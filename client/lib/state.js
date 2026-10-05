@@ -43,14 +43,7 @@ export const state = {
    *  state (the snapshot) is already folded into what the server sent. */
   lastSeq: -1,
   hydrated: false,
-  /** A v4 world (net.js sets it at each snapshot): the v1 entries this client derives from its own v4 fold are numbered
-   *  v4seq × 1000 + k (shared/v4/client.js), sparse by design — an act entry adds no v1 verb, a state entry adds k of
-   *  them. Contiguity is the v4 stream's to check (v4.ingest resyncs on a gap, door-check K4), so the +1 rule below
-   *  would only cry wolf on every write. */
-  sparseSeq: false,
 };
-/** net.js: is this world's v1 numbering the sparse one derived from a v4 stream? */
-export function setSparseSeq(on) { state.sparseSeq = !!on; }
 
 const subs = new Set();
 
@@ -108,7 +101,7 @@ export function foldLive(entry) {
     // the entry is already IN the folded state.
     return;
   }
-  if (state.lastSeq >= 0 && entry.seq !== state.lastSeq + 1 && !state.sparseSeq) {
+  if (state.lastSeq >= 0 && entry.seq !== state.lastSeq + 1) {
     // A gap means missed entries — fold what we have (total folding), but
     // say so loudly: parity with the server is now suspect until rejoin.
     console.warn(`[state] seq gap: ${state.lastSeq} → ${entry.seq}`);

@@ -49,11 +49,10 @@ let settle: (pose: unknown) => Record<string, unknown> | null = () => {
 };
 export function wireSettledPose(fn: typeof settle) { settle = fn; }
 
-// A v4 world's resync (a fresh snapshot to everyone in it) and rights refresh need server.ts's buildSnapshot and
-// rightsOf; they arrive by injection like settle (this module never imports server.ts).
-let v4Resync: (w: World) => void = () => { throw new Error("v4 resync not wired — server.ts wires it at boot"); };
+// A v4 world's rights refresh needs server.ts's rightsOf; it arrives by injection like settle (this module never
+// imports server.ts).
 let v4Rights: (w: World) => void = () => {};
-export function wireV4(resync: typeof v4Resync, rights: typeof v4Rights) { v4Resync = resync; v4Rights = rights; }
+export function wireV4(rights: typeof v4Rights) { v4Rights = rights; }
 
 // ------------------------------------------------------------------- clients
 
@@ -465,14 +464,11 @@ export class World {
     if (isV4World(name)) { // decided by the world's own genesis (server/v4/live.ts isV4Dir); v1 worlds never enter
       const v4 = new V4Log(name);
       this.v4 = v4;
-      this.log = v4 as unknown as WorldLog; // the WorldLog surface it serves: the compatibility projection
+      this.log = v4 as unknown as WorldLog; // the WorldLog surface it serves: the view of its fold (no v1 entries)
       v4.attach({
-        publish: (entry) => publishEntry(this, entry),
         broadcast: (msg) => this.session.broadcast(msg),
-        resync: () => v4Resync(this),
         rightsChanged: () => v4Rights(this),
         debug: (kind, detail) => this.debug(kind, detail),
-        projectionWanted: () => [...this.clients].some((c) => !c.v4fold),
       });
     } else this.log = new WorldLog(name);
     this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write

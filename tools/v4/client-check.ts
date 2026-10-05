@@ -71,7 +71,7 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("B1 the page knows it's in a v4 world (it adopted the v4 cut)", await waitFor(`import('/lib/net.js').then((m) => m.isV4())`));
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "" })); await sleep(500);
+  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", v4fold: true })); await sleep(500);   // v4fold: a v4 world speaks only to clients that read v4 (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.requestV4('set', { id: '@world', component: 'roles:bob', value: { role: 'builder' } })).ok;`)) === true);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));

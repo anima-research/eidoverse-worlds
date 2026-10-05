@@ -48,6 +48,7 @@ import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from ".
 import { makeV4Client } from "../shared/v4/client.js";
 import { diffView } from "../shared/v4/viewdiff.js";
 import { emptyView } from "../shared/v4/record.js";
+import { hear } from "../shared/chatwindow.js";
 import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
 import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
@@ -734,8 +735,10 @@ export class WorldAgent {
               // a v4 world: adopt the door's cut and read the view of this body's own fold of it. The snapshot's v1
               // `state` is read for its chat window only (chat isn't world state)
               this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
-              for (const e of stateToEntries(msg.state, oldestTail)) if (e.verb === "say") await this.applyEntry(e, false);
-              this.applyView(false, null, null);
+              (this.st as any).recentChat = structuredClone(msg.state?.recentChat ?? []);
+              (this.st as any).chatTotal = msg.state?.chatTotal ?? 0;
+              for (const e of stateToEntries(msg.state, oldestTail)) if (e.verb === "say") this.hearSay(e, false);
+              await this.applyView(false, null, null);
             } else {
               this.v4c = null;
               for (const e of stateToEntries(msg.state, oldestTail)) await this.applyEntry(e, false);
@@ -856,9 +859,10 @@ export class WorldAgent {
               const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}) } };
               this.lastSeq = Math.max(this.lastSeq, e.seq);
               this.noteOwnSay(e);
-              await this.applyEntry(e, true);
+              hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the window, no v1 fold
+              this.hearSay(e, true);
             }
-            if (r.changed) this.applyView(true, r.actor ?? null, r.ts ?? null);
+            if (r.changed) await this.applyView(true, r.actor ?? null, r.ts ?? null);
             break;
           }
           case "log":
@@ -1304,7 +1308,7 @@ export class WorldAgent {
 
   /** A v4 world: take the next view of this body's own v4 fold, and act on what changed (said in v4 terms,
    *  shared/v4/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
-  private applyView(live: boolean, actor: string | null, ts: number | null) {
+  private async applyView(live: boolean, actor: string | null, ts: number | null) {
     const prev = this.st as any;
     const next = this.v4c.view(prev);   // carries the chat window this body already holds
     const d = diffView(live ? prev : emptyView(), next);
@@ -1316,6 +1320,17 @@ export class WorldAgent {
       try { this.onThingChange(c, was.get(c.id), live, actor ?? "world", ts ?? this.serverNow()); }
       catch (e) { console.error(`[agent] ${c.what} ${c.id}:`, e); }
     }
+    // the world's own keys: the ground this body walks on, the sky, the grass (as a v1 world's verbs do below)
+    const W = this.st as any;
+    try {
+      if (d.world.includes("terrain") && W.terrain) await this.buildTerrain(W.terrain);
+      if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
+      if (d.world.includes("sky")) this.skyState = W.sky as typeof this.skyState;
+      if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }
+    } catch (e) { console.error("[agent] world change:", e); }
+  }
+  private grassInfo(args: any) {
+    return { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
   }
   private onThingChange({ id, what, comp }: { id: string; what: string; comp?: string }, was: any, live: boolean, actor: string, ts: number) {
     const now = this.entities.get(id);
@@ -1345,6 +1360,40 @@ export class WorldAgent {
         }
         if (comp === "motion" || comp?.startsWith("motion:")) this.trackSupport(this.syncSupport(id));
         break;
+    }
+  }
+
+  /** A chat line heard (a v1 say entry, or a v4 one in that shape): the inbox once, and a live line from someone else
+   *  is an event (and a mention ping when it names this body). The window itself is the caller's (the fold, or hear). */
+  private hearSay(entry: any, live: boolean) {
+    const { args, actor, ts } = entry;
+    // history lands in the inbox ONCE, so a freshly-joined agent has
+    // context — and a reconnect's replayed tail is deduped by seq instead
+    // of piling the same chat in again.
+    const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
+    // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
+    if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
+    if (seq != null && seq >= 0) this.inboxSeen = seq;
+    this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
+    // mention ping — @name or bare whole-word name, live messages only.
+    // The agent's OWN say is deliberately never fanned out: the world log
+    // echoes it back here, and delivering that echo as an incoming message
+    // made every resident hear themselves (Fable: "моё собственное эхо").
+    // It stays in the inbox — the scrollback record is honest — but it is
+    // not an event.
+    if (live && actor !== this.name) {
+      // speech near this body feeds the activity pulse (a speaker whose
+      // position is unknown — just arrived — counts as near)
+      const pp = this.people.get(actor)?.pose;
+      if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
+        this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
+      // A null regex means this body has no usable name (a malformed tokens
+      // entry). Not being mentionable is degraded, not fatal — the body still
+      // hears the room; it just cannot be addressed by name.
+      const rx = mentionRegex(this.name);
+      const mention = rx ? rx.test(String(args.text)) : false;
+      if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
+      this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
     }
   }
 
@@ -1442,34 +1491,7 @@ export class WorldAgent {
         }
       }
     } else if (verb === "say") {
-      // history lands in the inbox ONCE, so a freshly-joined agent has
-      // context — and a reconnect's replayed tail is deduped by seq instead
-      // of piling the same chat in again.
-      const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
-      // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
-      if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
-      if (seq != null && seq >= 0) this.inboxSeen = seq;
-      this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
-      // mention ping — @name or bare whole-word name, live messages only.
-      // The agent's OWN say is deliberately never fanned out: the world log
-      // echoes it back here, and delivering that echo as an incoming message
-      // made every resident hear themselves (Fable: "моё собственное эхо").
-      // It stays in the inbox — the scrollback record is honest — but it is
-      // not an event.
-      if (live && actor !== this.name) {
-        // speech near this body feeds the activity pulse (a speaker whose
-        // position is unknown — just arrived — counts as near)
-        const pp = this.people.get(actor)?.pose;
-        if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
-          this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        // A null regex means this body has no usable name (a malformed tokens
-        // entry). Not being mentionable is degraded, not fatal — the body still
-        // hears the room; it just cannot be addressed by name.
-        const rx = mentionRegex(this.name);
-        const mention = rx ? rx.test(String(args.text)) : false;
-        if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
-        this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
-      }
+      this.hearSay(entry, live);
     } else if (verb === "grant") {
       // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
       // `myRights` was written once from snapshot.yourRights and never again:
@@ -1538,7 +1560,7 @@ export class WorldAgent {
       // provenance rules — the view just adopts its answer (§24k: one fold)
       this.skyState = this.st.sky as typeof this.skyState;
     } else if (verb === "grass") {
-      this.worldInfo.grass = { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
+      this.worldInfo.grass = this.grassInfo(args);
     }
   }
 

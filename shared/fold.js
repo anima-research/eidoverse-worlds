@@ -182,7 +182,8 @@ function placerOf(a) {
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
-export const RECENT_CHAT = 40;
+import { RECENT_CHAT, trimRecentChat } from "./chatwindow.js";
+export { RECENT_CHAT, trimRecentChat };
 
 /** @returns {WorldState} */
 export const emptyState = () => ({
@@ -190,32 +191,7 @@ export const emptyState = () => ({
   roles: {}, bans: {},
 });
 
-/** Make room in the recent-chat window WITHOUT letting one loud speaker erase
- *  everyone else.
- *
- *  A plain "keep the last N" is a lie about what a room sounded like: measured,
- *  a bot emitting 300 telemetry lines reduced the window to 40 messages
- *  spanning ZERO seconds, all its own, and the two people actually holding a
- *  conversation vanished from it completely. An arrival would have seen a
- *  machine talking to itself.
- *
- *  So the loudest voice loses its oldest line first, and nobody's LAST line is
- *  ever dropped while someone else still has several. Recency still wins
- *  within a speaker; fairness decides between them.
- *  @param {WorldState["recentChat"]} rc */
-export function trimRecentChat(rc) {
-  while (rc.length > RECENT_CHAT) {
-    const counts = new Map();
-    for (const m of rc) counts.set(m.actor, (counts.get(m.actor) ?? 0) + 1);
-    let victim = -1;
-    let worst = 1;
-    for (let i = 0; i < rc.length; i++) {
-      const n = counts.get(rc[i].actor);
-      if (n > worst) { worst = n; victim = i; }      // oldest line of the loudest
-    }
-    rc.splice(victim >= 0 ? victim : 0, 1);          // everyone tied at 1: oldest goes
-  }
-}
+// the window's rule is shared by v1 and v4 worlds (shared/chatwindow.js)
 
 /** Fold one entry into the running state. This is the ONLY place that knows how
  *  a verb changes the world's shape, and it must stay a pure function of the
@@ -245,7 +221,7 @@ export function foldEntry(st, e) {
       st.entities[a.id] = {
         ...(a.lib != null ? { lib: a.lib } : {}), pos: a.pos ?? [0, 0, 0], ...orient(a),
         ...(a.scale != null ? { scale: a.scale } : {}),
-        // scale3: a v4 world's per-axis scale, beside the one-number `scale` (shared/v4/legacy.js); v1 never writes it
+        // scale3: a v4 world's per-axis scale, beside the one-number `scale` (shared/v4/record.js); v1 never writes it
         ...(Array.isArray(a.scale3) && a.scale3.length === 3 && a.scale3.every(Number.isFinite) ? { scale3: a.scale3 } : {}),
         // `collide` ("exact" | "box") is the spawner's override of the
         // size-derived collider choice, and the fold used to drop it: the
@@ -680,7 +656,7 @@ export function stateToEntries(state, {
         id, lib: e.lib, pos: e.pos, yaw: e.yaw,
         ...(e.q ? { q: e.q } : {}),
         ...(e.scale != null ? { scale: e.scale } : {}),
-        // a v4 world's per-axis scale rides beside it (shared/v4/legacy.js); dropping it here flattened every stretched
+        // a v4 world's per-axis scale rides beside it (shared/v4/record.js); dropping it here flattened every stretched
         // thing an agent then edited (agent lab, 10-04: the agent's edit of a stretched bench wrote [0.2, 0.2, 0.2])
         ...(Array.isArray(e.scale3) ? { scale3: e.scale3 } : {}),
         // the spawn verb's collide override decides exact-vs-box; dropping

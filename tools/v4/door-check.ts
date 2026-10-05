@@ -21,7 +21,6 @@ import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
 import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
-import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
 import { openWorld } from "../../server/v4/disk.ts";
 import { openLive } from "../../server/v4/live.ts";
 import { v1FoldBuild, v1FoldFiles } from "../../server/v4/build.ts";
@@ -429,32 +428,6 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const swp = (() => { const e = w2.state().entities.sw; if (!e) return null; const s = w2.state(); const g = s.entities.gate.c.transform; return [g.pos[0] + e.c.transform.pos[0], g.pos[2] + e.c.transform.pos[2]]; })();
   ok(sw.ok && swp && Math.abs(swp[0] - (gt[0] + 5)) < 0.05, "C12 hang from an off-origin frame: the seat hangs under the beam's middle, not the frame's origin", { swp, beamMid: gt[0] + 5, r: sw.refused }); }
 
-// ---- X: the compatibility projection reproduces itself through the client's fold ----
-{ let now = T + 9000; const w = openLive(root + "proj/", "proj", { now: () => now });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
-  let held = legacyState(w.state()); let resyncs = 0, steps = 0;
-  const step = (what, actor, tool, args) => { const r = call(actor, tool, args); const next = legacyState(w.state()); const d = legacyDelta(held, next);
-    const after = d && foldLegacy(held, d.map((v, k) => ({ seq: 1e6 + steps * 1000 + k, ts: now, actor: "a", ...v }))); steps++;
-    if (!d || legacyDiff(after, next)) { resyncs++; held = next; return { r, resync: true, why: d ? legacyDiff(after, next) : "no verbs" }; } held = after; return { r, resync: false, d }; };
-  step("found", "ann", "new", { title: "proj" });
-  const s1 = step("create", "ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
-  ok(!s1.resync && s1.d.some((v) => v.verb === "spawn"), "X1 a create is a spawn", s1);
-  const s2 = step("on", "ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
-  ok(!s2.resync && s2.d.some((v) => v.verb === "mount"), "X2 a thing put ON another is a spawn + mount (its offset is the door's local transform)", s2);
-  const s3 = step("lock", "ann", "set", { id: "tbl", component: "lock", value: true });
-  ok(!s3.resync && s3.d.some((v) => v.verb === "comp" && v.args.type === "lock" && v.args.data === true), "X3 `lock` is the client's edit-mode lock, unchanged (the identity)", s3);
-  const s4 = step("move", "ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] } });
-  ok(s4.r.refused?.code === "locked", "X4 (the lock holds)");
-  const s5 = step("role", "ann", "set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } });
-  ok(!s5.resync && s5.d.some((v) => v.verb === "grant"), "X5 a role is a grant", s5);
-  const s6 = step("del", "ann", "delete", { id: "tbl", component: "lock" }); step("del2", "ann", "delete", { id: "tbl" });
-  ok(!held.entities.tbl && !held.entities.cup, "X6 deleting the table takes the crate with it (the door deletes children)", Object.keys(held.entities));
-  const s7 = step("undo", "ann", "undo", {});
-  ok(s7.r.ok && held.entities.tbl, "X7 undo brings it back", s7.r);
-  ok(resyncs === 0, "X8 no step needed a resync", resyncs);
-  const s8 = step("about", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
-  ok(s8.resync, "X9 a change with no v1 verb (the sky) is a resync, never a wrong delta", s8); }
-
 // ---- V: what changed, said in v4 terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
   let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { now: () => now });
@@ -483,13 +456,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(v9.r.ok && v9.has("tbl", "born"), "V9 undo brings it back: 'born' again", v9.d);
   ok(diffView(held, viewState(w.state())).things.length === 0 && !diffView(held, viewState(w.state())).world.length, "V10 nothing changed says nothing"); }
 
-// ---- S3: a stretched v4 thing in the projection (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
-{ const { legacyEntity } = await import("../../shared/v4/legacy.js");
+// ---- S3: a stretched v4 thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
+{ const { viewOf } = await import("../../shared/v4/record.js");
   const { foldEntry, emptyState } = await import("../../shared/fold.js");
   const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
-  const rec = legacyEntity("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
-  ok(typeof rec.scale === "number" && JSON.stringify(rec.scale3) === "[2,0.4,0.4]", "S3a a stretched thing projects `scale` as ONE number (every v1-era reader) and scale3 beside it", rec);
-  ok(legacyEntity("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3 (v1 worlds stay byte-identical)");
+  const rec = viewOf("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
+  ok(typeof rec.scale === "number" && JSON.stringify(rec.scale3) === "[2,0.4,0.4]", "S3a a stretched thing's view has `scale` as ONE number (every older reader) and scale3 beside it", rec);
+  ok(viewOf("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3 (v1 worlds stay byte-identical)");
   const eff = effectiveWorldTransform("bench", { entity: (id: string) => (id === "bench" ? rec : undefined), mount: () => undefined } as any, 0);
   ok(eff.ok === true, "S3c the agent's pose reader (mcpl/effective) resolves it: no 'non-finite folded transform'", eff);
   const st = emptyState();

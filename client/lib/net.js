@@ -6,7 +6,8 @@ import { CONFIG, report, bus } from './base.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, setSparseSeq, applyView } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, applyView } from './state.js';
+import { hear } from '../../shared/chatwindow.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -254,8 +255,14 @@ function onV4Log(msg) {
   if (!v4.active) return;
   const r = v4.ingest(msg.entries ?? [], msg.from ?? -1);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
-  // numbered v4seq × 1000 so a chat line orders with the entries it came with (state.js sparseSeq)
-  for (const x of r.says) onLogEntry({ seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}) } });
+  // a chat line: into the window (the shared rule, no v1 fold), then the live causes (bubbles, voice, chat log).
+  // Numbered v4seq × 1000, as the server numbers it in its window and history.
+  for (const x of r.says) {
+    const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}) } };
+    hear(shadowState.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });
+    if (hydrating) pendingLive.push(e);
+    else if (e.seq > lastSeq) { lastSeq = e.seq; bus.emit('live-entry', e); noteSpeaking(e.actor); }
+  }
   if (r.changed) narrate(applyView(v4.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
   bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
@@ -910,7 +917,6 @@ async function onSnapshot(msg) {
   // a v4 world: adopt the door's own cut, and draw the view of THIS client's fold of it (the snapshot's `state` is
   // only read for its chat window)
   if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); } else v4.reset();
-  setSparseSeq(!!msg.v4?.state);   // the v1 numbering derived from a v4 stream jumps by design (state.js sparseSeq)
   shadowHydrate(msg.v4?.state ? v4.view(msg.state) : msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),

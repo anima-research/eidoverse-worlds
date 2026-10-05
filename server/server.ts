@@ -160,11 +160,8 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // both planes. world.ts takes it by injection because the source-text gates
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
-// v4 worlds (protocol/v4 slice 2, server/v4/): a change the projection can't spell as v1 verbs re-sends the
-// snapshot itself (the reconnect path), and a role change re-sends everyone's rights, as afterGrant does for v1.
+// v4 worlds (server/v4/): a role change re-sends everyone's rights, as afterGrant does for v1.
 wireV4(
-  // a client that folds v4 itself (slice 3b) never needs the projection's resync: it re-hydrates from its own fold
-  (w) => { for (const c of w.clients) { if (c.v4fold) continue; try { c.ws.send(JSON.stringify(buildSnapshot(w, c))); } catch (err) { w.debug("v4-resync-error", { who: c.id, error: String(err) }); } } },
   (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
 );
 
@@ -173,11 +170,8 @@ wireV4(
 // first, then the scripts. Future systems (seats, recorders, the sim core)
 // subscribe here instead of teaching another append site to fan out.
 onEntryCommitted("client-fanout", (w, entry) => {
-  // in a v4 world the `log` entries are the compatibility projection: a client that folds v4 (slice 3b) derives its
-  // own from the `v4-log` stream, so it never gets them. v1 worlds broadcast exactly as before.
-  if (!w.v4) { w.broadcast({ type: "log", entry }); return; }
-  const data = JSON.stringify({ type: "log", entry });
-  for (const c of w.clients) if (!c.v4fold) c.ws.send(data);
+  // a v4 world commits no v1 entries (its clients fold the `v4-log` stream); v1 worlds broadcast exactly as before
+  if (!w.v4) w.broadcast({ type: "log", entry });
 });
 onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
 
@@ -832,7 +826,15 @@ const server = Bun.serve({
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
-          // protocol/v4 slice 3b: a client that says it folds v4 gets the v4 cut and the v4-log stream, and no projection
+          // slice 3c: a v4 world speaks only v4. A client that doesn't fold it (an old page, an old agent build) is refused
+          // with the reason; 4005 = a refused join, which clients know not to redial
+          // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
+          if (w.v4 && msg.v4fold !== true && (c.surface ?? "world") === "world") {
+            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" is a protocol v4 world, and this client doesn't read v4 — reload the page for the current client, or update the agent` }));
+            ws.close(4005, "this client doesn't read v4");
+            clients.delete(ws);
+            return;
+          }
           c.v4fold = msg.v4fold === true;
           installJoin(c, w);
           ws.send(JSON.stringify(buildSnapshot(w, c)));

@@ -9,15 +9,11 @@
 // reaching a v4 world is a routing bug (server/v4/messages.ts maps the old UI's verbs to requests), and writing it
 // would put a v1 entry into a v4 log, or show clients a change the log never got.
 //
-// What clients see: today's client folds v1, so a V4Log serves the COMPATIBILITY PROJECTION (shared/v4/legacy.js):
-// `state` is the v4 fold read as a v1 state, and after each request the v1 verbs that move a client from the old
-// projection to the new one are published as ordinary `log` entries (the bus: client fanout, behaviors). Before they
-// go out, the server folds them with the client's own fold and compares with a fresh projection; if they don't
-// reproduce it (a change with no v1 spelling), no verbs go out and every client gets a fresh snapshot (a resync,
-// the reconnect path). The raw v4 entries also go out, as {type: "v4-log"}, for clients that read v4 (slice 3).
-//
-// Projected entries are numbered seq = v4seq × 1000 + k (k-th verb that v4 entry projected to), so they're
-// increasing, survive restarts, and name the v4 entry they came from. A snapshot covers through v4seq × 1000 + 999.
+// What clients see (slice 3c): every client folds v4 itself. A joiner adopts the door's cut (clientCut) and folds the
+// raw entries it is sent as {type: "v4-log"}; a client that doesn't fold v4 is refused at join (server.ts). No v1
+// verbs are made for a v4 world. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
+// for this server's own readers (rights, bans, leases, /geom, model warm-up); it is rebuilt by its next reader after
+// a write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR } from "../config.ts";
@@ -26,7 +22,8 @@ import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
 import { request as doorRequest, actIndexOf, roleIn } from "../../shared/v4/door.js";
 import { stateView } from "../../shared/v4/client.js";
-import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
+import { viewState } from "../../shared/v4/record.js";
+import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
 import { openLive, isV4Dir } from "./live.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./catalogue.ts";
@@ -39,38 +36,31 @@ export function isV4World(name: string): boolean { return isV4Dir(path.join(WORL
 
 /** What a V4Log needs from the World around it (injected: this file never imports world.ts). */
 export type V4Host = {
-  publish(entry: LogEntry): void;          // the entry bus (World.commit's publish half)
   broadcast(msg: unknown): void;           // every client in the world
-  resync(): void;                          // a fresh snapshot to every client (server.ts's buildSnapshot)
   rightsChanged(): void;                   // tell every client its rights again
   debug(kind: string, detail: Record<string, unknown>): void;
-  /** Does any client in the world still read the compatibility projection? (A client that folds v4 itself, slice 3b,
-   *  doesn't: it derives its own from the v4-log stream.) Absent = yes. */
-  projectionWanted?(): boolean;
 };
 
 export class V4Log {
   name: string;
   readonly v4 = true;
   live: Any;
-  /** The projection every client holds (it is what they fold). Checked against the v4 fold after every request.
-   *  Slice 3b: when no client in the world reads it, it is brought up to date lazily, by whoever reads it next (rights,
-   *  the drag relay's rank check, a joiner that still folds v1), never left stale for them. */
+  /** The view of the fold + the chat window (the readers above). Rebuilt lazily by its next reader after a write. */
   private _state!: WorldState;
   get state(): WorldState { if (this.stale) this.freshen(); return this._state; }
   set state(v: WorldState) { this._state = v; }
   /** v1 entries never live here: a v4 world has no v1 tail (joinPayload sends none). */
   entries: LogEntry[] = [];
-  sim = emptySim() as Any;           // the v1 sim: none (v4 physics isn't projected to old clients)
+  sim = emptySim() as Any;           // the v1 sim: none (v4 physics lives in the fold, @world.sim)
   recentSays: LogEntry[] = [];
   poses: Record<string, unknown> = {};
-  /** The projected entries, newest last (readHistory's source; the v4 log itself is the door's `history`). */
+  /** The chat lines, newest last (readHistory's source; the v4 log itself is the door's `history`). */
   private hist: LogEntry[] = [];
   private dir: string;
   private posesPath: string;
   private host: V4Host | null = null;
   /** counters, for /tick-style inspection and the tests */
-  stats = { requests: 0, writes: 0, projected: 0, resyncs: 0, skipped: 0 };
+  stats = { requests: 0, writes: 0 };
 
   constructor(name: string) {
     this.name = name;
@@ -79,17 +69,22 @@ export class V4Log {
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE });
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
-    this.state = this.project();
-    // chat: the last 40 says as the v1 window (the fold's own trim rule)
-    const says = this.live.entries.filter((e: Any) => e && e.kind === "say").slice(-40);
-    this.state = foldLegacy(this.state, says.map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? "") } })));
+    this._state = this.view();
+    // chat: the last 40 says, through the window's own rule
+    for (const e of this.live.entries.filter((e: Any) => e && e.kind === "say").slice(-40)) this.hearSay(e);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the door
   }
   attach(host: V4Host) { this.host = host; }
 
-  private project(): WorldState {
-    return legacyState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldState;
+  private view(): WorldState {
+    return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldState;
+  }
+  /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
+  private hearSay(e: Any) {
+    const line = { seq: e.seq * 1000, ts: e.ts, actor: idOut(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry;
+    hear(this._state, { actor: line.actor, text: (line.args as Any).text, ts: line.ts, seq: line.seq });
+    this.record(line);
   }
   /** The last v4 seq. */
   get head(): number { return this.live.entries.length - 1; }
@@ -109,57 +104,17 @@ export class V4Log {
     return r;
   }
 
-  /** Publish what the door just wrote: the raw v4 entries, then the projection's v1 verbs (checked), or a resync.
-   *  Slice 3b: when every client in the world folds v4 itself, no projection delta is computed; the projection is
-   *  marked stale and rebuilt by its next reader (the `state` getter). */
+  /** Send what the door just wrote: the raw v4 entries, to every client (they all fold v4). Chat lines go into the
+   *  window; the view goes stale for its next reader; a role change re-sends everyone's rights. */
   private stale = false;
   private afterWrite(from: number) {
     this.stats.writes++;
     const fresh = this.live.entries.slice(from);
     this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh });
-    if (this.host?.projectionWanted && !this.host.projectionWanted()) {
-      // the chat window stays current (a later joiner that reads the projection gets it); entities wait for freshen()
-      const says = fresh.filter((e: Any) => e?.kind === "say").map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry));
-      if (says.length) { this._state = foldLegacy(this._state, says); for (const e of says) this.record(e); }
-      this.stale = true; this.stats.skipped++;
-      const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
-      if (fresh.some(roles)) this.host?.rightsChanged();
-      return;
-    }
-    // a projection that went stale while nobody read it can't be stepped from: its readers get a fresh one (chat kept)
-    if (this.stale) {
-      const says = fresh.filter((e: Any) => e?.kind === "say").map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? "") } } as LogEntry));
-      if (says.length) { this._state = foldLegacy(this._state, says); for (const e of says) this.record(e); }
-      this.freshen(); this.stats.resyncs++; this.host?.resync(); this.host?.rightsChanged(); return;
-    }
-    const last = fresh[fresh.length - 1];
-    const ts = Number.isInteger(last?.ts) ? last.ts : Date.now();
-    const actorOf = idOut(String(fresh.find((e: Any) => e?.kind === "act" || e?.kind === "say")?.actor ?? last?.actor ?? "world"));
-    // the verbs, numbered by the v4 entry they came from
-    const out: LogEntry[] = [];
-    for (const e of fresh) if (e?.kind === "say") out.push({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry);
-    const next = this.project();
-    const delta = legacyDelta(this.state, next);
-    let k = 1;
-    const ok = delta !== null && delta.length < 999;
-    if (ok) for (const v of delta!) out.push({ seq: last.seq * 1000 + k++, ts, actor: actorOf, verb: v.verb, args: v.args } as LogEntry);
-    const held = foldLegacy(this.state, out);
-    const diff = ok ? legacyDiff(held, next) : { reason: delta === null ? "no v1 spelling" : "too many verbs" };
-    const rolesMoved = JSON.stringify(this.state.roles ?? {}) !== JSON.stringify(next.roles ?? {});
-    if (!diff) {
-      this.state = held;
-      for (const e of out) this.record(e);
-      for (const e of out) this.host?.publish(e);
-      this.stats.projected += out.length;
-    } else {
-      // no faithful verbs: the clients get the projection itself (chat carried from what they held)
-      this.state = { ...next, recentChat: held.recentChat, chatTotal: held.chatTotal } as WorldState;
-      for (const e of out) if (e.verb === "say") this.record(e);
-      this.stats.resyncs++;
-      this.host?.debug("v4-resync", { from, to: this.head, why: diff });
-      this.host?.resync();
-    }
-    if (rolesMoved) this.host?.rightsChanged();
+    for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
+    this.stale = true;
+    const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
+    if (fresh.some(roles)) this.host?.rightsChanged();
   }
   private record(e: LogEntry) {
     this.hist.push(e); if (this.hist.length > 512) this.hist.splice(0, this.hist.length - 512);
@@ -170,7 +125,7 @@ export class V4Log {
   append(_actor: string, verb: string, _args: Record<string, unknown>): LogEntry {
     throw new Error(`v4 world "${this.name}": a v1 '${verb}' write has no path here (writes are v4 requests; server/v4/messages.ts)`);
   }
-  fold(_reason?: string) { /* the v4 log is the record; the projection is rebuilt from it on load */ }
+  fold(_reason?: string) { /* the v4 log is the record; the view is rebuilt from it on load */ }
   flushLog() { /* lines are appended synchronously by the door's writeLine */ }
   reset(): string { throw new Error(`v4 world "${this.name}": reset isn't supported in a v4 world yet`); }
   readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null }) {
@@ -178,10 +133,10 @@ export class V4Log {
     const oldest = out.length ? out[0].seq : null;
     return { entries: out, oldestSeq: oldest, hasMore: false };
   }
-  /** Bring a skipped projection up to date (chat from the recorded says), before anyone reads it again. */
+  /** Bring the view up to date (the chat window is kept), before anyone reads it again. */
   private freshen() {
     this.stale = false;
-    this._state = { ...this.project(), recentChat: this._state.recentChat, chatTotal: this._state.chatTotal } as WorldState;
+    this._state = this.view();
   }
   joinPayload() { if (this.stale) this.freshen(); return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
   /** The role the DOOR gives this identity (the door is what admits writes; v1's own default for strangers is builder,

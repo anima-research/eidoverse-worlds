@@ -3,11 +3,10 @@
 //   S1  found a v4 world (tools/v4/world.ts), join it: the snapshot says v4, the founder is its owner
 //   S2  writes are door requests: create (a measured GLB), place ON it (the engine catalogue), every client sees it
 //   S3  refusals reach the asker: a locked edit (v4 message and old-UI verb; the old guard refused by name), a visitor's create, a spectator's write
-//   S4  undo through the door; the log on disk is v4, strictly readable, and every client's v1 fold = the projection
+//   S4  undo through the door; the log on disk is v4, strictly readable, and every client's own v4 fold = the log
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
 //   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
-//   S8  slice 3b: clients that fold v4 get the v4 cut and stream and no projection; a v1-reading joiner after
-//       unprojected writes still gets a fresh projection and its rights
+//   S8  clients fold v4: the v4 cut and stream, no `log` entries; a client that doesn't read v4 is refused (3c)
 //   S7  v1 worlds unchanged: the same v1 script against this branch and against slice 1's tree (097eedcc), byte-
 //       compared (logs, snapshots and every message each client received, with clock fields masked)
 // @ts-nocheck
@@ -16,8 +15,6 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold, digest } from "../../shared/v4/fold.js";
 import { makeV4Client } from "../../shared/v4/client.js";
-import { legacyState, legacyDiff } from "../../shared/v4/legacy.js";
-import { emptyState as v1Empty, foldEntry } from "../../shared/fold.js";
 import { enc } from "../../shared/v4/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
 
@@ -75,16 +72,17 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
   };
   return c;
 }
-/** What this client holds now: its snapshot's state folded forward with every `log` entry it was sent (the
- *  client's own fold, shared/fold.js), restarting at each snapshot (a resync replaces the state). */
+/** What this client holds now: its own v4 fold (shared/v4/client.js) of its snapshot's cut and every v4-log it was
+ *  sent, restarting at each snapshot. */
 function heldBy(c: any) {
-  let st = null, last = -Infinity;
+  let k = null;
   for (const m of c.msgs) {
-    if (m.type === "snapshot") { st = JSON.parse(JSON.stringify(m.state)); last = m.throughSeq ?? -1; }
-    else if (m.type === "log" && st && m.entry.seq > last) { foldEntry(st, m.entry); last = m.entry.seq; }
+    if (m.type === "snapshot" && m.v4?.state) { k = makeV4Client(); k.adopt(JSON.parse(JSON.stringify(m.v4))); }
+    else if (m.type === "v4-log" && k) k.ingest(JSON.parse(JSON.stringify(m.entries)), m.from);
   }
-  return st;
+  return k;
 }
+const V4 = { v4fold: true };   // every client in a v4 world folds v4 (slice 3c)
 
 // ================= v4 =================
 const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
@@ -100,14 +98,14 @@ ok(tool(["found", "garden", "--owner", "Ann"]).code !== 0, "S1 founding over an 
 const srv = await startServer(ENGINE, W4, OPT, "v4");
 { const ws0 = await (await fetch(`http://127.0.0.1:${srv.port}/worlds`)).json();
   ok(ws0.worlds?.some((w) => w.name === "garden" && w.loaded === false), "S1 /worlds lists the v4 world on disk before anyone loads it (travel discovery)", ws0); }
-const ann = await client(srv.port, "garden", "Ann");
+const ann = await client(srv.port, "garden", "Ann", V4);
 ok(ann.snapshot?.v4?.version === 4, "S1 the snapshot says v4", ann.snapshot?.v4);
 ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the door stamps the same name the tool did)", ann.snapshot?.yourRights);
 ok(!fs.existsSync(path.join(W4, "garden", "log.jsonl")), "S1 no v1 log appears beside the v4 one (no genesis, no land-rush grant)");
 for (const [who, role] of [["Bob", "builder"], ["Vic", "visitor"]]) ok((await ann.req("set", { id: "@world", component: `roles:${enc(who)}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
-const bob = await client(srv.port, "garden", "Bob"), vic = await client(srv.port, "garden", "Vic");
-const spec = await client(srv.port, "garden", "Watcher", { spectate: true });
-ok(bob.snapshot?.yourRights?.role === "builder" && vic.snapshot?.yourRights?.role === "visitor", "S1 roles set through the door reach the old client's rights", [bob.snapshot?.yourRights, vic.snapshot?.yourRights]);
+const bob = await client(srv.port, "garden", "Bob", V4), vic = await client(srv.port, "garden", "Vic", V4);
+const spec = await client(srv.port, "garden", "Watcher", { spectate: true, ...V4 });
+ok(bob.snapshot?.yourRights?.role === "builder" && vic.snapshot?.yourRights?.role === "visitor", "S1 roles set through the door reach each client's rights", [bob.snapshot?.yourRights, vic.snapshot?.yourRights]);
 
 const t1 = await ann.req("create", { id: "tbl", model: "test/table.glb", place: { at: [0, 3] } });
 ok(t1.ok, "S2 create a measured model", t1);
@@ -115,11 +113,9 @@ const c1 = await bob.req("create", { id: "cup", model: "test/cup.glb", place: { 
 const placed = c1.notes?.find((n) => n.placed)?.placed;
 ok(c1.ok && Math.abs(placed?.restsAt - 0.75) < 0.002 && placed?.on === "tbl", "S2 place ON it: the engine catalogue measured the GLB's top at 0.75 m", c1);
 await sleep(150);
-ok(vic.of("log").some((m) => m.entry.verb === "spawn" && m.entry.args.id === "cup") && vic.of("log").some((m) => m.entry.verb === "mount" && m.entry.args.id === "cup" && m.entry.args.to === "tbl"),
-  "S2 another client is sent v1 spawn + mount (it folds v1)", vic.of("log").map((m) => m.entry.verb));
-ok(vic.of("v4-log").length >= 2, "S2 …and the raw v4 entries (v4-log) for clients that read v4");
-{ const m = vic.of("log").find((x) => x.entry.verb === "mount" && x.entry.args.id === "cup")?.entry.args; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
-  ok(Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 the mount's offset is the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m?.offset, loc]); }
+ok(vic.of("v4-log").length >= 2 && vic.of("log").length === 0, "S2 another client is sent the raw v4 entries (v4-log), and no v1 `log` entries", [vic.of("v4-log").length, vic.of("log").length]);
+{ const m = heldBy(vic)?.view()?.entities?.cup?.parent; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
+  ok(m?.to === "tbl" && Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 in that client's own fold the cup hangs from the table at the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m, loc]); }
 
 ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
@@ -145,14 +141,13 @@ const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk is v4 and reads back strictly", st.diagnostics.slice(0, 3));
 ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "act").length >= 6, "S4 ts never decreases; every write is an act + its result");
 ok(L.filter((e) => e.kind === "act").every((e) => [enc("Ann"), enc("Bob")].includes(e.actor)), "S4 acts are stamped with the connection's identity, never the payload's", [...new Set(L.map((e) => e.actor))]);
-const truth = legacyState(st);
-for (const c of [ann, bob, vic, spec]) { const d = legacyDiff(heldBy(c), truth); ok(!d, `S4 what ${c.id} holds (its own v1 fold of what it was sent) = the projection of the v4 log`, d); }
+for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own v4 fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
-{ // a change with no v1 verb (the sky): every client is re-sent the state (a resync), and then holds the projection
+{ // the sky (which the v1 projection could only resync for) is just another entry in the stream now
   ok((await ann.req("set", { id: "@world", component: "sky", value: { hours: 18 } })).ok, "S4b Ann sets the sky (owner)"); await sleep(250);
-  const t2 = legacyState(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))));
-  ok([ann, bob, vic].every((c) => c.of("snapshot").length === 2), "S4b a change v1 can't spell is a resync: a second snapshot to each client", [ann, bob, vic].map((c) => c.of("snapshot").length));
-  for (const c of [ann, bob, vic]) { const d = legacyDiff(heldBy(c), t2); ok(!d && heldBy(c).sky?.hours === 18, `S4b …and ${c.id} then holds the projection (sky included)`, d); } }
+  const t2 = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))));
+  ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4b no resync: no second snapshot to anyone", [ann, bob, vic].map((c) => c.of("snapshot").length));
+  for (const c of [ann, bob, vic]) ok(digest(heldBy(c).st) === digest(t2) && heldBy(c).view().sky?.hours === 18, `S4b …and ${c.id} holds it (its fold = the log, sky included)`); }
 
 // ---- S5: an agent's tools (mcpl/tools.ts) over this connection ----
 { const { HANDLERS } = await import("../../mcpl/tools.ts");
@@ -181,6 +176,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && JSON.stringify(ag.entities.get("plank")?.scale3) !== "[2,1,0.5]"; i++) await sleep(50);
   ok(JSON.stringify(ag.entities.get("plank")?.scale3) === "[2,1,0.5]", "S5b a stretched thing stays stretched in what the agent holds (the v1 replay flattened it)", ag.entities.get("plank"));
   ok(JSON.stringify(ag.st.entities.plank?.scale3) === "[2,1,0.5]", "S5b …and in its view of the world (the record its look/inspect read)", ag.st.entities.plank);
+  // the world's own keys and chat reach it from the stream too (a v1 world's agent got them as verbs)
+  ok((await ann.req("set", { id: "@world", component: "sky", value: { hours: 7 } })).ok && (await ann.req("say", { text: "hello, agent" })).ok, "S5c (Ann sets the sky, then speaks)");
+  for (let i = 0; i < 40 && !(ag.skyState?.hours === 7 && ag.inbox.some((m) => m.text === "hello, agent")); i++) await sleep(50);
+  ok(ag.skyState?.hours === 7, "S5c the agent's sky follows a v4 world's sky", ag.skyState);
+  ok(ag.inbox.some((m) => m.kind === "say" && m.who === "Ann" && m.text === "hello, agent") && ag.st.recentChat?.some((m) => m.text === "hello, agent"), "S5c …and a chat line lands in its inbox and its chat window", [ag.inbox.slice(-2), ag.st.recentChat?.slice(-1)]);
   ag.close(); }
 
 // ---- S6: translate a v1 world into a new v4 world ----
@@ -202,7 +202,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const g = JSON.parse(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl"), "utf8").split("\n")[0]);
   ok(/^eidoverse\/translate-v1@/.test(g.body.translatedFrom?.translator) && /^[0-9a-f]{16}$/.test(g.body.translatedFrom?.fold), "S6 genesis names the engine translator and the v1 fold build", g.body.translatedFrom);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
-  const old = await client(srv.port, "oldtown", "Ann"), neu = await client(srv.port, "oldtown-v4", "Ann");
+  const old = await client(srv.port, "oldtown", "Ann"), neu = await client(srv.port, "oldtown-v4", "Ann", V4);
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
@@ -225,25 +225,25 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const bv = await client(srv.port, "meadow", "Bob", { v4fold: true }); // Bob folds v4 too: nobody reads the projection
   ok(bv.snapshot?.yourRights?.role === "visitor", "S8 Bob arrives a visitor", bv.snapshot?.yourRights);
   const r1 = await a.req("create", { id: "box", model: "test/table.glb", place: { at: [1, 1] } });
-  ok((await a.req("set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder (nobody in the world reads the projection)");
+  ok((await a.req("set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder");
   await sleep(200);
   ok(bv.of("your-rights").at(-1)?.rights?.role === "builder", "S8 …and Bob is told at once (the door's role, not v1's stranger default)", bv.of("your-rights").map((m) => m.rights?.role));
   { const g = await fetch(`http://127.0.0.1:${srv.port}/geom?world=meadow&id=box`, { signal: AbortSignal.timeout(3000) });
-    ok(g.status === 200, "S8 an HTTP reader of the projection (/geom) sees a thing made while nobody stepped it (it's rebuilt for its reader, never stale)", g.status); }
+    ok(g.status === 200, "S8 an HTTP reader of the world's view (/geom) sees a thing just made (the view is rebuilt for its reader, never stale)", g.status); }
   bv.close();
-  ok(r1.ok && a.of("log").length === 0 && a.of("v4-log").length >= 2, "S8 it gets v4-log and no projected `log` entries", [a.of("log").length, a.of("v4-log").length]);
+  ok(r1.ok && a.of("log").length === 0 && a.of("v4-log").length >= 2, "S8 it gets v4-log and no `log` entries", [a.of("log").length, a.of("v4-log").length]);
   const c = makeV4Client(); c.adopt(a.snapshot.v4);
   for (const m of a.of("v4-log")) c.ingest(m.entries, m.from);
   const disk = fold(readLog(fs.readFileSync(path.join(W4, "meadow", "v4.jsonl"))));
   ok(digest(c.st) === digest(disk), "S8 its own fold of the stream = the log on disk (digest)");
-  // a client that still reads v1 (an agent, an old page) joins after writes nobody projected: its snapshot is fresh
+  // a client that doesn't read v4 (an old page, an old agent build) is refused, with the reason, and isn't redialed (4005)
   const b = await client(srv.port, "meadow", "Bob");
-  ok(b.snapshot?.yourRights?.role === "builder" && !legacyDiff(b.snapshot.state, legacyState(disk)), "S8 a v1-reading joiner after unprojected writes gets the right rights and a fresh projection", [b.snapshot?.yourRights, legacyDiff(b.snapshot?.state, legacyState(disk))]);
-  const r2 = await a.req("set", { id: "box", component: "label", value: "now projected" }); await sleep(200);
-  ok(r2.ok && b.of("log").some((m) => m.entry.verb === "comp" && m.entry.args.type === "label") && a.of("log").length === 0, "S8 …and from then on it gets projected entries, while the v4 client still gets none", [b.of("log").map((m) => m.entry.verb), a.of("log").length]);
-  ok(!legacyDiff(heldBy(b), legacyState(fold(readLog(fs.readFileSync(path.join(W4, "meadow", "v4.jsonl")))))), "S8 what the v1 client holds = the projection");
+  for (let i = 0; i < 40 && b.ws.readyState !== 3; i++) await sleep(50);
+  ok(!b.snapshot && /protocol v4 world/.test(b.of("error").at(-1)?.error ?? "") && b.ws.readyState === 3, "S8 a joiner that doesn't read v4 is refused, told why, and closed", [b.of("error").at(-1), b.ws.readyState]);
+  const r2 = await a.req("set", { id: "box", component: "label", value: "after the refusal" }); await sleep(200);
+  ok(r2.ok && a.of("log").length === 0, "S8 …and the world carries on, still sending no `log` entries", a.of("log").length);
   ok(a.snapshot.v4.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { v4fold: true })).snapshot.v4.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
-  a.close(); b.close(); }
+  a.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
 const errlog = fs.existsSync(srv.log + ".err") ? fs.readFileSync(srv.log + ".err", "utf8") : "";
