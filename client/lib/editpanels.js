@@ -21,7 +21,7 @@ import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { sendVerb, requestDebug, requestV4, v4 } from './net.js';
 import { flashHint } from './ui.js';
-import { makeSchemaFrame, resolveDelta } from './panels.js';
+import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 import { state, onWorldChange } from './state.js';
@@ -961,10 +961,26 @@ function repaintAll() {
   });
 }
 
+/** The Inspector header's scrub-feel dials (Maya's Channel Box icons, R 10-04): speed and accelerating. Per viewer. */
+function scrubFeelButtons(root) {
+  const btns = root.querySelector('.fr-btns'); if (!btns) return;
+  const mk = (cls) => { const b = document.createElement('button'); b.className = `fr-btn sp-scrubfeel ${cls}`; Object.assign(b.style, { fontSize: '10px', padding: '0 5px', width: 'auto', opacity: '0.8' }); return b; };
+  const speed = mk('sp-scrub-speed'), accel = mk('sp-scrub-accel');
+  const paint = () => { const f = getScrubFeel();
+    speed.textContent = { slow: 'slow', medium: 'med', fast: 'fast' }[f.speed] ?? f.speed;
+    speed.title = `scrub speed: ${f.speed} — how much dragging a number changes it (click: ${Object.keys(SCRUB_SPEEDS).join(' → ')}). While dragging: Shift finer, Ctrl whole numbers`;
+    accel.textContent = f.accel ? 'accel' : 'linear';
+    accel.title = f.accel ? 'accelerating: the further you drag, the faster it changes (Maya\'s hyperbolic) — click for linear' : 'linear: the same change per inch however far you drag — click for accelerating'; };
+  speed.onclick = (e) => { e.stopPropagation(); const ks = Object.keys(SCRUB_SPEEDS); setScrubFeel({ speed: ks[(ks.indexOf(getScrubFeel().speed) + 1) % ks.length] }); paint(); };
+  accel.onclick = (e) => { e.stopPropagation(); setScrubFeel({ accel: !getScrubFeel().accel }); paint(); };
+  paint(); btns.prepend(speed, accel);
+}
+
 export function initEditPanels() {
   for (const p of PANELS) {
     registerXRPanel({ ...p, ...(p.vr ?? {}) });            // the VR body (a panel may declare its own)
     const sf = makeSchemaFrame(p.id, { title: p.title, ...p.frame, hidden: true, className: 'edit' });   // the desktop body
+    if (p.id === 'inspector') scrubFeelButtons(sf.frame.el);
     frames.set(p.id, sf);
   }
   bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)

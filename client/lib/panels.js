@@ -228,6 +228,27 @@ function put(e, s, icons) {
   return e;
 }
 
+// scrub feel (R 10-04, Maya's Channel Box icons): how dragging a number feels, per viewer, never logged. speed: slow /
+// medium / fast; accel: the further you drag the faster it goes (Maya's "hyperbolic"; R's default). Modifiers while
+// dragging: Shift = 10× finer, Ctrl = whole numbers. Said in every number's tooltip and when a drag starts, because
+// a modifier nobody can find doesn't exist (R: "SOOOO much hidden knowledge").
+export const SCRUB_SPEEDS = { slow: 0.3, medium: 1, fast: 3 };
+let scrubFeel = { speed: 'medium', accel: true };
+try { scrubFeel = { ...scrubFeel, ...JSON.parse(localStorage.getItem('ew-scrub-feel') ?? '{}') }; } catch { /* defaults */ }
+export const getScrubFeel = () => ({ ...scrubFeel });
+export function setScrubFeel(next) { scrubFeel = { ...scrubFeel, ...next }; try { localStorage.setItem('ew-scrub-feel', JSON.stringify(scrubFeel)); } catch { /* fine */ } return getScrubFeel(); }
+/** pixels dragged → how far the value moves, in units of one 'step' of travel */
+export const scrubTravel = (px) => { const k = SCRUB_SPEEDS[scrubFeel.speed] ?? 1; return scrubFeel.accel ? px * k * (1 + Math.abs(px) / 120) : px * k; };
+export const SCRUB_TIP = 'drag to change · Shift finer · Ctrl whole numbers · click to type';
+let scrubHintEl = null;
+function scrubHint(on, anchor) {
+  if (!on) { scrubHintEl?.remove(); scrubHintEl = null; return; }
+  scrubHintEl ??= document.body.appendChild(el('div', 'sp-scrub-hint'));
+  scrubHintEl.textContent = `Shift finer · Ctrl whole numbers · ${scrubFeel.speed}${scrubFeel.accel ? ', accelerating' : ''}`;
+  const r = anchor.getBoundingClientRect();
+  Object.assign(scrubHintEl.style, { position: 'fixed', left: `${r.left}px`, top: `${Math.max(4, r.top - 22)}px`, zIndex: 10001, fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,0,0,.75)', color: '#ddd', pointerEvents: 'none' });
+}
+
 function stepper(value, f, commit) {
   const cur = { step: 0.1, dp: 2, ...f };   // options are LIVE: update() refreshes them (a typed value past softMax raises the next drag's cap)
   const { unit, deg, compact, disabled } = cur;
@@ -274,6 +295,7 @@ function stepper(value, f, commit) {
     document.removeEventListener('keydown', onDragKey, true);
     num.classList.remove('scrub');
     try { num.releasePointerCapture(d.id); } catch { /* already released */ }
+    scrubHint(false);
     if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; }
   };
   num.addEventListener('pointerdown', (e) => {
@@ -293,9 +315,10 @@ function stepper(value, f, commit) {
       try { num.setPointerCapture(drag.id); } catch { /* no capture here */ }
       num.classList.add('scrub');
       num.blur();
+      scrubHint(true, num);
       document.addEventListener('keydown', onDragKey, true);
     }
-    let face = drag.face0 + drag.dist * perPx();
+    let face = drag.face0 + scrubTravel(drag.dist) * perPx();
     if (e.ctrlKey || e.metaKey) face = Math.round(face);
     const w = soft(toWire(face));
     drag.cur = w; wire = w; show(w);
@@ -307,6 +330,7 @@ function stepper(value, f, commit) {
     if (d.armed) {
       document.removeEventListener('keydown', onDragKey, true);
       num.classList.remove('scrub');
+      scrubHint(false);
       try { num.releasePointerCapture(d.id); } catch { /* fine */ }
       if (d.cur != null && d.cur !== d.w0) commit(d.cur); else if (d.cur != null) commit(d.w0, { live: true });
     } else if (e.type === 'pointerup') { num.focus(); num.select(); }   // a click: type
@@ -400,6 +424,7 @@ function fieldDOM(f, edit, ro = {}) {
   if (f.dim) { row.style.opacity = '0.55'; row.style.fontSize = '0.9em'; }   // secondary: an id beside its name
   if (f.driven) { row.classList.add('driven'); row.title = `driven by ${f.driven} — editing moves its rest pose`; }
   else if (f.hint) row.title = f.hint;
+  if (f.t === 'num' && !f.disabled) row.title = row.title ? `${row.title}\n${SCRUB_TIP}` : SCRUB_TIP;   // the modifiers, where the hand is
   let label = null;
   if (f.label != null && f.t !== 'btn' && f.t !== 'group') { label = el('label', 'sp-label', f.label); row.append(label); }
   if (label && ro.icons) put(label, f.label, true);

@@ -470,6 +470,17 @@ try {
   await evalJson(`[...${hier}.querySelectorAll('.sp-btn')].find((b) => /hidden in your view/.test(b.textContent))?.click(), true`);
   check("E4 …and 'show all' brings it back", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible === true)`));
 
+  // scrub feel (R 10-04: Maya's Channel Box speed + hyperbolic icons) and findable modifiers ("SOOOO much hidden knowledge")
+  const feel0 = await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-scrubfeel')].map((b) => b.textContent)`);
+  check("SF1 the Inspector header has the scrub-feel dials: speed and accelerating (default medium, accelerating)", JSON.stringify(feel0) === JSON.stringify(["med", "accel"]), feel0);
+  await evalJson(`(document.querySelector('[data-frame="inspector"] .sp-scrub-speed').click(), true)`);
+  check("SF2 …clicking speed steps it (medium → fast), and it's remembered per viewer", await evalJson(`document.querySelector('[data-frame="inspector"] .sp-scrub-speed').textContent === 'fast' && JSON.parse(localStorage.getItem('ew-scrub-feel')).speed === 'fast'`));
+  await evalJson(`(() => { const b = document.querySelector('[data-frame="inspector"] .sp-scrub-speed'); b.click(); b.click(); return true; })()`);
+  const tips = await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-f-num')].filter((r) => !r.classList.contains('disabled')).map((r) => r.title)`);
+  check("SF3 every editable number says its modifiers in its tooltip (Shift finer · Ctrl whole numbers)", tips?.length > 0 && tips.every((t) => /Shift finer/.test(t) && /Ctrl whole numbers/.test(t)), tips?.slice(0, 2));
+  const travel = await page(`const P = await import('/lib/panels.js'); const a = P.scrubTravel(300); P.setScrubFeel({ accel: false }); const l = P.scrubTravel(300); P.setScrubFeel({ accel: true }); return JSON.stringify([a, l]);`);
+  check("SF4 accelerating travels further than linear on a long drag (300 px)", JSON.parse(travel)[0] > JSON.parse(travel)[1] * 2, travel);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

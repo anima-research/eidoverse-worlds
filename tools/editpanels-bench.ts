@@ -59,6 +59,9 @@ await cdp.send('Page.navigate', { url: `${BASE}/?name=editbot&world=editbench` }
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s && !s.classList.contains('gone')) s.style.pointerEvents = 'none'; return true; })()`);
 }
 
+// the scrub checks below measure the mechanics in exact numbers: pin the feel to medium, linear (accelerating, the
+// default, is client-check SF4's)
+await evalJson(`import('/lib/panels.js').then((P) => (P.setScrubFeel({ speed: 'medium', accel: false }), true))`);
 console.log('\nedit mode shows the two frames:');
 // four edit frames: Build and Hierarchy share the left column's top pane as tabs (step 5: Build replaced
 // Create, 10-02), the Inspector is on the right, the Console is opt-in
@@ -338,7 +341,7 @@ check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.que
   const L = look as any;
   check('driven pos x / y / z labels keep their AXIS colours', L.x?.label === 'rgb(224, 106, 98)' && L.y?.label === 'rgb(130, 196, 94)' && L.z?.label === 'rgb(95, 149, 232)', JSON.stringify(L));
   check('…the field carries driven: amber edge + a ~ marker', ['x', 'y', 'z'].every((a) => L[a]?.edge === 'rgba(201, 162, 74, 0.45)' && L[a]?.mark === '~'), JSON.stringify(L));
-  check('…titled "driven by motion — editing moves its rest pose"', ['x', 'y', 'z'].every((a) => L[a]?.title === 'driven by motion — editing moves its rest pose'), JSON.stringify(L.x?.title));
+  check('…titled "driven by motion — editing moves its rest pose"', ['x', 'y', 'z'].every((a) => L[a]?.title?.startsWith('driven by motion — editing moves its rest pose')), JSON.stringify(L.x?.title));   // + the scrub modifiers line
 }
 check('amp / period are the Bob card\'s rows, once each (no "motion · " lane)', await evalJson(`(() => { const L = ${numLabels}; return L.filter((l) => l === 'amp').length === 1 && L.filter((l) => l === 'period').length === 1 && !L.some((l) => /^motion · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
 const t0 = await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.motion?.t0)`);
