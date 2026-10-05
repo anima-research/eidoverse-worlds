@@ -462,6 +462,34 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const s8 = step("about", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
   ok(s8.resync, "X9 a change with no v1 verb (the sky) is a resync, never a wrong delta", s8); }
 
+// ---- V: what changed, said in v4 terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
+{ const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
+  let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { now: () => now });
+  let held = viewState(w.state());
+  const step = (actor, tool, args) => { now += 100; const r = request(w, actor, tool, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
+    has: (id, what, comp) => d.things.some((c) => c.id === id && c.what === what && (comp === undefined || c.comp === comp)) }; };
+  step("ann", "new", { title: "vdiff" });
+  const v1 = step("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
+  ok(v1.has("tbl", "born") && !v1.has("tbl", "pose"), "V1 a create is one 'born' (nothing else said about it)", v1.d);
+  const v2 = step("ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
+  ok(v2.has("cup", "born") && !v2.d.things.some((c) => c.id === "tbl"), "V2 a thing put on another: it's born (parent included), the table untouched", v2.d);
+  const v3 = step("ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] } });
+  ok(v3.has("tbl", "pose") && v3.d.things.length === 1, "V3 a move is one 'pose' (the child rides along; it isn't told)", v3.d);
+  const v4c = step("ann", "set", { id: "tbl", component: "lock", value: true });
+  ok(v4c.has("tbl", "comp", "lock") && v4c.d.things.length === 1, "V4 a component set is 'comp' naming it", v4c.d);
+  step("ann", "delete", { id: "tbl", component: "lock" });
+  const v5 = step("ann", "place", { id: "cup", at: [4, 0] });
+  ok(v5.r.ok && v5.has("cup", "parent"), "V5 taking it off the table is 'parent'", { r: v5.r.refused, d: v5.d });
+  const v6 = step("ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
+  ok(v6.d.world.includes("sky") && !v6.d.things.length, "V6 the sky is a world change (the v1 projection could only resync for it)", v6.d);
+  const v7 = step("ann", "set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } });
+  ok(v7.d.world.includes("roles"), "V7 a role is a world change", v7.d);
+  const v8 = step("ann", "delete", { id: "tbl" });
+  ok(v8.has("tbl", "gone"), "V8 a delete is 'gone'", v8.d);
+  const v9 = step("ann", "undo", {});
+  ok(v9.r.ok && v9.has("tbl", "born"), "V9 undo brings it back: 'born' again", v9.d);
+  ok(diffView(held, viewState(w.state())).things.length === 0 && !diffView(held, viewState(w.state())).world.length, "V10 nothing changed says nothing"); }
+
 // ---- S3: a stretched v4 thing in the projection (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
 { const { legacyEntity } = await import("../../shared/v4/legacy.js");
   const { foldEntry, emptyState } = await import("../../shared/fold.js");

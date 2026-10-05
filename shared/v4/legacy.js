@@ -22,61 +22,13 @@
 //     sky/terrain/grass → themselves, legacy:<k> → st[k].
 //   - NOT projected: @world.sim (v4 physics: old clients see things jump to rest), behavior:<k> (scripts don't run in
 //     v4 worlds yet), epoch (the v1 sim), about/bounds/spawn (no v1 field), actor/ts/placer (views over the log).
-import { dec } from "./names.js";
-import { foldEntry, emptyState as v1Empty } from "../fold.js";
-import { qNorm, qHeading } from "../rot.js";
-
-const idOut = (id) => dec(id) ?? id;
+import { foldEntry } from "../fold.js";
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const NOT_PROJECTED_WORLD = new Set(["sim", "epoch", "about", "bounds", "spawn"]);
 /** The v1 fields a delta never carries (views, or per-entry stamps the client folds from its own entries). */
 export const LEGACY_DROPPED = ["actor", "ts", "born", "placer"];
 
-/** One v4 entity as a v1 record. */
-export function legacyEntity(id, c) {
-  const rec = {};
-  if (typeof c.model === "string") rec.lib = c.model;
-  const t = c.transform ?? {};
-  rec.pos = Array.isArray(t.pos) && t.pos.length === 3 ? t.pos.slice() : [0, 0, 0];
-  const qn = qNorm(t.q) ?? [0, 0, 0, 1];
-  rec.yaw = qHeading(qn); rec.q = qn;
-  const s = Array.isArray(t.scale) && t.scale.length === 3 ? t.scale : [1, 1, 1];
-  rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s[1];
-  if (!(s[0] === s[1] && s[1] === s[2])) rec.scale3 = s.slice();
-  const p = c.parent;
-  // every parent is the door's shape now (translate-v1@2 writes it too): the transform is LOCAL to the parent, which is
-  // exactly v1's offset + q. A socket name rides along for the UI; with an explicit offset v1 draws it at the offset.
-  if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.slot === "string" ? { slot: p.slot } : {}), offset: rec.pos.slice(), q: qn.slice() };
-  for (const [k, v] of Object.entries(c)) {
-    if (k === "model" || k === "transform" || k === "parent") continue;
-    if (k.startsWith("legacy:")) { rec[idOut(k.slice(7))] = clone(v); continue; }
-    (rec.comp ??= {})[idOut(k)] = clone(v);
-  }
-  return rec;
-}
-
-/** The v4 fold (fold.js's state) as a v1 WorldState. chat: an optional v1 recentChat window to carry. */
-export function legacyState(v4st, { recentChat = [], chatTotal = 0 } = {}) {
-  const st = v1Empty();
-  st.recentChat = clone(recentChat); st.chatTotal = chatTotal;
-  for (const id of Object.keys(v4st.entities ?? {})) {
-    const c = v4st.entities[id].c;
-    if (id === "@world") {
-      for (const [k, v] of Object.entries(c)) {
-        if (NOT_PROJECTED_WORLD.has(k) || k.startsWith("behavior:")) continue;
-        if (k === "sky" || k === "terrain" || k === "grass") st[k] = clone(v);
-        else if (k === "default-role") st.roles["*"] = clone(v);
-        else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
-        else if (k.startsWith("bans:")) st.bans[idOut(k.slice(5))] = clone(v);
-        else if (k.startsWith("palette:")) st.assets.push(v && typeof v === "object" && Object.keys(v).length ? clone(v) : idOut(k.slice(8)));
-        else if (k.startsWith("legacy:")) st[idOut(k.slice(7))] = clone(v);
-      }
-      continue;
-    }
-    st.entities[idOut(id)] = { ...legacyEntity(id, c), born: v4st.entities[id].born };
-  }
-  return st;
-}
+// The view itself lives in record.js now (slice 3c step 1); these names stay until the projection is deleted.
+export { viewOf as legacyEntity, viewState as legacyState } from "./record.js";
 
 // ---- comparison: what a client would hold vs the projection ----
 const EPS = 1e-9;
