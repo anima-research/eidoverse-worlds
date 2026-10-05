@@ -223,7 +223,7 @@ function hierarchyFields() {
     r.menu = [
       { k: 'rename', label: 'rename  (F2)' },
       { k: 'find', label: 'find  (F)' },
-      { k: 'duplicate', label: 'duplicate  (Alt+D)', title: KEYHINTS.duplicate.before },
+      { k: 'duplicate', label: 'duplicate  (Ctrl+D)', title: KEYHINTS.duplicate.before },
       { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
       ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
@@ -310,12 +310,17 @@ function reparent(id, onto) {
  *  original), same components, same carrier — composed on the client from
  *  ordinary verbs, ONE undo entry (remove the copy). Lights copy through
  *  `light`. Locks are not copied: a copy is a fresh thing to place. */
+// copies are independent: the second time you copy the same unlinked thing, say how to make copies that stay in step
+// (R 10-04: "suggest that they blueprint something first… unless making unique copies is really their intention")
+const dupCount = new Map();
 function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
+  const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
+  const nudge = n === 2 && !rec.comp?.blueprint ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
   if (V4.isV4()) {   // the door copies it, and what's attached to it: create {from: id}, one act
     V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-      const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}`, 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+      const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
     return;
   }
   const nid = `${id}~${Math.random().toString(16).slice(2, 6)}`;   // never strip anything from the id: 'lamp-2024' is a name, not a suffix
@@ -325,7 +330,7 @@ function duplicate(id) {
   for (const [type, data] of Object.entries(rec.comp ?? {})) if (type !== 'lock') sendVerb('comp', { id: nid, type, data });
   if (rec.parent) sendVerb('mount', { id: nid, to: rec.parent.to, ...(rec.parent.slot ? { slot: rec.parent.slot } : {}), ...(rec.parent.offset ? { offset: rec.parent.offset.map((v, i) => (i === 0 || i === 2 ? v + 0.5 : v)) } : {}), ...(rec.parent.yaw != null ? { yaw: rec.parent.yaw } : {}) });
   pushUndo({ verb: 'remove', args: { id: nid } }, `duplicating ${id}`);
-  flashHint(`<b>${nid}</b> — a copy of ${id}`, 4000);
+  flashHint(`<b>${nid}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000);
   setTimeout(() => { if (entities.has(nid)) sceneSelect(nid); }, 400);   // select it once the fold echoes
 }
 
@@ -1013,9 +1018,9 @@ export function initEditPanels() {
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(selection()));
   bus.on('edit-find', () => findSelected());              // F in the viewport
-  bus.on('key', (e) => {   // Alt+D duplicates: D strafes, and Shift+D strafes faster
-    if (!shown || e.ctrlKey || e.metaKey || !e.altKey) return;   // keys: duplicate
-    if (e.code === 'KeyD' && sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }
+  bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark
+    if (!shown || e.code !== 'KeyD' || !(e.ctrlKey || e.metaKey || e.altKey)) return;   // keys: duplicate
+    if (sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }
   });
   // ↑/↓ walk the tree ONLY while the tree has focus — on the window they are
   // walking keys (controller.js: ArrowUp is forward). The frame listener runs

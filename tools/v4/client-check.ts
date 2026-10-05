@@ -494,6 +494,21 @@ try {
   await sleep(300);
   check("KH3 …and gives the bar back when the drag ends", await evalJson(`!/Shift finer/.test(document.getElementById('hintbar')?.textContent ?? '') || document.getElementById('hintbar').classList.contains('gone')`), await evalJson(`document.getElementById('hintbar')?.textContent`));
 
+  // Ctrl+D duplicates (R 10-04: "isn't it usually ctrl+d?"), the held D never strafes, and copy #2 nudges toward blueprints
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`); await sleep(300);
+  const nD = myActs().length;
+  const me0 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
+  await evalJson(`(dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', ctrlKey: true, bubbles: true, cancelable: true })), true)`);
+  await sleep(400);
+  const heldD = await evalJson(`import('/lib/controller.js').then((m) => m.keys.has('KeyD'))`);   // the walk reads this set
+  await evalJson(`(dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', key: 'd', ctrlKey: true, bubbles: true })), true)`);
+  check("CD1 Ctrl+D = create {from: pt}: ONE act", await waitDisk(() => myActs().length === nD + 1 && myActs().at(-1).e.body.request.from === "pt"), myActs().slice(nD).map((a) => a.e.body?.request));
+  const me1 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
+  check("CD2 …and the chord never counts as a held D, so it can't strafe the body (the walk reads the held set)", heldD === false && Math.hypot(me1[0] - me0[0], me1[2] - me0[2]) < 0.05, { heldD, me0, me1 });
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`); await sleep(200);
+  await key("KeyD", { ctrlKey: true });
+  check("CD3 the second copy of the same unlinked thing says copies are independent, and points at Save as blueprint", await waitFor(`/independent/.test(document.getElementById('hintbar')?.textContent ?? '') && /Save as blueprint/.test(document.getElementById('hintbar').textContent)`, 4000), await evalJson(`document.getElementById('hintbar')?.textContent`));
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

@@ -287,7 +287,7 @@ addEventListener('keydown', (e) => {
   if (typing() || isOverlayOpen()) return;
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
-  keys.add(e.code);
+  if (!(e.ctrlKey || e.metaKey)) keys.add(e.code);   // keys: toolKeys — a chord (Ctrl+D duplicates, Ctrl+Z undoes) never walks the body
   bus.emit('key', e);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
