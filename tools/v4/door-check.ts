@@ -502,7 +502,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const sc = inspectSchema(ent, "g", live);
   ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
   const a = addVerbs({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
-  ok(a.verbs[0]?.args?.type === "pivot" && JSON.stringify(a.verbs[0].args.data) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a); }
+  ok(a.verbs[0]?.args?.type === "pivot" && JSON.stringify(a.verbs[0].args.data) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
+  const bare = { lib: "x.glb", pos: [0, 0, 0] };
+  const c4 = editVerbs(bare, "g", { "pivot.centre": true }, live);
+  ok(!c4.errors.length && JSON.stringify(c4.verbs[0]?.args?.data) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
+  const c5 = editVerbs(bare, "g", { "pivot.y": 1.5 }, live);
+  ok(!c5.errors.length && JSON.stringify(c5.verbs[0]?.args?.data) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
 { const tw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "turns"), actor, tool, args); };
@@ -522,6 +527,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   tw("ann", "turn", { id: "gate", axis: "y", deg: 90 });
   const g = tq("gate");
   ok(Math.abs(g.pos[0] - 11) < 1e-3 && Math.abs(g.pos[2] - 11) < 1e-3, "TN4 with a pivot it turns ABOUT the pivot (11, 0, 10): its origin swings to (11, 0, 11)", g);
+  const dry = tw("ann", "turn", { id: "gate", axis: "y", deg: 45, dry: true });
+  ok(dry.ok && dry.dry === true && Math.abs(tq("gate").pos[0] - 11) < 1e-3, "TN7 turn takes dry: true (a preview; help promises it on every write) and writes nothing (Hazel)", dry);
+  ok(JSON.stringify(tw("ann", "help", {})).includes("turn {id, axis, deg"), "TN8 help's list names turn (Hazel found it only in a refusal)");
   ok(tw("ann", "turn", { id: "gate", axis: "y", deg: 0, about: "origin" }).ok, "TN5 about: 'origin' is there when you want the old behaviour");
   ok(code(tw("ann", "turn", { id: "plank", axis: "sideways", deg: 10 })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, space: "screen" })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, about: "pivot" })) === "shape", "TN6 a bad axis, space, or about-pivot without one is refused, naming the fix"); }
 

@@ -732,7 +732,7 @@ export function editVerbs(ent, id, edits, live = {}) {
     }
     // actions and creations that have no field row: comp.<any>, sockets.del,
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
-    const known = f || group === 'parent' || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
+    const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
     if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
     if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
@@ -877,7 +877,7 @@ export function editVerbs(ent, id, edits, live = {}) {
           const mid = [0, 1, 2].map((i) => round((box[0][i] + box[1][i]) / 2, 4));
           comps.set('pivot', { pos: k === 'base' ? [mid[0], round(box[0][1], 4), mid[2]] : mid }); break;
         }
-        const n = num(f, raw); if (n == null) break;
+        const n = f ? num(f, raw) : (Number.isFinite(+raw) ? +raw : (errors.push(`${key}: not a number (${JSON.stringify(raw)})`), null)); if (n == null) break;   // no pivot yet: the first write makes one
         cur['xyz'.indexOf(k)] = round(n, 4); comps.set('pivot', { pos: cur }); break;
       }
       case 'look': {
