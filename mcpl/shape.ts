@@ -27,8 +27,10 @@ export function rawShapeError(verb: string, args: Record<string, unknown>): stri
       return `raw place pos must be a finite [x,y,z] — got ${JSON.stringify(args.pos)?.slice(0, 80)}`;
     if (args.yaw !== undefined && !Number.isFinite(args.yaw))
       return "raw place yaw must be a finite number";
-    if (args.scale !== undefined && !Number.isFinite(args.scale))
-      return "raw place scale must be a finite number";
+    // one number (uniform), or [x,y,z] per axis — a v4 world's transform (R 10-04); the edit tool spells a stretched
+    // thing's pose with its per-axis scale, so refusing the array refused every rotate on it (agent lab, Juniper)
+    if (args.scale !== undefined && !Number.isFinite(args.scale) && !isFiniteVec3(args.scale))
+      return "raw place scale must be a finite number, or [x, y, z] per axis";
   } else if (verb === "spawn" || verb === "dismount" || verb === "light") {
     // same trap, other doors: pos is optional on these, but a pos that IS
     // given must be the log's shape

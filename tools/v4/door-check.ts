@@ -411,7 +411,30 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("ann", "create", { id: "g", model: "lib/ghost.glb" }).ok, "C6 …but it can be named and set by transform");
   ok(code(call("ann", "set", { id: "g", component: "model", value: "nope" })) === "shape", "C7 a name the catalogue doesn't know is refused");
   ok(code(request(openWorld(root, "c8"), "ann", "new", {})) === undefined && code(request(openWorld(root, "c8"), "ann", "create", { id: "q", model: "constructor" })) === "shape", "C8 the lab catalogue no longer answers prototype names (model 'constructor')");
-  ok(LAB_CATALOGUE.get("toString") === undefined, "C9 LAB_CATALOGUE.get('toString') is undefined"); }
+  ok(LAB_CATALOGUE.get("toString") === undefined, "C9 LAB_CATALOGUE.get('toString') is undefined");
+  // C10-C12: a target is aimed at by its BODY, not its origin (agent lab 10-04: Wren's chair faced air, Juniper's swing
+  // hung from a corner). "far" is a desk whose origin sits 2.5 m off its body: its box spans x 2..3.2 in its own frame.
+  const cat2 = { get: (n) => ({ "lib/far.glb": { label: "far desk", box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], size: [1.2, 0.75, 0.8], surfaces: [] },
+      "lib/chair.glb": { label: "chair", box: [[-0.25, 0, -0.25], [0.25, 0.9, 0.25]], size: [0.5, 0.9, 0.5], surfaces: [] },
+      "lib/gate.glb": { label: "frame", box: [[4, 0, -0.1], [6, 2.2, 0.1]], size: [2, 2.2, 0.2], solids: [[[4, 0, -0.1], [4.1, 2.2, 0.1]], [[5.9, 0, -0.1], [6, 2.2, 0.1]], [[4, 2.1, -0.1], [6, 2.2, 0.1]]], surfaces: [] },
+      "lib/seat.glb": { label: "seat", box: [[-0.3, 0, -0.15], [0.3, 0.05, 0.15]], size: [0.6, 0.05, 0.3], surfaces: [] } } as any)[n], list: () => [] };
+  let now2 = T + 9000; const w2 = openLive(root + "cat2/", "cat2", { now: () => now2, catalogue: cat2 });
+  const c2 = (actor, tool, args = {}) => { now2 += 100; return request(w2, actor, tool, args); };
+  c2("ann", "new", { title: "cat2" });
+  c2("ann", "create", { id: "far", model: "lib/far.glb", place: { at: [0, 0] } });
+  const fb = (() => { const t = w2.state().entities.far.c.transform; return [t.pos[0] + 2.6, t.pos[2]]; })();   // its body's centre in the world
+  const ch = c2("ann", "create", { id: "ch", model: "lib/chair.glb", place: { near: "far", facing: "far" } });
+  const chp = w2.state().entities.ch?.c.transform;
+  const fwd = chp ? [2 * (chp.q[0] * chp.q[2] + chp.q[3] * chp.q[1]), 1 - 2 * (chp.q[0] ** 2 + chp.q[1] ** 2)] : null;   // +Z in the world
+  const toBody = chp ? [fb[0] - chp.pos[0], fb[1] - chp.pos[2]] : null;
+  const cosA = fwd && toBody ? (fwd[0] * toBody[0] + fwd[1] * toBody[1]) / Math.hypot(...toBody) : null;
+  ok(ch.ok && cosA !== null && cosA > 0.99, "C10 near + facing an off-origin desk: the chair faces the desk's BODY, not its origin", { cosA, chp, fb });
+  ok(ch.ok && Math.hypot(toBody[0], toBody[1]) < 1.6, "C11 …and stands near the body (within reach), not near the far origin", { dist: toBody && Math.hypot(toBody[0], toBody[1]) });
+  c2("ann", "create", { id: "gate", model: "lib/gate.glb", place: { at: [10, 10] } });
+  const gt = w2.state().entities.gate.c.transform.pos;
+  const sw = c2("ann", "create", { id: "sw", model: "lib/seat.glb", place: { hang: "gate", height: 0.45 } });
+  const swp = (() => { const e = w2.state().entities.sw; if (!e) return null; const s = w2.state(); const g = s.entities.gate.c.transform; return [g.pos[0] + e.c.transform.pos[0], g.pos[2] + e.c.transform.pos[2]]; })();
+  ok(sw.ok && swp && Math.abs(swp[0] - (gt[0] + 5)) < 0.05, "C12 hang from an off-origin frame: the seat hangs under the beam's middle, not the frame's origin", { swp, beamMid: gt[0] + 5, r: sw.refused }); }
 
 // ---- X: the compatibility projection reproduces itself through the client's fold ----
 { let now = T + 9000; const w = openLive(root + "proj/", "proj", { now: () => now });
@@ -451,7 +474,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const st = emptyState();
   foldEntry(st, { seq: 1, ts: 0, actor: "a", verb: "spawn", args: { id: "b", lib: "x.glb", pos: [0, 0, 0], scale: 0.4, scale3: [2, 0.4, 0.4] } });
   foldEntry(st, { seq: 2, ts: 0, actor: "a", verb: "place", args: { id: "b", pos: [0, 0, 0], scale: 1 } });
-  ok(st.entities.b && st.entities.b.scale === 1 && st.entities.b.scale3 === undefined, "S3d the v1 fold carries scale3, and a plain scale makes it uniform again", st.entities.b); }
+  ok(st.entities.b && st.entities.b.scale === 1 && st.entities.b.scale3 === undefined, "S3d the v1 fold carries scale3, and a plain scale makes it uniform again", st.entities.b);
+  const { rawShapeError } = await import("../../mcpl/shape.ts");
+  ok(rawShapeError("place", { id: "b", pos: [0, 0, 0], scale: [2, 0.4, 0.4] }) === null, "S3e the agent's raw place check takes a per-axis scale (Juniper: every rotate on a stretched thing was refused)");
+  ok(rawShapeError("place", { id: "b", scale: [2, NaN, 1] }) !== null && rawShapeError("place", { id: "b", scale: "big" }) !== null, "S3f …and still refuses a broken one"); }
 
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
