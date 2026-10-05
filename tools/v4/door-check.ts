@@ -20,6 +20,7 @@ import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
+import { custodyAt } from "../../server/v4/custody.ts";
 import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
 import { openWorld } from "../../server/v4/disk.ts";
 import { openLive } from "../../server/v4/live.ts";
@@ -32,6 +33,10 @@ let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 400)}` : ""}`); } };
 const code = (r: any) => r?.refused?.code;
 let T = 1800000000000;
+
+// a translation written into this door's worlds carries THIS door's keys: the door refuses to sign for a world whose
+// genesis names another sequencer (round-2 R5); disk.ts keeps custody at <root>/keys/custody.json
+const DOORKEYS = () => { const cu = custodyAt(root + "keys/custody.json"); return { key: cu.sequencer(), operator: cu.operator() }; };
 
 // ---- N: names ----
 ok(encName("0abc") !== encName("n0abc"), "N1 encName('0abc') and encName('n0abc') differ (the lab gave both 'n0abc')", [encName("0abc"), encName("n0abc")]);
@@ -152,7 +157,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       { seq: 5, ts: 6, actor: "ann", verb: "spawn", args: { id: "both", lib: "crate", pos: [5, 0, 1] } },
       { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: true } },
       { seq: 7, ts: 8, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: null } }];
-    const r = translate(old); const f = r.final.v4;
+    const r = translate(old, DOORKEYS()); const f = r.final.v4;
     ok(f.statue.lock === true && !r.stats.divergences, "P38 a v1 lock translates to `lock` unchanged (the identity)", f.statue);
     ok(f.sign.lock === true && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
@@ -213,7 +218,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 7, ts: 8, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } },                // at a socket, no offset
     { seq: 8, ts: 9, actor: "ann", verb: "spawn", args: { id: "stray", lib: "ball", pos: [6, 0, 6] } },
     { seq: 9, ts: 10, actor: "ann", verb: "mount", args: { id: "stray", to: "nowhere", offset: [0, 5, 0] } }];      // its carrier doesn't exist
-  const r = translate(old); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
   const tc = (tool, args) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", tool, args); };
   ok(!r.stats.divergences && r.final.v4.box.parent?.order === "a0" && !("offset" in r.final.v4.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.v4.box.parent);

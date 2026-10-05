@@ -93,6 +93,11 @@ export function worldOf(io) {
   // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
   const render = (e, seq, chained = false) => {
     const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.nextTs() };
+    // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
+    // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
+    // body carries 16 random bytes (round-2 review R3). Readers take bodies by field, so the salt is invisible to them.
+    if (io.custody?.sign && ["act", "say", "sim"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
+      obj.body = { ...obj.body, salt: nonce16(w) };
     if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
       const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
       obj.head = head; obj.sig = io.custody.sign(`eidoverse-v4-head:${w.worldId}:${seq}:${head}`); }
@@ -132,6 +137,27 @@ function skeleton(e) {
   return s;
 }
 const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
+/** Seal a whole log the door didn't write line by line (a translation): the same salts and chain points render gives
+ *  each line it appends (§2.4; round-2 review R3). entries[0] is genesis (never a chain point: the world id is its
+ *  hash); every later entry gets a salt on each set and on its act/say/sim body, then {head, sig}. Returns new objects;
+ *  `sign(msg)` is the sequencer key's, `random(n)` optional. */
+export function seal(entries, { sign, random } = {}) {
+  if (typeof sign !== "function") throw new Error("seal needs the sequencer's sign()");
+  const w = { random: random ?? null }; const out = []; let prev = "00".repeat(32); const wid = worldIdOf(entries[0]);
+  for (let i = 0; i < entries.length; i++) {
+    let e = JSON.parse(JSON.stringify(entries[i])); delete e.head; delete e.sig;
+    if (i > 0) {
+      if (e.kind === "state") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
+        e.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.verb === "set" ? salt({ verb: "set", ...e.body }) : e.body;
+        if (e.verb === "set") { const { verb: _v, ...b } = e.body; e.body = b; } }
+      else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
+    }
+    prev = chainStep(prev, e);
+    if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-v4-head:${wid}:${i}:${prev}`); }
+    out.push(e);
+  }
+  return out;
+}
 // §3d M7: expect by version is {seq, head}, never a bare seq. A head this history doesn't have at that seq means the
 // version was read on a branch that was rewound (or in another world): refused, never compared by seq alone.
 function versionSeq(w, v, what) {
@@ -319,6 +345,8 @@ const refuse = (code, reason, teach, extra) => { throw new Refusal(code, reason,
 // must match it.
 let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
+// tools that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
+const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts"]);
 const RESERVED = new Set(["door", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -336,6 +364,10 @@ export function request(w, actor, tool, args = {}) {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
     if (h && !w.exists && !["new", "help"].includes(tool)) refuse("no-world", `there is no world called '${w.name}' yet`, `new {title: '…'} founds it (you become its owner); or pick a world that exists`);
+    // §2.4: chain points are signed by the key genesis names (or the latest handoff). A door holding another key would
+    // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
+    if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(tool))
+      refuse("custody", "this door doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
@@ -508,8 +540,9 @@ function rights(w, st, s, who, role, op, at) {
   if (cap.kind === "handle") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can carry`, "");
     if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may move ${op.id} by hand; you are ${role}`, "ask the owner to set physics.who"); }
-  if (cap.kind === "founding") { const g = w.entries[0], k = w.custody().keyOf(actor);
-    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, by the holder of a key genesis names", ""); }
+  // founding: once, before any state, in a world whose genesis names this door's operator key (founded here)
+  if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
+    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
 }
 // §5 / L7: a KEYED component (`<name>:<key>`, an instance such as library:<hash> or roles:<id>) that exists may be
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
@@ -1672,7 +1705,7 @@ const TOOLS = {
     // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
     // here in custody) is tier 0; rewind_window is left at its default (1000 state entries).
     const cu = w.custody(); if (!cu) throw new Error("door bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
-    w.append({ kind: "genesis", actor: "door", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[cu.keyOf(actor, true)]], sequencer: cu.sequencer() } });
+    w.append({ kind: "genesis", actor: "door", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);

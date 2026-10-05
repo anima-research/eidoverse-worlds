@@ -16,6 +16,7 @@
 // a write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
 import { custodyAt } from "./custody.ts";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { WORLDS_DIR, TRUST_NAMES } from "../config.ts";
 import { directoryFor, mintId, type Entry } from "./directory.ts";
@@ -23,7 +24,7 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, actIndexOf, roleIn } from "../../shared/v4/door.js";
+import { request as doorRequest, seal, actIndexOf, roleIn } from "../../shared/v4/door.js";
 import { stateView } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { hear } from "../../shared/chatwindow.js";
@@ -217,9 +218,11 @@ export function translateV1World(srcDir: string, destDir: string) {
   for (const e of old) { const a = e?.args ?? {};
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: custodyAt(path.join(path.dirname(destDir), ".v4-custody.json")).sequencer(), who });
+  const cust = custodyAt(path.join(path.dirname(destDir), ".v4-custody.json"));
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
-  const text = r.out.map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
+  // salted and signed like every line the door writes (§2.4; round-2 review R3): a translated world is a chained log
+  const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));

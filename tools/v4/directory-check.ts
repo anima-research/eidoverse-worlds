@@ -53,6 +53,27 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const log = fs.readFileSync(path.join(tmp, "worlds", "w", "v4.jsonl"), "utf8");
   ok(!/Annie|discord/.test(log), "I6 nothing about the person (name, account) is in the log", null); }
 
+// ---- K: keys (round-2 R4, R5) ----
+{ let T = 1800000000000; const d = directoryAt(file); const cust = path.join(tmp, "k-custody.json");
+  const w: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: cust, nameOf: d.nameOf });
+  const me = d.resolve({ sub: "human:discord:555", name: "Kay" });
+  ok(request(w, me, "new", { title: "k" }).ok, "K0 found a world");
+  const g = w.entries[0].body;
+  ok(JSON.stringify(g.owners[0]) === "[]" && g.owners[1]?.length === 1 && g.owners[1][0] !== g.sequencer,
+    "K1 a founded world's genesis: tier 0 empty (custodial default, §2.4), the operator's governance key in tier 1, never the sequencer's key", g);
+  const other: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf });
+  const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
+  ok(!wr.ok && wr.refused?.code === "custody", "K2 a door that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
+  ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
+{ const { translateV1World } = await import("../../server/v4/world.ts");
+  const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
+  const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "v4.jsonl"), "utf8").split("\n")[0]).body;
+  ok(a.worldId !== b.worldId, "K4 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
+  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
