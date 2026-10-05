@@ -518,6 +518,21 @@ function lastTouch(w, id, comp) {
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) return { seq: i, actor: e.actor }; } }
   return null;
 }
+// who last changed each component, within a horizon of this thing's own recent entries (R 10-04: "only the most recent
+// x log steps… after that a deep search"). Past the horizon it says so ({beyond}) — never "default" or "never changed".
+export const TOUCH_HORIZON = 200;
+function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
+  const out = {}; const want = new Set(comps); let seen = 0, oldest = null;
+  for (const i of backward(w, id)) { if (!want.size || seen >= horizon) break; const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+    seen++; oldest = i;
+    for (const o of opsQuiet(e)) { if (o.id !== id) continue;
+      const hit = o.verb === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
+      for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.verb === "create" ? { created: true } : {}) }; want.delete(c); } } }
+  for (const c of want) out[c] = { beyond: oldest ?? 0 };   // not found in the window: "unchanged since before #N"
+  return out;
+}
+const opsTouching = (e, id) => opsQuiet(e).filter((o) => o.id === id);
+
 function needThing(ctx, id) {
   const e = ctx.st.entities[id];
   if (!e) refuse("not-found", `no thing called '${id}'`, "look lists what's here", { didYouMean: guess(String(id), Object.keys(ctx.st.entities)) });
@@ -1385,7 +1400,7 @@ const TOOLS = {
     if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, teach: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
     const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none";
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role },
-      tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {limit?}", "schema {component?}"],
+      tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?}", "schema {component?}"],
         world: ["new {title, text?} — found this world if it doesn't exist (you become its owner)"],
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
@@ -1406,7 +1421,7 @@ const TOOLS = {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, lastTouch(w, a.id, k)?.seq])), world: worldT(st, a.id),
+    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, lastTouch(w, a.id, k)?.seq])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
@@ -1423,7 +1438,22 @@ const TOOLS = {
     return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
   check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities)) }; },
-  history(w, actor, a) { const from = Math.max(0, w.entries.length - (a.limit ?? 12)); return { ok: true, entries: w.entries.slice(from).map((e, k) => [e, from + k]).map(([e, seq]) => isE(e) ? { seq, actor: e.actor, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code }) }; },
+  history(w, actor, a) {
+    // one thing's history, newest first, paged backwards (R 10-04: recent by default, deeper on request): before = the seq
+    // to continue from (the reply's `next`), limit = how many acts per page
+    if (a.id != null) {
+      const id = String(a.id); const lim = Math.max(1, Math.min(50, a.limit ?? 5)); const before = a.before ?? Infinity; const out = [];
+      let next = null;
+      for (const i of backward(w, id)) { if (i >= before) continue; const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+        const ops = opsTouching(e, id); if (!ops.length) continue;
+        if (out.length === lim) { next = out.at(-1).seq; break; }
+        const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? act.verb : null) ?? ops[0].verb,
+          changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
+          ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
+      return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
+    }
+    const from = Math.max(0, w.entries.length - (a.limit ?? 12)); return { ok: true, entries: w.entries.slice(from).map((e, k) => [e, from + k]).map(([e, seq]) => isE(e) ? { seq, actor: e.actor, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code }) }; },
   schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),

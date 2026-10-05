@@ -59,3 +59,17 @@ export function warningText(w) {
     default: return `${id}: ${w.kind ?? JSON.stringify(w)}`;
   }
 }
+
+/** How long ago, in words a person reads at a glance. */
+export function agoWords(ts, now = Date.now()) {
+  const s = Math.max(0, (now - ts) / 1000);
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(ts).toISOString().slice(0, 10);
+}
+/** One component's provenance from the door's inspect `touched` (R 10-04, "where a value came from"), the same words in
+ *  the Inspector's card tooltip and an agent's inspect: "set by Rowan · 3 min ago", "as made by Ann · 2 h ago", or, past
+ *  the recent window, "unchanged since before act #N — history for older". Never claims more than the window saw. */
+export function touchWords(t, now = Date.now()) {
+  if (!t) return null;
+  if (t.beyond !== undefined) return `unchanged since before act #${t.beyond} — history for older`;
+  return `${t.created ? "as made by" : "set by"} ${readable(t.by)} · ${agoWords(t.ts, now)}`;
+}

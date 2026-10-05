@@ -29,6 +29,8 @@ export const TOOLSPEC = {
       dry: { type: "bool", doc: "preview only" },
     },
   },
+  history: { doc: "what happened, newest first. With id: that one thing's acts (who, when, which components), a page at a time; the reply's next goes in before to page back. Without id: the world's latest entries. inspect's touched says who last changed each component within the recent window (beyond = unchanged since before that act: page history for older)",
+    args: { id: ref("one thing (omit for the whole world)"), limit: { type: "int", doc: "acts per page (with id: default 5, at most 50; without: default 12)" }, before: { type: "int", doc: "continue from here: the previous reply's next" } } },
   turn: {
     doc: "rotate a thing by an angle about an axis: in its own axes (space 'object', the default), its parent's, or the world's; about its pivot when it has one (the pivot stays put), else its origin",
     args: { id: ref("the thing to turn"), axis: { type: "any", doc: "'x', 'y', 'z' or [x, y, z]" }, deg: { type: "number", doc: "degrees; positive = counter-clockwise looking down the axis" },

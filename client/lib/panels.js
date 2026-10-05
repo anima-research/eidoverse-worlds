@@ -100,7 +100,8 @@ export function makeSchemaFrame(key, opts) {
     const key = shapeKey(fields);
     if (live && live.key === key) {
       live.box.edit = edit;
-      fields.forEach((f, i) => live.rows[i]?.update?.(f));
+      // a hint is not shape either: provenance (who set it, when) arrives a moment after the paint and must reach the tooltip
+      fields.forEach((f, i) => { const r = live.rows[i]; r?.update?.(f); if (r && f.t === 'group' && (r.title ?? '') !== (f.hint ?? '')) r.title = f.hint ?? ''; });
       // a focused input's update() skips itself (caret safety) — without this the
       // value it skipped was lost until some unrelated repaint came along
       holdUntilBlur();

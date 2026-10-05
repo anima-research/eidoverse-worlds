@@ -601,5 +601,29 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const nt = (other.notes ?? []).find((x) => x.madeBy);
   ok(nt && /this is Hazel's/.test(nt.why), "WT4 the 'this is X's' note names a person, not an encoded id (x--48617a656c)", nt); }
 
+// ---- HS: where a value came from, and one thing's history (R 10-04: recent by default, deeper on request) ----
+{ const { enc } = await import("../../shared/v4/names.js");
+  const hw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "histw"), actor, tool, args); };
+  hw("ann", "new", { title: "histw" });
+  hw("ann", "set", { id: "@world", component: "roles:" + enc("Rowan"), value: { role: "builder" } });
+  hw("ann", "create", { id: "box", model: "crate", components: { label: "box", transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const tSet = T + 100; hw(enc("Rowan"), "set", { id: "box", component: "transform", value: { pos: [2, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const ins = hw("ann", "inspect", { id: "box" });
+  ok(ins.touched?.transform?.by === enc("Rowan") && ins.touched.transform.ts === tSet, "HS1 inspect says who last changed the transform, and when", ins.touched);
+  ok(ins.touched?.transform?.who === "Rowan", "HS1b …by a name a person reads (who), beside the id (by)", ins.touched?.transform);
+  ok(ins.touched?.label?.by === "ann" && ins.touched.label.created === true, "HS2 …and that the label is as it was made, by its maker", ins.touched?.label);
+  for (let k = 0; k < 6; k++) hw("ann", "set", { id: "box", component: "label", value: `box ${k}` });
+  const p1 = hw("ann", "history", { id: "box", limit: 3 });
+  ok(p1.entries?.length === 3 && p1.entries[0].seq > p1.entries[1].seq && p1.entries.every((x) => x.changed.includes("label")) && typeof p1.next === "number", "HS3 history {id} is that thing's acts, newest first, a page at a time, with next", p1);
+  const all = []; let page = p1; all.push(...page.entries); while (page.next !== undefined) { page = hw("ann", "history", { id: "box", limit: 3, before: page.next }); all.push(...page.entries); }
+  ok(all.length === 8 && all.at(-1).changed.includes("(created)") && all.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS4 …paging back reaches its creation, every act once", all.map((x) => [x.seq, x.changed.join()]));
+  const { TOUCH_HORIZON } = await import("../../shared/v4/door.js");
+  let landed = 0; for (let k = 0; k < TOUCH_HORIZON + 2; k++) { T += 5000; if (hw("ann", "set", { id: "box", component: "label", value: `n${k}` }).ok) landed++; }   // spaced past the rate limit
+  ok(landed === TOUCH_HORIZON + 2, "HS5a (setup) every edit past the horizon landed", landed);
+  const deep = hw("ann", "inspect", { id: "box" });
+  ok(deep.touched?.transform?.beyond > 0 && deep.touched.transform.by === undefined && deep.touched.label?.by === "ann", "HS5 past the horizon it says 'unchanged since before #N' (beyond), never pretends it found nothing", deep.touched);
+  const far = []; let pg = hw("ann", "history", { id: "box", limit: 50 }); far.push(...pg.entries); while (pg.next !== undefined) { pg = hw("ann", "history", { id: "box", limit: 50, before: pg.next }); far.push(...pg.entries); }
+  ok(far.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS6 …and the deep search (history paging) still finds the transform change behind the horizon", far.length); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

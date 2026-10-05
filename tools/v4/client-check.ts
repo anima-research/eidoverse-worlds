@@ -509,6 +509,12 @@ try {
   await key("KeyD", { ctrlKey: true });
   check("CD3 the second copy of the same unlinked thing says copies are independent, and points at Save as blueprint", await waitFor(`/independent/.test(document.getElementById('hintbar')?.textContent ?? '') && /Save as blueprint/.test(document.getElementById('hintbar').textContent)`, 4000), await evalJson(`document.getElementById('hintbar')?.textContent`));
 
+  // where a value came from (R 10-04): each card's tooltip says who last set it and when, and the cards end in "last change"
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
+  const provOK = await waitFor(`(() => { const g = [...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => /Transform/.test(b.textContent)); const row = g?.closest('[title]'); return !!row && /(set by|as made by) .+ · (just now|\\d+ min ago)/.test(row.title); })()`, 6000);
+  check("PR1 the Transform card's tooltip says who last set it, and when", provOK, await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => /Transform/.test(b.textContent))?.closest('[title]')?.title`));
+  check("PR2 the cards end in one 'last change' line (the doorway to History)", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-row, [data-frame="inspector"] [class*="sp-f"]')].some((r) => /last change/.test(r.textContent) && /(just now|min ago)/.test(r.textContent))`, 4000), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] *')].map((r) => r.textContent).find((t) => /last change/.test(t))`));
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

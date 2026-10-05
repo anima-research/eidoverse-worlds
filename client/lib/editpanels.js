@@ -44,6 +44,7 @@ import { placerOf, guardedByOther, placerName } from './placer.js';
 import { reindexCollider } from './colliders.js';
 import * as V4 from './v4edit.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
+import { agoWords, touchWords } from '../../shared/v4/refusal.js';
 import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
 
 const _wp = new THREE.Vector3();
@@ -425,9 +426,11 @@ function cardRow(schema, id, addr) {
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
 function pushCards(f, schema, id, { locked = false } = {}) {
+  const touched = V4.isV4() && id !== WORLD_ID ? doorInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
     const key = `c:${sec.key ?? sec.type}`;
-    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
+    const prov = sec.present !== false ? touchLine(touched[wireOf(sec)]) : null;
+    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
     // the channel box: an alias (pos.yaw, the heading) stays addressable for
     // agents but is not drawn; the Quaternion row folds under its own header,
@@ -467,13 +470,32 @@ function worldFields() {
 
 // who made it. A v1 world stamps the placer; a v4 world keeps no such field (L2: a view, never stored), so ask the
 // door once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
-const madeByCache = new Map();
+// the door's inspect, per thing, re-asked whenever its components change (the key): who made it, and who last changed
+// each component and when (touched: R 10-04, "where a value came from"; within a recent window, beyond = older)
+const inspectCache = new Map();
+function doorInspect(id) {
+  const key = JSON.stringify(V4.compsOf(id));
+  const c = inspectCache.get(id);
+  if (c?.key === key) return c.reply;
+  inspectCache.set(id, { key, reply: c?.reply ?? null });   // keep showing the last answer while the new one comes
+  requestV4('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
+  return c?.reply ?? null;
+}
 function placedBy(id, meta) {
   if (!V4.isV4()) return placerOf(id)?.id ?? meta.actor ?? '?';
-  if (madeByCache.has(id)) return madeByCache.get(id) ?? '…';
-  madeByCache.set(id, null);
-  requestV4('inspect', { id }).then((r) => { madeByCache.set(id, r?.ok && r.derived?.madeBy ? V4.idOut(r.derived.madeBy) : 'unknown'); repaintAll(); }).catch(() => madeByCache.delete(id));
-  return '…';
+  const r = doorInspect(id);
+  return r ? (r.derived?.madeBy ? V4.idOut(r.derived.madeBy) : 'unknown') : '…';
+}
+// a card's v4 component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
+const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
+const ago = (ts) => agoWords(ts);
+const touchLine = (t) => touchWords(t);
+function lastChange(id) {
+  if (!V4.isV4()) return null;
+  const t = Object.entries(doorInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
+  if (!t) return null;
+  const [comp, v] = t; const sec = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === comp);
+  return v.created ? `made by ${V4.idOut(v.by)} · ${ago(v.ts)}` : `${V4.idOut(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
 function inspectorFields() {
@@ -511,6 +533,10 @@ function inspectorFields() {
       f.push({ t: 'btn', k: 'ask:cancel', label: 'cancel' });
     }
     pushCards(f, schema, id, { locked });
+    // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the
+    // Inspector, not in it; this line is the doorway)
+    const lc = lastChange(id);
+    if (lc) f.push({ t: 'info', k: 'lastchange', label: 'last change', value: lc, dim: true, hint: 'the most recent change to this thing, from the world log — each card\'s tooltip says who last set it' });
     if (schema.sections.add.length) {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Seats: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
