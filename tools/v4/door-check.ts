@@ -507,7 +507,18 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c4 = editVerbs(bare, "g", { "pivot.centre": true }, live);
   ok(!c4.errors.length && JSON.stringify(c4.verbs[0]?.args?.data) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
   const c5 = editVerbs(bare, "g", { "pivot.y": 1.5 }, live);
-  ok(!c5.errors.length && JSON.stringify(c5.verbs[0]?.args?.data) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5); }
+  ok(!c5.errors.length && JSON.stringify(c5.verbs[0]?.args?.data) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
+  // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
+  const gate = { lib: "x.glb", pos: [10, 0, 10], yaw: 0, comp: { pivot: { pos: [1, 0, 0] } } };
+  const placeOf = (r) => r.verbs.find((v) => v.verb === "place")?.args;
+  const r1 = placeOf(editVerbs(gate, "g", { "rot.y": 90 }, live));
+  ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
+  const r2 = placeOf(editVerbs(gate, "g", { "pos.scale": 2 }, live));
+  ok(r2 && Math.abs(r2.pos[0] - 9) < 1e-6 && Math.abs(r2.pos[2] - 10) < 1e-6, "P13 …and scale 2 grows it about the pivot (the pivot stays at 11): origin to (9, 0, 10)", r2);
+  const r3 = placeOf(editVerbs(gate, "g", { "rot.y": 90, "pos.x": 5 }, live));
+  ok(r3 && r3.pos[0] === 5 && r3.pos[2] === 10, "P14 …but a typed translate in the same edit wins (the pivot never second-guesses it)", r3);
+  const r4 = placeOf(editVerbs({ lib: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
+  ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
 { const tw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "turns"), actor, tool, args); };

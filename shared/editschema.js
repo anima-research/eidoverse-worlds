@@ -26,7 +26,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
-import { qNorm, qHeading, qFromYaw, qWithHeading } from './rot.js';
+import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentVerbs, childrenOf, worldPose } from './hierarchy.js';
 
@@ -689,6 +689,7 @@ export function editVerbs(ent, id, edits, live = {}) {
   const L = localOf(ent, live.world ?? null);
   const pv = L.mounted ? { ...ent, pos: L.pos, q: L.q ?? undefined, yaw: L.yaw } : ent;
   let moved = false;                // a translate/rotate/heading edit (vs. scale alone)
+  let posTyped = false;             // translate typed explicitly: the pivot never second-guesses a typed position
   let parented = null;              // a parent edit's { verbs, inverses }
   // the place every transform edit coalesces into, carrying the full pose: a
   // thing with q keeps its q (a move is not a turn), a yaw-only thing its yaw
@@ -746,7 +747,7 @@ export function editVerbs(ent, id, edits, live = {}) {
         if (k === 'yaw') { place.yaw = round(n, 4); delete place.q; headingSet = true; moved = true; }
         else if (k === 'scale') place.scale = round(n);
         else if (k === 'sx' || k === 'sy' || k === 'sz') { const v = [...scale3(place.scale)]; v['xyz'.indexOf(k[1])] = round(n); place.scale = scaleWire(v); }
-        else { place.pos['xyz'.indexOf(k)] = round(n); moved = true; }
+        else { place.pos['xyz'.indexOf(k)] = round(n); moved = true; posTyped = true; }
         break;
       }
       case 'parent': {
@@ -939,6 +940,17 @@ export function editVerbs(ent, id, edits, live = {}) {
     const n = type === 'picture' ? normalizePicture(b) : normalizeSound(b);
     if (!n.ok) { errors.push(`${type}: ${n.why}`); continue; }   // the rule, before any round-trip
     comps.set(type, type === 'picture' ? n.picture : n.sound);
+  }
+  // the pivot (research 52; Maya's channel box): a rotate or scale edit goes ABOUT the pivot, so the position moves to
+  // keep the pivot where it was (agent lab round 2, Rowan: 'edit rot.y +=90' turned the gate about its origin). A typed
+  // translate in the same edit wins. The same frame for a root and a child: pos/q/scale here are the local pose.
+  const pivp = Array.isArray(c.pivot?.pos) && c.pivot.pos.length === 3 ? c.pivot.pos : null;
+  if (place && pivp && !posTyped && !isLight(ent)) {
+    const q0 = qNorm(pv.q) ?? qFromYaw(pv.yaw ?? 0); const q1 = qNorm(place.q) ?? (headingSet && pv.q ? qWithHeading(pv.q, place.yaw) : qFromYaw(place.yaw ?? 0));
+    const s0 = scale3(entScale(ent) ?? 1), s1 = scale3(place.scale ?? 1);
+    const before = qRotate(q0, pivp.map((v, i) => v * s0[i])), after = qRotate(q1, pivp.map((v, i) => v * s1[i]));
+    const d = before.map((v, i) => v - after[i]);
+    if (d.some((v) => Math.abs(v) > 1e-9)) { place.pos = place.pos.map((v, i) => round(v + d[i])); moved = true; }
   }
   if (parented && place) { errors.push('parent: a parent edit goes alone — move it before or after, not in the same edit'); place = null; parented = null; }
   if (parented) verbs.push(...parented.verbs);
