@@ -18,7 +18,7 @@ import { entities, comps } from './world.js';
 import { sendDrag } from './net.js';
 import { registerSystem } from './frame.js';
 import { sceneSelected } from './scenegraph.js';
-import { getTool, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import { getTool, getSpace, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
 import { foldRecord, inverseOf } from './inspect.js';
@@ -79,6 +79,8 @@ function sync() {
   if (attachedId !== want) { c.attach(entities.get(want)); attachedId = want; }
   const mode = MODE[getTool()];
   if (c.mode !== mode) c.setMode(mode);
+  const sp = getSpace(getTool()) === 'object' ? 'local' : 'world';
+  if (c.space !== sp) c.setSpace(sp);   // the tool's space (build.js SPACES)
   // every axis: rotate commits q; scale is per axis in a v4 world, uniform in v1 (onChange)
   c.showX = true; c.showZ = true; c.showY = true;
 }
@@ -146,6 +148,6 @@ function cancelDrag() {
 export function initGizmo() {
   setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
-  bus.on('tool', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync);
+  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }

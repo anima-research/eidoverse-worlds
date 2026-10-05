@@ -411,6 +411,22 @@ try {
   const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
   check("W1 the Hierarchy's World row reads the world's name, not '(@world)'", wrow?.startsWith("client check") && !wrow.includes("@world"), wrow);
 
+  // transform space (R 10-04: "gimbal/object/world rotations... a way to switch between them")
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); const B = await import('/lib/build.js'); B.setSpace('rotate', 'world'); B.setTool('select'); return true;`);
+  await key("KeyE"); await sleep(300);
+  const sp0 = await evalJson(`({ s: __gizmo().controls?.space, a: __gizmo().attached })`);
+  await key("KeyE"); await sleep(400);
+  const sp1 = await evalJson(`import('/lib/build.js').then((B) => ({ tool: B.getTool(), space: B.getSpace('rotate'), gizmo: __gizmo().controls?.space }))`);
+  check("T1 E then E again: rotate switches to the thing's own axes, and the gizmo follows", sp0?.s === "world" && sp1?.tool === "rotate" && sp1?.space === "object" && sp1?.gizmo === "local", { sp0, sp1 });
+  await key("KeyE"); await sleep(400);
+  check("T2 …and E once more goes back to world axes", await evalJson(`import('/lib/build.js').then((B) => B.getSpace('rotate') === 'world' && __gizmo().controls?.space === 'world')`));
+  await evalJson(`(document.querySelector('.edit-tool[data-tool="move"]')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })), true)`);
+  const menuRows = await evalJson(`[...document.querySelectorAll('.edit-space-pop .edit-menu-item')].map((r) => r.textContent)`);
+  check("T3 right-click on the move tool lists its spaces", JSON.stringify(menuRows) === JSON.stringify(["● world axes", "○ object axes"]), menuRows);
+  await evalJson(`[...document.querySelectorAll('.edit-space-pop .edit-menu-item')].find((r) => /object/.test(r.textContent))?.click(), true`);
+  check("T4 …picking 'object axes' arms move in the thing's own axes", await waitFor(`import('/lib/build.js').then((B) => B.getTool() === 'move' && B.getSpace('move') === 'object' && __gizmo().controls?.space === 'local')`), await evalJson(`import('/lib/build.js').then((B) => ({ t: B.getTool(), s: B.getSpace('move'), g: __gizmo().controls?.space }))`));
+  await page(`const B = await import('/lib/build.js'); B.setSpace('move', 'world'); B.setSpace('rotate', 'world'); B.setTool('select'); return true;`);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

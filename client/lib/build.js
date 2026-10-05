@@ -119,6 +119,23 @@ export const toggleEditMode = () => setEditMode(!editMode);
 // three verbs — the tool state is theirs to read when they arrive.
 let tool = 'move';
 export const getTool = () => tool;
+// transform space per tool (R 10-04: "gimbal/object/world rotations... a way to switch between them"): world = the
+// world's axes, object = the thing's own axes (three's 'local'). Gimbal (the Euler rings in the rotate order) needs
+// its own gizmo: not yet. Scale is always the thing's own axes. Kept per viewer (a view choice, never logged).
+export const SPACES = { move: ['world', 'object'], rotate: ['world', 'object'], scale: ['object'] };
+const space = (() => { try { return { move: 'world', rotate: 'world', scale: 'object', ...JSON.parse(localStorage.getItem('ew-tool-space') ?? '{}') }; } catch { return { move: 'world', rotate: 'world', scale: 'object' }; } })();
+export const getSpace = (t = tool) => space[t] ?? 'world';
+export function setSpace(t, s) {
+  if (!SPACES[t]?.includes(s)) return getSpace(t);
+  space[t] = s; try { localStorage.setItem('ew-tool-space', JSON.stringify(space)); } catch { /* fine */ }
+  bus.emit('tool-space', { tool: t, space: s });
+  return s;
+}
+/** The active tool's key pressed again steps its space (Blender's double-press, one key): G G = move in object axes. */
+export function cycleSpace(t = tool) {
+  const list = SPACES[t]; if (!list || list.length < 2) return getSpace(t);
+  return setSpace(t, list[(list.indexOf(getSpace(t)) + 1) % list.length]);
+}
 export function setTool(t) {
   if (!['select', 'move', 'rotate', 'scale'].includes(t) || t === tool) return tool;
   tool = t;
@@ -741,7 +758,10 @@ bus.on('key', (e) => {
   // turn, ,/. size, R/F raise) are retired; the tools do those with a drag.
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
     const t = { KeyQ: 'select', KeyG: 'move', KeyE: 'rotate', KeyR: 'scale' }[e.code];
-    if (t) { setTool(t); return; }
+    if (t) {   // the active tool's key again steps its space (G G: move in the thing's own axes), saying so
+      if (t === getTool() && SPACES[t]?.length > 1) { const s = cycleSpace(t); flashHint(`${t} in <b>${s}</b> axes · ${{ move: 'G', rotate: 'E' }[t]} again to switch`, 2200); return; }
+      setTool(t); return;
+    }
     if (e.code === 'KeyF' && keyTarget()) { bus.emit('edit-find', keyTarget()); return; }
     if (e.code === 'KeyX' && keyTarget()) { removeTargets(); return; }
   }

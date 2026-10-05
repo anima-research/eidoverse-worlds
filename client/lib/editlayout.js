@@ -19,7 +19,7 @@
 
 import { bus } from './base.js';
 import { getFrame, allFrames } from './frames.js';
-import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets } from './build.js';
+import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace } from './build.js';
 import { panelFrame } from './ui.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
@@ -37,9 +37,9 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W and Blender's S both collide)
   { id: 'select', icon: 'mousePointer2', key: 'Q', title: 'select (Q) — click picks, a drag never moves' },
-  { id: 'move', icon: 'move', key: 'G', title: 'move (G) — drag moves; Shift+drag raises' },
-  { id: 'rotate', icon: 'rotateCw', key: 'E', title: 'rotate (E) — drag turns about up' },
-  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes, uniform' },
+  { id: 'move', icon: 'move', key: 'G', title: 'move (G) — drag moves; Shift+drag raises · G again or right-click: world / object axes' },
+  { id: 'rotate', icon: 'rotateCw', key: 'E', title: 'rotate (E) — drag turns about up · E again or right-click: world / object axes' },
+  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes; the handles stretch one axis (a v4 world)' },
   { id: 'pivot', icon: 'locateFixed', key: '', title: 'pivot — later, with rot/scale[] in the protocol', disabled: true },
 ];
 
@@ -81,6 +81,20 @@ function build() {
     if (t.key) b.append(el('kbd', 'edit-tool-key', t.key));   // the letter, so hands learn it
     b.dataset.tool = t.id; b.title = t.title; b.disabled = !!t.disabled;
     b.onclick = () => setTool(t.id);
+    // right-click: the tool's spaces (Maya's marking menu, as a plain menu): one click picks, the tool comes with it
+    if (SPACES[t.id]?.length > 1) b.oncontextmenu = (e) => {
+      e.preventDefault(); closeMenus();
+      const pop = el('div', 'edit-menu-pop edit-space-pop');
+      for (const sp of SPACES[t.id]) {
+        const row = el('button', 'edit-menu-item');
+        row.append(el('span', '', `${getSpace(t.id) === sp ? '● ' : '○ '}${sp} axes`));
+        row.onclick = () => { pop.remove(); setSpace(t.id, sp); setTool(t.id); };
+        pop.append(row);
+      }
+      const r = b.getBoundingClientRect();
+      Object.assign(pop.style, { position: 'fixed', left: `${r.right + 4}px`, top: `${r.top}px`, zIndex: 40 });
+      document.body.append(pop);
+    };
     tools.append(b);
   }
   bus.on('tool', paintTools);
@@ -203,8 +217,8 @@ function menu(label, items) {
   wrap.append(b, pop);
   return wrap;
 }
-function closeMenus() { for (const p of document.querySelectorAll('.edit-menu-pop')) p.hidden = true; }
-addEventListener('pointerdown', (e) => { if (!(e.target instanceof Element && e.target.closest('.edit-menu'))) closeMenus(); }, true);
+function closeMenus() { for (const p of document.querySelectorAll('.edit-menu-pop')) p.hidden = true; for (const p of document.querySelectorAll('.edit-space-pop')) p.remove(); }
+addEventListener('pointerdown', (e) => { if (!(e.target instanceof Element && e.target.closest('.edit-menu, .edit-space-pop'))) closeMenus(); }, true);
 addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(); }, true);
 
 function dragSplit(handle, onDelta) {
