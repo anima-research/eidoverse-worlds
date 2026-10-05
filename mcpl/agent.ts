@@ -1666,6 +1666,11 @@ export class WorldAgent {
     return false;
   }
 
+  /** A model's box in its own frame ([[min], [max]]), as the server measures it: the pivot's centre/base snaps. */
+  async modelBox(lib: string): Promise<number[][] | null> {
+    const g = await this.geomFor(lib); const b = g?.bbox;
+    return b && Array.isArray(b.min) && Array.isArray(b.max) ? [b.min, b.max] : null;
+  }
   private geomFor(lib: string): Promise<any | null> {
     let p = this.geomCache.get(lib);
     if (!p) {

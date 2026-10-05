@@ -750,7 +750,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const rec = ag.foldRecord(id) as any;
       if (!rec) return text(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const world = foldWorld(ag);
-      const schema = inspectSchema(rec, id, { world });
+      const schema = inspectSchema(rec, id, { world, box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
       const head = `[${id}] ${rec.kind === "light" ? "light" : rec.lib == null ? "empty" : String(rec.lib).split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}`
@@ -765,7 +765,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!rec && id !== WORLD_ID) return text(`edit: no placed thing "${id}" here`);
       const { verbs, errors, asks } = id === WORLD_ID
         ? { ...worldEditVerbs(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
-        : editVerbs(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag) });
+        : editVerbs(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
       // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
