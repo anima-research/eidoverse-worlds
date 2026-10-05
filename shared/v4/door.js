@@ -1058,7 +1058,7 @@ function buildUse(ctx, a) {
   if (action === "sit") return { presence: true, note: `you're seated on ${a.id} (presence: your frame says seat; nothing recorded)` };
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
-  if (h?.kind === "script") refuse("no-runtime", `${id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
+  if (h?.kind === "script") refuse("no-runtime", `${a.id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
   if (h?.kind === "pendulum-push") {
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
     if (!pivotOf(ctx.st, a.id)) refuse("no-pivot", `${a.id} swings but hangs from nothing above it`, `hang it first: place {id: '${a.id}', hang: <frame>}`);
@@ -1279,6 +1279,13 @@ function buildUndo(ctx, a, w) {
       const r = result(i); if (r && opsQuiet(r).some((o) => mine2.has(o.id))) n++; }
     if (n >= 2) refuse("revert-war", `${[...mine2].join(", ")} has been reverted across people ${n} times in the last hour`, "that's a disagreement, not a fix: ask an owner (owners may still revert), or talk it out"); }
   ctx.actExtra = { undoes: target.seq };
+  // round-2 R11: undoing my own `use` is admitted under the same reaction capability the use was (a visitor may open
+  // a door through its handler, so they may close it again by undo), asked for again NOW: no handler, no undo
+  const ureq = bodyOf(target.seq)?.request;
+  if (target.verb === "use" && target.actor === ctx.actor && target.body?.capability?.reaction && ureq?.id && ctx.st.entities[ureq.id]?.c.reactions?.[target.body.capability.reaction]) {
+    const comps = [...new Set(groups.flat().map((o) => o.comp).filter(Boolean))];
+    if (groups.flat().every((o) => o.id === ureq.id && o.comp !== undefined)) { reactionCap(ctx, ureq.id, comps[0], target.body.capability.reaction); ctx.cap.comps = comps;
+      ctx.actExtra = { undoes: target.seq, capability: ctx.actExtra.capability }; } }
   // say what came back: which act, what it was, and whether this undoes it or redoes it (Hazel: the reply named nothing)
   const req = bodyOf(target.seq)?.request ?? {}; const dz = depthOf(target.seq);
   const base = dz ? (() => { let q = target.seq; for (let i = 0; i < dz; i++) q = E[q].body?.undoes; return E[q]; })() : target;

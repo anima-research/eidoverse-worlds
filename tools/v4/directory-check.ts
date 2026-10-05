@@ -205,6 +205,30 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(dry.ok && w.entries.length === n0, "RB6 dry: true writes nothing", dry);
   ok(q(own, "undo", { actor: mal, since: s2, confirm: true }).ok && !Object.keys(w.state().entities).some((k) => k.startsWith("spam-")), "RB7 with confirm it rolls back all 22"); }
 
+// ---- X: a translated thing whose reaction runs a v1 script (round-2 R14: this path threw a ReferenceError) ----
+{ const { translateV1World } = await import("../../server/v4/world.ts");
+  const W = path.join(tmp, "xs"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "bell", lib: "a.glb", pos: [1, 0, 1] } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "comp", args: { id: "bell", type: "reactions", data: { ring: { kind: "script", script: "bell" } } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  translateV1World(path.join(W, "old"), path.join(W, "new"));
+  const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
+  let r: any = null, threw: any = null; try { r = request(w, "u-aaaaaaaaaaaaaaaaaaaa", "use", { id: "bell", action: "ring" }); } catch (e) { threw = String(e); }
+  ok(!threw && r?.refused?.code === "no-runtime" && /bell's 'ring'/.test(r.refused.reason), "X1 using a translated script reaction refuses (no-runtime) and names the thing, instead of throwing", threw ?? r?.refused); }
+
+// ---- V: a visitor undoes their own use, under the use's capability (round-2 R11) ----
+{ let T = 1800000000000; const d = directoryAt(file);
+  const w: any = openLive(path.join(tmp, "worlds", "vu"), "vu", { now: () => (T += 1000), custodyFile: path.join(tmp, "vu-custody.json"), nameOf: d.nameOf });
+  const own = d.resolve({ sub: "human:discord:vu1", name: "Oda" }), vis = d.resolve({ sub: "human:discord:vu2", name: "Vee" });
+  request(w, own, "new", { title: "vu" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
+  request(w, own, "create", { id: "gate", model: "door", components: { door: { open: false }, reactions: { open: { kind: "toggle", component: "door", field: "open" } } }, place: { at: [0, 4] } });
+  const u: any = request(w, vis, "use", { id: "gate", action: "open" });
+  ok(u.ok && w.state().entities.gate.c.door.open === true, "V1 a visitor opens the gate through its handler", u.refused);
+  const back: any = request(w, vis, "undo", {});
+  ok(back.ok && w.state().entities.gate.c.door.open === false, "V2 …and can undo that, under the same handler (not builder rank)", back.refused);
+  request(w, vis, "use", { id: "gate", action: "open" }); request(w, own, "delete", { id: "gate", component: "reactions" });
+  ok(request(w, vis, "undo", {}).refused?.code === "rights", "V3 with the handler gone, the capability is gone: the visitor's undo is refused on rank (asked again now, not at use time)"); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
