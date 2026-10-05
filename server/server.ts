@@ -10,6 +10,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
+import { TRUST_NAMES } from "./config.ts";
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
@@ -25,6 +26,7 @@ import { summarizeGlb } from "./geometry.ts";
 // worlds with the server is boot policy, not world mechanics.
 import { World, type Client, worlds, getWorld, wireSettledPose, wireV4 } from "./world.ts";
 import { v4Handler, actorOf as v4ActorOf } from "./v4/messages.ts";
+import { directoryFor } from "./v4/directory.ts";
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
@@ -473,6 +475,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         return null;
       }
     }
+    // A v4 world's actor is an OPAQUE id from the door's directory (server/v4/directory.ts, never logged), reached only
+    // through an account: a verified session's sub, or a verified agent's token. With neither, a fresh id per
+    // connection. Typing someone's name never yields their id, so it never yields their role (round-2 review R2).
+    if (w.v4) c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.sub ?? (c.tokenVerified ? `agent:${c.id.toLowerCase()}` : TRUST_NAMES ? `local:${c.id.toLowerCase()}` : null), name: c.id, agent: !!c.tokenVerified });
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
@@ -678,6 +684,8 @@ function buildSnapshot(w: World, c: Client) {
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
         id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+        // a v4 world: the identity the log and roles know them by (granting a role names this id, never a name)
+        ...(o.v4id ? { v4id: o.v4id } : {}),
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
         surfaces: [...w.clients]
@@ -839,7 +847,7 @@ const server = Bun.serve({
           installJoin(c, w);
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
-          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent }, c);
+          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.v4id ? { v4id: c.v4id } : {}) }, c);
           if (!c.spectator) w.bhv.onPresence("enter", c.id);
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
@@ -1169,6 +1177,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 console.log(`eidoverse-worlds sequencer on http://${HOST}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
+if (TRUST_NAMES) console.log(`  ⚠ TRUST_NAMES=1: a typed name IS an account here (local:<name>). Private servers only: anyone who can reach ${HOST}:${PORT} can be anyone.`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");
 // A fresh clone without the client's install step serves a client that can
 // never wake: the importmap points `three` at client/node_modules, every

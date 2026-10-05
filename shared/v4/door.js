@@ -53,6 +53,7 @@ export function worldOf(io) {
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
+  w.nameOf = io.nameOf ?? null; // id → display name (the door's directory, §2.3); null = old escaped ids only
   w.now = io.now;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
@@ -312,9 +313,12 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 // ---------- the door ----------
 class Refusal extends Error { constructor(code, reason, teach, extra = {}) { super(reason); Object.assign(this, { code, reason, teach, ...extra }); } }
 const refuse = (code, reason, teach, extra) => { throw new Refusal(code, reason, teach, extra); };
-// A person's name as they spell it, for a refusal's words (an escaped identity, x--5269…, reads back as "Riannon"; a
-// hashed one, h--, can't, and stays). The identity itself rides as a field (`by`) for whoever must match it.
-const said = (id) => dec(String(id)) ?? String(id);
+// A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the door's
+// directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CAT). An old
+// escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
+// must match it.
+let NAMEOF = null;
+const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
 const RESERVED = new Set(["door", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -327,7 +331,7 @@ function wire(args) {
 }
 
 export function request(w, actor, tool, args = {}) {
-  const prevCat = CAT, prevThrough = THROUGH; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false;
+  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -354,7 +358,7 @@ export function request(w, actor, tool, args = {}) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; THROUGH = prevThrough; }
+  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
 // §3a: "Release settles as one act with `expect` on the starting values." expect is a list of {id, component, value?}:

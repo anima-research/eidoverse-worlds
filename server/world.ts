@@ -84,6 +84,7 @@ export type Client = {
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
   renderer?: boolean;  // donates rendering: can answer snap requests for its world
+  v4id?: string;      // a v4 world's actor: this connection's opaque id from the door directory (server/v4/directory.ts)
   v4fold?: boolean;    // protocol/v4 slice 3b: this client folds a v4 world's own stream (no compatibility projection for it)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout

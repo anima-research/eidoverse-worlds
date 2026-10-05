@@ -22,6 +22,7 @@
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
 import { dec as decName } from "../shared/v4/names.js";
+import { actorName } from "../shared/v4/names.js";
 import { refusalText, warningText, touchWords } from "../shared/v4/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
@@ -838,7 +839,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (hits.length !== 1) return text(hits.length ? `blueprints: "${want}" matches ${hits.length} records (${hits.map((h) => h.slice(0, 12)).join(", ")}) — give more of the hash` : `blueprints: no record here whose hash starts "${want}"`);
         const h = hits[0], b = store[h];
         const line = lineageOf(store, h);
-        return text(`[${h}] "${b.record.name}" — published by ${b.by} at ${new Date(b.ts).toISOString()}`
+        return text(`[${h}] "${b.record.name}" — published by ${actorName(String(b.by))} at ${new Date(b.ts).toISOString()}`
           + `\nlineage (newest first): ${line.map((x) => `${x.slice(0, 12)}${store[x] ? ` "${store[x].record.name}"` : " (not in this store)"}`).join(" ← ")}`
           + (() => {
             const world = foldWorld(ag);
@@ -890,7 +891,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const rows = (h.entries ?? []).filter((e: any) => e.kind === "act" || e.kind === "say");
         if (!rows.length) return text("no entries yet");
         // an act carries its request; any other entry's body comes as a short JSON string
-        const who = (x: string) => decName(String(x)) ?? String(x);   // the names people typed, not the log's escapes
+        const who = (x: string) => actorName(String(x));   // the directory's names (names.js registry), not the log's ids
         return text(rows.map((e: any) => `#${e.seq} ${e.ts ? new Date(e.ts).toISOString() : ""} ${who(e.actor)}: ${e.kind === "act" ? `${e.verb} ${JSON.stringify(e.body?.request ?? {})}` : `say ${e.body}`}`).join("\n")
           + "\n(the newest; door history {id, before} pages one thing's acts further back)");
       }

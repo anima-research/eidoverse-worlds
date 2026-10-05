@@ -19,6 +19,7 @@ import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed } from "../.
 import { worldOf, posAt } from "../../shared/v4/door.js";
 import { simFolder } from "../../shared/v4/simlayer.js";
 import { custodyAt, modLogAt } from "./custody.ts";
+import { directoryFor } from "./directory.ts";
 
 type Any = any; // the door is JSDoc-typed JS; the server holds it structurally
 
@@ -36,7 +37,8 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 }
 
 export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
-  /** the door's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string };
+  /** the door's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
+  /** id → display name (the door directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null };
 
 /** Open (or prepare to found) the v4 world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
@@ -66,6 +68,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     writeLine: (line: string) => { fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(logPath, line + "\n"); },
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
     custody: custodyAt(opts.custodyFile ?? path.join(path.dirname(dir), ".v4-custody.json")),
+    nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
     ...modLogAt(path.join(dir, "v4.mod.jsonl")),
   });
 

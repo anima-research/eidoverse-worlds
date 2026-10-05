@@ -484,7 +484,7 @@ function doorInspect(id) {
 function placedBy(id, meta) {
   if (!V4.isV4()) return placerOf(id)?.id ?? meta.actor ?? '?';
   const r = doorInspect(id);
-  return r ? (r.derived?.madeBy ? V4.idOut(r.derived.madeBy) : 'unknown') : '…';
+  return r ? (r.derived?.madeBy ? V4.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
 // a card's v4 component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
 const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
@@ -495,7 +495,7 @@ function lastChange(id) {
   const t = Object.entries(doorInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
   if (!t) return null;
   const [comp, v] = t; const sec = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === comp);
-  return v.created ? `made by ${V4.idOut(v.by)} · ${ago(v.ts)}` : `${V4.idOut(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
+  return v.created ? `made by ${V4.nameOf(v.by)} · ${ago(v.ts)}` : `${V4.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
 function inspectorFields() {
@@ -991,7 +991,7 @@ function histLoad(id, more = false) {
   hist.loading = true;
   requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id) return;
-    const rows = id ? r.entries : r.entries.filter((e) => e.kind === 'act').reverse().map((e) => ({ seq: e.seq, by: e.actor, who: V4.idOut(e.actor), verb: e.verb,
+    const rows = id ? r.entries : r.entries.filter((e) => e.kind === 'act').reverse().map((e) => ({ seq: e.seq, by: e.actor, who: V4.nameOf(e.actor), verb: e.verb,
       changed: [e.body?.request?.component].filter(Boolean), target: e.body?.request?.id ?? null, ts: e.ts ?? null }));
     hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();
   }).catch(() => { hist.loading = false; });
@@ -1006,7 +1006,7 @@ function historyFields() {
   if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
   for (const e of hist.entries) {
     const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
-    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: `${e.who ?? V4.idOut(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
+    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: `${e.who ?? V4.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
   }
   if (id && hist.next != null) f.push({ t: 'btn', k: 'older', label: 'Older…', hint: 'read further back in the log (a deeper search, 20 at a time)' });
   return f;

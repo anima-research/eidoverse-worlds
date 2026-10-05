@@ -47,7 +47,7 @@ process.on("exit", () => { for (const p of procs) try { p.kill(); } catch {} });
 async function startServer(tree: string, worlds: string, opt: string, tag: string) {
   const port = await freePort(8990 + procs.length * 7);
   const logf = path.join(root, `${tag}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1",
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
   for (let i = 0; i < 100; i++) { await sleep(150); try { const r = await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) }); if (r.ok) return { port, proc: p, log: logf }; } catch {} } // bounded: on this host a closed local port can drop the SYN instead of refusing it
@@ -89,7 +89,7 @@ const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
 fs.mkdirSync(W4, { recursive: true });
 await writeBoxGlb(path.join(OPT, "test/table.glb"), [1.2, 0.75, 0.8]);
 await writeBoxGlb(path.join(OPT, "test/cup.glb"), [0.1, 0.12, 0.1]);
-const tool = (args: string[], worlds = W4) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+const tool = (args: string[], worlds = W4) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 
 const f = tool(["found", "garden", "--owner", "Ann", "--title", "a v4 garden"]);
@@ -100,12 +100,20 @@ const srv = await startServer(ENGINE, W4, OPT, "v4");
   ok(ws0.worlds?.some((w) => w.name === "garden" && w.loaded === false), "S1 /worlds lists the v4 world on disk before anyone loads it (travel discovery)", ws0); }
 const ann = await client(srv.port, "garden", "Ann", V4);
 ok(ann.snapshot?.v4?.version === 4, "S1 the snapshot says v4", ann.snapshot?.v4);
-ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the door stamps the same name the tool did)", ann.snapshot?.yourRights);
+ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the tool's account local:ann is the name Ann joins as on a TRUST_NAMES server)", ann.snapshot?.yourRights);
+const ANN = ann.snapshot?.v4?.you;
+ok(/^u-[a-z2-7]{20}$/.test(ANN ?? ""), "S1 a v4 joiner is told its identity: an opaque directory id, not its name (round-2 R1)", ann.snapshot?.v4?.you);
 ok(!fs.existsSync(path.join(W4, "garden", "log.jsonl")), "S1 no v1 log appears beside the v4 one (no genesis, no land-rush grant)");
-for (const [who, role] of [["Bob", "builder"], ["Vic", "visitor"]]) ok((await ann.req("set", { id: "@world", component: `roles:${enc(who)}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
 const bob = await client(srv.port, "garden", "Bob", V4), vic = await client(srv.port, "garden", "Vic", V4);
+await sleep(200);
+// an owner grants a PERSON: the id their arrival carries (presence knows people; roles know ids), never a typed name
+const idSeen = (name: string) => ann.msgs.find((m: any) => m.type === "arrive" && m.id === name)?.v4id;
+const BOB = idSeen("Bob"), VIC = idSeen("Vic");
+ok(BOB && BOB === bob.snapshot?.v4?.you && VIC === vic.snapshot?.v4?.you, "S1 an arrival carries the person's identity, the same one they're told", [BOB, VIC]);
+for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "visitor"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
 const spec = await client(srv.port, "garden", "Watcher", { spectate: true, ...V4 });
-ok(bob.snapshot?.yourRights?.role === "builder" && vic.snapshot?.yourRights?.role === "visitor", "S1 roles set through the door reach each client's rights", [bob.snapshot?.yourRights, vic.snapshot?.yourRights]);
+await sleep(200);
+ok(bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "visitor", "S1 roles set through the door reach each client's rights", [bob.of("your-rights").at(-1), vic.of("your-rights").at(-1)]);
 
 const t1 = await ann.req("create", { id: "tbl", model: "test/table.glb", place: { at: [0, 3] } });
 ok(t1.ok, "S2 create a measured model", t1);
@@ -138,13 +146,13 @@ ok(u.ok && u.after?.cup && u.after.cup.label === null, "S4 Bob undoes his own la
 const u2 = await ann.req("undo", { act: c1.act });
 ok(u2.ok === false && u2.refused?.code === "nothing", "S4 undo only reverts your own acts", u2);
 const ins = await vic.req("inspect", { id: "cup" });
-ok(ins.ok && ins.derived?.madeBy === enc("Bob"), "S4 inspect says who made it (a view over the log)", ins);
+ok(ins.ok && ins.derived?.madeBy === BOB, "S4 inspect says who made it (a view over the log)", ins);
 await sleep(200);
 const L = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")));
 const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk is v4 and reads back strictly", st.diagnostics.slice(0, 3));
 ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "act").length >= 6, "S4 ts never decreases; every write is an act + its result");
-ok(L.filter((e) => e.kind === "act").every((e) => [enc("Ann"), enc("Bob")].includes(e.actor)), "S4 acts are stamped with the connection's identity, never the payload's", [...new Set(L.map((e) => e.actor))]);
+ok(L.filter((e) => e.kind === "act").every((e) => [ANN, BOB].includes(e.actor)), "S4 acts are stamped with the connection's identity, never the payload's", [...new Set(L.map((e) => e.actor))]);
 for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own v4 fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
 { // the sky (which the v1 projection could only resync for) is just another entry in the stream now
@@ -187,7 +195,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(ag.inbox.some((m) => m.kind === "say" && m.who === "Ann" && m.text === "hello, agent") && ag.st.recentChat?.some((m) => m.text === "hello, agent"), "S5c …and a chat line lands in its inbox and its chat window", [ag.inbox.slice(-2), ag.st.recentChat?.slice(-1)]);
   // the agent's own voice and its reading of the log, with no v1 verb on the wire (3c: the server refuses them now)
   await HANDLERS.say(ag, { text: "hello, Ann" }, {} as any, "say");
-  const saidOnDisk = async () => readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).some((e) => e.kind === "say" && e.actor === enc("Bob") && e.body?.text === "hello, Ann");
+  const saidOnDisk = async () => readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).some((e) => e.kind === "say" && e.actor === BOB && e.body?.text === "hello, Ann");
   for (let i = 0; i < 40 && !(await saidOnDisk()); i++) await sleep(50);
   ok(await saidOnDisk(), "S5d the agent's say reaches a v4 world's log (as a door request, spelled by the agent)");
   const wh = await HANDLERS.world_history(ag, { limit: 20 }, {} as any, "world_history");
@@ -237,7 +245,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const bv = await client(srv.port, "meadow", "Bob", { v4fold: true }); // Bob folds v4 too: nobody reads the projection
   ok(bv.snapshot?.yourRights?.role === "visitor", "S8 Bob arrives a visitor", bv.snapshot?.yourRights);
   const r1 = await a.req("create", { id: "box", model: "test/table.glb", place: { at: [1, 1] } });
-  ok((await a.req("set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder");
+  ok((await a.req("set", { id: "@world", component: `roles:${bv.snapshot?.v4?.you}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder");
   await sleep(200);
   ok(bv.of("your-rights").at(-1)?.rights?.role === "builder", "S8 …and Bob is told at once (the door's role, not v1's stranger default)", bv.of("your-rights").map((m) => m.rights?.role));
   { const g = await fetch(`http://127.0.0.1:${srv.port}/geom?world=meadow&id=box`, { signal: AbortSignal.timeout(3000) });

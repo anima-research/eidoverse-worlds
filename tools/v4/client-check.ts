@@ -25,6 +25,7 @@ import { refusalText } from "../../shared/v4/refusal.js";
 
 const ENGINE = path.resolve(import.meta.dir, "../..");
 const ME = "editbot", WORLD = "edit4";
+process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the account local:editbot (server/config.ts)
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
 const { cdp, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench("v4client", {
@@ -38,7 +39,9 @@ const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const LOG = () => path.join(worldsDir, WORLD, "v4.jsonl");
 const entries = () => readLog(fs.readFileSync(LOG()));
-const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === ME);
+// my identity is the founder's opaque id (round-2 R1): the actor of the world's founding act
+const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "new")?.actor;
+const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY());
 const disk = () => fold(entries());
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* page busy */ } await sleep(100); } return false; };
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
@@ -57,7 +60,8 @@ const posX = (id: string) => `import('/lib/world.js').then((m) => m.entities.get
 try {
   // ---- a second builder over a plain socket (an agent's view: it still reads the projection) ----
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0;
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result") replies.get(m.id)?.(m.reply); };
+  let BOB = "";   // bob's identity: the opaque id his snapshot tells him (round-2 R1); a role is granted to it, never to "bob"
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (tool: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
@@ -73,7 +77,7 @@ try {
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("B1 the page knows it's in a v4 world (it adopted the v4 cut)", await waitFor(`import('/lib/net.js').then((m) => m.isV4())`));
   bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", v4fold: true })); await sleep(500);   // v4fold: a v4 world speaks only to clients that read v4 (3c)
-  check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.requestV4('set', { id: '@world', component: 'roles:bob', value: { role: 'builder' } })).ok;`)) === true);
+  check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.requestV4('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));
 
@@ -559,7 +563,7 @@ try {
   check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.v4.st)); return n.v4.stats.ingested > 10 && n.v4.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.v4.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.v4.stats, diff: d.diffView(s.state.st, r.viewState(n.v4.st)) }))`));
   // a UI verb path (the chat box sends through net.js sendVerb('say')), driven for real so B5 has a subject
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
-  check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === ME && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
+  check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
   check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a door request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
   check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (v4seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));

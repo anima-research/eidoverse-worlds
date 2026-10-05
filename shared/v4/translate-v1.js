@@ -66,8 +66,15 @@ function rideOf(st, e) {
   return { pos, q };
 }
 const PARENT_POSE = new Set(["offset", "yaw", "q"]);
-export function project(st, seen = null) {
+// who(name, {sub}) → the v4 identity for a v1 person (round-2 review R1): the server passes the door directory's
+// mapping, so actors and role/ban keys become opaque ids and the account (`sub`) leaves the log for the directory.
+// Without one (the pure tests, the sweep), names are escaped as before and `sub` stays in the value.
+const SYSTEM = new Set(["door", "world", "sim"]);
+const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
+export function project(st, seen = null, who = null) {
   const out = {};
+  const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
+  const unsub = (v) => { if (!who || !v || typeof v !== "object" || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
     const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
@@ -89,8 +96,8 @@ export function project(st, seen = null) {
   const w = {};
   for (const k of ["sky", "terrain", "grass", "epoch"]) if (st[k] != null) w[k] = st[k];
   for (const a of st.assets ?? []) w[keyed("palette", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
-  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[keyed("roles", k)] = v;
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[keyed("bans", k)] = v;
+  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[`roles:${person(k, v)}`] = unsub(v);
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`bans:${person(k, v)}`] = unsub(v);
   for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("behavior", k)] = v;
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("legacy", k)] = v;
@@ -116,7 +123,7 @@ export const stateBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence, foldBuild, key } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, who } = {}) {
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, state: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
@@ -131,16 +138,18 @@ export function translate(oldEntries, { onDivergence, foldBuild, key } = {}) {
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
   push({ kind: "genesis", actor: "door", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, key ? { key } : {}) });
   push({ kind: "act", actor: "door", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
-  let prev = project(v1, seen);
+  // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
+  const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);
+  let prev = project(v1, seen, who);
   for (const e of oldEntries) {
     if (e.verb === "genesis") continue;
     stats.verbs[e.verb] = (stats.verbs[e.verb] ?? 0) + 1;
     foldEntry(v1, e);
-    const now = project(v1, seen);
-    const actor = enc(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
+    const now = project(v1, seen, who);
+    const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : enc(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the door's admission time, carried from the old entry
-    const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(clone(e.args) ?? {}) }
-      : { kind: "act", actor, verb: "legacy", body: unNegZero({ verb: e.verb, args: clone(e.args) ?? null, from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
+    const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
+      : { kind: "act", actor, verb: "legacy", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const ops = diff(prev, now);
     if (ops.length) { push({ kind: "state", actor, cause: tl, ...stateBody(unNegZero(ops)), ...(ts !== undefined ? { ts } : {}) }); stats.state++; stats.ops += ops.length; }
     if (canon(v4project(v4)) !== canon(now)) { stats.divergences++; if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e.seq, verb: e.verb }; onDivergence?.(e, now, v4project(v4)); } }
@@ -148,6 +157,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key } = {}) {
   }
   stats.out = out.length;
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: project(v1), v4: v4project(v4) } };
+  return { out, stats, final: { v1: project(v1, null, who), v4: v4project(v4) } };
 }
 

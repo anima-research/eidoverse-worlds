@@ -17,7 +17,9 @@
 import { custodyAt } from "./custody.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { WORLDS_DIR } from "../config.ts";
+import { WORLDS_DIR, TRUST_NAMES } from "../config.ts";
+import { directoryFor, mintId, type Entry } from "./directory.ts";
+import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
@@ -62,12 +64,16 @@ export class V4Log {
   private host: V4Host | null = null;
   /** counters, for /tick-style inspection and the tests */
   stats = { requests: 0, writes: 0 };
+  /** every actor this log names (opaque ids): clients are sent their display names, from the directory (§2.3) */
+  private actors = new Set<string>();
+  private names(ids: Iterable<string>) { return directoryFor(WORLDS_DIR).names(ids); }
 
   constructor(name: string) {
     this.name = name;
     this.dir = path.join(WORLDS_DIR, name);
     this.posesPath = path.join(this.dir, "poses.json");
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE });
+    for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
     this._state = this.view();
@@ -83,7 +89,8 @@ export class V4Log {
   }
   /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
   private hearSay(e: Any) {
-    const line = { seq: e.seq * 1000, ts: e.ts, actor: idOut(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry;
+    const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
+    const line = { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}) } } as LogEntry;
     hear(this._state, { actor: line.actor, text: (line.args as Any).text, ts: line.ts, seq: line.seq });
     this.record(line);
   }
@@ -111,7 +118,9 @@ export class V4Log {
   private afterWrite(from: number) {
     this.stats.writes++;
     const fresh = this.live.entries.slice(from);
-    this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh });
+    const newActors = [...new Set(fresh.map((e: Any) => e?.actor).filter((a: Any) => typeof a === "string" && !this.actors.has(a)))] as string[];
+    newActors.forEach((a) => this.actors.add(a));
+    this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh, ...(newActors.length ? { names: this.names(newActors) } : {}) });
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
     const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
@@ -148,7 +157,7 @@ export class V4Log {
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
     const mine = (X.actsOf.get(actor) ?? []).filter((q: number) => !["undo", "new", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40);
-    return { state: stateView(this.live.state()), head: this.head, mine };
+    return { state: stateView(this.live.state()), head: this.head, mine, you: actor, names: this.names([...this.actors, actor]) };
   }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;
@@ -170,9 +179,13 @@ export function foundV4(dir: string, name: string, owner: string, title?: string
   if (fs.existsSync(path.join(dir, "v4.jsonl")) || fs.existsSync(path.join(dir, "log.jsonl"))) throw new Error(`${dir} already holds a world`);
   fs.mkdirSync(dir, { recursive: true });
   const w = openLive(dir, name, { now });
-  const r = doorRequest(w, enc(owner), "new", { title: title ?? name });
+  // the owner is an account (human:…, agent:…, local:…); a bare name means `local:<name>`, the account a TRUST_NAMES
+  // server gives that typed name. Its opaque id comes from the door directory (round-2 review R1).
+  const acct = /^(human|agent|local):/.test(owner) ? owner : `local:${owner.toLowerCase()}`;
+  const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()!, agent: acct.startsWith("agent:") });
+  const r = doorRequest(w, id, "new", { title: title ?? name });
   if (!r.ok) throw new Error(`founding refused: ${JSON.stringify(r.refused)}`);
-  return { worldId: w.worldId, owner: enc(owner), entries: w.entries.length };
+  return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. */
@@ -182,7 +195,29 @@ export function translateV1World(srcDir: string, destDir: string) {
   if (fs.existsSync(path.join(destDir, "v4.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
   // the sequencer key is this door's (the custody file every world in this worlds dir shares, server/v4/custody.ts)
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: custodyAt(path.join(path.dirname(destDir), ".v4-custody.json")).sequencer() });
+  // identities (round-2 review R1): every v1 person becomes an opaque id in the door directory; an account seen in the
+  // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
+  // directory only after the log is: a failed translation leaves no identities behind.
+  const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
+  const agents = agentTokens().names;
+  const isAcct = (k: string) => /^(human|agent):/.test(k);
+  const who = (name: string, { sub }: { sub?: string } = {}) => {
+    // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
+    // local:<name>, as a join there is; anywhere else it's a legacy identity an operator binds (directory.bind)
+    const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
+    const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
+    const key = acct ?? `name:${name}`;
+    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;
+    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (acct.startsWith("agent:") ? "agent" : "human") : "legacy", since: Date.now() }; }
+    if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
+    memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
+  // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
+  // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
+  // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
+  for (const e of old) { const a = e?.args ?? {};
+    if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: custodyAt(path.join(path.dirname(destDir), ".v4-custody.json")).sequencer(), who });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   const text = r.out.map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
@@ -193,5 +228,6 @@ export function translateV1World(srcDir: string, destDir: string) {
   const tmp = path.join(destDir, "v4.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "v4.jsonl"));
-  return { stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
+  dir.put(planned);
+  return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
 }

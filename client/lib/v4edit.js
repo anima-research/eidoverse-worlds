@@ -19,7 +19,7 @@ import { bus } from './base.js';
 import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
 import { spellVerbs } from '../../shared/v4/fromv1.js';
-import { enc, dec } from '../../shared/v4/names.js';
+import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
 import { flashHint, toast } from './ui.js';
@@ -28,6 +28,8 @@ export { isV4 };
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const idIn = (id) => enc(String(id));
 export const idOut = (id) => dec(id) ?? id;
+/** a person's display name for an actor id (the door directory's, via names.js; never the log's) */
+export const nameOf = (id) => actorName(id);
 
 // ---- my acts: what Ctrl+Z and redo walk (seeded at join from the server's act index, so it survives a reload) ----
 const undoStack = [];   // my act seqs, newest last

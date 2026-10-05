@@ -6,9 +6,10 @@
 // read by people and by agents' verb tools (which take v1 names), so an escaped name is read back as it is spelled. A
 // hashed name (h--) can't be read back and stays. The door tool's raw JSON reply is untouched: its ids are the ones to
 // send back, and the door says people's names readably itself (with the id in `by`).
-import { dec } from "./names.js";
+import { dec, actorName, ACTOR_ID } from "./names.js";
 
-const readable = (s) => String(s).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
+// an actor id (u-…) reads as its display name (names.js registry); an escaped name reads back as spelled
+const readable = (s) => String(s).replace(ACTOR_ID, (m) => actorName(m)).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
 
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};

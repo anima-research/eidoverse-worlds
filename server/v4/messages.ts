@@ -14,13 +14,13 @@
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one (the same per-client queue the v1 verb path uses).
 import type { Client, World } from "../world.ts";
-import { enc } from "../../shared/v4/names.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: unknown };
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait"]);
-/** The identity the door stamps for this connection (names.js: the same encoding the translator gives old logs). */
-export const actorOf = (c: Client) => enc(c.id);
+/** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
+ *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
+export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };
 
 /** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. */
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {

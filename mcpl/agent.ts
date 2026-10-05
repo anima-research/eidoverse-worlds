@@ -729,7 +729,7 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
-            for (const p of msg.present) this.rememberBody(p.id, p.avatar, p.pose, !!p.agent);
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.v4ids.set(p.id, p.v4id); }
             // A join is now the folded world plus a tail, not the whole log.
             // An agent that only read `entries` would arrive in an empty room.
             const oldestTail = msg.entries.length
@@ -855,7 +855,7 @@ export class WorldAgent {
             break;
           case "v4-log": {
             if (!this.v4c?.active) break;
-            const r = this.v4c.ingest((msg as any).entries ?? [], (msg as any).from ?? -1);
+            const r = this.v4c.ingest((msg as any).entries ?? [], (msg as any).from ?? -1, (msg as any).names);
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
             if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
             for (const x of r.says) {
@@ -909,6 +909,7 @@ export class WorldAgent {
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
             this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
+            if (typeof msg.v4id === "string") this.v4ids.set(msg.id, msg.v4id);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
@@ -2707,11 +2708,15 @@ export class WorldAgent {
   /** A building verb, waited for in a v4 world (the door's reply) and fire-and-forget elsewhere (null). In a v4 world
    *  it is spelled here, from this body's own fold, as the door request it means (shared/v4/fromv1.js, the page's own
    *  spelling): no v1 verb crosses the wire (3c). The reply names the tool it became (`as`). */
+  /** present people's v4 identities, by display name (their arrival carries it) */
+  v4ids = new Map<string, string>();
   async sendVerb(verb: string, args: Record<string, unknown>): Promise<any | null> {
     if (this.v4) {
       // spelled only after the previous verb's answer (its v4-log arrived first), so a follow-up reads that write
       const turn = this.spelling.then(async () => {
         if (!this.v4c?.active) return { ok: false, refused: { code: "not-joined", reason: "this body hasn't read the world yet" } };
+        // a grant names a person present by their name; the door wants their identity (round-2 R1/R2)
+        if (verb === "grant" && typeof args.id === "string" && this.v4ids.has(args.id)) args = { ...args, id: this.v4ids.get(args.id) };
         const m: any = spellVerbs(this.v4c.st, [{ verb, args }]);
         if (m.noop) return { ok: true, noop: true };
         if (m.refuse) return { ok: false, refused: { code: "no-v4-spelling", reason: m.refuse, teach: "the door tool takes the v4 request itself" } };

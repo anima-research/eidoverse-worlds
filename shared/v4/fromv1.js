@@ -70,7 +70,10 @@ export function toV4(st, verb, a) {
     case "use": return { tool: "use", args: { id: id(a.id), ...(a.action ? { action: String(a.action) } : {}), ...(a.args ? { args: a.args } : {}) } };
     case "grant":
       if (!a?.role) return { refuse: "in a v4 world a grant sets a role (gen, fly and caption deeds aren't v4 components yet)" };
-      return { tool: "set", args: { id: "@world", component: `roles:${id(a.id)}`, value: { role: String(a.role) } } };
+      // a role is held by an IDENTITY (u-…, from the door directory: the person's arrival carries it), never by a typed
+      // name (round-2 R1/R2). A caller resolves the person first; a name that isn't an identity is refused, not guessed.
+      if (!/^u-[a-z2-7]{20}$/.test(String(a.id ?? ""))) return { refuse: `in a v4 world a role goes to a person's identity, not a name: '${a.id}' isn't one (whoever is present has one; look lists them)` };
+      return { tool: "set", args: { id: "@world", component: `roles:${a.id}`, value: { role: String(a.role) } } };
     default:
       return { refuse: `'${verb}' has no v4 request yet in this world (slice 2 maps spawn, place, remove, comp, motion, mount, dismount, light, say, use, grant)` };
   }

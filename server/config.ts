@@ -27,6 +27,10 @@ export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod);
 // serving worlds must be startable without shouldering the optimizer.
 export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
+// TRUST_NAMES=1: a PRIVATE server (a dev box, the owner's own garden on 127.0.0.1) takes a typed name as an account,
+// `local:<name>`, so its owner can be who they say without a login. Never set it on a server strangers can reach: there
+// anyone typing the owner's name would BE the owner (round-2 review R2). Off by default; the server says so at boot.
+export const TRUST_NAMES = process.env.TRUST_NAMES === "1";
 // OPT_MEM_BUDGET_MB bounds the optimizer so serving a world never competes
 // with encoding one: each optimize child runs under RLIMIT_DATA of this
 // many MB (Linux only — XNU accepts the limit and ignores it), and an item

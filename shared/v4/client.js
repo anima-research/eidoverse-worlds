@@ -16,7 +16,7 @@
 // to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
 import { viewState } from "./record.js";
-import { dec } from "./names.js";
+import { dec, learnNames, actorName } from "./names.js";
 
 const idOut = (s) => dec(s) ?? s;
 
@@ -39,15 +39,20 @@ export function stateFromView(view) {
 }
 
 export function makeV4Client() {
-  const v = { active: false, st: null, head: -1, worldId: null, stats: { ingested: 0, resyncs: 0 } };
+  const v = { active: false, st: null, head: -1, worldId: null, you: null, names: Object.create(null), stats: { ingested: 0, resyncs: 0 } };
+  // actors are opaque ids (u-…); their display names come from the door's directory, never from the log (§2.3)
+  const learn = (names) => { if (names && typeof names === "object") { learnNames(names); for (const [k, n] of Object.entries(names)) if (typeof n === "string") v.names[k] = n; } };
+  v.nameOf = (id) => actorName(id);
   v.adopt = (snap) => {
     v.st = stateFromView(snap.state); v.head = Number.isInteger(snap.head) ? snap.head : -1; v.worldId = snap.worldId ?? null; v.active = true;
+    v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
   };
   v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; };
   /** The view the renderer and panels read, carrying a chat window (chat isn't in the fold). */
   v.view = (chat) => viewState(v.st, { recentChat: chat?.recentChat ?? [], chatTotal: chat?.chatTotal ?? 0 });
   /** Fold the door's fresh entries. Returns {changed, says: [chat lines], resync, why?, ts?, actor?}. */
-  v.ingest = (entries, from) => {
+  v.ingest = (entries, from, names) => {
+    learn(names);
     if (!v.active) return { changed: false, says: [], resync: false };
     const says = []; let changed = false, ts = null, actor = null;
     for (let i = 0; i < (entries?.length ?? 0); i++) {
@@ -56,8 +61,8 @@ export function makeV4Client() {
       if (seq !== v.head + 1) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: `gap ${v.head} → ${seq}` }; }
       if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: e.kind }; }
       if (e?.kind === "state") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
-      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: idOut(String(e.actor)), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) });
-      if (e?.kind === "act" && actor === null) actor = idOut(String(e.actor));
+      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}) });
+      if (e?.kind === "act" && actor === null) actor = v.nameOf(e.actor);
       if (Number.isInteger(e?.ts)) ts = e.ts;
       v.head = seq; v.stats.ingested++;
     }

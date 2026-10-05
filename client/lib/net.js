@@ -273,7 +273,7 @@ function onV4Result(msg) {
  *  realizers what changed, in v4 terms). Chat lines take the chat path (they aren't world state). */
 function onV4Log(msg) {
   if (!v4.active) return;
-  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1);
+  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
   // a chat line: into the window (the shared rule, no v1 fold), then the live causes (bubbles, voice, chat log).
   // Numbered v4seq × 1000, as the server numbers it in its window and history.

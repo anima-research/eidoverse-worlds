@@ -43,3 +43,13 @@ export function dec(s) {
   try { return new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(hex.match(/../g).map((h) => parseInt(h, 16)))); }
   catch { return null; }
 }
+
+// ---- display names for actors (round-2 review R1) ----
+// A v4 actor is an opaque id, u- + 20 base32 (server/v4/directory.ts). Its display name lives in the door's
+// directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
+// process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
+// person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.
+export const ACTOR_ID = /\bu-[a-z2-7]{20}\b/g;
+const NAMES = Object.create(null);
+export function learnNames(o) { if (o && typeof o === "object") for (const [k, n] of Object.entries(o)) if (typeof n === "string" && n) NAMES[k] = n; }
+export const actorName = (id) => NAMES[String(id)] ?? dec(String(id)) ?? String(id);
