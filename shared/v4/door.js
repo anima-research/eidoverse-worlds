@@ -659,9 +659,23 @@ function unknownKeys(at, v, allowed, what) {
   for (const k of Object.keys(v)) if (!allowed.includes(k)) { const dym = guessKey(k, allowed);
     refuse("schema", `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `${what} takes: ${allowed.join(", ")}`, { didYouMean: dym }); }
 }
+// edit distance (a near-miss of a registered component name is a typo, R8)
+function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
+  return d[b.length]; }
 function schemaCheck(at, comp, v) {
   const name = comp.split(":")[0], def = COMPONENTS[name];
-  if (!def?.fields || !!def.keyed !== comp.includes(":")) { if (def?.keyed && !comp.includes(":")) refuse("shape", `${at}: ${name} is keyed (${name}:<key>)`, def.help); return; }
+  // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
+  // it's a near-miss of a registered name: that's a typo (ligth, transform@2), and it would be a new name forever (L5)
+  if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (L2), never stored`, "inspect {id} → derived.madeBy");
+  if (!def) { if (!name.includes("/")) { const near = Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
+      if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${name}')`, { didYouMean: near }); }
+    return; }
+  // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
+  if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
+  if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
+  if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
+  if (!def.fields) return;
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
   unknownKeys(at, v, fields, name);

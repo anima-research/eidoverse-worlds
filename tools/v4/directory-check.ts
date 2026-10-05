@@ -114,6 +114,24 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const u: any = request(w, own, "undo", {});
   ok(u.ok && !w.state().entities.cube, "B10 a bare undo steps over a recorded refusal to my last real change", u); }
 
+// ---- S: the schema gate (round-2 R8, R9) ----
+{ let T = 1800000000000; const d = directoryAt(file);
+  const w: any = openLive(path.join(tmp, "worlds", "s"), "s", { now: () => (T += 100), custodyFile: path.join(tmp, "s-custody.json"), nameOf: d.nameOf });
+  const me = d.resolve({ sub: "human:discord:888", name: "Sam" }); request(w, me, "new", { title: "s" });
+  request(w, me, "create", { id: "cube", model: "crate", place: { at: [1, 1] } });
+  const set = (component: string, value: unknown) => request(w, me, "set", { id: "cube", component, value }) as any;
+  const typo = set("ligth", { intensity: 5 });
+  ok(typo.refused?.code === "schema" && typo.refused?.didYouMean?.[0] === "light", "S1 a near-miss of a registered name is a typo: refused, did you mean light", typo.refused);
+  ok(set("heart", { takes: 1 }).ok && set("inscription", { text: "hi" }).ok, "S2 a world's own invention (heart, inscription) is admitted");
+  ok(set("transform@2", { pos: [1e9, 0, 0] }).refused?.code === "schema", "S3 transform@2 is a near-miss too");
+  ok(request(w, me, "set", { id: "@world", component: "terrain:base", value: { amp: 0 } }).refused?.code === "shape" && set("light:main", { intnsity: 5 }).refused?.code === "shape",
+    "S4 an unkeyed name written keyed (terrain:base, light:main) no longer dodges the schema");
+  ok(set("label", 42).refused?.code === "shape" && set("sockets", "nope").refused?.code === "shape" && set("model", { x: 1 }).refused?.code === "shape", "S5 label, sockets and model are typed");
+  ok(set("placer", { id: "me" }).refused?.code === "derived", "S6 placer is derived (L2): refused");
+  const lit: any = request(w, me, "create", { id: "lamp", components: { transform: { pos: [2, 1, 2] }, light: {} } });
+  ok(lit.ok && w.state().entities.lamp.c.light.intensity === 16 && w.state().entities.lamp.c.light.range === 10, "S7 an agent's light {} gets the renderer's defaults (16, 10), as the editor's does (R9)", w.state().entities.lamp?.c.light);
+  ok(request(w, me, "set", { id: "@world", component: "sky", value: { hours: 9, rate: 1, weathr: "rain" } }).refused?.code === "schema", "S8 sky is registered: its fields are checked"); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

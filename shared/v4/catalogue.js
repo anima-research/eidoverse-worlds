@@ -22,14 +22,14 @@ export const MODELS = {
 
 export const COMPONENTS = {
   transform: { fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
-  model:     { help: "which model it shows: a name from find {kind: 'model'}" },
-  label:     { help: "its display name, a short string" },
+  model:     { type: "string", help: "which model it shows: a name from find {kind: 'model'}" },
+  label:     { type: "string", help: "its display name, a short string" },
   pivot:     { help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   parent:    { fields: { to: "string", order: "string" }, defaults: { order: "a0" }, help: "{to: id}; its transform becomes local to the parent" },
-  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", shadows: "bool", keep: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 1, range: 6, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
-  motion:    { fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number" }, enums: { type: ["pendulum", "spin", "orbit", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },
+  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", shadows: "bool", keep: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
+  motion:    { keyed: "optional", fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3" }, enums: { type: ["pendulum", "spin", "orbit", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },
   lock:      { help: "true: an edit lock (PROTOCOL-v4 §5; v1's lock, same meaning). Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Any builder or owner may unlock it (delete {id, component: 'lock'}), or act through it by sending a request with through_lock: true. Not on @world. A door's gameplay lock is `door.locked`, not this" },
-  sockets:   { help: "{name: {pos, pose}}: places a body can sit" },
+  sockets:   { map: "object", help: "{name: {pos, pose}}: places a body can sit" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and teach: text (shown on refusal).",
     handlers: {
       toggle: { args: { component: "the component to flip (default 'door')", field: "the field inside it to flip (default 'open' for a door; leave both out for a door). A named component with no field flips its whole value", unless: "a field of the same component that, when true, bars it (e.g. 'locked')" }, example: { open: { kind: "toggle", component: "door", field: "open", unless: "locked" } } },
@@ -41,7 +41,17 @@ export const COMPONENTS = {
     help: "how it takes part in physics: {kind: dynamic (can be picked up and thrown) | static (a collider; the default for anything with a model) | none (nothing collides with it), who: who may pick it up (default builder)}. With eidosim@0.5: a thrown thing flies, bounces off what's in the world and comes to rest; it does NOT push or topple things at rest (stacks don't fall over), and things don't spin" },
   sim:       { fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The door stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
   blueprint: { fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
-  placer:    { help: "server-written: who made it" },
+  // round-2 review R8 (2026-10-05): names the engine reads, carried by translated worlds, registered with their v1
+  // meaning so it's fixed (L5). Fields from every v1 log on Burrow, translated. A name not here is a world's own
+  // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
+  sky:       { fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
+  grass:     { fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" }, help: "a grass or crop field {width, depth, center, species, density…}" },
+  structure: { fields: { tile: "number", wallH: "number", wallT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
+  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "number", speed: "number", opacity: "number", lifetime: "number" }, help: "a particle emitter {preset, count, size, speed, lifetime…}" },
+  epoch:     { fields: { sim: "string", tickMs: "number", ts: "number", seq: "number" }, help: "on @world: the physics epoch a translated world began (dialect 3)" },
+  behavior:  { keyed: true, key: "instance", fields: { src: "string", attach: "string", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: a v1 runtime script binding, carried from translation (v4's are script:<name>)" },
+  palette:   { keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: an asset on the world's palette" },
+  legacy:    { keyed: true, key: "instance", help: "keyed: a v1 field the translation had no mapping for, carried as it was (R10)" },
   roles:     { keyed: true, key: "instance", fields: { role: "string", gen: "bool", sub: "any" }, help: "on @world, keyed by identity: {role: owner|builder|visitor|none}" },
   "default-role": { fields: { role: "string", gen: "bool" }, help: "on @world: the role of anyone without roles:<id> (absent = visitor)" },
   about:     { fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },

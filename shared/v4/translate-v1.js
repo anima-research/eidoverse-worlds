@@ -97,10 +97,16 @@ export function project(st, seen = null, who = null) {
   }
   const w = {};
   for (const k of ["sky", "terrain", "grass", "epoch"]) if (st[k] != null) w[k] = st[k];
+  // round-2 R8: v1 echoed into the sky value who set it (`by`, a display name) and at which seq: derived, and a person's
+  // name inside a value. Dropped; the log says who set the sky (History, inspect's touched).
+  if (w.sky && typeof w.sky === "object") { const { seq, by, ...sky } = w.sky;
+    if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
+    w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("palette", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
   for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[`roles:${person(k, v)}`] = unsub(v);
   for (const [k, v] of Object.entries(st.bans ?? {})) w[`bans:${person(k, v)}`] = unsub(v);
-  for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("behavior", k)] = v;
+  // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
+  for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("legacy", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
