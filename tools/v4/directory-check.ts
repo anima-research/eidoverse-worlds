@@ -74,6 +74,46 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(a.worldId !== b.worldId, "K4 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
   ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga); }
 
+// ---- B: budgets and attempts (round-2 R6, R7) ----
+{ let T = 1800000000000; const d = directoryAt(file); const kindOf = (id: string) => d.entry(id)?.kind ?? null;
+  const w: any = openLive(path.join(tmp, "worlds", "b"), "b", { now: () => (T += 10), custodyFile: path.join(tmp, "b-custody.json"), nameOf: d.nameOf, kindOf } as any);
+  const own = d.resolve({ sub: "human:discord:777", name: "Bo" }); request(w, own, "new", { title: "b" });
+  request(w, own, "set", { id: "@world", component: "default-role", value: { role: "builder" } });
+  const big = request(w, own, "say", { text: "x".repeat(9000) });
+  ok(big.refused?.code === "too-big", "B1 a say is at most 8 KiB of text", big.refused);
+  // the flood is big VALUES, not chat (20 says of 8 KiB stay under the cap): 60 KiB labels, well under 60 entries
+  request(w, own, "create", { id: "slab", model: "crate", place: { at: [4, 4] } });
+  const n0 = w.entries.length; let said = 0, stop: any = null;
+  for (let i = 0; i < 40 && !stop; i++) { const r: any = request(w, own, "set", { id: "slab", component: "label", value: `${i}` + "y".repeat(60000) }); if (r.ok) said++; else stop = r.refused; }
+  const grew = w.entries.slice(n0).reduce((a: number, e: any) => a + JSON.stringify(e).length, 0);
+  ok(stop?.code === "rate" && /KiB/.test(stop?.reason ?? "") && said < 8 && grew < 400 * 1024, "B2 one identity's BYTES per 10 s are capped (256 KiB), not just its entries", { said, grew, stop: stop?.reason });
+  T += 20000;
+  T += 20000;
+  const anon = d.resolve({ name: "drifter" }); let aSaid = 0;
+  for (let i = 0; i < 50; i++) { const r: any = request(w, anon, "say", { text: "z".repeat(7000) }); if (r.ok) aSaid++; else break; }
+  ok(aSaid > 0 && aSaid <= 5, "B3 an identity with no account gets a smaller budget (32 KiB)", aSaid);
+  T += 20000;
+  const m0 = w.entries.length;
+  const ref: any = request(w, anon, "delete", { id: "@world" });
+  const rec = w.entries.slice(m0);
+  ok(!ref.ok && rec.length === 1 && rec[0].kind === "act" && rec[0].actor === anon && rec[0].body?.refused?.code === ref.refused?.code && rec[0].body?.request?.id === "@world",
+    "B4 a refused write is recorded: an act with the request as sent and {refused: {code}}, no state", rec.map((e: any) => [e.kind, e.body]));
+  const m1 = w.entries.length;
+  request(w, anon, "delete", { id: "@world", dry: true }); request(w, anon, "inspect", { id: "nope" }); request(w, anon, "frobnicate", {});
+  ok(w.entries.length === m1 + 1 && w.entries.at(-1).body?.refused?.code === "unknown-tool", "B5 dry runs and reads aren't recorded; an unknown tool is (it's what was tried)", w.entries.slice(m1).map((e: any) => e.body?.refused));
+  const huge: any = request(w, anon, "set", { id: "nope", component: "label", value: "q".repeat(5000) });
+  ok(!huge.ok && w.entries.at(-1).body?.request?.truncated === true, "B6 a recorded request over 2 KiB is cut to its size", w.entries.at(-1).body?.request);
+  T += 20000; const before = w.entries.length; const TRIES = 300;
+  for (let i = 0; i < TRIES; i++) request(w, anon, "delete", { id: "@world" });   // refusals cost bytes too
+  const written = w.entries.length - before; const grewB = w.entries.slice(before).reduce((a: number, e: any) => a + JSON.stringify(e).length, 0);
+  ok(written > 0 && written < TRIES && grewB <= 32 * 1024, "B7 refusals are written only while the byte budget lasts (no flood)", { written, grewB });
+  T += 20000; request(w, anon, "delete", { id: "@world" });
+  ok(w.entries.at(-1).body?.unrecorded === TRIES - written, "B8 …and the next one that is written says exactly how many weren't", [w.entries.at(-1).body?.unrecorded, TRIES - written]);
+  T += 20000; ok(request(w, own, "create", { id: "cube", model: "crate", place: { at: [2, 2] } }).ok, "B9 setup: a real change");
+  request(w, own, "delete", { id: "nope-at-all" });  // a refusal, recorded, after it
+  const u: any = request(w, own, "undo", {});
+  ok(u.ok && !w.state().entities.cube, "B10 a bare undo steps over a recorded refusal to my last real change", u); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

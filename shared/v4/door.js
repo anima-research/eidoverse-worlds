@@ -53,6 +53,7 @@ export function worldOf(io) {
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
+  w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
   w.nameOf = io.nameOf ?? null; // id → display name (the door's directory, §2.3); null = old escaped ids only
   w.now = io.now;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
@@ -115,7 +116,7 @@ export function worldOf(io) {
     if (e.kind === "state" && token !== STATE) throw new Error("door bug: a state entry must come from stateEntry (L7: one gate)");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
-    entries.push(posAt(parsed, seq)); io.writeLine(line);
+    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
     if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
     w.exists = true; return seq;
   };
@@ -388,9 +389,28 @@ export function request(w, actor, tool, args = {}) {
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
   } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; }
+}
+// R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
+// refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
+// byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the door's own state (rate,
+// identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the door counts
+// what it didn't write, and the next refusal it does write says how many (`unrecorded`).
+const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned"]);
+function logRefusal(w, actor, tool, args, code) {
+  try {
+    // a tool the door doesn't have is recorded too (an agent's invented tool is part of what it tried), when it's a name
+    if (!w.exists || !(TOOLS[tool] || /^[a-z][a-z0-9-]{0,31}$/.test(String(tool))) || READ_ONLY.has(tool) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
+    if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
+    if (UNLOGGED.has(code)) return;
+    let req = stripDry(args ?? {}); try { checkIJSON(req); } catch { req = { unloggable: "not I-JSON" }; } const j = jcs(req);
+    const body = { request: j.length > 2048 ? { truncated: true, bytes: j.length } : req, refused: { code } };
+    const miss = (w.unrecorded ??= new Map()); const n = miss.get(actor) ?? 0; if (n) body.unrecorded = n;
+    try { rateCheck(w, actor, "act", jcs(body).length + 256); } catch (x) { if (x instanceof Refusal) { miss.set(actor, n + 1); return; } throw x; }
+    w.append(actEntry(w, actor, tool, body)); miss.delete(actor);
+  } catch { /* logging a refusal never fails the request it records */ }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
 // §3a: "Release settles as one act with `expect` on the starting values." expect is a list of {id, component, value?}:
@@ -436,18 +456,34 @@ function guess(s, opts) {
 // physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
 // and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose v1's meaning.
 const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
-const RATE = { n: 60, ms: 10000 };
+// L7 rate (round-2 review R6): per actor, over a 10 s window by the door's clock. Counted in ENTRIES and in BYTES, with
+// talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
+// make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
+// An identity with no account (io.kindOf → "anon") gets less. A say's text is at most 8 KiB (the Commons' longest real
+// line is 4.5 KB). Refused requests are logged (R7) inside the same byte budget.
+const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
+const SAY_MAX = 8192;
+const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
 class Admitted { constructor(who, ops, after) { this.who = who; this.ops = ops; this.after = after; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the door's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
 // agents" is the actor alone here. Refusals aren't logged, so they cost the door, not the log (door practice).
-function rateCheck(w, actor) {
+function rateCheck(w, actor, kind = "act", extra = 0) {
   if (w.leaving === actor) return; // a disconnect's settlement is the door's duty, not the leaver's request: never rate-refused
-  const now = w.now(); let n = 0; for (let i = w.entries.length - 1; i >= 0 && n <= RATE.n; i--) { const e = w.entries[i];
-    if (isE(e) && Number.isInteger(e.ts) && now - e.ts > RATE.ms) break; // ts never decreases: everything earlier is older (engine: the lab scanned the whole log for a quiet actor)
-    if (isE(e) && (e.kind === "act" || e.kind === "say") && e.actor === actor) n++; }
-  if (n >= RATE.n) refuse("rate", `${said(actor)} has made ${n} entries in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
+  const r = rateOf(w, actor); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
+  if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
+  if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; big data goes in a blob");
+}
+// what this actor put in the log over the window: acts, says (counted apart), and all their bytes (incl. results)
+function rateOf(w, actor) {
+  const now = w.now(); let acts = 0, says = 0, bytes = 0;
+  for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i];
+    if (isE(e) && Number.isInteger(e.ts) && now - e.ts > RATE.ms) break; // ts never decreases: everything earlier is older
+    if (!isE(e) || e.actor !== actor) continue;
+    if (e.kind === "act") acts++; else if (e.kind === "say") says++;
+    bytes += bytesOf(e); }
+  return { acts, says, bytes };
 }
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
@@ -1130,7 +1166,7 @@ function buildUndo(ctx, a, w) {
   const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = E[q].body?.undoes; } return d; };
   const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && E[mine[k]].body?.undoes === seq) return mine[k]; return undefined; };
   const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : undefined)
-    : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q))
+    : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
     : pick((q) => E[q].verb !== "new" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
   if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
     refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
@@ -1790,7 +1826,9 @@ const TOOLS = {
     w.appendMod({ actor, verb: "ban", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, banned: a.who, logged: "moderator log" }; },
   unban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "unbanning needs owner", "");
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
-  say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", ""); rateCheck(w, actor); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); return { ok: true, seq }; }, // w.append refuses too-big before writing
+  say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
+    if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
+    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) {

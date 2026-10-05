@@ -38,7 +38,8 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 
 export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
   /** the door's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
-  /** id → display name (the door directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null };
+  /** id → display name (the door directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
+  /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null };
 
 /** Open (or prepare to found) the v4 world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
@@ -69,6 +70,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
     custody: custodyAt(opts.custodyFile ?? path.join(path.dirname(dir), ".v4-custody.json")),
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
+    kindOf: opts.kindOf ?? ((id: string) => directoryFor(path.dirname(dir)).entry(id)?.kind ?? null),
     ...modLogAt(path.join(dir, "v4.mod.jsonl")),
   });
 

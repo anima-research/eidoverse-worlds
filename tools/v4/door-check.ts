@@ -324,7 +324,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("bob", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [2, t0.pos[1], 3] } });
   const before = n();
   const e2 = call("ann", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [5, t0.pos[1], 5] }, expect: [{ id: "tbl", component: "transform", value: moved }] });
-  ok(code(e2) === "changed" && e2.refused.by === "bob" && n() === before && w.state().entities.tbl.c.transform.pos[0] === 2, "E2 someone changed it since: refused `changed`, naming them, and nothing is written", [e2.refused, n() - before]);
+  const rec = w.entries.slice(before);
+  ok(code(e2) === "changed" && e2.refused.by === "bob" && rec.length === 1 && rec[0].kind === "act" && rec[0].body?.refused?.code === "changed" && w.state().entities.tbl.c.transform.pos[0] === 2,
+    "E2 someone changed it since: refused `changed`, naming them; no change is written, only the attempt (an act carrying its refusal, round-2 R7)", [e2.refused, rec.map((e) => [e.kind, e.body?.refused])]);
   ok(code(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label", value: "y" }] })) === "changed", "E3 expecting a value that isn't there");
   ok(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label" }] }).ok, "E4 value left out = expect it absent");
   ok(code(call("ann", "set", { id: "tbl", component: "label", value: "z", expect: [{ id: "tbl", component: "label" }] })) === "changed", "E4b …and refused once it's there");

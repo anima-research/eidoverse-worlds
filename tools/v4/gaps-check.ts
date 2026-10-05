@@ -106,9 +106,10 @@ const cases = [
       s.call("vic", "move", { to: [0, 0, 8] }); s.call("vic", "leave", {});
       const arrive = s.call("vic", "move", { to: [0, 0, 0.4] });
       const ok8 = s.call("vic", "move", { to: [0.5, 0, 8] }); const tp = s.call("vic", "move", { to: [0, 0, 0.4], teleport: true });
-      const L = s.world().entries; const acts = L.filter((e) => e.kind === "act" && e.actor === "vic" && e.verb === "move");
-      return { arrive, ok8, tp, moveActs: acts.length, recorded: acts[0]?.body?.presence ?? null }; },
-    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 2 && !!o.recorded },
+      const L = s.world().entries; const all = L.filter((e) => e.kind === "act" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
+      // round-2 R7: a refused request is recorded too (an act carrying {refused: {code}}), so the two refused arrivals are there
+      return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused?.code === "spawn").length, recorded: acts[0]?.body?.presence ?? null }; },
+    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 2 && o.refusedActs === 2 && !!o.recorded },
   { id: "G2d", guard: true, what: "walking at a plausible speed while carrying still works, and the put records the presence it used", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
@@ -133,10 +134,10 @@ const cases = [
       const later = s.call("bob", "set", { id: "c", component: "label", value: "later" }, 10000);
       return { first60: rs.filter(ok).length, r61, other, later }; },
     nowGood: (o) => o.first60 === 59 && code(o.r61) === "rate" && ok(o.other) && ok(o.later) }, // 59 + the create = 60 acts
-  { id: "G3b", what: "say is unmetered: 80 lines in 8 s, all logged", run(s) { cast(s);
+  { id: "G3b", what: "say is unmetered: 80 lines in 8 s, all logged (now: 20 says per 10 s, a budget of their own, round-2 R6)", run(s) { cast(s);
       const rs = Array.from({ length: 80 }, (_, i) => s.call("vic", "say", { text: `spam ${i}` }));
       return { accepted: rs.filter(ok).length, first: rs.findIndex(refused), code: code(rs.find(refused)) }; },
-    baseBad: (o) => o.accepted === 80, nowGood: (o) => o.accepted === 60 && o.code === "rate" },
+    baseBad: (o) => o.accepted === 80, nowGood: (o) => o.accepted === 20 && o.code === "rate" },
   { id: "G3c", what: "grab/throw is unmetered: 40 throws in 8 s = 80 acts + 80 sim entries", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
@@ -255,8 +256,11 @@ const cases = [
       const h = s.call("bob", "publish", { from: "fat", name: "fat" }).notes?.find((n) => n.record)?.record;
       const n0 = s.world().entries.length;
       const r = s.call("bob", "batch", { ops: Array.from({ length: 20 }, (_, i) => ({ tool: "create", args: { from: h, id: `fat-${i}` } })) });
-      const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "act").length, newStates: L.filter((e) => e.kind === "state").length }; },
-    baseBad: (o) => o.newActs === 1 && o.newStates === 0, nowGood: (o) => /refused too-big/.test(o.r) && o.newActs === 0 && o.newStates === 0 },
+      const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "act").length, newStates: L.filter((e) => e.kind === "state").length,
+        refusedAct: L.filter((e) => e.kind === "act" && e.body?.refused?.code === "too-big").length }; },
+    // never an act that claims success with no result (33 C2); since round-2 R7 the refusal itself IS recorded, as an act
+    // that says it was refused (its request cut to 2 KiB), with no state
+    baseBad: (o) => o.newActs === 1 && o.newStates === 0, nowGood: (o) => /refused too-big/.test(o.r) && o.newActs === 1 && o.refusedAct === 1 && o.newStates === 0 },
   { id: "R6b", what: "33 C2: say with 1.1 MB of text throws inside the door instead of refusing", run(s) { cast(s);
       const r = s.call("vic", "say", { text: "y".repeat(1100000) }); return { r: show(r) }; },
     baseBad: (o) => /CRASH/.test(o.r), nowGood: (o) => /refused too-big/.test(o.r) },

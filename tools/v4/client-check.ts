@@ -41,7 +41,10 @@ const LOG = () => path.join(worldsDir, WORLD, "v4.jsonl");
 const entries = () => readLog(fs.readFileSync(LOG()));
 // my identity is the founder's opaque id (round-2 R1): the actor of the world's founding act
 const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "new")?.actor;
-const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY());
+// my acts that CHANGED something: a refused request is recorded too (an act carrying {refused}, round-2 R7), and is
+// counted apart (myRefused), so "nothing was written" below means no change, with the attempt on the record
+const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY() && !e.body?.refused);
+const myRefused = () => entries().filter((e) => e?.kind === "act" && e.actor === MY() && e.body?.refused).length;
 const disk = () => fold(entries());
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* page busy */ } await sleep(100); } return false; };
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
@@ -173,7 +176,7 @@ try {
   check("L1 moving the cup on bob's locked table asks first: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
   const body = await evalJson(`document.querySelector('#confirm-center #cc-body')?.textContent ?? ''`);
   check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides tbl, which is locked by bob.", body);
-  check("L3 …and the refused try wrote nothing", myActs().length === n0);
+  check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with through_lock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.through_lock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
   check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock === true, [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
