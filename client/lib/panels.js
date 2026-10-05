@@ -553,6 +553,13 @@ function fieldDOM(f, edit, ro = {}) {
         const items = r.menu ?? f.menu;
         if (items?.length) line.oncontextmenu = (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, items, (k) => (k === 'rename' && beginRename ? beginRename() : edit(k, r.id))); };
         line.append(main);
+        if (r.mine != null) {   // 👁: hidden in MY view only (myview.js) — never the shared component
+          const eye = el('button', `sp-mini sp-eye${r.mine ? ' on' : ''}`);
+          eye.innerHTML = iconSvg(r.mine ? 'eye-slash' : 'eye', 14);
+          eye.title = r.mine ? 'hidden in your view only — click to show it again' : 'click to hide it in your view only (nobody else is affected)';
+          eye.onclick = (e) => { e.stopPropagation(); edit('myhide', r.id); };
+          line.append(eye);
+        }
         if (r.locked != null) {
           const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}`);
           lock.innerHTML = iconSvg(r.locked ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)

@@ -42,7 +42,8 @@ import { commitLight, lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { placerOf, guardedByOther, placerName } from './placer.js';
 import { reindexCollider } from './colliders.js';
-import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
+import * as V4 from './v4edit.js';
+import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -209,7 +210,7 @@ function hierarchyFields() {
     if (bag.hidden === true) badges.push('hidden');
     const bpLink = world[id]?.comp?.blueprint;
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
-    return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
+    return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
       ...(V4.isV4() ? { lockable: V4.mayLift() } : {}),   // v4 (§5): only builders and owners lock and unlock
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
@@ -225,13 +226,16 @@ function hierarchyFields() {
       { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
       ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
-      { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'show' : 'hide' },
+      { k: 'myhide', label: r.mine ? 'show in my view' : 'hide in my view (only you)' },
+      { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'make visible to everyone' : 'make invisible to everyone' },
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
   }
   visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:')).map((r) => r.id);
   return [
     worldRowFields(),   // pinned: the world entity, always first, never filtered out (design §3)
+    // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on)
+    ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
@@ -239,6 +243,8 @@ function hierarchyFields() {
 function hierarchyDispatch(action, payload, _field, opts = {}) {
   let sel = sceneSelected();
   switch (action) {
+    case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? `${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
+    case 'myshowall': { const n = showAllMine(); flashHint(`${n} shown again`, 2000); repaintAll(); return; }
     case 'wsel': {   // the pinned World row
       if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
       selectWorld();

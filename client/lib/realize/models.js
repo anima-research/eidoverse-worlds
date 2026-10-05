@@ -23,6 +23,7 @@
 
 import { THREE, scene, camera } from '../core.js';
 import { applyScale, entScale } from '../../../shared/scale3.js';
+import { isMineHidden } from '../myview.js';
 import { report, bus } from '../base.js';
 import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure,
   lodNegotiable, negotiationReady } from '../assets.js';
@@ -748,8 +749,9 @@ function emitCompBag(id) {
  *  the convention every surface — inspector, hierarchy, look() — honours. */
 function applyHidden(id) {
   const obj = entities.get(id);
-  if (obj) obj.visible = comps.get(id)?.hidden !== true;
+  if (obj) obj.visible = comps.get(id)?.hidden !== true && !isMineHidden(id);   // hidden for everyone, or just in my view (myview.js)
 }
+bus.on('myview', ({ id }) => applyHidden(id));
 
 function onComp(id, type) {
   syncComps(id);

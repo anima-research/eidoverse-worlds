@@ -459,6 +459,17 @@ try {
   check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities.pt.c.transform) === ptBefore, [ptBefore, disk().entities.pt.c.transform]);
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
 
+  // 👁 Hidden in MY view (R 10-04: "Hidden" is the local one; research 51): never logged, and you can't lose track of it
+  const eyeOf = (id: string) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === ${JSON.stringify(id)})?.querySelector('.sp-eye')`;
+  const nEye = entries().length;
+  await evalJson(`(${eyeOf("pt")}?.click(), true)`);
+  check("E1 the row's eye hides it in my view (not drawn here)", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible === false)`), await evalJson(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible)`));
+  await sleep(500);
+  check("E2 …and writes NOTHING to the world (a view filter, never logged)", entries().length === nEye && !disk().entities.pt.c.hidden, entries().length - nEye);
+  check("E3 …the Hierarchy says so: '1 hidden in your view · show all'", await waitFor(`[...${hier}.querySelectorAll('.sp-btn')].some((b) => /1 hidden in your view/.test(b.textContent))`), await evalJson(`[...${hier}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
+  await evalJson(`[...${hier}.querySelectorAll('.sp-btn')].find((b) => /hidden in your view/.test(b.textContent))?.click(), true`);
+  check("E4 …and 'show all' brings it back", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pt')?.visible === true)`));
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));
