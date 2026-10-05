@@ -21,26 +21,48 @@ export const MODELS = {
 };
 
 export const COMPONENTS = {
-  transform: { defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
+  transform: { fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { help: "which model it shows: a name from find {kind: 'model'}" },
   label:     { help: "its display name, a short string" },
   pivot:     { help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
-  parent:    { defaults: { order: "a0" }, help: "{to: id}; its transform becomes local to the parent" },
-  light:     { defaults: { kind: "point", color: 0xffd9a0, intensity: 1, range: 6, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
-  motion:    { enums: { type: ["pendulum", "spin", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },
+  parent:    { fields: { to: "string", order: "string" }, defaults: { order: "a0" }, help: "{to: id}; its transform becomes local to the parent" },
+  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", shadows: "bool", keep: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 1, range: 6, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
+  motion:    { fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number" }, enums: { type: ["pendulum", "spin", "orbit", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },
   lock:      { help: "true: an edit lock (PROTOCOL-v4 §5; v1's lock, same meaning). Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Any builder or owner may unlock it (delete {id, component: 'lock'}), or act through it by sending a request with through_lock: true. Not on @world. A door's gameplay lock is `door.locked`, not this" },
   sockets:   { help: "{name: {pos, pose}}: places a body can sit" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and teach: text (shown on refusal).",
     handlers: {
       toggle: { args: { component: "the component to flip (default 'door')", field: "the field inside it to flip (default 'open' for a door; leave both out for a door). A named component with no field flips its whole value", unless: "a field of the same component that, when true, bars it (e.g. 'locked')" }, example: { open: { kind: "toggle", component: "door", field: "open", unless: "locked" } } },
       set: { args: { component: "which component", field: "optional: the field inside it to set", value: "the value it gets" }, example: { bolt: { kind: "set", component: "door", field: "locked", value: true, who: "builder" } } },
-      "pendulum-push": { args: { gain: "amplitude per unit impulse (default 0.25)", default: "impulse when none is given" }, example: { push: { kind: "pendulum-push", gain: 0.25 } } } } },
-  door:      { help: "{open: true/false, locked: true/false}: a door's own state. `locked` is gameplay (it bars the open handler); the edit lock is the separate `lock` component" },
-  physics:   { defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none"], who: ["visitor", "builder", "owner"] },
+      "pendulum-push": { args: { gain: "amplitude per unit impulse (default 0.25)", default: "impulse when none is given" }, example: { push: { kind: "pendulum-push", gain: 0.25 } } } },
+    common: { kind: "the handler kind", who: "who may use it: builder|owner", teach: "text shown on refusal" } },
+  door:      { fields: { open: "bool", locked: "bool" }, help: "{open: true/false, locked: true/false}: a door's own state. `locked` is gameplay (it bars the open handler); the edit lock is the separate `lock` component" },
+  physics:   { fields: { kind: "string", who: "string" }, defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none"], who: ["visitor", "builder", "owner"] },
     help: "how it takes part in physics: {kind: dynamic (can be picked up and thrown) | static (a collider; the default for anything with a model) | none (nothing collides with it), who: who may pick it up (default builder)}. With eidosim@0.5: a thrown thing flies, bounces off what's in the world and comes to rest; it does NOT push or topple things at rest (stacks don't fall over), and things don't spin" },
-  sim:       { help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The door stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
-  blueprint: { help: "set by the server on copies: {from: record hash, key}" },
+  sim:       { fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The door stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
+  blueprint: { fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
   placer:    { help: "server-written: who made it" },
+  roles:     { keyed: true, key: "instance", fields: { role: "string", gen: "bool", sub: "any" }, help: "on @world, keyed by identity: {role: owner|builder|visitor|none}" },
+  "default-role": { fields: { role: "string", gen: "bool" }, help: "on @world: the role of anyone without roles:<id> (absent = visitor)" },
+  about:     { fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },
+  bounds:    { fields: { min: "vec3", max: "vec3" }, help: "on @world: the box the world lives in (m)" },
+  spawn:     { fields: { pos: "vec3", radius: "number" }, help: "on @world: where visitors arrive {pos, radius}" },
+  // research 40 §6.1: today's noise bag with `kind` explicit, or an imported raster as a value blob. Keys by kind.
+  terrain:   { fields: { kind: "string", seed: "int", size: "number", amplitude: "number", octaves: "int", frequency: "number", flatRadius: "number", flatHeight: "number",
+                         blob: "string", w: "int", h: "int", spacing: "number", origin: "array", format: "string", segments: "int", layers: "any" },
+               defaultKind: "noise", byKind: { noise: ["kind", "seed", "size", "amplitude", "octaves", "frequency", "flatRadius", "flatHeight", "segments", "layers"], raster: ["kind", "blob", "w", "h", "spacing", "origin", "format"] },
+               help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight} or {kind: 'raster', blob, w, h, spacing, origin: [x, z], format: 'i32-mm-le'}" },
+  "terrain-grid": { fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
+  "terrain-tile": { keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
+  // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
+  script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
+               scopeFields: { ids: "any", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
+               help: "keyed <name>: {src: sha256 of the source blob, scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'changed:<comp>'], every?: s (>= 5), always?: bool (owner), knobs?, paused?}" },
+  // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
+  schemas:   { keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (L5, §3d M6)" },
+  library:   { keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
+  "ground-paint": { keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
+  scripts:   { fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int" }, help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600), rate (logged activations per script per minute, default 6)}" },
 };
 
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

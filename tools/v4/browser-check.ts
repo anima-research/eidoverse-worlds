@@ -35,7 +35,11 @@ const work = async (base: string, texts: { cottage: string; v1: string; d3: stri
   let T = 1800000000000; const lines: string[] = []; const blobs = new Map<string, string>();
   const io = { name: "mem", entries: [] as any[], now: () => T, writeLine: (l: string) => { lines.push(l); },
     getBlob: (h: string) => { const s = blobs.get(h); if (s === undefined || `sha256:${H(s)}` !== h) throw new Error("missing"); return JSON.parse(s); },
-    putBlob: (v: any) => { const s = M.fold.jcs(v); const h = `sha256:${H(s)}`; if (!blobs.has(h)) blobs.set(h, s); return h; } };
+    putBlob: (v: any) => { const s = M.fold.jcs(v); const h = `sha256:${H(s)}`; if (!blobs.has(h)) blobs.set(h, s); return h; },
+    // §2.4 custody, fixed test keys (a browser door holds no key file; the lab's conformance sequencer key)
+    // seeded bytes for genesis's nonce and every set's salt: both sides draw the same, so the logs compare byte for byte
+    random: (() => { let k = 0; return (n: number) => Uint8Array.from({ length: n }, () => (k = (k * 1103515245 + 12345) >>> 0) >>> 24); })(),
+    custody: { sequencer: () => "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", keyOf: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0" } };
   const w = M.door.worldOf(io);
   const reqs: [string, string, any][] = [["olive", "new", { title: "mem" }], ["olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }],
     ["bob", "create", { id: "table-1", model: "table", place: { at: [0, 0] } }], ["bob", "create", { id: "crate-1", model: "crate", place: { on: "table-1" } }],

@@ -14,6 +14,7 @@
 // verbs are made for a v4 world. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
 // for this server's own readers (rights, bans, leases, /geom, model warm-up); it is rebuilt by its next reader after
 // a write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
+import { custodyAt } from "./custody.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR } from "../config.ts";
@@ -180,7 +181,8 @@ export function translateV1World(srcDir: string, destDir: string) {
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "v4.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  const r = translate(old, { foldBuild: v1FoldBuild() });
+  // the sequencer key is this door's (the custody file every world in this worlds dir shares, server/v4/custody.ts)
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: custodyAt(path.join(path.dirname(destDir), ".v4-custody.json")).sequencer() });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   const text = r.out.map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists

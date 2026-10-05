@@ -8,7 +8,7 @@
 import { emptyState as v1Empty, foldEntry } from "../fold.js";
 import * as eidosim from "../sim.js";
 import { applyInPlace, opsOf, emptyState as v4Empty, worldIdOf, VERSION } from "./fold.js";
-import { project, enc, diff, stateBody, unNegZero } from "./translate-v1.js";
+import { project, enc, diff, stateBody, unNegZero, translatedGenesis } from "./translate-v1.js";
 import { simFold, digestOf, ENGINES } from "./simlayer.js";
 
 export const TRANSLATOR = "translate-d3@0.2";
@@ -37,7 +37,8 @@ export function translate(old) {
   const push = (e) => { if (e.kind !== "genesis") e = { world, ...e }; const seq = out.length; out.push(e); if (typeof e.ts === "number") lastAt = e.ts;
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "state") applyInPlace(v4, opsOf(e), seq); return seq; };
   const g = old[0]?.verb === "genesis" ? old[0].args : {};
-  push({ kind: "genesis", actor: "door", verb: "genesis", ts: old[0]?.ts ?? 0, body: { version: VERSION, owners: [], translatedFrom: unNegZero({ ...g, translator: TRANSLATOR }) } });
+  push({ kind: "genesis", actor: "door", verb: "genesis", ts: old[0]?.ts ?? 0, body: translatedGenesis(old) }); // §2.4 + §3d (translate-v1.js)
+  push({ kind: "act", actor: "door", verb: "translated", ts: old[0]?.ts ?? 0, body: { from: unNegZero({ ...g, translator: TRANSLATOR }) } });
   let prev = composed(st, sim, recorded);
   const launchSeq = {}; const restLogged = new Set(); // bodies whose CURRENT flight's rest is logged
   const restTicks = {};

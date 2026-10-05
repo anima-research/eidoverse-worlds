@@ -7,10 +7,13 @@
 // Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
-import { readLog, fold, opsOf, applyOps, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
+import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
+import { sha256Bytes, hexBytes } from "./hash.js";
+import * as C from "./consent.js";
+import * as TR from "./terrain.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
@@ -49,20 +52,50 @@ export function worldOf(io) {
   const { name, entries, getBlob, putBlob } = io;
   const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
+  w.random = io.random ?? null;
   w.now = io.now;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
   w.savePresence = () => io.savePresence?.(w.presence);
+  // Governance keys (§2.4) live outside the log. Custody is door practice (§5 identity), injected like storage:
+  // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/v4/disk.ts keeps the keys).
+  w.custody = () => io.custody ?? null;
+  // §2.1: moderation lives in a SEPARATE moderator log with door enforcement, never in the world log
+  w.mod = io.mod ?? [];
+  w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; w.mod.push(r); io.appendMod?.(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
-  w.state = () => (cache?.n === entries.length ? cache.st : (cache = { n: entries.length, st: fold(entries) }).st);
+  // incremental when the new lines are plain entries this door wrote (state/act/sim/say): clone + apply their ops, which
+  // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
+  w.state = () => { if (cache?.n === entries.length) return cache.st;
+    const fresh = entries.slice(cache?.n ?? 0);
+    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["state", "act", "sim", "say"].includes(e.kind))) {
+      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "state") applyInPlace(st, opsOf(e), cache.n + k); });
+      return (cache = { n: entries.length, st }).st; }
+    return (cache = { n: entries.length, st: fold(entries) }).st; };
+  // §2.4 chain heads as a view over the log (the lab door doesn't sign them): head(i) = sha256(head(i-1) ‖
+  // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
+  const heads = [];
+  w.headAt = (seq) => { for (let i = heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1];
+      heads[i] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq] ?? null; };
+  // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
+  const ever = { n: 0, ids: new Set() };
+  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "state") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
   w.sim = () => simFold(entries, w.now());
   w.stateAt = (seq) => fold(entries, { until: seq });
   // The door re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
   // §2.1: ts = the door's admission time, an integer that never decreases along the log (a clock that steps back,
   // an NTP slew or a VM restore, must not make the door write a line every reader refuses)
-  const render = (e, seq) => {
-    let lastTs = 0; for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastTs = entries[i].ts; break; }
-    const line = JSON.stringify({ ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: Math.max(Math.floor(w.now()), lastTs) });
+  w.nextTs = () => { let lastTs = 0; for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastTs = entries[i].ts; break; }
+    return Math.max(Math.floor(w.now()), lastTs); };
+  // §2.4 the chain: "the door signs at least every write it commits". When custody can sign, every entry after
+  // genesis is a chain point {head, sig} (genesis can't be: the world id is the hash of genesis itself). head(i) is
+  // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
+  const render = (e, seq, chained = false) => {
+    const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.nextTs() };
+    if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
+      const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
+      obj.head = head; obj.sig = io.custody.sign(`eidoverse-v4-head:${w.worldId}:${seq}:${head}`); }
+    const line = JSON.stringify(obj);
     const [parsed] = readLog(line); let bad = parsed instanceof Malformed ? parsed : null;
     if (!bad) try { checkEntry(parsed, seq); } catch (x) { bad = x; }
     return { line, parsed, bad };
@@ -74,14 +107,40 @@ export function worldOf(io) {
     throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
     if (e.kind === "state" && token !== STATE) throw new Error("door bug: a state entry must come from stateEntry (L7: one gate)");
-    w.fits(e); const { line, parsed } = render(e, entries.length); const seq = entries.length;
+    w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
+    if (bad) throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     entries.push(posAt(parsed, seq)); io.writeLine(line);
     if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
     w.exists = true; return seq;
   };
   return w;
 }
+// 16 random bytes as base64url (a genesis nonce, a set's salt). io.random(n) → Uint8Array may be injected (a test that
+// compares two runs byte for byte seeds both alike); otherwise Web Crypto, in bun and browsers alike.
+const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.getRandomValues(new Uint8Array(16)); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
 const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
+// §2.4 "The chain": the skeleton keeps each set's value and salt only as commit = sha256(salt ‖ JCS(value)), and an
+// act/say/sim body only as {commit}; a body or op already {commit} is purged and stays as it is.
+const opCommit = (o) => ("commit" in o && !("value" in o) ? o.commit : sha256((o.salt ?? "") + jcs(o.value)));
+const skelOp = (o) => { const { value, salt, commit, ...rest } = o; return "value" in o || "commit" in o ? { ...rest, commit: opCommit(o) } : rest; };
+const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commit") return b.commit; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
+function skeleton(e) {
+  const { head, sig, ...s } = e;
+  if (["act", "say", "sim"].includes(e.kind)) s.body = { commit: bodyCommit(e.body) };
+  else if (e.kind === "state") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
+  return s;
+}
+const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
+// §3d M7: expect by version is {seq, head}, never a bare seq. A head this history doesn't have at that seq means the
+// version was read on a branch that was rewound (or in another world): refused, never compared by seq alone.
+function versionSeq(w, v, what) {
+  if (!(v && typeof v === "object" && !Array.isArray(v) && Number.isInteger(v.seq) && typeof v.head === "string" && Object.keys(v).length === 2))
+    refuse("shape", `${what} is a version {seq, head}, never a bare seq (§3d M7)`, "inspect {id} → versions gives {seq, head} for each component; a write's result carries its own seq and head");
+  if (v.seq < 0 || v.seq >= w.entries.length || w.headAt(v.seq) !== v.head)
+    refuse("other-branch", `${what} {seq: ${v.seq}} names a head this world's history doesn't have at that seq: it was read on a branch that was rewound, or elsewhere`, "inspect again and redo the change on what's here");
+  return v.seq;
+}
+const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 // PROTOCOL-v4 §5 (locks: decided): `lock` is v1's lock with v1's meaning, so an old log's locks carry over untranslated.
 // A lock is on when its value is truthy, exactly as v1 read it (`comp.lock`); the door itself only ever writes `true`.
@@ -210,13 +269,16 @@ function roleOf(st, actor) {
 export const roleIn = (st, actor) => roleOf(st, actor);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
+const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
+const isBanned = (w, who) => { let b = false; for (const m of w.mod) if (m.who === who && (m.verb === "ban" || m.verb === "unban")) b = m.verb === "ban"; return b; };
 // Who a state entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
 // differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
 function entryBy(w, e) {
   const c = w.entries[e.cause];
   const by = isE(c) && c.kind === "act" ? c.actor : e.actor;
-  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && c.body?.capability?.author) || by };
+  // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
+  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && (c.body?.capability?.author || (isBhv(c.actor) && c.body?.sponsor))) || by };
 }
 // The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
 // present after it was last absent. null if it isn't present now. { seq, by, rights }.
@@ -271,8 +333,10 @@ export function request(w, actor, tool, args = {}) {
     const h = TOOLS[tool];
     if (h && !w.exists && !["new", "help"].includes(tool)) refuse("no-world", `there is no world called '${w.name}' yet`, `new {title: '…'} founds it (you become its owner); or pick a world that exists`);
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
-    if (h && w.exists) settleSim(w);
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
+    if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    w.changedQ = [];
+    if (h && w.exists) { settleSim(w); expireAsks(w); }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
@@ -283,9 +347,11 @@ export function request(w, actor, tool, args = {}) {
     if (expect !== undefined) expectCheck(w, expect);
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
+    if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
     return r;
   } catch (e) {
+    if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
   } finally { CAT = prevCat; THROUGH = prevThrough; }
@@ -365,18 +431,30 @@ function admit(w, st, who, ops) {
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
       if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the door keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
     const e = s.entities[op.id];
-    if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the door mints one"); }
+    if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the door mints one");
+      // §3d H7: an id is never reused, so a re-created id can't inherit references (parents, portals, old acts) or a sponsorship
+      // …except the SAME thing coming back: an undo restoring what its own target deleted (who.restores, set only by
+      // buildUndo's whole-thing branch). Its references are its own, so inheriting them is the point (Ctrl+Z after Delete).
+      if ((w.everIds().has(op.id) && !who.restores?.has(op.id)) || made.has(op.id)) refuse("reused", `'${op.id}' existed before in this world; an id is never reused`, "choose another id, or leave id out and the door mints a fresh one"); }
     else if (!e) refuse("not-found", `no thing called '${op.id}'`, "look lists what's here", { didYouMean: guess(op.id, Object.keys(s.entities)) });
     else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2.3: delete or change its components instead (owners only)");
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
     rights(w, st, s, who, role, op, at);
     keyRights(w, st, s, who, op, at, keysMade);
+    // §3d H7: deleting an entity is admitted as deleting each of its components, so the creator rule applies per key
+    if (op.verb === "delete" && op.comp === undefined && e) for (const c of Object.keys(e.c)) keyRights(w, st, s, who, { verb: "delete", id: op.id, comp: c }, `${op.id}.${c}`, keysMade);
+    // §3d M6 (L5): a schemas:<name> value, once set, can't change (a new meaning is a new name). Setting the same value
+    // again changes nothing; deleting it is changing it.
+    if (op.id === "@world" && op.comp?.startsWith("schemas:") && e && op.comp in e.c && !(op.verb === "set" && jcs(op.value) === jcs(e.c[op.comp])))
+      refuse("schema-fixed", `@world.${op.comp} is set; a schema never changes (L5: a name never changes meaning)`, "a new meaning is a new name");
+    if (op.comp === "terrain-grid" && Object.keys(e?.c ?? {}).some((k) => k.startsWith("terrain-tile:")) && !(op.verb === "set" && jcs(op.value) === jcs(e.c["terrain-grid"])))
+      refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity (40 §6.1)");
     if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); L6: no write may touch a launched thing before its rest");
     if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§5: lock the things in it instead");
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
-    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp))) { // a rest is the engine's word on a released thing: locks guard authored writes
+    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp) || op.comp.startsWith("terrain-tile:"))) { // a rest is the engine's word on a released thing: locks guard authored writes
       // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
       // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
       // put or throw settles it. Its OWN lock still binds, and picking it up off a locked thing is refused at grab.
@@ -387,6 +465,8 @@ function admit(w, st, who, ops) {
     s = applyOps(s, [op]); norm.push(op);
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
+  if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
+    refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
   return new Admitted(who, norm, s);
@@ -424,7 +504,8 @@ function rights(w, st, s, who, role, op, at) {
   if (cap.kind === "handle") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can carry`, "");
     if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may move ${op.id} by hand; you are ${role}`, "ask the owner to set physics.who"); }
-  if (cap.kind === "founding") { const g = w.entries[0]; if (!g.body.owners?.includes(actor) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, by an owner genesis names", ""); }
+  if (cap.kind === "founding") { const g = w.entries[0], k = w.custody().keyOf(actor);
+    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, by the holder of a key genesis names", ""); }
 }
 // §5 / L7: a KEYED component (`<name>:<key>`, an instance such as library:<hash> or roles:<id>) that exists may be
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
@@ -432,14 +513,19 @@ function rights(w, st, s, who, role, op, at) {
 // carries: a handler with its author's. The door's own scoped follow-ups (rest, door, handle, founding) touch no keys
 // that someone else made; founding makes roles:<founder>. A whole-entity delete is NOT gated here (see note 34).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
+// §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, library:, roles:) carry the creator
+// rule; PARTITION keys (terrain-tile:, ground-paint:) are pieces of one shared surface: ordinary rank rules only.
+// A keyed name with no schema here is an instance (note 49: the spec doesn't say; this is the safe side).
+export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
 function keyRights(w, st, s, who, op, at, keysMade) {
   if (!isKeyed(op.comp) || op.verb === "create") return;
+  if (keyKind(op.comp) === "partition") return;
   const key = `${op.id}\u0000${op.comp}`;
   const present = s.entities[op.id] && op.comp in s.entities[op.id].c;
   if (!present) { if (op.verb === "set") keysMade.add(key); return; } // a new life of the key: the asker makes it
   if (keysMade.has(key)) return; // made earlier in this same write
-  const { actor, cap } = who; if (cap && cap.kind !== "reaction") return;
-  const holder = cap?.kind === "reaction" ? cap.author : actor;
+  const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
+  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
   if (RANK[roleOf(st, holder)] >= RANK.owner) return;
   const c = creatorOf(w, op.id, op.comp);
   if (c && c.rights === holder) return;
@@ -464,9 +550,57 @@ function valueCheck(s, { id, comp, value: v }) {
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'door', field: 'locked', value: true}");
-      for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, ""); } }
+      for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
+      handlerCheck(at, act, h); } }
   if (comp.startsWith("roles:") && (!obj || RANK[v.role] === undefined)) refuse("shape", `${at} must be {role: owner|builder|visitor|none}`, "");
   for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
+  schemaCheck(at, comp, v);
+  if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
+      && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
+    if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
+  if (comp.startsWith("terrain-tile:")) { const g = s.entities[id]?.c["terrain-grid"]; const ij = TR.parseKey(comp);
+    if (!g) refuse("no-grid", `${id} has no terrain-grid`, "set terrain-grid on the ground first");
+    if (!ij || ij[0] >= g.extent[0] || ij[1] >= g.extent[1]) refuse("shape", `${comp} isn't a tile of ${id}'s ${g.extent.join("×")} grid`, "keys are <i>-<j>, counted from the grid origin");
+    if (!Array.isArray(v.mm) || v.mm.length !== g.tile ** 2 || !v.mm.every(Number.isInteger)) refuse("shape", `${at}.mm must be ${g.tile ** 2} integers (millimetres)`, "");
+    const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity;
+    if (v.mm.some((n) => n < lo || n > hi)) refuse("bounds", `${at} goes outside the grid's limits (−${g.limits.lower} … +${g.limits.raise} mm)`, "terrain-grid.limits (SL's raise/lower)"); }
+}
+// L7 (21:45, research 40 T10): values are checked against their schema at admit. A KNOWN name with an unknown key is
+// refused with a "did you mean": Under the Eves sent terrain {amp: 0}, the engine reads `amplitude`, and the flat world
+// got 3 m hills. Unknown NAMES are still kept (L5): this binds only names the catalogue defines.
+const isNum = (x) => typeof x === "number" && Number.isFinite(x);
+const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
+  vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),
+  axis: (x) => (Array.isArray(x) && x.length === 3 && x.every(isNum)) || x === "x" || x === "y" || x === "z", // the text-tier shorthand the renderer reads (motioneval.js)
+  array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x) };
+// "did you mean" for a field name: a prefix either way (amp → amplitude) beats a short edit distance (amp → w)
+function guessKey(k, allowed) {
+  const lev = (a, b) => { const m = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)); return m[a.length][b.length]; };
+  const x = k.toLowerCase();
+  return allowed.map((a) => { const y = a.toLowerCase(); const pre = Math.min(x.length, y.length) >= 2 && (y.startsWith(x) || x.startsWith(y));
+    return [a, pre ? Math.abs(y.length - x.length) / 100 : lev(x, y)]; })
+    .filter(([a, d]) => d < 1 || d <= Math.max(1, Math.floor(Math.max(k.length, a.length) / 3))).sort((p, q) => p[1] - q[1]).slice(0, 3).map(([a]) => a);
+}
+function unknownKeys(at, v, allowed, what) {
+  for (const k of Object.keys(v)) if (!allowed.includes(k)) { const dym = guessKey(k, allowed);
+    refuse("schema", `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `${what} takes: ${allowed.join(", ")}`, { didYouMean: dym }); }
+}
+function schemaCheck(at, comp, v) {
+  const name = comp.split(":")[0], def = COMPONENTS[name];
+  if (!def?.fields || !!def.keyed !== comp.includes(":")) { if (def?.keyed && !comp.includes(":")) refuse("shape", `${at}: ${name} is keyed (${name}:<key>)`, def.help); return; }
+  const fields = Object.keys(def.fields);
+  if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
+  unknownKeys(at, v, fields, name);
+  const kind = v.kind ?? def.defaultKind; // v1 terrain never named its kind: it is noise
+  if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
+    unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
+  for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
+  if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
+}
+function handlerCheck(at, act, h) {
+  const R = COMPONENTS.reactions; const allowed = [...Object.keys(R.common), ...Object.keys(R.handlers[h.kind]?.args ?? {})];
+  unknownKeys(`${at}.${act}`, h, [...new Set(allowed)], `a '${h.kind}' handler`);
 }
 // L3: a rest must equal the engine's value. The gate asks the engine itself, not the caller.
 function restCheck(w, cap, after) {
@@ -474,31 +608,36 @@ function restCheck(w, cap, after) {
   if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
   if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
 }
-function stateShape(plan, cause) {
-  const ops = plan.ops; const one = ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } };
+function stateShape(plan, cause, w) {
+  // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
+  // brute-forced from a guess. Added here, before fits() measures the entry. The fold ignores it.
+  const ops = plan.ops.map((o) => (o.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o)); const one = ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } };
   return { kind: "state", actor: plan.who.actor, cause, ...one };
 }
 function stateEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("door bug: a state write that admit() didn't produce (L7)");
-  return w.append(stateShape(plan, cause), STATE);
+  const seq = w.append(stateShape(plan, cause, w), STATE);
+  (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
+  return seq;
 }
 const actEntry = (w, actor, tool, body) => ({ kind: "act", actor, verb: tool, body });
 const actOf = (w, actor, tool, args, extra) => actEntry(w, actor, tool, { request: stripDry(args), ...(extra ?? {}) });
 
 // A write: build ops against the folded state, admit them, then append the act and its one state entry.
 function commit(w, actor, tool, args, build) {
+  mintW = w;
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   const ops = build(ctx);
-  const plan = admit(w, st, { actor, cap: ctx.cap }, ops);
+  const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, tool, sent, ctx.actExtra);
-  w.fits(actE, stateShape(plan, w.entries.length)); // both lines fit, or neither is written
+  w.fits(actE, stateShape(plan, w.entries.length, w)); // both lines fit, or neither is written
   const act = w.append(actE);
   const seq = stateEntry(w, plan, act);
   const after = w.state();
-  return { ok: true, seq, act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
+  return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 function touched(ops, st) {
@@ -570,7 +709,10 @@ function merge7396(target, patch) {
   return out;
 }
 let mintN = 0;
-function mint(st, base) { base = slug(base); let n = Object.keys(st.entities).length + (++mintN); while (st.entities[`${base}-${n}`]) n++; return `${base}-${n}`; }
+// a fresh id: never one this world has had (§3d H7), nor one already used in this request
+let mintW = null;
+function mint(st, base) { base = slug(base); let n = Object.keys(st.entities).length + (++mintN); const ever = mintW?.everIds() ?? new Set();
+  while (st.entities[`${base}-${n}`] || ever.has(`${base}-${n}`)) n++; return `${base}-${n}`; }
 
 function buildCreate(ctx, a) {
   if (a.from) return buildCreateFrom(ctx, a);
@@ -593,8 +735,8 @@ function buildCreate(ctx, a) {
 function buildSet(ctx, a) {
   const e = needThing(ctx, a.id);
   if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
-  const lt = lastTouch(ctx.w, a.id, a.component);
-  if (a.base !== undefined && lt && lt.seq > a.base) refuse("stale", `${a.id}.${a.component} changed since version ${a.base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { current: e.c[a.component] ?? null, version: lt.seq, by: lt.actor });
+  const lt = lastTouch(ctx.w, a.id, a.component); const base = a.base === undefined ? undefined : versionSeq(ctx.w, a.base, "base");
+  if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { current: e.c[a.component] ?? null, version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
   let v = a.merge ? merge7396(e.c[a.component], a.value) : a.value;
   if (a.component === "parent") {
@@ -828,6 +970,7 @@ function buildUse(ctx, a) {
   if (action === "sit") return { presence: true, note: `you're seated on ${a.id} (presence: your frame says seat; nothing recorded)` };
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
+  if (h?.kind === "script") refuse("no-runtime", `${id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
   if (h?.kind === "pendulum-push") {
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
     if (!pivotOf(ctx.st, a.id)) refuse("no-pivot", `${a.id} swings but hangs from nothing above it`, `hang it first: place {id: '${a.id}', hang: <frame>}`);
@@ -961,6 +1104,7 @@ function buildUndo(ctx, a, w) {
       live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
   const res = result(target.seq); if (!res) refuse("nothing", "that act changed nothing", "");
+  if (target.verb === "sculpt" && TR.ADDITIVE.has(target.body.request?.brush) && !target.body.clamped) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
   const now = ctx.st; const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every state entry since
@@ -979,7 +1123,7 @@ function buildUndo(ctx, a, w) {
     const by = touchedBy(id, whole ? undefined : comp);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     if (o.verb === "create") { if (now.entities[id]) groups.push([delOp(id)]); }
-    else if (whole) { const old = before(id); if (old && !now.entities[id]) groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
+    else if (whole) { const old = before(id); if (old && !now.entities[id]) (ctx.restores ??= new Set()).add(id), groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
     else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       if (old === undefined) { if (now.entities[id] && comp in now.entities[id].c) groups.push([delOp(id, comp)]); }
@@ -1006,6 +1150,42 @@ function buildUndo(ctx, a, w) {
   return groups.flat();
 }
 
+// §3b / 40 §6.2: undo of an additive stroke writes head − (after − before) per touched sample, so strokes made since
+// survive. If that would cross the grid's limits (clamping), it is not exact: fall back to restore-before (refused if
+// changed since). Returns null to fall back.
+function sculptInverse(w, ctx, target, res) {
+  const before = w.stateAt(target.seq - 1), ops = [];
+  // a LATER stroke that clamped on these tiles makes the inverse inexact too (40 says "at either time"; this is a third)
+  const mine = new Set(opsOf(res).map((o) => `${o.id}|${o.comp}`));
+  for (const e of w.entries) if (isE(e) && e.kind === "act" && e.verb === "sculpt" && e.seq > target.seq && e.body?.clamped) {
+    const r = w.entries.find((x) => isE(x) && x.kind === "state" && x.cause === e.seq); if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
+  for (const o of opsOf(res)) { const g = ctx.st.entities[o.id]?.c["terrain-grid"]; if (!g || !o.comp?.startsWith("terrain-tile:") || o.verb !== "set") return null;
+    const zeros = () => new Array(g.tile ** 2).fill(0); const b = before.entities[o.id]?.c[o.comp]?.mm ?? zeros(), a = o.value.mm, h = ctx.st.entities[o.id]?.c[o.comp]?.mm ?? zeros();
+    const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity; const v = h.map((x, k) => x - (a[k] - b[k]));
+    if (v.some((x) => x < lo || x > hi)) return null;
+    if (v.some((x, k) => x !== h[k])) ops.push(setOp(o.id, o.comp, { mm: v })); ctx.refs.add(o.id); }
+  if (!ops.length) refuse("nothing", "undoing that stroke changes nothing now", "");
+  return ops;
+}
+// `sculpt`: one act per stroke, applied by the door to the tiles AT HEAD (never the client's copy), writing only the
+// touched tiles, whole. Additive brushes commute; smooth reads its neighbours at head and may carry expect {id,
+// component, at} (expect by version) to be refused instead of re-applied.
+function buildSculpt(ctx, a) {
+  const e = needThing(ctx, a.on); const g = e.c["terrain-grid"];
+  if (!g) refuse("no-grid", `${a.on} has no terrain-grid`, "set {id, component: 'terrain-grid', value: {spacing: 0.5, tile: 32, origin: [x, z], extent: [nx, nz], limits: {raise, lower}}}");
+  if (!TR.BRUSHES.includes(a.brush)) refuse("shape", `no brush '${a.brush}'`, TR.BRUSHES.join(", "), { didYouMean: guess(String(a.brush), TR.BRUSHES) });
+  if (!Array.isArray(a.path) || !a.path.length || a.path.length > 256 || !a.path.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum))) refuse("shape", "path: [[x, z], …] (1–256 points)", "");
+  if (!(a.radius > 0 && a.radius <= 64) || (TR.ADDITIVE.has(a.brush) && !(Number.isInteger(a.strength) && a.strength > 0 && a.strength <= 100000))) refuse("shape", "radius (m, ≤ 64) and strength (whole mm, > 0)", "");
+  for (const x of a.expect ?? []) { const lt = lastTouch(ctx.w, x.id, x.component); const at = versionSeq(ctx.w, x.at, `expect ${x.id}.${x.component} at`);
+    if (lt && lt.seq > at) refuse("stale", `${x.id}.${x.component} changed since ${at}: ${lt.actor} at ${lt.seq}`, "look again, then stroke (or send it without expect to apply at head)", { version: versionOf(ctx.w, lt.seq) }); }
+  const tiles = new Map(Object.entries(e.c).filter(([k]) => k.startsWith("terrain-tile:")).map(([k, v]) => [k, v.mm]));
+  const { writes, clamped } = TR.applyStroke(g, tiles, a);
+  if (!writes.size) refuse("nothing", "the brush touches no sample of the grid", "check the path against terrain-grid.origin and extent");
+  const bytes = [...writes.values()].reduce((t, mm) => t + jcs(mm).length + 60, 0);
+  if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles (about ${bytes} bytes); a log line is at most 1 MiB, and a stroke is one entry (§3b)`, "use the base (terrain) or import a raster for big changes; or use a smaller brush");
+  ctx.actExtra = { tiles: writes.size, ...(clamped ? { clamped: true } : {}) }; ctx.refs.add(a.on);
+  return [...writes].map(([c, mm]) => setOp(a.on, c, { mm }));
+}
 // ---------- blueprints ----------
 const libKey = (h) => `library:${String(h).replace(/^sha256:/, "")}`;
 const inLibrary = (st, h) => !!st.entities["@world"]?.c[libKey(h)];
@@ -1154,6 +1334,7 @@ const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is meas
 // that left the world) is a SEPARATE entry caused by a door act, so a rest and a correction never look alike.
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
+  if (!w.state().entities["@world"]?.c.sim) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
   for (let guard = 0; guard < 64; guard++) {
     const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
     const st = w.state(); const t = worldT(st, r.id);
@@ -1188,6 +1369,7 @@ function buildEpoch(ctx, v, a) {
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
   if (v === null) return [...ops, delOp("@world", "sim")];
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
+  unknownKeys("@world.sim", v, Object.keys(COMPONENTS.sim.fields), "sim"); // the door builds the value from these keys: a typo would vanish silently
   const known = ENGINES[v.engine];
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
@@ -1243,20 +1425,21 @@ const PHYSICS_TOOLS = {
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
       rateCheck(w, actor);
       const act = w.append(actOf(w, actor, "move", a, { presence: { from: me?.at ?? null, to, arrival: !me } }));
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap }; w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; w.savePresence();
       return { ok: true, recorded: true, act, at: to };
     }
     const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to);
     if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at });
-    const prev = me.at; w.presence.bodies[actor] = { at: to, ts: now, tokens: tokens - d };
+    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d };
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
     w.savePresence();
     return { ok: true, recorded: false, at: to, ...(carrying.length ? { carrying } : {}) };
   },
   grab(w, actor, a) {
+    if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_TOOLS.body(w, actor, { to: a.id, act: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     const held = w.presence.holds[a.id];
@@ -1383,13 +1566,109 @@ function launch(w, actor, a, tool) {
   delete w.presence.holds[a.id]; w.savePresence();
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
+// ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
+// The door keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
+// unlogged attempt ring. Delivery in the lab is the target's `inbox` (a stand-in for the relay to its client).
+const ringPush = (P, r) => { (P.ring ??= []).push(r); if (P.ring.length > 200) P.ring.shift(); };
+const inboxPush = (P, who, m) => { ((P.inbox ??= {})[who] ??= []).push(m); };
+const bodyRef = (x) => (typeof x === "string" ? x.replace(/^body:/, "") : x);
+function expireAsks(w) { const P = w.presence, now = w.now();
+  for (const [id, k] of Object.entries(P.asks ?? {})) if (k.expires <= now) { delete P.asks[id]; coolDown(P, k, now); inboxPush(P, k.from, { type: "body-reply", ask: id, ok: false, why: "no answer in 20 s: silence is no" }); w.presenceDirty = true; } }
+function coolDown(P, k, now) { const key = `${k.from}>${k.to}:${k.cls}`; const n = (P.cool?.[key]?.n ?? 0) + 1; (P.cool ??= {})[key] = { n, until: now + C.COOL_MS * 2 ** (n - 1) }; }
+// 42 §4.13 item 4: five refusals of one class from three distinct targets in 5 min puts the actor on a 10-minute
+// cool-down for that class, world-wide, written as an automatic action in the MODERATOR log. Never a ban.
+function noteRefusal(w, from, to, cls, now) { const P = w.presence; (P.refusals ??= []).push({ ts: now, from, to, cls }); P.refusals = P.refusals.filter((r) => now - r.ts < 300000);
+  const mine = P.refusals.filter((r) => r.from === from && r.cls === cls);
+  if (mine.length >= 5 && new Set(mine.map((r) => r.to)).size >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
+    (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "door", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
+// The gate for every act on another body. extra: { cls?, spec?, why?, script?, sponsor? }.
+function bodyGate(w, from, to, act, extra = {}) {
+  const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.ACT_CLASS[act];
+  if (!cls) return { ok: false, code: "shape", reason: `no body act '${act}'`, teach: Object.keys(C.ACT_CLASS).join(", ") };
+  if (!P.bodies[to]) return { ok: false, code: "not-here", reason: `${to} isn't here` };
+  if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, act, cls, extra, "self") };
+  const result = (verdict, r) => { ringPush(P, { ts: now, from, to, cls, verdict }); w.presenceDirty = true; return r; };
+  if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, teach: "ask people first; this lifts by itself" });
+  const d = C.decide(P, from, to, cls, now);
+  if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); return result("refused", { ok: false, code: "consent", class: cls, reason: d.why, teach: `${to} isn't taking ${cls} from you; their shield says so (look)` }); }
+  if (d.mode === "ask") {
+    if (isBhv(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, teach: `${to} may allow ${from} by name` });
+    const key = `${from}>${to}:${cls}`; if (P.cool?.[key]?.until > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${to} said no (or didn't answer); you may ask again in ${Math.ceil((P.cool[key].until - now) / 60000)} min`, teach: "the wait doubles each time" });
+    if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, teach: "one at a time" });
+    if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", teach: "" });
+    const id = `ask-${now}-${Object.keys(P.asks ?? {}).length}`; (P.asks ??= {})[id] = { id, from, to, act, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
+    (P.asked ??= {})[id] = { from, ts: now };
+    inboxPush(P, to, { type: "body-ask", ask: { id, from, act, summary: `${from} asks to ${act}${extra.spec?.point ? ` (${extra.spec.point})` : ""}`, why: extra.why ?? null, expires: now + C.ASK_MS } });
+    return result("asked", { ok: true, asked: true, ask: id }); }
+  return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, act, cls, extra, "standing"); } };
+}
+function deliver(w, from, to, act, cls, extra, consent) {
+  const P = w.presence, b = P.bodies[to];
+  if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }
+  if (cls === "move") b.draggedBy = from;
+  if (cls === "shove") b.tumble = { by: from, ts: w.now() };
+  if (cls === "touch" || cls === "touchI") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null };
+  inboxPush(P, to, { type: "body", from, act, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
+}
+// After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
+// actor hears body-revoked once (42 §4.6). An act granted by an ask outlives a later 'ask' cell; only 'nobody' ends it.
+function revokeAfter(w, to) { const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
+  const ended = []; const end = (actor, cls, clear) => { if (C.decide(P, actor, to, cls, now).mode !== "nobody") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
+  if (b.poseBy) end(b.poseBy, "pose", () => { delete b.pose; delete b.poseBy; });
+  if (b.draggedBy) end(b.draggedBy, "move", () => { delete b.draggedBy; });
+  for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r.to === to) end(actor, r.cls, () => delete P.reaches[actor]);
+  w.presenceDirty = true; return ended; }
+const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, strangers: Object.fromEntries(C.ENFORCED.map((c) => [c, t.strangers[c]])), ...(t.paused ? { paused: true } : {}) }; };
+const BODY_TOOLS = {
+  // L6: the person's own table. `of: <who>` acts on someone else's: closing only, and only if they named you trusted.
+  consent(w, actor, a) { const P = w.presence, now = w.now(); expireAsks(w);
+    if (a.answer !== undefined) { const k = P.asks?.[a.answer]; if (!k || k.to !== actor) refuse("not-found", `no ask '${a.answer}' waiting for you`, "consent {} lists them");
+      delete P.asks[a.answer];
+      if (a.yes === true) { if (a.for) C.setConsent(P, actor, { allow: k.from, class: k.cls, for: a.for }, now);
+        deliver(w, k.from, actor, k.act, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
+      else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: `${actor} said no` }); }
+      w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
+    const changing = ["preset", "set", "allow", "deny", "pause", "friend"].some((k) => a[k] !== undefined);
+    if (changing) { const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.teach ?? "anyone you trust may close your shield; only you may open it (L6)");
+      const ended = revokeAfter(w, r.target); w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
+    const t = C.tableOf(P, actor);
+    return { ok: true, table: { preset: t.preset, strangers: t.strangers, friends: t.friends, paused: t.paused, trusted: t.friendsList }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
+      attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
+  // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
+  body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);
+    if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.act)) refuse("shape", `no body act '${a.act}'`, "pose, anim, shove, drag, seat, carry");
+    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.act) && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
+    const g = bodyGate(w, actor, to, a.act, { spec: a.spec, why: a.why });
+    if (!g.ok) refuse(g.code, g.reason, g.teach, { class: g.class });
+    if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false, note: `${to} was asked; no answer in 20 s is no` };
+    g.deliver(); return { ok: true, outcome: "allowed", delivered: true, consent: g.consent, recorded: false }; },
+  // touch is judged by where the hand IS (42 P8): a named point, or a bare world point at someone's body
+  reach(w, actor, a) { const me = body(w, actor); const P = w.presence; let to, cls, point = a.point ?? null; expireAsks(w);
+    if (Array.isArray(a.at)) { if (a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "at: [x, y, z]", "");
+      for (const [k, b] of Object.entries(P.bodies)) { if (k === actor) continue; const c = C.pointClass(b.at, a.at); if (c) { to = k; cls = c; break; } }
+      if (dist(handOf(me), a.at) > REACH) refuse("out-of-reach", `that point is ${r3(dist(handOf(me), a.at))} m from your hand`, "walk closer");
+      if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
+    else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
+      cls = C.INTIMATE_POINTS.has(point) ? "touchI" : C.SOCIAL_POINTS.has(point) ? "touch" : refuse("shape", `no point '${point}'`, [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
+      const t = P.bodies[to]; if (t && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
+    delete P.reaches?.[actor];
+    const g = bodyGate(w, actor, to, "touch", { cls, spec: { point, ...(a.at ? { at: a.at } : {}) }, why: a.why });
+    if (!g.ok) { w.presenceDirty = true; refuse(g.code, g.reason, g.teach, { class: g.class, stripped: true }); }
+    if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false };
+    g.deliver(); return { ok: true, outcome: "allowed", touching: to, class: cls, recorded: false }; },
+  inbox(w, actor) { const P = w.presence; expireAsks(w); const m = P.inbox?.[actor] ?? []; if (P.inbox) delete P.inbox[actor]; w.presenceDirty = true; return { ok: true, messages: m }; },
+};
 const TOOLS = {
   ...PHYSICS_TOOLS,
+  ...BODY_TOOLS,
   new(w, actor, a) {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
-    w.append({ kind: "genesis", actor: "door", verb: "genesis", body: { version: VERSION, owners: [actor] } });
+    // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
+    // here in custody) is tier 0; rewind_window is left at its default (1000 state entries).
+    const cu = w.custody(); if (!cu) throw new Error("door bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
+    w.append({ kind: "genesis", actor: "door", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[cu.keyOf(actor, true)]], sequencer: cu.sequencer() } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
@@ -1415,13 +1694,15 @@ const TOOLS = {
     const live = livePoses(w.sim());
     const tree = (id, d) => [{ ...describe(st, id, live, w.presence.holds), depth: d }, ...Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === id).flatMap((k) => tree(k, d + 1))];
     const all = ids.flatMap((id) => tree(id, 0));
-    return { ok: true, things: all.slice(0, lim), ...(all.length > lim ? { truncated: true, total: all.length } : {}) };
+    const P = w.presence; const bodies = Object.entries(P.bodies).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
+      ...(b.poseBy ? { posedBy: b.poseBy } : {}), ...(b.draggedBy ? { draggedBy: b.draggedBy } : {}), touchedBy: Object.entries(P.reaches ?? {}).filter(([, r]) => r.to === id).map(([k]) => k) }));
+    return { ok: true, things: all.slice(0, lim), ...(all.length > lim ? { truncated: true, total: all.length } : {}), bodies };
   },
   inspect(w, actor, a) {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, lastTouch(w, a.id, k)?.seq])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
+    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
@@ -1467,8 +1748,14 @@ const TOOLS = {
     if (probe.presence) return { ok: true, recorded: false, note: probe.note };
     return commit(w, actor, "use", a, (ctx) => buildUse(ctx, a));
   },
+  // moderation (§2.1): a separate log, enforced by the door; never a world entry
+  ban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "banning needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "ban {who}", "");
+    w.appendMod({ actor, verb: "ban", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, banned: a.who, logged: "moderator log" }; },
+  unban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "unbanning needs owner", "");
+    w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", ""); rateCheck(w, actor); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
+  sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) {
     return commit(w, actor, "batch", a, (ctx) => {
       const all = []; let st = ctx.st;

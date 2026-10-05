@@ -210,8 +210,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const tr = tool(["translate", "oldtown", "oldtown-v4"]);
   ok(tr.code === 0 && /0 divergences/.test(tr.out) && /mtime unchanged: true/.test(tr.out), "S6 translate writes a new v4 world and reports 0 divergences", tr.out);
   ok(Buffer.compare(before, fs.readFileSync(v1log)) === 0, "S6 the v1 log's bytes are unchanged (R9)");
-  const g = JSON.parse(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl"), "utf8").split("\n")[0]);
-  ok(/^eidoverse\/translate-v1@/.test(g.body.translatedFrom?.translator) && /^[0-9a-f]{16}$/.test(g.body.translatedFrom?.fold), "S6 genesis names the engine translator and the v1 fold build", g.body.translatedFrom);
+  const [g, t1] = fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl"), "utf8").split("\n").slice(0, 2).map((l) => JSON.parse(l));
+  ok(g.body.minor === 0 && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
+  ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
   const old = await client(srv.port, "oldtown", "Ann"), neu = await client(srv.port, "oldtown-v4", "Ann", V4);
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own

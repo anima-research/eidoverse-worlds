@@ -179,9 +179,11 @@ function playground(name) {
     call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [1.3, 2.7, 3.1] });
     call(W, "rowan", "move", { to: [1.6, 0, 0.5] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [-2, 3, 3] });
     call(W, "rowan", "wait", {}, 8000);
-    return fs.readFileSync(`${root}worlds/${W}.jsonl`, "utf8").replaceAll(name, "X"); };
+    // §3d C1: two worlds' geneses differ in their nonce by design (so do their world ids); everything after is the same
+    const [g, ...rest] = fs.readFileSync(`${root}worlds/${W}.jsonl`, "utf8").split("\n"); const gb = JSON.parse(g); const wid = JSON.parse(rest[0]).world;
+    return { nonce: gb.body.nonce, genesis: JSON.stringify({ ...gb, body: { ...gb.body, nonce: "N" } }), rest: rest.filter(Boolean).map((l) => { const { head, sig, ...e } = JSON.parse(l); return JSON.stringify(e).replace(/"salt":"[A-Za-z0-9_-]+"/g, '"salt":"S"'); }).join("\n").replaceAll(wid, "W").replaceAll(name, "X") }; }; // §2.4: salts are random, so heads and sigs differ too
   const a = run("pc-i1"), b = run("pc-i2");
-  ok(a === b, "I same requests, same times → identical logs");
+  ok(a.rest === b.rest && a.genesis === b.genesis && a.nonce !== b.nonce, "I same requests, same times → identical logs (but for genesis's nonce and so the world id)");
   const v = view("pc-i1"); ok(v.checks.agree === 2 && !v.checks.disagree.length, "I two rests, both verified", v.checks);
 }
 

@@ -6,7 +6,7 @@
 // entry), so the browser path is the sync pure-JS sha256hex from ../components.js (the same function blueprint and
 // record hashes already use). Bun has a native sync hasher; the server uses it. tools/v4/run.ts proves both agree.
 // No node: import here — the browser imports this file as-is.
-import { sha256hex } from '../components.js';
+import { sha256hex, sha256hexBytes } from '../components.js';
 
 const BunHasher = typeof globalThis.Bun !== 'undefined' ? globalThis.Bun.CryptoHasher : null;
 
@@ -15,8 +15,17 @@ export const sha256 = BunHasher
   ? (s) => new BunHasher('sha256').update(s, 'utf8').digest('hex')
   : sha256hex;
 
+/** SHA-256 of raw bytes (Uint8Array) as lowercase hex: the §2.4 chain step, head(i-1) ‖ sha256(skeleton). */
+export const sha256Bytes = BunHasher
+  ? (b) => new BunHasher('sha256').update(b).digest('hex')
+  : sha256hexBytes;
+
 /** The portable implementation, exported so a test can compare it with the native one. */
 export const sha256Portable = sha256hex;
+export const sha256BytesPortable = sha256hexBytes;
+
+/** hex string → bytes */
+export const hexBytes = (h) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
 
 /** Lowercase hex of a string's UTF-8 bytes (what node's Buffer.from(s).toString("hex") gives). */
 export function utf8Hex(s) {

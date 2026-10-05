@@ -12,6 +12,7 @@ import { emptyState as v1Empty, foldEntry } from "../fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "./fold.js";
 import { enc, encName, dec } from "./names.js";
 import { qNorm } from "../rot.js";
+import { sha256 } from "./hash.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -20,7 +21,19 @@ import { qNorm } from "../rot.js";
 // it when the caller knows it (translate(…, {foldBuild}); server/v4/build.ts computes it from the files).
 // @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
-export const TRANSLATOR = "eidoverse/translate-v1@2";
+export const TRANSLATOR = "eidoverse/translate-v1@3";
+// @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
+// translating door's key is the sequencer and the only governance key, in tier 1 (the custodial default: tier 0
+// empty, the operator the real owner). The nonce is the first 16 bytes of sha256 of the source log's lines, so
+// translation stays a pure function. translatedFrom can't ride in genesis (a known minor's fields are exact): it is
+// the `translated` act right after it. v1's owners are @world roles (from its grants), as before.
+export const LAB_DOOR_KEY = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"; // the conformance suite's fixed sequencer key
+const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY } = {}) {
+  const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n"));
+  const nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16)));
+  return { version: VERSION, minor: 0, nonce, owners: [[], [key]], sequencer: key };
+}
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
@@ -103,7 +116,7 @@ export const stateBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence, foldBuild } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key } = {}) {
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, state: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
@@ -115,8 +128,9 @@ export function translate(oldEntries, { onDivergence, foldBuild } = {}) {
     const seq = out.length; out.push(e);
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "state") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
-  const owners = Object.entries(genesis.roles ?? {}).filter(([, r]) => r?.role === "owner").map(([k]) => enc(k));
-  push({ kind: "genesis", actor: "door", verb: "genesis", ...(Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {}), body: { version: VERSION, owners, translatedFrom: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
+  const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
+  push({ kind: "genesis", actor: "door", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, key ? { key } : {}) });
+  push({ kind: "act", actor: "door", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   let prev = project(v1, seen);
   for (const e of oldEntries) {
     if (e.verb === "genesis") continue;

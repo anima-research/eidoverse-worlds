@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readLog, jcs, sha256 } from "../../shared/v4/fold.js";
 import { worldOf, posAt } from "../../shared/v4/door.js";
+import { custodyAt, modLogAt } from "./custody.ts";
 
 export type OpenOpts = { now?: () => number };
 
@@ -36,5 +37,7 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
     writeLine: (line: string) => { fs.mkdirSync(path.dirname(logPath), { recursive: true }); fs.appendFileSync(logPath, line + "\n"); },
     presence: fs.existsSync(presPath) ? JSON.parse(fs.readFileSync(presPath, "utf8")) : { bodies: {}, holds: {} },
     savePresence: (p: object) => { fs.mkdirSync(path.dirname(presPath), { recursive: true }); fs.writeFileSync(presPath, JSON.stringify(p)); },
+    custody: custodyAt(path.join(root, "keys", "custody.json")),
+    ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)),
   });
 }

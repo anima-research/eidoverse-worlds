@@ -51,10 +51,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 2, ts: 3, actor: "Riannon", verb: "comp", args: { id: "lamp_1", type: "0abc", data: 1 } },
     { seq: 3, ts: 4, actor: "Riannon", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
-  ok(r.out[0].body.translatedFrom.translator === TRANSLATOR && r.out[0].body.translatedFrom.fold === v1FoldBuild(), "T2 genesis names the translator and the v1 fold build", r.out[0].body.translatedFrom);
+  ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 0, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
   const c = r.final.v4[enc("lamp_1")];
   ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
-  ok(r.out[0].body.owners[0] === enc("Riannon"), "T4 genesis owners use the same encoding as the live door", r.out[0].body.owners);
+  ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the door's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("shared/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers shared/fold.js and its imports", v1FoldFiles()); }
 
 // ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
@@ -179,7 +179,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call(R, "set", { id: "pot", component: "transform", value: { ...t0, pos: [3, 0, 3] } });
   const ch = call("bob", "set", { id: "pot", component: "transform", value: { ...t0, pos: [4, 0, 4] }, expect: [{ id: "pot", component: "transform", value: t0 }] });
   ok(code(ch) === "changed" && /Riannon changed it at/.test(ch.refused.reason) && ch.refused.by === R, "NR3 an expect refusal names who changed it (and keeps by: the id)", ch.refused);
-  const st = call("bob", "set", { id: "pot", component: "transform", value: { ...t0, pos: [5, 0, 5] }, base: 1 });
+  const st = call("bob", "set", { id: "pot", component: "transform", value: { ...t0, pos: [5, 0, 5] }, base: { seq: 1, head: openWorld(root, name).headAt(1) } }); // §3d M7: a version is {seq, head}
   ok(code(st) === "stale" && /Riannon set it at/.test(st.refused.reason) && st.refused.by === R, "NR4 a stale-base refusal names them too", st.refused);
   call("bob", "create", { id: "cup", model: "crate", place: { at: [6, 2] } });
   const cupT = openWorld(root, name).state().entities.cup.c.transform;
@@ -378,13 +378,15 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!said.k.changed && said.k.says.length === 1 && said.k.says[0].text === "hi" && said.k.says[0].actor === "ann", "K7 a say comes back as a chat line, and changes no state", said.k);
   const re = c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1);
   ok(!re.changed && !re.says.length && !re.resync, "K3 a re-delivered entry is ignored", re);
-  call("ann", "set", { id: "cup", component: "label", value: "x" }); const from = w.entries.length; call("ann", "set", { id: "cup", component: "label", value: "y" });
+  // its own thing: cup left with tbl (deleting takes children, and undoing a delete is refused since lab F3)
+  call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
+  call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
   const c2 = makeV4Client(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
   now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
-  ok(digest(sv) === digest(w.state()) && sv.entities.cup.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities.cup?.c); }
+  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
@@ -618,6 +620,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(deep.touched?.transform?.beyond > 0 && deep.touched.transform.by === undefined && deep.touched.label?.by === "ann", "HS5 past the horizon it says 'unchanged since before #N' (beyond), never pretends it found nothing", deep.touched);
   const far = []; let pg = hw("ann", "history", { id: "box", limit: 50 }); far.push(...pg.entries); while (pg.next !== undefined) { pg = hw("ann", "history", { id: "box", limit: 50, before: pg.next }); far.push(...pg.entries); }
   ok(far.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS6 …and the deep search (history paging) still finds the transform change behind the horizon", far.length); }
+
+// ---- H7 (review F3, 2026-10-05): an id is never reused by a NEW thing, but undo brings back the same thing ----
+{ let now = T + 40000; const w = openLive(root + "h7/", "h7", { now: () => now });
+  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  call("ann", "new", { title: "h7" }); call("ann", "create", { id: "desk", model: "table", place: { at: [0, 3] } });
+  call("ann", "create", { id: "mug", model: "crate", place: { on: "desk" } });
+  const del = call("ann", "delete", { id: "desk" });
+  ok(del.ok && !w.state().entities.desk && !w.state().entities.mug, "H7a deleting a thing takes what rides it", del.refused);
+  const again = call("ann", "create", { id: "desk", model: "table", place: { at: [4, 3] } });
+  ok(again.refused?.code === "reused", "H7b a NEW thing can't take a deleted id (it would inherit the old one's references)", again);
+  const back = call("ann", "undo", {});
+  ok(back.ok && w.state().entities.desk && w.state().entities.mug?.c.parent?.to === "desk", "H7c undo of the delete brings back the same thing, and what rode it, still riding it", [back.refused, w.state().entities.mug?.c.parent]);
+  call("ann", "delete", { id: "desk" });
+  ok(call("bob", "create", { id: "mug", model: "crate", place: { at: [6, 3] } }).refused?.code === "reused", "H7d …and after a second delete a stranger's create of a child's id is still refused"); }
 
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

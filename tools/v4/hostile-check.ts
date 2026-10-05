@@ -14,7 +14,9 @@ if (LAB) { fs.writeFileSync(basePath, Bun.spawnSync(["git", "show", "4f62913:fol
 const verbose = process.argv.includes("--verbose");
 
 // ---- builders for both formats ----
-const GEN = { kind: "genesis", actor: "door", verb: "genesis", body: { version: 4, owners: ["olive"] } };
+// §2.4 + §3d: genesis {version, minor, nonce, owners: tiers of keys, sequencer} (fixed test key and nonce; lab hostile-check)
+const KEY = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0";
+const GEN = { kind: "genesis", actor: "door", verb: "genesis", body: { version: 4, minor: 0, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
 const WID = worldIdOf(parseLine(JSON.stringify(GEN)));
 const L = (o) => JSON.stringify(o);
 const act = L({ world: WID, kind: "act", ts: 1, actor: "olive", verb: "set", body: {} }); // §2.1: every entry after genesis carries ts

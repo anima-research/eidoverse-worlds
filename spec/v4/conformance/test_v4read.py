@@ -8,8 +8,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOGS = os.path.join(HERE, "logs")
 os.makedirs(LOGS, exist_ok=True)
 
-GEN = {"kind": "genesis", "actor": "door", "verb": "genesis",
-       "body": {"version": 4, "owners": ["k-owner"]}}
+# PROTOCOL-v4 §2.4 + §3d (C1, H5, H6): genesis body {version: 4, minor, nonce, rewind_window?, parent?,
+# owners: [[<key>…], …], quorum?, sequencer}. Keys are fixed test keys (ed25519 from sha256 seeds), nonce fixed.
+K_OWNER = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"
+K_SEQ = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
+K_TIER1 = "ed25519:iUs8tlcXt9q0Zq1OuuCX-llZgf5YdLA9vJ5aoaEFpkg"
+NONCE, NONCE2 = "XWVu1u7BpaZTDFSETYiphg", "dLedD3Y4zEayxxDNGOBM6w"
+GBODY = {"version": 4, "minor": 0, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
+GEN = {"kind": "genesis", "actor": "door", "verb": "genesis", "body": GBODY}
 GEN_LINE = json.dumps(GEN)
 WID = "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(GEN_LINE.encode())).encode()).hexdigest()
 
@@ -131,7 +137,9 @@ check("06 nested batch: whole entry shapes nothing", r.view() == {"@world": {}} 
 
 # 7 unknown / wrong-typed version
 for nm, v in [("07a-version-5", 5), ("07b-version-str", "4"), ("07c-version-missing", None), ("07d-version-4.0", 4.0)]:
-    g = dict(GEN); g["body"] = {"owners": []} if v is None else {"version": v}
+    g = dict(GEN); g["body"] = dict(GBODY)
+    if v is None: del g["body"]["version"]
+    else: g["body"]["version"] = v
     r = run(nm, [json.dumps(g), ACT])
     want = "ok" if nm == "07d-version-4.0" else "unknown-version"
     check("07 version %r -> %s" % (v, want), r.status == want and (want == "ok" or r.world is None), r.status)
@@ -249,6 +257,61 @@ check("15 JCS key order by UTF-16 units", R.jcs({"\U0001f600": 1, "\ufb33": 2}) 
 r = run("16-bool", [GEN_LINE, ACT, st("create", {"id": "a"}),
     st("set", {"id": "a", "comp": "t", "value": True}), st("set", {"id": "a", "comp": "o", "value": 1})])
 check("16 true and 1 stay distinct", R.jcs(r.view()["a"]) == '{"o":{"v":1},"t":{"v":true}}', R.jcs(r.view()))
+
+# 19 genesis shape (PROTOCOL-v4 §2.4, §3d C1/H5/H6). A malformed genesis means "no world"; an unknown minor
+# means "unknown version" (L1), checked before the shape so a later minor may add fields.
+def gen_with(**kw):
+    b = dict(GBODY)
+    for k, v in kw.items():
+        if v is _DEL: b.pop(k, None)
+        else: b[k] = v
+    return json.dumps({"kind": "genesis", "actor": "door", "verb": "genesis", "body": b})
+_DEL = object()
+def wid_of(line):
+    return "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(line.encode())).encode()).hexdigest()
+def gen_log(name, gline):
+    w = wid_of(gline)
+    return run(name, [gline, json.dumps({"world": w, "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}),
+                      json.dumps({"world": w, "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}})])
+SMALL_NEG = "ed25519:" + "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"  # same y, sign bit set ("-0")
+import base64 as _b
+_b64 = lambda raw: _b.urlsafe_b64encode(raw).rstrip(b"=").decode()
+BIG_Y = "ed25519:" + _b64((2**255 - 19 + 1).to_bytes(32, "little"))     # y >= p
+bad19 = {
+    "19a-genesis-no-nonce": (gen_with(nonce=_DEL), "no-world", "malformed:genesis-nonce"),
+    "19b-genesis-short-nonce": (gen_with(nonce=_b64(b"\x01" * 15)), "no-world", "malformed:genesis-nonce"),
+    "19c-genesis-nonce-not-b64url": (gen_with(nonce="XWVu1u7BpaZTDFSETYiphg=="), "no-world", "malformed:genesis-nonce"),
+    "19d-genesis-no-minor": (gen_with(minor=_DEL), "no-world", "malformed:genesis-minor"),
+    "19e-genesis-minor-1": (gen_with(minor=1, future=True), "unknown-version", "unknown-minor"),
+    "19f-genesis-flat-owners": (gen_with(owners=[K_OWNER]), "no-world", "malformed:genesis-owners"),
+    "19g-genesis-small-order-key": (gen_with(owners=[[SMALL_NEG]]), "no-world", "malformed:genesis-key"),
+    "19h-genesis-key-y-ge-p": (gen_with(sequencer=BIG_Y), "no-world", "malformed:genesis-key"),
+    "19i-genesis-no-sequencer": (gen_with(sequencer=_DEL), "no-world", "malformed:genesis-sequencer"),
+    "19j-genesis-unknown-field": (gen_with(rewind_n=5), "no-world", "malformed:genesis-field"),
+    "19k-genesis-key-twice": (gen_with(owners=[[K_OWNER], [K_OWNER]]), "no-world", "malformed:genesis-owners"),
+    "19l-genesis-bad-quorum": (gen_with(quorum=[0]), "no-world", "malformed:genesis-quorum"),
+    "19m-genesis-bad-window": (gen_with(rewind_window=-1), "no-world", "malformed:genesis-window"),
+    "19n-genesis-bad-parent": (gen_with(parent={"world": "sha256:00", "seq": 3, "head": "00" * 32}), "no-world", "malformed:genesis-parent"),
+}
+for nm, (gl, want, code) in bad19.items():
+    r = gen_log(nm, gl)
+    check("19 %s -> %s (%s)" % (nm, want, code), r.status == want and r.world is None and (0, code) in codes(r), (r.status, codes(r)))
+r = gen_log("19o-genesis-full", gen_with(owners=[[], [K_TIER1, K_OWNER]], quorum=[1, 2], rewind_window=500,
+                                         parent={"world": "sha256:" + "ab" * 32, "seq": 12, "head": "cd" * 32}))
+check("19o full genesis (empty tier 0, quorum, window, parent) folds", r.status == "ok" and "a" in r.view() and not r.diag, codes(r))
+g1, g2 = gen_with(), gen_with(nonce=NONCE2)
+check("19p same keys, different nonce -> different world ids (C1)", wid_of(g1) != wid_of(g2) and R.parse_ijson(g1.encode())["body"]["owners"] == R.parse_ijson(g2.encode())["body"]["owners"])
+
+# 20 purge never targets roles: (PROTOCOL-v4 §3d M11): diagnosed and ignored; other targets in the same purge still apply
+r = run("20-purge-roles", [GEN_LINE, ACT,
+    st("batch", {"ops": [{"verb": "set", "id": "@world", "comp": "roles:alice", "value": {"role": "owner"}},
+                         {"verb": "set", "id": "@world", "comp": "note", "value": "a phone number"}]}),          # 2
+    st("set", {"id": "@world", "comp": "roles:bob", "value": {"role": "builder"}}),                               # 3
+    json.dumps({"world": WID, "kind": "purge", "actor": "door", "verb": "purge",
+                "body": {"values": [{"seq": 2, "op": 0}, {"seq": 2, "op": 1}, {"seq": 3}]}})])                    # 4
+check("20 purge of roles: ignored (diagnosed), the note purged",
+      r.view()["@world"] == {"roles:alice": {"v": {"role": "owner"}}, "note": {"purged": True}, "roles:bob": {"v": {"role": "builder"}}}
+      and [c for s_, c in codes(r)].count("purge-target-governance") == 2, (r.view(), codes(r)))
 
 fails = 0
 for n, ok, info in results:

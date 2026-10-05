@@ -1,0 +1,3 @@
+{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", "rewind_window": -1}}
+{"world": "sha256:0d3a0f881295a134132b3f08db892da31874c56ed99afc17d671707eff6f72d0", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"world": "sha256:0d3a0f881295a134132b3f08db892da31874c56ed99afc17d671707eff6f72d0", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}}

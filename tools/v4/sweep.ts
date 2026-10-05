@@ -160,7 +160,7 @@ for (const p of logs.sort()) {
   const v1 = v1Empty(); const v4 = v4Empty(); let k = -1, loss: any = null;
   const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, v4); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
-    if (e.kind === "act" || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); }
+    if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
     else if (e.kind === "state") applyInPlace(v4, opsOf(e), s); }
   compareAt(k); if (loss) lossy++;
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));

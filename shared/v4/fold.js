@@ -8,6 +8,7 @@
 import { sha256 } from "./hash.js";
 
 export const VERSION = 4;
+export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
 // §2.1 + §2.4: `ts` is the door's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
 const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
@@ -191,6 +192,52 @@ export function shapeOne(verb, b, inner, where) {
   return op;
 }
 
+// ---------- genesis (§2.4; §3d C1, H5, H6) ----------
+// body {version: 4, minor, nonce, rewind_window?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
+// genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
+// minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
+const GENESIS_FIELDS = new Set(["version", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
+// canonical unpadded base64url (one spelling per byte string), or null
+export function b64uDecode(s) {
+  if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
+  // no Buffer here: the browser folds too. Decode, then re-encode: a non-canonical spelling (stray low bits) differs.
+  let bin; try { bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4)); } catch { return null; }
+  const raw = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return b64uEncode(raw) === s ? raw : null;
+}
+const b64uEncode = (bytes) => { let t = ""; for (const x of bytes) t += String.fromCharCode(x); return btoa(t).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+const hexOf = (bytes) => Array.from(bytes, (x) => x.toString(16).padStart(2, "0")).join("");
+// §2.4 Keys, registration: ed25519:<base64url 32 bytes>, not small-order in any sign-bit encoding, y < p
+const SMALL_Y = new Set(["0100000000000000000000000000000000000000000000000000000000000000", "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+  "0000000000000000000000000000000000000000000000000000000000000000", "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"]);
+const P25519 = 2n ** 255n - 19n;
+export function keyOk(k) {
+  if (typeof k !== "string" || !k.startsWith("ed25519:")) return false;
+  const raw = b64uDecode(k.slice(8)); if (!raw || raw.length !== 32) return false;
+  const y = Uint8Array.from(raw); y[31] &= 0x7f;
+  return !SMALL_Y.has(hexOf(y)) && BigInt("0x" + hexOf(Uint8Array.from(y).reverse())) < P25519;
+}
+const nat = (v, lo = 0) => Number.isInteger(v) && v >= lo;
+// null if well formed, "unknown-minor" if this reader doesn't know the minor; else throws Malformed
+export function checkGenesis(b) {
+  if (!nat(b.minor)) bad("genesis-minor", JSON.stringify(b.minor) ?? "missing");
+  if (!MINORS.has(b.minor)) return "unknown-minor";
+  const extra = Object.keys(b).filter((k) => !GENESIS_FIELDS.has(k)); if (extra.length) bad("genesis-field", extra.sort().join(","));
+  const n = b64uDecode(b.nonce); if (!n || n.length < 16) bad("genesis-nonce", JSON.stringify(b.nonce) ?? "missing");
+  if (!Array.isArray(b.owners) || !b.owners.every(Array.isArray)) bad("genesis-owners", "owners is a list of tiers, each a list of keys");
+  const seen = new Set();
+  for (const t of b.owners) for (const k of t) { if (!keyOk(k)) bad("genesis-key", JSON.stringify(k)); if (seen.has(k)) bad("genesis-owners", "a key in two places: " + k); seen.add(k); }
+  if (!("sequencer" in b)) bad("genesis-sequencer", "missing");
+  if (!keyOk(b.sequencer)) bad("genesis-key", JSON.stringify(b.sequencer));
+  if ("quorum" in b && !(Array.isArray(b.quorum) && b.quorum.length === b.owners.length && b.quorum.every((x) => nat(x, 1)))) bad("genesis-quorum", JSON.stringify(b.quorum));
+  if ("rewind_window" in b && !nat(b.rewind_window)) bad("genesis-window", JSON.stringify(b.rewind_window));
+  if ("parent" in b) { const p = b.parent, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+    if (!(p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).sort().join() === "head,seq,world" && typeof p.world === "string" && p.world.startsWith("sha256:") && hex(p.world.slice(7)) && nat(p.seq) && hex(p.head)))
+      bad("genesis-parent", JSON.stringify(p)); }
+  return null;
+}
+
 // ---------- the fold ----------
 export function emptyState() {
   const entities = Object.create(null); entities["@world"] = { born: 0, c: Object.create(null) }; // live from genesis
@@ -207,6 +254,8 @@ export function fold(entries, { until = Infinity } = {}) {
   const g = ok[0];
   if (!g || g.kind !== "genesis") { d(0, "no-genesis", g ? `entry 0 kind=${g.kind}` : "entry 0 missing or malformed"); return { ...st, status: "no-world", entities: null }; }
   if (g.body.version !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.version)); return { ...st, status: "unknown-version", entities: null, version: g.body.version }; }
+  try { if (checkGenesis(g.body) === "unknown-minor") { d(0, "unknown-minor", JSON.stringify(g.body.minor)); return { ...st, status: "unknown-version", entities: null, version: g.body.version }; } }
+  catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;
     if (e.kind === "genesis") { d(seq, "malformed:genesis-not-first"); ok[seq] = null; continue; }
@@ -226,6 +275,13 @@ export function fold(entries, { until = Infinity } = {}) {
   }
   return st;
 }
+// the set op a purge target names, if it sets a roles: value (§3d M11). A target that isn't a set stays the fold's
+// ordinary "purge-target-not-a-value" diagnostic.
+function governanceTarget(e, op) {
+  if (!e || e.kind !== "state" || !e.body || typeof e.body !== "object") return false;
+  const o = e.verb === "batch" ? (Array.isArray(e.body.ops) && Number.isInteger(op) ? e.body.ops[op] : null) : op === undefined ? { verb: e.verb, ...e.body } : null;
+  return !!o && typeof o === "object" && o.verb === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
+}
 function purgesOf(ok, d) {
   const out = new Map();
   ok.forEach((e, pseq) => {
@@ -237,6 +293,8 @@ function purgesOf(ok, d) {
       if (!okT) { d(pseq, "purge-target-bad", jcs(t).slice(0, 60)); continue; }
       if (t.seq >= pseq || t.seq <= 0) { d(pseq, "purge-target-range", String(t.seq)); continue; }
       if (ok[t.seq]?.kind === "purge") { d(pseq, "purge-of-purge-refused", String(t.seq)); continue; }
+      // §3d M11: purge never targets roles: (governance values are reversed by acts, never erased)
+      if (governanceTarget(ok[t.seq], t.op)) { d(pseq, "purge-target-governance", `seq ${t.seq}${t.op === undefined ? "" : ` op ${t.op}`}`); continue; }
       out.set(`${t.seq}:${t.op ?? "-"}`, pseq); d(pseq, "purge", `seq ${t.seq}${t.op === undefined ? "" : ` op ${t.op}`}`);
     }
   });

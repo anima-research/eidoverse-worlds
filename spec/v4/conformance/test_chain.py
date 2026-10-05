@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Proofs 4 and 5 of PROTOCOL-v4 §6: a signed hash chain detects tampering; purge keeps the chain valid."""
-import copy, json
+import copy, json, os
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 import chain, v4read
@@ -18,7 +18,7 @@ priv, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
 KEY = "ed25519:" + chain.b64u(raw(priv.public_key()))
 
 def build(every=2):
-    g = {"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "owners": ["k-owner"], "sequencer": KEY}}
+    g = {"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": chain.b64u(os.urandom(16)), "owners": [[KEY]], "sequencer": KEY}}  # §2.4 + §3d
     import hashlib
     wid = "sha256:" + hashlib.sha256(v4read.jcs(g).encode()).hexdigest()
     st = lambda verb, body: {"world": wid, "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": verb, "body": body}

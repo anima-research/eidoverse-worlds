@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/v4/fold.js";
 import { ENGINE } from "./common.ts";
 
-const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b"; // bun replay-check.js in the lab @ 11db981
+const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b"; // bun replay-check.js in the lab @ 11db981; unchanged by the §3d genesis migration (lab 62301b8, digests equal by construction)
 const raw = fs.readFileSync(ENGINE + "spec/v4/fixtures/lab-cottage.jsonl");
 const entries = readLog(raw);
 const st = fold(entries), st2 = fold(readLog(raw)); // self-agreement: read and fold twice

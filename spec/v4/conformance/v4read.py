@@ -32,6 +32,7 @@ import sys
 from decimal import Decimal
 
 FOLD_VERSIONS = {4}            # GUESS-03: version is the integer 4
+KNOWN_MINORS = {0}             # §3d H6: a reader that doesn't know the minor refuses the world
 MAX_LINE_BYTES = 1 << 20       # GUESS-12: spec says "size caps", gives none
 MAX_DEPTH = 64                 # GUESS-12
 KINDS = {"genesis", "state", "act", "sim", "say", "purge", "sequencer"}
@@ -209,6 +210,88 @@ def jcs(v):
     raise TypeError(type(v))
 
 
+# ---- genesis (spec 2.4, 3d C1/H5/H6) -----------------------------------------
+GENESIS_FIELDS = {"version", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"}
+_B64U = re.compile(r"\A[A-Za-z0-9_-]*\Z")
+_HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
+# the 8 small-order points' y (sign bit cleared): conformance/ed25519/test_vectors.py, spec 2.4 "Keys"
+_SMALL_Y = {bytes.fromhex(h) for h in [
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"]}
+_P = 2 ** 255 - 19
+
+
+def b64u_decode(s):
+    """Canonical unpadded base64url, or None. Canonical = re-encoding gives the same text (no spare bits set),
+    so one byte string has exactly one spelling (GUESS-26: the spec says base64url, not which spelling)."""
+    import base64
+    if not isinstance(s, str) or not _B64U.match(s) or len(s) % 4 == 1:
+        return None
+    raw = base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+    return raw if base64.urlsafe_b64encode(raw).rstrip(b"=").decode() == s else None
+
+
+def key_ok(k):
+    """spec 2.4 Keys, registration: ed25519:<base64url 32 bytes>, not small-order in any sign-bit encoding, y < p."""
+    if not isinstance(k, str) or not k.startswith("ed25519:"):
+        return False
+    raw = b64u_decode(k[8:])
+    if raw is None or len(raw) != 32:
+        return False
+    y = raw[:31] + bytes([raw[31] & 0x7F])
+    return y not in _SMALL_Y and int.from_bytes(y, "little") < _P
+
+
+def _int(v, lo=0):
+    return type(v) is float and v.is_integer() and v >= lo
+
+
+def check_genesis(b):
+    """Returns None if the genesis body is well formed, "unknown-minor" if this reader doesn't know its minor, else
+    raises Malformed. The minor is checked before the shape: a later minor may add fields (L1)."""
+    if "minor" not in b or not _int(b["minor"]):
+        raise Malformed("genesis-minor", repr(b.get("minor"))[:40])
+    if int(b["minor"]) not in KNOWN_MINORS:
+        return "unknown-minor"
+    extra = set(b) - GENESIS_FIELDS
+    if extra:
+        raise Malformed("genesis-field", ",".join(sorted(extra)))   # GUESS-27: a known minor's fields are exact
+    n = b64u_decode(b.get("nonce"))
+    if n is None or len(n) < 16:
+        raise Malformed("genesis-nonce", repr(b.get("nonce"))[:40])
+    tiers = b.get("owners")
+    if not isinstance(tiers, list) or not all(isinstance(t, list) for t in tiers):
+        raise Malformed("genesis-owners", "owners is a list of tiers, each a list of keys")
+    seen = set()
+    for t in tiers:
+        for k in t:
+            if not key_ok(k):
+                raise Malformed("genesis-key", repr(k)[:60])
+            if k in seen:
+                raise Malformed("genesis-owners", "a key in two places: " + k[:60])   # GUESS-28
+            seen.add(k)
+    if "sequencer" not in b:
+        raise Malformed("genesis-sequencer", "missing")
+    if not key_ok(b["sequencer"]):
+        raise Malformed("genesis-key", repr(b["sequencer"])[:60])
+    if "quorum" in b:
+        q = b["quorum"]
+        if not isinstance(q, list) or len(q) != len(tiers) or not all(_int(x, 1) for x in q):
+            raise Malformed("genesis-quorum", repr(q)[:60])
+    if "rewind_window" in b and not _int(b["rewind_window"]):
+        raise Malformed("genesis-window", repr(b["rewind_window"])[:40])
+    if "parent" in b:
+        p = b["parent"]
+        if not (isinstance(p, dict) and set(p) == {"world", "seq", "head"} and isinstance(p["world"], str)
+                and p["world"].startswith("sha256:") and _HEX64.match(p["world"][7:]) and _int(p["seq"])
+                and isinstance(p["head"], str) and _HEX64.match(p["head"])):
+            raise Malformed("genesis-parent", repr(p)[:60])
+    return None
+
+
 # ---- the fold --------------------------------------------------------------
 PURGED = object()   # absent(purged): a defined value, distinct from "deleted"
 
@@ -262,6 +345,15 @@ class Reader:
         if type(ver) is not float or ver not in FOLD_VERSIONS:
             self.status = "unknown-version"
             self.d(0, "unknown-version", repr(ver))
+            return
+        try:
+            if check_genesis(g["body"]) == "unknown-minor":
+                self.status = "unknown-version"
+                self.d(0, "unknown-minor", repr(g["body"]["minor"]))
+                return
+        except Malformed as m:
+            self.status = "no-world"
+            self.d(0, "malformed:" + m.code, m.detail)
             return
         # GUESS-21: world id = sha256 of JCS(genesis entry). Reported, and
         # every later entry's `world` must equal it.
@@ -371,9 +463,24 @@ class Reader:
                 if tgt is not None and tgt.get("kind") == "purge":
                     self.d(pseq, "purge-of-purge-refused", str(s))  # L1
                     continue
+                if self.governance_target(tgt, k):   # 3d M11: purge never targets roles: (reversed by acts)
+                    self.d(pseq, "purge-target-governance", "seq %d%s" % (s, "" if k is None else " op %d" % k))
+                    continue
                 purged[(s, k)] = pseq
                 self.d(pseq, "purge", "seq %d%s" % (s, "" if k is None else " op %d" % k))
         return purged
+
+    @staticmethod
+    def governance_target(e, k):
+        if e is None or e.get("kind") != "state" or not isinstance(e.get("body"), dict):
+            return False
+        b = e["body"]
+        if e.get("verb") == "batch":
+            ops = b.get("ops")
+            o = ops[k] if isinstance(ops, list) and k is not None and 0 <= k < len(ops) else None
+        else:
+            o = dict(b, verb=e.get("verb")) if k is None else None
+        return isinstance(o, dict) and o.get("verb") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
 
     # -- turning a state entry into a flat op list --
     def shape_ops(self, seq, e, purged):
