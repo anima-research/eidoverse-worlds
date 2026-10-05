@@ -9,7 +9,7 @@
 //     verbatim, in <world dir>/v4.genesis-before.jsonl with both world ids. (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
 //   - every later line's `world` is rewritten from the old id to the new one (a text replace: number spellings kept).
-// SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git HEAD) and after
+// SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
 // (today's fold AND the Python reference reader). Stop the world's server first: it holds the old world id in memory.
 // usage: bun tools/v4/migrate-genesis.ts [--apply] <world dir>…   (dry run without --apply; skips a log already on §3d)
 import fs from "node:fs";
@@ -20,10 +20,13 @@ import { custodyAt } from "../../server/v4/custody.ts";
 import { ENGINE } from "./common.ts";
 
 const apply = process.argv.includes("--apply");
-const dirs = process.argv.slice(2).filter((a) => a !== "--apply");
+// --old-fold <git ref>: the fold that still reads the OLD genesis (the "before" digest). Default: the tree just before the
+// §3d port (d4e0677a~1). HEAD is wrong once the port is committed: its fold rightly reads an old genesis as no-world.
+const ofi = process.argv.indexOf("--old-fold"); const OLD_REF = ofi > 0 ? process.argv[ofi + 1] : "d4e0677a~1";
+const dirs = process.argv.slice(2).filter((a, i, all) => a !== "--apply" && a !== "--old-fold" && all[i - 1] !== "--old-fold");
 const oldFoldPath = path.join(ENGINE, "shared/v4/.baseline-fold-HEAD.mjs"); // beside fold.js so its own imports resolve
-const shown = Bun.spawnSync(["git", "show", "HEAD:shared/v4/fold.js"], { cwd: ENGINE });
-if (shown.exitCode !== 0) throw new Error("can't read the previous fold from git HEAD");
+const shown = Bun.spawnSync(["git", "show", `${OLD_REF}:shared/v4/fold.js`], { cwd: ENGINE });
+if (shown.exitCode !== 0) throw new Error(`can't read the previous fold from git ${OLD_REF}`);
 fs.writeFileSync(oldFoldPath, shown.stdout);
 const out: Record<string, unknown>[] = [];
 try {
