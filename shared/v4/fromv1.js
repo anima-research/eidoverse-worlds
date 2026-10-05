@@ -66,6 +66,8 @@ export function toV4(st, verb, a) {
         ...(Array.isArray(a.pos) ? [{ tool: "set", args: { id: id(a.id), component: "transform", value: { pos: a.pos } } }] : [])] } };
       return { tool: "create", args: { id: id(a.id), components: { transform: { pos: Array.isArray(a.pos) ? a.pos : [0, 1, 0] }, light: L } } };
     }
+    case "sky": return { tool: "sky", args: { ...(a ?? {}) } };          // the sky panel (door tools with v1's meaning)
+    case "weather": return { tool: "weather", args: { ...(a ?? {}) } };
     case "say": return { tool: "say", args: { text: String(a?.text ?? ""), ...(a?.to ? { to: id(a.to) } : {}) } };
     case "use": return { tool: "use", args: { id: id(a.id), ...(a.action ? { action: String(a.action) } : {}), ...(a.args ? { args: a.args } : {}) } };
     case "grant":

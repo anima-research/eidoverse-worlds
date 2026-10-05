@@ -11,6 +11,7 @@ import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, c
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
+import { foldSkyEntry } from "../forecast.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./terrain.js";
@@ -1167,6 +1168,14 @@ export function entityBefore(w, id, seq, x = actIndexOf(w)) {
 }
 
 // ---------- undo (by act; the inverse goes through admit like any write: rank and locks NOW) ----------
+function skyValue(prev, verb, args, now) {
+  if (!args || typeof args !== "object" || Array.isArray(args)) refuse("shape", `${verb} takes the sky's fields {hours, rate, weather, clouds…}`, "");
+  const { dry, ...a } = args;
+  const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "door" }));
+  delete out.seq; delete out.by;
+  if (out.forecast && typeof out.forecast === "object") { delete out.forecast.seq; delete out.forecast.by; }
+  return out;
+}
 function buildUndo(ctx, a, w) {
   const X = actIndexOf(w); const E = w.entries;
   const mine = X.actsOf.get(ctx.actor) ?? [];
@@ -1862,6 +1871,11 @@ const TOOLS = {
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
+  // the sky panel's two verbs, with v1's own meaning (shared/forecast.js foldSkyEntry, the same function v1's fold ran):
+  // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
+  // sky. v1 also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
+  sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => [setOp("@world", "sky", skyValue(null, "sky", a, w.now()))]),
+  weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => [setOp("@world", "sky", skyValue(ctx.st.entities["@world"]?.c.sky ?? null, "weather", a, w.now()))]),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) {
     return commit(w, actor, "batch", a, (ctx) => {
