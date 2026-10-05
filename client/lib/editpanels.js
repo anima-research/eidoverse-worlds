@@ -596,6 +596,15 @@ function inspectorFields() {
 function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
+  if (action === 'goto') {   // a driven field's ~: open the driver's card and bring it into view
+    const g = `c:${payload}`; if (!isOpen(id, g)) toggleFold(id, g);
+    repaintAll();
+    const title = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === payload)?.title ?? String(payload);   // found by component, not by words
+    requestAnimationFrame(() => {
+      const h = [...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => b.textContent.replace(/^[▸▾]\s*/, '').trim().startsWith(title));
+      if (h) { h.scrollIntoView({ block: 'center' }); h.classList.add('sp-flash'); setTimeout(() => h.classList.remove('sp-flash'), 900); } });
+    return;
+  }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
     if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;

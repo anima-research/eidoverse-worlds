@@ -515,6 +515,22 @@ try {
   check("PR1 the Transform card's tooltip says who last set it, and when", provOK, await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => /Transform/.test(b.textContent))?.closest('[title]')?.title`));
   check("PR2 the cards end in one 'last change' line (the doorway to History)", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-row, [data-frame="inspector"] [class*="sp-f"]')].some((r) => /last change/.test(r.textContent) && /(just now|min ago)/.test(r.textContent))`, 4000), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] *')].map((r) => r.textContent).find((t) => /last change/.test(t))`));
 
+  // drivers are ordinary cards; a driven field's ~ leads to its driver (R 10-04: follow Blender/Unity/Godot/Roblox/Resonite)
+  const mset = await page(`const r = await (await import('/lib/net.js')).requestV4('set', { id: 'pt', component: 'motion', value: { type: 'pendulum', axis: [0, 0, 1], amp: 0.1, period: 3 } }); return JSON.stringify(r?.ok);`);
+  await sleep(600);   // a duplicate earlier in the run reselects its copy after 400 ms (editpanels duplicate); let that land first
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
+  await waitFor(`!!document.querySelector('[data-frame="inspector"] .sp-drv')`, 5000);
+  // fold the Motion card first, so the jump has to open it
+  await evalJson(`(() => { const h = [...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => /Pendulum/.test(b.textContent)); if (h && /▾/.test(h.textContent)) h.click(); return true; })()`);
+  check("DR0 (setup) the Pendulum card starts folded", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].some((b) => /▸\\s*Pendulum/.test(b.textContent))`, 2000));
+  await sleep(300);
+  const drv = await evalJson(`document.querySelector('[data-frame="inspector"] .sp-drv')?.title ?? null`);
+  check("DR1 a driven channel's ~ says what drives it, and that a click goes there", /driven by its Pendulum \(motion\) — click to go to its card/.test(drv ?? ""), { mset, drv });
+  await evalJson(`(document.querySelector('[data-frame="inspector"] .sp-drv')?.click(), true)`);
+  check("DR2 …clicking it opens the Pendulum card (it was folded)", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].some((b) => /▾\\s*Pendulum/.test(b.textContent))`, 3000), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].map((b) => b.textContent)`));
+  await page(`await (await import('/lib/net.js')).requestV4('delete', { id: 'pt', component: 'motion' }); return true;`);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

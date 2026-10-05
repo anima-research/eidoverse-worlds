@@ -152,7 +152,8 @@ export function inspectSchema(ent, id, live = {}) {
       hint: tf.hint ?? 'the stored orientation (unit quaternion x y z w); normalized on commit' }));
   }
   const driven = c.motion?.type && !c.motion.part ? 'motion' : null;   // a whole-entity motion composes onto this REST pose
-  if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') f.driven = driven;
+  // drivenBy: the card's own title (a pendulum's card is Pendulum), so the field's ~ names what you'll land on
+  if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); }
   if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
   groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
   if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });

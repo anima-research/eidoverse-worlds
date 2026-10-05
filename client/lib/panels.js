@@ -450,7 +450,10 @@ function fieldDOM(f, edit, ro = {}) {
     case 'num': {
       const st = stepper(f.value ?? 0, f, (v, o) => edit(f.k, v, null, o));
       // driven: the FIELD carries it (edit chrome) — a `~` inside its left end; the label keeps its axis colour
-      if (f.driven && ro.icons) st.prepend(el('span', 'sp-drv', '~'));
+      // …and it leads to its driver (Resonite's drive mark, Unity's animated tint; R 10-04: drivers are ordinary cards,
+      // the field points at them — no second list to drift): click goes to the driver's card
+      if (f.driven && ro.icons) { const d = el('span', 'sp-drv', '~'); d.title = `driven by ${f.drivenBy ? `its ${f.drivenBy} (${f.driven})` : f.driven} — click to go to its card`;
+        d.style.cursor = 'pointer'; d.onpointerdown = (e) => e.stopPropagation(); d.onclick = (e) => { e.stopPropagation(); edit('goto', f.driven); }; st.prepend(d); }
       row.append(st);
       row.update = (nf) => { setLabel(nf); st.update(nf); };
       break;
