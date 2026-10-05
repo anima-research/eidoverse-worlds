@@ -197,7 +197,7 @@ initDock([
     action: toggleEditMode,
     active: () => isEditing(),
     // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
-    title: (on) => (on ? 'leave edit mode (B)' : null),
+    title: (on) => (on ? 'leave builder mode (B)' : null),
     gate: () => ['builder', 'owner'].includes(net.myRights?.role),
   },
 ]);

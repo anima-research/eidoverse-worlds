@@ -1883,8 +1883,10 @@ body.edit-workspace [data-frame="console"] { z-index: 30 !important; }   /* over
 .frame.docked .fr-head { cursor: default; }
 .frame.docked .fr-btn { display: none; }        /* a docked frame is closed from the View menu, not with ✕ */
 body.edit-workspace .frame.docked { --panel-a: 1; }
-/* the rail slims to what edit mode needs: ∃, the wrench (mic / ear / goggles are their own elements) */
-body.edit-workspace #dock button[data-toggles]:not([data-toggles="edit"]) { display: none !important; }
+/* the WHOLE dock stays in builder mode (R 10-04: "keep the full dock in edit mode"): ∃ (its mic / ear / goggles stay
+   beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
+body.edit-workspace #dock { flex-direction: column !important; }
+body.edit-workspace #dock button.edit-overflow { display: none !important; }
 /* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the
    wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /
    ear / goggles are NOT moved here: mictoggle.placeMic folds them to the ∃'s right exactly as it does

@@ -142,8 +142,8 @@ const TIPS = [
   // promises this client can make — the wording stays descriptive, never a guarantee (review 2026-09-10 #4).
   ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
   ['/', '<b>/w name message</b> whispers privately where this world allows it. Whispers are never written to the world log.'],
-  ['B', '<b>B</b> toggles edit mode. Off by default, so looking around never moves anything.'],
-  ['↕', 'In edit mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
+  ['B', '<b>B</b> toggles builder mode. Off by default, so looking around never moves anything.'],
+  ['↕', 'In builder mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
   ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],

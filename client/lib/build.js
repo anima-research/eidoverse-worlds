@@ -92,7 +92,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   // Edit is unpinned and gray." The rail says you cannot; the keyboard should
   // not disagree with the rail.
   if (on && !mayEdit()) {
-    if (!quiet) flashHint('edit mode needs build rights in this world');
+    if (!quiet) flashHint('builder mode needs build rights in this world');
     return editMode;
   }
   if (editMode === on) return editMode;
@@ -106,7 +106,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   if (on) panelFrame().show();
   if (!quiet) {
     flashHint(on
-      ? 'edit mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves'
+      ? 'builder mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves'
       : 'looking again');
   }
   bus.emit('edit-mode', on);

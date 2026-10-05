@@ -472,9 +472,9 @@ export function dockPins() {
 }
 
 // how a rail entry reads as a lantern row (the rail itself shows only a glyph)
-const PANEL_TITLE = { emotes: 'emote bar', edit: 'edit mode', debug: 'debug panel' };
+const PANEL_TITLE = { emotes: 'emote bar', edit: 'builder mode', debug: 'debug panel' };
 const PANEL_WORDS = { world: ['catalog', 'build'], profile: ['avatar', 'presence', 'friends', 'satchel'],
-  chat: ['messages', 'log', 'people'], edit: ['build', 'place'], settings: ['preferences', 'options'] };
+  chat: ['messages', 'log', 'people'], edit: ['build', 'builder', 'edit', 'place'], settings: ['preferences', 'options'] };
 function addDockButton(entry) {
   const { id, label, action } = entry;
   const icon = iconOf(entry);   // upstream main.js still labels the rail with emoji; chrome never rides emoji
@@ -528,7 +528,7 @@ const SEARCH_ENTRY = { id: 'search', icon: 'magnifying-glass', label: 'Search & 
 addEventListener('lantern', () => paintDock());
 // every rail button's tooltip: its name, and its key where the action registry knows one ("Chat · Enter",
 // "Debug · F3") — read from actions.js at paint time, so a key table merged in later (main.js) shows up
-const DOCK_NAME = { search: 'Search & commands' };
+const DOCK_NAME = { search: 'Search & commands', edit: 'Builder mode' };
 function dockTitle(entry, suffix = '') {
   const name = DOCK_NAME[entry.id] ?? (entry.id.charAt(0).toUpperCase() + entry.id.slice(1));
   const key = entry.id === 'search' ? CHORD : getAction(`panel:${entry.id}`)?.key;

@@ -20,7 +20,6 @@
 import { bus } from './base.js';
 import { getFrame, allFrames } from './frames.js';
 import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace } from './build.js';
-import { panelFrame } from './ui.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
@@ -106,23 +105,22 @@ function build() {
   // ---- top strip: menus, undo, mode
   const menus = el('div', 'edit-menus');
   menus.append(
-    menu('World', () => [
-      { label: 'world panel (ground · sky · build)…', run: () => { const w = panelFrame(); w.show(); w.el.style.zIndex = '30'; } },
-    ]),
     menu('Edit', () => [
       { label: 'undo\tCtrl+Z', run: undo, title: KEYHINTS.undo.before },
       ...(V4.isV4() ? [{ label: 'redo\tCtrl+Shift+Z', run: () => V4.redo(), title: KEYHINTS.undo.before }] : []),
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
-      { label: 'leave edit mode', run: () => setEditMode(false) },
+      { label: 'leave builder mode\tB', run: () => setEditMode(false) },
     ]),
     menu('View', () => [
       { label: 'reset workspace layout', run: () => { L = { ...DEF }; save(); apply(); } },
       { label: `${getFrame('chat')?.visible ? 'hide' : 'show'} chat`, run: () => { getFrame('chat')?.toggle(); apply(); } },
       { label: `${getFrame('console')?.visible ? 'hide' : 'show'} console (scripts)`, run: () => getFrame('console')?.toggle() },
     ]),
-    menu('Panels', () => allFrames().filter((f) => !f.docked).map((f) => ({
-      label: `${f.visible ? '● ' : '○ '}${f.id}`, run: () => f.toggle(),
+    // every HUD panel, the dock's fallback (R 10-04): the rail folds what doesn't fit under ⋯, this always has them all.
+    // A floating frame renders under the columns, so one opened from here comes up over them.
+    menu('HUD Panels', () => allFrames().filter((f) => !f.docked && !f.el.classList.contains('edit')).map((f) => ({
+      label: `${f.visible ? '● ' : '○ '}${panelName(f.id)}`, run: () => { f.toggle(); if (f.visible) f.el.style.zIndex = '30'; },
     }))),
   );
   const undoBtn = el('button', 'edit-btn'); undoBtn.innerHTML = `${iconSvg('undo2', 14)}<span>undo</span>`; undoBtn.title = 'Ctrl+Z'; undoBtn.onclick = undo;
@@ -200,6 +198,9 @@ function setWireframe(v) {
   } else if (scene.overrideMaterial === wireMat) scene.overrideMaterial = null;
 }
 
+const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
+const panelName = (id) => PANEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+
 function menu(label, items) {
   const wrap = el('span', 'edit-menu');
   const b = el('button', 'edit-btn', `${label} ▾`);
@@ -243,6 +244,48 @@ function paintTools() {
   for (const b of els.tools.querySelectorAll('.edit-tool')) b.classList.toggle('on', b.dataset.tool === getTool());
 }
 
+/** The dock in builder mode: every pinned panel button stays, and the trailing ones fold under one ⋯ when the column
+ *  would push the tools off the screen (a 1366×768 laptop leaves ~650 px). The ∃, the wrench and the tools never fold.
+ *  Returns the dock's bottom edge. */
+const TOOLS_H = () => TOOLS.length * 36 + 16;
+function fitDock(TOP) {
+  const dock = document.getElementById('dock'); if (!dock) return TOP;
+  const wrench = dock.querySelector('button[data-toggles="edit"]');
+  let more = dock.querySelector('.dock-more');
+  if (!more) {
+    more = document.createElement('button'); more.className = 'dock-more'; more.textContent = '⋯'; more.hidden = true;
+    more.onclick = (e) => { e.stopPropagation(); openMore(more); };
+    dock.insertBefore(more, wrench ?? dock.querySelector('.dock-grip'));
+  }
+  for (const b of dock.querySelectorAll('.edit-overflow')) b.classList.remove('edit-overflow');
+  more.hidden = true;
+  const panelBtns = [...dock.querySelectorAll('button[data-toggles]')].filter((b) => !b.hidden && b !== wrench);
+  const limit = innerHeight - TOOLS_H();
+  const bottom = () => dock.getBoundingClientRect().bottom;
+  for (let i = panelBtns.length - 1; i >= 0 && bottom() > limit; i--) { panelBtns[i].classList.add('edit-overflow'); more.hidden = false; }
+  const folded = dock.querySelectorAll('.edit-overflow').length;
+  more.title = `${folded} more panel${folded === 1 ? '' : 's'} — or HUD Panels ▾ in the bar`;
+  return bottom();
+}
+function openMore(anchor) {
+  closeMenus();
+  const pop = el('div', 'edit-menu-pop edit-space-pop');
+  for (const b of document.querySelectorAll('#dock .edit-overflow')) {
+    const row = el('button', 'edit-menu-item');
+    row.append(el('span', '', b.getAttribute('title') ?? b.dataset.toggles));
+    row.onclick = () => { pop.remove(); b.click(); const f = getFrame(b.dataset.toggles); if (f?.visible) f.el.style.zIndex = '30'; };
+    pop.append(row);
+  }
+  const r = anchor.getBoundingClientRect();
+  Object.assign(pop.style, { position: 'fixed', left: `${r.right + 4}px`, top: `${r.top}px`, zIndex: 40 });
+  document.body.append(pop);
+}
+function unfitDock() {
+  const dock = document.getElementById('dock');
+  dock?.querySelector('.dock-more')?.remove();
+  for (const b of document.querySelectorAll('#dock .edit-overflow')) b.classList.remove('edit-overflow');
+}
+
 /** Lay the columns out from L; called on enter, on every splitter move, on resize. */
 function apply() {
   if (!els || !on) return;
@@ -252,7 +295,9 @@ function apply() {
   // goggles beside it, as on the HUD (R, 09-30). The rail starts under it: the wrench, then the
   // tools — no gaps between bar, rail and columns (R, 09-13).
   top.style.cssText = `left:0; right:0; top:0; height:${TOP}px`;
-  tools.style.cssText = `left:0; top:${TOP}px; bottom:0; width:${RAIL}px; padding-top:46px`;
+  // the tools start under the dock, which now carries every panel button: fold what doesn't fit first, then measure
+  const dockBottom = fitDock(TOP);
+  tools.style.cssText = `left:0; top:${TOP}px; bottom:0; width:${RAIL}px; padding-top:${Math.max(46, Math.round(dockBottom - TOP + 8))}px`;
   strip.style.cssText = `left:${RAIL + Math.round(L.leftW)}px; right:${Math.round(L.rightW)}px; top:${TOP}px`;
   const leftW = Math.round(L.leftW), rightW = Math.round(L.rightW);
   left.style.cssText = `left:${RAIL}px; top:${TOP}px; bottom:0; width:${leftW}px`;
@@ -298,7 +343,7 @@ function enter() {
   apply();
   // the glyphs re-seat on the next frame (mictoggle hears edit-mode too); measure once they have
   requestAnimationFrame(() => requestAnimationFrame(fitSeat));
-  clearInterval(seatTimer); seatTimer = setInterval(fitSeat, 1000);
+  clearInterval(seatTimer); seatTimer = setInterval(() => { fitSeat(); apply(); }, 1000);
 }
 function exit() {
   if (!els || !on) return;
@@ -307,6 +352,7 @@ function exit() {
   const { top, tools, left, right, lsplit, rsplit, strip } = els;
   for (const e of [top, tools, left, right, lsplit, rsplit, strip]) e.hidden = true;
   document.body.classList.remove('edit-workspace');
+  unfitDock();
   dispatchEvent(new CustomEvent('dockmoved'));   // …and back beside the HUD's ∃
   setWireframe(false);
   if (els.top.querySelector('.edit-vbtn[data-view="wire"]')) els.top.querySelector('.edit-vbtn[data-view="wire"]').classList.remove('on');

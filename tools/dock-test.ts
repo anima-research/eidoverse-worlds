@@ -99,7 +99,7 @@ check("…and search is pinned by default (shown while the lantern is closed)", 
   const titles = Object.fromEntries(["chat", "world", "debug", "emotes", "edit"].map((id) => [id, btn(id)?.title]));
   check("rail tooltips read the key from the action registry: 'Chat · Enter', 'Debug · F3', 'World', 'Emotes'",
     titles.chat === "Chat · Enter" && titles.debug === "Debug · F3" && titles.world === "World" && titles.emotes === "Emotes", JSON.stringify(titles));
-  check("…the gated wrench: 'Edit · B — needs build rights in this world'", titles.edit === "Edit · B — needs build rights in this world", String(titles.edit));
+  check("…the gated wrench: 'Builder mode · B — needs build rights in this world'", titles.edit === "Builder mode · B — needs build rights in this world", String(titles.edit));
 }
 check("built-ins are pinned by default: chat's button shows while its frame is closed",
   !getFrame("chat")!.visible && btn("chat")!.hidden === false);

@@ -56,16 +56,45 @@ console.log('\nthe corner (R, 09-30): ∃ top-left, mic / ear beside it as on th
   check('the bar runs the full width from x=0; the rail starts under it', g.bar?.l === 0 && g.rail?.t >= 40, JSON.stringify([g.bar, g.rail]));
   check('mic then ear, to the ∃\'s right, on its centre line (the HUD fold)', !!g.mic && !!g.ear && g.mic.l >= g.hud.r && g.ear.l >= g.mic.r - 1 && Math.abs(cy(g.mic) - cy(g.hud)) <= 2 && Math.abs(cy(g.ear) - cy(g.hud)) <= 2, JSON.stringify([g.hud, g.mic, g.ear]));
   check('the menus start after the glyphs, not under them', !!g.menus && g.menus.l >= Math.max(g.mic?.r ?? 0, g.ear?.r ?? 0), JSON.stringify([g.mic, g.ear, g.menus]));
-  check('the wrench heads the rail, under the corner', !!g.wrench && g.wrench.t >= 40 && g.wrench.r <= 48, JSON.stringify(g.wrench));
+  const dockBtns = await evalJson(`[...document.querySelectorAll('#dock button[data-toggles]')].filter((b) => getComputedStyle(b).display !== 'none').map((b) => b.dataset.toggles)`);
+  check('the whole pinned dock is still there in builder mode (chat, world, settings… then the wrench)', Array.isArray(dockBtns) && ['chat', 'world', 'settings', 'edit'].every((k) => dockBtns.includes(k)) && dockBtns.at(-1) === 'edit', dockBtns);
+  const below = await evalJson(`(() => { const d = [...document.querySelectorAll('#dock button[data-toggles]')].filter((b) => getComputedStyle(b).display !== 'none'); const t = document.querySelector('.edit-tool'); return { firstDock: d[0].getBoundingClientRect().top, ear: document.querySelector('#earbtn').getBoundingClientRect().bottom, lastDock: d.at(-1).getBoundingClientRect().bottom, tool: t.getBoundingClientRect().top }; })()`);
+  check('…the panel buttons start under the bar, and the tools start below the wrench', (below as any).firstDock >= 40 && (below as any).tool >= (below as any).lastDock, below);
+  check('the wrench closes the dock, in the column', !!g.wrench && g.wrench.t >= 40 && g.wrench.r <= 48, JSON.stringify(g.wrench));
   // grey-on-grey: the glyph strokes are the editor's greys, not the HUD's teal (mictoggle reads its inks off the button)
   const ink = await evalJson(`(() => { const s = (sel) => { const g = document.querySelector(sel + ' svg g'); return g ? getComputedStyle(g).stroke : null; }; const probe = document.createElement('i'); document.body.append(probe); const c = (v) => { probe.style.color = v; return getComputedStyle(probe).color; }; const out = { mic: s('#micbtn'), ear: s('#earbtn'), dim: c('#8e8e96'), text: c('#d8d8dc'), brand: c(getComputedStyle(document.documentElement).getPropertyValue('--brand').trim()) }; probe.remove(); return out; })()`);
   const k = ink as any;
   check('mic / ear ink is the editor grey (dim off, text on) — not the HUD brand', [k.mic, k.ear].every((v) => v === k.dim || v === k.text) && k.mic !== k.brand, JSON.stringify(k));
 }
 
+console.log('\na 1366×768 laptop (≈ 620 px) fits the whole dock; a very short screen (480 px) folds it under ⋯, the tools never fold:');
+{
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 620, deviceScaleFactor: 1, mobile: false });
+  await sleep(1400);
+  check('at 620 px the whole dock fits (no ⋯)', await evalJson(`(() => { const m = document.querySelector('#dock .dock-more'); return !m || getComputedStyle(m).display === 'none'; })()`));
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 480, deviceScaleFactor: 1, mobile: false });
+  await sleep(1400);
+  const s = await evalJson(`(() => { const more = document.querySelector('#dock .dock-more'); const tools = [...document.querySelectorAll('.edit-tool')]; return { more: !!more && getComputedStyle(more).display !== 'none', folded: document.querySelectorAll('#dock .edit-overflow').length, toolsBottom: tools.at(-1).getBoundingClientRect().bottom, h: innerHeight, wrench: getComputedStyle(document.querySelector('#dock button[data-toggles="edit"]')).display !== 'none' }; })()`);
+  const v = s as any;
+  check('⋯ appears and holds the panels that don\'t fit; the wrench stays', v.more && v.folded >= 1 && v.wrench, s);
+  check('…every tool is on screen', v.toolsBottom <= v.h, s);
+  await evalJson(`(document.querySelector('#dock .dock-more').click(), true)`);
+  const rows = await evalJson(`[...document.querySelectorAll('.edit-space-pop .edit-menu-item')].map((r) => r.textContent)`);
+  check('…clicking ⋯ lists exactly the folded panels', Array.isArray(rows) && rows.length === v.folded, rows);
+  await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })), true)`);
+  const hud = await evalJson(`(() => { const b = [...document.querySelectorAll('.edit-menu > .edit-btn')].find((x) => /^HUD Panels/.test(x.textContent)); b.click(); const r = [...b.parentElement.querySelectorAll('.edit-menu-item')].map((x) => x.textContent); b.click(); return r; })()`);
+  check('HUD Panels ▾ in the bar lists every HUD panel (the fallback, folded or not)', Array.isArray(hud) && hud.some((t) => /Settings/.test(t)) && hud.some((t) => /World/.test(t)), hud);
+  const shot = async (name: string) => { if (!process.env.SHOT_DIR) return; const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/${name}.png`, Buffer.from(r.data, 'base64')); };
+  await shot('builder-480');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await sleep(1400);
+  await shot('builder-1000');
+  check('a tall screen unfolds it again (no ⋯)', await evalJson(`(() => { const m = document.querySelector('#dock .dock-more'); return !m || getComputedStyle(m).display === 'none'; })()`));
+}
+
 console.log('\nthe wrench is the way out: amber on purpose, the only amber on the rail:');
 {
-  check('its title says so: "leave edit mode (B)"', await waitFor(`document.querySelector('#dock button[data-toggles="edit"]')?.title === 'leave edit mode (B)'`, 3000), await evalJson(`document.querySelector('#dock button[data-toggles="edit"]')?.title`));
+  check('its title says so: "leave builder mode (B)"', await waitFor(`document.querySelector('#dock button[data-toggles="edit"]')?.title === 'leave builder mode (B)'`, 3000), await evalJson(`document.querySelector('#dock button[data-toggles="edit"]')?.title`));
   const amber = await evalJson(`(() => {
     const probe = document.createElement('i'); document.body.append(probe); probe.style.color = 'var(--attn)'; const A = getComputedStyle(probe).color; probe.remove();
     const rgb = A.match(/[0-9]+/g).slice(0, 3).join(', ');   // no backslashes: this is a template literal
@@ -127,7 +156,7 @@ check('the workspace chrome is not painted any more (bar, rail, columns, tool st
 check('…the ∃ is back on the HUD, hit-testable, its glyphs beside it', await waitFor(`(() => { const h = document.querySelector('#hud').getBoundingClientRect(), m = document.querySelector('#micbtn').getBoundingClientRect(); const hit = document.elementFromPoint(h.left + h.width / 2, h.top + h.height / 2); return (hit === document.querySelector('#hud') || document.querySelector('#hud').contains(hit)) && m.left >= h.right && Math.abs((m.top + m.bottom) / 2 - (h.top + h.bottom) / 2) <= 2; })()`));
 check('…the glyphs wear the HUD ink again (not the editor grey)', await waitFor(`(() => { const g = document.querySelector('#micbtn svg g'); const p = document.createElement('i'); document.body.append(p); p.style.color = 'var(--dim)'; const dim = getComputedStyle(p).color; p.remove(); return !!g && getComputedStyle(g).stroke === dim; })()`, 3000));
 // plainly = as every dock button is titled on main (ui.js dockTitle: its name · its key)
-check('…and the wrench is titled plainly again', await waitFor(`document.querySelector('#dock button[data-toggles="edit"]')?.title === 'Edit · B'`, 3000), await evalJson(`document.querySelector('#dock button[data-toggles="edit"]')?.title`));
+check('…and the wrench is titled plainly again', await waitFor(`document.querySelector('#dock button[data-toggles="edit"]')?.title === 'Builder mode · B'`, 3000), await evalJson(`document.querySelector('#dock button[data-toggles="edit"]')?.title`));
 
 const errs: string[] = (await evalJson(`window.__errs`)) ?? [];
 const mine = errs.filter((e) => /editpanels|editlayout|structure_ui|panels\.js|editpaint|mictoggle|worldquad|palette/.test(e));

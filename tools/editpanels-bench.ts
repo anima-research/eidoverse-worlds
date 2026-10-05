@@ -91,7 +91,7 @@ await evalJson(`document.querySelector('.edit-vbtn[data-view="wire"]').click(), 
 check('wireframe sets a scene override material', await evalJson(`import('/lib/core.js').then((m) => !!m.scene.overrideMaterial?.wireframe)`));
 await evalJson(`document.querySelector('.edit-vbtn[data-view="wire"]').click(), true`);
 check('…and clears it', await evalJson(`import('/lib/core.js').then((m) => m.scene.overrideMaterial === null)`));
-check('rail shows only the wrench among toggles', await evalJson(`[...document.querySelectorAll('#dock button[data-toggles]')].filter((b) => getComputedStyle(b).display !== 'none').map((b) => b.dataset.toggles).join() === 'edit'`));
+check('the rail keeps the whole pinned dock, the wrench last', await evalJson(`(() => { const v = [...document.querySelectorAll('#dock button[data-toggles]')].filter((b) => getComputedStyle(b).display !== 'none').map((b) => b.dataset.toggles); return v.length > 1 && v.at(-1) === 'edit' && v.includes('chat'); })()`));
 check('the World panel is parked (it would sit behind the Inspector)', await evalJson(`!document.querySelector('[data-frame="world"]') || getComputedStyle(document.querySelector('[data-frame="world"]')).display === 'none'`));
 check('docked frames ignore their floating geometry', await evalJson(`(() => { const h = document.querySelector('[data-frame="hierarchy"]'); const cs = getComputedStyle(h); return cs.position === 'relative' && h.getBoundingClientRect().left >= 40; })()`));
 await evalJson(`document.querySelector('.edit-tool[data-tool="rotate"]').click(), true`);
