@@ -505,7 +505,9 @@ try {
   check("CD1 Ctrl+D = create {from: pt}: ONE act", await waitDisk(() => myActs().length === nD + 1 && myActs().at(-1).e.body.request.from === "pt"), myActs().slice(nD).map((a) => a.e.body?.request));
   const me1 = await evalJson(`import('/lib/controller.js').then((m) => [m.myState.pos.x, m.myState.pos.y, m.myState.pos.z])`);
   check("CD2 …and the chord never counts as a held D, so it can't strafe the body (the walk reads the held set)", heldD === false && Math.hypot(me1[0] - me0[0], me1[2] - me0[2]) < 0.05, { heldD, me0, me1 });
-  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`); await sleep(200);
+  await sleep(600);   // the first copy reselects ITSELF 400 ms after it lands (editpanels duplicate): let that happen first
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
   await key("KeyD", { ctrlKey: true });
   check("CD3 the second copy of the same unlinked thing says copies are independent, and points at Save as blueprint", await waitFor(`/independent/.test(document.getElementById('hintbar')?.textContent ?? '') && /Save as blueprint/.test(document.getElementById('hintbar').textContent)`, 4000), await evalJson(`document.getElementById('hintbar')?.textContent`));
 
@@ -530,6 +532,26 @@ try {
   await evalJson(`(document.querySelector('[data-frame="inspector"] .sp-drv')?.click(), true)`);
   check("DR2 …clicking it opens the Pendulum card (it was folded)", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].some((b) => /▾\\s*Pendulum/.test(b.textContent))`, 3000), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] .sp-group')].map((b) => b.textContent)`));
   await page(`await (await import('/lib/net.js')).requestV4('delete', { id: 'pt', component: 'motion' }); return true;`);
+
+  // History (R 10-04, research 56): a tab beside the Inspector; the 'last change' line opens it; one thing's acts, Older… pages
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
+  check("HT1 the right column has Inspector | History tabs", await evalJson(`JSON.stringify([...document.querySelectorAll('.edit-rtabs .edit-tab')].map((b) => b.textContent)) === '["Inspector","History"]'`));
+  await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-btn')].some((b) => /History ›/.test(b.textContent))`, 4000);
+  await evalJson(`([...document.querySelectorAll('[data-frame="inspector"] .sp-btn')].find((b) => /History ›/.test(b.textContent)).click(), true)`);
+  check("HT2 the Inspector's 'last change … History ›' opens the History tab", await waitFor(`document.querySelector('.edit-right')?.dataset.tab === 'history' && getComputedStyle(document.querySelector('[data-frame="history"]')).display !== 'none' && getComputedStyle(document.querySelector('[data-frame="inspector"]')).display === 'none'`, 3000));
+  const hrows = async () => evalJson(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent)`);
+  check("HT3 it lists this thing's acts, newest first, with who and what (pt's motion set and deleted above)", await waitFor(`(() => { const t = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent); const i = t.findIndex((x) => /delete.*motion/.test(x)), j = t.findIndex((x) => /set.*motion/.test(x)); return i >= 0 && j > i; })()`, 5000), await hrows());
+  // enough acts to page: 25 label sets on pt, then Older… must reach back to the motion set
+  for (let k = 0; k < 25; k++) await page("await (await import('/lib/net.js')).requestV4('set', { id: 'pt', component: 'label', value: 'pt " + k + "' }); return true;");
+  await sleep(800);
+  check("HT4 a long history shows a page and an Older… button", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-btn')].some((b) => /Older/.test(b.textContent))`, 5000), await hrows());
+  check("HT5 …the first page doesn't reach back to the motion yet", !(await hrows() as string[]).some((x) => /set.*motion/.test(x)));
+  await evalJson(`([...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((b) => /Older/.test(b.textContent)).click(), true)`);
+  if (process.env.SHOT_DIR) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/history-tab.png`, Buffer.from(r.data, 'base64')); }
+  check("HT6 …Older… reads further back and finds it", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /set.*motion/.test(x.textContent))`, 5000), (await hrows() as string[]).length);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
+  await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);

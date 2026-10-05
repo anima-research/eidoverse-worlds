@@ -536,7 +536,7 @@ function inspectorFields() {
     // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the
     // Inspector, not in it; this line is the doorway)
     const lc = lastChange(id);
-    if (lc) f.push({ t: 'info', k: 'lastchange', label: 'last change', value: lc, dim: true, hint: 'the most recent change to this thing, from the world log — each card\'s tooltip says who last set it' });
+    if (lc) f.push({ t: 'btn', k: 'history', label: `last change: ${lc} — History ›`, hint: 'the most recent change to this thing, from the world log. History lists them all, newest first; each card\'s tooltip says who last set it' });
     if (schema.sections.add.length) {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Seats: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
@@ -596,6 +596,7 @@ function inspectorFields() {
 function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
+  if (action === 'history') { bus.emit('edit-righttab', 'history'); return; }
   if (action === 'goto') {   // a driven field's ~: open the driver's card and bring it into view
     const g = `c:${payload}`; if (!isOpen(id, g)) toggleFold(id, g);
     repaintAll();
@@ -979,12 +980,47 @@ function buildVRDispatch(action, payload) {
   repaintAll();
 }
 
+// ---------------------------------------------------------------- History
+// the right column's second page (R 10-04, research 56): the selected thing's acts, newest first, or the whole world's
+// with nothing selected — read from the log on demand through the same door request an agent uses (history {id,
+// before}), a page at a time: recent by default, Older… for the deep search. Nothing stored.
+const hist = { key: null, entries: [], next: null, loading: false, id: null };
+function histLoad(id, more = false) {
+  if (!V4.isV4()) return;
+  const before = more ? hist.next : undefined;
+  hist.loading = true;
+  requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
+    if (!r?.ok || hist.id !== id) return;
+    const rows = id ? r.entries : r.entries.filter((e) => e.kind === 'act').reverse().map((e) => ({ seq: e.seq, by: e.actor, who: V4.idOut(e.actor), verb: e.verb,
+      changed: [e.body?.request?.component].filter(Boolean), target: e.body?.request?.id ?? null, ts: e.ts ?? null }));
+    hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();
+  }).catch(() => { hist.loading = false; });
+}
+function historyFields() {
+  if (!V4.isV4()) return [{ t: 'info', label: 'history', value: 'History reads a v4 world\'s log; this world is older' }];
+  const id = worldSel ? null : sceneSelected() ?? null;
+  // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
+  const key = id ? `${id}|${JSON.stringify(V4.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
+  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; } hist.id = id; histLoad(id); }
+  const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (comps.get(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
+  if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
+  for (const e of hist.entries) {
+    const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
+    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: `${e.who ?? V4.idOut(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
+  }
+  if (id && hist.next != null) f.push({ t: 'btn', k: 'older', label: 'Older…', hint: 'read further back in the log (a deeper search, 20 at a time)' });
+  return f;
+}
+function historyDispatch(action) { if (action === 'older') histLoad(hist.id, true); }
+
 // ---------------------------------------------------------------- mounting
 const PANELS = [
   { id: 'hierarchy', title: 'Hierarchy', theme: 'edit', fields: hierarchyFields, dispatch: hierarchyDispatch, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },   // x clears the dock rail (left:10 + 34px buttons + padding)
   // docked as a tab beside the Hierarchy by editlayout.js (Build | Hierarchy); its VR body is its own field list
   { id: 'build', title: 'Build', theme: 'edit', fields: buildFields, dispatch: buildDispatch, vr: { fields: buildVRFields, dispatch: buildVRDispatch }, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },
   { id: 'inspector', title: 'Inspector', theme: 'edit', fields: inspectorFields, dispatch: inspectorDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
+  // docked as a tab beside the Inspector by editlayout.js (Inspector | History)
+  { id: 'history', title: 'History', theme: 'edit', fields: historyFields, dispatch: historyDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
   // optional: never auto-shown on entering edit mode (View ▸ console, or a script row in the inspector)
   { id: 'console', title: 'Console', theme: 'edit', fields: consoleFields, dispatch: consoleDispatch, optional: true, frame: { x: 'center', y: -24, w: 560, h: 240, minW: 320, minH: 120 } },
 ];

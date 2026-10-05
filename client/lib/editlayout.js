@@ -30,7 +30,7 @@ import { TABS, openingTab, useTab } from './edittabs.js';
 const LS = 'ew-edit-layout';
 // the left column's top pane is one frame at a time, picked by tab (edittabs.js TABS): B opens
 // on Build the first time, then on whichever tab this viewer used last (design §5)
-const DEF = { leftW: 300, rightW: 320, leftSplit: 0.55, leftTab: 'build' };
+const DEF = { leftW: 300, rightW: 320, leftSplit: 0.55, leftTab: 'build', rightTab: 'inspector' };
 let L = { ...DEF };
 try { const stored = JSON.parse(localStorage.getItem(LS) || 'null'); L = { ...DEF, ...(stored ?? {}), leftTab: openingTab(stored) }; } catch { /* defaults */ }
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(L)); } catch { /* fine */ } };
@@ -44,7 +44,8 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
   { id: 'pivot', icon: 'locateFixed', key: 'P', title: 'pivot (P) — drag where it turns and scales from; it snaps to the model\'s centre, base, corners and faces. The thing never moves' },
 ];
 
-let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, strip }
+const RTABS = [['inspector', 'Inspector'], ['history', 'History']];
+let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip }
 let prevChat = null;     // chat's visibility before docking, restored on exit
 let prevWorld = null;    // the World panel's, likewise
 let on = false;
@@ -70,6 +71,15 @@ function build() {
     b.onclick = () => { L = useTab(L, id); save(); apply(); };
     tabs.append(b);
   }
+  // Inspector | History: the right column's two pages (research 56: history lives BESIDE the Inspector, not in it)
+  const rtabs = el('div', 'edit-tabs edit-rtabs');
+  for (const [id, label] of RTABS) {
+    const b = el('button', 'edit-tab', label);
+    b.dataset.tab = id;
+    b.onclick = () => { L = { ...L, rightTab: id }; save(); apply(); };
+    rtabs.append(b);
+  }
+  bus.on('edit-righttab', (id) => { if (RTABS.some(([t]) => t === id)) { L = { ...L, rightTab: id }; save(); apply(); } });
   // the armed building tool, named across the top of the viewport (it disappears with the tool)
   const strip = el('div', 'edit-toolstrip');
   for (const e of [top, tools, left, right, lsplit, rsplit, strip]) { e.hidden = true; document.body.append(e); }
@@ -147,7 +157,7 @@ function build() {
   dragSplit(split, (_dx, dy) => { L.leftSplit = clamp(L.leftSplit + dy / left.clientHeight, 0.15, 0.85); });
   addEventListener('resize', () => { if (on) apply(); });
 
-  els = { top, tools, left, right, split, lsplit, rsplit, tabs, strip };
+  els = { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip };
   paintTools();
   return els;
 }
@@ -289,7 +299,11 @@ function unfitDock() {
 /** Lay the columns out from L; called on enter, on every splitter move, on resize. */
 function apply() {
   if (!els || !on) return;
-  const { top, tools, left, right, split, lsplit, rsplit, tabs, strip } = els;
+  const { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip } = els;
+  const rtab = RTABS.some(([id]) => id === L.rightTab) && getFrame(L.rightTab) ? L.rightTab : 'inspector';
+  right.dataset.tab = rtab;
+  for (const b of rtabs.children) b.classList.toggle('on', b.dataset.tab === rtab);
+  for (const [id] of RTABS) { const f = getFrame(id); if (f) f.el.style.flex = id === rtab ? '1 1 0' : ''; }
   const TOP = 40, RAIL = 48;
   // the bar runs the full width: the ∃ sits in its left end (the corner) with the mic / ear /
   // goggles beside it, as on the HUD (R, 09-30). The rail starts under it: the wrench, then the
@@ -324,7 +338,7 @@ function apply() {
 
 let seatTimer = 0;
 function enter() {
-  const { top, tools, left, right, lsplit, rsplit, tabs } = build();
+  const { top, tools, left, right, lsplit, rsplit, tabs, rtabs } = build();
   on = true;
   for (const e of [top, tools, left, right, lsplit, rsplit]) e.hidden = false;
   document.body.classList.add('edit-workspace');
@@ -332,7 +346,9 @@ function enter() {
   const bd = getFrame('build'), h = getFrame('hierarchy'), i = getFrame('inspector'), c = getFrame('chat');
   bd?.dock(left); h?.dock(left);
   left.prepend(tabs, ...[bd?.el, h?.el].filter(Boolean));   // tabs, then both pages, above the splitter
-  i?.dock(right);
+  const hs = getFrame('history');
+  i?.dock(right); hs?.dock(right);
+  right.prepend(rtabs, ...[i?.el, hs?.el].filter(Boolean));   // tabs, then both pages
   if (c) { prevChat = c.visible; c.dock(left); if (!c.visible) c.show(); }
   // floating frames render UNDER the columns; the World panel build.js opens
   // on entry sits at the right edge, exactly where the Inspector now is.
@@ -357,7 +373,7 @@ function exit() {
   setWireframe(false);
   if (els.top.querySelector('.edit-vbtn[data-view="wire"]')) els.top.querySelector('.edit-vbtn[data-view="wire"]').classList.remove('on');
   const c = getFrame('chat');
-  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
+  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace
   if (prevWorld) getFrame('world')?.show();
   prevChat = prevWorld = null;

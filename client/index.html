@@ -1969,6 +1969,8 @@ body.edit-workspace .sp-ctx-item.danger { color: var(--e-danger); }
 .edit-tab:active { transform: none; }
 .edit-left > :is([data-frame="hierarchy"], [data-frame="build"]) > .fr-head { display: none !important; }
 .edit-left[data-tab="hierarchy"] > [data-frame="build"], .edit-left[data-tab="build"] > [data-frame="hierarchy"] { display: none !important; }
+.edit-right > :is([data-frame="inspector"], [data-frame="history"]) > .fr-head { display: none !important; }
+.edit-right[data-tab="inspector"] > [data-frame="history"], .edit-right[data-tab="history"] > [data-frame="inspector"] { display: none !important; }
 /* tiles (panels.js 'tiles'): a grid; an icon or a picture over a short label. Quiet at rest, hover fill,
    armed = press fill + an accent glyph — the tool rail's look */
 .frame.edit .sp-f-tiles.sp-row { display: block; margin: 2px 0 4px; }

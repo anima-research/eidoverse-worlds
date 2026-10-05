@@ -54,7 +54,7 @@ const here = await work("file://" + ENGINE.replace(/\/$/, ""), texts);
 
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const p = decodeURIComponent(new URL(req.url).pathname);
-  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><title>v4</title>", { headers: { "content-type": "text/html" } });
+  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><link rel=icon href=\"data:,\"><title>v4</title>", { headers: { "content-type": "text/html" } });
   if (!/^\/(shared)\/[A-Za-z0-9_\-./]+\.js$/.test(p) || p.includes("..")) return new Response("no", { status: 404 });
   const f = ENGINE + p.slice(1); if (!fs.existsSync(f)) return new Response("missing", { status: 404 });
   return new Response(fs.readFileSync(f), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
