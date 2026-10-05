@@ -132,6 +132,39 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(lit.ok && w.state().entities.lamp.c.light.intensity === 16 && w.state().entities.lamp.c.light.range === 10, "S7 an agent's light {} gets the renderer's defaults (16, 10), as the editor's does (R9)", w.state().entities.lamp?.c.light);
   ok(request(w, me, "set", { id: "@world", component: "sky", value: { hours: 9, rate: 1, weathr: "rain" } }).refused?.code === "schema", "S8 sky is registered: its fields are checked"); }
 
+// ---- U: undo across people (F2 decided 10-05; round-2 R10, R11; round-1 F3) ----
+{ let T = 1800000000000; const d = directoryAt(file);
+  const w: any = openLive(path.join(tmp, "worlds", "u"), "u", { now: () => (T += 1000), custodyFile: path.join(tmp, "u-custody.json"), nameOf: d.nameOf });
+  const P = (n: string) => d.resolve({ sub: `human:discord:u-${n}`, name: n });
+  const ann = P("ann"), dee = P("dee"), bob = P("bob"), cy = P("cy"), vic = P("vic");
+  const q = (who: string, tool: string, a: any = {}) => request(w, who, tool, a) as any;
+  q(ann, "new", { title: "u" });
+  for (const [id, role] of [[dee, "owner"], [bob, "builder"], [cy, "builder"], [vic, "visitor"]]) q(ann, "set", { id: "@world", component: `roles:${id}`, value: { role } });
+  const actOf = (r: any) => r.act ?? r.seq - 1;
+  const b1 = q(bob, "create", { id: "bench", model: "crate", place: { at: [1, 1] } });
+  ok(q(vic, "undo", { act: actOf(b1) }).refused?.code === "rank", "U1 a visitor can't undo someone else's act");
+  const r1 = q(cy, "undo", { act: actOf(b1) });
+  ok(r1.ok && !w.state().entities.bench, "U2 a builder undoes another builder's act (peer review)", r1.refused);
+  const a1 = q(ann, "create", { id: "arch", model: "crate", place: { at: [3, 3] } });
+  ok(q(bob, "undo", { act: actOf(a1) }).refused?.code === "rank", "U3 a builder can't undo an owner's act (never upward)");
+  ok(q(dee, "undo", { act: actOf(a1) }).ok && !w.state().entities.arch, "U4 an owner undoes another owner's act (owners revert owners)");
+  const b2 = q(bob, "create", { id: "table", model: "table", place: { at: [5, 5] } }); q(cy, "set", { id: "table", component: "label", value: "cy's now" });
+  const r4 = q(ann, "undo", { act: actOf(b2) });
+  ok(!r4.ok && r4.refused?.code === "conflict" && w.state().entities.table, "U5 reverting someone's act never writes over a third person's later work", r4.refused);
+  const a2 = q(ann, "create", { id: "shelf", model: "table", place: { at: [8, 8] } });
+  q(bob, "create", { id: "cup", model: "crate", place: { on: "shelf" } });
+  const cupAt = JSON.stringify(w.state().entities.cup?.c.transform?.pos);
+  const r5 = q(ann, "undo", { act: actOf(a2) }); const cup = w.state().entities.cup;
+  ok(r5.ok && !w.state().entities.shelf && cup && !cup.c.parent, "U6 undoing a create lets go of what others hung on it: it stays, unparented (round-1 F3)", [r5.refused, cup?.c.parent]);
+  ok(cup && JSON.stringify(cup.c.transform.pos) !== cupAt && Math.abs(cup.c.transform.pos[0] - 8) < 1, "U7 …where it was in the world (its local pose became a world pose)", [cupAt, cup?.c.transform.pos]);
+  q(ann, "create", { id: "post", model: "crate", place: { at: [11, 11] } });
+  const war: any[] = [];
+  for (const v of ["a", "b", "c"]) { const s1 = q(bob, "set", { id: "post", component: "label", value: v }); war.push(q(cy, "undo", { act: actOf(s1) })); }
+  ok(war[0].ok && war[1].ok && war[2].refused?.code === "revert-war", "U8 the third revert across people on one thing within the hour is refused below owner (a dispute)", war.map((r) => r.ok || r.refused?.code));
+  const last = [...w.entries.keys()].reverse().find((i) => w.entries[i].kind === "act" && w.entries[i].actor === bob && w.entries[i].verb === "set");
+  ok(q(ann, "undo", { act: last }).ok, "U9 …an owner still can (owners settle it)");
+  ok(q(bob, "undo", { acts: 3 }).refused?.code === "unknown-arg", "U10 a typo'd undo argument is refused, not a silent undo of your latest act (R10)"); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

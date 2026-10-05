@@ -1179,7 +1179,14 @@ function buildUndo(ctx, a, w) {
   // it into older work).
   const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = E[q].body?.undoes; } return d; };
   const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && E[mine[k]].body?.undoes === seq) return mine[k]; return undefined; };
-  const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : undefined)
+  // F2 (decided 10-05): revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's
+  // or a visitor's) or an owner (anyone's, owners included: round-2 R11, owners revert owners). Roles as they are NOW.
+  const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "act")) return undefined;
+    if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the door's own, not a person's`, "undo takes back people's acts");
+    const me = RANK[roleOf(ctx.st, ctx.actor)], them = RANK[roleOf(ctx.st, e.actor)];
+    if (me < RANK.builder || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${me < RANK.builder ? "undoing someone else's work needs builder" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
+    return e; };
+  const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : othersAct(a.act))
     : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
     : pick((q) => E[q].verb !== "new" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
   if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
@@ -1196,7 +1203,7 @@ function buildUndo(ctx, a, w) {
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every state entry since
   // the result (bounded by what happened after the act, never the log before it)
-  const others = (i) => E[i].actor !== ctx.actor;
+  const others = (i) => E[i].actor !== target.actor; // later work by anyone but the act's own author stands
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
   const later = X.states.slice(firstAfter(X.states, res.seq)).filter(others).map((i) => E[i]);
@@ -1209,7 +1216,10 @@ function buildUndo(ctx, a, w) {
     const { id, comp } = o; const whole = o.verb === "create" || (o.verb === "delete" && comp === undefined);
     const by = touchedBy(id, whole ? undefined : comp);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
-    if (o.verb === "create") { if (now.entities[id]) groups.push([delOp(id)]); }
+    // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never
+    // deleted with it and never left pointing at a thing that's gone
+    if (o.verb === "create") { if (now.entities[id]) { const kids = Object.keys(now.entities).filter((k) => now.entities[k].c.parent?.to === id && !madeHere.has(k));
+        groups.push([...kids.flatMap((k) => [setOp(k, "transform", worldT(now, k)), delOp(k, "parent")]), delOp(id)]); kids.forEach((k) => ctx.refs.add(k)); } }
     else if (whole) { const old = before(id); if (old && !now.entities[id]) (ctx.restores ??= new Set()).add(id), groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
     else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
@@ -1227,6 +1237,14 @@ function buildUndo(ctx, a, w) {
       skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${said(who)} has placed since`, by: who }); groups.splice(i, 1); } }
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
+  // round-2 R11: a brake on revert wars (Wikipedia's 3RR): reverting someone else's work on a thing that has already been
+  // reverted across people twice within the hour is refused below owner rank: that's a dispute, and owners settle it
+  if (target.actor !== ctx.actor && RANK[roleOf(ctx.st, ctx.actor)] < RANK.owner) {
+    const mine2 = new Set(groups.flat().map((o) => o.id)); const t0 = w.now() - 3600000; let n = 0;
+    for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && e.ts < t0) break;
+      if (e.kind !== "act" || e.verb !== "undo" || !Number.isInteger(e.body?.undoes) || E[e.body.undoes]?.actor === e.actor) continue;
+      const r = result(i); if (r && opsQuiet(r).some((o) => mine2.has(o.id))) n++; }
+    if (n >= 2) refuse("revert-war", `${[...mine2].join(", ")} has been reverted across people ${n} times in the last hour`, "that's a disagreement, not a fix: ask an owner (owners may still revert), or talk it out"); }
   ctx.actExtra = { undoes: target.seq };
   // say what came back: which act, what it was, and whether this undoes it or redoes it (Hazel: the reply named nothing)
   const req = bodyOf(target.seq)?.request ?? {}; const dz = depthOf(target.seq);

@@ -29,6 +29,10 @@ export const TOOLSPEC = {
       dry: { type: "bool", doc: "preview only" },
     },
   },
+  // round-2 R10: a typo'd undo argument used to undo your latest act silently (undo {acts: 9}); now it's refused
+  undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or visitor's if you're a builder, anyone's if you're an owner; never someone above you",
+    args: { act: { type: "int", doc: "the act's number (history and inspect show them); someone else's needs the rank to revert it" }, label: { type: "string", doc: "the label you gave a batch or set" }, dry: { type: "bool" } },
+    example: { act: 42 } },
   history: { doc: "what happened, newest first. With id: that one thing's acts (who, when, which components), a page at a time; the reply's next goes in before to page back. Without id: the world's latest entries. inspect's touched says who last changed each component within the recent window (beyond = unchanged since before that act: page history for older)",
     args: { id: ref("one thing (omit for the whole world)"), limit: { type: "int", doc: "acts per page (with id: default 5, at most 50; without: default 12)" }, before: { type: "int", doc: "continue from here: the previous reply's next" } } },
   turn: {

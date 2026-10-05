@@ -143,8 +143,12 @@ ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" }))
 
 const u = await bob.req("undo", {});
 ok(u.ok && u.after?.cup && u.after.cup.label === null, "S4 Bob undoes his own last act (the label goes)", u);
+// F2 (decided 10-05): revert goes along rank, never upward. A visitor can't undo Bob's act; an owner may (here the
+// table's lock still stops it, which is the lock doing its job, not rank)
+const u2v = await vic.req("undo", { act: c1.act });
+ok(u2v.ok === false && u2v.refused?.code === "rank", "S4 a visitor can't undo someone else's act (rank)", u2v);
 const u2 = await ann.req("undo", { act: c1.act });
-ok(u2.ok === false && u2.refused?.code === "nothing", "S4 undo only reverts your own acts", u2);
+ok(u2.refused?.code !== "rank", "S4 …an owner may revert it (here only the lock decides)", u2);
 const ins = await vic.req("inspect", { id: "cup" });
 ok(ins.ok && ins.derived?.madeBy === BOB, "S4 inspect says who made it (a view over the log)", ins);
 await sleep(200);
