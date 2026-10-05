@@ -504,5 +504,26 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const a = addVerbs({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
   ok(a.verbs[0]?.args?.type === "pivot" && JSON.stringify(a.verbs[0].args.data) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a); }
 
+// ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
+{ const tw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "turns"), actor, tool, args); };
+  const qm = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+  const aa = (x, y, z, deg) => { const h = deg * Math.PI / 360; return [x * Math.sin(h), y * Math.sin(h), z * Math.sin(h), Math.cos(h)]; };
+  const same = (a, b) => Math.abs(Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]) - 1) < 1e-6;
+  const tq = (id) => openWorld(root, "turns").state().entities[id].c.transform;
+  tw("ann", "new", { title: "turns" });
+  tw("ann", "create", { id: "plank", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  ok(tw("ann", "turn", { id: "plank", axis: "x", deg: 90 }).ok && same(tq("plank").q, aa(1, 0, 0, 90)), "TN1 turn about its own x by 90°", tq("plank"));
+  tw("ann", "create", { id: "plank2", model: "crate", components: { transform: { pos: [3, 0, 0], q: aa(1, 0, 0, 90), scale: [1, 1, 1] } } });
+  tw("ann", "turn", { id: "plank", axis: "y", deg: 90, space: "object" });
+  tw("ann", "turn", { id: "plank2", axis: "y", deg: 90, space: "world" });
+  ok(same(tq("plank").q, qm(aa(0, 0, 1, 90), aa(1, 0, 0, 90))), "TN2 tilted, then about its OWN y: that's the world's z now (Rz·Rx)", tq("plank").q);
+  ok(same(tq("plank2").q, qm(aa(0, 1, 0, 90), aa(1, 0, 0, 90))) && !same(tq("plank").q, tq("plank2").q), "TN3 …while space 'world' turns about the world's y (Ry·Rx): a different answer, as it should be", tq("plank2").q);
+  tw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [10, 0, 10], q: [0, 0, 0, 1], scale: [1, 1, 1] }, pivot: { pos: [1, 0, 0] } } });
+  tw("ann", "turn", { id: "gate", axis: "y", deg: 90 });
+  const g = tq("gate");
+  ok(Math.abs(g.pos[0] - 11) < 1e-3 && Math.abs(g.pos[2] - 11) < 1e-3, "TN4 with a pivot it turns ABOUT the pivot (11, 0, 10): its origin swings to (11, 0, 11)", g);
+  ok(tw("ann", "turn", { id: "gate", axis: "y", deg: 0, about: "origin" }).ok, "TN5 about: 'origin' is there when you want the old behaviour");
+  ok(code(tw("ann", "turn", { id: "plank", axis: "sideways", deg: 10 })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, space: "screen" })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, about: "pivot" })) === "shape", "TN6 a bad axis, space, or about-pivot without one is refused, naming the fix"); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

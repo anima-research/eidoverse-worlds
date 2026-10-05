@@ -29,6 +29,11 @@ export const TOOLSPEC = {
       dry: { type: "bool", doc: "preview only" },
     },
   },
+  turn: {
+    doc: "rotate a thing by an angle about an axis: in its own axes (space 'object', the default), its parent's, or the world's; about its pivot when it has one (the pivot stays put), else its origin",
+    args: { id: ref("the thing to turn"), axis: { type: "any", doc: "'x', 'y', 'z' or [x, y, z]" }, deg: { type: "number", doc: "degrees; positive = counter-clockwise looking down the axis" },
+      space: { type: "enum", values: ["object", "parent", "world"], doc: "whose axes: its own (default), its parent's, the world's" }, about: { type: "enum", values: ["pivot", "origin"], doc: "default: pivot if it has one" } },
+    required: ["id", "axis", "deg"], example: { id: "plank-1", axis: "x", deg: 30, space: "object" } },
   create: {
     doc: "make a new thing; optionally place it in the same step",
     args: { id: { type: "string", doc: "optional; the server mints one if absent" }, model: { type: "string", doc: "a model from find {kind: 'model'}" },

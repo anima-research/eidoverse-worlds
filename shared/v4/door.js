@@ -622,6 +622,33 @@ function buildDelete(ctx, a) {
   return ops;
 }
 
+// turn {id, axis, deg, space?, about?}: the gizmo's rotate, for agents (agent lab, Juniper #3: no tool could say "about
+// its own long axis"). space: 'object' (its own axes, the default) | 'parent' | 'world'. about: 'pivot' (default when it
+// has one: the pivot stays put and the thing swings round it, research 52) | 'origin'. The log gets a plain transform.
+function buildTurn(ctx, a) {
+  const e = needThing(ctx, a.id); const st = ctx.st;
+  const AX = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  const ax0 = typeof a.axis === "string" ? AX[a.axis] : Array.isArray(a.axis) && a.axis.length === 3 && a.axis.every((v) => typeof v === "number" && Number.isFinite(v)) ? a.axis : null;
+  const len = ax0 ? Math.hypot(...ax0) : 0;
+  if (!ax0 || len < 1e-9) refuse("shape", `axis is 'x', 'y', 'z' or [x, y, z] (not zero)`, "e.g. turn {id, axis: 'x', deg: 30}");
+  if (typeof a.deg !== "number" || !Number.isFinite(a.deg)) refuse("shape", "deg is a number of degrees", "e.g. deg: 90 (positive = counter-clockwise looking down the axis)");
+  const space = a.space ?? "object";
+  if (!["object", "parent", "world"].includes(space)) refuse("shape", `space is 'object', 'parent' or 'world'`, "object = its own axes (the default), parent = its parent's (the world's for a root), world = the world's");
+  const t = { ...COMPONENTS.transform.defaults, ...(e.c.transform ?? {}) };
+  let ax = ax0.map((v) => v / len);
+  if (space === "world" && e.c.parent?.to && st.entities[e.c.parent.to]) ax = qrot(qinv(worldT(st, e.c.parent.to).q), ax);   // into the parent's frame
+  const h = (a.deg * Math.PI / 180) / 2; const R = [ax[0] * Math.sin(h), ax[1] * Math.sin(h), ax[2] * Math.sin(h), Math.cos(h)];
+  const q2 = space === "object" ? qmul(t.q, R) : qmul(R, t.q);
+  const piv = Array.isArray(e.c.pivot?.pos) ? e.c.pivot.pos : null;
+  const about = a.about ?? (piv ? "pivot" : "origin");
+  if (!["pivot", "origin"].includes(about)) refuse("shape", "about is 'pivot' or 'origin'", "");
+  if (about === "pivot" && !piv) refuse("shape", `${a.id} has no pivot`, `add one first: set {id: '${a.id}', component: 'pivot', value: {pos: [x, y, z]}}`);
+  let pos = t.pos;
+  if (about === "pivot") { const sp = piv.map((v, i) => v * t.scale[i]); const P = qrot(t.q, sp).map((v, i) => v + t.pos[i]); const off = qrot(q2, sp); pos = P.map((v, i) => v - off[i]); }
+  ctx.refs.add(a.id);
+  return [setOp(a.id, "transform", { pos: pos.map((v) => Math.round(v * 1e4) / 1e4), q: q2.map((v) => Math.round(v * 1e9) / 1e9), scale: t.scale })];
+}
+
 // Relational placement (A1): the door solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
@@ -1373,6 +1400,7 @@ const TOOLS = {
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
   delete: (w, actor, a) => commit(w, actor, "delete", a, (ctx) => buildDelete(ctx, a)),
   place: (w, actor, a) => commit(w, actor, "place", a, (ctx) => buildPlace(ctx, a)),
+  turn: (w, actor, a) => commit(w, actor, "turn", a, (ctx) => buildTurn(ctx, a)),
   publish: (w, actor, a) => commit(w, actor, "publish", a, (ctx) => buildPublish(ctx, a, w)),
   update: (w, actor, a) => commit(w, actor, "update", a, (ctx) => buildUpdate(ctx, a, w)),
   use(w, actor, a) {
