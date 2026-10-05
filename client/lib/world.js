@@ -271,6 +271,8 @@ export function applyGrantState(id, rec) {
   // in an owned world is a builder, so `/grant bob +gen` doesn't silently
   // demote bob to visitor. The old 'visitor' default here disagreed with
   // what the server actually granted (review S6) — the HUD lied.
+  // a role taken away (v4 worlds can delete one): back to the world's default, as the fold reads it
+  if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: 'builder' }); return; }
   const cur = worldRoles.get(id) ?? { role: 'builder' };
   worldRoles.set(id, {
     role: rec.role ?? cur.role,

@@ -36,13 +36,18 @@ for (const dir of fixtures) {
 
   // 1. pure live path: every entry through foldLive
   reset();
-  let entryEvents = 0;
-  const off = onWorldChange((ev) => { if (ev.type === "entry") entryEvents++; });
+  // slice 3c: an entry is ANNOUNCED (change/world events, v4 terms) exactly when it changed the world's things or keys
+  let told = 0; const off = onWorldChange((ev) => { if (ev.type === "change" || ev.type === "world") told++; });
   state.hydrated = true;                       // live path without a snapshot
-  for (const e of entries) foldLive(e);
+  const wrong: any[] = [];
+  for (const e of entries) {
+    const before = JSON.stringify(pick(state.st)); told = 0; foldLive(e);
+    const changed = JSON.stringify(pick(state.st)) !== before;
+    if (changed !== told > 0) wrong.push({ seq: e.seq, verb: e.verb, changed, told });
+  }
   off();
   check(`${dir}: live fold matches fixture`, jeq(pick(state.st), wantPicked));
-  check(`${dir}: one event per entry`, entryEvents === entries.length, `${entryEvents}/${entries.length}`);
+  check(`${dir}: an entry is announced exactly when it changed the world`, wrong.length === 0, wrong.slice(0, 4));
   check(`${dir}: lastSeq tracks`, state.lastSeq === entries[entries.length - 1].seq);
 
   // 2. hydrate path: snapshot of the first half + tail of the second,

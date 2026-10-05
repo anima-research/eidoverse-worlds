@@ -1064,8 +1064,8 @@ export function initEditPanels() {
   for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights', 'v4-applied']) bus.on(ev, repaintAll);   // v4-applied: a v4 world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
-  const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass', 'blueprint']);
-  onWorldChange((ev) => { if (ev.type !== 'entry' || WORLD_VERBS.has(ev.entry?.verb)) repaintAll(); });
+  const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])
+  onWorldChange((ev) => { if (ev.type !== 'change' && (ev.type !== 'world' || WORLD_KEYS.has(ev.key))) repaintAll(); });
   loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
   bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)

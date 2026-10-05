@@ -10,13 +10,12 @@
 //                      (opsOf + applyInPlace, the strict reader's code). A gap, a purge (retroactive by law, L1) or a
 //                      genesis means this client can't continue its cut: it asks for a fresh snapshot (`resync`).
 //
-// What the renderer still reads: today's realizers draw a v1 WorldState. So after each ingest the client computes the
-// v1 verbs that take what it holds (`held`) to legacyState(its v4 fold), checks them with the v1 fold exactly as the
-// server used to (legacy.js), and folds them into its own shadow state. If no v1 verbs can say it, it re-hydrates its
-// shadow from the projection, locally (`rehydrate`): the server's projection deltas and resyncs are no longer needed by
-// a client that does this. The panels read the v4 fold directly (v4.st), and the door's views by asking the door.
+// What the renderer reads (slice 3c): the VIEW of this fold (record.js viewState), recomputed from the fold itself,
+// so there's nothing held beside it to drift; client/lib/state.js diffs successive views and tells the realizers
+// what changed, in v4 terms. No v1 verbs are made. `say` entries come back as chat lines ({seq, ts, actor, text,
+// to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
-import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "./legacy.js";
+import { viewState } from "./record.js";
 import { dec } from "./names.js";
 
 const idOut = (s) => dec(s) ?? s;
@@ -40,38 +39,29 @@ export function stateFromView(view) {
 }
 
 export function makeV4Client() {
-  const v = { active: false, st: null, head: -1, worldId: null, stats: { ingested: 0, projected: 0, rehydrated: 0, resyncs: 0 } };
+  const v = { active: false, st: null, head: -1, worldId: null, stats: { ingested: 0, resyncs: 0 } };
   v.adopt = (snap) => {
     v.st = stateFromView(snap.state); v.head = Number.isInteger(snap.head) ? snap.head : -1; v.worldId = snap.worldId ?? null; v.active = true;
   };
   v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; };
-  /** The projection the renderer draws, carrying the chat window of what the client already holds. */
-  v.legacy = (held) => legacyState(v.st, { recentChat: held?.recentChat ?? [], chatTotal: held?.chatTotal ?? 0 });
-  /** Fold the door's fresh entries. Returns {v1: [entries], rehydrate: v1 state | null, resync: bool, throughSeq}. */
-  v.ingest = (entries, from, held) => {
-    if (!v.active) return { v1: [], rehydrate: null, resync: false };
-    const says = []; let changed = false, last = null;
+  /** The view the renderer and panels read, carrying a chat window (chat isn't in the fold). */
+  v.view = (chat) => viewState(v.st, { recentChat: chat?.recentChat ?? [], chatTotal: chat?.chatTotal ?? 0 });
+  /** Fold the door's fresh entries. Returns {changed, says: [chat lines], resync, why?, ts?, actor?}. */
+  v.ingest = (entries, from) => {
+    if (!v.active) return { changed: false, says: [], resync: false };
+    const says = []; let changed = false, ts = null, actor = null;
     for (let i = 0; i < (entries?.length ?? 0); i++) {
       const seq = from + i; const e = entries[i];
       if (seq <= v.head) continue;                                   // already folded (a re-delivery)
-      if (seq !== v.head + 1) { v.stats.resyncs++; return { v1: [], rehydrate: null, resync: true, why: `gap ${v.head} → ${seq}` }; }
-      if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { v1: [], rehydrate: null, resync: true, why: e.kind }; }
+      if (seq !== v.head + 1) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: `gap ${v.head} → ${seq}` }; }
+      if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: e.kind }; }
       if (e?.kind === "state") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
-      if (e?.kind === "say") says.push({ seq: seq * 1000, ts: e.ts, actor: idOut(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } });
-      v.head = seq; last = e; v.stats.ingested++;
+      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: idOut(String(e.actor)), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) });
+      if (e?.kind === "act" && actor === null) actor = idOut(String(e.actor));
+      if (Number.isInteger(e?.ts)) ts = e.ts;
+      v.head = seq; v.stats.ingested++;
     }
-    if (!changed) return { v1: says, rehydrate: null, resync: false, throughSeq: v.head * 1000 + 999 };
-    // the verbs, numbered by the v4 entry they came from (as the server numbered them): v4seq × 1000 + k
-    const next = v.legacy(held);
-    const delta = legacyDelta(held, next);
-    const ts = Number.isInteger(last?.ts) ? last.ts : 0;
-    const actor = idOut(String(entries.find((e) => e?.kind === "act" || e?.kind === "say")?.actor ?? last?.actor ?? "world"));
-    if (delta && delta.length < 999) {
-      const out = [...says, ...delta.map((x, k) => ({ seq: v.head * 1000 + k + 1, ts, actor, verb: x.verb, args: x.args }))];
-      if (!legacyDiff(foldLegacy(held, out), next)) { v.stats.projected += delta.length; return { v1: out, rehydrate: null, resync: false, throughSeq: v.head * 1000 + 999 }; }
-    }
-    v.stats.rehydrated++;
-    return { v1: says, rehydrate: next, resync: false, throughSeq: v.head * 1000 + 999 };
+    return { changed, says, resync: false, ts, actor };
   };
   return v;
 }

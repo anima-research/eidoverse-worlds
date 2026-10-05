@@ -15,15 +15,20 @@
 // - state.st IS A PURE FUNCTION OF (snapshot, entries). Same contract as
 //   the sequencer's fold, because it is the sequencer's fold, imported.
 //
-// Events are invalidation signals, not data carriers: subscribers get the
-// entry that changed the world and read the world from state.st. The
-// vocabulary starts minimal (hydrated | reset | entry); per-facet interest
-// filtering arrives with the first realizer, not before.
+// Events are invalidation signals, not data carriers: subscribers are told
+// WHAT changed and read the world from state.st (slice 3c: said in v4 terms,
+// shared/v4/viewdiff.js, never as v1 verbs):
+//   {type:'hydrated'} · {type:'reset'}
+//   {type:'change', id, what: 'born'|'gone'|'pose'|'parent'|'comp', comp?}
+//   {type:'world', key, ids?, ts?}     a world key changed (sky, terrain, roles…; ids = which entries of a map)
+// A v4 world hands this module each new view of its own v4 fold (applyView);
+// a v1 world still folds its v1 entries here (foldLive), and says the same.
 
 import { foldEntry, emptyState } from '../../shared/fold.js';
 import { emptySim, simEntry } from '../../shared/sim.js';
 import { rightsIn } from '../../shared/rightsfold.js';
 import { CONFIG, bus } from './base.js';
+import { diffView, diffThing } from '../../shared/v4/viewdiff.js';
 
 export const state = {
   /** @type {import('../../shared/fold.js').WorldState} */
@@ -49,8 +54,7 @@ export function setSparseSeq(on) { state.sparseSeq = !!on; }
 
 const subs = new Set();
 
-/** Subscribe to world changes. Returns unsubscribe. Events:
- *  {type:'hydrated'} · {type:'reset'} · {type:'entry', entry}. */
+/** Subscribe to world changes (the events above). Returns unsubscribe. */
 export function onWorldChange(fn) {
   subs.add(fn);
   return () => subs.delete(fn);
@@ -109,6 +113,7 @@ export function foldLive(entry) {
     // say so loudly: parity with the server is now suspect until rejoin.
     console.warn(`[state] seq gap: ${state.lastSeq} → ${entry.seq}`);
   }
+  const watch = beforeOf(entry);
   foldEntry(state.st, entry);
   simEntry(state.sim, entry, state.st);   // normative order: instant fold first
   state.lastSeq = entry.seq;
@@ -128,8 +133,44 @@ export function foldLive(entry) {
   // WORLD_ADMIN is deliberately NOT reproducible here: it is an environment
   // fact the server folds in before sending yourRights, so an admin's grant is
   // preserved rather than recomputed away.
-  if (entry?.verb === 'grant') refreshMyRights();
-  emit({ type: 'entry', entry });
+  if (watch) {
+    const things = [];
+    for (const [id, was] of watch.things) diffThing(id, was, state.st.entities[id], things);
+    const d = diffView({ ...watch.world, entities: {} }, { ...pick(state.st, Object.keys(watch.world)), entities: {} });
+    announce({ things, world: d.world, ids: d.ids }, entry.ts);
+  }
+}
+
+// ---- v1 worlds: what one v1 entry can touch, copied before it folds (the fold mutates in place) ----
+const THING_VERBS = new Set(['spawn', 'place', 'remove', 'light', 'comp', 'motion', 'mount', 'dismount']);
+const WORLD_OF = { terrain: ['terrain'], grass: ['grass'], sky: ['sky'], weather: ['sky'], asset: ['assets'], grant: ['roles'],
+  blueprint: ['blueprints'], ban: ['bans'], unban: ['bans'], behavior: ['behaviors'], mount: ['mounts'], dismount: ['mounts'], remove: ['mounts'] };
+const pick = (st, keys) => Object.fromEntries(keys.map((k) => [k, st[k]]));
+function beforeOf(entry) {
+  const verb = entry?.verb, id = entry?.args?.id;
+  const keys = WORLD_OF[verb] ?? [];
+  const ids = THING_VERBS.has(verb) && typeof id === 'string'
+    ? [id, ...Object.entries(state.st.entities).filter(([, e]) => e?.parent?.to === id).map(([k]) => k)] : [];
+  if (!keys.length && !ids.length) return null;
+  return { things: ids.map((x) => [x, structuredClone(state.st.entities[x])]), world: structuredClone(pick(state.st, keys)) };
+}
+
+/** A v4 world: adopt the next view of this client's own v4 fold (record.js viewState) and say what changed. */
+export function applyView(next, { ts } = {}) {
+  const d = diffView(state.st, next);
+  state.st = next;
+  // parents before children, so a thing born in the same batch as what it hangs from finds it there
+  const depth = (id) => { let n = 0; for (let p = next.entities[id]?.parent?.to; p && n < 64; p = next.entities[p]?.parent?.to) n++; return n; };
+  // (and every 'gone' first: a thing replaced by another model is 'gone' then 'born' under the same id)
+  d.things.sort((a, b) => (b.what === 'gone') - (a.what === 'gone') || (a.what === 'born' && b.what === 'born' ? depth(a.id) - depth(b.id) : 0));
+  announce(d, ts ?? Date.now());
+  return d;
+}
+
+function announce(d, ts) {
+  if (d.world.includes('roles')) refreshMyRights();
+  for (const c of d.things) emit({ type: 'change', ...c });
+  for (const key of d.world) emit({ type: 'world', key, ...(d.ids?.[key] ? { ids: d.ids[key] } : {}), ts });
 }
 
 /** Recompute what I may do here from the folded roles.

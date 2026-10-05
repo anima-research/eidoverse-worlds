@@ -6,7 +6,7 @@ import { CONFIG, report, bus } from './base.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, setSparseSeq } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, setSparseSeq, applyView } from './state.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -248,18 +248,30 @@ function onV4Result(msg) {
   v4Pending.delete(msg.id); clearTimeout(p.timer);
   p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the door sent no reply body' } });
 }
-/** The door's fresh entries: fold them (v4.ingest), then deliver what the realizers draw. */
+/** The door's fresh entries: fold them (v4.ingest), then hand state.js the new view of that fold (it tells the
+ *  realizers what changed, in v4 terms). Chat lines take the chat path (they aren't world state). */
 function onV4Log(msg) {
   if (!v4.active) return;
-  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, shadowState.st);
+  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
-  for (const e of r.v1) onLogEntry(e);
-  if (r.rehydrate) {
-    // no v1 verbs can say this change: re-draw from this client's own fold (the server's old resync, done locally)
-    shadowHydrate(v4.legacy(shadowState.st), [], r.throughSeq);
-    if (r.throughSeq > lastSeq) lastSeq = r.throughSeq;
-  }
+  // numbered v4seq × 1000 so a chat line orders with the entries it came with (state.js sparseSeq)
+  for (const x of r.says) onLogEntry({ seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}) } });
+  if (r.changed) narrate(applyView(v4.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
   bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
+}
+/** Say in chat who changed someone's standing here (the role and ban maps), as the world's own narration. */
+function narrate(d, actor) {
+  const who = actor === 'world' || !actor ? 'the world' : actor; const st = shadowState.st;
+  for (const id of d?.ids?.roles ?? []) {
+    const rec = st.roles?.[id];
+    if (!rec) { logChat('*', `${who} took away ${id}'s role here`); continue; }
+    const bits = [rec.role, rec.gen != null ? (rec.gen ? '+gen' : '-gen') : null].filter(Boolean);
+    logChat('*', `${who} made ${id} ${bits.join(' ')}`);
+  }
+  for (const id of d?.ids?.bans ?? []) {
+    const rec = st.bans?.[id];
+    logChat('*', rec ? `${who} banned ${id}${rec.reason ? ` — ${rec.reason}` : ''}` : `${who} lifted the ban on ${id}`);
+  }
 }
 
 let lastPoseSent = 0;
@@ -895,11 +907,11 @@ async function onSnapshot(msg) {
   // server sends live-folded state (it already contains the tail's effects;
   // the tail rides along for the chat overlap), so the shadow folds nothing
   // twice: it marks the highest covered seq and lets foldLive take over.
-  // a v4 world: adopt the door's own cut, and draw the v1 state THIS client derives from it (the snapshot's `state`
-  // is the server's projection, which a v4-folding client no longer needs; its chat window is kept)
+  // a v4 world: adopt the door's own cut, and draw the view of THIS client's fold of it (the snapshot's `state` is
+  // only read for its chat window)
   if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); } else v4.reset();
   setSparseSeq(!!msg.v4?.state);   // the v1 numbering derived from a v4 stream jumps by design (state.js sparseSeq)
-  shadowHydrate(msg.v4?.state ? v4.legacy(msg.state) : msg.state, [], Math.max(
+  shadowHydrate(msg.v4?.state ? v4.view(msg.state) : msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);

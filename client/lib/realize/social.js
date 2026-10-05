@@ -21,21 +21,18 @@ function reconcileSocial() {
   replayRecentChat();
 }
 
-function onEntry(entry) {
-  const { verb, args = {} } = entry;
-  if (verb === 'grant' && args.id) {
-    applyGrantState(args.id, state.st.roles?.[args.id] ?? args);
-  } else if (verb === 'behavior' && args.id) {
-    applyBehaviorState(args.id, state.st.behaviors?.[args.id] ?? null, true);
-  }
+function onWorld({ key, ids }) {
+  const st = state.st;
+  if (key === 'roles') for (const id of ids ?? Object.keys(st.roles ?? {})) applyGrantState(id, st.roles?.[id] ?? null);
+  else if (key === 'behaviors') for (const id of ids ?? Object.keys(st.behaviors ?? {})) applyBehaviorState(id, st.behaviors?.[id] ?? null, true);
 }
 
-const VERBS = new Set(['grant', 'behavior']);
+
 
 export function initSocialRealizer() {
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') reconcileSocial();
-    else if (ev.type === 'entry' && VERBS.has(ev.entry.verb)) onEntry(ev.entry);
+    else if (ev.type === 'world') onWorld(ev);
   });
   return true;
 }

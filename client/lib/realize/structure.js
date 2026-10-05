@@ -373,34 +373,20 @@ export function reconcileStructures() {
   for (const id of [...tracked.keys()]) if (!seen.has(id)) retire(id);
 }
 
-function onEntry(entry) {
-  const { verb, args = {} } = entry;
-  const id = args.id;
-  if (!id) return;
+function onChange({ id, what, comp }) {
   try {
-    switch (verb) {
-      case 'comp':
-        // Only our own type matters — but a `structure` comp arriving on an
-        // entity we don't track yet is exactly how a building is born.
-        if (args.type === 'structure') realize(id, state.st.entities[id]);
-        break;
-      case 'spawn':
-        // A same-id spawn REPLACES the entity wholesale (the fold's documented
-        // behaviour), which drops the comp bag with it. Re-deriving from state
-        // rather than assuming keeps us honest either way.
-        realize(id, state.st.entities[id]);
-        break;
-      case 'place':
-        if (tracked.has(id)) realize(id, state.st.entities[id]);
-        break;
-      case 'remove':
-        retire(id);
-        break;
+    switch (what) {
+      // a `structure` comp arriving on a thing we don't track yet is exactly how a building is born
+      case 'comp': if (comp === 'structure') realize(id, state.st.entities[id]); break;
+      // re-derive from state rather than assume (a re-born thing may have dropped its structure)
+      case 'born': realize(id, state.st.entities[id]); break;
+      case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]); break;
+      case 'gone': retire(id); break;
     }
-  } catch (e) { report(`realize structure ${verb}`, e); }
+  } catch (e) { report(`realize structure ${what}`, e); }
 }
 
-const PORTED = new Set(['spawn', 'place', 'remove', 'comp']);
+
 
 /** Wire the realizer to state. Called once from main.js, beside the others. */
 export function initStructureRealizer() {
@@ -422,7 +408,7 @@ export function initStructureRealizer() {
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') reconcileStructures();
     else if (ev.type === 'reset') { for (const id of [...tracked.keys()]) retire(id); }
-    else if (ev.type === 'entry' && PORTED.has(ev.entry.verb)) onEntry(ev.entry);
+    else if (ev.type === 'change') onChange(ev);
   });
   return true;
 }

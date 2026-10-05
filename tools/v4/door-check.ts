@@ -350,47 +350,40 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
 
 // ---- K: the client's own fold (shared/v4/client.js): adopt a cut, ingest the door's entries; the v4 state equals the
-// server's after every request, and the v1 state the renderer draws equals the projection (verbs or a local re-draw) ----
-{ let now = T + 12000; const w = openLive(root + "client/", "client", { now: () => now });
+// server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
+{ const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
+  let now = T + 12000; const w = openLive(root + "client/", "client", { now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   call("ann", "new", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeV4Client();
   c.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
-  let held = c.legacy({ recentChat: [], chatTotal: 0 }); let steps = 0, bad = null, rehydrated = 0, verbs = 0;
+  let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
   const step = (what, actor, tool, args) => { const from = w.entries.length; const r = call(actor, tool, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
-    const k = c.ingest(fresh, from, held); steps++;
+    const before = c.view(); const k = c.ingest(fresh, from); steps++;
     if (k.resync) return { r, k };
-    held = foldLegacy(held, k.v1); verbs += k.v1.length;
-    if (k.rehydrate) { held = c.legacy(held); rehydrated++; }
     if (!bad && digest(c.st) !== digest(w.state())) bad = [what, "v4 state differs"];
-    if (!bad && legacyDiff(held, legacyState(w.state()))) bad = [what, legacyDiff(held, legacyState(w.state()))];
-    return { r, k }; };
+    if (!bad && !same(c.view(), viewState(w.state()))) bad = [what, diffView(c.view(), viewState(w.state()))];
+    return { r, k, d: diffView(before, c.view()) }; };
   step("on", "ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
   step("lock", "ann", "set", { id: "tbl", component: "lock", value: true });
-  step("say", "ann", "say", { text: "hi" });
+  const said = step("say", "ann", "say", { text: "hi" });
   step("move", "ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] }, through_lock: true });
   step("dup", "ann", "create", { from: "tbl" });
   const sky = step("sky", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
   step("del", "ann", "delete", { id: "tbl", through_lock: true });
   step("undo", "ann", "undo", {});
   step("publish", "ann", "publish", { from: "tbl", name: "table set" });
-  ok(!bad, `K1 after each of ${steps} requests the client's v4 fold = the server's (digest), and what it draws = the projection`, bad);
-  ok(verbs > 0 && sky.k.rehydrate && rehydrated === 1, "K2 a change with no v1 verb (the sky) is re-drawn locally, never a wrong delta; the rest went as verbs", { verbs, rehydrated });
-  ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1, held).v1.length === 0, "K3 a re-delivered entry is ignored");
+  ok(!bad, `K1 after each of ${steps} requests the client's v4 fold = the server's (digest), and its view = the server's`, bad);
+  ok(sky.k.changed && sky.d.world.includes("sky") && !sky.d.things.length, "K2 the sky arrives as a world change (the v1 path had to re-draw everything for it)", sky.d);
+  ok(!said.k.changed && said.k.says.length === 1 && said.k.says[0].text === "hi" && said.k.says[0].actor === "ann", "K7 a say comes back as a chat line, and changes no state", said.k);
+  const re = c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1);
+  ok(!re.changed && !re.says.length && !re.resync, "K3 a re-delivered entry is ignored", re);
   call("ann", "set", { id: "cup", component: "label", value: "x" }); const from = w.entries.length; call("ann", "set", { id: "cup", component: "label", value: "y" });
-  ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from, held).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
+  ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
   const c2 = makeV4Client(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
   now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values: [{ seq: from + 1 }] } });
-  ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1, held).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
-  // a drawing that drifted from the fold (here: the client drew the cup elsewhere) heals at the next write: the verbs are a
-  // diff from what the client HOLDS to its fold, checked by folding them, and a re-draw when they can't say it
-  { const c3 = makeV4Client(); c3.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
-    const drifted = c3.legacy({ recentChat: [], chatTotal: 0 }); drifted.entities.cup.pos = [9, 9, 9]; if (drifted.entities.cup.parent) drifted.entities.cup.parent.offset = [9, 9, 9];
-    const f3 = w.entries.length; call("ann", "set", { id: "cup", component: "light", value: { range: 2 } });
-    const k3 = c3.ingest(JSON.parse(JSON.stringify(w.entries.slice(f3))), f3, drifted);
-    const healed = k3.rehydrate ? c3.legacy(drifted) : foldLegacy(drifted, k3.v1);
-    ok(!legacyDiff(healed, legacyState(w.state())), "K7 a drawing that drifted from the fold is healed at the next write (a diff from what it holds, checked)", legacyDiff(healed, legacyState(w.state()))); }
+  ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
   ok(digest(sv) === digest(w.state()) && sv.entities.cup.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities.cup?.c); }
 
@@ -483,7 +476,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const v6 = step("ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
   ok(v6.d.world.includes("sky") && !v6.d.things.length, "V6 the sky is a world change (the v1 projection could only resync for it)", v6.d);
   const v7 = step("ann", "set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } });
-  ok(v7.d.world.includes("roles"), "V7 a role is a world change", v7.d);
+  ok(v7.d.world.includes("roles") && JSON.stringify(v7.d.ids.roles) === '["Bob"]', "V7 a role is a world change, naming whose", v7.d);
   const v8 = step("ann", "delete", { id: "tbl" });
   ok(v8.has("tbl", "gone"), "V8 a delete is 'gone'", v8.d);
   const v9 = step("ann", "undo", {});

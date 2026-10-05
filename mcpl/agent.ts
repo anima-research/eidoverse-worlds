@@ -44,6 +44,10 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // The snapshot re-synthesizer, shared with the browser — this agent's
 // deliberate omissions ride as flags (see stateToEntries below).
 import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
+// a v4 world (slice 3c): this process folds the door's own stream and reads the VIEW of that fold, like the browser
+import { makeV4Client } from "../shared/v4/client.js";
+import { diffView } from "../shared/v4/viewdiff.js";
+import { emptyView } from "../shared/v4/record.js";
 import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
 import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
@@ -434,6 +438,13 @@ export class WorldAgent {
   /** This world's protocol, from the snapshot: set only in a v4 world (protocol/v4 slice 2). Building tools route
    *  through door()/verbV4() there and WAIT for the door's reply, so a refusal reaches the agent (PARITY (d)1). */
   v4: { version: number; head: number; worldId: string } | null = null;
+  /** A v4 world's own fold, from the join cut and the door's `v4-log` stream (shared/v4/client.js). null in a v1 world. */
+  private v4c: any = null;
+  /** v4fold: this body folds a v4 world's stream itself, so the server sends it no v1 projection (slice 3c). */
+  private joinMsg() {
+    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, v4fold: true,
+      token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
+  }
   private pendingV4 = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
@@ -585,8 +596,7 @@ export class WorldAgent {
       // body may do. It exists so the world can SAY who it is talking to.
       // Knowing whether the thing across the table thinks in tokens or neurons
       // matters here in a way it doesn't in a chat app.
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+      ws.onopen = () => ws.send(JSON.stringify(this.joinMsg()));
       ws.onclose = (ev) => {
         this.joined = false;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
@@ -720,8 +730,17 @@ export class WorldAgent {
             // An agent that only read `entries` would arrive in an empty room.
             const oldestTail = msg.entries.length
               ? Math.min(...msg.entries.map((e: any) => e.seq ?? Infinity)) : Infinity;
-            for (const e of stateToEntries(msg.state, oldestTail)) await this.applyEntry(e, false);
-            for (const e of msg.entries) await this.applyEntry(e, false);
+            if ((msg as any).v4?.state) {
+              // a v4 world: adopt the door's cut and read the view of this body's own fold of it. The snapshot's v1
+              // `state` is read for its chat window only (chat isn't world state)
+              this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
+              for (const e of stateToEntries(msg.state, oldestTail)) if (e.verb === "say") await this.applyEntry(e, false);
+              this.applyView(false, null, null);
+            } else {
+              this.v4c = null;
+              for (const e of stateToEntries(msg.state, oldestTail)) await this.applyEntry(e, false);
+              for (const e of msg.entries) await this.applyEntry(e, false);
+            }
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
             this.joined = true;
@@ -828,6 +847,20 @@ export class WorldAgent {
               if (Number.isFinite(msg.yaw)) this.yaw = msg.yaw;
             }
             break;
+          case "v4-log": {
+            if (!this.v4c?.active) break;
+            const r = this.v4c.ingest((msg as any).entries ?? [], (msg as any).from ?? -1);
+            // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
+            if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
+            for (const x of r.says) {
+              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}) } };
+              this.lastSeq = Math.max(this.lastSeq, e.seq);
+              this.noteOwnSay(e);
+              await this.applyEntry(e, true);
+            }
+            if (r.changed) this.applyView(true, r.actor ?? null, r.ts ?? null);
+            break;
+          }
           case "log":
             this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
             // Remember our OWN says briefly, so a sidecar that airs one can be
@@ -836,12 +869,7 @@ export class WorldAgent {
             // differ by a trailing space and the digest would not match).
             // Small ring — a receipt is valid for 5 minutes server-side, so
             // holding more than a handful of utterances is pointless.
-            if (msg.entry?.verb === "say" && msg.entry?.actor === this.name
-                && typeof msg.entry?.args?.text === "string") {
-              this.ownSays.set(msg.entry.seq, String(msg.entry.args.text));
-              if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
-              this.onMedia?.({ type: "speak", seq: msg.entry.seq, text: msg.entry.args.text });
-            }
+            this.noteOwnSay(msg.entry);
             await this.applyEntry(msg.entry, true);
             break;
           case "v4-result": {
@@ -1239,6 +1267,8 @@ export class WorldAgent {
         lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
+        ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
+        ...(Array.isArray((e as any).q) ? { q: (e as any).q } : {}),
         actor: (e as any).actor,
         ...((e as any).placer ? { placer: (e as any).placer } : {}),
         ...((e as any).comp ? { comp: (e as any).comp } : {}),
@@ -1259,6 +1289,62 @@ export class WorldAgent {
       this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
         ...((m as any).offset != null ? { offset: (m as any).offset } : {}),
         ...((m as any).yaw != null ? { yaw: (m as any).yaw } : {}) });
+    }
+  }
+
+  /** Remember our OWN says briefly, so a sidecar that airs one can be attested for it (the receipt is sha256 of the
+   *  text the world logged; only the world's copy is authoritative). Small ring: a receipt is valid for 5 minutes. */
+  private noteOwnSay(entry: any) {
+    if (entry?.verb === "say" && entry?.actor === this.name && typeof entry?.args?.text === "string") {
+      this.ownSays.set(entry.seq, String(entry.args.text));
+      if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+      this.onMedia?.({ type: "speak", seq: entry.seq, text: entry.args.text });
+    }
+  }
+
+  /** A v4 world: take the next view of this body's own v4 fold, and act on what changed (said in v4 terms,
+   *  shared/v4/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
+  private applyView(live: boolean, actor: string | null, ts: number | null) {
+    const prev = this.st as any;
+    const next = this.v4c.view(prev);   // carries the chat window this body already holds
+    const d = diffView(live ? prev : emptyView(), next);
+    const was = new Map<string, any>();
+    for (const c of d.things) if (!was.has(c.id)) was.set(c.id, this.entities.get(c.id));
+    this.st = next;
+    this.reconcileFromFold();
+    for (const c of d.things) {
+      try { this.onThingChange(c, was.get(c.id), live, actor ?? "world", ts ?? this.serverNow()); }
+      catch (e) { console.error(`[agent] ${c.what} ${c.id}:`, e); }
+    }
+  }
+  private onThingChange({ id, what, comp }: { id: string; what: string; comp?: string }, was: any, live: boolean, actor: string, ts: number) {
+    const now = this.entities.get(id);
+    switch (what) {
+      case "born":
+        if (live) this.noteBuild(actor, now?.pos);
+        this.trackSupport(this.syncSupport(id));   // a placed thing is a thing bodies can rest on (#17)
+        if (this.mounts.has(id)) this.dropSupport(id);   // …unless it rides a parent (it collides as the parent)
+        break;
+      case "pose":
+        if (live) this.noteBuild(actor, now?.pos);
+        this.trackSupport(this.syncSupport(id));   // support follows the thing it belongs to
+        break;
+      case "gone":
+        if (live) this.noteBuild(actor, was?.pos);
+        this.dropSupport(id);
+        break;
+      case "parent":
+        if (this.mounts.has(id)) this.dropSupport(id); else this.trackSupport(this.syncSupport(id));
+        break;
+      case "comp":
+        // an emitter beginning, changing or ending is something you SEE happen (#25); gated on where it actually is
+        if (comp === "particles" && live) {
+          const fx = this.eff(id, this.serverNow());
+          if (fx.ok) this.noteEmitter(actor, id, was?.comp?.particles ?? null, now?.comp?.particles ?? null, fx.pos, ts);
+          else this.noteEffGap(id, fx.why);
+        }
+        if (comp === "motion" || comp?.startsWith("motion:")) this.trackSupport(this.syncSupport(id));
+        break;
     }
   }
 
@@ -2959,8 +3045,7 @@ export class WorldAgent {
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);
     if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+      this.ws.send(JSON.stringify(this.joinMsg()));
     }
   }
 

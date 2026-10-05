@@ -7,6 +7,7 @@
 //           'parent' what it hangs from changed (attached, detached, or another parent / slot / offset)
 //           'comp'   one component (`comp`) was set, changed or removed
 //     world: the @world keys whose value changed (sky, terrain, grass, assets, roles, bans, blueprints, …)
+//     ids:   for a world key that's a map (roles, bans, behaviors), the entries in it that changed: {roles: ['Bob']}
 // A 'born' implies everything about the thing; it isn't followed by 'pose'/'parent'/'comp' for the same id.
 
 const EPS = 1e-9;
@@ -24,6 +25,7 @@ const POSE = ["pos", "q", "scale", "scale3"];
 // fields the diff reads itself, or that are stamps rather than state
 const OWN = new Set([...POSE, "lib", "kind", "yaw", "parent", "comp", "born", "actor", "ts", "placer"]);
 const NOT_WORLD = new Set(["entities", "recentChat", "chatTotal"]);
+const MAPS = new Set(["roles", "bans", "behaviors"]);
 
 /** One thing's change from `p` to `n` (either may be undefined), appended to `out`. */
 export function diffThing(id, p, n, out) {
@@ -39,7 +41,7 @@ export function diffThing(id, p, n, out) {
 }
 
 export function diffView(prev, next) {
-  const things = [], world = [];
+  const things = [], world = [], ids = {};
   const P = prev?.entities ?? {}, N = next?.entities ?? {};
   for (const id of Object.keys(P)) if (!N[id]) things.push({ id, what: "gone" });
   for (const id of Object.keys(N)) diffThing(id, P[id], N[id], things);
@@ -47,7 +49,10 @@ export function diffView(prev, next) {
     if (NOT_WORLD.has(k)) continue;
     const empty = (v) => v == null || (Array.isArray(v) && !v.length) || (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length);
     const a = prev?.[k], b = next?.[k];
-    if (!(empty(a) && empty(b)) && !near(a, b)) world.push(k);
+    if (!(empty(a) && empty(b)) && !near(a, b)) {
+      world.push(k);
+      if (MAPS.has(k)) ids[k] = [...new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])].filter((x) => !near(a?.[x], b?.[x]));
+    }
   }
-  return { things, world };
+  return { things, world, ids };
 }

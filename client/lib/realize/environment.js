@@ -25,29 +25,24 @@ function reconcileEnvironment() {
   for (const a of st.assets ?? []) applyAssetState(a);
 }
 
-function onEntry(entry) {
+function onWorld({ key, ts }) {
   const st = state.st;
-  switch (entry.verb) {
+  switch (key) {
     case 'terrain': applyTerrainState(st.terrain); break;
-    case 'grass':
-      // clear folds to null — the mow is the ARGS' clear flag, so pass the
-      // entry's own args when the fold has nothing to show for them
-      applyGrassState(st.grass ?? entry.args); break;
-    case 'sky':
-    case 'weather':
-      // the fold merged this entry into st.sky already (same math as the
-      // sequencer); the entry's ts anchors live transition timing
-      applySkyFolded(st.sky, entry.ts); break;
-    case 'asset': applyAssetState(entry.args); break;
+    // a mown lawn folds to null; the realizer is told to clear
+    case 'grass': applyGrassState(st.grass ?? { clear: true }); break;
+    // the fold merged this change into st.sky already; its ts anchors live transition timing
+    case 'sky': applySkyFolded(st.sky, ts ?? st.sky?.ts); break;
+    case 'assets': for (const a of st.assets ?? []) applyAssetState(a); break;
   }
 }
 
-const VERBS = new Set(['terrain', 'grass', 'sky', 'weather', 'asset']);
+
 
 export function initEnvironmentRealizer() {
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') reconcileEnvironment();
-    else if (ev.type === 'entry' && VERBS.has(ev.entry.verb)) onEntry(ev.entry);
+    else if (ev.type === 'world') onWorld(ev);
   });
   return true;
 }

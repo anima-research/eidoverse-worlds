@@ -1095,48 +1095,34 @@ export function reconcileModels() {
   syncBodyMounts();
 }
 
-function onEntry(entry) {
-  const { verb, args = {} } = entry;
+/** One thing changed (state.js: said in v4 terms, never as a v1 verb). The fold has already written state. */
+function onChange({ id, what, comp }) {
   try {
-    // the fold has already written state — refresh the parent index BEFORE
-    // any handler runs (retire's step-out reads the SCENE index; canDemote,
-    // mountsTouching and the sockets re-seat read this one)
-    if (verb === 'spawn' || verb === 'light' || verb === 'remove'
-      || verb === 'mount' || verb === 'dismount') refoldParents(verb, args.id);
-    switch (verb) {
-      case 'spawn':
-      case 'light':
-        reconcileId(args.id);
-        // a same-kind re-spawn REPLACES the bag wholesale (§3.1) but only
-        // refreshes in place — the light must follow the new bag, not the old
-        syncCompLight(args.id);
+    const ent = state.st.entities[id];
+    switch (what) {
+      case 'born':
+      case 'gone':
+        // refresh the parent index BEFORE the handler runs (retire's step-out reads the SCENE index; canDemote,
+        // mountsTouching and the sockets re-seat read this one)
+        refoldParents(what === 'gone' ? 'remove' : 'spawn', id);
+        reconcileId(id);
+        // a re-born thing keeps no stale bag: the light follows the new one
+        if (what === 'born') syncCompLight(id); else syncBodyMounts();   // body mounts onto a gone thing fold away
         break;
-      case 'place': {
-        const ent = state.st.entities[args.id];
-        if (ent) (ent.kind === 'light' ? refreshLight : refreshModel)(args.id, ent);
-        syncCompLight(args.id);   // a parked light (model still loading) moves with the fold
+      case 'pose':
+        if (ent) (ent.kind === 'light' ? refreshLight : refreshModel)(id, ent);
+        syncCompLight(id);   // a parked light (model still loading) moves with the fold
         break;
-      }
-      case 'remove':
-        reconcileId(args.id);
-        syncBodyMounts();   // body mounts onto the removed id fold away
+      case 'parent':
+        refoldParents('mount', id);
+        if (ent?.parent) execMount(id);
+        else if (entities.has(id) || tracked.has(id)) execDismount(id, ent);
         break;
       case 'comp':
-        if (args.id && typeof args.type === 'string') onComp(args.id, args.type);
-        break;
-      case 'motion':
-        if (args.id) onComp(args.id, 'motion');
-        break;
-      case 'mount':
-        if (state.st.entities[args.id]) execMount(args.id);
-        else syncBodyMounts();
-        break;
-      case 'dismount':
-        if (entities.has(args.id) || tracked.has(args.id)) execDismount(args.id, state.st.entities[args.id]);
-        syncBodyMounts();
+        onComp(id, comp);
         break;
     }
-  } catch (e) { report(`realize ${verb}`, e); }
+  } catch (e) { report(`realize ${what} ${id}`, e); }
 }
 
 /** Wire the realizer to state. Called once from main.js. */
@@ -1193,7 +1179,8 @@ export function initModelsRealizer() {
       rebuildFoldIndex();          // state is empty — so is the index
       sceneChildren.clear();
       sceneParentOf.clear();
-    } else if (ev.type === 'entry' && PORTED.has(ev.entry.verb)) onEntry(ev.entry);
+    } else if (ev.type === 'change') onChange(ev);
+    else if (ev.type === 'world' && ev.key === 'mounts') syncBodyMounts();   // a body seated or unseated (v1 worlds)
   });
   return true;
 }

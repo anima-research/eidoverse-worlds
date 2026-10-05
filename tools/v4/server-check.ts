@@ -173,6 +173,14 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await HANDLERS.door(ag, { tool: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "door");
   const un = await HANDLERS.door(ag, { tool: "undo", args: {} }, {} as any, "door");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
+  // slice 3c: the agent folds the v4 stream itself (joined v4fold), never the v1 projection
+  ok(ag.v4c?.active === true && ag.entities.has("agentcup"), "S5b the agent folds the door's own stream, and sees what it made there", [ag.v4c?.active, [...ag.entities.keys()]]);
+  const mk = await HANDLERS.door(ag, { tool: "create", args: { id: "plank", model: "test/table.glb", place: { at: [6, 6] } } }, {} as any, "door");
+  const sc = await HANDLERS.door(ag, { tool: "set", args: { id: "plank", component: "transform", value: { pos: [6, 0, 6], q: [0, 0, 0, 1], scale: [2, 1, 0.5] } } }, {} as any, "door");
+  ok(!mk.isError && !sc.isError, "S5b (the agent makes a plank and stretches it)", [mk.content[0].text.slice(0, 160), sc.content[0].text.slice(0, 160)]);
+  for (let i = 0; i < 40 && JSON.stringify(ag.entities.get("plank")?.scale3) !== "[2,1,0.5]"; i++) await sleep(50);
+  ok(JSON.stringify(ag.entities.get("plank")?.scale3) === "[2,1,0.5]", "S5b a stretched thing stays stretched in what the agent holds (the v1 replay flattened it)", ag.entities.get("plank"));
+  ok(JSON.stringify(ag.st.entities.plank?.scale3) === "[2,1,0.5]", "S5b …and in its view of the world (the record its look/inspect read)", ag.st.entities.plank);
   ag.close(); }
 
 // ---- S6: translate a v1 world into a new v4 world ----
@@ -225,7 +233,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   bv.close();
   ok(r1.ok && a.of("log").length === 0 && a.of("v4-log").length >= 2, "S8 it gets v4-log and no projected `log` entries", [a.of("log").length, a.of("v4-log").length]);
   const c = makeV4Client(); c.adopt(a.snapshot.v4);
-  for (const m of a.of("v4-log")) c.ingest(m.entries, m.from, legacyState(c.st));
+  for (const m of a.of("v4-log")) c.ingest(m.entries, m.from);
   const disk = fold(readLog(fs.readFileSync(path.join(W4, "meadow", "v4.jsonl"))));
   ok(digest(c.st) === digest(disk), "S8 its own fold of the stream = the log on disk (digest)");
   // a client that still reads v1 (an agent, an old page) joins after writes nobody projected: its snapshot is fresh
