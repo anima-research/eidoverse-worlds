@@ -25,6 +25,7 @@ import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
 import { net, sendVerb, sendVerbs, sendDrag } from './net.js';
 import { scaleOf } from '../../shared/scale3.js';
+import { engage, release } from './keyhints.js';
 import { placeVerbs, placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
@@ -653,7 +654,7 @@ canvas.addEventListener('mousedown', (e) => {
   // Ctrl-click EXTENDS the selection (editpanels owns the set; Shift is the
   // vertical drag here, so it can't double as the extend modifier it is in
   // the tree). No drag starts from an extend.
-  if (e.ctrlKey || e.metaKey) { bus.emit('edit-extend', id); e.preventDefault(); return; }
+  if (e.ctrlKey || e.metaKey) { bus.emit('edit-extend', id); e.preventDefault(); return; }   // keys: selectExtend
   select(id);
   // A press is a SELECT. It only becomes a drag once the pointer actually
   // travels — otherwise clicking a thing to look at its label moved it.
@@ -675,7 +676,7 @@ canvas.addEventListener('mousedown', (e) => {
     // Shift held at grab = a VERTICAL drag: the ground-plane raycast can't
     // express height, so hold Shift and the pointer's up/down maps to world Y
     // with the horizontal position pinned. The standard editor gesture.
-    vertical: e.shiftKey,
+    vertical: e.shiftKey,   // keys: meshMove
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
@@ -701,10 +702,12 @@ addEventListener('mousemove', (e) => {
     // thing refuses here, before any preview exists to snap back
     if (lockedHint(dragging.id)) { dragging = null; return; }
     dragging.armed = true;
+    engage('meshMove');
   }
 });
 
 addEventListener('mouseup', () => {
+  if (dragging?.armed) release();
   if (dragging?.armed && selected) {
     const moved = dragging.before;
     const o = selected.obj;
@@ -745,8 +748,9 @@ bus.on('key', (e) => {
   // Undo stays available outside edit mode — you may only notice the mistake
   // after you have gone back to looking.
   // v4: redo is Ctrl+Shift+Z or Ctrl+Y (the door's undo of my undo); a v1 world keeps today's keys exactly
-  if (V4.isV4() && (e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) { e.preventDefault?.(); V4.redo(); return; }
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }
+  if (V4.isV4() && (e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) {   // keys: undo
+    e.preventDefault?.(); V4.redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
   if (!editMode) return;
 
   // a selected seat anchor holds the editing keys before things do
@@ -756,7 +760,7 @@ bus.on('key', (e) => {
   // G move (Blender), E rotate and R scale (Maya), Q select, F find, X or Del
   // removes, Esc steps out, B toggles the mode. The old per-key nudges (Q/E
   // turn, ,/. size, R/F raise) are retired; the tools do those with a drag.
-  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+  if (!e.ctrlKey && !e.metaKey && !e.altKey) {   // keys: toolKeys
     const t = { KeyQ: 'select', KeyG: 'move', KeyE: 'rotate', KeyR: 'scale', KeyP: 'pivot' }[e.code];   // P: the pivot (Maya's D; D walks here)
     if (t) {   // the active tool's key again steps its space (G G: move in the thing's own axes), saying so
       if (t === getTool() && SPACES[t]?.length > 1) { const s = cycleSpace(t); flashHint(`${t} in <b>${s}</b> axes · ${{ move: 'G', rotate: 'E' }[t]} again to switch`, 2200); return; }

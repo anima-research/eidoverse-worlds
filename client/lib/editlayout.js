@@ -23,6 +23,8 @@ import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPA
 import { panelFrame } from './ui.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
+import { withKeys, KEYHINTS } from './keyhints.js';
+import * as V4 from './v4edit.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 
@@ -79,7 +81,9 @@ function build() {
     const b = el('button', 'edit-tool');
     b.innerHTML = iconSvg(t.icon, 16);   // one glyph set (icons.js) — the rail's old ↖ ✥ ↻ ⤢ ⊙ were four fonts' worth of shapes
     if (t.key) b.append(el('kbd', 'edit-tool-key', t.key));   // the letter, so hands learn it
-    b.dataset.tool = t.id; b.title = t.title; b.disabled = !!t.disabled;
+    b.dataset.tool = t.id; b.disabled = !!t.disabled;
+    // the tool's hidden keys, in its tooltip (keyhints.js): the gizmo's Ctrl-snap, select's Ctrl/Shift-click, all the letters
+    b.title = withKeys(withKeys(t.title, { select: 'selectExtend', move: 'gizmo', rotate: 'gizmo', scale: 'gizmo', pivot: 'gizmo' }[t.id]), 'toolKeys');
     b.onclick = () => setTool(t.id);
     // right-click: the tool's spaces (Maya's marking menu, as a plain menu): one click picks, the tool comes with it
     if (SPACES[t.id]?.length > 1) b.oncontextmenu = (e) => {
@@ -106,7 +110,8 @@ function build() {
       { label: 'world panel (ground · sky · build)…', run: () => { const w = panelFrame(); w.show(); w.el.style.zIndex = '30'; } },
     ]),
     menu('Edit', () => [
-      { label: 'undo\tCtrl+Z', run: undo },
+      { label: 'undo\tCtrl+Z', run: undo, title: KEYHINTS.undo.before },
+      ...(V4.isV4() ? [{ label: 'redo\tCtrl+Shift+Z', run: () => V4.redo(), title: KEYHINTS.undo.before }] : []),
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
       { label: 'leave edit mode', run: () => setEditMode(false) },
@@ -209,6 +214,7 @@ function menu(label, items) {
       const row = el('button', 'edit-menu-item');
       const [txt, key] = it.label.split('\t');
       row.append(el('span', '', txt)); if (key) row.append(el('kbd', '', key));
+      if (it.title) row.title = it.title;
       row.onclick = () => { closeMenus(); it.run(); };
       pop.append(row);
     }

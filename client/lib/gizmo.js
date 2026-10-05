@@ -21,6 +21,7 @@ import { sceneSelected } from './scenegraph.js';
 import { getTool, getSpace, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
+import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
 import { foldRecord, inverseOf } from './inspect.js';
 import { mayAuthor } from './placer.js';
@@ -61,8 +62,10 @@ function ensure() {
   controls.addEventListener('objectChange', onChange);
   setPointerVeto(() => !!controls?.axis || !!controls?.dragging);
   // Ctrl held = snapping (Blender's Ctrl, Maya's grid): 10 cm, 5°, 0.1×
-  addEventListener('keydown', (e) => { if (e.key === 'Control') { controls.setTranslationSnap(0.1); controls.setRotationSnap(5 / R2D); controls.setScaleSnap(0.1); } });
-  addEventListener('keyup', (e) => { if (e.key === 'Control') { controls.setTranslationSnap(null); controls.setRotationSnap(null); controls.setScaleSnap(null); } });
+  addEventListener('keydown', (e) => { if (e.key === 'Control') {   // keys: gizmo
+    controls.setTranslationSnap(0.1); controls.setRotationSnap(5 / R2D); controls.setScaleSnap(0.1); } });
+  addEventListener('keyup', (e) => { if (e.key === 'Control') {   // keys: gizmo
+    controls.setTranslationSnap(null); controls.setRotationSnap(null); controls.setScaleSnap(null); } });
   return controls;
 }
 
@@ -105,6 +108,7 @@ function sync() {
 
 function beginDrag() {
   if (!attachedId) return;
+  engage('gizmo');
   if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), scale: entities.get(attachedId).scale.x, ...(V4.isV4() ? { v4: V4.compsOf(attachedId) } : {}) } : null;
@@ -160,6 +164,7 @@ function endPivotDrag() {
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
 function endDrag() {
+  release();
   if (getTool() === 'pivot') { endPivotDrag(); return; }
   if (cancelled) { cancelled = false; start = null; return; }
   const id = attachedId; const obj = id && entities.get(id);

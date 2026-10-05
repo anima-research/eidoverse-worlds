@@ -481,6 +481,19 @@ try {
   const travel = await page(`const P = await import('/lib/panels.js'); const a = P.scrubTravel(300); P.setScrubFeel({ accel: false }); const l = P.scrubTravel(300); P.setScrubFeel({ accel: true }); return JSON.stringify([a, l]);`);
   check("SF4 accelerating travels further than linear on a long drag (300 px)", JSON.parse(travel)[0] > JSON.parse(travel)[1] * 2, travel);
 
+  // keyhints (R 10-04): before = tooltip, during = the status line at the bottom
+  const moveTip = await evalJson(`document.querySelector('.edit-tool[data-tool="move"]')?.title ?? ''`);
+  check("KH1 the move tool's tooltip says the gizmo's hidden key (hold Ctrl to snap) and the tool letters", /hold Ctrl to snap/.test(moveTip) && /P pivot/.test(moveTip), moveTip);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); return true;`); await sleep(500);
+  await evalJson(`(() => { const n = [...document.querySelectorAll('[data-frame="inspector"] .sp-f-num .sp-num')].find((x) => !x.disabled); const r = n.getBoundingClientRect();
+    n.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 7, clientX: r.left + 5, clientY: r.top + 5 }));
+    n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientX: r.left + 30, clientY: r.top + 5 })); return true; })()`);
+  const during = await evalJson(`document.getElementById('hintbar')?.textContent ?? ''`);
+  check("KH2 while scrubbing, the status line says the keys (Shift finer · Ctrl whole numbers)", /Shift finer/.test(during) && /Ctrl whole numbers/.test(during), during);
+  await evalJson(`(() => { const n = [...document.querySelectorAll('[data-frame="inspector"] .sp-f-num .sp-num')].find((x) => !x.disabled); n.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7 })); return true; })()`);
+  await sleep(300);
+  check("KH3 …and gives the bar back when the drag ends", await evalJson(`!/Shift finer/.test(document.getElementById('hintbar')?.textContent ?? '') || document.getElementById('hintbar').classList.contains('gone')`), await evalJson(`document.getElementById('hintbar')?.textContent`));
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

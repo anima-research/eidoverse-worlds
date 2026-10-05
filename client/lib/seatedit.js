@@ -19,6 +19,7 @@ import { entities, entityMeta, comps, findPart } from './world.js';
 import { sendVerb } from './net.js';
 import { mouse } from './controller.js';
 import { flashHint } from './ui.js';
+import { engage, release } from './keyhints.js';
 import { setEditMode, isEditing, deselect, pushUndo,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
@@ -100,6 +101,7 @@ export function selectSeat(pick) {
   deselect();                              // a seat and a thing never co-hold the keys
   seatSel = pick;
   refreshSeatHighlight();
+  engage('seatTurn');
   const meta = entityMeta.get(pick.id) ?? {};
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
   setInspectorHtml(
@@ -107,6 +109,7 @@ export function selectSeat(pick) {
     `<span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);
 }
 export function deselectSeat() {
+  if (seatSel) release();
   seatSel = null; seatDrag = null;
   refreshSeatHighlight();
   hideInspector();
@@ -231,8 +234,8 @@ export function seatMouseDown(e) {
  *  selection consumed the whole key set. */
 export function seatKeyDown(e) {
   if (!seatSel) return false;
-  if (e.code === 'KeyQ') turnSeat(e.shiftKey ? 0.02 : Math.PI / 12);
-  if (e.code === 'KeyE') turnSeat(e.shiftKey ? -0.02 : -Math.PI / 12);
+  if (e.code === 'KeyQ') turnSeat(e.shiftKey ? 0.02 : Math.PI / 12);   // keys: seatTurn
+  if (e.code === 'KeyE') turnSeat(e.shiftKey ? -0.02 : -Math.PI / 12);   // keys: seatTurn
   if (e.code === 'Delete' || e.code === 'Backspace') removeSeat();
   return true;
 }

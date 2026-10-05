@@ -73,6 +73,7 @@ import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';
 import { svg as iconSvg } from './icons.js';
+import { KEYHINTS, engage, release, withKeys } from './keyhints.js';
 export { parseEntry };
 
 // ---------------------------------------------------------------- DOM renderer
@@ -187,6 +188,7 @@ export function contextMenu(x, y, items, pick) {
   const m = el('div', 'sp-ctx');
   for (const it of items) {
     const b = el('button', `sp-ctx-item${it.danger ? ' danger' : ''}`, it.label);
+    if (it.title) b.title = it.title;
     b.onclick = () => { closeContextMenu(); pick(it.k); };
     m.append(b);
   }
@@ -239,15 +241,9 @@ export const getScrubFeel = () => ({ ...scrubFeel });
 export function setScrubFeel(next) { scrubFeel = { ...scrubFeel, ...next }; try { localStorage.setItem('ew-scrub-feel', JSON.stringify(scrubFeel)); } catch { /* fine */ } return getScrubFeel(); }
 /** pixels dragged → how far the value moves, in units of one 'step' of travel */
 export const scrubTravel = (px) => { const k = SCRUB_SPEEDS[scrubFeel.speed] ?? 1; return scrubFeel.accel ? px * k * (1 + Math.abs(px) / 120) : px * k; };
-export const SCRUB_TIP = 'drag to change · Shift finer · Ctrl whole numbers · click to type';
-let scrubHintEl = null;
-function scrubHint(on, anchor) {
-  if (!on) { scrubHintEl?.remove(); scrubHintEl = null; return; }
-  scrubHintEl ??= document.body.appendChild(el('div', 'sp-scrub-hint'));
-  scrubHintEl.textContent = `Shift finer · Ctrl whole numbers · ${scrubFeel.speed}${scrubFeel.accel ? ', accelerating' : ''}`;
-  const r = anchor.getBoundingClientRect();
-  Object.assign(scrubHintEl.style, { position: 'fixed', left: `${r.left}px`, top: `${Math.max(4, r.top - 22)}px`, zIndex: 10001, fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,0,0,.75)', color: '#ddd', pointerEvents: 'none' });
-}
+export const SCRUB_TIP = KEYHINTS.scrub.before;
+// while scrubbing, the keys go on the status line (keyhints.js); the speed rides along
+function scrubHint(on) { if (on) engage('scrub'); else release(); }
 
 function stepper(value, f, commit) {
   const cur = { step: 0.1, dp: 2, ...f };   // options are LIVE: update() refreshes them (a typed value past softMax raises the next drag's cap)
@@ -277,7 +273,7 @@ function stepper(value, f, commit) {
     else if (e.key === 'Enter') { num.onchange(); }
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
-      const d = (e.key === 'ArrowUp' ? 1 : -1) * cur.step * (e.shiftKey ? 10 : 1);
+      const d = (e.key === 'ArrowUp' ? 1 : -1) * cur.step * (e.shiftKey ? 10 : 1);   // keys: scrub
       send(toWire(+toFace(wire) + d));
     }
   };
@@ -308,18 +304,18 @@ function stepper(value, f, commit) {
     // accumulate BEFORE the arm check (Godot :113 then :117): the pixels
     // inside the click slop still count, or a drag that wanders back lands
     // short of where it began — the drift this whole shape exists to avoid
-    drag.dist += dx * (e.shiftKey ? 0.1 : 1);
+    drag.dist += dx * (e.shiftKey ? 0.1 : 1);   // keys: scrub
     if (!drag.armed) {
       if (Math.abs(e.clientX - drag.x0) < 4) return;           // click-vs-drag slop
       drag.armed = true;
       try { num.setPointerCapture(drag.id); } catch { /* no capture here */ }
       num.classList.add('scrub');
       num.blur();
-      scrubHint(true, num);
+      scrubHint(true);
       document.addEventListener('keydown', onDragKey, true);
     }
     let face = drag.face0 + scrubTravel(drag.dist) * perPx();
-    if (e.ctrlKey || e.metaKey) face = Math.round(face);
+    if (e.ctrlKey || e.metaKey) face = Math.round(face);   // keys: scrub
     const w = soft(toWire(face));
     drag.cur = w; wire = w; show(w);
     commit(w, { live: true });
@@ -550,7 +546,8 @@ function fieldDOM(f, edit, ro = {}) {
         const main = el('span', 'sp-item-main');
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
         if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
-        main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // Shift/Ctrl-click extends a selection
+        main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // keys: selectExtend
+        main.title = withKeys(r.sub ? `${r.label} — ${r.sub}` : r.label, 'selectExtend');
         // inline rename (Godot F2 / Blender double-click): a row that carries `rename` (its
         // current label) swaps the label for an input; Enter or blur commits
         // edit('rename', id, f, {value}), Esc cancels. The panel holds repaints while it's focused.
@@ -614,7 +611,7 @@ function fieldDOM(f, edit, ro = {}) {
       // escape hatch under a typed group, for keys its fields don't speak for.
       const wrap = el('div', 'sp-json');
       const tog = el('button', 'sp-json-tog', '{ } JSON');
-      const ta = el('textarea', 'sp-json-ta'); ta.spellcheck = false; ta.disabled = !!f.disabled;
+      const ta = el('textarea', 'sp-json-ta'); ta.spellcheck = false; ta.disabled = !!f.disabled; ta.title = withKeys(f.hint, 'jsonCommit');
       const err = el('div', 'sp-json-err');
       let base = f.value ?? '', open = !f.collapsed;
       const size = () => { ta.rows = Math.min(14, Math.max(3, ta.value.split('\n').length)); };
@@ -629,7 +626,7 @@ function fieldDOM(f, edit, ro = {}) {
       ta.onblur = () => { if (ta.value !== base && valid()) edit(f.k, ta.value); };
       ta.onkeydown = (e) => {
         e.stopPropagation();
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.blur(); }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.blur(); }   // keys: jsonCommit
         else if (e.key === 'Escape') { ta.value = base; valid(); size(); ta.blur(); }
       };
       if (f.collapsed) wrap.append(tog);

@@ -119,11 +119,17 @@ bus.on('esc-quiet', (did) => {
   else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
 });
 export function flashHint(html, ms = 2600) {
+  delete el.hint.dataset.keyhint;   // a flash takes the bar from an engaged gesture's keys
   el.hint.innerHTML = html;
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
   el.hint._t = setTimeout(endFlash, ms);
 }
+// keyhints.js: a gesture's keys hold the bar while you're engaged (R 10-04: the status line, once engaged), then give it back
+addEventListener('ew-keyhint', (e) => {
+  if (e.detail) { clearTimeout(el.hint._t); el.hint._t = -1; el.hint.innerHTML = `<span>${e.detail}</span>`; el.hint.classList.remove('gone'); el.hint.dataset.keyhint = '1'; }
+  else if (el.hint.dataset.keyhint) { delete el.hint.dataset.keyhint; endFlash(); }
+});
 // a flash is over (its time ran out, or what it said stopped being true): the bar goes back to the ambient offer or away
 function endFlash() {
   clearTimeout(el.hint._t);

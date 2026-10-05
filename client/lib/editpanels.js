@@ -43,7 +43,8 @@ import { myState } from './controller.js';
 import { placerOf, guardedByOther, placerName } from './placer.js';
 import { reindexCollider } from './colliders.js';
 import * as V4 from './v4edit.js';
-import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
+import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
+import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -222,7 +223,7 @@ function hierarchyFields() {
     r.menu = [
       { k: 'rename', label: 'rename  (F2)' },
       { k: 'find', label: 'find  (F)' },
-      { k: 'duplicate', label: 'duplicate  (Alt+D)' },
+      { k: 'duplicate', label: 'duplicate  (Alt+D)', title: KEYHINTS.duplicate.before },
       { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
       ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
@@ -1013,7 +1014,7 @@ export function initEditPanels() {
   setRemoveHook(() => removeMany(selection()));
   bus.on('edit-find', () => findSelected());              // F in the viewport
   bus.on('key', (e) => {   // Alt+D duplicates: D strafes, and Shift+D strafes faster
-    if (!shown || e.ctrlKey || e.metaKey || !e.altKey) return;
+    if (!shown || e.ctrlKey || e.metaKey || !e.altKey) return;   // keys: duplicate
     if (e.code === 'KeyD' && sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }
   });
   // ↑/↓ walk the tree ONLY while the tree has focus — on the window they are
