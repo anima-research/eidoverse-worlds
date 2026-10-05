@@ -1129,6 +1129,7 @@ function indexEntry(x, E, i) {
   if (e.kind === "act") { let a = x.actsOf.get(e.actor); if (!a) x.actsOf.set(e.actor, (a = [])); a.push(i);
     const b = x.purged.has(i) ? null : e.body;
     if (e.verb === "undo" && b && b.undoes !== undefined) x.undone.add(b.undoes);
+    if (e.verb === "undo" && b && Array.isArray(b.rollback?.acts)) for (const q of b.rollback.acts) x.undone.add(q);
     if (e.verb !== "undo" && e.actor !== "door") x.lastAct = i;
     if (e.actor === "door" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
   if (e.kind === "state") { x.states.push(i);
@@ -1181,34 +1182,10 @@ function buildUndo(ctx, a, w) {
   const mine = X.actsOf.get(ctx.actor) ?? [];
   const bodyOf = (seq) => (X.purged.has(seq) ? null : E[seq].body); // a purged act's request can't be read, or matched by label
   const result = (seq) => { const r = X.resultOf.get(seq); return r === undefined ? undefined : E[r]; };
-  const pick = (pred) => { for (let k = mine.length - 1; k >= 0; k--) if (pred(mine[k])) return E[mine[k]]; return undefined; };
-  // an undo's depth along its `undoes` chain: 0 = an ordinary act, 1 = an undo of one, 2 = a redo (an undo of an undo)…
-  // A bare undo takes back my latest live act of EVEN depth: an ordinary act or a redo. Skipping only plain undos keeps
-  // Ctrl+Z walking back, while a redo is undone first (agent lab round 2, Hazel: a bare undo after a redo reached past
-  // it into older work).
-  const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = E[q].body?.undoes; } return d; };
-  const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && E[mine[k]].body?.undoes === seq) return mine[k]; return undefined; };
-  // F2 (decided 10-05): revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's
-  // or a visitor's) or an owner (anyone's, owners included: round-2 R11, owners revert owners). Roles as they are NOW.
-  const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "act")) return undefined;
-    if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the door's own, not a person's`, "undo takes back people's acts");
-    const me = RANK[roleOf(ctx.st, ctx.actor)], them = RANK[roleOf(ctx.st, e.actor)];
-    if (me < RANK.builder || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${me < RANK.builder ? "undoing someone else's work needs builder" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
-    return e; };
-  const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : othersAct(a.act))
-    : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
-    : pick((q) => E[q].verb !== "new" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
-  if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
-    refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
-  if (target.verb === "new") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
-  if (X.undone.has(target.seq)) { let head = target.seq; const chain = []; for (let i = 0; i < 64; i++) { const u = undoneBy(head); if (u === undefined) break; chain.push(u); head = u; }
-    const live = head !== target.seq && depthOf(head) % 2 === 0 ? head : null;
-    refuse("nothing", `act ${target.seq} was already undone${chain.length ? ` (by ${chain.map((c) => `${depthOf(c) % 2 ? "undo" : "redo"} ${c}`).join(", then ")})` : ""}`,
-      live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
-  if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
-  const res = result(target.seq); if (!res) refuse("nothing", "that act changed nothing", "");
-  if (target.verb === "sculpt" && TR.ADDITIVE.has(target.body.request?.brush) && !target.body.clamped) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
-  const now = ctx.st; const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
+  // the inverse of one act against `now`: what to write, and what to leave because someone changed it since. A function
+  // so an owner's rollback can run it over many acts in a row, each against what the previous inverses left
+  const inverseOf = (target, res, now) => {
+  const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every state entry since
   // the result (bounded by what happened after the act, never the log before it)
@@ -1244,6 +1221,53 @@ function buildUndo(ctx, a, w) {
     const hit = [...othersSince].find((x) => x !== o.id && trial.entities[x] && obbs(trial, x).some((sb) => mine.some((ma) => satDepth(ma, sb) > 0.02)));
     if (hit) { const who = later.find((e) => opsQuiet(e).some((q) => q.id === hit))?.actor;
       skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${said(who)} has placed since`, by: who }); groups.splice(i, 1); } }
+  return { groups, skipped }; };
+  const pick = (pred) => { for (let k = mine.length - 1; k >= 0; k--) if (pred(mine[k])) return E[mine[k]]; return undefined; };
+  // an undo's depth along its `undoes` chain: 0 = an ordinary act, 1 = an undo of one, 2 = a redo (an undo of an undo)…
+  // A bare undo takes back my latest live act of EVEN depth: an ordinary act or a redo. Skipping only plain undos keeps
+  // Ctrl+Z walking back, while a redo is undone first (agent lab round 2, Hazel: a bare undo after a redo reached past
+  // it into older work).
+  const depthOf = (seq) => { let d = 0, q = seq; while (q !== undefined && E[q]?.verb === "undo" && d < 64) { d++; q = E[q].body?.undoes; } return d; };
+  const undoneBy = (seq) => { for (let k = mine.length - 1; k >= 0; k--) if (E[mine[k]].verb === "undo" && E[mine[k]].body?.undoes === seq) return mine[k]; return undefined; };
+  // an owner's rollback (round-2 R11, CoreProtect's rollback by player and time): undo {actor, since} takes back every
+  // act that person made since a version, newest first, each inverse against what the previous ones left; later work by
+  // anyone else still stands. It says how many acts it would take back, and above 20 it needs confirm: true.
+  if (a.actor !== undefined || a.since !== undefined) {
+    if (roleOf(ctx.st, ctx.actor) !== "owner") refuse("rights", "rolling back someone's work needs owner", "undo {act} takes back one act, along rank");
+    if (!isIdentity(a.actor) || RESERVED.has(a.actor)) refuse("shape", "rollback is undo {actor, since}: actor is a person's identity", "history shows who did what");
+    const from = versionSeq(w, a.since, "since");
+    const acts = (X.actsOf.get(a.actor) ?? []).filter((q) => q >= from && X.resultOf.has(q) && !X.undone.has(q) && !["new", "undo", "throw", "drop", "leave"].includes(E[q].verb)).reverse();
+    if (!acts.length) refuse("nothing", `${said(a.actor)} has made no change since act ${from} that's still in force`, "");
+    if (acts.length > 20 && a.confirm !== true && a.dry !== true) refuse("confirm", `that rolls back ${acts.length} acts by ${said(a.actor)} since act ${from}`, "dry: true lists them; confirm: true does it", { acts: acts.length });
+    let st = ctx.st; const all = []; const skippedAll = [], done = [];
+    for (const q of acts) { const { groups, skipped } = inverseOf(E[q], result(q), st); const ops = groups.flat();
+      skippedAll.push(...skipped); if (ops.length) { all.push(...ops); st = scratch(st, ops); done.push(q); } }
+    if (!all.length) refuse("conflict", `everything ${said(a.actor)} did since then has been changed by others since`, "their later work stands");
+    if (skippedAll.length) ctx.notes.push({ skipped: skippedAll });
+    ctx.actExtra = { rollback: { actor: a.actor, since: from, acts: done } };
+    ctx.undid = { kind: "rollback", acts: done.length, of: said(a.actor) };
+    return all; }
+  // F2 (decided 10-05): revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's
+  // or a visitor's) or an owner (anyone's, owners included: round-2 R11, owners revert owners). Roles as they are NOW.
+  const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "act")) return undefined;
+    if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the door's own, not a person's`, "undo takes back people's acts");
+    const me = RANK[roleOf(ctx.st, ctx.actor)], them = RANK[roleOf(ctx.st, e.actor)];
+    if (me < RANK.builder || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${me < RANK.builder ? "undoing someone else's work needs builder" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
+    return e; };
+  const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : othersAct(a.act))
+    : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
+    : pick((q) => E[q].verb !== "new" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
+  if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
+    refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
+  if (target.verb === "new") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
+  if (X.undone.has(target.seq)) { let head = target.seq; const chain = []; for (let i = 0; i < 64; i++) { const u = undoneBy(head); if (u === undefined) break; chain.push(u); head = u; }
+    const live = head !== target.seq && depthOf(head) % 2 === 0 ? head : null;
+    refuse("nothing", `act ${target.seq} was already undone${chain.length ? ` (by ${chain.map((c) => `${depthOf(c) % 2 ? "undo" : "redo"} ${c}`).join(", then ")})` : ""}`,
+      live !== null ? `it's back in force through redo ${live}: undo {act: ${live}} (or a bare undo) takes it back` : "a bare undo takes back your latest change; history shows the chain"); }
+  if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
+  const res = result(target.seq); if (!res) refuse("nothing", "that act changed nothing", "");
+  if (target.verb === "sculpt" && TR.ADDITIVE.has(target.body.request?.brush) && !target.body.clamped) { const inv = sculptInverse(w, ctx, target, res); if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; return inv; } }
+  const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
   // round-2 R11: a brake on revert wars (Wikipedia's 3RR): reverting someone else's work on a thing that has already been

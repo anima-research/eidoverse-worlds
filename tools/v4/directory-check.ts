@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { directoryAt, isMinted } from "../../server/v4/directory.ts";
 import { openLive } from "../../server/v4/live.ts";
-import { request } from "../../shared/v4/door.js";
+import { request, actIndexOf } from "../../shared/v4/door.js";
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, what: string, why?: unknown) => { if (c) pass++; else { fail++; console.log(`  FAIL ${what}${why === undefined ? "" : ` — ${JSON.stringify(why).slice(0, 300)}`}`); } };
@@ -178,6 +178,32 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const r2: any = request(w, own, "weather", { weather: "rain" }); const sky2 = w.state().entities["@world"].c.sky;
   ok(r2.ok && sky2.weather === "rain" && sky2.clouds === "cumulus" && sky2.world === "earth", "W3 weather merges onto the standing sky", [r2.refused, sky2]);
   ok(request(w, vis, "sky", panel).refused?.code === "rights", "W4 a visitor can't set the world's sky"); }
+
+// ---- RB: an owner's rollback, undo {actor, since} (round-2 R11) ----
+{ let T = 1800000000000; const d = directoryAt(file);
+  const w: any = openLive(path.join(tmp, "worlds", "rb"), "rb", { now: () => (T += 1000), custodyFile: path.join(tmp, "rb-custody.json"), nameOf: d.nameOf });
+  const P = (n: string) => d.resolve({ sub: `human:discord:rb-${n}`, name: n });
+  const own = P("ola"), mal = P("mal"), car = P("car");
+  const q = (who: string, tool: string, a: any = {}) => request(w, who, tool, a) as any;
+  q(own, "new", { title: "rb" }); for (const id of [mal, car]) q(own, "set", { id: "@world", component: `roles:${id}`, value: { role: "builder" } });
+  q(own, "create", { id: "fountain", model: "crate", place: { at: [0, 6] } });
+  const since = { seq: w.entries.length - 1, head: w.headAt(w.entries.length - 1) };
+  q(mal, "create", { id: "junk-1", model: "crate", place: { at: [2, 2] } }); q(mal, "create", { id: "junk-2", model: "crate", place: { at: [4, 2] } });
+  q(mal, "set", { id: "fountain", component: "label", value: "mal was here" }); q(mal, "create", { id: "junk-3", model: "crate", place: { at: [6, 2] } });
+  q(car, "set", { id: "junk-3", component: "label", value: "car kept this one" });
+  ok(q(car, "undo", { actor: mal, since }).refused?.code === "rights", "RB1 rolling back someone's work needs owner");
+  const r = q(own, "undo", { actor: mal, since }); const E = w.state().entities;
+  ok(r.ok && !E["junk-1"] && !E["junk-2"] && E.fountain && E.fountain.c.label === undefined, "RB2 an owner rolls back everything a person did since a version, in one act", r.refused);
+  ok(E["junk-3"]?.c.label === "car kept this one" && r.notes?.some((n: any) => n.skipped?.length), "RB3 …a third person's later work stands (and the reply says what was left)", [E["junk-3"]?.c, r.notes]);
+  const rolled: number[] = w.entries.at(-2)?.body?.rollback?.acts ?? []; const X = actIndexOf(w);
+  ok(rolled.length === 3 && rolled.every((qq) => X.undone.has(qq)), "RB4 the acts the rollback took back count as undone (the one left in force, junk-3, doesn't)", rolled);
+  const s2 = { seq: w.entries.length - 1, head: w.headAt(w.entries.length - 1) };
+  for (let i = 0; i < 22; i++) q(mal, "create", { id: `spam-${i}`, model: "crate", place: { at: [i - 11, -6] } });
+  const big = q(own, "undo", { actor: mal, since: s2 });
+  ok(big.refused?.code === "confirm" && big.refused?.acts === 22, "RB5 more than 20 acts needs confirm: true, and says how many", big.refused);
+  const n0 = w.entries.length; const dry = q(own, "undo", { actor: mal, since: s2, dry: true });
+  ok(dry.ok && w.entries.length === n0, "RB6 dry: true writes nothing", dry);
+  ok(q(own, "undo", { actor: mal, since: s2, confirm: true }).ok && !Object.keys(w.state().entities).some((k) => k.startsWith("spam-")), "RB7 with confirm it rolls back all 22"); }
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
