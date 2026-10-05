@@ -1,7 +1,7 @@
-// shared/v4/fromv1.js — a v1 verb (today's UI and agent tools speak them) as a v4 door request. One mapping for every
-// caller: the server answers an old client's `verb` and an agent's {type: "v4", verb} with it (server/v4/messages.ts),
-// and edit mode in a v4 world spells its gestures with it before sending them as requests (client/lib/v4edit.js), so
-// a human's edit and an agent's are the same request by construction. Pure; browser-safe.
+// shared/v4/fromv1.js — a v1 verb (today's UI and agent tools still PLAN in them) as a v4 door request. One mapping for
+// every caller, applied at the caller's own edge (slice 3c): the page (net.js sendVerb, v4edit.js), and the agent's
+// building tools (mcpl/agent.ts sendVerb) spell their verbs here and send only door requests, so a human's edit and an
+// agent's are the same request by construction, and no v1 verb reaches a v4 world. Pure; browser-safe.
 import { enc, encName } from "./names.js";
 import { qNorm } from "../rot.js";
 
@@ -76,3 +76,32 @@ export function toV4(st, verb, a) {
   }
 }
 
+// ---- a whole plan: several v1 verbs as one request ----
+const qArg = (a) => (Array.isArray(a?.q) && a.q.length === 4 ? a.q : Number.isFinite(a?.yaw) ? yawQ(a.yaw) : undefined);
+/** v1 verbs (as today's UI and agent tools plan them) → ONE door request against the fold `st` (a single tool, or a
+ *  batch), or {refuse} / {noop}. One edit is one act, so one Ctrl+Z. Every client spells at its own edge (3c): no v1
+ *  verb crosses the wire to a v4 world. */
+export function spellVerbs(st, verbs) {
+  const ops = [];
+  for (const v of verbs) {
+    const a = v.args ?? {}; const e = a.id != null ? st.entities[enc(String(a.id))] : null;
+    // a thing that already rides a parent moves in that parent's frame (what the scene shows it at): set transform,
+    // local. A `mount` to the parent it already has is the same move (editschema spells a child's move as a mount).
+    const sameParent = v.verb === 'mount' && e?.c.parent?.to === enc(String(a.to)) && (e.c.parent.slot ?? null) === (a.slot ?? null);
+    if ((v.verb === 'place' && e?.c.parent) || sameParent) {
+      const t = { ...(e.c.transform ?? {}) };
+      const pos = v.verb === 'mount' ? a.offset : a.pos; if (Array.isArray(pos)) t.pos = pos;
+      const q = qArg(a); if (q) t.q = q;
+      if (Number.isFinite(a.scale)) t.scale = [a.scale, a.scale, a.scale];
+      else if (Array.isArray(a.scale) && a.scale.length === 3 && a.scale.every(Number.isFinite)) t.scale = [...a.scale];   // per axis (R 10-04)
+      ops.push({ tool: 'set', args: { id: enc(String(a.id)), component: 'transform', value: t } });
+      continue;
+    }
+    const m = toV4(st, v.verb, a);
+    if ('noop' in m) continue;
+    if ('refuse' in m) return { refuse: m.refuse };
+    if (m.tool === 'batch') ops.push(...m.args.ops); else ops.push(m);
+  }
+  if (!ops.length) return { noop: true };
+  return ops.length === 1 ? ops[0] : { tool: 'batch', args: { ops } };
+}

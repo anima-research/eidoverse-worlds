@@ -49,6 +49,7 @@ import { makeV4Client } from "../shared/v4/client.js";
 import { diffView } from "../shared/v4/viewdiff.js";
 import { emptyView } from "../shared/v4/record.js";
 import { hear } from "../shared/chatwindow.js";
+import { spellVerbs } from "../shared/v4/fromv1.js";
 import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
 import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
@@ -441,6 +442,8 @@ export class WorldAgent {
   v4: { version: number; head: number; worldId: string } | null = null;
   /** A v4 world's own fold, from the join cut and the door's `v4-log` stream (shared/v4/client.js). null in a v1 world. */
   private v4c: any = null;
+  /** The last building verb's turn: each is spelled after the one before it is answered. */
+  private spelling: Promise<unknown> = Promise.resolve();
   /** v4fold: this body folds a v4 world's stream itself, so the server sends it no v1 projection (slice 3c). */
   private joinMsg() {
     return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, v4fold: true,
@@ -2690,20 +2693,33 @@ export class WorldAgent {
   }
 
   /** One v4 request (v4 worlds only), answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
-   *  teach}}. `via` sends a v1 verb instead, which the server maps onto the door's request (server/v4/messages.ts). */
-  door(tool: string, args: Record<string, unknown> = {}, via?: { verb: string; args: Record<string, unknown> }): Promise<any> {
+   *  teach}}. */
+  door(tool: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     if (!this.v4) return Promise.resolve({ ok: false, refused: { code: "not-v4", reason: `${this.world} is not a v4 world`, teach: "the door tool works in worlds founded or translated as v4" } });
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the door did not answer within 8 s" } }); }, 8000);
       this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the door's answer had no reply" } }); });
-      this.ws!.send(JSON.stringify(via ? { type: "v4", id, verb: via.verb, args: via.args } : { type: "v4", id, tool, args }));
+      this.ws!.send(JSON.stringify({ type: "v4", id, tool, args }));
     });
   }
-  /** A building verb, waited for in a v4 world (the door's reply) and fire-and-forget elsewhere (null). */
+  /** A building verb, waited for in a v4 world (the door's reply) and fire-and-forget elsewhere (null). In a v4 world
+   *  it is spelled here, from this body's own fold, as the door request it means (shared/v4/fromv1.js, the page's own
+   *  spelling): no v1 verb crosses the wire (3c). The reply names the tool it became (`as`). */
   async sendVerb(verb: string, args: Record<string, unknown>): Promise<any | null> {
-    if (this.v4) return this.door("", {}, { verb, args });
+    if (this.v4) {
+      // spelled only after the previous verb's answer (its v4-log arrived first), so a follow-up reads that write
+      const turn = this.spelling.then(async () => {
+        if (!this.v4c?.active) return { ok: false, refused: { code: "not-joined", reason: "this body hasn't read the world yet" } };
+        const m: any = spellVerbs(this.v4c.st, [{ verb, args }]);
+        if (m.noop) return { ok: true, noop: true };
+        if (m.refuse) return { ok: false, refused: { code: "no-v4-spelling", reason: m.refuse, teach: "the door tool takes the v4 request itself" } };
+        return { ...(await this.door(m.tool, m.args)), as: m.tool };
+      });
+      this.spelling = turn.catch(() => null);
+      return turn;
+    }
     this.verb(verb, args);
     return null;
   }
@@ -2790,6 +2806,9 @@ export class WorldAgent {
       args.utt = extra.utt;
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
+    // a v4 world takes door requests only: spelled at this edge like every building verb (the spoken trio is display
+    // metadata a v4 say doesn't carry yet)
+    if (this.v4) { void this.sendVerb("say", args).then((r) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); }); return; }
     this.verb("say", args);
   }
 

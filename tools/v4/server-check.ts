@@ -120,11 +120,15 @@ ok(vic.of("v4-log").length >= 2 && vic.of("log").length === 0, "S2 another clien
 ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
 ok(mv.ok === false && mv.refused?.code === "locked" && /through_lock/.test(mv.refused.teach), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
-const errsBefore = bob.of("error").length;
+const errsBefore = bob.of("error").length, headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length;
 bob.verb("remove", { id: "cup" }); await sleep(300);
-ok(bob.of("error").length === errsBefore + 1 && /locked/.test(bob.of("error").at(-1)?.error), "S3 the old UI's remove is refused the same way (an error the client shows)", bob.of("error").at(-1));
-bob.verb("comp", { id: "cup", type: "guard", data: true }); await sleep(300);
-ok(bob.of("error").length === errsBefore + 2 && /merged into `lock`/.test(bob.of("error").at(-1)?.error), "S3 the old UI's guard is refused by name: guard merged into lock (§5)", bob.of("error").at(-1));
+ok(bob.of("error").length === errsBefore + 1 && /takes door requests, not v1 verbs/.test(bob.of("error").at(-1)?.error) && readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length === headBefore,
+  "S3 a raw v1 verb sent to a v4 world is refused by name, and nothing is written (clients spell verbs as requests at their own edge, 3c)", bob.of("error").at(-1));
+{ const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "v4", id: rid, verb: "remove", args: { id: "cup" } }); });
+  ok(vr?.ok === false && vr.refused?.code === "v1-verb", "S3 …and a v1 verb inside a v4 request is refused the same way", vr); }
+{ const { spellVerbs } = await import("../../shared/v4/fromv1.js");
+  ok(/merged into `lock`/.test(spellVerbs(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))), [{ verb: "comp", args: { id: "cup", type: "guard", data: true } }]).refuse ?? ""),
+    "S3 the old UI's guard is refused by name where every client spells it: guard merged into lock (§5)"); }
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
 ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't lock-guarded");
@@ -181,6 +185,13 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && !(ag.skyState?.hours === 7 && ag.inbox.some((m) => m.text === "hello, agent")); i++) await sleep(50);
   ok(ag.skyState?.hours === 7, "S5c the agent's sky follows a v4 world's sky", ag.skyState);
   ok(ag.inbox.some((m) => m.kind === "say" && m.who === "Ann" && m.text === "hello, agent") && ag.st.recentChat?.some((m) => m.text === "hello, agent"), "S5c …and a chat line lands in its inbox and its chat window", [ag.inbox.slice(-2), ag.st.recentChat?.slice(-1)]);
+  // the agent's own voice and its reading of the log, with no v1 verb on the wire (3c: the server refuses them now)
+  await HANDLERS.say(ag, { text: "hello, Ann" }, {} as any, "say");
+  const saidOnDisk = async () => readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).some((e) => e.kind === "say" && e.actor === enc("Bob") && e.body?.text === "hello, Ann");
+  for (let i = 0; i < 40 && !(await saidOnDisk()); i++) await sleep(50);
+  ok(await saidOnDisk(), "S5d the agent's say reaches a v4 world's log (as a door request, spelled by the agent)");
+  const wh = await HANDLERS.world_history(ag, { limit: 20 }, {} as any, "world_history");
+  ok(!wh.isError && /Bob: set /.test(wh.content[0].text) && /say "hello, Ann"|hello, Ann/.test(wh.content[0].text), "S5d world_history in a v4 world reads the v4 log (acts and says), not v1's chat-only history", wh.content[0].text.slice(0, 400));
   ag.close(); }
 
 // ---- S6: translate a v1 world into a new v4 world ----

@@ -18,7 +18,7 @@
 import { bus } from './base.js';
 import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
-import { toV4 } from '../../shared/v4/fromv1.js';
+import { spellVerbs } from '../../shared/v4/fromv1.js';
 import { enc, dec } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
@@ -45,33 +45,8 @@ export function expectOf(ids, comps, base = null) {
   return out;
 }
 
-const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
-const qArg = (a) => (Array.isArray(a?.q) && a.q.length === 4 ? a.q : Number.isFinite(a?.yaw) ? yawQ(a.yaw) : undefined);
-/** v1 verbs (as edit code plans them) → one door request, or {refuse} / {noop}. */
-export function spell(verbs) {
-  const st = v4.st; const ops = [];
-  for (const v of verbs) {
-    const a = v.args ?? {}; const e = a.id != null ? st.entities[idIn(a.id)] : null;
-    // a thing that already rides a parent moves in that parent's frame (what the scene shows it at): set transform,
-    // local. A `mount` to the parent it already has is the same move (editschema spells a child's move as a mount).
-    const sameParent = v.verb === 'mount' && e?.c.parent?.to === idIn(a.to) && (e.c.parent.slot ?? null) === (a.slot ?? null);
-    if ((v.verb === 'place' && e?.c.parent) || sameParent) {
-      const t = { ...(e.c.transform ?? {}) };
-      const pos = v.verb === 'mount' ? a.offset : a.pos; if (Array.isArray(pos)) t.pos = pos;
-      const q = qArg(a); if (q) t.q = q;
-      if (Number.isFinite(a.scale)) t.scale = [a.scale, a.scale, a.scale];
-      else if (Array.isArray(a.scale) && a.scale.length === 3 && a.scale.every(Number.isFinite)) t.scale = [...a.scale];   // per axis (R 10-04)
-      ops.push({ tool: 'set', args: { id: idIn(a.id), component: 'transform', value: t } });
-      continue;
-    }
-    const m = toV4(st, v.verb, a);
-    if ('noop' in m) continue;
-    if ('refuse' in m) return { refuse: m.refuse };
-    if (m.tool === 'batch') ops.push(...m.args.ops); else ops.push(m);
-  }
-  if (!ops.length) return { noop: true };
-  return ops.length === 1 ? ops[0] : { tool: 'batch', args: { ops } };
-}
+/** v1 verbs (as edit code plans them) → one door request, or {refuse} / {noop} (shared/v4/fromv1.js spellVerbs). */
+export const spell = (verbs) => spellVerbs(v4.st, verbs);
 /** The (id, component) pairs a request sets: what a gesture's expect covers. */
 export function writesOf(req) {
   const ops = req.tool === 'batch' ? req.args.ops : [req];

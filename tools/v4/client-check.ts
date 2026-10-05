@@ -64,6 +64,7 @@ try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
     window.__refused = []; window.__asked = [];
+    window.__v1sent = []; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m && (m.type === 'verb' || (m.type === 'v4' && typeof m.verb === 'string'))) __v1sent.push(m.verb); } catch {} return send.call(this, d); }; }
     import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); m.bus.on('v4-lock-asked', (e) => __asked.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
@@ -556,6 +557,10 @@ try {
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.v4.st)); return n.v4.stats.ingested > 10 && n.v4.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.v4.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.v4.stats, diff: d.diffView(s.state.st, r.viewState(n.v4.st)) }))`));
+  // a UI verb path (the chat box sends through net.js sendVerb('say')), driven for real so B5 has a subject
+  await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+  check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === ME && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
+  check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a door request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
   check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (v4seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

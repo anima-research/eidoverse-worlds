@@ -8,6 +8,8 @@ import { CONFIG, report, bus } from './base.js';
 // EW.foldParity() measures fold-vs-scene drift on demand.
 import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
+import { spellVerbs } from '../../shared/v4/fromv1.js';
+import { refusalText } from '../../shared/v4/refusal.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -103,11 +105,29 @@ export function wireNet(h) {
 
 function rawSend(verb, args) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
+    if (v4.active) sendAsRequest(verb, args);
+    else net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
   } else {
     verbQueue.push({ verb, args });
     logChat('*', `queued ${verb} — reconnecting…`);
   }
+}
+/** A v4 world (slice 3c): the UI's verb, spelled at this edge as a door request from this page's own fold
+ *  (shared/v4/fromv1.js), so no v1 verb crosses the wire. A refusal takes the path a server error always did: a toast,
+ *  and 'verb-refused' for any module holding an optimistic preview (lights.js rolls back off it). */
+// Each verb is spelled only once the one before it has been answered: the server sends a write's v4-log before its
+// reply, so by then this page's fold holds that write, and a follow-up (a light's second edit, a label on a thing just
+// made) is spelled against it, as the server's own in-order spelling did.
+let spelling = Promise.resolve();
+function sendAsRequest(verb, args) {
+  spelling = spelling.then(async () => {
+    const m = spellVerbs(v4.st, [{ verb, args }]);
+    if (m.noop) return;
+    const refuse = (text) => handle({ type: 'error', error: text });
+    if (m.refuse) { refuse(m.refuse); return; }
+    const r = await requestV4(m.tool, m.args);
+    if (!r?.ok) refuse(refusalText(verb, r));
+  }).catch(() => { /* the socket's own close says it */ });
 }
 // One gesture that is many verbs (placing a blueprint copy, undoing it) is
 // paced under the door's rate limit (shared/pace.js); a single verb sent while
@@ -888,11 +908,6 @@ async function onSnapshot(msg) {
   }
   restoredPose = true; // first snapshot decides, restore or not
 
-  while (verbQueue.length) {
-    const { verb, args } = verbQueue.shift();
-    net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
-  }
-
   // reconcile: the snapshot is authoritative — tear down any participant no
   // longer present, through the SAME funnel a leave uses (custody, then
   // body; the voice peer rides the roster emit below). Stale ghosts
@@ -921,6 +936,14 @@ async function onSnapshot(msg) {
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);
+
+  // what was said while the socket was down goes out now, against the cut just adopted (a v4 world spells it as door
+  // requests from that fold)
+  while (verbQueue.length) {
+    const { verb, args } = verbQueue.shift();
+    if (v4.active) sendAsRequest(verb, args);
+    else net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
+  }
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.

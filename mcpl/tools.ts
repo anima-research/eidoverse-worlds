@@ -21,6 +21,7 @@
 // Everything else in here talks only to the WorldAgent and the sequencer's
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
+import { dec as decName } from "../shared/v4/names.js";
 import { refusalText, warningText, touchWords } from "../shared/v4/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
@@ -875,12 +876,24 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const parts = Object.entries(plan.parts).map(([p, e]) => `${p || "(root)"} → ${e}`).join(", ");
       if (a.dry) return text(`would send ${plan.verbs.length} verbs:\n${plan.verbs.map((v) => `${v.verb} ${JSON.stringify(v.args)}`).join("\n")}\nparts: ${parts}`);
       // one pacer per agent: the door drops verbs past its rate (shared/pace.js)
-      const pacer = ((ag as any).__pacer ??= makePacer({ send: (verb: string, args: Record<string, unknown>) => ag.verb(verb, args) }));
+      // a v4 world: each verb is spelled as a door request at this edge (ag.sendVerb), in order
+      const pacer = ((ag as any).__pacer ??= makePacer({ send: (verb: string, args: Record<string, unknown>) => { if (ag.v4) void ag.sendVerb(verb, args); else ag.verb(verb, args); } }));
       pacer.run(plan.verbs);
       const v = versionOf(store, h);
       return text(`placing a copy of "${rec.name}" (v${v}, ${h.slice(0, 12)}) as [${id}] — ${plan.verbs.length} verbs${pacer.pending() ? `, paced: about ${Math.ceil(pacer.eta() / 1000)}s to finish` : ""}\nparts: ${parts}\nto undo: ${plan.inverses.map((i) => `${i.verb} ${JSON.stringify(i.args)}`).join("; ")}`);
   },
   world_history: async (ag, a, ctx, name) => {
+      // a v4 world's log is read through the door (its history request); the v1 history holds only its chat lines there
+      if (ag.v4) {
+        const h = await ag.door("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 30))) });
+        if (!h?.ok) return text(`history refused: ${h?.refused?.reason ?? h?.refused?.code ?? "no answer"}`);
+        const rows = (h.entries ?? []).filter((e: any) => e.kind === "act" || e.kind === "say");
+        if (!rows.length) return text("no entries yet");
+        // an act carries its request; any other entry's body comes as a short JSON string
+        const who = (x: string) => decName(String(x)) ?? String(x);   // the names people typed, not the log's escapes
+        return text(rows.map((e: any) => `#${e.seq} ${e.ts ? new Date(e.ts).toISOString() : ""} ${who(e.actor)}: ${e.kind === "act" ? `${e.verb} ${JSON.stringify(e.body?.request ?? {})}` : `say ${e.body}`}`).join("\n")
+          + "\n(the newest; door history {id, before} pages one thing's acts further back)");
+      }
       const r = await ag.history({
         verbs: Array.isArray(a.verbs) && a.verbs.length ? a.verbs.map(String) : undefined,
         before: typeof a.before === "number" ? a.before : undefined,

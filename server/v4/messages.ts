@@ -6,9 +6,8 @@
 //           (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/move/drop/wait, and the
 //           reads look/inspect/measure/find/check/history/schema/help). The asker is stamped from the connection
 //           (L4), never read from the payload. Spectators may only read.
-//   verb    the old UI's v1 verbs, mapped onto the door's requests where a v4 spelling exists (toV4 below). A refusal
-//           goes back as {type: "error"}, which today's client already shows (and rolls back on). A verb with no v4
-//           spelling yet is refused by name.
+//   verb    refused (slice 3c): a v4 world takes door requests only. Every client spells its UI's verbs as requests at
+//           its own edge (shared/v4/fromv1.js: the page's net.js, the agent's sendVerb), so no v1 verb reaches here.
 //   lease, world-fork, world-reset
 //           refused: a lease's settlement skipped every gate in v1 (PARITY (c)2), and fork/reset act on v1 files.
 //
@@ -16,8 +15,6 @@
 // earlier one (the same per-client queue the v1 verb path uses).
 import type { Client, World } from "../world.ts";
 import { enc } from "../../shared/v4/names.js";
-import { toV4 as toV4At } from "../../shared/v4/fromv1.js";
-import { refusalText } from "../../shared/v4/refusal.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: unknown };
 type Any = any;
@@ -35,44 +32,28 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
-/** A v1 verb as a door request (shared/v4/fromv1.js), against this world's current fold. */
-export const toV4 = (w: World, verb: string, a: Any) => toV4At(w.v4!.live.state(), verb, a) as { tool: string; args: Any } | { refuse: string } | { noop: true };
+const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not v1 verbs", teach: "send {type: 'v4', id, tool, args}; help lists the tools" };
 
 
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "v4": ({ c, ws }, msg) => {
-    // {tool, args}: a door request. {verb, args}: a v1 verb, mapped by toV4 (the same mapping the old UI's `verb`
-    // takes), for an agent's building tools that must WAIT for the door's answer (PARITY (d)1).
+    // {tool, args}: a door request (a v1 `verb` in it is refused: clients spell at their own edge, 3c)
     const w = c.world; if (!w?.v4) return;
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
-    const verb = typeof msg.verb === "string" ? msg.verb : null;
-    const tool = verb ? `verb:${verb}` : String(msg.tool ?? "");
+    const tool = String(msg.tool ?? "");
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
-    if (c.spectator && (verb || !READS.has(tool))) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
+    if (typeof msg.verb === "string") { w.debug("v4-v1-verb", { who: c.id, verb: msg.verb }); reply({ ok: false, refused: V1_VERB }); return; }
+    if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
-      let t = tool, a = args;
-      if (verb) {
-        const m = toV4(w, verb, args);
-        if ("noop" in m) { reply({ ok: true, noop: true }); return; }
-        if ("refuse" in m) { reply({ ok: false, refused: { code: "no-v4-spelling", reason: m.refuse, teach: "the door tool takes the v4 request itself" } }); return; }
-        t = m.tool; a = m.args;
-      }
-      reply({ ...(await w.v4!.request(actorOf(c), t, a)), ...(verb ? { as: t } : {}) });
+      reply(await w.v4!.request(actorOf(c), tool, args));
     });
   },
   "verb": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4 || c.spectator) return;
-    const verb = String(msg.verb ?? ""), a = msg.args && typeof msg.args === "object" ? msg.args : {};
-    inOrder(c, ws, async () => {
-      if (c.world !== w) return;
-      const m = toV4(w, verb, a);
-      if ("noop" in m) return;
-      if ("refuse" in m) { w.debug("v4-verb-refused", { who: c.id, verb, why: m.refuse }); ws.send(JSON.stringify({ type: "error", error: m.refuse })); return; }
-      const r = await w.v4!.request(actorOf(c), m.tool, m.args);
-      if (!r.ok) { w.debug("v4-refused", { who: c.id, verb, tool: m.tool, refused: r.refused }); ws.send(JSON.stringify({ type: "error", error: refusalText(verb, r) })); }
-    });
+    const w = c.world; if (!w?.v4) return;
+    w.debug("v4-v1-verb", { who: c.id, verb: String(msg.verb ?? "") });
+    ws.send(JSON.stringify({ type: "error", error: `${V1_VERB.reason} (this '${String(msg.verb ?? "")}' wasn't written) — reload the page for the current client` }));
   },
   "lease": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "leases aren't part of v4 worlds: carrying is grab/put/throw through the door (L6)" })); },
   "world-fork": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "copying a v4 world isn't supported yet (slice 2)" })); },
