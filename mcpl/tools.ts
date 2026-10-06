@@ -833,7 +833,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // carries a `blueprint` component naming the hash it came from
       const lib = ag.v4Library();
       const copies: Record<string, string[]> = {};
-      for (const [id, e] of Object.entries(foldWorld(ag) as Record<string, any>)) { const h = e?.comp?.blueprint?.hash; if (h) (copies[String(h).replace(/^sha256:/, "")] ??= []).push(id); }
+      // the door stamps every part of a copy blueprint {from: sha256:<hash>, key}; the copy itself is the part whose parent
+      // isn't a part of the same copy
+      const W = foldWorld(ag) as Record<string, any>;
+      for (const [id, e] of Object.entries(W)) { const f = e?.comp?.blueprint?.from; if (typeof f !== "string") continue;
+        const up = e.parent?.to ? W[e.parent.to] : null; if (up?.comp?.blueprint?.from === f) continue;
+        (copies[f.replace(/^sha256:/, "")] ??= []).push(id); }
       const hashes = Object.keys(lib);
       const want = String(a.hash ?? "").trim().toLowerCase();
       const pick = want ? hashes.filter((h) => h.startsWith(want)) : hashes;
@@ -855,7 +860,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const yaw = Number(a.yaw ?? ag.yaw);
       // the door copies the whole tree: create {from: <hash>, at} — one act, one undo
       const at = { pos: [x, a.y ?? ag.heightAt(x, z), z], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] };
-      const r: any = await ag.door("create", { from: h, at, ...(a.dry ? { dry: true } : {}) });
+      const r: any = await ag.door("create", { from: `sha256:${h}`, at, ...(a.dry ? { dry: true } : {}) });   // a bare hex would name a thing to duplicate
       if (!r?.ok) return refusedBy(r, "blueprint_place");
       return text(`${a.dry ? "would place" : "placed"} a copy of "${lib[h]?.name ?? h.slice(0, 12)}" (${h.slice(0, 12)})${r.refs?.[0]?.id ? ` as [${r.refs[0].id}]` : ""} — one act`);
   },

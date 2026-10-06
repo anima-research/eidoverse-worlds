@@ -58,7 +58,6 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
 import { lightOf } from "../shared/components.js";
-import { copyLine } from "../shared/blueprint.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
@@ -1273,6 +1272,14 @@ export class WorldAgent {
     return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
   /** This world's blueprint library from the v4 fold: @world library:<hash> → {name, parts?} (the door's publish). */
+  /** a placed copy (or one of its parts) says which blueprint it is: the door stamps blueprint {from, key} on every
+   *  part; the copy is the part whose parent isn't of the same copy */
+  copyLineV4(id: string): string | null {
+    const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.blueprint?.from; if (typeof f !== "string") return null;
+    const name = this.v4Library()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
+    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.comp?.blueprint?.from !== f) break; root = p; }
+    return root === id ? `a copy of "${name}"` : `part "${E[id].comp.blueprint.key}" of ${root} (a copy of "${name}")`;
+  }
   v4Library(): Record<string, { name?: string }> {
     const w = this.v4c?.st?.entities?.["@world"]?.c ?? {};
     const out: Record<string, { name?: string }> = {};
@@ -3384,14 +3391,14 @@ export class WorldAgent {
       if (c.hidden === true) aff.push(`hidden (not drawn; comp {id, type: "hidden", data: null} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
-      const copy = c.blueprint ? copyLine(this.st.entities as Record<string, any>, e.id, (this.st as any).blueprints ?? null) : null;
+      const copy = c.blueprint ? this.copyLineV4(e.id) : null;
       if (copy) aff.push(copy);
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label", "hidden"];
+      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden"];
       if (copy) spoken.push("blueprint");
       if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
