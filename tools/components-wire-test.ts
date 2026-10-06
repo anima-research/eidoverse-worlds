@@ -350,11 +350,19 @@ console.log('\n4. text tier (mcpl/agent.ts look(), mcpl/tools.ts)');
 }
 
 // ---- 5. the inspector ----------------------------------------------------------
-console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit)');
+// v4 port (2026-10-06): editOps plans door requests; what an edit DOES is checked through the real v4 door on a
+// scratch world (tools/v4/scratchdoor.ts). Light-verb lights are gone from the planner (a v4 lamp is a thing with a
+// light component), so the "old light-verb light keeps the light verb" checks are dropped. Tiers 1–4 above still
+// pin the v1 runtime (shared/fold.js, server/verbs.ts, the realizer's v1 path, the agent's v1 reader), which v1
+// worlds still run (tools/v4/nov1-check.ts lists it): they are kept as they were.
+console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit, through the v4 door)');
 {
-  const { inspectSchema, editVerbs, fieldAt } = await import('../shared/editschema.js');
-  const ed = (ent: any, set: Record<string, unknown>) => editVerbs(ent, 'x', set);
-  const verbsOf = (r: any) => JSON.stringify(r.verbs);
+  const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
+  const { scratchWorld } = await import('./v4/scratchdoor.ts');
+  const ed = (ent: any, set: Record<string, unknown>) => editOps(ent, 'x', set);
+  const opsOf = (r: any) => JSON.stringify(r.ops);
+  // the edit through the door: `x` seeded as `ent`, the ops sent as one request, the view read back
+  const door = (ent: any, set: Record<string, unknown>) => { const W = scratchWorld('compwire').seed({ x: ent }); const r = ed(ent, set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('x') }; };
   // every card's fields resolve and are owned once (components-inspector-test's rule)
   const cardsSound = (ent: any) => { const sc = inspectSchema(ent, 'x'); const own = new Map<string, string>(); const bad: string[] = [];
     for (const a of sc.sections.header) own.set(a, 'header');
@@ -362,52 +370,65 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
     return bad; };
   const card = (ent: any, type: string, key: string | null = null) => inspectSchema(ent, 'x').sections.list.find((c: any) => c.type === type && c.key === key);
 
-  const legacy = { kind: 'light', pos: [0, 2, 0], color: 0xffd9a0, intensity: 16, range: 10, actor: 'a', ts: 1 };
-  check('an OLD light-verb light is edited with the light verb, as before — it is not migrated',
-    verbsOf(ed(legacy, { 'light.intensity': 30, 'light.noon': true })) === JSON.stringify([{ verb: 'light', args: { id: 'x', intensity: 30, day: false } }]), verbsOf(ed(legacy, { 'light.intensity': 30, 'light.noon': true })));
-  check('…its Light card owns the light group and is not removable (removing a light-verb light is removing the entity)',
-    card(legacy, 'Light')?.fields.includes('light.intensity') && card(legacy, 'Light').removable === false, JSON.stringify(card(legacy, 'Light')));
-
-  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, keep: true, flicker: 1 } }, actor: 'a', ts: 1 };
+  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, keep: true } }, actor: 'a', ts: 1 };
   const lsch = inspectSchema(lamp, 'x');
-  check('a light component shows in the SAME light group (light.* addresses), valued from its bag',
+  check('a light component shows in the light group (light.* addresses), valued from its bag',
     fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.keep')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
-  check('…editing it writes comp light, merged into the bag (unknown keys kept), keep/day stored only when not default',
-    verbsOf(ed(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: { color: 0x00ff00, intensity: 24, flicker: 1, day: false } } }]),
-    verbsOf(ed(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' })));
-  check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.verbs.length === 0 && /light: light color/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
-  check('…its card is removable and remove.light writes comp light null', card(lamp, 'Light', 'light')?.removable === true
-    && verbsOf(ed(lamp, { 'remove.light': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: null } }]));
+  const le = door(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' });
+  check('…editing it writes ONE set light, merged into the bag, keep/day stored only when not default',
+    opsOf(le.r) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'light', value: { color: 0x00ff00, intensity: 24, day: false } } }]), opsOf(le.r));
+  check('…and through the door the lamp is lit that way (keep cleared, burns at noon)', le.res.ok && le.after.comp.light.color === 0x00ff00 && le.after.comp.light.intensity === 24 && le.after.comp.light.day === false && !le.after.comp.light.keep, JSON.stringify([le.res.refused, le.after.comp]));
+  // a lamp translated from v1 can carry a key the v4 door's light schema doesn't know (v1 accepted unknown keys; the
+  // translator keeps them). The planner keeps it in the bag (it never drops what it doesn't understand)…
+  const odd = { ...lamp, comp: { light: { ...lamp.comp.light, flicker: 1 } } };
+  const oe = ed(odd, { 'light.intensity': 24 });
+  check('…unknown keys in the bag are kept by the planner (flicker rides along)', JSON.parse(opsOf(oe))[0]?.args.value.flicker === 1, opsOf(oe));
+  // KNOWN BUG (reported 2026-10-06; door/translator, not the planner): …but the door's light schema is closed, so it
+  // refuses that edit whole ("x.light: unknown key 'flicker'"): a translated lamp with an unknown light key can't be
+  // edited at all in v4. Translation keeps such keys (shown first), so these lamps exist.
+  { const { translate } = await import('../shared/v4/translate-v1.js'); const { v1FoldBuild } = await import('../server/v4/build.ts');
+    const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
+      { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
+    check('…(a v1 lamp with flicker translates to v4 with flicker kept)', tr.final.v4.x?.light?.flicker === 1, JSON.stringify(tr.final.v4.x));
+    const W = scratchWorld('compwire').seed({ x: lamp });
+    const sent = W.sendAll(oe.ops);
+    check('…and the door takes the planner\'s edit of such a lamp (KNOWN BUG: refused, unknown key)', sent.ok, JSON.stringify(sent.refused)); }
+  check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.ops.length === 0 && /light: light color/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
+  const rl = door(lamp, { 'remove.light': null });
+  check('…its card is removable and remove.light writes delete light; through the door it is dark', card(lamp, 'Light', 'light')?.removable === true
+    && opsOf(rl.r) === JSON.stringify([{ tool: 'delete', args: { id: 'x', component: 'light' } }]) && rl.res.ok && rl.after.comp?.light === undefined, JSON.stringify([rl.r.ops, rl.res.refused]));
   check('…and it is not shown a second time as raw JSON in Components', !fieldAt(lsch, 'comp.light'));
 
   const empty = { pos: [1, 2, 3], yaw: 0, actor: 'a', ts: 1 };
   const esch = inspectSchema(empty, 'x');
-  check('an Empty: a Transform card with yaw and scale, and no Model card', !!fieldAt(esch, 'pos.yaw') && !!fieldAt(esch, 'pos.scale') && !card(empty, 'Model') && esch.sections.list.length === 1, JSON.stringify(esch.sections.list.map((c: any) => c.type)));
+  check('an Empty: a Transform card with yaw and scale, no Model card (and a root\'s quiet, empty Parent card, R 10-04)', !!fieldAt(esch, 'pos.yaw') && !!fieldAt(esch, 'pos.scale') && !card(empty, 'Model')
+    && JSON.stringify(esch.sections.list.map((c: any) => c.type)) === '["Transform","Parent"]' && esch.sections.list[1].present === false, JSON.stringify(esch.sections.list.map((c: any) => [c.type, c.present])));
   check('…Add Component offers Light (unblocked) and not Collider (it needs a model)',
     esch.sections.add.some((a: any) => a.name === 'Light' && !a.blocked) && !esch.sections.add.some((a: any) => a.name === 'Collider' && !a.blocked), JSON.stringify(esch.sections.add.map((a: any) => `${a.name}${a.blocked ? '(blocked)' : ''}`)));
-  check('…add.Light writes comp light with the fields spelled out (the log records the result, not a default)',
-    verbsOf(ed(empty, { 'add.Light': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: { color: 0xffd9a0, intensity: 16, range: 10 } } }]));
-  check('…add.Collider is refused with a reason', (() => { const r = ed(empty, { 'add.Collider': null }); return r.verbs.length === 0 && /needs a model/.test(r.errors[0] ?? ''); })());
-  check('add.Light on a light-verb light is refused (it is already one)', (() => { const r = ed(legacy, { 'add.Light': null }); return r.verbs.length === 0 && /already a light/.test(r.errors[0] ?? ''); })());
+  const al = door(empty, { 'add.Light': null });
+  check('…add.Light writes set light with the fields spelled out (the log records the result, not a default)',
+    opsOf(al.r) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'light', value: { color: 0xffd9a0, intensity: 16, range: 10 } } }]), opsOf(al.r));
+  check('…and through the door the Empty is a lamp with exactly those values', al.res.ok && al.after.comp?.light?.color === 0xffd9a0 && al.after.comp.light.intensity === 16 && al.after.comp.light.range === 10 && al.after.lib === undefined, JSON.stringify([al.res.refused, al.after]));
+  check('…add.Collider is refused with a reason', (() => { const r = ed(empty, { 'add.Collider': null }); return r.ops.length === 0 && /needs a model/.test(r.errors[0] ?? ''); })());
+  check('add.Light on a thing that already has a light is refused', (() => { const r = ed(lamp, { 'add.Light': null }); return r.ops.length === 0 && /already has a light/.test(r.errors[0] ?? ''); })());
 
   const oldCol = { lib: LAMP, pos: [0, 0, 0], yaw: 0, collide: 'exact', actor: 'a', ts: 1 };
+  const oc = ed(oldCol, { 'collider.shape': 'box' });
   check('a legacy spawn collide shows as the collider group; editing it writes the collider COMPONENT (write-new-on-edit)',
-    fieldAt(inspectSchema(oldCol, 'x'), 'collider.shape')?.value === 'exact' && verbsOf(ed(oldCol, { 'collider.shape': 'box' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'box' } } }]));
+    fieldAt(inspectSchema(oldCol, 'x'), 'collider.shape')?.value === 'exact' && opsOf(oc) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'collider', value: { shape: 'box' } } }]), opsOf(oc));
   check('…its legacy card is not removable (only a spawn writes collide)', card(oldCol, 'Collider')?.removable === false);
   const both = { ...oldCol, comp: { collider: { shape: 'box' } } };
   check('with both spellings the component owns the group, the legacy card says it is overridden, nothing is owned twice',
     fieldAt(inspectSchema(both, 'x'), 'collider.shape')?.value === 'box' && card(both, 'Collider', 'collider')?.fields.includes('collider.shape')
     && /overridden/.test(JSON.stringify(card(both, 'Collider')?.info)) && cardsSound(both).length === 0, JSON.stringify(cardsSound(both)));
-  check('collider.shape must be exact or box', (() => { const r = ed(both, { 'collider.shape': 'mesh' }); return r.verbs.length === 0 && /exact.*box/.test(r.errors[0] ?? ''); })());
-  check('add.Collider on a model writes comp collider (default exact; "box" when asked)',
-    verbsOf(ed({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': 'box' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'box' } } }])
-    && verbsOf(ed({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'exact' } } }]));
-  check('the raw-JSON door obeys the door\'s rules too (comp.light with a string colour; comp.light on a light-verb light)',
-    ed(lamp, { 'comp.light': '{"color":"red"}' }).verbs.length === 0 && ed(legacy, { 'comp.light': '{"intensity":3}' }).verbs.length === 0);
-  const hand = { ...legacy, comp: { light: { color: 4 } } };
-  check('a hand-written log with both lights: the legacy one owns the group, the component is raw JSON, nothing owned twice',
-    fieldAt(inspectSchema(hand, 'x'), 'light.color')?.value === 0xffd9a0 && !!fieldAt(inspectSchema(hand, 'x'), 'comp.light') && cardsSound(hand).length === 0, JSON.stringify(cardsSound(hand)));
-  check('every card sound on the lamp, the Empty and the legacy-collide model', [lamp, empty, oldCol, legacy].every((e) => cardsSound(e).length === 0), JSON.stringify([lamp, empty, oldCol, legacy].map(cardsSound)));
+  check('collider.shape must be exact or box', (() => { const r = ed(both, { 'collider.shape': 'mesh' }); return r.ops.length === 0 && /exact.*box/.test(r.errors[0] ?? ''); })());
+  const ac = door({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': 'box' });
+  check('add.Collider on a model writes set collider (default exact; "box" when asked), and the door writes it',
+    opsOf(ac.r) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'collider', value: { shape: 'box' } } }])
+    && opsOf(ed({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': null })) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'collider', value: { shape: 'exact' } } }])
+    && ac.res.ok && ac.after.comp?.collider?.shape === 'box', JSON.stringify([ac.r.ops, ac.res.refused]));
+  check('the raw-JSON door obeys the door\'s rules too (comp.light with a string colour)', ed(lamp, { 'comp.light': '{"color":"red"}' }).ops.length === 0);
+  check('every card sound on the lamp, the Empty and the legacy-collide model', [lamp, empty, oldCol].every((e) => cardsSound(e).length === 0), JSON.stringify([lamp, empty, oldCol].map(cardsSound)));
 }
 
 rmSync(SCRATCH, { recursive: true, force: true });

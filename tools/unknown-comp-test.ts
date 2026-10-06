@@ -14,7 +14,9 @@
 //                    tools/lod-client-stub.mjs's cone (no renderer, no network):
 //                    the bag is mirrored and announced, nobody claims it,
 //                    nothing is reported; motion.js's frame loop skips it
-//   4. the inspector shared/editschema.js — a raw-JSON field, editable by `comp`
+//   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set` (v4 port 2026-10-06: the
+//                    edit's ops go through the real v4 door on a scratch world and are read back; tiers 1–3 still pin
+//                    the v1 runtime, which v1 worlds still run — tools/v4/nov1-check.ts)
 // Text-tier perception ("components: <type>" in look()) is pinned live by
 // tools/compfold-test.ts and tools/comptest.ts against a scratch sequencer.
 import { plugin } from 'bun';
@@ -54,7 +56,7 @@ const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 
 const { emptyState, foldEntry, stateToEntries } = await import('../shared/fold.js');
 const { runVerb } = await import('../server/verbs.ts');
-const { inspectSchema, editVerbs, fieldAt } = await import('../shared/editschema.js');
+const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
 
 const TYPE = 'weathervane';                 // a type no evaluator in this tree knows
 const D1 = { points: 'north', vanes: [1, 2, { deep: true }], note: 'a cockerel' };
@@ -170,11 +172,23 @@ const ent = { lib: 'x.glb', pos: [0, 0, 0], yaw: 0, comp: { [TYPE]: D1 } };
 const schema = inspectSchema(ent, 'crate');
 const f = fieldAt(schema, `comp.${TYPE}`);
 check('an unknown type gets a raw-JSON field in the Components group', f?.t === 'json' && jeq(JSON.parse(f.value), D1), JSON.stringify(f));
-const set = editVerbs(ent, 'crate', { [`comp.${TYPE}`]: '{"points":"east"}' });
-check('…which saves as ONE comp verb replacing the data wholesale',
-  set.errors.length === 0 && set.verbs.length === 1 && jeq(set.verbs[0], { verb: 'comp', args: { id: 'crate', type: TYPE, data: { points: 'east' } } }), JSON.stringify(set));
-const del = editVerbs(ent, 'crate', { [`comp.${TYPE}`]: '' });
-check('…and an emptied field removes it (data: null)', jeq(del.verbs[0]?.args, { id: 'crate', type: TYPE, data: null }), JSON.stringify(del));
+const set = editOps(ent, 'crate', { [`comp.${TYPE}`]: '{"points":"east"}' });
+check('…which saves as ONE set replacing the data wholesale',
+  set.errors.length === 0 && set.ops.length === 1 && jeq(set.ops[0], { tool: 'set', args: { id: 'crate', component: TYPE, value: { points: 'east' } } }), JSON.stringify(set));
+const del = editOps(ent, 'crate', { [`comp.${TYPE}`]: '' });
+check('…and an emptied field removes it (delete)', jeq(del.ops, [{ tool: 'delete', args: { id: 'crate', component: TYPE } }]), JSON.stringify(del));
+{
+  // through the real v4 door: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
+  // wholesale by the edit, removed by the delete
+  const { scratchWorld } = await import('./v4/scratchdoor.ts');
+  const W = scratchWorld('unknowncomp').seed({ crate: ent });
+  check('the v4 door keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
+  const r1 = W.send(set.ops[0]);
+  check('…the edit replaces it wholesale (no merge with the old keys), and the door says it knows no evaluator for it',
+    r1.ok && jeq(W.rec('crate').comp?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));
+  const r2 = W.send(del.ops[0]);
+  check('…and the delete removes it', r2.ok && W.rec('crate').comp?.[TYPE] === undefined, JSON.stringify([r2.refused, W.rec('crate').comp]));
+}
 
 rmSync(SCRATCH, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);

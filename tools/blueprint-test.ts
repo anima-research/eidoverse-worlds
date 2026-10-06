@@ -9,6 +9,17 @@
 // 4. the store     the fold keeps every record by its recomputed hash; a
 //                  snapshot (stateToEntries) carries it; lineage walks it
 // 5. the door      server/verbs.ts runVerb on an in-process bench world
+// 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch v4 world
+//    (tools/v4/scratchdoor.ts): the record, the copy's tree, its local poses, one act, the door's undo
+// 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
+// 8. the pacer      shared/pace.js against the v1 door's rate rule
+//
+// v4 port (2026-10-06): v4 blueprints are the door's (publish → a content-addressed blob + @world library:<hash>;
+// create {from: hash, at} expands the copy as one batch). Sections 1–5 and 8 pin the v1 runtime and pure helpers
+// that still exist (shared/fold.js's store, server/verbs.ts's blueprint verb, shared/pace.js) and are kept as they
+// were; NOTE several of them now test code with no runtime caller (expand/overridesOf/rebase, pace.js): see the port
+// report. The v1 placing path (placeVerbs → runVerb, its inverses, the v1 agent readout over state.blueprints and
+// world_verb) is replaced by sections 6 and 7.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -265,162 +276,6 @@ console.log('\n5. the door (server/verbs.ts runVerb)');
   check('a re-publish with reworded prose goes in whole, and the store takes the note', !!r.appended?.args.record && st.blueprints[H1].record.note === 'reworded', J(r));
   r = B({ hash: H2, record: lampV2 });
   check('now the parent is held, the new version is accepted', !!r.appended && !!st.blueprints[H2], J(r));
-  // ---- 6. the agent's readout
-  console.log('\n6. the text tier (mcpl/tools.ts blueprints)');
-  const { HANDLERS, TOOLS } = await import('../mcpl/tools.ts');
-  const ag: any = { blueprintStore: () => st.blueprints ?? {}, foldedIds: () => Object.keys(st.entities), foldRecord: (id: string) => st.entities[id] ?? null };
-  const out = (r: any) => r.content.map((c: any) => c.text).join('\n');
-  const list = out(await HANDLERS.blueprints(ag, {}));
-  check('the list names each record by short hash, name, version and parent', list.includes(`[${H1.slice(0, 12)}] "Lamp" v1 · 2 parts`) && list.includes(`[${H2.slice(0, 12)}] "Lamp" v2 ← ${H1.slice(0, 12)}`) && /Model · Light · Label · by bld/.test(list), list);
-  const one = out(await HANDLERS.blueprints(ag, { hash: H2.slice(0, 10) }));
-  check('a prefix opens one record in full, with its lineage newest first', one.startsWith(`[${H2}]`) && one.includes(`${H2.slice(0, 12)} "Lamp" ← ${H1.slice(0, 12)} "Lamp"`) && JSON.parse(one.slice(one.indexOf('{'))).root.children[0].id === 'bulb', one.slice(0, 300));
-  check('an unknown prefix says so', /no record here whose hash starts "zz"/.test(out(await HANDLERS.blueprints(ag, { hash: 'zz' }))));
-  check('an empty store says how to publish', /store is empty.*world_verb blueprint/.test(out(await HANDLERS.blueprints({ blueprintStore: () => ({}), foldedIds: () => [], foldRecord: () => null } as any, {}))));
-  check('world_verb\'s closed verb list names blueprint', /behavior, asset, blueprint/.test(TOOLS.find((t: any) => t.name === 'world_verb')!.description));
-  check('the door\'s rules are the shared module\'s (one refusal text)', (() => { const v = (VERBS.blueprint as any).validate({ w, c: { id: 'bld' } }, { hash: H1, record: 'x' }); return v.error === blueprintRefusal('x'); })());
-}
-
-// ---- 7. placing a copy (6b) ----------------------------------------------------------
-console.log('\n7. placing a copy through the door (placeVerbs → runVerb → the fold → copyTree)');
-{
-  const { placeVerbs, placeRefusal, copyTree, copyOf, copiesOf, copyLine, modernize, versionOf, LINK_KEY } = await import('../shared/blueprint.js');
-  const { runVerb } = await import('../server/verbs.ts');
-  const { worldPose } = await import('../shared/hierarchy.js');
-  const { lightOf, colliderOf } = await import('../shared/components.js');
-  const st: any = emptyState();
-  st.roles.bld = { role: 'builder' };
-  let seq = -1;
-  const log: any[] = [];
-  const w: any = {
-    name: 'place-bench', state: st, clients: new Set(), leases: new Map(),
-    sim: { epoch: null, bodies: {} }, bhv: { sync() {}, onEntry() {} },
-    append(actor: string, verb: string, args: any) { const e = { seq: ++seq, ts: 1786320000000 + seq, actor, verb, args }; foldEntry(st, e); log.push(e); return e; },
-    commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
-    broadcast() {}, debug() {}, fold() {},
-  };
-  const msgs: any[] = [];
-  const c: any = { id: 'bld', spectator: false, world: w, lastPose: null, ws: { send(x: string) { msgs.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 };
-  w.clients.add(c);
-  // the door's own rate rule, honoured: a run is sent as a client would, within VERB_RATE
-  // per window (the pacer's job, checked in 8); here each verb opens a fresh window
-  const send = (list: any[]) => { const errs: string[] = []; for (const v of list) { c.verbWin = 0; c.verbCount = 0; msgs.length = 0; runVerb({ w, c, now: Date.now(), expel() {} } as any, v.verb, v.args); const e = msgs.find((m) => m.type === 'error'); if (e) errs.push(`${v.verb} ${J(v.args).slice(0, 80)}: ${e.error}`); } return errs; };
-  const ents = () => st.entities;
-  send([{ verb: 'blueprint', args: { hash: H1, record: lampV1 } }]);
-
-  // the lamp: a model + light + label at the root, the bulb (an Empty with a light) 1.2 m up
-  const plan = placeVerbs(lampV1, { id: 'lamp-1', pos: [3, 0, 4], yaw: 0.5 }, { hash: H1 });
-  check('placeVerbs: no errors, a part per node', plan.errors.length === 0 && J(plan.parts) === J({ '': 'lamp-1', bulb: 'lamp-1-bulb' }), J(plan));
-  const sp = plan.verbs.filter((v: any) => v.verb === 'spawn');
-  check('…the root spawns at the placed pose with its model; the bulb as an Empty (no lib)', sp[0]?.args.id === 'lamp-1' && sp[0].args.lib === LAMP && J(sp[0].args.pos) === J([3, 0, 4]) && sp[0].args.yaw === 0.5 && sp[1]?.args.id === 'lamp-1-bulb' && !('lib' in sp[1].args), J(sp));
-  const mt = plan.verbs.find((v: any) => v.verb === 'mount');
-  check('…the bulb mounts under the root at its LOCAL pose (offset + yaw, as the record says)', J(mt?.args) === J({ id: 'lamp-1-bulb', to: 'lamp-1', offset: [0, 1.2, 0], yaw: 0 }), J(mt));
-  check('…the link on the root ({hash, name}) and a part marker on the bulb ({part})', plan.verbs.some((v: any) => v.verb === 'comp' && v.args.id === 'lamp-1' && v.args.type === LINK_KEY && J(v.args.data) === J({ hash: H1, name: 'Lamp' })) && plan.verbs.some((v: any) => v.verb === 'comp' && v.args.id === 'lamp-1-bulb' && v.args.type === LINK_KEY && J(v.args.data) === J({ part: 'bulb' })));
-  check('…and the way back is one list: remove each part, leaves first', J(plan.inverses) === J([{ verb: 'remove', args: { id: 'lamp-1-bulb' } }, { verb: 'remove', args: { id: 'lamp-1' } }]), J(plan.inverses));
-  const errs = send(plan.verbs);
-  check('the door accepts every verb (builder rank)', errs.length === 0, errs.join(' | '));
-  const root = ents()['lamp-1'], bulb = ents()['lamp-1-bulb'];
-  check('the fold holds the tree: the bulb rides the lamp', root?.lib === LAMP && bulb?.parent?.to === 'lamp-1' && J(bulb.parent.offset) === J([0, 1.2, 0]), J(bulb));
-  check('…the lamp is a Model and a Light (comp.light), the bulb an Empty with comp.light', root.comp?.light?.intensity === 16 && bulb.lib == null && bulb.kind == null && bulb.comp?.light?.range === 3);
-  const W = worldPose(ents(), 'lamp-1-bulb');
-  check('the bulb\'s spawn pose is its world pose (nothing jumps between spawn and mount)', W && J(W.pos.map((v: number) => +v.toFixed(4))) === J(sp[1].args.pos), J({ W, spawned: sp[1].args.pos }));
-  const t = copyTree(ents(), 'lamp-1', lampV1);
-  check('read back: copyTree finds the link and names every part', t?.hash === H1 && t.name === 'Lamp' && J(t.parts) === J({ '': 'lamp-1', bulb: 'lamp-1-bulb' }) && J(t.tree.children.map((k: any) => k.id)) === J(['bulb']), J(t?.parts));
-  check('…a child\'s Transform reads LOCAL (the mount\'s offset), not its pre-mount pose', J(t.tree.children[0].components.find((x: any) => x.type === 'Transform').params) === J({ pos: [0, 1.2, 0], yaw: 0 }), J(t.tree.children[0].components[0]));
-  check('…and an unmodified copy is the record: no overrides', overridesOf(t.tree, lampV1).length === 0, J(overridesOf(t.tree, lampV1)));
-  check('copyOf: the root is itself, the bulb is part "bulb" of lamp-1', J(copyOf(ents(), 'lamp-1')) === J({ root: 'lamp-1', path: [], link: { hash: H1, name: 'Lamp' } }) && J(copyOf(ents(), 'lamp-1-bulb')?.path) === J(['bulb']));
-  check('copyLine: "a copy of "Lamp" (v1, …)", and the part names its copy', copyLine(ents(), 'lamp-1', st.blueprints) === `a copy of "Lamp" (v1, ${H1.slice(0, 12)})` && copyLine(ents(), 'lamp-1-bulb', st.blueprints) === `part "bulb" of lamp-1, a copy of "Lamp" (v1, ${H1.slice(0, 12)})`, `${copyLine(ents(), 'lamp-1', st.blueprints)} / ${copyLine(ents(), 'lamp-1-bulb', st.blueprints)}`);
-  check('copyLine: a record the store lacks says so', /not in this world's store/.test(copyLine(ents(), 'lamp-1', {}) ?? ''));
-
-  // a second copy, so the store knows where copies stand; the minted ids avoid what stands
-  const plan2 = placeVerbs(lampV1, { id: 'lamp-2', pos: [0, 0, 0] }, { hash: H1, taken: (x: string) => !!ents()[x] || x === 'lamp-2-bulb' });
-  check('a minted part id never replaces something standing', plan2.parts.bulb === 'lamp-2-bulb-2', J(plan2.parts));
-  send(plan2.verbs);
-  check('copiesOf: where each blueprint\'s copies stand', J(copiesOf(ents())) === J({ [H1]: ['lamp-1', 'lamp-2'] }));
-  check('placeVerbs refuses an id already in use', placeVerbs(lampV1, { id: 'lamp-1', pos: [0, 0, 0] }, { taken: (x: string) => !!ents()[x] }).errors[0]?.includes('already in use'));
-
-  // a copy edited for itself: overrides read off the world
-  send([{ verb: 'comp', args: { id: 'lamp-1-bulb', type: 'light', data: { color: 0xffffff, intensity: 2, range: 3 } } }]);
-  send([{ verb: 'spawn', args: { id: 'cat', lib: 'eidoverse/assets/models/cat.glb', pos: [0, 0, 0] } }, { verb: 'mount', args: { id: 'cat', to: 'lamp-1', offset: [0.3, 0, 0] } }]);
-  const ov = overridesOf(copyTree(ents(), 'lamp-1', lampV1)!.tree, lampV1);
-  check('an edit to a part reads as an override at that part\'s path', ov.some((o: any) => J(o.path) === J(['bulb']) && o.comp === 'Light|light' && o.field === 'params/intensity' && o.value === 2), J(ov));
-  check('a thing parented into the copy since reads as an ADDED part, named by its entity id', ov.some((o: any) => J(o.path) === J(['cat']) && o.value === true && o.base === undefined), J(ov));
-  check('…and nothing else', ov.every((o: any) => o.path[0] === 'cat' || (o.path[0] === 'bulb' && o.field === 'params/intensity')), `${ov.length}: ${J(ov.map((o: any) => [o.path.join('/'), o.comp, o.field]))}`);
-
-  // one undo step takes the copy away
-  const undoErrs = send(plan2.inverses);
-  check('undo: the inverses remove every part of the copy, and nothing is left standing', undoErrs.length === 0 && !ents()['lamp-2'] && !ents()['lamp-2-bulb-2'], undoErrs.join(' | '));
-
-  // a deeper design: a tilted, scaled arm, a locked shade with a rotation order, a legacy light
-  // (keyless: from a kind:"light" entity) and a legacy collide on the base
-  const deep: any = {
-    kind: 'eido.blueprint', v: 1, name: 'Desk',
-    root: { components: [
-      { type: 'Transform', params: { scale: 2 } },
-      { type: 'Model', params: { lib: LAMP } },
-      { type: 'Collider', params: { shape: 'box' } },
-    ], children: [
-      { id: 'arm', components: [
-        { type: 'Transform', params: { pos: [0.2, 0.5, 0], q: [0.3826834323650898, 0, 0, 0.9238795325112867], yaw: 0, scale: 0.5 } },
-        { type: 'Model', params: { lib: LAMP } },
-      ], children: [
-        { id: 'shade', components: [
-          { type: 'Transform', params: { pos: [0, 1, 0], rotOrder: 'ZXY' } },
-          { type: 'Model', params: { lib: LAMP } },
-          { type: 'Lock', key: 'lock', params: {}, wire: { value: true } },
-          { type: 'Spin', key: 'motion', params: { axis: 'y', rate: 20 } },
-        ], children: [
-          { id: 'glow', components: [
-            { type: 'Transform', params: { pos: [0, -0.1, 0] } },
-            { type: 'Light', params: { color: 0xff8800, intensity: 6, range: 4, burnsAtNoon: true } },
-          ], children: [] },
-        ] },
-      ] },
-    ] },
-  };
-  check('the deep design is a record', blueprintRefusal(deep) === null, String(blueprintRefusal(deep)));
-  const HD = blueprintHash(deep);
-  send([{ verb: 'blueprint', args: { hash: HD, record: deep } }]);
-  const pd = placeVerbs(deep, { id: 'desk', pos: [10, 0, -2], q: [0, 0.7071067811865476, 0, 0.7071067811865476], scale: 1.5 }, { hash: HD });
-  check('a keyless (legacy) Light goes out as comp.light on an Empty, never the light verb (owner, 10-02)', !pd.verbs.some((v: any) => v.verb === 'light') && pd.verbs.some((v: any) => v.verb === 'comp' && v.args.id === pd.parts['arm/shade/glow'] && v.args.type === 'light' && v.args.data.day === false), J(pd.verbs.filter((v: any) => v.args.id === pd.parts['arm/shade/glow'])));
-  check('a legacy collide goes out as comp.collider, not the spawn\'s collide', !pd.verbs.some((v: any) => v.verb === 'spawn' && 'collide' in v.args) && pd.verbs.some((v: any) => v.verb === 'comp' && v.args.id === 'desk' && v.args.type === 'collider' && v.args.data.shape === 'box'));
-  check('the ghost\'s scale multiplies the record\'s root scale', pd.verbs[0]?.args.scale === 3, J(pd.verbs[0]?.args ?? pd.errors));
-  check('locks go out last (a locked part refuses its own mount)', pd.verbs.at(-1)?.args.type === 'lock' && pd.verbs.findIndex((v: any) => v.args.type === 'lock') > pd.verbs.findLastIndex((v: any) => v.verb === 'mount'));
-  check('…and the way back unlocks before it removes', J(pd.inverses[0]) === J({ verb: 'comp', args: { id: pd.parts['arm/shade'], type: 'lock', data: null } }) && pd.inverses.slice(1).every((v: any) => v.verb === 'remove'), J(pd.inverses));
-  const de = send(pd.verbs);
-  check('the door accepts the deep copy', de.length === 0, de.join(' | '));
-  const glow = ents()[pd.parts['arm/shade/glow']];
-  check('the glow is an Empty whose light reads the same (colour, brightness, reach, burns at noon) — comp spelling', glow && glow.kind == null && J(lightOf(glow)) === J({ spelling: 'comp', color: 0xff8800, intensity: 6, range: 4, keep: false, day: false }), J(glow));
-  check('the base collides as a box', colliderOf(ents().desk) === 'box');
-  check('the shade is locked, spins, and reads its rotation order', ents()[pd.parts['arm/shade']]?.comp?.lock === true && ents()[pd.parts['arm/shade']]?.comp?.motion?.type === 'spin' && ents()[pd.parts['arm/shade']]?.comp?.rotOrder === 'ZXY');
-  const td = copyTree(ents(), 'desk', deep)!;
-  const ovd = overridesOf(td.tree, deep);
-  check('read back: the deep copy is the record (legacy spellings and all) — the root\'s scale is the one override', ovd.length === 1 && ovd[0].comp === 'Transform' && ovd[0].field === 'params/scale' && ovd[0].value === 3 && ovd[0].base === 2, J(ovd));
-  const unscaled = placeVerbs(deep, { id: 'desk2', pos: [0, 0, 0] }, { hash: HD });
-  send(unscaled.verbs);
-  check('…and placed at the record\'s own scale, no override at all', overridesOf(copyTree(ents(), 'desk2', deep)!.tree, deep).length === 0, J(overridesOf(copyTree(ents(), 'desk2', deep)!.tree, deep)));
-  const tilted = worldPose(ents(), pd.parts.arm);
-  const armSpawn = pd.verbs.find((v: any) => v.verb === 'spawn' && v.args.id === pd.parts.arm)?.args;
-  check('the tilted arm (root turned 90°, scale 3; local offset, tilt and scale ½) spawns at its composed pose: [10, 1.5, -2.6], tilted', tilted && Math.abs(tilted.scale - 1.5) < 1e-9 && J(tilted.pos.map((v: number) => +v.toFixed(4))) === J([10, 1.5, -2.6]) && J(armSpawn?.pos) === J([10, 1.5, -2.6]) && Array.isArray(armSpawn?.q), J({ tilted, armSpawn }));
-  const du = send(pd.inverses);
-  check('undo removes the whole deep copy, its locked part included', du.length === 0 && !Object.keys(pd.parts).some((k) => ents()[pd.parts[k]]), du.join(' | '));
-  check('modernize: a keyless Light/Collider takes the component spelling; one that would collide keeps its own', J(modernize([{ type: 'Light', params: {} }]).map((x: any) => x.key)) === J(['light'])
-    && J(modernize([{ type: 'Light', params: {} }, { type: 'Light', key: 'light', params: {} }]).map((x: any) => x.key ?? null)) === J([null, 'light'])
-    && J(modernize([{ type: 'Collider', params: { shape: 'mesh' } }]).map((x: any) => x.key ?? null)) === J([null])
-    && J(modernize([{ type: 'Label', params: { text: 'x' } }, { type: 'Annotation', params: { type: 'recipe', data: 1 } }]).map((x: any) => x.key)) === J(['label', 'recipe']));
-  check('versionOf: v1 for an original, 0 for a record the store lacks', versionOf(st.blueprints, H1) === 1 && versionOf(st.blueprints, '0'.repeat(64)) === 0);
-
-  // refusals, before anything is sent
-  const both: any = { kind: 'eido.blueprint', v: 1, name: 'x', root: { components: [{ type: 'Light', params: {} }, { type: 'Light', key: 'light', params: {} }], children: [] } };
-  check('placeRefusal: a part holding both spellings of a light', /both spellings/.test(placeRefusal(both) ?? ''), String(placeRefusal(both)));
-  const badLight: any = { kind: 'eido.blueprint', v: 1, name: 'x', root: { components: [{ type: 'Light', key: 'light', params: { color: 'red' } }], children: [] } };
-  check('placeRefusal: a light the component contract refuses (the door would)', /light color/.test(placeRefusal(badLight) ?? ''), String(placeRefusal(badLight)));
-  const longKey: any = { kind: 'eido.blueprint', v: 1, name: 'x', root: { components: [{ type: 'Annotation', params: { type: 'k'.repeat(40), data: 1 } }], children: [] } };
-  check('placeRefusal: a comp key the door would truncate', /32 characters/.test(placeRefusal(longKey) ?? ''), String(placeRefusal(longKey)));
-  const nullData: any = { kind: 'eido.blueprint', v: 1, name: 'x', root: { components: [{ type: 'Annotation', key: 'note', params: { type: 'note', data: null } }], children: [] } };
-  check('placeRefusal: a comp with no data (it would be a removal)', /holds no data/.test(placeRefusal(nullData) ?? ''), String(placeRefusal(nullData)));
-  const badOrder: any = { kind: 'eido.blueprint', v: 1, name: 'x', root: { components: [{ type: 'Transform', params: { rotOrder: 'XXY' } }], children: [] } };
-  check('placeRefusal: a rotation order the door refuses', /rotation order/.test(placeRefusal(badOrder) ?? ''), String(placeRefusal(badOrder)));
-  check('placeVerbs: refusals come back as errors, with no verbs', (() => { const r = placeVerbs(both, { id: 'z', pos: [0, 0, 0] }); return r.errors.length === 1 && r.verbs.length === 0; })());
 }
 
 // ---- 8. the pacer ------------------------------------------------------------------------
@@ -453,41 +308,146 @@ console.log('\n8. the pacer (shared/pace.js) against the door\'s rate rule');
   check('control: unpaced, the door drops all but 12', d.dropped === 108);
 }
 
-// ---- 9. the text tier for copies ----------------------------------------------------------
-console.log('\n9. the text tier: look(), inspect, blueprints, blueprint_place (mcpl)');
+// ---- 6. v4: the door's publish and create {from} ------------------------------------------
+console.log('\n6. v4: publish → @world library:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
+const { scratchWorld } = await import('./v4/scratchdoor.ts');
+const { worldPose } = await import('../shared/hierarchy.js');
+const { qFromYaw, qNorm } = await import('../shared/rot.js');
+const near = (a: number[], b: number[], e = 2e-3) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= e);
+const lampWorld = () => {
+  const W = scratchWorld('blueprint');
+  W.call('set', { id: '@world', component: 'roles:bld', value: { role: 'builder' } });
+  W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'visitor' } });
+  // a lamp: a model with a light and a label, and a bulb child (an Empty with its own light) 1.2 m up
+  W.seed({
+    lamp: { lib: LAMP, pos: [7, 0, 7], yaw: 1, comp: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, label: 'a lamp' } },
+    bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, comp: { light: { color: 0xffffff, intensity: 4, range: 3 } } },
+  });
+  return W;
+};
+const libOf = (W: any) => Object.fromEntries(Object.entries(W.state().entities['@world'].c).filter(([k]) => k.startsWith('library:')).map(([k, v]) => [k.slice(8), v]));
+let HV = '';   // the v4 record's hash, "sha256:<hex>"
 {
-  const { placeVerbs } = await import('../shared/blueprint.js');
+  const W = lampWorld();
+  const vis = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'vis');
+  check('a visitor may not publish (rank)', vis.ok === false && vis.refused?.code === 'rights', J(vis));
+  const r = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
+  HV = r.notes?.find((n: any) => n.record)?.record ?? '';
+  const hex = HV.replace(/^sha256:/, '');
+  check('publish {from, name}: one act, the record\'s hash in its notes, the library entry @world library:<hex> = {name, parts}', r.ok && /^sha256:[0-9a-f]{64}$/.test(HV) && J(libOf(W)[hex]) === J({ name: 'Lamp', parts: 2 }), J([r.refused, r.notes, libOf(W)]));
+  const rec = W.getBlob(HV);
+  check('the record: the thing and what is attached, root at the origin (its place is the copy\'s), parts keyed, the publisher named',
+    rec.name === 'Lamp' && rec.root === 'lamp' && rec.by === 'bld' && J(rec.parts.map((p: any) => p.key)) === J(['lamp', 'bulb'])
+    && J(rec.parts[0].components.transform.pos) === J([0, 0, 0]) && !rec.parts[0].components.parent && rec.parts[1].components.parent?.to === 'lamp'
+    && near(rec.parts[1].components.transform.pos, [0, 1.2, 0], 0) && rec.parts[0].components.light.intensity === 16, J(rec));
+  check('…the world is untouched by publishing (the lamp stays where it stands)', near(W.rec('lamp').pos, [7, 0, 7], 0) && W.rec('bulb').parent?.to === 'lamp');
+  const again = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
+  check('content-addressed: the same publisher re-publishing the same thing gets the same hash', again.ok && again.notes?.find((n: any) => n.record)?.record === HV, J(again.notes));
+  W.call('set', { id: 'lamp', component: 'light', value: { color: 0xffd9a0, intensity: 24, range: 10 } }, 'bld');
+  const v2 = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
+  const H2v = v2.notes?.find((n: any) => n.record)?.record;
+  check('…meaning moves it: a brighter lamp is a new record beside the first (nothing replaced)', v2.ok && H2v !== HV && Object.keys(libOf(W)).length === 2, J(libOf(W)));
+
+  // place a copy: create {from: hash, at}
+  const at = { pos: [3, 0, 4], q: qFromYaw(0.5) };
+  const c1 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
+  const E = () => W.view().entities;
+  check('create {id, from: hash, at}: one act, the copy\'s parts named from its id', c1.ok && !!E()['lamp-1'] && !!E()['lamp-1-bulb'], J([c1.refused, Object.keys(E())]));
+  const root = E()['lamp-1'], bulb = E()['lamp-1-bulb'];
+  check('…the root at `at` (pos and turn) with its model, light and label; the bulb an Empty with its light',
+    root.lib === LAMP && near(root.pos, [3, 0, 4], 0) && Math.abs(root.yaw - 0.5) < 1e-6 && root.comp?.light?.intensity === 16 && root.comp?.label === 'a lamp'
+    && bulb.lib === undefined && bulb.comp?.light?.range === 3, J({ root, bulb }));
+  check('…the bulb rides the copy\'s root at its LOCAL pose (as the record says)', bulb.parent?.to === 'lamp-1' && near(bulb.pos, [0, 1.2, 0], 0), J(bulb));
+  const Wb = worldPose(E(), 'lamp-1-bulb')!;
+  check('…so its world pose is the root\'s pose composed with it: [3, 1.2, 4]', near(Wb.pos, [3, 1.2, 4]), J(Wb));
+  check('…every part carries the link: blueprint {from: hash, key}', J(root.comp?.blueprint) === J({ from: HV, key: 'lamp' }) && J(bulb.comp?.blueprint) === J({ from: HV, key: 'bulb' }), J([root.comp?.blueprint, bulb.comp?.blueprint]));
+  const c2 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
+  check('an id in use is refused (`exists`), nothing written', c2.ok === false && c2.refused?.code === 'exists', J(c2));
+  const c3 = W.call('create', { from: 'sha256:' + '0'.repeat(64) }, 'bld');
+  check('a hash with no record is refused', c3.ok === false && ['not-found', 'not-in-library'].includes(c3.refused?.code), J(c3));
+  const W2 = scratchWorld('blueprint');
+  const c4 = W2.call('create', { from: HV });
+  check('a record that isn\'t in THIS world\'s library is refused (publish it here first)', c4.ok === false && ['not-in-library', 'not-found'].includes(c4.refused?.code), J(c4));
+  const u = W.call('undo', {}, 'bld');
+  check('one undo (the door\'s, of the create) takes the whole copy away', u.ok && !E()['lamp-1'] && !E()['lamp-1-bulb'] && !!E().lamp, J([u.refused, Object.keys(E())]));
+  // a copy edited for itself is just a thing (the link stays): editing it never touches the record or other copies
+  W.call('create', { id: 'lamp-2', from: HV, at: { pos: [0, 0, 0] } }, 'bld');
+  W.call('create', { id: 'lamp-3', from: HV, at: { pos: [2, 0, 0] } }, 'bld');
+  W.call('set', { id: 'lamp-2-bulb', component: 'light', value: { color: 0xffffff, intensity: 2, range: 3 } }, 'bld');
+  check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()['lamp-2-bulb'].comp.light.intensity === 2 && E()['lamp-3-bulb'].comp.light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
+}
+{
+  // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a rotation order
+  // and a spin, and a glow (an Empty with a light that burns at noon)
+  const W = scratchWorld('blueprint');
+  const tilt = [0.3826834323650898, 0, 0, 0.9238795325112867];
+  W.seed({
+    desk: { lib: LAMP, pos: [50, 0, 50], scale: 2, comp: { collider: { shape: 'box' } } },
+    arm: { lib: LAMP, parent: { to: 'desk', offset: [0.2, 0.5, 0], q: tilt }, scale: 0.5 },
+    shade: { lib: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, comp: { rotOrder: 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true } },
+    glow: { parent: { to: 'shade', offset: [0, -0.1, 0] }, comp: { light: { color: 0xff8800, intensity: 6, range: 4, day: false } } },
+  });
+  const p = W.call('publish', { from: 'desk', name: 'Desk' });
+  const HD = p.notes?.find((n: any) => n.record)?.record;
+  check('the deep design publishes (4 parts, the locked shade included)', p.ok && J(libOf(W)[String(HD).slice(7)]) === J({ name: 'Desk', parts: 4 }), J([p.refused, libOf(W)]));
+  const yaw90 = [0, 0.7071067811865476, 0, 0.7071067811865476];
+  const c = W.call('create', { id: 'desk2', from: HD, at: { pos: [10, 0, -2], q: yaw90 } });
+  const E = W.view().entities;
+  const id = (k: string) => Object.keys(E).find((x) => E[x].comp?.blueprint?.from === HD && E[x].comp.blueprint.key === k && x.startsWith('desk2'));
+  check('the copy lands as one act: four parts', c.ok && ['desk', 'arm', 'shade', 'glow'].every((k) => !!id(k)), J([c.refused, Object.keys(E)]));
+  const arm = worldPose(E, id('arm')!)!;
+  check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
+    near(arm.pos, [10, 1, -2.4]) && Math.abs(arm.scale - 1) < 1e-6 && Math.abs(E[id('arm')!].q[0]) > 0.1, J(arm));
+  const shade = E[id('shade')!], glow = E[id('glow')!];
+  check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.rotOrder === 'ZXY', J(shade.comp));
+  check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.lib === undefined && glow.comp?.light?.day === false && glow.comp.light.color === 0xff8800 && E.desk2.comp?.collider?.shape === 'box', J([glow, E.desk2.comp]));
+  // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
+  // unlocked first). The person is asked "Move anyway?" (v4edit: undo offers through, not unlock); through_lock takes it.
+  const u0 = W.call('undo', {});
+  check('a bare undo of the copy is refused `locked` (its shade is locked), and nothing is removed', u0.ok === false && u0.refused?.code === 'locked' && Object.keys(W.view().entities).filter((x) => x.startsWith('desk2')).length === 4, J(u0));
+  const u = W.call('undo', { through_lock: true });
+  check('…through_lock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.keys(W.view().entities).some((x) => x.startsWith('desk2')), J([u.refused, Object.keys(W.view().entities)]));
+}
+
+// ---- 7. v4: the agent's tools over the library ------------------------------------------------
+console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcpl), the agent\'s door the scratch door');
+{
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const { HANDLERS } = await import('../mcpl/tools.ts');
+  const W = lampWorld();
+  const pub = W.call('publish', { from: 'lamp', name: 'Lamp' });
+  const H = pub.notes.find((n: any) => n.record).record as string, hex = H.slice(7);
+  W.call('create', { id: 'lampa', from: H, at: { pos: [2, 0, 2] } });
   const ag: any = new WorldAgent({ name: 'eye' });
-  let n = 1;
-  const entry = (verb: string, args: Record<string, unknown>) => ag.applyEntry({ verb, args, ts: 1786320000000 + n, seq: n++, actor: 'owner' }, false);
-  entry('blueprint', { hash: H1, record: lampV1 });
-  for (const v of placeVerbs(lampV1, { id: 'lampA', pos: [2, 0, 2] }, { hash: H1 }).verbs) entry(v.verb, v.args);
-  const out = ag.look();
-  const line = (id: string) => out.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
-  check('look(): a placed copy says which blueprint it is', line('lampA').includes(`a copy of "Lamp" (v1, ${H1.slice(0, 12)})`) && !/components: .*blueprint/.test(line('lampA')), line('lampA'));
-  check('look(): a part says whose part it is', line('lampA-bulb').includes(`part "bulb" of lampA, a copy of "Lamp"`), line('lampA-bulb'));
-  const txt = (r: any) => r.content.map((c: any) => c.text).join('\n');
-  const ins = txt(await HANDLERS.inspect(ag, { id: 'lampA-bulb' }));
-  check('inspect: the head names the copy, beside parent and children', ins.includes(`blueprint: part "bulb" of lampA, a copy of "Lamp" (v1,`) && ins.includes('parent: lampA'), ins.slice(0, 400));
-  const list = txt(await HANDLERS.blueprints(ag, {}));
-  check('blueprints: each record says where its copies stand', list.includes('· 1 copy: lampA'), list);
-  const one = txt(await HANDLERS.blueprints(ag, { hash: H1.slice(0, 8) }));
-  check('blueprints {hash}: lists the copies with how many overrides each holds', /copies \(1\): lampA\n/.test(one), one.slice(0, 400));
-  entry('comp', { id: 'lampA', type: 'label', data: 'the porch lamp' });
-  check('…an edited copy counts its overrides', /copies \(1\): lampA \(1 override\)/.test(txt(await HANDLERS.blueprints(ag, { hash: H1.slice(0, 8) }))));
+  const sync = () => { ag.st = W.view(); ag.v4c = { st: W.state(), active: true }; ag.reconcileFromFold(); };
+  sync();
+  ag.door = async (tool: string, args: any) => { const r = W.call(tool, args); sync(); return r; };
   ag.pos = { x: 0, y: 0, z: 0 }; ag.yaw = 0; ag.heightAt = () => 0;
-  const dry = txt(await HANDLERS.blueprint_place(ag, { hash: H1.slice(0, 10), id: 'lampB', dry: true }));
-  check('blueprint_place dry: the verbs a copy is, 2 m ahead, with its parts', /^would send \d+ verbs/.test(dry) && dry.includes('spawn {"id":"lampB","lib"') && dry.includes('"pos":[0,0,2]') && dry.includes('bulb → lampB-bulb'), dry.slice(0, 300));
-  const sent: any[] = []; ag.verb = (verb: string, args: any) => sent.push({ verb, args });
-  const live = txt(await HANDLERS.blueprint_place(ag, { hash: H1.slice(0, 10), id: 'lampC', x: 5, z: 5 }));
-  check('blueprint_place: sends the copy (paced) and says how to undo it', sent.length > 0 && sent[0].verb === 'spawn' && sent[0].args.id === 'lampC' && /to undo: remove .*lampC-bulb.*remove .*"lampC"/.test(live), live.slice(0, 300));
+  const txt = (r: any) => r.content.map((c: any) => c.text).join('\n');
+  const list = txt(await HANDLERS.blueprints(ag, {}));
+  check('blueprints: the library by short hash, name and part count', list.includes(`[${hex.slice(0, 12)}] "Lamp" · 2 part(s)`), list);
+  // KNOWN BUG (reported 2026-10-06, mcpl/tools.ts blueprints): it counts copies by comp.blueprint.hash, but the door's
+  // link is blueprint {from: "sha256:…", key} — so every record reads "no copies placed"
+  check('…and says where its copies stand (KNOWN BUG: reads comp.blueprint.hash; the door writes {from, key})', /1 copy: lampa/.test(list), list);
+  const one = txt(await HANDLERS.blueprints(ag, { hash: hex.slice(0, 10) }));
+  check('blueprints {hash: a prefix}: that one record', one.startsWith(`[${hex.slice(0, 12)}] "Lamp"`) && one.split('\n').length === 2, one);
+  check('…an unknown prefix says so', /none here starts "zz"/.test(txt(await HANDLERS.blueprints(ag, { hash: 'zz' }))));
+  const before = Object.keys(W.view().entities).length;
+  const dry = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), id: 'lampb', dry: true });
+  // KNOWN BUG (reported 2026-10-06, mcpl/tools.ts blueprint_place): it sends create {from: <hex>} — the library key
+  // without "sha256:" — and the door reads a from without that prefix as a THING id to duplicate: "no thing called…"
+  check('blueprint_place (dry): the door answers it would place a copy, and nothing is written (KNOWN BUG: from lacks "sha256:")', !(dry as any).isError && /would place a copy of "Lamp"/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
+  const live = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), x: 5, z: 5 });
+  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e.comp?.blueprint?.from === H && e.comp.blueprint.key === 'lamp').length === 2, txt(live));
   const r = await HANDLERS.blueprint_place(ag, { hash: 'ffff' });
   check('blueprint_place: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
-  const before = sent.length;
-  const taken: any = await HANDLERS.blueprint_place(ag, { hash: H1.slice(0, 10), id: 'lampA' });
-  check('blueprint_place: an id in use is refused, nothing sent', taken.isError === true && /already in use/.test(txt(taken)) && sent.length === before, txt(taken));
+  const look = ag.look();
+  const line = (id: string) => look.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
+  // KNOWN BUG (reported 2026-10-06, mcpl/agent.ts look → shared/blueprint.js copyLine): copyLine reads v1's link
+  // ({hash, name} / {part} and state.blueprints); the v4 link is blueprint {from, key}, so look() says nothing about a
+  // copy and dumps "components: blueprint" instead
+  check('look(): a placed copy says which blueprint it is (KNOWN BUG: v1 copyLine)', /a copy of "Lamp"/.test(line('lampa')) && !/components: .*blueprint/.test(line('lampa')), line('lampa'));
+  check('look(): a part says whose part it is (KNOWN BUG: v1 copyLine)', /part "bulb" of lampa/.test(line('lampa-bulb')), line('lampa-bulb'));
 }
 
 rmSync(SCRATCH, { recursive: true, force: true });
