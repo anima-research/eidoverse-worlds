@@ -299,7 +299,7 @@ export const roleIn = (st, actor) => roleOf(st, actor);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
-const isBanned = (w, who) => { let b = false; for (const m of w.mod) if (m.who === who && (m.verb === "ban" || m.verb === "unban")) b = m.verb === "ban"; return b; };
+export const isBanned = (w, who) => { let b = false; for (const m of w.mod) if (m.who === who && (m.verb === "ban" || m.verb === "unban")) b = m.verb === "ban"; return b; };
 // Who a state entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
 // differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
@@ -1066,9 +1066,16 @@ function buildUse(ctx, a) {
     const fwd = qrot(worldT(ctx.st, a.id).q, [0, 0, 1]); const along = raw[0] * fwd[0] + raw[1] * fwd[1] + raw[2] * fwd[2];
     const mag = Math.hypot(...raw);
     if (mag > 0 && Math.abs(along) < 0.3 * mag) refuse("sideways", `${a.id} swings front-to-back; that push is mostly sideways`, `push along its front ${JSON.stringify(fwd.map(r3))} (or the opposite)`);
-    const amp = Math.min(mo.maxAmp ?? 0.9, (mo.amp ?? 0) * 0.5 + Math.abs(along) * (h.gain ?? 0.25));
+    // v1's pendulumImpulse (server/reactions.ts on main): read angle and velocity AT the push instant, add the push,
+    // re-express as (amp, phase, t0). No snap at the push; with the motion builds, against it damps. The client's
+    // pendulumTheta (client/lib/motioneval.js) evaluates the result: keep the two in sync (review 10-06 #5).
+    const now = ctx.w.now(), w0 = (2 * Math.PI) / (mo.period ?? 3.5), damp = mo.damp ?? 0;
+    const t = mo.t0 != null ? Math.max(0, (now - mo.t0) / 1000) : 0;
+    const a0 = (mo.amp ?? 0) * Math.exp(-damp * t), ph = w0 * t + (mo.phase ?? 0);
+    const th = a0 * Math.cos(ph), vel = -a0 * w0 * Math.sin(ph) + along * (h.gain ?? 0.25) * w0;
+    const amp = Math.min(mo.maxAmp ?? 0.9, Math.hypot(th, vel / w0)), phase = Math.atan2(-(vel / w0), th);
     reactionCap(ctx, a.id, "motion", action);
-    ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), t0: ctx.w.now() })];
+    ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), phase: r3(phase), t0: now })];
   }
   // §5: a thing's gameplay state lives inside its own component (a door is `door: {open, locked}`), never as a top-level
   // name beside the edit `lock`. A handler names its component and, for an object component, the field it changes.

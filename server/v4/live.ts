@@ -11,13 +11,14 @@
 //   presence the door's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
 //           file because its CLI ran one process per request).
 // The log file is <dir>/v4.jsonl (UTF-8 JSONL, §2.4); blobs are <dir>/v4-blobs/sha256-<hex>.json, named by the full
-// hash of their JCS bytes, written once, verified on read (§2.2). Each line is appended with appendFileSync before
+// hash of their JCS bytes, written once, verified on read (§2.2). Each line is appended and fsynced (durable.ts) before
 // the request returns: the door has already re-read it with the strict reader.
 import fs from "node:fs";
 import path from "node:path";
 import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed } from "../../shared/v4/fold.js";
 import { worldOf, posAt } from "../../shared/v4/door.js";
 import { simFolder } from "../../shared/v4/simlayer.js";
+import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { directoryFor } from "./directory.ts";
 
@@ -45,7 +46,7 @@ export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; o
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const logPath = path.join(dir, "v4.jsonl");
   const blobDir = path.join(dir, "v4-blobs");
-  const entries: Any[] = (fs.existsSync(logPath) ? readLog(fs.readFileSync(logPath)) : []).map(posAt);
+  const entries: Any[] = readLog(readLogBytes(logPath)).map(posAt);
   const blobPath = (h: string) => path.join(blobDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(h))) throw new Error(`not a blob name: ${h}`);
@@ -55,7 +56,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   };
   const putBlob = (v: unknown) => {
     const s = jcs(v); const h = `sha256:${sha256(s)}`;
-    if (!fs.existsSync(blobPath(h))) { fs.mkdirSync(blobDir, { recursive: true }); fs.writeFileSync(blobPath(h), s); }
+    putBlobFile(blobPath(h), s, h);
     return h;
   };
   // the clock: never behind anything already written, never backwards
@@ -66,7 +67,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
 
   const w: Any = worldOf({
     name, entries, getBlob, putBlob, now, catalogue: opts.catalogue,
-    writeLine: (line: string) => { fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(logPath, line + "\n"); },
+    writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
     custody: custodyAt(opts.custodyFile ?? path.join(path.dirname(dir), ".v4-custody.json")),
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,

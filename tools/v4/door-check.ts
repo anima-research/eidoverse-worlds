@@ -589,6 +589,53 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
   ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
 
+// ---- SW: a push re-expresses the swing at the push instant, as v1's pendulumImpulse does (v4-vs-v1 review 10-06 #5):
+// no jump at the push, and pushing in rhythm builds. v4 kept the old phase with a new t0 and halved amp (a snap). ----
+{ const sw = (actor, tool, args = {}) => { process.env.V4_NOW = String(T); return request(openWorld(root, "swingpush"), actor, tool, args); };
+  const { pendulumTheta } = await import("../../client/lib/motioneval.js");
+  T += 100; sw("ann", "new", { title: "swingpush" });
+  T += 100; sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  T += 100; sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
+  T += 100; sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "pendulum-push", gain: 0.25 } } });
+  const mo = () => openWorld(root, "swingpush").state().entities.seat.c.motion;
+  const theta = (m, at) => m ? pendulumTheta(m, Math.max(0, (at - m.t0) / 1000)) : 0;
+  T += 100; const p1 = sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } });
+  const m1 = mo();
+  ok(p1.ok && Math.abs(theta(m1, T)) < 1e-3, "SW1 a swing at rest doesn't jump on the first push (it starts moving from where it hangs)", { p1: p1.refused, m1, th: theta(m1, T) });
+  const w0 = 2 * Math.PI / (m1?.period ?? 2.4);
+  // push again a quarter period later, mid-swing: the angle at that instant must be the same before and after
+  T += Math.round(250 * (m1?.period ?? 2.4)) + 37;
+  const before = theta(m1, T);
+  sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } });
+  const m2 = mo();
+  ok(Math.abs(theta(m2, T) - before) < 2e-3, "SW2 a mid-swing push keeps the angle at the push instant (no snap)", { before, after: theta(m2, T), m2 });
+  // rhythm: push at each forward pass through the bottom; amplitude grows push after push
+  let m = mo(), amps = [];
+  for (let k = 0; k < 4; k++) {
+    let t = T; for (let i = 0; i < 4000; i++) { t += 5; const a = theta(m, t), b = theta(m, t + 5); if (a <= 0 && b > 0) break }   // next upward zero crossing
+    T = t + 5; sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } }); m = mo(); amps.push(m.amp);
+  }
+  ok(amps.every((a, i) => i === 0 || a > amps[i - 1] - 1e-9) && amps[3] > amps[0] + 0.05, "SW3 pushing in rhythm builds the swing", amps);
+}
+
+// ---- DU: disk practice (platforms review 10-06 #5): a torn last line is cut at open, not kept as a malformed entry
+// forever; a blob whose bytes don't match its name is rewritten, not skipped forever ----
+{ const du = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "durable"), actor, tool, args); };
+  du("ann", "new", { title: "durable" });
+  du("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const lp = root + "worlds/durable.jsonl"; const n0 = openWorld(root, "durable").entries.length;
+  fs.appendFileSync(lp, '{"world":"durable","kind":"say","ts":1,"body":{"te');   // a crash mid-write
+  const w1 = openWorld(root, "durable");
+  ok(w1.entries.length === n0 && !w1.state().diagnostics.some(([, c]) => String(c).startsWith("malformed")) && fs.readFileSync(lp).at(-1) === 0x0a,
+    "DU1 a torn last line is cut off at open: same entries, no malformed diagnostic, the file ends on a newline", { n0, n1: w1.entries.length, diag: w1.state().diagnostics.slice(-2) });
+  ok(du("ann", "set", { id: "box", component: "label", value: "after the crash" }).ok && openWorld(root, "durable").entries.length > n0, "DU2 the world writes on after the cut");
+  const w2 = openWorld(root, "durable"); const h = w2.putBlob({ note: "a blob" });
+  const bf = root + "store/" + h.replace(/[^a-z0-9]/g, "-") + ".json";
+  fs.writeFileSync(bf, '{"note":"a bl');   // torn blob
+  openWorld(root, "durable").putBlob({ note: "a blob" });
+  let good = false; try { good = JSON.stringify(openWorld(root, "durable").getBlob(h)) === '{"note":"a blob"}'; } catch {}
+  ok(good, "DU3 putting a blob whose stored copy is torn rewrites it (it used to be skipped because the name existed)", fs.readFileSync(bf, "utf8")); }
+
 // ---- WT: a warning as a sentence (agent lab: out-of-bounds "doesn't say out of what") ----
 { const { warningText } = await import("../../shared/v4/refusal.js");
   ok(warningText({ id: "box", kind: "out-of-bounds", bounds: { min: [-20, 0, -20], max: [20, 12, 20] } }) === "box is outside the world's bounds (x -20…20, y 0…12, z -20…20 m)", "WT1 out-of-bounds says which bounds");

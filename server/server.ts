@@ -487,7 +487,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // last resort.
     {
       const gb = findBan(globalBans, c.id, c.sub);
-      const ban = gb ?? findBan(w.state.bans, c.id, c.sub);
+      // a v4 world's door bans by opaque id in its moderator log (review 10-06): the same door closes at join
+      const ban = gb ?? findBan(w.state.bans, c.id, c.sub) ?? (w.v4 && c.v4id && w.v4.bannedHere(c.v4id) ? { by: "a moderator" } : null);
       if (ban && !isAdminId(c.id, c.sub)) {
         console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "globally" : "here"} (by ${ban.by})`);
         ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""} (by ${ban.by})` }));

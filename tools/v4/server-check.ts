@@ -111,6 +111,14 @@ const idSeen = (name: string) => ann.msgs.find((m: any) => m.type === "arrive" &
 const BOB = idSeen("Bob"), VIC = idSeen("Vic");
 ok(BOB && BOB === bob.snapshot?.v4?.you && VIC === vic.snapshot?.v4?.you, "S1 an arrival carries the person's identity, the same one they're told", [BOB, VIC]);
 for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "visitor"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
+// SB: a door ban (moderator log, by id) also closes the door at JOIN — it only refused requests, so a banned person
+// could still walk in, be seen and look around (v4-vs-v1 review 10-06 #1: two sources of truth for bans)
+{ const mal = await client(srv.port, "garden", "Mal", V4); await sleep(150);
+  const MAL = mal.snapshot?.v4?.you; mal.close(); await sleep(100);
+  ok((await ann.req("ban", { who: MAL, reason: "test" })).ok, "SB1 Ann bans Mal through the door");
+  const again = await client(srv.port, "garden", "Mal", V4);
+  ok(!again.snapshot && again.of("error").some((m) => /banned/.test(m.error)), "SB2 a door-banned person can't join (no snapshot, told why)", again.msgs.map((m) => m.type));
+  again.close(); }
 const spec = await client(srv.port, "garden", "Watcher", { spectate: true, ...V4 });
 await sleep(200);
 ok(bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "visitor", "S1 roles set through the door reach each client's rights", [bob.of("your-rights").at(-1), vic.of("your-rights").at(-1)]);

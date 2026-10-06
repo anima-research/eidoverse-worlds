@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readLog, jcs, sha256 } from "../../shared/v4/fold.js";
 import { worldOf, posAt } from "../../shared/v4/door.js";
+import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 
 export type OpenOpts = { now?: () => number };
@@ -19,7 +20,7 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`);
   const storeDir = path.join(root, "store");
   const presPath = path.join(root, "worlds", `${name}.presence.json`);
-  const entries = (fs.existsSync(logPath) ? readLog(fs.readFileSync(logPath)) : []).map(posAt);
+  const entries = readLog(readLogBytes(logPath)).map(posAt);
   const blobPath = (h: string) => path.join(storeDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     const s = fs.readFileSync(blobPath(h), "utf8");
@@ -28,13 +29,13 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   };
   const putBlob = (v: unknown) => {
     const s = jcs(v); const h = `sha256:${sha256(s)}`;
-    if (!fs.existsSync(blobPath(h))) { fs.mkdirSync(storeDir, { recursive: true }); fs.writeFileSync(blobPath(h), s); }
+    putBlobFile(blobPath(h), s, h);
     return h;
   };
   return worldOf({
     name, entries, getBlob, putBlob,
     now: opts.now ?? envClock,
-    writeLine: (line: string) => { fs.mkdirSync(path.dirname(logPath), { recursive: true }); fs.appendFileSync(logPath, line + "\n"); },
+    writeLine: (line: string) => appendDurable(logPath, line),
     presence: fs.existsSync(presPath) ? JSON.parse(fs.readFileSync(presPath, "utf8")) : { bodies: {}, holds: {} },
     savePresence: (p: object) => { fs.mkdirSync(path.dirname(presPath), { recursive: true }); fs.writeFileSync(presPath, JSON.stringify(p)); },
     custody: custodyAt(path.join(root, "keys", "custody.json")),

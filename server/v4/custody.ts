@@ -2,6 +2,7 @@
 // One sequencer key per keys file, and one key per identity that founds a world through this door, so two worlds one
 // person founds here carry the same keys and only genesis's nonce tells them apart. Keys never enter a log; the file
 // is written 0600. Same layout and key encoding as the lab's custody (code/v4-lab/door.js custodyOf).
+import { appendDurable, readLogBytes } from "./durable.ts";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -17,7 +18,7 @@ const mk = (): Key => {
 /** Custody over the keys file at `file` (created on first use). */
 export function custodyAt(file: string) {
   const c: File = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { holders: {} };
-  const save = () => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(c, null, 1), { mode: 0o600 }); fs.chmodSync(file, 0o600); };
+  const save = () => { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(c, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600); };
   return {
     sequencer(): string { if (!c.sequencer) { c.sequencer = mk(); save(); } return c.sequencer.pub; },
     /** The operator's GOVERNANCE key (tier 1 of the custodial default, §2.4): never the same key as the sequencer, so a
@@ -35,6 +36,6 @@ export function custodyAt(file: string) {
 
 /** A world's moderator log (§2.1: never in the world log): read it, and append one record per line. */
 export function modLogAt(file: string) {
-  const mod = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-  return { mod, appendMod: (r: object) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.appendFileSync(file, JSON.stringify(r) + "\n"); } };
+  const mod = fs.existsSync(file) ? readLogBytes(file).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  return { mod, appendMod: (r: object) => { appendDurable(file, JSON.stringify(r)); } };
 }
