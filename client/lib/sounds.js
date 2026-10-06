@@ -224,7 +224,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       q('play')?.addEventListener('click', (ev) => {
         const norm = normalizeSound(bagFrom(true));
         if (!norm.ok) { msg(norm.why, true); return; }
-        commit('comp', { id, type: 'sound', data: norm.sound });
+        commit('sound', norm.sound);
         msg(norm.notes.length ? norm.notes.join(' · ') : 'playing');
         if (norm.notes.length) flashHint(`🔊 ${esc(norm.notes[0])}`);
         ev.target.blur();
@@ -232,9 +232,9 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       q('pause')?.addEventListener('click', (ev) => {
         const norm = normalizeSound({ ...bagFrom(false), t0: undefined });
         if (!norm.ok) { msg(norm.why, true); return; }
-        commit('comp', { id, type: 'sound', data: norm.sound }); msg('paused'); ev.target.blur();
+        commit('sound', norm.sound); msg('paused'); ev.target.blur();
       });
-      q('silence')?.addEventListener('click', (ev) => { commit('comp', { id, type: 'sound', data: null }); msg('silenced'); ev.target.blur(); });
+      q('silence')?.addEventListener('click', (ev) => { commit('sound', null); msg('silenced'); ev.target.blur(); });
     },
   };
 });

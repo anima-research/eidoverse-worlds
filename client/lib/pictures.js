@@ -310,13 +310,13 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         if (look) data.look = look;
         const norm = normalizePicture(data);
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
-        commit('comp', { id, type: 'picture', data: norm.picture });
+        commit('picture', norm.picture);
         msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
         if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
         ev.target.blur();
       });
       q('down')?.addEventListener('click', (ev) => {
-        commit('comp', { id, type: 'picture', data: null });
+        commit('picture', null);
         msg('taken down', false, null);
         ev.target.blur();
       });

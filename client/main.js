@@ -7,6 +7,7 @@
 // handle in mybody.js, my body's physics in localbody.js, consent in
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
+import { say } from './lib/net.js';
 import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
@@ -42,7 +43,7 @@ import * as participants from './lib/remotes.js';
 import { snapshot } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
+  net, connect, initIdentity, loginUrl, wireNet, requestV4, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
@@ -158,7 +159,7 @@ initSimWorld();
 initBoot({ world: CONFIG.world, name: CONFIG.name });
 buildHelp();
 const chatApi = initChat({
-  send: (text) => sendVerb('say', { text }),
+  send: (text) => say(text),
   whisper: sendWhisper,
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
@@ -841,8 +842,8 @@ globalThis.whyIsItSilent = () => {
 };
 
 const EW = globalThis.EW = {
-  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
-  skyArgs, sendVerb, setPosable, get posable() { return posable(); },
+  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, requestV4,
+  skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have. A value
   // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
   //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one

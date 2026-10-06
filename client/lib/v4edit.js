@@ -18,7 +18,7 @@
 import { bus } from './base.js';
 import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
-import { spellVerbs } from '../../shared/v4/fromv1.js';
+import * as OP from '../../shared/v4/ops.js';
 import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
@@ -47,8 +47,6 @@ export function expectOf(ids, comps, base = null) {
   return out;
 }
 
-/** v1 verbs (as edit code plans them) → one door request, or {refuse} / {noop} (shared/v4/fromv1.js spellVerbs). */
-export const spell = (verbs) => spellVerbs(v4.st, verbs);
 /** The (id, component) pairs a request sets: what a gesture's expect covers. */
 export function writesOf(req) {
   const ops = req.tool === 'batch' ? req.args.ops : [req];
@@ -119,14 +117,14 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
   }
   return r;
 }
-/** v1 verbs as one request (spell), sent; expect on what it sets, from `base` (a gesture's start) or now. */
-export async function sendVerbsV4(verbs, { what, base = null, expect = true, revert = null } = {}) {
-  const req = spell(verbs);
-  if (req.noop) return { ok: true, noop: true };
-  if (req.refuse) { const r = { ok: false, refused: { code: 'no-v4-spelling', reason: req.refuse, teach: 'the door tool takes the v4 request itself' } }; try { revert?.(); } catch { /* best effort */ } showRefusal(what, r); return r; }
+/** A gesture's door ops (shared/v4/ops.js) as ONE request — one act, one Ctrl+Z — sent and waited for; `expect` covers
+ *  what it sets, as this viewer saw it at `base` (a gesture's start: id → components) or now. */
+export async function sendOps(ops, { what, base = null, expect = true, revert = null } = {}) {
+  const req = OP.batch(Array.isArray(ops) ? ops : [ops]);
+  if (!req) return { ok: true, noop: true };
   if (expect) {
-    const pairs = writesOf(req); const ids = [...new Set(pairs.map(([i]) => i))];
-    const ex = ids.flatMap((i) => expectOf([i], [...new Set(pairs.filter(([j]) => j === i).map(([, k]) => k))], base));
+    const pairs = OP.writesOf(req); const ids = [...new Set(pairs.map(([i]) => i))];
+    const ex = ids.flatMap((i) => expectOf([idOut(i)], [...new Set(pairs.filter(([j]) => j === i).map(([, k]) => k))], base));
     if (ex.length) req.args = { ...req.args, expect: ex };
   }
   return send(req, { what, revert });

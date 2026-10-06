@@ -15,8 +15,8 @@ import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
-import { avatarMounts, mountTransform, comps, socketWorldPos } from './world.js';
-import { sendVerb, sendAnim } from './net.js';
+import { avatarMounts, mountTransform, comps, socketWorldPos, setBodySeat } from './world.js';
+import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
@@ -90,8 +90,7 @@ export function dismountMe() {
   const off = sw ? _seatP.clone() : myState.pos.clone();
   off.x += Math.sin(yaw) * 0.7;
   off.z += Math.cos(yaw) * 0.7;
-  sendVerb('dismount', { id: CONFIG.name, pos: [off.x, 0, off.z], yaw });
-  avatarMounts.delete(CONFIG.name);      // locally immediate; the echo confirms
+  setBodySeat(CONFIG.name, null);        // presence: my next frame carries no seat, and everyone stands me up
   myState.pos.set(off.x, 0, off.z);
   setPosture('stand');
 }
@@ -149,7 +148,7 @@ export function trySitOn(arg) {
     if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);
     return false;
   }
-  sendVerb('mount', { id: CONFIG.name, to: best.id, slot: best.slot });
+  setBodySeat(CONFIG.name, { to: best.id, slot: best.slot });   // presence: my frames carry the seat (world.js)
   logChat('*', `you sit on ${best.id} (${best.slot}) — X or move to get off`);
   return true;
 }

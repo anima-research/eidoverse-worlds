@@ -49,7 +49,7 @@ import { makeV4Client } from "../shared/v4/client.js";
 import { diffView } from "../shared/v4/viewdiff.js";
 import { emptyView } from "../shared/v4/record.js";
 import { hear } from "../shared/chatwindow.js";
-import { spellVerbs } from "../shared/v4/fromv1.js";
+import * as OP from "../shared/v4/ops.js";
 import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
 import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
@@ -247,6 +247,15 @@ export class WorldAgent {
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
   mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number; q?: number[] }>();
+  /** Bodies' seats are PRESENCE (v4: bodies aren't entities, nothing is logged): a body's pose frame carries
+   *  `seat: {to, slot}` while it sits. Others' come from their frames; mine rides my frames. */
+  bodySeats = new Map<string, { to: string; slot?: string }>();
+  mySeat: { to: string; slot?: string } | null = null;
+  /** sit on a thing's seat socket (presence: my frames carry it), or stand (null) */
+  setSeat(seat: { to: string; slot?: string } | null) {
+    this.mySeat = seat;
+    if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
+  }
   people = new Map<string, Person>();
   inbox: InboxItem[] = [];
   private inboxCursor = 0;
@@ -974,6 +983,7 @@ export class WorldAgent {
           p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
           ...wingFoldPresence(this.wingsFolded), ...(bones ? { pose: bones } : {}),
           ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        ...(this.mySeat ? { seat: this.mySeat } : {}),
         }) : null });
     }
     const p = this.people.get(who);
@@ -1037,6 +1047,9 @@ export class WorldAgent {
     const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
     p.pose = pose; p.observedAt = now;
+    { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
+      if (seat?.to) { const st = { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
+      else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
     p.bodyGeneration ??= ++this.bodyGenerationCounter;
     this.people.set(id, p);
     // hands aimed at this body — before the spatial gate below, because a
@@ -1259,6 +1272,13 @@ export class WorldAgent {
   blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
     return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
+  /** This world's blueprint library from the v4 fold: @world library:<hash> → {name, parts?} (the door's publish). */
+  v4Library(): Record<string, { name?: string }> {
+    const w = this.v4c?.st?.entities?.["@world"]?.c ?? {};
+    const out: Record<string, { name?: string }> = {};
+    for (const [k, v] of Object.entries(w)) if (k.startsWith("library:")) out[k.slice(8)] = (v ?? {}) as { name?: string };
+    return out;
+  }
   foldRecord(id: string): Record<string, unknown> | null {
     const e = (this.st.entities as Record<string, any>)[id];
     if (!e) return null;
@@ -1293,11 +1313,8 @@ export class WorldAgent {
         ...(p.yaw != null ? { yaw: p.yaw } : {}),
         ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
     }
-    for (const [id, m] of Object.entries(this.st.mounts ?? {})) {
-      this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
-        ...((m as any).offset != null ? { offset: (m as any).offset } : {}),
-        ...((m as any).yaw != null ? { yaw: (m as any).yaw } : {}) });
-    }
+    for (const [id, m] of this.bodySeats) this.mounts.set(id, { ...m });   // bodies: presence, never the fold
+    if (this.mySeat) this.mounts.set(this.name, { ...this.mySeat });
   }
 
   /** Remember our OWN says briefly, so a sidecar that airs one can be attested for it (the receipt is sha256 of the
@@ -1973,6 +1990,7 @@ export class WorldAgent {
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
         ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        ...(this.mySeat ? { seat: this.mySeat } : {}),
       },
     }));
     this.pendingEmote = null; // one-shot: rides exactly one packet
@@ -2645,7 +2663,7 @@ export class WorldAgent {
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
+    if (this.joined && this.mySeat) this.setSeat(null);
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
@@ -2705,28 +2723,17 @@ export class WorldAgent {
       this.ws!.send(JSON.stringify({ type: "v4", id, tool, args }));
     });
   }
-  /** A building verb, waited for in a v4 world (the door's reply) and fire-and-forget elsewhere (null). In a v4 world
-   *  it is spelled here, from this body's own fold, as the door request it means (shared/v4/fromv1.js, the page's own
-   *  spelling): no v1 verb crosses the wire (3c). The reply names the tool it became (`as`). */
   /** present people's v4 identities, by display name (their arrival carries it) */
   v4ids = new Map<string, string>();
-  async sendVerb(verb: string, args: Record<string, unknown>): Promise<any | null> {
-    if (this.v4) {
-      // spelled only after the previous verb's answer (its v4-log arrived first), so a follow-up reads that write
-      const turn = this.spelling.then(async () => {
-        if (!this.v4c?.active) return { ok: false, refused: { code: "not-joined", reason: "this body hasn't read the world yet" } };
-        // a grant names a person present by their name; the door wants their identity (round-2 R1/R2)
-        if (verb === "grant" && typeof args.id === "string" && this.v4ids.has(args.id)) args = { ...args, id: this.v4ids.get(args.id) };
-        const m: any = spellVerbs(this.v4c.st, [{ verb, args }]);
-        if (m.noop) return { ok: true, noop: true };
-        if (m.refuse) return { ok: false, refused: { code: "no-v4-spelling", reason: m.refuse, teach: "the door tool takes the v4 request itself" } };
-        return { ...(await this.door(m.tool, m.args)), as: m.tool };
-      });
-      this.spelling = turn.catch(() => null);
-      return turn;
-    }
-    this.verb(verb, args);
-    return null;
+  /** A gesture's door ops (shared/v4/ops.js) as ONE request — one act, the door's answer — sent after the previous one
+   *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
+   *  (dry, expect, through_lock). The same requests a person's edit sends: one vocabulary, both audiences. */
+  async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
+    const req: any = OP.batch(ops);
+    if (!req) return { ok: true, noop: true };
+    const turn = this.spelling.then(() => this.door(req.tool, { ...req.args, ...extra }));
+    this.spelling = turn.catch(() => null);
+    return turn;
   }
 
   // ---- moderation ----
@@ -2813,8 +2820,7 @@ export class WorldAgent {
     }
     // a v4 world takes door requests only: spelled at this edge like every building verb (the spoken trio is display
     // metadata a v4 say doesn't carry yet)
-    if (this.v4) { void this.sendVerb("say", args).then((r) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); }); return; }
-    this.verb("say", args);
+    void this.door("say", { text: args.text, ...(args.to ? { to: args.to } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); });
   }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
@@ -3079,7 +3085,7 @@ export class WorldAgent {
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
     // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
+    if (clip === "idle" && this.joined && this.mySeat) this.setSeat(null);
     this.clip = clip;
   }
 

@@ -142,9 +142,9 @@ ok(bob.of("error").length === errsBefore + 1 && /takes door requests, not v1 ver
   "S3 a raw v1 verb sent to a v4 world is refused by name, and nothing is written (clients spell verbs as requests at their own edge, 3c)", bob.of("error").at(-1));
 { const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "v4", id: rid, verb: "remove", args: { id: "cup" } }); });
   ok(vr?.ok === false && vr.refused?.code === "v1-verb", "S3 …and a v1 verb inside a v4 request is refused the same way", vr); }
-{ const { spellVerbs } = await import("../../shared/v4/fromv1.js");
-  ok(/merged into `lock`/.test(spellVerbs(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))), [{ verb: "comp", args: { id: "cup", type: "guard", data: true } }]).refuse ?? ""),
-    "S3 the old UI's guard is refused by name where every client spells it: guard merged into lock (§5)"); }
+{ const { editOps } = await import("../../shared/editschema.js");
+  const r = editOps({ pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: 1, lib: "test/cup.glb", comp: {} }, "cup", { "flags.guard": true });
+  ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
 ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't lock-guarded");

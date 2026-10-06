@@ -13,7 +13,7 @@ import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, roleOf, worldHasOwner } from '../world.js';
 import {
-  net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
+  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
 } from '../net.js';
 import { remotes } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
@@ -27,6 +27,8 @@ import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
+import { send } from '../v4edit.js';
+import * as OP from '../../../shared/v4/ops.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
@@ -85,9 +87,11 @@ register('grant', (arg) => {
   if (!id || (!role && !genFlag && !flyFlag)) {
     return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]');
   }
-  sendVerb('grant', { id, ...(role ? { role } : {}),
-                      ...(genFlag ? { gen: genFlag === '+gen' } : {}),
-                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}) });
+  // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
+  if (genFlag || flyFlag) return logChat('*', 'gen and fly aren\'t separate grants in v4 worlds: a role is owner, builder or visitor');
+  const who = identityOf(id);
+  if (!who) return logChat('*', `${id} isn't here — a role goes to someone present (their identity, not their name)`);
+  send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value: { role } } }, { what: `make ${id} ${role}` });
 });
 
 // /kick /ban <name> [reason…] — owner-only, the server enforces (and
@@ -95,7 +99,9 @@ register('grant', (arg) => {
 function moderate(cmd, arg) {
   const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
   if (!id) return logChat('*', `usage: /${cmd} <name> [reason] — ${cmd === 'kick' ? 'they can rejoin; /ban keeps them out' : 'a kick that sticks — /unban lifts it'}`);
-  sendVerb(cmd, { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
+  const who = identityOf(id);
+  if (!who) return logChat('*', `${id} isn't here — a ${cmd} goes to someone present (their identity, not their name)`);
+  send({ tool: cmd, args: { who, ...(rest.length ? { reason: rest.join(' ') } : {}) } }, { what: `${cmd} ${id}` });
 }
 
 // /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
@@ -130,19 +136,21 @@ register('epoch', (arg) => {
   // toggle): every flight is released to the fold where it stands, and punts
   // go back to the volunteer physics. Owners only; the world refuses or announces.
   if (/^(off|leave|exit|none)$/i.test(a)) {
-    sendVerb('epoch', { sim: null });
+    send(OP.unset('@world', 'sim'), { what: 'leave the physics epoch' });
     logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
     return;
   }
   const tickMs = Math.round(Number(a)) || 66;
-  sendVerb('epoch', { sim: SIM_ID, tickMs });
+  send(OP.set('@world', 'sim', { engine: SIM_ID, tickMs }), { what: 'enter the physics epoch' });
   logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
 });
 
 register('unban', (arg) => {
   const id = (arg || '').trim();
   if (!id) return logChat('*', 'usage: /unban <name>');
-  sendVerb('unban', { id });
+  const who = identityOf(id);
+  if (!who) return logChat('*', `unban needs the person's identity (u-…): ${id} isn't here — the world's ban list shows ids`);
+  send({ tool: 'unban', args: { who } }, { what: `unban ${id}` });
 });
 
 register('bans', () => sendMod('world-bans'));
@@ -168,7 +176,7 @@ register('push', (arg) => {
   // one word, two acts: /push swing1 is the swing's use-reaction (the old
   // alias, kept working), /push bob is a shove. Things win the name lookup
   // because they were here first; /shove is always the person verb.
-  if (named && entities.has(named)) { sendVerb('use', { id: named, action: 'push' }); return; }
+  if (named && entities.has(named)) { send(OP.use(named, 'push'), { what: `push ${named}` }); return; }
   const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((p) => /^[\d.]+$/.test(p))) || 2.2));
   let target = named ?? null;
   if (!target) {
@@ -293,11 +301,7 @@ register('boom', (arg) => {
   // body in radius (mine included — standing at your own blast is on you)
   // applies its own shove.
   const nums = (arg || '').trim().split(/\s+/).map(parseFloat).filter(Number.isFinite);
-  sendVerb('force', {
-    at: [myState.pos.x, myState.pos.y, myState.pos.z],
-    ...(nums[0] ? { power: nums[0] } : {}),
-    ...(nums[1] ? { radius: nums[1] } : {}),
-  });
+  return logChat('*', 'a blast (/boom) isn\'t in v4 worlds yet: physics pushes are being redesigned for v4');
 });
 
 register('fork', (arg) => {
@@ -354,7 +358,7 @@ register('use', (arg) => {
   const [id, action] = (arg || '').trim().split(/\s+/);
   if (!id) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
   if (!entities.has(id)) return logChat('*', `nothing here called "${id}"`);
-  sendVerb('use', { id, action: action || 'use' });
+  send(OP.use(id, action || 'use'), { what: `${action || 'use'} ${id}` });
 });
 
 register('sit', (arg) => {

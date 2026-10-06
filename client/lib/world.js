@@ -46,6 +46,16 @@ export const comps = new Map();
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. */
 export const avatarMounts = new Map();
+/** A body's seat is PRESENCE (PROTOCOL-v4: bodies aren't entities; nothing is logged): its owner's pose frame carries
+ *  `seat: {to, slot}` while seated, so every receiver sets it from the frame and clears it when a frame comes without
+ *  one. My own is set here by localbody.js and rides my frames (net.js sendPose). */
+export function setBodySeat(id, seat) {
+  const cur = avatarMounts.get(id);
+  if (!seat?.to) { if (cur) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); } return; }
+  if (cur?.to === seat.to && (cur.slot ?? null) === (seat.slot ?? null)) return;
+  avatarMounts.set(id, { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) });
+  bus.emit('mount', { id, to: String(seat.to), slot: seat.slot });
+}
 /** id -> bound runtime scripts (server sandbox AND client-mod offers), from
  *  `behavior` entries. mods.js consumes the runtime:"client" ones. */
 export const behaviors = new Map();

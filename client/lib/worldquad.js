@@ -5,10 +5,10 @@
 // the sky lives in a closure with the clock rules (skypanel gather()) — not
 // duplicated here; the quad says 'preview' and the desk commits. owner, 09-04
 // 22:02: every slot opens that frame's quad; this is the world frame's.
+import * as OP from '../../shared/v4/ops.js';
+import { sendOps } from './v4edit.js';
 import { bus } from './base.js';
-import { sendVerb } from './net.js';
 import { myState } from './controller.js';
-import { pushUndo } from './build.js';
 import { starterModels } from './palette.js';
 import { defsRegistry } from './defs.js';
 import { previewSky, skyArgs } from './sky.js';
@@ -34,8 +34,7 @@ export function spawnAhead(lib) {
   const yaw = myState.yaw ?? 0;
   const p = [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5];
   const thing = crypto.randomUUID().slice(0, 8);
-  sendVerb('spawn', { id: thing, lib, pos: [+p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2)], yaw: +yaw.toFixed(3) });
-  pushUndo({ verb: 'remove', args: { id: thing } }, 'spawn');
+  sendOps([OP.create(thing, { model: lib, transform: { pos: [+p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2)], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } })], { what: 'place it ahead', expect: false });
   return thing;
 }
 function dispatch(k, id) {

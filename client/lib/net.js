@@ -2,13 +2,13 @@
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
 import { CONFIG, report, bus } from './base.js';
+import { avatarMounts } from './world.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
 import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
-import { spellVerbs } from '../../shared/v4/fromv1.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
@@ -22,7 +22,6 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
-import { makePacer } from '../../shared/pace.js';
 // protocol/v4 slice 3b: in a v4 world this client folds the door's own stream (shared/v4/client.js) and derives the
 // v1 state the realizers draw from it, locally; edit mode sends v4 requests (v4edit.js) and waits for the door.
 import { makeV4Client } from '../../shared/v4/client.js';
@@ -49,7 +48,6 @@ let hydrating = false;
 let pendingLive = [];
 let lastSeq = -1;
 let retryDelay = 1200;
-const verbQueue = [];   // verbs issued while disconnected — flushed on rejoin
 
 // Supplied by main.js so net can read/write body state without importing the
 // controller (which imports ui, which imports assets…).
@@ -103,45 +101,15 @@ export function wireNet(h) {
 
 // ---------------------------------------------------------------- sending
 
-function rawSend(verb, args) {
-  if (net.joined && net.ws?.readyState === 1) {
-    if (v4.active) sendAsRequest(verb, args);
-    else net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
-  } else {
-    verbQueue.push({ verb, args });
-    logChat('*', `queued ${verb} — reconnecting…`);
-  }
-}
-/** A v4 world (slice 3c): the UI's verb, spelled at this edge as a door request from this page's own fold
- *  (shared/v4/fromv1.js), so no v1 verb crosses the wire. A refusal takes the path a server error always did: a toast,
- *  and 'verb-refused' for any module holding an optimistic preview (lights.js rolls back off it). */
-// Each verb is spelled only once the one before it has been answered: the server sends a write's v4-log before its
-// reply, so by then this page's fold holds that write, and a follow-up (a light's second edit, a label on a thing just
-// made) is spelled against it, as the server's own in-order spelling did.
-let spelling = Promise.resolve();
-function sendAsRequest(verb, args) {
-  spelling = spelling.then(async () => {
-    const m = spellVerbs(v4.st, [{ verb, args }]);
-    if (m.noop) return;
-    const refuse = (text) => handle({ type: 'error', error: text });
-    if (m.refuse) { refuse(m.refuse); return; }
-    const r = await requestV4(m.tool, m.args);
-    if (!r?.ok) refuse(refusalText(verb, r));
-  }).catch(() => { /* the socket's own close says it */ });
-}
-// One gesture that is many verbs (placing a blueprint copy, undoing it) is
-// paced under the door's rate limit (shared/pace.js); a single verb sent while
-// such a run drains waits behind it, so the log keeps the order they were said.
-const pacer = makePacer({ send: rawSend });
-export function sendVerb(verb, args) { pacer.direct(verb, args); }
-/** Send a run of verbs in order, paced so the door's rate limit never drops
- *  the tail. Returns how many still wait. */
-export function sendVerbs(list) { return pacer.run(list); }
-/** What a paced run still holds, and roughly how long it needs (ms). */
-export const verbPace = () => ({ pending: pacer.pending(), eta: pacer.eta() });
-/** Retune the pacer (a bench with a raised VERB_RATE, a door that says its rate). */
-export const setVerbPace = (o) => pacer.set(o);
+// Every write is a door request (requestV4 below; edits go through v4edit.js sendOps). No verb crosses the wire.
 
+/** People present, by the name they show → the identity the world knows them by (u-…, from the door's directory;
+ *  the server sends it on arrive and in the join roster). A role, a ban or a rollback goes to THIS, never to a typed
+ *  name (round-2 R1/R2; security review 10-06 H2). */
+export const identities = new Map();
+export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
+/** Say something in the world (the door's `say`). */
+export const say = (text, extra = {}) => requestV4('say', { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) });
 /** A one-off animation — sent once, relayed to everyone, never logged. */
 export function sendAnim(data) {
   if (net.joined && net.ws?.readyState === 1) {
@@ -354,6 +322,9 @@ export function sendPose(now) {
   // receiver re-solves it live. Rides while active; absence means let go.
   const reach = myReachBag();
   if (reach !== undefined) pose.reach = reach;
+  // my seat rides every frame while I sit (presence; world.js setBodySeat): absence means standing
+  const seat = avatarMounts.get(CONFIG.name);
+  if (seat?.to) pose.seat = { to: seat.to, ...(seat.slot ? { slot: seat.slot } : {}) };
   net.ws.send(JSON.stringify({ type: 'pose', pose }));
 }
 
@@ -652,6 +623,7 @@ async function handle(msg) {
       // before transplanting it into a fresh record.
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
       ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
+      if (msg.v4id) identities.set(msg.id, msg.v4id);
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');
       break;
@@ -918,7 +890,9 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
+  identities.clear(); if (msg.v4?.you) net.v4you = msg.v4.you;
   for (const p of msg.present) {
+    if (p.v4id) identities.set(p.id, p.v4id);
     ensureRemote(p.id, p.avatar, { agent: p.agent, authority: true })
       .then(() => { if (p.pose) pushPose(p.id, p.pose); })
       .catch((e) => report(`present ${p.id}`, e));
@@ -937,13 +911,6 @@ async function onSnapshot(msg) {
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);
 
-  // what was said while the socket was down goes out now, against the cut just adopted (a v4 world spells it as door
-  // requests from that fold)
-  while (verbQueue.length) {
-    const { verb, args } = verbQueue.shift();
-    if (v4.active) sendAsRequest(verb, args);
-    else net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
-  }
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.

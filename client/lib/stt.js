@@ -54,9 +54,9 @@
 // that as "a chime every 6-8 seconds": it is the workaround being audible, not
 // a bug of ours and not a notification.
 
+import { say } from './net.js';
 import { report, bus } from './base.js';
 import { sttConsented } from './voiceconsent.js';
-import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 // 🔴 flashHint is a 2.6s OVERLAY, not a log (ui.js:flashHint). Every caption
 // failure I "surfaced" this morning appeared and vanished on a phone screen
@@ -172,7 +172,7 @@ export function setSTT(on) {
       // is our intent and `micOn()` is the world's reality; a disagreement
       // between them must resolve to silence.
       if (!wanted || !micIsLive()) continue;
-      if (text) sendVerb('say', { text: `🎙 ${text}`, voiced: true, spoken: true, utt: ++uttSeq });
+      if (text) { ++uttSeq; say(`🎙 ${text}`); }
     }
   };
   // Chrome ends recognition on silence — restart while still wanted.

@@ -21,7 +21,7 @@ import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';
 import { colliders, nearColliders, entityWorldCenter } from './colliders.js';
-import { sendLease, sendVerb } from './net.js';
+import { sendLease } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { state } from './state.js';
@@ -283,7 +283,8 @@ export function kick(arg) {
   // Swept against the law: lift 0.9 @ power 4 = a knee-high hop resting
   // ~3m out. An INPUT ratio, not sim law — tuning it is no epoch bump.
   const lift = state.sim?.epoch && !state.sim.epoch.foreign ? 0.9 : 0;
-  sendVerb('punt', { id, power, dir: [dx / d, lift, dz / d] });
+  void id; void power; void lift;
+  flashHint('kicking, carrying and throwing things aren\'t in v4 worlds yet: physics is being redesigned for v4', 4000);
 }
 
 /** Every punt in the world lands here off the live log — mine, another

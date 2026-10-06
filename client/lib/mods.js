@@ -28,7 +28,6 @@
 
 import { bus, CONFIG, report } from './base.js';
 import { behaviors } from './world.js';
-import { sendVerb } from './net.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { physicsEnabled, setPhysicsEnabled } from './physobj.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
@@ -176,7 +175,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.
-// EW: entities, remotes, myState, me(), THREE, scene, sendVerb, lease, bus…
+// EW: entities, remotes, myState, me(), THREE, scene, requestV4 (door requests), bus…
 export default ({ EW, ui, onTick }) => {
   ui.flashHint('hello from a mod');
   let t = 0;
@@ -316,8 +315,8 @@ export function initMods() {
               method: 'POST', body: rec.source,
             }).then((r) => r.json());
             if (!up.path) throw new Error(up.error ?? 'upload refused');
-            sendVerb('behavior', { id: `mod-${rec.name}`, src: up.path, runtime: 'client' });
-            toast(`offered "${rec.name}" to this world — visitors choose to run it`, 'info');
+            void up;
+            toast(`offering a mod to a world isn't in v4 yet (scripts are a later v4 slice) — "${rec.name}" stays yours`, 'info');
           } catch (err) { toast(`promote failed: ${err.message}`, 'err'); }
           return;
         }

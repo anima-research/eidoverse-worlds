@@ -847,23 +847,6 @@ function execDismount(id, ent) {
   bus.emit('mount', { id, to: null });
 }
 
-/** Bodies aren't entities: their folded mounts sync into avatarMounts for
- *  remotes/controller, with the same bus events legacy emitted. */
-function syncBodyMounts() {
-  const want = state.st.mounts ?? {};
-  for (const id of [...avatarMounts.keys()]) {
-    if (!want[id]) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); }
-  }
-  for (const [id, rel] of Object.entries(want)) {
-    const next = { to: rel.to, slot: rel.slot, offset: rel.offset, yaw: rel.yaw };
-    const cur = avatarMounts.get(id);
-    if (!cur || JSON.stringify(cur) !== JSON.stringify(next)) {
-      avatarMounts.set(id, next);
-      bus.emit('mount', { id, to: rel.to, slot: rel.slot });
-    }
-  }
-}
-
 // ---- residency (§13.3 R1) ---------------------------------------------------
 // Demotion is fold→state→realize read BACKWARDS: state never changes, the
 // projection coarsens. A far entity swaps back to the placeholder tier —
@@ -1092,7 +1075,6 @@ export function reconcileModels() {
     emitCompBag(id);
     execMount(id);
   }
-  syncBodyMounts();
 }
 
 /** One thing changed (state.js: said in v4 terms, never as a v1 verb). The fold has already written state. */
@@ -1107,7 +1089,7 @@ function onChange({ id, what, comp }) {
         refoldParents(what === 'gone' ? 'remove' : 'spawn', id);
         reconcileId(id);
         // a re-born thing keeps no stale bag: the light follows the new one
-        if (what === 'born') syncCompLight(id); else syncBodyMounts();   // body mounts onto a gone thing fold away
+        if (what === 'born') syncCompLight(id);
         break;
       case 'pose':
         if (ent) (ent.kind === 'light' ? refreshLight : refreshModel)(id, ent);
@@ -1180,7 +1162,6 @@ export function initModelsRealizer() {
       sceneChildren.clear();
       sceneParentOf.clear();
     } else if (ev.type === 'change') onChange(ev);
-    else if (ev.type === 'world' && ev.key === 'mounts') syncBodyMounts();   // a body seated or unseated (v1 worlds)
   });
   return true;
 }

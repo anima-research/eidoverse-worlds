@@ -3,10 +3,12 @@
 // EDITING gestures (ghost, select, drag, undo) stay in build.js; this module
 // is how a thing gets INTO your hand, build.js is what your hand does with it.
 
+import { enc } from '../../shared/v4/names.js';
+import * as OP from '../../shared/v4/ops.js';
+import { sendOps } from './v4edit.js';
 import { TIER_COLORS } from '../../shared/perfrank.js';
 import { CONFIG, report, bus } from './base.js';
 import { libLabels } from './assets.js';
-import { sendVerb } from './net.js';
 import { makeSection, toast, escapeHtml } from './ui.js';
 import { holdGhost } from './build.js';
 import { paintGround } from './groundpanel.js';
@@ -306,7 +308,7 @@ addEventListener('drop', async (e) => {
       toast(`avatar "${name}" is on the roster — pick it in the avatar panel`, 'info', 9000);
     } else {
       const label = file.name.replace(/\.glb$/i, '');
-      sendVerb('asset', { name: label, path });  // world vocabulary grows for everyone
+      sendOps([OP.set('@world', `palette:${enc(path)}`, { name: label, path })], { what: `add ${label} to the palette`, expect: false });  // world vocabulary grows for everyone
       await holdGhost(path, label);
     }
   } catch (err) { report(`upload ${file.name}`, err); }

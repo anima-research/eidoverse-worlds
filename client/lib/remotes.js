@@ -9,7 +9,7 @@
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
-import { avatarMounts, mountTransform } from './world.js';
+import { avatarMounts, mountTransform, setBodySeat } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
@@ -202,6 +202,7 @@ export function pushPose(id, pose, t) {
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
   r.buf.push({ t: stamp, ...pose });
+  setBodySeat(id, pose.seat ?? null);   // a seat rides the frame while it holds (presence; world.js)
   while (r.buf.length > BUF_MAX) r.buf.shift();
   // reach/touch events ride the RAW stream, not the applied one — a touch
   // that begins while this body's avatar is still loading must be heard

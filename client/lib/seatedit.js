@@ -12,15 +12,16 @@
 // bar) are build.js exports — the modules call across the seam at gesture
 // time only, so the import cycle is eval-safe by construction.
 
+import * as OP from '../../shared/v4/ops.js';
+import { sendOps } from './v4edit.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { libLabels } from './assets.js';
 import { entities, entityMeta, comps, findPart } from './world.js';
-import { sendVerb } from './net.js';
 import { mouse } from './controller.js';
 import { flashHint } from './ui.js';
 import { engage, release } from './keyhints.js';
-import { setEditMode, isEditing, deselect, pushUndo,
+import { setEditMode, isEditing, deselect,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
 
@@ -127,9 +128,7 @@ function socketsOf(id) { return structuredClone(comps.get(id)?.sockets ?? {}); }
  *  merged, because comp data replaces wholesale and a naive write would
  *  silently eat every OTHER anchor on the thing. */
 export function commitSockets(id, next, describe) {
-  const before = comps.get(id)?.sockets;
-  sendVerb('comp', { id, type: 'sockets', data: Object.keys(next).length ? next : null });
-  pushUndo({ verb: 'comp', args: { id, type: 'sockets', data: before ? structuredClone(before) : null } }, describe);
+  sendOps([Object.keys(next).length ? OP.set(id, 'sockets', next) : OP.unset(id, 'sockets')], { what: describe });
 }
 
 const _saM = new THREE.Matrix4();

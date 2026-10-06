@@ -1,11 +1,9 @@
 // worldentity — the world entity `@world` (design §3), as an ALIAS both ways.
 //
-// A world's sky, ground and grass live outside `entities` in the fold
-// (state.sky, state.terrain, state.grass; weather is merged into state.sky by
-// the weather verb). This file reads them as ONE entity whose components are
-// Sky, Weather, Ground and Grass (records in shared/components.js), and writes
-// every edit back through the verbs that already exist — sky, weather,
-// terrain, grass. Nothing new goes on the wire and nothing new is folded:
+// A world's sky, ground and grass are the world entity's components in v4 (the view shows them as state.sky,
+// state.terrain, state.grass; weather is part of the sky). This file reads them as ONE entity whose components are
+// Sky, Weather, Ground and Grass (records in shared/components.js), and writes every edit as door requests: the
+// door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
 //   worldOf(view)             → { sky, terrain, grass }   (the inverse, exact:
@@ -13,14 +11,15 @@
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration
-//   worldEditVerbs(st, edits) → { verbs, errors, inverses } — `edit @world`
-//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as verbs
+//   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as door requests
+//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one door request
 //
 // "One sky per world" is not a rule here: Sky is one-per-entity, and there is
 // one world entity. Picking a sky preset REPLACES the Sky component's params
 // (pickSky); the Weather component is a different component and is carried
 // across the sky verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
 
+import * as OP from './v4/ops.js';
 import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
@@ -124,19 +123,12 @@ export function pickSky(sky, preset) {
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
 
-/** The verb that puts the world back as it was before `v` (undo). An inverse
- *  is a re-authoring, like every undo here: a sky re-issue re-epochs a
- *  forecast. null where no verb can return it (the world had no ground). */
-export function worldInverse(st, v, now = 0) {
-  const { sky, terrain, grass } = worldState(st);
-  switch (v?.verb) {
-    case 'sky': return { verb: 'sky', args: skyReissue(sky, {}, now) };
-    case 'weather': return { verb: 'weather', args: { weather: WEATHERS.includes(sky?.weather) ? sky.weather : 'clear' } };
-    case 'terrain': return isBag(terrain) ? { verb: 'terrain', args: clone(terrain) } : null;
-    case 'grass': return isBag(grass) ? { verb: 'grass', args: clone(grass) } : { verb: 'grass', args: { clear: true } };
-  }
-  return null;
-}
+/** One world change as its door request (v4): the sky and weather are the door's `sky`/`weather` tools (they stamp the
+ *  clock: PROTOCOL-v4 sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
+const skyOp = (args) => ({ tool: 'sky', args });
+const weatherOp = (weather) => ({ tool: 'weather', args: { weather } });
+const terrainOp = (args) => OP.set(WORLD_ID, 'terrain', args);
+const grassOp = (args) => (args == null ? OP.unset(WORLD_ID, 'grass') : OP.set(WORLD_ID, 'grass', args));
 
 // ---------------------------------------------------------------- the schema
 
@@ -176,7 +168,7 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
-  const ro = live.mayShape === false ? { disabled: true, hint: 'shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank verbs' } : {};
+  const ro = live.mayShape === false ? { disabled: true, hint: 'shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank' } : {};
   const groups = [];
 
   // Sky
@@ -195,7 +187,7 @@ export function worldSchema(st, live = {}) {
       ...(k === 'hours' && !clocked && (s.rate ?? 0) !== 0 ? { hint: ro.hint ?? 'the hour now — the day turns at the rate below; setting it re-anchors the day here' } : {}) });
     if (k === 'rate') skyFields.push({ t: 'enum', k: 'clouds', label: 'clouds', value: s.clouds ?? 'cumulus', def: 'cumulus', options: CLOUDS.map((v) => ({ v, label: v })), ...ro });
   }
-  groups.push({ group: 'sky', verb: 'sky', label: 'Sky', fields: skyFields });
+  groups.push({ group: 'sky', label: 'Sky', fields: skyFields });
 
   // Weather — state.sky's weather half; under a forecast a pick is a manual
   // override that holds until the segment boundary (AGENTS.md "Weather")
@@ -207,7 +199,7 @@ export function worldSchema(st, live = {}) {
     { t: 'info', label: 'now', value: eff ? `${eff.weather ?? 'clear'} — ${eff.source === 'forecast' ? 'the forecast\'s' : eff.source === 'manual' ? `set by ${eff.by ?? '?'} until the next segment` : 'authored'}` : 'clear — no sky authored yet' },
     ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the sky verb's forecast (world_verb sky)` }] : []),
   ];
-  groups.push({ group: 'weather', verb: 'weather', label: 'Weather', fields: wxFields });
+  groups.push({ group: 'weather', label: 'Weather', fields: wxFields });
 
   // Ground
   const t = isBag(terrain) ? terrain : null;
@@ -220,7 +212,7 @@ export function worldSchema(st, live = {}) {
     { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, min: 0, softMax: 200, step: 1, dp: 0, unit: 'm', ...ro },
     ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
   ] : [{ t: 'info', label: '', value: 'no ground authored: the default flat ground. Pick a shape in Build ▸ World' }];
-  groups.push({ group: 'ground', verb: 'terrain', label: 'Ground', fields: groundFields });
+  groups.push({ group: 'ground', label: 'Ground', fields: groundFields });
 
   // Grass
   const g = isBag(grass) ? grass : null;
@@ -232,7 +224,7 @@ export function worldSchema(st, live = {}) {
     ...(g.depth != null ? [{ t: 'num', k: 'depth', label: 'depth', value: g.depth, min: 1, softMax: 400, step: 1, dp: 0, unit: 'm', ...ro }] : []),
     { t: 'btn', k: 'mow', label: 'mow', danger: true, ...ro },
   ] : [{ t: 'info', label: '', value: 'nothing growing. Pick a planting in Build ▸ World' }];
-  groups.push({ group: 'grass', verb: 'grass', label: 'Grass', fields: grassFields });
+  groups.push({ group: 'grass', label: 'Grass', fields: grassFields });
 
   // the cards (design §5): one per component, in the inspector's order
   const have = new Set(worldComponents(st).components.map((c) => c.type));
@@ -246,13 +238,13 @@ export function worldSchema(st, live = {}) {
   return { id: WORLD_ID, world: true, groups, sections: { header: [], list, add: [], lib: null, libLabel: 'the world' } };
 }
 
-// ---------------------------------------------------------------- edits → the existing verbs
+// ---------------------------------------------------------------- edits → door requests
 
-/** Turn `edit @world` edits into the fewest existing verbs: every sky.* edit is
- *  ONE re-authored sky, weather.state ONE weather, ground.* ONE terrain, grass.*
- *  ONE grass (grass.mow: grass {clear:true}). Relative math works on numbers, as
+/** Turn `edit @world` edits into the fewest door requests: every sky.* edit is
+ *  ONE re-authored sky, weather.state ONE weather, ground.* ONE terrain set, grass.*
+ *  ONE grass set (grass.mow: delete @world grass). Relative math works on numbers, as
  *  on any entity. Pure: never sends, never mutates `st`. */
-export function worldEditVerbs(st, edits, live = {}) {
+export function worldEditOps(st, edits, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
   const schema = worldSchema(st, live);
@@ -298,20 +290,19 @@ export function worldEditVerbs(st, edits, live = {}) {
       case 'grass': if (k === 'mow') mow = true; else (grassPatch ??= {})[k] = v; break;
     }
   }
-  const verbs = [];
-  if (skyPatch) verbs.push({ verb: 'sky', args: skyReissue(sky, skyPatch, now) });
-  if (weather != null) verbs.push({ verb: 'weather', args: { weather } });
-  if (ground) verbs.push({ verb: 'terrain', args: { ...clone(terrain), ...ground } });
-  if (mow) verbs.push({ verb: 'grass', args: { clear: true } });
-  else if (grassPatch) verbs.push({ verb: 'grass', args: { ...clone(grass), ...grassPatch } });
-  const inverses = verbs.map((v) => worldInverse(st, v, now)).filter(Boolean);
-  return { verbs, errors, inverses };
+  const ops = [];
+  if (skyPatch) ops.push(skyOp(skyReissue(sky, skyPatch, now)));
+  if (weather != null) ops.push(weatherOp(weather));
+  if (ground) ops.push(terrainOp({ ...clone(terrain), ...ground }));
+  if (mow) { if (isBag(grass)) ops.push(grassOp(null)); }
+  else if (grassPatch) ops.push(grassOp({ ...clone(grass), ...grassPatch }));
+  return { ops, errors };
 }
 
 // ---------------------------------------------------------------- the Build tab's World tiles
 
-/** A preset pick from Build ▸ World, as verbs: picking replaces the current
- *  choice of that kind, through the existing verbs.
+/** A preset pick from Build ▸ World, as one door request: picking replaces the current
+ *  choice of that kind.
  *    kind 'sky'     v = a sky preset name (ctx.presets, defs/sky/_presets.json) → sky (pickSky)
  *    kind 'weather' v = one of WEATHERS                                          → weather
  *    kind 'shape' | 'tint'  v = a ground-palette name (ctx.pal)                  → terrain (only that dial changes)
@@ -320,37 +311,36 @@ export function worldEditVerbs(st, edits, live = {}) {
  *  ctx: { pal, presets, now, mayShape } */
 export function worldPick(st, kind, v, ctx = {}) {
   const { sky, terrain, grass } = worldState(st);
-  if (ctx.mayShape === false) return { verbs: [], inverses: [], errors: ['shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank verbs'] };
+  if (ctx.mayShape === false) return { ops: [], errors: ['shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank'] };
   const pal = ctx.pal; const def = paletteDefaults(pal);
-  let verb = null;
+  let op = null;
   switch (kind) {
     case 'sky': {
       const p = ctx.presets?.[v];
-      if (!isBag(p) || v === 'doc') return { verbs: [], inverses: [], errors: [`no sky preset "${v}"`] };
-      verb = { verb: 'sky', args: pickSky(sky, p) };
+      if (!isBag(p) || v === 'doc') return { ops: [], errors: [`no sky preset "${v}"`] };
+      op = skyOp(pickSky(sky, p));
       break;
     }
     case 'weather':
-      if (!WEATHERS.includes(v)) return { verbs: [], inverses: [], errors: [`weather: one of ${WEATHERS.join('|')}`] };
-      verb = { verb: 'weather', args: { weather: v } };
+      if (!WEATHERS.includes(v)) return { ops: [], errors: [`weather: one of ${WEATHERS.join('|')}`] };
+      op = weatherOp(v);
       break;
     case 'shape': case 'tint': {
-      if (!(kind === 'shape' ? pal?.shapes?.[v] != null : pal?.tints?.[v])) return { verbs: [], inverses: [], errors: [`no ground ${kind} "${v}"`] };
-      verb = { verb: 'terrain', args: isBag(terrain) ? terrainArgs(pal, { [kind]: v }, terrain) : terrainArgs(pal, { shape: def.shape, tint: def.tint, seed: def.seed, [kind]: v }) };
+      if (!(kind === 'shape' ? pal?.shapes?.[v] != null : pal?.tints?.[v])) return { ops: [], errors: [`no ground ${kind} "${v}"`] };
+      op = terrainOp(isBag(terrain) ? terrainArgs(pal, { [kind]: v }, terrain) : terrainArgs(pal, { shape: def.shape, tint: def.tint, seed: def.seed, [kind]: v }));
       break;
     }
     case 'plant': {
       const c = groundChoice(pal, terrain, grass);
       const args = grassArgs(pal, { plant: v, height: c.height ?? def.height, density: c.density ?? def.density, tint: c.tint ?? def.tint });
-      if (!args) return { verbs: [], inverses: [], errors: [`no planting "${v}"`] };
-      verb = { verb: 'grass', args };
+      if (!args) return { ops: [], errors: [`no planting "${v}"`] };
+      op = grassOp(args);
       break;
     }
-    case 'mow': verb = { verb: 'grass', args: { clear: true } }; break;
-    default: return { verbs: [], inverses: [], errors: [`nothing to pick for "${kind}"`] };
+    case 'mow': op = grassOp(null); break;
+    default: return { ops: [], errors: [`nothing to pick for "${kind}"`] };
   }
-  const inv = worldInverse(st, verb, ctx.now ?? 0);
-  return { verbs: [verb], inverses: inv ? [inv] : [], errors: [] };
+  return { ops: [op], errors: [] };
 }
 
 /** Which World tile reads as armed, per row: the current choice by name. */

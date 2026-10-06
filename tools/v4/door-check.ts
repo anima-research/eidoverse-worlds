@@ -486,7 +486,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(rawShapeError("place", { id: "b", scale: [2, NaN, 1] }) !== null && rawShapeError("place", { id: "b", scale: "big" }) !== null, "S3f …and still refuses a broken one"); }
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
-{ const { editVerbs, inspectSchema, addVerbs } = await import("../../shared/editschema.js");
+{ const { editOps, inspectSchema, addOps } = await import("../../shared/editschema.js");
+  // the planner's door ops: a set's value / a delete of the component
+  const val = (r) => r.ops[0]?.tool === "set" ? r.ops[0].args.value : r.ops[0]?.tool === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
   const pw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "pivots"), actor, tool, args); };
   pw("ann", "new", { title: "pivots" });
@@ -499,31 +501,31 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const sortK = (v) => (Array.isArray(v) ? v.map(sortK) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortK(v[k])])) : v);
   ok(JSON.stringify(sortK(entityOf(componentsOf(ent)))) === JSON.stringify(sortK(ent)), "P4 pivot round-trips through the component view (componentsOf ∘ entityOf)", entityOf(componentsOf(ent)));
   const live = { box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], doorLocks: true };
-  const c1 = editVerbs(ent, "g", { "pivot.centre": true }, live).verbs[0]?.args?.data;
+  const c1 = val(editOps(ent, "g", { "pivot.centre": true }, live));
   ok(JSON.stringify(c1) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P5 'centre' snaps the pivot to the middle of the model's own box (an off-origin model)", c1);
-  const c2 = editVerbs(ent, "g", { "pivot.base": true }, live).verbs[0]?.args?.data;
+  const c2 = val(editOps(ent, "g", { "pivot.base": true }, live));
   ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "P6 'base' snaps it to the middle of the bottom face", c2);
-  const c3 = editVerbs(ent, "g", { "pivot.reset": true }, live).verbs[0]?.args;
-  ok(c3?.type === "pivot" && c3.data === null, "P7 'origin' removes it (turn about the origin again)", c3);
+  const c3 = editOps(ent, "g", { "pivot.reset": true }, live).ops[0];
+  ok(c3?.tool === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
   const sc = inspectSchema(ent, "g", live);
   ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
-  const a = addVerbs({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
-  ok(a.verbs[0]?.args?.type === "pivot" && JSON.stringify(a.verbs[0].args.data) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
+  const a = addOps({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
+  ok(a.ops[0]?.args?.component === "pivot" && JSON.stringify(a.ops[0].args.value) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
   const bare = { lib: "x.glb", pos: [0, 0, 0] };
-  const c4 = editVerbs(bare, "g", { "pivot.centre": true }, live);
-  ok(!c4.errors.length && JSON.stringify(c4.verbs[0]?.args?.data) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
-  const c5 = editVerbs(bare, "g", { "pivot.y": 1.5 }, live);
-  ok(!c5.errors.length && JSON.stringify(c5.verbs[0]?.args?.data) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
+  const c4 = editOps(bare, "g", { "pivot.centre": true }, live);
+  ok(!c4.errors.length && JSON.stringify(val(c4)) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
+  const c5 = editOps(bare, "g", { "pivot.y": 1.5 }, live);
+  ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
   // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
   const gate = { lib: "x.glb", pos: [10, 0, 10], yaw: 0, comp: { pivot: { pos: [1, 0, 0] } } };
-  const placeOf = (r) => r.verbs.find((v) => v.verb === "place")?.args;
-  const r1 = placeOf(editVerbs(gate, "g", { "rot.y": 90 }, live));
+  const placeOf = (r) => r.ops.find((o) => o.tool === "set" && o.args.component === "transform")?.args.value;   // the whole transform
+  const r1 = placeOf(editOps(gate, "g", { "rot.y": 90 }, live));
   ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
-  const r2 = placeOf(editVerbs(gate, "g", { "pos.scale": 2 }, live));
+  const r2 = placeOf(editOps(gate, "g", { "pos.scale": 2 }, live));
   ok(r2 && Math.abs(r2.pos[0] - 9) < 1e-6 && Math.abs(r2.pos[2] - 10) < 1e-6, "P13 …and scale 2 grows it about the pivot (the pivot stays at 11): origin to (9, 0, 10)", r2);
-  const r3 = placeOf(editVerbs(gate, "g", { "rot.y": 90, "pos.x": 5 }, live));
+  const r3 = placeOf(editOps(gate, "g", { "rot.y": 90, "pos.x": 5 }, live));
   ok(r3 && r3.pos[0] === 5 && r3.pos[2] === 10, "P14 …but a typed translate in the same edit wins (the pivot never second-guesses it)", r3);
-  const r4 = placeOf(editVerbs({ lib: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
+  const r4 = placeOf(editOps({ lib: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
   ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----

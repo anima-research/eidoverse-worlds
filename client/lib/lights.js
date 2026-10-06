@@ -25,9 +25,7 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { requestLight, updateRequest, releaseLight, isCasting } from './lightrig.js';
-import { sendVerb } from './net.js';
 import { entities } from './world.js';
-import { registerHandler } from './inspect.js';
 
 // governor compatibility re-exports (main.js's shed lever; 5d replaces)
 export { shedALight, litCount } from './lightrig.js';
@@ -106,77 +104,7 @@ export function disposeLight(group) {
   });
 }
 
-// ---- the editor's commit coalescer + refusal rollback -------------------------
-// A colour-picker gesture fires input/change continuously; committing every
-// event ate the whole verb budget (VERB_RATE, 12 per 4s) mid-drag, the server
-// refused the rest, and the local preview ran ahead of a fold that never
-// heard it — until the next rejoin snapped the light back. So edits commit at
-// most one `light` verb per EDIT_COMMIT_MS (a trailing send guarantees the
-// FINAL value of the gesture), and a refusal rolls the preview back to fold
-// truth: net.js announces 'verb-refused' on the bus, this module names every
-// light with an edit in flight ('light-refused'), and the models realizer
-// re-derives it from state — one refreshLight call, live ≡ join.
-const EDIT_COMMIT_MS = 350;   // 4000/350 ≈ 11.4 per rate window, under VERB_RATE
-                              // (chatbridge paces world verbs the same way)
-const liveEdits = new Map();  // id -> { commit, pending, sent, timer, lastSend }
-
-function queueCommit(id, commit, patch) {
-  let e = liveEdits.get(id);
-  if (!e) liveEdits.set(id, e = { commit, pending: null, sent: null, timer: 0, lastSend: 0 });
-  e.commit = commit;
-  if (Date.now() - e.lastSend > 5000) e.sent = null;   // dedup is per-gesture, not forever
-  // drop echoes: range/checkbox controls fire `change` with the exact value
-  // the throttled `input` send already carried — one gesture, one final verb
-  const fresh = Object.entries(patch).filter(([k, v]) => e.sent?.[k] !== v);
-  if (!fresh.length && !e.pending) return;
-  e.pending = { ...(e.pending ?? {}), ...patch };
-  if (e.timer) return;   // a trailing send is armed and will carry this value
-  const wait = EDIT_COMMIT_MS - (Date.now() - e.lastSend);
-  const flush = () => {
-    e.timer = 0;
-    if (!e.pending) return;
-    const args = e.pending;
-    e.pending = null;
-    e.sent = { ...(e.sent ?? {}), ...args };
-    e.lastSend = Date.now();
-    e.commit('light', { id, ...args });
-  };
-  if (wait <= 0) flush();
-  else e.timer = setTimeout(flush, wait);
-}
-
-// Refusals arrive as a bare {type:'error'} with prose — the wire names no
-// verb, but every refusal on this socket is OURS, and rolling an edited
-// light back to fold truth is correct even when the refusal was for
-// something else: if the light verb actually landed, its log entry
-// re-applies it a beat later. Convergence either way.
-bus.on('verb-refused', () => {
-  const now = Date.now();
-  for (const [id, e] of liveEdits) {
-    const inFlight = Boolean(e.timer) || e.pending != null || now - e.lastSend < 5000;
-    if (e.timer) { clearTimeout(e.timer); e.timer = 0; }
-    if (inFlight) bus.emit('light-refused', { id });
-    liveEdits.delete(id);
-  }
-});
-
-// ---- the inspector's light PREVIEW --------------------------------------------
-// The fields themselves are declared once, for every surface, in
-// shared/editschema.js. What only this module can add: a live preview
-// (updateLight) while a control is dragged, and the coalescer above for the
-// commit — at most one partial `light` verb per EDIT_COMMIT_MS, the
-// gesture's final value always sent. Both go through queueCommit so a drag
-// never outruns VERB_RATE.
+// ---- the inspector ------------------------------------------------------------
+// The fields are declared once, for every surface, in shared/editschema.js; a light is a thing's `light` component and
+// commits through the shared edit path (one door request on release). This module adds only what the panel shows.
 export const lightCasting = (obj) => (obj?.userData?.rigKey ? isCasting(obj.userData.rigKey) : undefined);
-export function commitLight(id, patch) {
-  const obj = entities.get(id);
-  if (obj?.userData?.isLight) updateLight(obj, patch);   // the preview lands before the echo
-  queueCommit(id, (verb, args) => sendVerb(verb, args), patch);
-}
-registerHandler('light', (id, obj, k, v, opts) => {
-  if (!obj?.userData?.isLight || !opts?.live) return false;
-  const patch = k === 'noon' ? { day: !v } : { [k]: v };
-  updateLight(obj, patch);
-  queueCommit(id, (verb, args) => sendVerb(verb, args), patch);   // live: the coalescer paces the wire
-  return true;
-});

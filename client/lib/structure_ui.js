@@ -12,9 +12,10 @@
 // will silently lose an edit rather than corrupt it. Worth knowing before
 // anyone builds together.
 
+import * as OP from '../../shared/v4/ops.js';
+import { sendOps } from './v4edit.js';
 import { THREE, canvas, camera, scene } from './core.js';
 import { bus, report } from './base.js';
-import { sendVerb } from './net.js';
 import { state } from './state.js';
 import { planStructure, localizePoint, GRID_DEFAULTS } from '../../shared/structure.js';
 import { setCutaway } from './realize/structure.js';
@@ -95,7 +96,7 @@ function apply(b, at, commit, upTo = null) {
   if (commit) {
     undoStack.push(JSON.parse(JSON.stringify(g)));
     if (undoStack.length > 40) undoStack.shift();
-    sendVerb('comp', { id: b.id, type: 'structure', data: next });
+    sendOps([OP.set(b.id, 'structure', next)], { what: `the building ${b.id}` });
     setTimeout(refreshGrid, 60);       // the lattice follows the footprint out
   } else {
     showGhost(b, next);
@@ -141,7 +142,7 @@ export function undo() {
   const b = target();
   const prev = undoStack.pop();
   if (!b || !prev) return false;
-  sendVerb('comp', { id: b.id, type: 'structure', data: prev });
+  sendOps([OP.set(b.id, 'structure', prev)], { what: `the building ${b.id}`, expect: false });
   bus.emit('structure-tool', { tool });   // the stack's depth changed: the Create panel repaints its undo
   return true;
 }
@@ -172,9 +173,8 @@ export function newBuilding(ev) {
   const hit = new THREE.Vector3();
   if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return;
   const id = `house-${Math.floor(hit.x)}_${Math.floor(hit.z)}`;
-  sendVerb('spawn', { id, lib: 'eidoverse/assets/models/crate_large_red.glb',
-    pos: [Math.round(hit.x), 0, Math.round(hit.z)], yaw: 0 });
-  sendVerb('comp', { id, type: 'structure', data: emptyStructure() });
+  sendOps([OP.create(id, { model: 'eidoverse/assets/models/crate_large_red.glb', transform: { pos: [Math.round(hit.x), 0, Math.round(hit.z)] },
+    components: { structure: emptyStructure() } })], { what: 'a new building', expect: false });
   editing = id;
   setTimeout(refreshGrid, 120);
 }

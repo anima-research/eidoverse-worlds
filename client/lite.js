@@ -15,6 +15,7 @@
 // It runs the REAL net.js. The wire protocol is not forked — net.js takes its
 // participant registry, asset ledger and snapshot renderer by injection now, so this
 // file supplies renderer-free ones and the protocol has exactly one implementation.
+import { say } from './lib/net.js';
 import { chooseClient } from './lib/litechoice.js';
 import { CONFIG, bus, report, setToken } from './lib/base.js';
 // NOT ui.js. That module is the DESKTOP shell: since #185 it imports videopanel.js and
@@ -26,7 +27,7 @@ import { CONFIG, bus, report, setToken } from './lib/base.js';
 import { makeFrame } from './lib/frames.js';
 import { initChat, logChat } from './lib/chat.js';
 import {
-  net, connect, initIdentity, wireNet, sendVerb, sendWhisper, sendTyping, sendPoseExact,
+  net, connect, initIdentity, wireNet, sendWhisper, sendTyping, sendPoseExact,
   loginUrl,
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
@@ -268,7 +269,7 @@ async function main() {
   // The rule, stated so it is not re-learned: anything that can receive buffered
   // arrival traffic is installed here, above the connect, with no await between.
   initChat({
-    send: (text) => sendVerb('say', { text }),
+    send: (text) => say(text),
     whisper: sendWhisper,
     typing: (to) => sendTyping(to),   // no local avatar to show typing on
     people,

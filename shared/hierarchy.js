@@ -16,11 +16,12 @@
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
+import * as OP from './v4/ops.js';
+import { enc } from './v4/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
-const isLight = (ent) => ent?.kind === 'light';
 const r3 = (v) => +(+v).toFixed(4);
 const r9 = (v) => +(+v).toFixed(9);
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
@@ -43,9 +44,9 @@ const ridden = (world, ent) => !!ent?.parent?.to && !!world?.[ent.parent.to];
  *  at the part's current phase, not editable as an offset). */
 export function localOf(ent, world = null) {
   if (!ent) return null;
-  const scale = isLight(ent) ? 1 : (entScale(ent) ?? 1);
+  const scale = entScale(ent) ?? 1;
   if (!ent.parent || (world && !ridden(world, ent))) {
-    return { mounted: false, pos: [...(ent.pos ?? [0, 0, 0])], q: isLight(ent) ? null : (qNorm(ent.q) ?? null), yaw: isLight(ent) ? 0 : (ent.yaw ?? 0), scale, part: null };
+    return { mounted: false, pos: [...(ent.pos ?? [0, 0, 0])], q: qNorm(ent.q) ?? null, yaw: ent.yaw ?? 0, scale, part: null };
   }
   const rel = ent.parent;
   const sock = socketOf(world, rel);
@@ -119,10 +120,10 @@ export function childrenOf(world, id) {
 /** What a row says a thing IS, in a word or two: a light, an Empty, or its model's file stem. */
 export function kindHint(ent) {
   if (!ent) return '?';
-  if (isLight(ent)) return 'light';
-  const lit = ent.comp?.light && typeof ent.comp.light === 'object' ? ' + light' : '';
-  if (ent.lib == null) return `empty${lit}`;
-  return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${lit}`;
+  const lit = ent.comp?.light && typeof ent.comp.light === 'object';
+  if (ent.lib == null) return lit ? 'light' : 'empty';
+  const plus = lit ? ' + light' : '';
+  return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
 
 /** { roots, kids } from the fold: a thing whose carrier is absent, or whose
@@ -168,58 +169,24 @@ export function treeRows(world, { collapsed = new Set(), matches = null, extra =
   return rows;
 }
 
-/** The verbs that put `id` under `to` (null = make it a root) WITHOUT moving
- *  it in the world, and the inverse verbs that put it back — one undo step on
- *  every surface. Refusals mirror the server (server/rights.ts): a locked
- *  thing does not move; a guarded thing, a guarded new carrier and a guarded
- *  old carrier answer only to their placer (`mayAuthor(id) === false` means
- *  this viewer is not; undefined = unknown, the server decides).
- *
- *  The pose: `mount {id, to, offset, q, yaw}` carries the full local pose
- *  (offset in the carrier's frame and scale, q relative to it — PROTOCOL
- *  §9.1); `dismount {id, pos, q, yaw}` stamps the absolute pose. Neither verb
- *  carries scale, and the renderer multiplies a child's scale by its
- *  carrier's, so when the carrier's world scale is not 1 a `place {id, scale}`
- *  rides along to keep the size. An upright orientation travels as a bare yaw
- *  (old readers stay exact); anything tilted as q + its heading. */
-export function parentVerbs(world, id, to, { mayAuthor, doorLocks = false } = {}) {
+/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the door requests (shared/v4/ops.js)
+ *  for the Hierarchy's drag, the Parent card and the agent's edit. Its world pose is kept: under a parent the transform
+ *  becomes local to it (pos, q and scale: the renderer composes a child's scale with its carrier's); as a root it is the
+ *  world pose. One gesture, one batch, one act — the door's undo is the way back. Locks are the door's to ask about. */
+export function parentOps(world, id, to) {
   const errors = [];
   const ent = world?.[id];
-  if (!ent) return { verbs: [], inverses: [], errors: [`${id} is not in the world`] };
+  if (!ent) return { ops: [], errors: [`${id} is not in the world`] };
   to = to == null || to === '' ? null : String(to);
   const was = ent.parent?.to ?? null;   // a carrier that is gone still counts: unparenting clears the dangling edge
-  if (to === was) return { verbs: [], inverses: [], errors: [to ? `${id} is already under ${to}` : `${id} already has no parent`] };
-  if (to && !world[to]) return { verbs: [], inverses: [], errors: [`no ${to} here to parent under`] };
+  if (to === was) return { ops: [], errors: [to ? `${id} is already under ${to}` : `${id} already has no parent`] };
+  if (to && !world[to]) return { ops: [], errors: [`no ${to} here to parent under`] };
   const cyc = cycleRefusal(world, id, to);
-  if (cyc) errors.push(cyc);
-  if (ent.comp?.lock && !doorLocks) errors.push(`${id} is locked — unlock it first to move it`);   // doorLocks (v4): the door asks
-  const guardedBy = (x) => world[x]?.comp?.guard && mayAuthor?.(x) === false ? (world[x].placer?.id ?? world[x].actor ?? 'its placer') : null;
-  if (guardedBy(id)) errors.push(`${id} is guarded by ${guardedBy(id)} — only they or the world's owner can move it`);
-  if (to && guardedBy(to)) errors.push(`${to} is guarded by ${guardedBy(to)} — only they or the world's owner can put things under it`);
-  if (was && guardedBy(was)) errors.push(`${was} is guarded by ${guardedBy(was)} — only they or the world's owner can take things out from under it`);
-  if (errors.length) return { verbs: [], inverses: [], errors };
-
+  if (cyc) return { ops: [], errors: [cyc] };
   const W = worldPose(world, id);
-  const ownScale = isLight(ent) ? 1 : (entScale(ent) ?? 1);
-  const orient = (q) => (upright(q) ? { yaw: r9(qHeading(q)) } : { q: q.map(r9), yaw: r9(qHeading(q)) });
-  const verbs = [];
-  let scale = W.scale;
   if (to) {
-    const P = worldPose(world, to);
-    const L = localUnder(P, W);
-    verbs.push({ verb: 'mount', args: { id, to, offset: L.offset.map(r3), ...orient(L.q) } });
-    scale = L.scale;
-  } else {
-    verbs.push({ verb: 'dismount', args: { id, pos: W.pos.map(r3), ...orient(W.q) } });
+    const L = localUnder(worldPose(world, to), W);
+    return { ops: [OP.batch([OP.set(id, 'parent', { to: enc(to) }), OP.set(id, 'transform', { pos: L.offset.map(r9), q: L.q.map(r9), scale: scale3(L.scale).map(r9) })])], errors: [] };
   }
-  const sameScale = scale3(scale).every((v, i) => Math.abs(v - scale3(ownScale)[i]) <= 1e-6);
-  if (!isLight(ent) && !sameScale) verbs.push({ verb: 'place', args: { id, scale: scaleWire(scale3(scale).map(r3)) } });
-
-  // the way back: the old carrier with its old relation, or the stamp of the
-  // root pose it had (the fold keeps a root's pos/q current)
-  const inverses = [];
-  if (ent.parent) inverses.push({ verb: 'mount', args: { id, ...JSON.parse(JSON.stringify(ent.parent)) } });
-  else inverses.push({ verb: 'dismount', args: { id, pos: [...(ent.pos ?? [0, 0, 0])], ...(ent.q ? { q: [...ent.q] } : {}), yaw: ent.yaw ?? 0 } });
-  if (verbs.some((v) => v.verb === 'place')) inverses.push({ verb: 'place', args: { id, scale: ownScale } });
-  return { verbs, inverses, errors: [] };
+  return { ops: [OP.batch([OP.unset(id, 'parent'), OP.set(id, 'transform', { pos: W.pos.map(r9), q: W.q.map(r9), scale: scale3(W.scale).map(r9) })])], errors: [] };
 }

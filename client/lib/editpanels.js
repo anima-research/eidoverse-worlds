@@ -16,31 +16,31 @@
 // A number a motion comp drives shows its REST pose, tinted: `place` moves
 // the base the motion composes onto, which is the honest thing to edit.
 
+import * as OP from '../../shared/v4/ops.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { sendVerb, requestDebug, requestV4, v4 } from './net.js';
+import { requestDebug, requestV4, v4 } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
-import { pushUndo, refreshOutline, setRemoveHook, holdGhost, holdBlueprint, placeBlueprint, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
+import { refreshOutline, setRemoveHook, holdGhost, holdBlueprint, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
 import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
 import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
 import { WEATHERS } from '../../shared/forecast.js';
-import { versionOf, copiesOf } from '../../shared/blueprint.js';
+import { copiesOf } from '../../shared/blueprint.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
-import { schemaFor, commitEdit, planEdit, sendPlanned, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
+import { schemaFor, commitEdit, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt } from '../../shared/editschema.js';
-import { commitLight, lightCasting } from './lights.js';
+import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
-import { placerOf, guardedByOther, placerName } from './placer.js';
 import { reindexCollider } from './colliders.js';
 import * as V4 from './v4edit.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
@@ -107,7 +107,7 @@ function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
 // the world's display name: v4 keeps it on @world (about.name); a v1 world has only the name in its address
-const worldName = () => (V4.isV4() ? v4.st?.entities?.['@world']?.c?.about?.name : null) || CONFIG.world || 'World';
+const worldName = () => v4.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
@@ -213,7 +213,7 @@ function hierarchyFields() {
     const bpLink = world[id]?.comp?.blueprint;
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
-      ...(V4.isV4() ? { lockable: V4.mayLift() } : {}),   // v4 (§5): only builders and owners lock and unlock
+      lockable: V4.mayLift(),   // §5: only builders and owners lock and unlock
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
@@ -319,27 +319,14 @@ function duplicate(id) {
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
   const nudge = n === 2 && !rec.comp?.blueprint ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
-  if (V4.isV4()) {   // the door copies it, and what's attached to it: create {from: id}, one act
-    V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-      const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
-    return;
-  }
-  const nid = `${id}~${Math.random().toString(16).slice(2, 6)}`;   // never strip anything from the id: 'lamp-2024' is a name, not a suffix
-  const pos = [...(rec.pos ?? [0, 0, 0])]; pos[0] = round(pos[0] + 0.5); pos[2] = round(pos[2] + 0.5);
-  if (rec.kind === 'light') sendVerb('light', { id: nid, pos, color: rec.color, intensity: rec.intensity, range: rec.range, ...(rec.keep ? { keep: true } : {}), ...(rec.day === false ? { day: false } : {}) });
-  else sendVerb('spawn', { id: nid, lib: rec.lib, pos, yaw: rec.yaw ?? 0, ...(rec.scale != null ? { scale: rec.scale } : {}), ...(rec.collide ? { collide: rec.collide } : {}) });
-  for (const [type, data] of Object.entries(rec.comp ?? {})) if (type !== 'lock') sendVerb('comp', { id: nid, type, data });
-  if (rec.parent) sendVerb('mount', { id: nid, to: rec.parent.to, ...(rec.parent.slot ? { slot: rec.parent.slot } : {}), ...(rec.parent.offset ? { offset: rec.parent.offset.map((v, i) => (i === 0 || i === 2 ? v + 0.5 : v)) } : {}), ...(rec.parent.yaw != null ? { yaw: rec.parent.yaw } : {}) });
-  pushUndo({ verb: 'remove', args: { id: nid } }, `duplicating ${id}`);
-  flashHint(`<b>${nid}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000);
-  setTimeout(() => { if (entities.has(nid)) sceneSelect(nid); }, 400);   // select it once the fold echoes
+  // the door copies it, and what's attached to it: create {from: id}, one act
+  V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
+    const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
 function toggleLock(id) {
   const locked = !!comps.get(id)?.lock;
-  if (V4.isV4()) { if (V4.mayLift()) V4.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here'); return; }
-  sendVerb('comp', { id, type: 'lock', data: locked ? null : true });
-  pushUndo({ verb: 'comp', args: { id, type: 'lock', data: locked ? true : null } }, locked ? `unlocking ${id}` : `locking ${id}`);
+  if (V4.mayLift()) V4.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here');
 }
 function findSelected() {
   const sel = sceneSelected(); const obj = entities.get(sel); if (!obj) return;
@@ -426,7 +413,7 @@ function cardRow(schema, id, addr) {
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
 function pushCards(f, schema, id, { locked = false } = {}) {
-  const touched = V4.isV4() && id !== WORLD_ID ? doorInspect(id)?.touched ?? {} : {};
+  const touched = id !== WORLD_ID ? doorInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
     const key = `c:${sec.key ?? sec.type}`;
     const prov = sec.present !== false ? touchLine(touched[wireOf(sec)]) : null;
@@ -482,7 +469,6 @@ function doorInspect(id) {
   return c?.reply ?? null;
 }
 function placedBy(id, meta) {
-  if (!V4.isV4()) return placerOf(id)?.id ?? meta.actor ?? '?';
   const r = doorInspect(id);
   return r ? (r.derived?.madeBy ? V4.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
@@ -491,7 +477,6 @@ const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
 const ago = (ts) => agoWords(ts);
 const touchLine = (t) => touchWords(t);
 function lastChange(id) {
-  if (!V4.isV4()) return null;
   const t = Object.entries(doorInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
   if (!t) return null;
   const [comp, v] = t; const sec = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === comp);
@@ -647,21 +632,10 @@ function inspectorDispatch(action, payload, field, opts = {}) {
       const isDelta = typeof payload === 'object' && payload && 'delta' in payload;
       const v = isDelta ? resolveDelta(painted, action, payload) : payload;
       if (isDelta && v == null) return;
-      const inverses = [], errors = [];
-      if (V4.isV4()) {   // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
-        const verbs = [];
-        for (const each of ids) { const plan = planEdit(each, key, v); errors.push(...plan.errors); verbs.push(...plan.verbs); }
-        if (verbs.length) V4.sendVerbsV4(verbs, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => V4.revertPose(x)) });
-        if (errors.length) flashHint(errors.join(' · '), 5000);
-        repaintAll();
-        return;
-      }
-      for (const each of ids) {
-        const plan = planEdit(each, key, v);
-        errors.push(...plan.errors); inverses.push(...plan.inverses);
-        plan.verbs.forEach(sendPlanned);
-      }
-      if (inverses.length) pushUndo({ verbs: inverses }, `${key} on ${ids.length} things`);
+      // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
+      const ops = [], errors = [];
+      for (const each of ids) { const plan = planEdit(each, key, v); errors.push(...plan.errors); ops.push(...plan.ops); }
+      if (ops.length) V4.sendOps(ops, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => V4.revertPose(x)) });
       if (errors.length) flashHint(errors.join(' · '), 5000);
       repaintAll();
     }
@@ -669,7 +643,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   }
 
   // transform channels: preview locally while dragging (no log traffic), one
-  // `place` on release carrying the full pose the channels show
+  // whole transform on release, carrying the pose the channels show
   if (/^ch:pos\.(x|y|z|yaw|scale)$/.test(action)) {
     const k = action.slice(7);
     const driven = drivenBy(id, obj);
@@ -691,9 +665,9 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     }
     gesture = null;
     if (JSON.stringify(next) === JSON.stringify(before)) return;
-    if (V4.isV4()) { V4.sendVerbsV4([{ verb: 'place', args: { id, ...next } }], { what: `move ${id}`, revert: () => V4.revertPose(id) }); repaintAll(); return; }
-    pushUndo({ verb: 'place', args: { id, ...before } }, `moving ${id}`);
-    sendVerb('place', { id, ...next });
+    // the whole transform (local for a child): a heading turns it about up keeping its tilt; scale sets all three axes
+    const patch = { pos: next.pos, ...(k === 'yaw' ? { yaw: next.yaw } : {}), ...(k === 'scale' ? { scale: next.scale } : {}) };
+    V4.sendOps([OP.pose(foldRecord(id), id, patch)], { what: `move ${id}`, revert: () => V4.revertPose(id) });
     repaintAll();
     return;
   }
@@ -713,7 +687,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   }
   switch (action) {
     case 'remove': removeMany([id]); break;
-    case 'unbind': sendVerb('behavior', { id: payload, remove: true }); setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': V4.sendOps([OP.unset('@world', `behavior:${payload}`)], { what: `unbind ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'bhv': watchScript(payload); break;   // a script row → the Console, watching it
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
   }
@@ -755,38 +729,17 @@ function consoleDispatch(action, payload) {
   switch (action) {
     case 'cwatch': watching = payload === watching ? null : payload; refreshWatch().then(repaintAll); break;
     case 'cgoto': { const b = behaviors.find((x) => x.id === payload); if (b?.attach && entities.has(b.attach)) sceneSelect(b.attach); break; }
-    case 'unbind': sendVerb('behavior', { id: payload, remove: true }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': V4.sendOps([OP.unset('@world', `behavior:${payload}`)], { what: `unbind ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
     case 'fold': break;   // the log header is not a fold
   }
   repaintAll();
 }
 
-/** The verb that would bring a removed thing back — from the FOLD record,
- *  so a light returns with its colour and a model with its scale and comps. */
-function removeInverse(id) {
-  const rec = foldRecord(id); if (!rec) return null;
-  const pos = [...(rec.pos ?? [0, 0, 0])];
-  return rec.kind === 'light'
-    ? { verb: 'light', args: { id, pos, color: rec.color, intensity: rec.intensity, range: rec.range, keep: rec.keep === true, day: rec.day !== false } }
-    : { verb: 'spawn', args: { id, lib: rec.lib, pos, yaw: rec.yaw ?? 0, ...(rec.scale != null ? { scale: rec.scale } : {}) } };
-}
 function removeMany(ids) {
-  // v4: a locked thing is asked about by the door's refusal ("This is locked. Delete anyway?"), not filtered out here
-  const locked = V4.isV4() ? [] : ids.filter((id) => comps.get(id)?.lock);
-  const held = ids.filter((id) => !comps.get(id)?.lock && guardedByOther(id));
-  const why = [];
-  if (locked.length) why.push(`${locked.join(', ')} ${locked.length > 1 ? 'are' : 'is'} locked — unlock first`);
-  // the server would refuse these anyway; say so instead of a silent bounce
-  if (held.length) why.push(held.map((id) => `${id} is guarded by ${placerName(id)}`).join(' · '));
-  if (why.length) flashHint(why.join(' · '), 4000);
-  const go = ids.filter((id) => entities.get(id) && !locked.includes(id) && !held.includes(id));
+  // a locked thing is asked about by the door's refusal ("This is locked. Delete anyway?"), not filtered out here
+  const go = ids.filter((id) => entities.get(id));
   if (!go.length) return false;
-  if (V4.isV4()) { V4.del(go); clearExtras(); return true; }   // one request: delete, or a batch of them (one act)
-  const inverses = go.map(removeInverse).filter(Boolean);
-  pushUndo(inverses.length === 1 ? inverses[0] : { verbs: inverses }, go.length === 1 ? `removing ${go[0]}` : `removing ${go.length} things`);
-  for (const id of go) sendVerb('remove', { id });
-  clearExtras();
-  return true;
+  V4.del(go); clearExtras(); return true;   // one request: delete, or a batch of them (one act)
 }
 
 // ---------------------------------------------------------------- build
@@ -847,21 +800,7 @@ const blueprintFields = (pics) => [
  *  as the ghost (build.js holdBlueprint) on desktop, or places one 1.5 m ahead in VR. Save as
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  blueprint verb (an agent, or world_verb). */
-function savedFields(pics) {
-  if (V4.isV4()) return savedFieldsV4();
-  const store = state.st.blueprints ?? {};
-  const hashes = Object.keys(store).sort((a, b) => (store[a].ts ?? 0) - (store[b].ts ?? 0));
-  const copies = copiesOf(state.st.entities ?? {});
-  const parts = (n) => 1 + (n?.children ?? []).reduce((k, c) => k + parts(c), 0);
-  return [
-    { t: 'info', label: 'saved here', value: hashes.length ? `${hashes.length} blueprint${hashes.length === 1 ? '' : 's'} in this world` : 'none yet — Save as Blueprint comes next (6c)' },
-    ...(hashes.length ? [{ t: 'tiles', k: 'bp', value: null, options: hashes.map((h) => {
-      const r = store[h].record; const v = versionOf(store, h); const n = parts(r.root); const c = copies[h]?.length ?? 0;
-      return { v: h, label: `${r.name} v${v}`, icon: 'boxes',
-        hint: `${n} part${n === 1 ? '' : 's'}${c ? ` · ${c} cop${c === 1 ? 'y' : 'ies'} placed` : ''} · ${h.slice(0, 12)} — ${pics ? 'click, then click the world to place a copy' : 'places a copy 1.5 m ahead of you'}` };
-    }) }] : []),
-  ];
-}
+function savedFields(pics) { return savedFieldsV4(); }
 /** v4: this world's library is @world library:<hash> (the door's publish writes it); a copy is the door's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the door's publish {from, name} on the selection. */
 function savedFieldsV4() {
@@ -877,14 +816,7 @@ function savedFieldsV4() {
 const aheadPose = () => { const yaw = myState.yaw ?? 0;
   return { pos: [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5].map((v) => +v.toFixed(2)), q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)].map((v) => +v.toFixed(4)) }; };
 /** A copy 1.5 m ahead, facing the way you face — the hand-free place (worldquad.js spawnAhead's pose). */
-function placeAhead(hash) {
-  if (V4.isV4()) return V4.copyBlueprint(hash, aheadPose());
-  const rec = state.st.blueprints?.[hash]?.record;
-  if (!rec) return null;
-  const yaw = myState.yaw ?? 0;
-  const p = [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5].map((v) => +v.toFixed(2));
-  return placeBlueprint(hash, rec, { id: crypto.randomUUID().slice(0, 8), pos: p, yaw: +yaw.toFixed(3) });
-}
+function placeAhead(hash) { return V4.copyBlueprint(hash, aheadPose()); }
 
 /** The World section: one row of tiles per component, each reading its current choice. */
 function worldBuildFields() {
@@ -910,13 +842,12 @@ function worldBuildFields() {
   return f;
 }
 const WORLD_PICKS = { wsky: 'sky', wshape: 'shape', wtint: 'tint', wplant: 'plant', wwx: 'weather' };
-/** A World tile: the pick as verbs (shared/worldentity.js worldPick), one undo step. */
+/** A World tile: the pick as one door request (shared/worldentity.js worldPick): one act, one Ctrl+Z. */
 function pickWorld(action, v) {
   const kind = action === 'wplant' && v === '@mow' ? 'mow' : WORLD_PICKS[action];
   const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: Date.now(), mayShape: mayShape() });
   if (r.errors.length) { flashHint(r.errors.join(' · '), 5000); return r; }
-  if (r.inverses.length) pushUndo(r.inverses.length === 1 ? r.inverses[0] : { verbs: [...r.inverses].reverse() }, kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`);
-  for (const x of r.verbs) sendVerb(x.verb, x.args);
+  V4.sendOps(r.ops, { what: kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`, expect: false });
   flashHint(kind === 'mow' ? 'field cleared' : `${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);
   return r;
 }
@@ -950,7 +881,7 @@ function buildDispatch(action, payload) {
     case 'snew': newBuilding(null); break;
     case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
-    case 'bp': { if (V4.isV4()) { placeAhead(payload); break; } const b = state.st.blueprints?.[payload]; holdBlueprint(payload, b?.record); break; }
+    case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;
       const name = ids.length === 1 ? String(foldRecord(ids[0])?.comp?.label ?? ids[0]) : `${ids.length} things`;
       V4.publish(ids, name).then((r) => { if (r.ok) flashHint(`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
@@ -986,7 +917,6 @@ function buildVRDispatch(action, payload) {
 // before}), a page at a time: recent by default, Older… for the deep search. Nothing stored.
 const hist = { key: null, entries: [], next: null, loading: false, id: null };
 function histLoad(id, more = false) {
-  if (!V4.isV4()) return;
   const before = more ? hist.next : undefined;
   hist.loading = true;
   requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
@@ -997,7 +927,6 @@ function histLoad(id, more = false) {
   }).catch(() => { hist.loading = false; });
 }
 function historyFields() {
-  if (!V4.isV4()) return [{ t: 'info', label: 'history', value: 'History reads a v4 world\'s log; this world is older' }];
   const id = worldSel ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(V4.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
@@ -1085,7 +1014,7 @@ export function initEditPanels() {
   });
   bus.on('entity', () => { if (extra.size) syncOutlines(); });
   bus.on('edit-mode', (on) => { if (!on) { clearExtras(); armingRef = null; worldSel = false; } });
-  setEditHooks({ undo: pushUndo, commitLight, casting: lightCasting });
+  setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(selection()));
   bus.on('edit-find', () => findSelected());              // F in the viewport

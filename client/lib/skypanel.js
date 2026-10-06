@@ -8,9 +8,9 @@
 // one world's log, every one of which replays for every future joiner. The
 // log is history; trying things out is not.
 
+import { sendOps } from './v4edit.js';
 import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
-import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow } from './rows.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
@@ -370,7 +370,7 @@ export function paintSky(body) {
   commit.textContent = '✓ log to world';
   commit.title = 'share this sky with everyone, permanently';
   commit.onclick = () => {
-    sendVerb('sky', gather());
+    sendOps([{ tool: 'sky', args: gather() }], { what: 'the sky', expect: false });
     commit.classList.remove('dirty');
     commit.textContent = '✓ logged';
     setTimeout(() => { commit.textContent = '✓ log to world'; }, 1200);

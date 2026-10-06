@@ -34,8 +34,10 @@ import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
-import { sendVerb, requestDebug } from './net.js';
-import { guardedByOther, placerOf, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name
+import { requestDebug } from './net.js';
+import { sendOps, del, revertPose } from './v4edit.js';
+import * as OP from '../../shared/v4/ops.js';
+import { state } from './state.js';
 import { makeSection, flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
@@ -131,16 +133,11 @@ function paintScene(force = false) {
     let transform = '';
     if (obj) {
       const n2 = (v) => Number(v.toFixed(2));
-      // a locked thing's pose is read-only — the server would refuse the
-      // `place` anyway; a disabled field says so before the round-trip
+      // a locked thing: the door asks before it moves ("This is locked. Move anyway?")
       const locked = !!bag?.lock;
-      // guarded by someone else: every edit would be refused, so the fields
-      // say so too (the placer and the world's owner keep them live)
-      const held = guardedByOther(selected);
-      const why = held ? `guarded by ${placerName(selected)} — only they or the world's owner can move it` : 'locked — remove the lock comp to move';
-      const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em"${locked || held ? ` disabled title="${esc(why)}"` : ''}>`;
+      const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em">`;
       transform = `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0">
-        <span style="color:var(--dim)">${held ? '🛡 ' : ''}${locked ? '🔒 ' : ''}${obj.userData.mountedTo ? 'local ' : ''}pos</span>
+        <span style="color:var(--dim)">${locked ? '🔒 ' : ''}${obj.userData.mountedTo ? 'local ' : ''}pos</span>
         ${cell('x', n2(obj.position.x), 0.1)}${cell('y', n2(obj.position.y), 0.1)}${cell('z', n2(obj.position.z), 0.1)}
         ${isLight ? '' : `<span style="color:var(--dim)">yaw°</span>${cell('yaw', Math.round(obj.rotation.y * 180 / Math.PI), 5)}
         <span style="color:var(--dim)">scale</span>${cell('scale', n2(obj.scale?.x ?? 1), 0.05)}`}
@@ -148,7 +145,9 @@ function paintScene(force = false) {
     }
 
     // semantic editors — whatever evaluator modules registered for this thing
-    eds = editorsFor({ id: selected, obj, meta, bag, commit: sendVerb, esc });
+    const target = selected;
+    eds = editorsFor({ id: selected, obj, meta, bag, esc,
+      commit: (component, value) => sendOps([value == null ? OP.unset(target, component) : OP.set(target, component, value)], { what: `${component} on ${target}` }) });
 
     // generic component editor — meaning-free by design, the UI twin of the
     // blind fold: any comp type, known or invented this morning, shows as a
@@ -175,7 +174,7 @@ function paintScene(force = false) {
 
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.lib ?? '')}</span></div>
-      <div style="color:var(--dim)">placed by ${esc(placerOf(selected)?.id ?? meta?.actor ?? '?')}${meta?.actor && meta.actor !== (placerOf(selected)?.id ?? meta.actor) ? ` · last change by ${esc(meta.actor)}` : ''}${bag?.guard ? ' · 🛡 guarded' : ''} · ${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
+      <div style="color:var(--dim)">${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
       ${transform}
       ${eds.map((e) => e.html).join('')}
       ${compRows.join('')}${newComp}
@@ -219,11 +218,12 @@ function paintScene(force = false) {
   const tf = (f) => sceneBody.querySelector(`[data-tf="${f}"]`);
   for (const el of sceneBody.querySelectorAll('[data-tf]')) {
     el.addEventListener('change', () => {
-      const args = { id: selected, pos: [Number(tf('x').value), Number(tf('y').value), Number(tf('z').value)] };
-      if (tf('yaw')) args.yaw = Number(tf('yaw').value) * Math.PI / 180;
-      if (tf('scale')) args.scale = Number(tf('scale').value);
-      if (args.pos.some(Number.isNaN) || Number.isNaN(args.yaw ?? 0) || Number.isNaN(args.scale ?? 1)) return;
-      sendVerb('place', args);
+      const patch = { pos: [Number(tf('x').value), Number(tf('y').value), Number(tf('z').value)] };
+      if (tf('yaw')) patch.yaw = Number(tf('yaw').value) * Math.PI / 180;
+      if (tf('scale')) patch.scale = Number(tf('scale').value);
+      if (patch.pos.some(Number.isNaN) || Number.isNaN(patch.yaw ?? 0) || Number.isNaN(patch.scale ?? 1)) return;
+      const id = selected;
+      sendOps([OP.pose(state.st.entities?.[id] ?? {}, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
     });
   }
 
@@ -232,7 +232,7 @@ function paintScene(force = false) {
     b.onclick = () => { editingComp = b.dataset.ceEdit; paintScene(true); };
   }
   for (const b of sceneBody.querySelectorAll('[data-ce-del]')) {
-    b.onclick = () => { sendVerb('comp', { id: selected, type: b.dataset.ceDel, data: null }); };
+    b.onclick = () => { sendOps([OP.unset(selected, b.dataset.ceDel)], { what: `remove ${b.dataset.ceDel} from ${selected}` }); };
   }
   sceneBody.querySelector('[data-ce-add]')?.addEventListener('click', () => {
     editingComp = true; paintScene(true);
@@ -245,7 +245,7 @@ function paintScene(force = false) {
     let data;
     try { data = JSON.parse(sceneBody.querySelector('[data-ce="json"]').value); }
     catch (err) { flashHint(`not valid JSON: ${esc(err.message)}`, 5000); return; }
-    sendVerb('comp', { id: selected, type, data });
+    sendOps([data == null ? OP.unset(selected, type) : OP.set(selected, type, data)], { what: `${type} on ${selected}` });
     editingComp = null;
     paintScene(true);
   });
@@ -255,7 +255,7 @@ function paintScene(force = false) {
 
   sceneBody.querySelector('[data-act="detach"]')?.addEventListener('click', () => doDetach(selected));
   sceneBody.querySelector('[data-act="remove"]')?.addEventListener('click', () => {
-    sendVerb('remove', { id: selected });
+    del([selected]);
     selected = null;
   });
 }
@@ -303,7 +303,7 @@ export function sceneSelect(id) {
  *  Exported for /mount — command and panel are the same act. */
 export function sceneAttach(childId, parentId, slot) {
   if (slot) {   // a declared socket wins over glue-in-place
-    sendVerb('mount', { id: childId, to: parentId, slot });
+    sendOps([OP.parent(state.st, childId, parentId, { slot })], { what: `seat ${childId} on ${parentId}` });
     return;
   }
   doAttach(childId, parentId);
@@ -367,7 +367,7 @@ async function paintScripts() {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
-    sendVerb('behavior', { id: watching, remove: true });
+    sendOps([OP.unset('@world', `behavior:${watching}`)], { what: `unbind ${watching}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);
   });

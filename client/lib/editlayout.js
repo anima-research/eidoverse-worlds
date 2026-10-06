@@ -117,7 +117,7 @@ function build() {
   menus.append(
     menu('Edit', () => [
       { label: 'undo\tCtrl+Z', run: undo, title: KEYHINTS.undo.before },
-      ...(V4.isV4() ? [{ label: 'redo\tCtrl+Shift+Z', run: () => V4.redo(), title: KEYHINTS.undo.before }] : []),
+      { label: 'redo\tCtrl+Shift+Z', run: () => V4.redo(), title: KEYHINTS.undo.before },
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },

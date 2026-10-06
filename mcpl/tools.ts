@@ -29,12 +29,10 @@ import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
-import { rawShapeError } from "./shape.ts";
-import { inspectSchema, editVerbs, describeSchema } from "../shared/editschema.js";
+import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
+import * as OP from "../shared/v4/ops.js";
 import { childrenOf } from "../shared/hierarchy.js";
-import { WORLD_ID, worldSchema, worldEditVerbs, describeWorld } from "../shared/worldentity.js";
-import { lineageOf, copiesOf, copyLine, copyTree, overridesOf, placeVerbs, versionOf } from "../shared/blueprint.js";
-import { makePacer } from "../shared/pace.js";
+import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";
 /** Every folded record by id — what the hierarchy maths reads (a child's
  *  parent and its socket, children, in-place parenting). */
 const foldWorld = (ag: any): Record<string, any> => {
@@ -113,6 +111,7 @@ export const TOOLS = [
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until clear_reach, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target currently has no tool to revoke someone else's incoming reach; agree on release with them. Presence-only, never logged.`, inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "clear_reach", description: "Let go: release one of YOUR reaching limbs (or all of them when called bare), easing back to normal animation. Anyone you were touching sees the hand withdraw. This clears your outgoing reaches; it does not revoke someone else's incoming reach toward you.", inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"] } } } },
+  { name: "sit", description: "Sit on a thing's seat (a socket it declares): your body rides it — swings with the swing — until you walk or call sit with no `on`. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { on: { type: "string" }, slot: { type: "string" } } } },
   { name: "posture", description: "Settle into a posture: sit (on the ground), sitchair (chair height), lie, or stand. Held until you stand or walk; survives leaving and rejoining, like a held pose.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] } }, required: ["kind"] } },
   { name: "ragdoll", description: "Shove another body over — a physics ragdoll. `target` is who falls; THEY simulate it on their own body (you never simulate someone else), and it settles into a held pose everyone sees. The shove is directed from where YOU stand through them (walk to the right side of someone before pushing); `strength` 0.5–4 m/s, default 2.2. Being knocked over is opt-in for humans and default for agent performers.", inputSchema: { type: "object", properties: { target: { type: "string" }, strength: { type: "number" } }, required: ["target"] } },
   { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion AND over any pose you hold or animation already playing — it takes only the bones it animates; replace:true ends your held pose and other animations first. Relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, replace: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
@@ -134,13 +133,12 @@ export const TOOLS = [
   // avatar and the activity dial ARE carried, and are named because they are.
   { name: "worlds", description: "Which worlds this door fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the door knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
   { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
-  { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, blueprint (publish a record into the world's blueprint store; see the blueprints tool), terrain, grass, sky, weather, grant, kick, ban, unban, caption (one line of what a screen said; needs the per-screen caption deed) — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "inspect", description: "The inspector, for you: every editable field on a placed thing with its current value, units, limits, and the verb that changes it — the same declaration the browser's Inspector panel renders (shared/editschema.js). Fields are addressed group.field: pos.x pos.yaw pos.scale · rot.x rot.y rot.z (Rotate in degrees, read from q in the thing's rotation order) rot.qx…rot.qw rot.order · flags.lock flags.hidden flags.label · light.color light.intensity light.range light.keep light.noon · motion.type motion.axis motion.amp motion.period … (a part's motion as motion.<part>|amp) · sockets.<slot>|pos|0..2 sockets.<slot>|yaw sockets.del · particles.* · comp.<type> (raw JSON for any component no group speaks for; comp.+ adds one) · parent.to (its parent; set an id to parent it where it stands, \"\" or null to make it a root) · parent.unparent. Says its parent and children; a child's Transform is LOCAL to its parent. Read-only fields say why (locked, guarded, riding a moving part). id \"@world\" is the world entity: its Sky (sky.hours sky.rate sky.clouds sky.clock …), Weather (weather.state), Ground (ground.amplitude ground.color …) and Grass (grass.density … grass.mow) — the world's sky/terrain/grass, edited through the sky, weather, terrain and grass verbs (owner rank). Pass json:true for the raw schema.", inputSchema: { type: "object", properties: { id: { type: "string" }, json: { type: "boolean" } }, required: ["id"] } },
-  { name: "edit", description: "Change fields on a placed thing by address (see inspect) — the fewest verbs that commit them, sent for you: three transform channels become ONE place carrying the full pose; two socket fields ONE merged comp. Numbers take Maya's relative math: \"+=1\", \"-=0.5\", \"*=-1\", \"+=10%\". Angles are typed in DEGREES. Refused edits (locked, guarded, a cycle, unknown field, bad JSON) are reported by name and the rest still go. \"parent.to\": \"lamp\" parents it under lamp where it stands (null = make it a root); a child's pos/rot are local to its parent. set: {\"pos.x\": \"+=1\", \"light.intensity\": 24, \"flags.label\": \"the good chair\", \"sockets.seat|pos|1\": 0.55, \"comp.recipe\": \"{...}\"}. id \"@world\" edits the world entity: {\"sky.hours\": 17.5, \"weather.state\": \"rain\", \"ground.amplitude\": \"+=1\"} → one sky, one weather, one terrain verb. Pass dry:true to see the verbs without sending.", inputSchema: { type: "object", properties: { id: { type: "string" }, set: { type: "object" }, dry: { type: "boolean" } }, required: ["id", "set"] } },
+  { name: "edit", description: "Change fields on a placed thing by address (see inspect) — ONE door request for the whole edit (one act; undo {act} takes it back), exactly what a person's edit sends: the transform channels become one whole `set transform` (local to its parent for a child); socket fields one `set sockets`. Numbers take Maya's relative math: \"+=1\", \"-=0.5\", \"*=-1\", \"+=10%\". Angles are typed in DEGREES. Edits that can't be planned (unknown field, a cycle, bad JSON) are reported by name and the rest still go; a locked thing is refused by the door with the way through (through_lock: true, if you may lift locks). \"parent.to\": \"lamp\" parents it under lamp where it stands (null = make it a root); a child's pos/rot are local to its parent. set: {\"pos.x\": \"+=1\", \"light.intensity\": 24, \"flags.label\": \"the good chair\", \"sockets.seat|pos|1\": 0.55, \"comp.recipe\": \"{...}\"}. id \"@world\" edits the world entity: {\"sky.hours\": 17.5, \"weather.state\": \"rain\", \"ground.amplitude\": \"+=1\"}. Pass dry:true to have the door check it without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, set: { type: "object" }, dry: { type: "boolean" }, through_lock: { type: "boolean" } }, required: ["id", "set"] } },
   { name: "hierarchy", description: "The scene tree, as the browser's Hierarchy panel shows it: every placed thing, mounted things indented under their carrier, seated people as riders, with each thing's label, lib, components and lock state. filter narrows to ids/labels/libs/component types containing the text (matches keep their ancestors). Cheaper than look() when you want structure, not surroundings.", inputSchema: { type: "object", properties: { filter: { type: "string" } } } },
-  { name: "blueprints", description: "This world's blueprint store (design §3): every published blueprint — a thing's components and children saved as one content-hashed record that copies are placed from — with its short hash, name, version (how many ancestors the store holds), parent, parts, root components and publisher. Pass hash (the full hash or a unique prefix) for one record in full, as JSON, with its lineage newest first. Publishing is world_verb blueprint {hash, record} (builder rank): record = {kind: \"eido.blueprint\", v: 1, name, parent?: <hash of the version it was edited from>, note?, root: {components: [{type, key?, params}], children: [{id, components, children}]}}; hash = SHA-256 of its RFC 8785 canonical JSON without the note. The door refuses a wrong hash (and names the right one), a malformed record, and a parent the store does not hold.", inputSchema: { type: "object", properties: { hash: { type: "string" } } } },
-  { name: "blueprint_place", description: "Place a COPY of a blueprint from this world's store (see blueprints): the whole tree as ordinary verbs — each part spawned (an Empty when it has no model), each child mounted under its parent at its local pose, every component a comp, and the link: comp blueprint {hash, name} on the root, {part: <child id>} on each part. Position defaults to 2m in front of you, facing yaw (radians, default your heading); scale multiplies the record's own. The verbs are paced under the world's rate limit (a big blueprint takes a few seconds). Returns the root id and every part's id; undo it by removing them (leaves first). Builder rank, like spawn. dry:true lists the verbs without sending.", inputSchema: { type: "object", properties: { hash: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, yaw: { type: "number" }, scale: { type: "number" }, id: { type: "string" }, dry: { type: "boolean" } }, required: ["hash"] } },
+  { name: "blueprints", description: "This world's blueprint library: every published blueprint (a thing and everything under it, saved as one content-hashed record) with its short hash, name, part count and the copies placed from it. Pass hash for one. Publish with door {tool: \"publish\", args: {from, name}}; place a copy with blueprint_place.", inputSchema: { type: "object", properties: { hash: { type: "string" } } } },
+  { name: "blueprint_place", description: "Place a COPY of a blueprint from this world's library (see blueprints): the door copies the whole tree in one act (create {from: <hash>, at}). Position defaults to 2m in front of you, facing the way you face; pass dry:true to have the door check it without writing.", inputSchema: { type: "object", properties: { hash: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, yaw: { type: "number" }, scale: { type: "number" }, id: { type: "string" }, dry: { type: "boolean" } }, required: ["hash"] } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
   { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — denied verbs (rights), rejected shapes (malformed/oversized comp, bad mount), rate limits, reaction outcomes ('reaction' fired with cause→effect seqs, 'reaction-skip' with the reason, 'reaction-error'), and script events ('script-error', 'script-pause'). Pass behavior: <id> to read ONE runtime script's own log ring (its world.log() console + status); pass behaviors: true to list what scripts run here and whether they're alive. IMPORTANT: motion/comp components are NOT scripts — they are passive data evaluated client-side and NEVER appear in the behaviors roster (absence there does not mean your component failed or was deleted; check world_history verbs:['comp','motion'] for its fold, and look for kind 'motion-lint' in the plain recorder: the server lints every folded motion for params the evaluator will ignore, unknown types, and part names that no client renders). In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
   { name: "kick", description: "MODERATION: remove a participant from this world right now. They may rejoin — a kick interrupts, a ban excludes. Needs owner rights here (same gate as grant); operators and fellow owners cannot be kicked.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id"] } },
@@ -284,6 +282,19 @@ export const HANDLERS: Record<string, ToolHandler> = {
       ctx.rememberAvatar?.(path);   // the choice outlives this session
       return text(`you are now wearing ${want.includes("/") ? path.split("/").pop() : want}`);
 
+  },
+  sit: async (ag, a) => {
+      // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit,
+      // and walking or standing gets me off. The thing must declare the seat (a sockets component).
+      const on = String(a.on ?? "").trim();
+      if (!on) { ag.setSeat(null); return text("you stand up"); }
+      const rec: any = ag.foldRecord(on);
+      if (!rec) return { content: [{ type: "text", text: `sit: nothing here called "${on}"` }], isError: true };
+      const socks = rec.comp?.sockets ?? {};
+      const slot = a.slot != null ? String(a.slot) : Object.keys(socks)[0];
+      if (!slot || !socks[slot]) return { content: [{ type: "text", text: `sit: ${on} declares no seat${a.slot != null ? ` called "${a.slot}"` : ""} (its sockets: ${Object.keys(socks).join(", ") || "none"}) — a builder can add one: edit {"sockets.seat|pos|1": 0.5}` }], isError: true };
+      ag.setSeat({ to: on, slot });
+      return text(`you sit on ${on} (${slot}) — walk or sit {} to get up`);
   },
   posture: async (ag, a, ctx, name) => {
       const kind = String(a.kind ?? "");
@@ -607,14 +618,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
-      const r = await ag.sendVerb("spawn", { id, lib, pos: [x, a.y ?? ag.heightAt(x, z), z], yaw: a.yaw ?? 0 });
+      const yaw = Number(a.yaw ?? 0);
+      const r = await ag.sendOps([OP.create(id, { model: lib, transform: { pos: [x, a.y ?? ag.heightAt(x, z), z], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } })]);
       if (r && !r.ok) return refusedBy(r, "spawn");
       return text(`spawned [${id}] ${String(lib).split("/").pop()} at (${x.toFixed(1)}, ${z.toFixed(1)})${r ? " (the door accepted it)" : ""}`);
 
   },
   place: async (ag, a, ctx, name) => {
       if (!ag.entities.has(a.id)) return text(`no entity ${a.id}`);
-      const r = await ag.sendVerb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
+      const r = await ag.sendOps([OP.pose(ag.foldRecord(a.id) ?? {}, a.id, { pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) })]);
       if (r && !r.ok) return refusedBy(r, "place");
       return text(`placed ${a.id}`);
 
@@ -624,13 +636,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // UPDATE: send only what was given — the fold merges, so absent
         // fields keep their prior value (stamping defaults here would reset
         // a light's color every time someone dims it).
-        const patch: any = { id: a.id };
+        const patch: any = {};
         for (const k of ["color", "intensity", "range", "keep"] as const) if (a[k] != null) patch[k] = a[k];
+        const ops: any[] = [];
+        if (Object.keys(patch).length) ops.push(OP.set(a.id, "light", patch, { merge: true }));
         if (a.x != null || a.y != null || a.z != null) {
-          const prev = ag.entities.get(a.id)!.pos ?? [0, 1, 0];
-          patch.pos = [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]];
+          const prev = (ag.entities.get(a.id) as any)?.pos ?? [0, 1, 0];
+          ops.push(OP.pose(ag.foldRecord(a.id) ?? {}, a.id, { pos: [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]] }));
         }
-        const r = await ag.sendVerb("light", patch);
+        const r = await ag.sendOps(ops);
         if (r && !r.ok) return refusedBy(r, "light");
         return text(`updated light [${a.id}]`);
       }
@@ -638,12 +652,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const y = a.y ?? ag.heightAt(x, z) + 1.6;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
-      const r = await ag.sendVerb("light", { id, pos: [x, y, z], color: a.color ?? 0xffd9a0, intensity: a.intensity ?? 16, range: a.range ?? 10, ...(a.keep ? { keep: true } : {}) });
+      const r = await ag.sendOps([OP.create(id, { transform: { pos: [x, y, z] }, components: { light: { color: a.color ?? 0xffd9a0, intensity: a.intensity ?? 16, range: a.range ?? 10, ...(a.keep ? { keep: true } : {}) } } })]);
       if (r && !r.ok) return refusedBy(r, "light");
       return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
 
   },
-  remove: async (ag, a, ctx, name) => { const r = await ag.sendVerb("remove", { id: a.id }); if (r && !r.ok) return refusedBy(r, "remove"); return text(`removed ${a.id}`); },
+  remove: async (ag, a, ctx, name) => { const r = await ag.sendOps([OP.remove(a.id)]); if (r && !r.ok) return refusedBy(r, "remove"); return text(`removed ${a.id}`); },
   door: async (ag, a) => {
       const r = await ag.door(String(a.tool ?? ""), (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, unknown>);
       const reply = r ?? { ok: false };
@@ -683,17 +697,6 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ? (pol.canFound ? "You hold create authority: `travel` to an unlisted name founds it." : "Founding an unlisted world needs create authority you do not hold.")
         : ctx.travel ? "" : "This door fronts a single world; there is no travel from here.";
       return text(`Worlds on this door (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
-  },
-  world_verb: async (ag, a, ctx, name) => {
-      // the raw door forwards verbatim, so shape is checked HERE — a
-      // malformed place in the log is permanent history every replayer
-      // must survive (#88)
-      const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
-      if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
-      const r = await ag.sendVerb(String(a.verb), a.args ?? {});
-      if (r && !r.ok) return refusedBy(r, String(a.verb));
-      return text(r ? `${a.verb}: the door accepted it` : `sent ${a.verb}`);
-
   },
   measure: async (ag, a, ctx, name) => {
       // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
@@ -758,7 +761,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const head = `[${id}] ${rec.kind === "light" ? "light" : rec.lib == null ? "empty" : String(rec.lib).split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}`
         + `\nparent: ${rec.parent ? `${rec.parent.to}${rec.parent.slot ? ` (slot ${rec.parent.slot})` : ""} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
-        + (() => { const line = copyLine(world, id, ag.blueprintStore() as any); return line ? `\nblueprint: ${line}` : ""; })();
+        + (() => { const h = String((rec as any)?.comp?.blueprint?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.v4Library()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the door's touched; the Inspector's card tooltips say the same words)
       let prov = "";
       if (ag.v4) { const r = await ag.door("inspect", { id }).catch(() => null);
@@ -770,32 +773,28 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
       if (!rec && id !== WORLD_ID) return text(`edit: no placed thing "${id}" here`);
-      const { verbs, errors, asks } = id === WORLD_ID
-        ? { ...worldEditVerbs(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
-        : editVerbs(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
+      const { ops, errors, asks } = id === WORLD_ID
+        ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
+        : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
       // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
       for (const q of (asks ?? []) as any[]) if (q.kind === 'confirm' || q.options.length) L.push(q.kind === 'choice'
         ? `asks: ${q.prompt} — answer with ${q.options.map((o: any) => `"${q.key}": "${o.v}" (${o.label})`).join(' or ')}`
         : `asks: ${q.prompt} — answer with "${q.key}": "both"`);
-      if (!verbs.length) return { content: [{ type: "text", text: L.length ? L.join("\n") : "edit: nothing to change" }], isError: errors.length > 0 };
-      for (const v of verbs) {
-        const why = rawShapeError(v.verb, v.args as Record<string, unknown>);
-        if (why) { L.push(`refused ${v.verb}: ${why}`); continue; }
-        let r: any = null;
-        if (!a.dry) { r = await ag.sendVerb(v.verb, v.args as Record<string, unknown>);
-          if (r && !r.ok) { L.push(refusalText(v.verb, r)); continue; } }   // the words a person sees (shared/v4/refusal.js)
-        L.push(`${a.dry ? "would send" : "sent"} ${v.verb} ${JSON.stringify(v.args)}`);
-        // the door's own words on what it did (agent lab round 2, Hazel: "edit replies don't show the door's answer, so
-        // warnings get lost"): its notes, warnings, and an undo's account of itself
-        if (!a.dry && r && r.ok) {
-          for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
-          for (const nt of (r.notes ?? []) as any[]) if (!nt.placed) L.push(`  note: ${nt.why ?? JSON.stringify(nt)}`);
-        }
+      if (!ops.length) return { content: [{ type: "text", text: L.length ? L.join("\n") : "edit: nothing to change" }], isError: errors.length > 0 };
+      // ONE request for the whole edit (a batch when it took several ops): one act, one undo — what a person's edit sends
+      const req: any = OP.batch(ops);
+      const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.through_lock ? { through_lock: true } : {}) });
+      L.push(`${a.dry ? "would send" : "sent"} ${req.tool} ${JSON.stringify(req.args)}`);
+      if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/v4/refusal.js)
+      else if (r) {
+        // the door's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account
+        for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
+        for (const nt of (r.notes ?? []) as any[]) if (!nt.placed) L.push(`  note: ${nt.why ?? JSON.stringify(nt)}`);
+        if (!a.dry) L.push(`the door accepted it${r.act != null ? ` (act ${r.act}; undo {act: ${r.act}} takes it back)` : ""}`);
       }
-      L.push(ag.v4 ? "(v4 world: each verb above was answered by the door)" : "(the fold echoes in a beat — inspect again to read the new values; refusals of rank or rate land in world_debug)");
-      return text(L.join("\n"));
+      return { content: [{ type: "text", text: L.join("\n") }], ...(r && !r.ok ? { isError: true } : {}) };
   },
   hierarchy: async (ag, a) => {
       const q = String(a.filter ?? "").trim().toLowerCase();
@@ -830,58 +829,35 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(L.join("\n"));
   },
   blueprints: async (ag, a) => {
-      const store = ag.blueprintStore() as Record<string, { record: any; by: string; ts: number }>;
-      const hashes = Object.keys(store).sort((x, y) => store[x].ts - store[y].ts);
-      const parts = (n: any): number => 1 + (n?.children ?? []).reduce((k: number, c: any) => k + parts(c), 0);
+      // the world's library (v4): @world library:<hash> → {name, parts}, written by the door's publish; a placed copy
+      // carries a `blueprint` component naming the hash it came from
+      const lib = ag.v4Library();
+      const copies: Record<string, string[]> = {};
+      for (const [id, e] of Object.entries(foldWorld(ag) as Record<string, any>)) { const h = e?.comp?.blueprint?.hash; if (h) (copies[String(h).replace(/^sha256:/, "")] ??= []).push(id); }
+      const hashes = Object.keys(lib);
       const want = String(a.hash ?? "").trim().toLowerCase();
-      if (want) {
-        const hits = hashes.filter((h) => h.startsWith(want));
-        if (hits.length !== 1) return text(hits.length ? `blueprints: "${want}" matches ${hits.length} records (${hits.map((h) => h.slice(0, 12)).join(", ")}) — give more of the hash` : `blueprints: no record here whose hash starts "${want}"`);
-        const h = hits[0], b = store[h];
-        const line = lineageOf(store, h);
-        return text(`[${h}] "${b.record.name}" — published by ${actorName(String(b.by))} at ${new Date(b.ts).toISOString()}`
-          + `\nlineage (newest first): ${line.map((x) => `${x.slice(0, 12)}${store[x] ? ` "${store[x].record.name}"` : " (not in this store)"}`).join(" ← ")}`
-          + (() => {
-            const world = foldWorld(ag);
-            const placed = copiesOf(world)[h] ?? [];
-            if (!placed.length) return `\ncopies: none placed (blueprint_place with hash ${h.slice(0, 12)} places one)`;
-            return `\ncopies (${placed.length}): ${placed.map((id) => { const t = copyTree(world, id, b.record); const n = t ? overridesOf(t.tree, b.record).length : 0; return `${id}${n ? ` (${n} override${n === 1 ? "" : "s"})` : ""}`; }).join(", ")}`;
-          })()
-          + `\n${JSON.stringify(b.record, null, 1)}`);
-      }
-      const copies = copiesOf(foldWorld(ag));
-      if (!hashes.length) return text("This world's blueprint store is empty. Publish with world_verb blueprint {hash, record} (see this tool's description for the record's shape).");
-      const L = hashes.map((h) => {
-        const { record: r, by } = store[h];
-        const v = lineageOf(store, h).filter((x) => store[x]).length;
-        const comps = (r.root?.components ?? []).map((c: any) => c.type).filter((t: string) => t !== "Transform");
-        const placed = copies[h] ?? [];
-        return `[${h.slice(0, 12)}] "${r.name}" v${v}${r.parent ? ` ← ${String(r.parent).slice(0, 12)}` : ""} · ${parts(r.root)} part${parts(r.root) === 1 ? "" : "s"} · ${comps.join(" · ") || "empty"} · by ${by}`
-          + (placed.length ? ` · ${placed.length} cop${placed.length === 1 ? "y" : "ies"}: ${placed.slice(0, 8).join(", ")}${placed.length > 8 ? ", …" : ""}` : "");
-      });
-      L.push(`(${hashes.length} record${hashes.length === 1 ? "" : "s"} · blueprints {hash} for one in full)`);
-      return text(L.join("\n"));
+      const pick = want ? hashes.filter((h) => h.startsWith(want)) : hashes;
+      if (want && pick.length !== 1) return text(pick.length ? `blueprints: "${want}" matches ${pick.length} (${pick.map((h) => h.slice(0, 12)).join(", ")}) — give more of the hash` : `blueprints: none here starts "${want}"`);
+      if (!hashes.length) return text("This world's library is empty. Publish one: door {tool: \"publish\", args: {from: <thing id>, name}} — the thing and everything under it, as one record.");
+      return text(pick.map((h) => { const c = copies[h] ?? [];
+        return `[${h.slice(0, 12)}] "${lib[h]?.name ?? "?"}" · ${(lib[h] as any)?.parts ?? "?"} part(s)${c.length ? ` · ${c.length} cop${c.length === 1 ? "y" : "ies"}: ${c.slice(0, 8).join(", ")}${c.length > 8 ? ", …" : ""}` : " · no copies placed"}`; }).join("\n")
+        + `\n(blueprint_place {hash} places a copy; door {tool: "publish", args: {from, name}} saves a new one)`);
   },
+
   blueprint_place: async (ag, a) => {
-      const store = ag.blueprintStore() as Record<string, { record: any; by: string; ts: number }>;
+      const lib = ag.v4Library();
       const want = String(a.hash ?? "").trim().toLowerCase();
-      const hits = want ? Object.keys(store).filter((h) => h.startsWith(want)) : [];
-      if (hits.length !== 1) return { content: [{ type: "text", text: hits.length ? `blueprint_place: "${want}" matches ${hits.length} records — give more of the hash` : `blueprint_place: no record here whose hash starts "${want}" (the blueprints tool lists them)` }], isError: true };
-      const h = hits[0], rec = store[h].record;
+      const hits = want ? Object.keys(lib).filter((h) => h.startsWith(want)) : [];
+      if (hits.length !== 1) return { content: [{ type: "text", text: hits.length ? `blueprint_place: "${want}" matches ${hits.length} records — give more of the hash` : `blueprint_place: no blueprint here whose hash starts "${want}" (the blueprints tool lists them)` }], isError: true };
+      const h = hits[0];
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
-      const id = String(a.id ?? crypto.randomUUID().slice(0, 8));
-      const plan = placeVerbs(rec, { id, pos: [x, a.y ?? ag.heightAt(x, z), z], yaw: a.yaw ?? ag.yaw, ...(a.scale != null ? { scale: Number(a.scale) } : {}) }, { hash: h, taken: (e: string) => !!ag.foldRecord(e) });
-      if (plan.errors.length) return { content: [{ type: "text", text: `blueprint_place refused: ${plan.errors.join(" · ")}` }], isError: true };
-      for (const v of plan.verbs) { const why = rawShapeError(v.verb, v.args as Record<string, unknown>); if (why) return { content: [{ type: "text", text: `blueprint_place refused ${v.verb}: ${why}` }], isError: true }; }
-      const parts = Object.entries(plan.parts).map(([p, e]) => `${p || "(root)"} → ${e}`).join(", ");
-      if (a.dry) return text(`would send ${plan.verbs.length} verbs:\n${plan.verbs.map((v) => `${v.verb} ${JSON.stringify(v.args)}`).join("\n")}\nparts: ${parts}`);
-      // one pacer per agent: the door drops verbs past its rate (shared/pace.js)
-      // a v4 world: each verb is spelled as a door request at this edge (ag.sendVerb), in order
-      const pacer = ((ag as any).__pacer ??= makePacer({ send: (verb: string, args: Record<string, unknown>) => { if (ag.v4) void ag.sendVerb(verb, args); else ag.verb(verb, args); } }));
-      pacer.run(plan.verbs);
-      const v = versionOf(store, h);
-      return text(`placing a copy of "${rec.name}" (v${v}, ${h.slice(0, 12)}) as [${id}] — ${plan.verbs.length} verbs${pacer.pending() ? `, paced: about ${Math.ceil(pacer.eta() / 1000)}s to finish` : ""}\nparts: ${parts}\nto undo: ${plan.inverses.map((i) => `${i.verb} ${JSON.stringify(i.args)}`).join("; ")}`);
+      const yaw = Number(a.yaw ?? ag.yaw);
+      // the door copies the whole tree: create {from: <hash>, at} — one act, one undo
+      const at = { pos: [x, a.y ?? ag.heightAt(x, z), z], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] };
+      const r: any = await ag.door("create", { from: h, at, ...(a.dry ? { dry: true } : {}) });
+      if (!r?.ok) return refusedBy(r, "blueprint_place");
+      return text(`${a.dry ? "would place" : "placed"} a copy of "${lib[h]?.name ?? h.slice(0, 12)}" (${h.slice(0, 12)})${r.refs?.[0]?.id ? ` as [${r.refs[0].id}]` : ""} — one act`);
   },
   world_history: async (ag, a, ctx, name) => {
       // a v4 world's log is read through the door (its history request); the v1 history holds only its chat lines there
@@ -931,10 +907,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!id) return text(`${name} needs an id — who, exactly?`);
       const reason = a.reason != null ? String(a.reason) : undefined;
       const t0 = Date.now();
-      if (a.global && name !== "kick") ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}) });
-      else ag.verb(name, { id, ...(reason ? { reason } : {}) });
-      const answer = await ag.modOutcome(t0);
-      return text(answer ?? `sent ${name} ${id}${a.global ? " (global)" : ""} — no echo from the world yet; check look()`);
+      if (a.global && name !== "kick") {
+        ag.sendMod(name === "ban" ? "global-ban" : "global-unban", { id, ...(reason ? { reason } : {}) });
+        const answer = await ag.modOutcome(t0);
+        return text(answer ?? `sent ${name} ${id} (global) — no echo yet; check look()`);
+      }
+      // this world: the door's moderation, by IDENTITY (u-…) — a present person's comes from their arrival, never a typed name
+      const who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.v4ids.get(id) ?? null;
+      if (!who) return { content: [{ type: "text", text: `${name}: ${id} isn't here, and isn't an identity (u-…) — a ${name} goes to a person's identity (look lists who is present)` }], isError: true };
+      const r: any = await ag.door(name, { who, ...(reason ? { reason } : {}) });
+      return r?.ok ? text(`${name} ${id}: done (${r.logged ?? "the door's moderator log"})`) : refusedBy(r, name);
 
   },
   ban: (ag, a, ctx, name) => HANDLERS.kick(ag, a, ctx, name),

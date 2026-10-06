@@ -166,13 +166,14 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(q(bob, "undo", { acts: 3 }).refused?.code === "unknown-arg", "U10 a typo'd undo argument is refused, not a silent undo of your latest act (R10)"); }
 
 // ---- W: the sky panel in a v4 world (it couldn't write at all: fromv1 had no 'sky' / 'weather') ----
-{ let T = 1800000000000; const d = directoryAt(file); const { spellVerbs } = await import("../../shared/v4/fromv1.js");
+{ let T = 1800000000000; const d = directoryAt(file); const { worldEditOps } = await import("../../shared/worldentity.js");
   const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf });
   const own = d.resolve({ sub: "human:discord:w1", name: "Wyn" }), vis = d.resolve({ sub: "human:discord:w2", name: "Val" });
   request(w, own, "new", { title: "wx" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
   const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", sun: 1.2, fill: 0.4, world: "earth", clock: "authored" };
-  const m: any = spellVerbs(w.state(), [{ verb: "sky", args: panel }]);
-  ok(m.tool === "sky", "W1 the sky panel's verb has a v4 spelling (the door's sky tool)", m);
+  const m: any = { tool: "sky", args: panel };   // what the sky panel sends (client/lib/skypanel.js)
+  const we: any = worldEditOps({ sky: null, terrain: null, grass: null }, { "weather.state": "rain" }, { now: T });
+  ok(we.ops.length === 1 && we.ops[0].tool === "weather" && we.ops[0].args.weather === "rain", "W1 edit @world plans the door's own tools (weather), never a v1 verb", we);
   const r: any = request(w, own, m.tool, m.args); const sky = w.state().entities["@world"].c.sky;
   ok(r.ok && sky.hours === 18 && sky.world === "earth" && Number.isInteger(sky.ts) && !("seq" in sky) && !("by" in sky), "W2 sky sets the sky, stamped with the door's clock, with no echo of who (R8)", [r.refused, sky]);
   const r2: any = request(w, own, "weather", { weather: "rain" }); const sky2 = w.state().entities["@world"].c.sky;

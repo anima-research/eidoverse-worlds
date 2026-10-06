@@ -18,14 +18,15 @@ import { entities, comps } from './world.js';
 import { sendDrag } from './net.js';
 import { registerSystem } from './frame.js';
 import { sceneSelected } from './scenegraph.js';
-import { getTool, getSpace, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import { getTool, getSpace, isEditing, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
-import { foldRecord, inverseOf } from './inspect.js';
+import { foldRecord } from './inspect.js';
 import { mayAuthor } from './placer.js';
-import { editVerbs, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
+import { editOps, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
+import * as OP from '../../shared/v4/ops.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const R2D = 180 / Math.PI;
@@ -74,13 +75,12 @@ const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'tran
  *  thing's transform is read-only; a light has no orientation or scale to drag. */
 function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
-  // v4: a lock doesn't stop the drag; the release asks the door, and a person who may lift it is asked (§5, R's dialog)
-  const doorLocks = V4.isV4();
-  // a thing riding another: three parents it (realize/models.js), so its position IS the local pose the schema's pos.*
-  // edit (→ one mount), the frame the mesh drag already uses. v1 keeps its rule; a part socket (a moving node) stays out.
+  // a lock doesn't stop the drag: the release asks the door, and a person who may lift it is asked (§5, R's dialog).
+  // A thing riding another: three parents it (realize/models.js), so its position IS the local transform the schema's
+  // pos.* edits, the frame the mesh drag already uses; a part socket (a moving node) stays out.
   const rides = !!rec?.parent;
-  if (!rec || !obj || (rides && (!doorLocks || obj.parent !== entities.get(rec.parent.to ?? rec.parent))) || (!doorLocks && comps.get(id)?.lock)) return false;
-  const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id), doorLocks });   // guarded by someone else → no handles
+  if (!rec || !obj || (rides && obj.parent !== entities.get(rec.parent.to ?? rec.parent))) return false;
+  const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id) });
   const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
   const f = fieldAt(sc, key);
   return !!f && !f.disabled;
@@ -89,7 +89,7 @@ function editable(id, mode) {
 function sync() {
   // v4: a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
   // (and offers to move it anyway); detaching mid-drag left the preview stranded with nothing sent
-  if (V4.isV4() && start) return;
+  if (start) return;
   const id = sceneSelected();
   // scenegraph's selection is THE selection (a tree click never sets build.js's viewport `selected`)
   const want = isEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;
@@ -102,7 +102,7 @@ function sync() {
   if (c.mode !== mode) c.setMode(mode);
   const sp = getSpace(getTool()) === 'object' ? 'local' : 'world';
   if (c.space !== sp) c.setSpace(sp);   // the tool's space (build.js SPACES)
-  // every axis: rotate commits q; scale is per axis in a v4 world, uniform in v1 (onChange)
+  // every axis: rotate commits q; scale is per axis (R 10-04)
   c.showX = true; c.showZ = true; c.showY = true;
 }
 
@@ -111,7 +111,7 @@ function beginDrag() {
   engage('gizmo');
   if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
-  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), scale: entities.get(attachedId).scale.x, ...(V4.isV4() ? { v4: V4.compsOf(attachedId) } : {}) } : null;
+  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), v4: V4.compsOf(attachedId) } : null;
   cancelled = false;
 }
 function onChange() {
@@ -123,12 +123,6 @@ function onChange() {
     _m.multiplyMatrices(proxy.matrixWorld, offset);
     if (obj.parent) { obj.parent.updateWorldMatrix(true, false); _m.premultiply(obj.parent.matrixWorld.clone().invert()); }
     _m.decompose(obj.position, obj.quaternion, obj.scale);
-  }
-  if (controls.mode === 'scale' && start && !V4.isV4()) {   // v1: one number; a v4 transform scales per axis (R 10-04)
-    // whichever handle moved, the thing scales uniformly by that ratio
-    const ax = (controls.axis ?? 'X')[0].toLowerCase();
-    const k = ['x', 'y', 'z'].includes(ax) ? obj.scale[ax] / start.scale : obj.scale.x / start.scale;
-    obj.scale.setScalar(THREE.MathUtils.clamp(start.scale * k, 0.1, 12));
   }
   reindexCollider(attachedId); refreshOutline();
   const now = performance.now();
@@ -157,9 +151,7 @@ function endPivotDrag() {
     for (const [name, h] of hotspots(box)) { const d = Math.hypot(...h.map((v, i) => (v - p[i]) * [s.x, s.y, s.z][i])); if (d < 0.15 && (!best || d < best.d)) best = { name, h, d }; }
     if (best) { p = best.h.map((v) => Math.round(v * 1e4) / 1e4); snapped = best.name; } }
   const data = p.every((v) => v === 0) ? null : { pos: p };   // back at the origin = no pivot
-  const verbs = [{ verb: 'comp', args: { id, type: 'pivot', data } }];
-  if (V4.isV4()) V4.sendVerbsV4(verbs, { what: `pivot of ${id}`, expect: false });
-  else { pushUndo({ verb: 'comp', args: { id, type: 'pivot', data: comps.get(id)?.pivot ?? null } }, `pivot of ${id}`); import('./net.js').then((m) => m.sendVerb('comp', verbs[0].args)); }
+  V4.sendOps([data ? OP.set(id, 'pivot', data) : OP.unset(id, 'pivot')], { what: `pivot of ${id}`, expect: false });
   import('./ui.js').then((m) => m.flashHint(snapped ? `pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
@@ -171,34 +163,24 @@ function endDrag() {
   if (!obj || !start?.rec) { start = null; return; }
   const rec = foldRecord(id) ?? start.rec;
   // only the fields this gesture moved and this thing HAS (shared/editschema.js
-  // poseEdits) — editVerbs coalesces them into one place carrying the full pose
+  // poseEdits) — editOps coalesces them into one whole transform
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
   const o = obj.quaternion;
-  const pose = { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: V4.isV4() ? obj.scale.toArray() : obj.scale.x };
+  const pose = { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: obj.scale.toArray() };
   // about a pivot, a turn or a size ALSO moves the origin (it swings round the pivot): send the position with it
   const set = viaProxy && mode !== 'move' ? { ...poseEdits(rec, id, 'move', pose), ...poseEdits(rec, id, mode, pose) } : poseEdits(rec, id, mode, pose);
-  const { verbs, errors } = editVerbs(rec, id, set, V4.isV4() ? { doorLocks: true } : undefined);   // v4: the door asks about locks
-  if (errors.length || !verbs.length) { start = null; return; }
-  if (V4.isV4()) {   // presence until now; the release is ONE request, expecting where the drag started
-    const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;
-    const base = start.v4 ? { [id]: start.v4 } : null; start = null;
-    bus.emit('gizmo-v4', { id, verbs });
-    V4.sendVerbsV4(verbs, { what, base, revert: () => V4.revertPose(id) });
-    return;
-  }
-  for (const v of verbs) {
-    const inv = inverseOf(v, start.rec, id);
-    if (inv) pushUndo(inv, `${controls.mode === 'translate' ? 'moving' : controls.mode === 'rotate' ? 'turning' : 'sizing'} ${id}`);
-    bus.emit('gizmo-commit', v);
-  }
-  start = null;
+  const { ops, errors } = editOps(rec, id, set);   // the door asks about locks
+  if (errors.length || !ops.length) { start = null; return; }
+  // presence until now; the release is ONE request, expecting where the drag started
+  const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;
+  const base = start.v4 ? { [id]: start.v4 } : null; start = null;
+  bus.emit('gizmo-v4', { id, ops });
+  V4.sendOps(ops, { what, base, revert: () => V4.revertPose(id) });
 }
-/** The commit itself rides one seam so the bench can watch it; net.js speaks the wire. */
-bus.on('gizmo-commit', (v) => import('./net.js').then((m) => m.sendVerb(v.verb, v.args)));
 
-/** Esc mid-drag (v4 only; a v1 world's Esc is unchanged): cancel the gesture. */
+/** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */
 function cancelDrag() {
-  if (!V4.isV4() || !start || !attachedId) return false;
+  if (!start || !attachedId) return false;
   cancelled = true; V4.revertPose(attachedId); refreshOutline();
   import('./ui.js').then((m) => m.flashHint('cancelled — nothing written'));
   return true;

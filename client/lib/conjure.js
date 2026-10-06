@@ -19,10 +19,13 @@
 // ?orrery=<url> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
+import { enc } from '../../shared/v4/names.js';
+import * as OP from '../../shared/v4/ops.js';
+import { sendOps } from './v4edit.js';
 import { CONFIG, bus, report } from './base.js';
 import { fsvg } from './icons.js';
 import { makeSection, toast, flashHint } from './ui.js';
-import { sendVerb, net } from './net.js';
+import { net } from './net.js';
 import { holdGhost } from './build.js';
 import { logChat } from './chat.js';
 
@@ -313,7 +316,7 @@ async function paint(body) {
         toast(`avatar "${r.name}" is on the roster — pick it in the avatar panel`, 'info', 9000);
       } else {
         const label = j.prompt.slice(0, 40);
-        sendVerb('asset', { name: label, path: r.path });   // the gen-gated verb
+        sendOps([OP.set('@world', `palette:${enc(r.path)}`, { name: label, path: r.path })], { what: `add ${label} to the palette`, expect: false });
         await holdGhost(r.path, label);
         flashHint('on your cursor — click to set it down');
       }
