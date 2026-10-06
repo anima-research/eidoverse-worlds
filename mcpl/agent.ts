@@ -2714,11 +2714,6 @@ export class WorldAgent {
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
-  verb(verb: string, args: Record<string, unknown>) {
-    if (!this.joined) throw new Error("not joined");
-    this.ws!.send(JSON.stringify({ type: "verb", verb, args }));
-  }
-
   /** One v4 request (v4 worlds only), answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
    *  teach}}. */
   door(tool: string, args: Record<string, unknown> = {}): Promise<any> {

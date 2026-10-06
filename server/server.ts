@@ -16,7 +16,7 @@ import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isOperator } from "./v4/operators.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal, bodyRefusal } from "./rights.ts";
-import { resolveLibFile } from "./lint.ts";
+import { resolveLibFile } from "./libfile.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
 // linters, reactions, and the behavior cap itself; server.ts keeps only what
 // the presence plane and HTTP surface still touch directly.

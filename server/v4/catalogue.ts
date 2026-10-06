@@ -10,7 +10,7 @@
 // at once. A lib this server can't find or parse is still a model the door may NAME (refusing it would make worlds
 // stop at whatever this host happens to have on disk), but it has no size: the door says it can't place or collide
 // it. A name that isn't a library path at all is refused (no model called …).
-import { resolveLibFile } from "../lint.ts";
+import { resolveLibFile } from "../libfile.ts";
 import { summarizeGlb } from "../geometry.ts";
 import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

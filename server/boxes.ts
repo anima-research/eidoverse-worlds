@@ -20,7 +20,7 @@
 // read and a diff can compare, and a millimetre is below anything the sim's
 // contact law can resolve at 15Hz.
 
-import { resolveLibFile } from "./lint.ts";
+import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
 
 /** [[minx, miny, minz], [maxx, maxy, maxz]] in the model's local frame. */

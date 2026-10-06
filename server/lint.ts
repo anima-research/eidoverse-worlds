@@ -39,15 +39,7 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
   path: new Set(["type", "points", "speed", "duration", "loop", "face", "t0", "part", "cause", "by"]),
 };
 
-export function resolveLibFile(lib: string): string | null {
-  const rel = normalize(lib).replace(/^\/+/, "");
-  if (rel.includes("..") || !/\.(glb|vrm)$/i.test(rel)) return null;
-  for (const base of [OPT_DIR, LIBRARY_DIR]) {
-    const p = normalize(join(base, rel));
-    if (p.startsWith(base) && existsSync(p)) return p;
-  }
-  return null;
-}
+export { resolveLibFile } from "./libfile.ts";
 
 export function lintMotion(w: LintHost, entry: LogEntry): void {
   // detached on purpose: geometry parsing is async and the verb path is not
