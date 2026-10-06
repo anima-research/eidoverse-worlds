@@ -60,7 +60,7 @@ export const TOOLSPEC = {
   throw: { doc: "let go of what you're holding with a velocity; physics (if the world runs it) decides where it lands, and the log records where it came to rest", args: { id: ref("the thing you hold"), v: { type: "any", doc: "[x, y, z] in m/s (+y is up); 20 m/s max" } }, required: ["id", "v"],
     example: { id: "ball-1", v: [0, 3, 4] } },
   drop: { doc: "let go of what you're holding: it falls (with physics), or is set straight down (without)", args: { id: ref("the thing you hold") }, required: ["id"], example: { id: "ball-1" } },
-  use: { doc: "do something to a thing (inspect shows what it offers you)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" } }, required: ["id"],
+  use: { doc: "do something to a thing (inspect shows what it offers you)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" }, dry: { type: "bool", doc: "preview only: what it would write (a script runs dry); nothing is logged" } }, required: ["id"],
     example: { id: "swing-1", action: "push", args: { impulse: [0, 0, 1.5] } } },
 };
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);

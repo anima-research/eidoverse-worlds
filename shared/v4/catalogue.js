@@ -47,6 +47,9 @@ export const COMPONENTS = {
       // ForceMode.Impulse; Rapier and PhysX applyImpulse / applyTorqueImpulse): a push changes the thing's velocity at its
       // centre (strength, m/s) or its turn rate about its axis (angular, rad/s). A hinged thing (a pendulum motion) takes
       // strength as strength / its distance from the hinge, and angular as it is.
+      // research 41 §3.1: the join between the two tiers. The action list, its `who` gate and its `teach` stay data; only
+      // the effect is computed, by the script:<name> on the same thing, with its sponsor's rights narrowed to its scope
+      script: { args: { script: "the name of a script on this same thing (its component is script:<name>)" }, example: { ring: { kind: "script", script: "bell" } } },
       impulse: { args: { strength: "a push: the speed it gives the thing at its centre, m/s (default 0.5). A use may give its own push as args.impulse [x,y,z] (m/s)", angular: "or a turn: the turn rate it adds about the thing's axis, rad/s (instead of strength)" }, example: { push: { kind: "impulse", strength: 0.5 } } } },
     common: { kind: "the handler kind", who: "who may use it: builder|owner", teach: "text shown on refusal" } },
   door:      { fields: { open: "bool", locked: "bool" }, help: "{open: true/false, locked: true/false}: a door's own state. `locked` is gameplay (it bars the open handler); the edit lock is the separate `lock` component" },
@@ -80,12 +83,14 @@ export const COMPONENTS = {
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
   script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
                scopeFields: { ids: "any", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
-               help: "keyed <name>: {src: sha256 of the source blob, scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'changed:<comp>'], every?: s (>= 5), always?: bool (owner), knobs?, paused?}" },
+               help: "keyed <name>: a script (JavaScript; docs/SCRIPTS-v4.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
   // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
   schemas:   { keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (L5, §3d M6)" },
   library:   { keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "ground-paint": { keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
-  scripts:   { fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int" }, help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600), rate (logged activations per script per minute, default 6)}" },
+  scripts:   { fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int" }, enums: { install: ["builder", "owner"] },
+               ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 } },
+               help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5)}" },
 };
 
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

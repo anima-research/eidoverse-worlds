@@ -239,7 +239,7 @@ function expel(w: World, target: Client, why: string) {
   clients.delete(target.ws);
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
-  if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id); }
+  if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id, target.v4id); }
 }
 
 // Operator-log census: people are people, eyes are eyes.
@@ -793,7 +793,7 @@ const server = Bun.serve({
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
             c.world.broadcast({ type: "leave", id: c.id });
-            c.world.bhv.onPresence("leave", c.id);
+            c.world.bhv.onPresence("leave", c.id, c.v4id);
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
             // identity, and takeover means re-arrival, not departure).
@@ -862,7 +862,7 @@ const server = Bun.serve({
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
               c.world.broadcast({ type: "leave", id: c.id });
-              c.world.bhv.onPresence("leave", c.id);
+              c.world.bhv.onPresence("leave", c.id, c.v4id);
               reapAuxLegs(c.world, c, "primary traveled");
             }
           }
@@ -882,7 +882,7 @@ const server = Bun.serve({
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.v4id ? { v4id: c.v4id } : {}) }, c);
-          if (!c.spectator) w.bhv.onPresence("enter", c.id);
+          if (!c.spectator) w.bhv.onPresence("enter", c.id, c.v4id);
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator) {
