@@ -730,6 +730,16 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(bad({ s: { pos: [0, 1, 0], pose: "sit" } }) === "schema", "SK4 a socket's pose lives in body (an unknown socket key is refused, with a did-you-mean)");
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
   ok(bad({ s: { body: {} } }) === "shape", "SK4 a socket needs its pos");
-  ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner"); }
+  ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner");
+  // SK5-8: the whole body block (shared/sockbody.js), through the door's own request path
+  ok(R("ann", "set", { id: "horse", component: "sockets", value: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", anchor: "hips", pose: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] },
+    reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, leaveBy: "jump", fromSeat: true } } } }).ok, "SK5 a saddle with a blend by speed, reins, look limits, a driver's input and leaveBy is taken");
+  ok(bad({ s: { pos: [0, 1, 0], body: { anchr: "hips" } } }) === "schema" && bad({ s: { pos: [0, 1, 0], body: { reach: { leftHand: { at: [0, 1, 0], grip: 1 } } } } }) === "schema"
+    && bad({ s: { pos: [0, 1, 0], body: { reach: { tail: { at: [0, 1, 0] } } } } }) === "schema", "SK6 closed keys: the body, a reach, the reach limbs (the reach chains)");
+  ok(bad({ s: { pos: [0, 1, 0], body: { leaveBy: "teleport" } } }) === "shape" && bad({ s: { pos: [0, 1, 0], body: { look: { pitch: [10, -10] } } } }) === "shape"
+    && bad({ s: { pos: [0, 1, 0], body: { pose: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } } } }) === "shape" && bad({ s: { pos: [0, 1, 0], body: { enter: 42 } } }) === "shape", "SK7 enums, ranges, signals and clip names");
+  ok(bad({ a: { pos: [0, 1, 0], body: { input: { move: "drive" } } }, b: { pos: [1, 1, 0], body: { input: { move: "drive" } } } }) === "shape", "SK8 at most one drive per thing");
+  const att = R("bob", "use", { id: "horse", action: "ride" }).attach;
+  ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.input?.move === "drive" && att.reach?.leftHand?.vr === "near" && att.fromSeat === true && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the body does there", att); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

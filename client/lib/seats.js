@@ -78,6 +78,6 @@ export function declareSeatState(riderId, to, slot, state, reason) {
   if (declared.get(riderId) === key) return;
   declared.set(riderId, key);
   if (state === 'approximate') console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat approximate — ${reason}`);
-  else console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat profiled`);
+  else console.info(`[seat] ${riderId} on ${to}/${slot ?? 'seat'}: seat ${state}`);
 }
 export function clearSeatState(riderId) { declared.delete(riderId); }

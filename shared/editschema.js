@@ -25,11 +25,13 @@
 // the held poses a socket can give a person (the posture clips every body has)
 // a socket's rotation as [pitch, heading, roll]: q = qY(heading)·qX(pitch)·qZ(roll), the tilt in the turned frame (Maya order ZXY = three.js 'YXZ'), radians
 const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
-const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'stand'];
+// the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
+const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
 import * as OP from './v4/ops.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
+import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
@@ -277,7 +279,7 @@ export function inspectSchema(ent, id, live = {}) {
     const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
       const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
       const b = bodyOf(s);
-      return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${b.pose})` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
+      return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${typeof b.pose === 'string' ? b.pose : 'a blend'}, ${b.anchor})${b.input.move === 'drive' ? ' · drives' : ''}${b.leaveBy === 'script' ? ' · held' : ''}` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
     }) }];
     for (const slot of slots) {
       const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
@@ -289,8 +291,25 @@ export function inspectSchema(ent, id, live = {}) {
       const b = bodyOf(s);
       fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
       if (b) {
-        fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie…" });
-        fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: 'sitchair', options: SOCKET_POSES.map((v) => ({ v, label: v })) });
+        // the body block (shared/sockbody.js): the common fields as rows, the structured ones (reach) as JSON; the
+        // component's own JSON hatch below reaches everything else (poses, sync, approach, exit, hold)
+        const raw = s.body ?? {}; const d = ACTION_DEFAULTS[b.action] ?? ACTION_DEFAULTS.sit;
+        fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie, stand, drive… (it also picks the default pose and anchor)" });
+        fields.push({ t: 'enum', k: `${slot}|anchor`, label: `${slot} anchor`, value: b.anchor, def: d.anchor, options: ANCHORS.map((v) => ({ v, label: v })), hint: 'the body point that lands on the socket: hips (a seat), feet (a place to stand), head, or the root' });
+        if (typeof b.pose === 'string') fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: d.pose, options: [...new Set([...SOCKET_POSES, b.pose])].map((v) => ({ v, label: v })), hint: 'the clip the body holds (any animation-library name; a blend or a phase-locked clip: edit as JSON)' });
+        else fields.push({ t: 'json', k: `${slot}|pose`, label: `${slot} pose`, value: JSON.stringify(b.pose, null, 2), hint: '{clip, time: "phase"} or a blend {by: "speed", clips: [[0, "idle"], [2, "walk"]]}; a clip name string makes it one clip again' });
+        fields.push({ t: 'enum', k: `${slot}|leaveBy`, label: `${slot} leave by`, value: b.leaveBy, def: 'any', options: [['any', 'moving, jumping or X'], ['jump', 'jump or X'], ['menu', 'X only'], ['script', 'only the world (a script)']].map(([v, label]) => ({ v, label })) });
+        fields.push({ t: 'enum', k: `${slot}|who`, label: `${slot} who`, value: b.who ?? 'anyone', def: 'anyone', options: [['anyone', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })) });
+        fields.push({ t: 'check', k: `${slot}|fromSeat`, label: `${slot}: hop from another seat`, value: b.fromSeat, hint: 'someone seated elsewhere may move here without standing up' });
+        fields.push({ t: 'text', k: `${slot}|enter`, label: `${slot} enter clip`, value: b.enter ?? '', hint: "one-shot clip while you're carried on (stand_to_sit); empty: ease on" });
+        fields.push({ t: 'text', k: `${slot}|leave`, label: `${slot} leave clip`, value: b.leave ?? '', hint: "one-shot clip while you're carried off (sit_to_stand); empty: step off" });
+        fields.push({ t: 'enum', k: `${slot}|input|move`, label: `${slot} movement keys`, value: b.input.move, def: 'none', options: [['none', 'get you off'], ['drive', 'drive the thing (one per thing)'], ['walk', 'steer your own pose']].map(([v, label]) => ({ v, label })), hint: 'drive publishes throttle/steer for the thing; walk publishes them for this body\'s pose only' });
+        fields.push({ t: 'enum', k: `${slot}|input|look`, label: `${slot} looking`, value: b.input.look, def: 'free', options: [['free', 'look around'], ['aim', 'look aims (aimYaw/aimPitch)'], ['locked', 'view locked forward']].map(([v, label]) => ({ v, label })) });
+        const lk = raw.look ?? {};
+        [['yaw', 0, 'left', -180, 180], ['yaw', 1, 'right', -180, 180], ['pitch', 0, 'down', -90, 90], ['pitch', 1, 'up', -90, 90]].forEach(([ax, i, nm, lo, hi]) =>
+          fields.push({ t: 'num', k: `${slot}|look|${ax}|${i}`, label: `${slot} look ${nm}`, value: (Array.isArray(lk[ax]) ? lk[ax][i] : b.look[ax][i]), step: 5, dp: 0, unit: '°', min: lo, max: hi, hint: ax === 'yaw' ? 'how far the head turns (yaw, degrees, + = left)' : 'how far the head tilts (pitch, degrees, + = up)' }));
+        fields.push({ t: 'enum', k: `${slot}|look|up`, label: `${slot} view up`, value: b.look.up, def: 'world', options: [['world', 'the horizon stays level'], ['socket', 'the view rolls with it']].map(([v, label]) => ({ v, label })) });
+        fields.push({ t: 'json', k: `${slot}|reach`, label: `${slot} reach`, value: JSON.stringify(raw.reach ?? {}, null, 2), collapsed: !raw.reach, hint: '{leftHand: {at: [x,y,z], q?, part?, hint?, vr: snap|track|near}}: hands (or feet) on the thing, in its frame; with part they move with it' });
       }
     }
     fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
@@ -805,18 +824,43 @@ export function editOps(ent, id, edits, live = {}) {
         const next = comps.get('sockets') ?? JSON.parse(JSON.stringify(c.sockets ?? {}));
         if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); break; }
         if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); break; }
-        const [slot, what, idx] = k.split('|');
+        const [slot, what, idx, sub] = k.split('|');
         const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
         if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); break; }
         if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); break; }
           cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); break; }
-        if (what === 'pose') { if (!SOCKET_POSES.includes(raw)) { errors.push(`sockets.${slot}|pose: one of ${SOCKET_POSES.join(', ')}`); break; }
-          cur.body = { ...(cur.body ?? {}), pose: raw }; if (raw === 'sitchair') delete cur.body.pose; comps.set('sockets', next); break; }
+        // the rest of the body block: each field written the way the door reads it (shared/sockbody.js), a default left
+        // out, and the result checked with the door's own check, so a refusal here reads as the door's would
+        const BODY = ['anchor', 'pose', 'leaveBy', 'who', 'fromSeat', 'enter', 'leave', 'input', 'look', 'reach', 'hold', 'poses', 'sync', 'approach', 'exit'];
+        if (BODY.includes(what)) {
+          const b = cur.body = { ...(cur.body ?? {}) };
+          const d = ACTION_DEFAULTS[b.action ?? 'sit'] ?? ACTION_DEFAULTS.sit;
+          const json = (v) => { if (v == null || v === '') return undefined; if (typeof v !== 'string') return v; const t = v.trim(); if (!/^[[{"]/.test(t)) return t; try { return JSON.parse(t); } catch (e) { errors.push(`sockets.${slot}|${what}: not valid JSON (${e.message})`); return null; } };
+          const put = (key, v, dflt) => { if (v === undefined || v === dflt || (v && typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) delete b[key]; else b[key] = v; };
+          if (what === 'anchor') put('anchor', String(raw), d.anchor);
+          else if (what === 'pose') { const v = json(raw); if (v === null) break; put('pose', v, d.pose); }
+          else if (what === 'leaveBy') put('leaveBy', String(raw), 'any');
+          else if (what === 'who') { const v = String(raw); put('who', v === 'visitor' ? 'anyone' : v, 'anyone'); }
+          else if (what === 'fromSeat') put('fromSeat', bool(raw) || undefined, undefined);
+          else if (what === 'enter' || what === 'leave' || what === 'sync') put(what, String(raw ?? '').trim() || undefined, undefined);
+          else if (what === 'input') { const inp = { ...(b.input ?? {}) }; if (!['move', 'look'].includes(idx)) { errors.push(`sockets.${slot}|input|${idx}: input is move or look`); break; }
+            inp[idx] = String(raw); if (inp[idx] === (idx === 'move' ? 'none' : 'free')) delete inp[idx]; put('input', inp, undefined); }
+          else if (what === 'look') { const lk = { ...(b.look ?? {}) };
+            if (idx === 'up') { lk.up = String(raw); if (lk.up === 'world') delete lk.up; }
+            else if (idx === 'yaw' || idx === 'pitch') { const lim = idx === 'yaw' ? 180 : 90; const n = num(f ?? { value: (lk[idx] ?? [-lim, lim])[+sub] ?? 0, k }, raw); if (n == null) break;
+              const r = [...(lk[idx] ?? [-lim, lim])]; r[+sub] = round(n, 2); lk[idx] = r; if (r[0] === -lim && r[1] === lim) delete lk[idx]; }
+            else { errors.push(`sockets.${slot}|look|${idx}: look is yaw|0..1, pitch|0..1, up`); break; }
+            put('look', lk, undefined); }
+          else { const v = json(raw); if (v === null) break; put(what, v, undefined); }
+          const bad = checkSockets(next);
+          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+          comps.set('sockets', next); break;
+        }
         const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) break;
         if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); }
         else if (what === 'rot') { const q = setEulerChannel(socketQ(cur), 'ZXY', sockRot(cur), +idx, n).q.map((v) => round(v, 6)); delete cur.yaw;
           if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
-        else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, pose)`); break; }
+        else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); break; }
         comps.set('sockets', next);
         break;
       }

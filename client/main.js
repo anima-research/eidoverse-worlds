@@ -106,7 +106,7 @@ import {
   rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
-  stepRagdoll, updateMountedMe, updateSeatHint,
+  stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
@@ -569,7 +569,7 @@ registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
+  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) updateMountedMe(dt);  // seated (or being carried off a seat): derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 });
@@ -613,7 +613,7 @@ registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
 bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
-bus.on('xr:stand', () => xrDismountMe());
+bus.on('xr:stand', () => xrDismountMe('menu'));
 bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
 bus.on('xr:select', (id) => sceneSelect(id));
 let _pulseAt = 0;

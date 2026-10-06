@@ -324,7 +324,10 @@ export function sendPose(now) {
   if (reach !== undefined) pose.reach = reach;
   // my seat rides every frame while I sit (presence; world.js setBodySeat): absence means standing
   const seat = avatarMounts.get(CONFIG.name);
-  if (seat?.to) pose.seat = { to: seat.to, ...(seat.slot ? { slot: seat.slot } : {}) };
+  // …with the pose I chose from its menu (and when: a sync group follows the latest), and my input where the socket
+  // routes it (throttle/steer, aimYaw/aimPitch: signals every client computes my pose from; client/lib/socksignals.js)
+  if (seat?.to) pose.seat = { to: seat.to, ...(seat.slot ? { slot: seat.slot } : {}), ...(seat.pose ? { pose: seat.pose, at: seat.at ?? 0 } : {}),
+    ...(seat.in && Object.keys(seat.in).length ? { in: Object.fromEntries(Object.entries(seat.in).map(([k, v]) => [k, Math.round(v * 1000) / 1000])) } : {}) };
   net.ws.send(JSON.stringify({ type: 'pose', pose }));
 }
 

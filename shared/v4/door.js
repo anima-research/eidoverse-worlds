@@ -8,6 +8,7 @@
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf } from "../components.js";
+import { checkSockets } from "../sockbody.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -703,22 +704,8 @@ function schemaCheck(at, comp, v) {
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
-  if (name === "sockets") { const obj = v && typeof v === "object" && !Array.isArray(v); const nums = (a, n, lim) => Array.isArray(a) && a.length === n && a.every((x) => isNum(x) && Math.abs(x) <= lim);
-    if (!obj) refuse("shape", `${at} must be {<name>: {pos, q?, part?, body?}}`, COMPONENTS.sockets.help);
-    for (const [k, sk] of Object.entries(v)) { const sat = `${at}.${k}`;
-      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/i.test(k)) refuse("shape", `${sat}: a socket's name is letters, digits, - and _ (up to 32)`, "");
-      if (!sk || typeof sk !== "object" || Array.isArray(sk)) refuse("shape", `${sat} must be {pos, q?, part?, body?}`, COMPONENTS.sockets.help);
-      unknownKeys(sat, sk, ["pos", "q", "part", "body"], "a socket");
-      if (!nums(sk.pos, 3, 1e4)) refuse("shape", `${sat}.pos must be [x, y, z] in the thing's own frame`, "");
-      if (sk.q !== undefined && !(nums(sk.q, 4, 1.0001) && Math.abs(Math.hypot(...sk.q) - 1) < 1e-3)) refuse("shape", `${sat}.q is a unit quaternion [x, y, z, w] (the socket's rotation in the thing's frame)`, "");
-      if (sk.part !== undefined && typeof sk.part !== "string") refuse("shape", `${sat}.part names a node of its model`, "");
-      if (sk.body !== undefined) { const b = sk.body;
-        if (!b || typeof b !== "object" || Array.isArray(b)) refuse("shape", `${sat}.body must be {action?, pose?, exit?, who?}`, COMPONENTS.sockets.help);
-        unknownKeys(`${sat}.body`, b, ["action", "pose", "exit", "who"], "a socket's body");
-        if (b.action !== undefined && !(typeof b.action === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(b.action))) refuse("shape", `${sat}.body.action is a verb in lower case ('sit', 'ride', 'drive')`, "");
-        if (b.pose !== undefined && typeof b.pose !== "string") refuse("shape", `${sat}.body.pose names a clip ('sitchair', 'sit')`, "");
-        if (b.exit !== undefined && !nums(b.exit, 3, 1e4)) refuse("shape", `${sat}.body.exit must be [x, y, z] in the thing's own frame`, "");
-        if (b.who !== undefined && !["visitor", "builder", "owner"].includes(b.who)) refuse("shape", `${sat}.body.who is visitor, builder or owner`, ""); } } }
+  // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
+  if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.teach || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
   if (!def.fields) return;
   const fields = Object.keys(def.fields);
@@ -1104,11 +1091,18 @@ function buildUse(ctx, a) {
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
-    const ok = socks.filter((x) => !x.body.who || RANK[roleOf(ctx.st, ctx.actor)] >= RANK[x.body.who]);
+    const may = (x) => !x.body.who || RANK[roleOf(ctx.st, ctx.actor)] >= RANK[x.body.who];
+    const slot = a.args?.slot;
+    if (slot != null) { const named = socks.find((x) => x.slot === slot);
+      if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${slot}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(slot), socks.map((x) => x.slot)) });
+      if (!may(named)) refuse("rights", `only a ${named.body.who} may ${action} ${a.id} (${slot})`, "ask someone who can"); }
+    const ok = socks.filter(may);
     if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
-    const pick = (a.args?.slot && ok.find((x) => x.slot === a.args.slot)) || ok[0];
-    // attaching is presence (your frames say where you're attached; nothing is recorded), so the door only answers
-    return { presence: true, attach: { to: a.id, slot: pick.slot, pose: pick.body.pose }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded` };
+    const pick = slot != null ? ok.find((x) => x.slot === slot) : ok[0];
+    // attaching is presence (your frames say where you're attached; nothing is recorded), so the door only answers: where,
+    // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
+    const { clip, ...body } = pick.body;
+    return { presence: true, attach: { to: a.id, slot: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");

@@ -9,13 +9,19 @@
 // not add another edge into it (§14.2).
 
 import { bodyOf } from '../../shared/components.js';
+import { mayLeave } from '../../shared/sockbody.js';
+import { driveSeat, releaseSeat } from './seatbody.js';
+import { serverNow } from './remotes.js';
+import { isV4, requestV4 } from './net.js';
+import { refusalText } from '../../shared/v4/refusal.js';
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import { mergePose } from '../../shared/humanoid.js';
 import {
-  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
+  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
 } from './controller.js';
+import { camera } from './core.js';
 import { avatarMounts, mountTransform, comps, socketWorldPos, setBodySeat, entities } from './world.js';
 import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
@@ -80,64 +86,173 @@ export function getUp() {
 }
 // ---------------------------------------------------------------- mounted
 // While seated/riding, my body is DERIVED from the parent entity's live
-// transform + socket (same math remotes use for me) — so I visibly swing on
-// the swing I'm sitting on. Movement input means "I want off": it emits a
-// dismount with my landing spot stamped (the plane-transition invariant),
-// and control returns to the normal ground controller.
+// transform + socket (same math remotes use for me: seatbody.js) — so I visibly
+// swing on the swing I'm sitting on. Getting off is the socket's to allow
+// (body.leaveBy, shared/sockbody.js mayLeave): moving, jumping, the explicit
+// get-up (X, the stand tile, the radial menu), or only a script. Getting off
+// emits no verb — my next frame simply carries no seat — and stamps where I land.
 const _seatP = new THREE.Vector3();
-export function dismountMe() {
-  const sw = mountTransform(CONFIG.name, _seatP);
+let leaving = null;            // {from, to, yaw, clip, t0, dur}: carried off the seat while a leave clip plays
+export const seatLeaving = () => !!leaving;
+/** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
+export function mySeatBody() {
+  const m = avatarMounts.get(CONFIG.name);
+  return m ? bodyOf(comps.get(m.to)?.sockets?.[m.slot]) : null;
+}
+/** Get off my seat, if the socket lets this kind of leaving through ('move' | 'jump' | 'menu' | 'script'). True when
+ *  I'm off (or on my way off, with a leave clip). */
+export function dismountMe(kind = 'menu') {
+  const m = avatarMounts.get(CONFIG.name);
+  if (!m) return false;
+  const body = mySeatBody();
+  if (!mayLeave(body, kind)) {
+    flashHint(body?.leaveBy === 'script' ? "this seat lets you go only when the world does" : body?.leaveBy === 'jump' ? '<kbd>Space</kbd> or <kbd>X</kbd> to get off' : '<kbd>X</kbd> to get off');
+    return false;
+  }
+  const me = getMe();
+  const sw = mountTransform(CONFIG.name, _seatP, { av: me });
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
+  let exitYaw = yaw;
   // the socket's exit (its own frame), where it names one: off a horse to the side, out of a car door
-  const m = sw ? avatarMounts.get(CONFIG.name) : null;
-  const ex = m ? bodyOf(comps.get(m.to)?.sockets?.[m.slot])?.exit : null;
-  if (ex && entities.get(m.to)) { entities.get(m.to).updateWorldMatrix(true, false); off.set(...ex).applyMatrix4(entities.get(m.to).matrixWorld); }
-  else { off.x += Math.sin(yaw) * 0.7; off.z += Math.cos(yaw) * 0.7; }
+  const ex = body?.exit;
+  if (ex && entities.get(m.to)) {
+    const obj = entities.get(m.to); obj.updateWorldMatrix(true, false);
+    off.set(ex[0], ex[1], ex[2]).applyMatrix4(obj.matrixWorld);
+    if (ex.length === 4) { const f = new THREE.Vector3(Math.sin(ex[3]), 0, Math.cos(ex[3])).transformDirection(obj.matrixWorld); exitYaw = Math.atan2(f.x, f.z); }
+  } else { off.x += Math.sin(yaw) * 0.7; off.z += Math.cos(yaw) * 0.7; }
   setBodySeat(CONFIG.name, null);        // presence: my next frame carries no seat, and everyone stands me up
-  getMe()?.root.rotation.set(0, yaw, 0);  // stand upright again (a rocket seat may have had me on my back)
-  myState.pos.set(off.x, 0, off.z);
-  setPosture('stand');
-}
-export function updateMountedMe(dt) {
-  const sw = mountTransform(CONFIG.name, _seatP);
-  if (!sw) return;                       // parent still downloading
-  const me = getMe();
-  myState.pos.copy(_seatP);
-  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
-  myState.speed = 0;
-  myState.clip = sw.pose;
-  if (me) {
-    me.root.position.copy(_seatP);
-    me.root.quaternion.fromArray(sw.q);   // the socket's whole rotation: upright on a chair, on your back in a rocket
-    me.setClip(sw.pose, 0);
+  const from = me ? me.root.position.clone() : off.clone();
+  const leaveClip = me ? body?.leave ?? null : null;
+  releaseSeat(me);
+  if (leaveClip && me) {
+    // carried off while the leave clip plays, its time locked to the carry (the same warp that carries you on)
+    const a = me.ensureClip(leaveClip);
+    leaving = { from, to: new THREE.Vector3(off.x, off.y, off.z), yaw: exitYaw, clip: leaveClip, t0: performance.now(), dur: a ? a.getClip().duration : 1.2 };
+    myState.clip = leaveClip;
+  } else {
+    me?.root.rotation.set(0, exitYaw, 0);  // stand upright again (a rocket seat may have had me on my back)
+    myState.pos.set(off.x, 0, off.z); myState.yaw = exitYaw;
+    setPosture('stand');
   }
+  return true;
+}
+function stepLeaving(dt) {
+  const me = getMe();
+  const u = Math.min(1, (performance.now() - leaving.t0) / 1000 / leaving.dur);
+  const k = u * u * (3 - 2 * u);
+  myState.pos.copy(leaving.from).lerp(leaving.to, k);
+  myState.yaw = leaving.yaw; myState.speed = 0; myState.clip = leaving.clip;
+  if (me) {
+    me.root.position.copy(myState.pos);
+    me.root.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), leaving.yaw), Math.min(1, 10 * dt));
+    me.setSeatBlend([[leaving.clip, 1]], u);
+    updateFollowCamera(dt, me);
+  }
+  if (u >= 1) {
+    me?.setSeatBlend(null); me?.root.rotation.set(0, leaving.yaw, 0);
+    myState.pos.y = 0; myState.clip = 'idle'; leaving = null;
+    setPosture('stand');
+  }
+}
+
+const MOVE = { fwd: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'] };
+const held = (l) => l.some((k) => keys.has(k));
+const _camUp = new THREE.Vector3(), _camQ = new THREE.Quaternion(), _camO = new THREE.Vector3(), _camD = new THREE.Vector3();
+let lastSeat = null;
+export function updateMountedMe(dt) {
+  if (leaving) { stepLeaving(dt); return; }
+  const me = getMe();
+  const m = avatarMounts.get(CONFIG.name);
+  if (!m || !me) return;
+  const body = mySeatBody();
+  if (!body) {   // the socket went away under me (removed, or a script took the seat away): that is how a script lets go
+    dismountMe('script');
+    return;
+  }
+  // my input, where the socket routes it: published as signals on my seat frame (net.js), never as physics here
+  const seatYaw = lastSeat?.yaw ?? myState.yaw;
+  const inp = {};
+  if (body.input.move !== 'none') {
+    inp.throttle = Math.max(-1, Math.min(1, (held(MOVE.fwd) ? 1 : 0) - (held(MOVE.back) ? 1 : 0) + (xrIntent.active ? xrIntent.fwd : 0)));
+    inp.steer = Math.max(-1, Math.min(1, (held(MOVE.right) ? 1 : 0) - (held(MOVE.left) ? 1 : 0) + (xrIntent.active ? xrIntent.strafe : 0)));
+  }
+  if (body.input.look !== 'locked') {   // where I look, relative to the seat: the camera looks back along camYaw
+    inp.aimYaw = Math.atan2(Math.sin(camYaw + Math.PI - seatYaw), Math.cos(camYaw + Math.PI - seatYaw));
+    inp.aimPitch = Math.max(-1.5, Math.min(1.5, -(camPitch - 0.32)));
+  }
+  m.in = inp;
+  me.pitch = 0;   // the seat turns the head (setSeatLook); the walking head pitch stays off while seated
+  const r = driveSeat(me, CONFIG.name, { dt, nowMs: serverNow(), local: true });
+  if (!r) { updateFollowCamera(dt, me); return; }   // parent still downloading
+  lastSeat = r;
+  myState.pos.copy(r.pos);
+  myState.yaw = r.yaw;
+  myState.speed = 0;
+  myState.clip = r.clip;
+  me.root.position.copy(r.pos);
+  me.root.quaternion.copy(r.q);   // the socket's whole rotation: upright on a chair, on your back in a rocket
+  // look locked: the view faces the way the seat does (the camera sits behind it)
+  if (body.input.look === 'locked') setCamYaw(r.yaw + Math.PI);
   // The camera lives in updateMe, which we skip while seated — so drive it
   // here too (the ragdoll path learned this the same way), or it freezes on
   // the frame you sat down and never rides the seat (#75). First person keeps
   // its own-mesh exclusion; both modes follow the socket, moving or not.
-  if (me) updateFollowCamera(dt, me);
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((k) => keys.has(k))) dismountMe();
+  updateFollowCamera(dt, me);
+  // look.up 'socket': the view rolls with the thing (a rocket, a loop-the-loop); 'world' keeps the horizon level
+  if (body.look.up === 'socket') {
+    _camQ.fromArray(r.sw.socketQ); const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_camQ);
+    const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(f.x, f.z)).invert().premultiply(_camQ);   // the socket's rotation without its heading
+    const pivot = me.headWorldPosition(new THREE.Vector3()) ?? r.pos;
+    camera.getWorldDirection(_camD);
+    _camO.copy(camera.position).sub(pivot).applyQuaternion(tilt);
+    camera.position.copy(pivot).add(_camO);
+    camera.up.copy(_camUp.set(0, 1, 0).applyQuaternion(tilt));
+    camera.lookAt(_camO.copy(camera.position).add(_camD.applyQuaternion(tilt)));
+  } else camera.up.set(0, 1, 0);
+  // getting off, as the socket allows: movement keys (only when the seat doesn't take them), jump
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((k) => keys.has(k)) && body.input.move === 'none') { if (mayLeave(body, 'move')) { camera.up.set(0, 1, 0); dismountMe('move'); } }
+  else if (keys.has('Space') || (xrIntent.active && xrIntent.jump)) { if (mayLeave(body, 'jump')) { camera.up.set(0, 1, 0); dismountMe('jump'); } }
+}
+
+/** Pick one of my seat's named poses (its `poses` menu), or its default (null). Rides my seat frames with the time I
+ *  chose it, so a sync group follows the latest choice on every screen. Returns the menu, or null when not seated. */
+export function chooseSeatPose(name) {
+  const m = avatarMounts.get(CONFIG.name); const b = mySeatBody();
+  if (!m || !b) return null;
+  const menu = Object.keys(b.poses);
+  if (name == null || name === '') return menu;   // just asking
+  if (name === 'default') { delete m.pose; delete m.at; return menu; }
+  if (!menu.includes(name)) return menu;
+  m.pose = name; m.at = serverNow();
+  return menu;
 }
 
 /** Nearest declared seat: distance to the SOCKET's world point, not the
  *  entity's origin — a swing's pivot frame is not where you sit, and on a
  *  ferry the helm can be a deck-length from the hull's center. Every slot
  *  competes, not just the first. `arg` narrows to one entity by id prefix
- *  (case-insensitive), so `/sit 34` reaches 3485c78e without the full hash. */
+ *  (case-insensitive), so `/sit 34` reaches 3485c78e without the full hash.
+ *  A seat someone is already on is taken (one occupant per socket); the seat
+ *  I'm on doesn't count. */
 const _sitV = new THREE.Vector3();
 function nearestSeat(arg, reach) {
   const want = arg ? String(arg).toLowerCase() : null;
+  const mine = avatarMounts.get(CONFIG.name);
+  const taken = new Set([...avatarMounts].filter(([id]) => id !== CONFIG.name).map(([, o]) => `${o.to}/${o.slot}`));
   let best = null, bestD = reach;
   for (const [id, bag] of comps) {
     if (!bag.sockets) continue;
     if (want && !id.toLowerCase().startsWith(want)) continue;
     for (const slot of Object.keys(bag.sockets)) {
-      if (!bodyOf(bag.sockets[slot])) continue;   // an attachment point for things, not a seat
+      const body = bodyOf(bag.sockets[slot]);
+      if (!body) continue;   // an attachment point for things, not a seat
+      if (mine && mine.to === id && mine.slot === slot) continue;
+      if (taken.has(`${id}/${slot}`)) continue;
       const p = socketWorldPos(id, slot, _sitV);
       if (!p) continue;
       const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);
-      if (d < bestD) { bestD = d; best = { id, slot, d }; }
+      if (d < bestD) { bestD = d; best = { id, slot, d, body }; }
     }
   }
   return best;
@@ -146,16 +261,31 @@ function nearestSeat(arg, reach) {
 /** Sit ON something: nearest socket within arm's reach (or a named entity
  *  from anywhere). When nothing is in reach but a seat exists further out,
  *  SAY so — the silent ground-sit fallback read as "sitting is broken" to
- *  anyone standing four meters from a swing they could name but not see. */
-export function trySitOn(arg) {
+ *  anyone standing four meters from a swing they could name but not see.
+ *  In a v4 world the door is asked first (`use {id, action, args: {slot}}`):
+ *  it checks who may and answers with what the body does; nothing is logged.
+ *  Already seated, I may move straight to a socket that allows it (fromSeat). */
+export function trySitOn(arg, slot = null) {
+  const mine = avatarMounts.get(CONFIG.name);
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
+  if (best && slot && best.slot !== slot) { const b = bodyOf(comps.get(best.id)?.sockets?.[slot]); if (b) Object.assign(best, { slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
     if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);
     return false;
   }
-  setBodySeat(CONFIG.name, { to: best.id, slot: best.slot });   // presence: my frames carry the seat (world.js)
-  logChat('*', `you sit on ${best.id} (${best.slot}) — X or move to get off`);
+  if (mine && !best.body.fromSeat) { logChat('*', `get up first — ${best.id} (${best.slot}) doesn't take you straight from another seat`); return true; }
+  const take = () => {
+    if (mine && avatarMounts.get(CONFIG.name) !== mine) return;   // I got up (or moved) while the door answered
+    if (mine) releaseSeat(getMe());
+    setBodySeat(CONFIG.name, { to: best.id, slot: best.slot });   // presence: my frames carry the seat (world.js)
+    const lb = best.body.leaveBy;
+    logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
+  };
+  if (!isV4()) { take(); return true; }
+  requestV4('use', { id: best.id, action: best.body.action, args: { slot: best.slot } }).then((r) => {
+    if (r?.ok) take(); else logChat('*', refusalText(`${best.body.action} ${best.id}`, r));
+  });
   return true;
 }
 
@@ -169,7 +299,9 @@ export function updateSeatHint(dt) {
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) hint = '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off';
+  if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
+    hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? '<kbd>X</kbd> get up · <kbd>WASD</kbd> drive' : '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off')
+      : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? '<kbd>Space</kbd> or <kbd>X</kbd> get up' : '<kbd>X</kbd> get up'; }
   else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
   setAmbientHint(hint);
 }
@@ -348,7 +480,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // the controller's own layers (geometry seat pans, then the ground sit).
   setMountedHook(() => avatarMounts.has(CONFIG.name));
   setSeatHook(() => {
-    if (avatarMounts.has(CONFIG.name)) { dismountMe(); return true; }
+    if (avatarMounts.has(CONFIG.name)) { dismountMe('menu'); return true; }
     if (downed) return false;
     return trySitOn(null);
   });

@@ -9,7 +9,8 @@
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
-import { avatarMounts, mountTransform, setBodySeat } from './world.js';
+import { avatarMounts, setBodySeat } from './world.js';
+import { driveSeat, releaseSeat } from './seatbody.js';
 import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
@@ -388,10 +389,14 @@ export function updateRemotes(dt, now = performance.now()) {
     // swing mid-pendulum — presence samples are ignored while mounted, so a
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
-      const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
+      const s0 = buf[buf.length - 1];
+      // the same driver my own seat runs (seatbody.js): socket, anchor, signals, pose, reach, look — so a sitter looks
+      // the same on every screen
+      const seated = driveSeat(r.avatar, r.id, { dt, nowMs: serverNow(), path: r.avatarPath, xr: s0?.xr ?? null });
+      const sw = seated?.sw;
       if (sw) {
-        r.avatar.root.position.copy(_a);
-        r.avatar.root.quaternion.fromArray(sw.q);   // the socket's whole rotation
+        r.avatar.root.position.copy(seated.pos);
+        r.avatar.root.quaternion.copy(seated.q);   // the socket's whole rotation
         // Declared seat state (#101): the ≈ marker and one console line per
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
@@ -419,9 +424,7 @@ export function updateRemotes(dt, now = performance.now()) {
           applyXRPresence(r, s, s, 1);   // …and still looks around / points
         }
         r.avatar.setLimp(false);
-        if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }
-        r.avatar.setClip(sw.pose, 0);   // emote-aware: no-ops while a gesture owns the body
-        if ((s?.clipTimeSlot ?? s?.clip) === sw.pose) syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
+        r.lastClip = seated.clip;   // the seat's pose layer owns the base clips (avatar.setSeatBlend); emotes still play over it
         const d = r.avatar.root.position.distanceTo(eye);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;
@@ -430,10 +433,13 @@ export function updateRemotes(dt, now = performance.now()) {
         continue;
       }
       // parent still downloading — fall through to normal presence meanwhile
-    } else if (r.avatar._seatApprox) {
-      // stood up: the marker comes off and the next sit declares afresh
-      r.avatar.setSeatApprox(false);
-      clearSeatState(r.id);
+    } else {
+      if (r.avatar._seatState) releaseSeat(r.avatar);   // stood up: the seat lets go of the body
+      if (r.avatar._seatApprox) {
+        // stood up: the marker comes off and the next sit declares afresh
+        r.avatar.setSeatApprox(false);
+        clearSeatState(r.id);
+      }
     }
 
     if (buf.length >= 2) {

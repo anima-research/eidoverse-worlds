@@ -5,6 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
+import { describeBody, mayLeave } from "../shared/sockbody.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
@@ -250,9 +251,13 @@ export class WorldAgent {
   /** Bodies' seats are PRESENCE (v4: bodies aren't entities, nothing is logged): a body's pose frame carries
    *  `seat: {to, slot}` while it sits. Others' come from their frames; mine rides my frames. */
   bodySeats = new Map<string, { to: string; slot?: string }>();
-  mySeat: { to: string; slot?: string } | null = null;
+  mySeat: { to: string; slot?: string; pose?: string; at?: number } | null = null;
+  /** My seat's body block (shared/sockbody.js), or null standing. */
+  mySeatBody() { const m = this.mySeat; return m ? bodyOf(this.entities.get(m.to)?.comp?.sockets?.[m.slot ?? ""]) : null; }
+  /** May I leave my seat this way? (its leaveBy: a 'script' seat lets go only when the world does) */
+  mayLeaveSeat(kind: "move" | "jump" | "menu" | "script") { const b: any = this.mySeatBody(); return !b || mayLeave(b, kind) || !this.entities.get(this.mySeat!.to)?.comp?.sockets?.[this.mySeat!.slot ?? ""]; }
   /** sit on a thing's seat socket (presence: my frames carry it), or stand (null) */
-  setSeat(seat: { to: string; slot?: string } | null) {
+  setSeat(seat: { to: string; slot?: string; pose?: string; at?: number } | null) {
     this.mySeat = seat;
     if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
   }
@@ -348,7 +353,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? bodyOf(this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""])?.pose ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""])?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -1000,7 +1005,7 @@ export class WorldAgent {
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
     const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
-    const clip = bodyOf(socket)?.pose ?? "sitchair";
+    const clip = bodyOf(socket)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -2671,7 +2676,7 @@ export class WorldAgent {
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mySeat) this.setSeat(null);
+    if (this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
@@ -3093,7 +3098,7 @@ export class WorldAgent {
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
     // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mySeat) this.setSeat(null);
+    if (clip === "idle" && this.joined && this.mySeat && this.mayLeaveSeat("menu")) this.setSeat(null);
     this.clip = clip;
   }
 
@@ -3237,7 +3242,7 @@ export class WorldAgent {
    *  one contract, three declarations. Empty when the seat is profiled. */
   private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
     const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
-    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.pose ?? "sitchair" });
+    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
@@ -3354,8 +3359,13 @@ export class WorldAgent {
       // in one world disagree by when they joined.
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
-      if (c.sockets) { const acts = [...new Set(Object.values<any>(c.sockets).map((s) => bodyOf(s)?.action).filter(Boolean))];
-        aff.push(`${acts.length ? `${acts.join("/")} here (use it): ` : "attach points: "}${Object.keys(c.sockets).join(", ")}`); }
+      if (c.sockets) {
+        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it
+        const on = new Map([...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => [m.slot ?? "", rid]));
+        const lines = Object.entries<any>(c.sockets).map(([slot, s]) => { const b = bodyOf(s); return b ? `${describeBody(slot, b)}${on.has(slot) ? ` — ${on.get(slot)} is on it` : ""}` : null; }).filter(Boolean);
+        const things = Object.keys(c.sockets).filter((k) => !bodyOf(c.sockets[k]));
+        if (lines.length) aff.push(`use it (sit {on: "${e.id}", slot}): ${lines.join(" · ")}`);
+        if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that

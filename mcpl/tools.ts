@@ -22,6 +22,7 @@
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
 import { bodyOf } from "../shared/components.js";
+import { describeBody } from "../shared/sockbody.js";
 import { dec as decName } from "../shared/v4/names.js";
 import { actorName } from "../shared/v4/names.js";
 import { refusalText, warningText, touchWords } from "../shared/v4/refusal.js";
@@ -112,7 +113,7 @@ export const TOOLS = [
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until clear_reach, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target currently has no tool to revoke someone else's incoming reach; agree on release with them. Presence-only, never logged.`, inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "clear_reach", description: "Let go: release one of YOUR reaching limbs (or all of them when called bare), easing back to normal animation. Anyone you were touching sees the hand withdraw. This clears your outgoing reaches; it does not revoke someone else's incoming reach toward you.", inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"] } } } },
-  { name: "sit", description: "Sit on a thing's seat (a socket it declares): your body rides it — swings with the swing — until you walk or call sit with no `on`. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { on: { type: "string" }, slot: { type: "string" } } } },
+  { name: "sit", description: "Get on a thing at one of its sockets (look says what each does: sit, ride, drive, stand at…): your body rides it — swings with the swing, holds the socket's pose, puts its hands where the socket says — until you get off (sit with no `on`, or walk; a seat may only let you go a certain way, which look and the reply say). Pick the socket by `slot` or by `action`; `pose` picks one of its named poses. A seat that allows it (fromSeat) takes you straight from another. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { on: { type: "string" }, slot: { type: "string" }, action: { type: "string" }, pose: { type: "string" } } } },
   { name: "posture", description: "Settle into a posture: sit (on the ground), sitchair (chair height), lie, or stand. Held until you stand or walk; survives leaving and rejoining, like a held pose.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] } }, required: ["kind"] } },
   { name: "ragdoll", description: "Shove another body over — a physics ragdoll. `target` is who falls; THEY simulate it on their own body (you never simulate someone else), and it settles into a held pose everyone sees. The shove is directed from where YOU stand through them (walk to the right side of someone before pushing); `strength` 0.5–4 m/s, default 2.2. Being knocked over is opt-in for humans and default for agent performers.", inputSchema: { type: "object", properties: { target: { type: "string" }, strength: { type: "number" } }, required: ["target"] } },
   { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion AND over any pose you hold or animation already playing — it takes only the bones it animates; replace:true ends your held pose and other animations first. Relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, replace: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
@@ -285,17 +286,38 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   sit: async (ag, a) => {
-      // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit,
-      // and walking or standing gets me off. The thing must declare the seat (a sockets component).
+      // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit.
+      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). In a v4 world the
+      // door is asked first (use {id, action, args: {slot}}): it checks who may. The seat's leaveBy decides how I get
+      // off, and fromSeat whether I may move to it without standing.
       const on = String(a.on ?? "").trim();
-      if (!on) { ag.setSeat(null); return text("you stand up"); }
+      const mine = ag.mySeat;
+      if (!on) {
+        if (!mine) return text("you're not on a seat");
+        if (!ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you can't get off ${mine.to} (${mine.slot}): it lets you go only when the world does (a script, or the seat being taken away)` }], isError: true };
+        ag.setSeat(null); return text("you stand up");
+      }
       const rec: any = ag.foldRecord(on);
       if (!rec) return { content: [{ type: "text", text: `sit: nothing here called "${on}"` }], isError: true };
-      const socks = Object.fromEntries(Object.entries<any>(rec.comp?.sockets ?? {}).filter(([, s]) => bodyOf(s)));   // only sockets a person can attach to
-      const slot = a.slot != null ? String(a.slot) : Object.keys(socks)[0];
-      if (!slot || !socks[slot]) return { content: [{ type: "text", text: `sit: ${on} declares no seat${a.slot != null ? ` called "${a.slot}"` : ""} (its sockets: ${Object.keys(socks).join(", ") || "none"}) — a builder can add one: edit {"sockets.seat|pos|1": 0.5}` }], isError: true };
-      ag.setSeat({ to: on, slot });
-      return text(`you sit on ${on} (${slot}) — walk or sit {} to get up`);
+      const all = Object.entries<any>(rec.comp?.sockets ?? {}).map(([slot, s]) => [slot, bodyOf(s)] as const).filter(([, b]) => b);   // only sockets a person can attach to
+      const taken = new Set([...ag.mounts.entries()].filter(([id, m]) => id !== ag.name && m.to === on).map(([, m]) => m.slot ?? ""));
+      const fits = all.filter(([slot, b]: any) => (a.slot == null || slot === String(a.slot)) && (a.action == null || b.action === String(a.action)));
+      const pick: any = fits.find(([slot]) => !taken.has(slot)) ?? null;
+      if (!pick) {
+        const why = !all.length ? "declares no seat" : !fits.length ? `has no ${a.action != null ? `'${a.action}' ` : ""}seat${a.slot != null ? ` called "${a.slot}"` : ""}` : "has every such seat taken";
+        return { content: [{ type: "text", text: `sit: ${on} ${why} (its seats: ${all.map(([slot, b]: any) => `${slot} (${b.action})`).join(", ") || "none"})${all.length ? "" : ` — a builder can add one: edit {"sockets.seat|pos|1": 0.5}`}` }], isError: true };
+      }
+      const [slot, body] = pick;
+      if (mine && !(mine.to === on && mine.slot === slot)) {
+        if (!body.fromSeat) return { content: [{ type: "text", text: `sit: you're on ${mine.to} (${mine.slot}); ${on} (${slot}) doesn't take you straight from another seat — sit {} to get up first` }], isError: true };
+      }
+      if (a.pose != null && body.poses[String(a.pose)] === undefined) return { content: [{ type: "text", text: `sit: ${on} (${slot}) has no pose "${a.pose}" (its poses: ${Object.keys(body.poses).join(", ") || "only its own"})` }], isError: true };
+      if (ag.v4) {
+        const r = await ag.door("use", { id: on, action: body.action, args: { slot } });
+        if (!r?.ok) return { content: [{ type: "text", text: `sit: the door refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.teach ? ` — ${r.refused.teach}` : ""}` }], isError: true };
+      }
+      ag.setSeat({ to: on, slot, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
+      return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
   },
   posture: async (ag, a, ctx, name) => {
       const kind = String(a.kind ?? "");
@@ -356,6 +378,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   walk_to: async (ag, a, ctx, name) => {
+      if (ag.mySeat && !ag.mayLeaveSeat("menu")) return { content: [{ type: "text", text: `you're held on ${ag.mySeat.to} (${ag.mySeat.slot}): it lets you go only when the world does` }], isError: true };
       const x = Number(a.x), z = Number(a.z), tolerance = a.tolerance ?? 0.01;
       if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4)
         return { content: [{ type: "text", text: "walk_to needs finite x/z and tolerance between 0 and 0.4 metres" }], isError: true };

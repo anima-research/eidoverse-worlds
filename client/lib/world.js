@@ -53,9 +53,20 @@ export const avatarMounts = new Map();
 export function setBodySeat(id, seat) {
   const cur = avatarMounts.get(id);
   if (!seat?.to) { if (cur) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); } return; }
-  if (cur?.to === seat.to && (cur.slot ?? null) === (seat.slot ?? null)) return;
-  avatarMounts.set(id, { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) });
+  if (cur?.to === seat.to && (cur.slot ?? null) === (seat.slot ?? null)) { seatExtras(cur, seat); return; }
+  const m = { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) };
+  seatExtras(m, seat);
+  avatarMounts.set(id, m);
   bus.emit('mount', { id, to: String(seat.to), slot: seat.slot });
+}
+/** What else a seat frame carries (shared/sockbody.js): the pose the occupant chose from the socket's menu and when
+ *  (`pose`, `at`: a sync group follows the latest choice), and their input (`in`: throttle, steer, aimYaw, aimPitch)
+ *  when the socket routes it. Read by seatbody.js for every occupant, mine and everyone else's, the same way. */
+function seatExtras(m, seat) {
+  const fin = Number.isFinite;
+  if (typeof seat.pose === 'string' && /^[a-z0-9][a-z0-9_-]{0,31}$/i.test(seat.pose)) { m.pose = seat.pose; m.at = fin(seat.at) ? seat.at : 0; } else { delete m.pose; delete m.at; }
+  const i = seat.in;
+  if (i && typeof i === 'object') { m.in = {}; for (const k of ['throttle', 'steer', 'aimYaw', 'aimPitch']) if (fin(i[k])) m.in[k] = i[k]; } else delete m.in;
 }
 /** id -> bound runtime scripts (server sandbox AND client-mod offers), from
  *  `behavior` entries. mods.js consumes the runtime:"client" ones. */
@@ -386,19 +397,26 @@ const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtM = new THREE.Matrix4();
 const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
-/** Fill outPos with rider's world seat position; returns {yaw, pose, to,
- *  seatState, seatReason} or null when not mounted (or the parent isn't live
- *  yet). `rider` is {path, av} — the roster path and live wrapper of the
- *  body being seated; without it the seat is declared approximate, because
- *  a correction we cannot gate is a correction we may not apply (#101). */
-export function mountTransform(riderId, outPos, rider) {
+/** Fill outPos with the rider's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
+ *  body, sock, upright, yaw, pose, to, seatState, seatReason} or null when not mounted (or the parent isn't live yet).
+ *  `rider` is {path, av} — the roster path and live wrapper of the body being seated.
+ *
+ *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
+ *  a seat, feet for a standing place, head, or the root itself — measured from the rider's posed skeleton
+ *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
+ *  Until the body has been measured the root sits at the socket, declared approximate. (v1's seat-profile correction,
+ *  #101, still applies to a v1 'surface' socket that has no body anchor.) */
+const _mtP = new THREE.Vector3(), _mtD = new THREE.Quaternion();
+export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   const m = avatarMounts.get(riderId);
   if (!m) return null;
   const parent = entities.get(m.to);
   if (!parent) return null;
   const sock = (comps.get(m.to)?.sockets ?? {})[m.slot] ?? {};
+  const body = bodyOf(sock);
   parent.updateWorldMatrix(true, false);
   _mtF.set(...(m.offset ?? sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
+  _mtD.identity();
   const part = sock.part ? findPart(parent, String(sock.part)) : null;
   if (part && part.parent && part.userData.mbase) {
     // mbase = the part's rest pose, captured by motion.js the first time it
@@ -408,29 +426,37 @@ export function mountTransform(riderId, outPos, rider) {
     _mtM.compose(_mtV.set(...b.pos), _mtQ.fromArray(b.quat), part.scale)
       .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
     _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
+    // …and the rider turns with it (a swing's plank tilts its sitter): the part's displacement, live ∘ rest⁻¹
+    part.parent.getWorldQuaternion(_mtS).multiply(_mtQ.fromArray(b.quat));
+    part.getWorldQuaternion(_mtD).multiply(_mtS.invert());
   }
-  // The profile correction (#101): contact plane onto the authored socket
-  // plane, applied AFTER part displacement so a profiled rider carries it
-  // through a moving part's arc. The subtraction is along WORLD up — mounted
-  // bodies render upright (yaw only, below), so a tilted parent's normal
-  // would displace the root laterally while the body's contact geometry
-  // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
-  // closed = today's root-at-socket, declared, never silent.
-  // the rider's WHOLE rotation: the parent's, then the socket's (a rocket seat lies on its back), then the rider's own
-  // heading, where set, instead of the socket's. The seat-height correction is a world-up subtraction, so it only holds
-  // while the socket stands upright; a tilted socket seats the root at the socket, declared approximate.
+  // the rider's WHOLE rotation: the part's displacement, the parent's, then the socket's (a rocket seat lies on its
+  // back), then the rider's own heading, where set, instead of the socket's
   parent.getWorldQuaternion(_mtQ);
-  _mtR.copy(_mtQ).multiply(Number.isFinite(m.yaw) ? _mtS.setFromAxisAngle(_UP, m.yaw) : _mtS.fromArray(socketQ(sock)));   // a rider's own heading replaces the socket's
+  const socketQw = _mtQ.clone().premultiply(_mtD).multiply(_mtS.fromArray(socketQ(sock)));
+  _mtR.copy(_mtQ).premultiply(_mtD).multiply(Number.isFinite(m.yaw) ? _mtS.setFromAxisAngle(_UP, m.yaw) : _mtS.fromArray(socketQ(sock)));
   const upright = _mtV.set(0, 1, 0).applyQuaternion(_mtR).y > 0.966;   // within 15°
-  const seat = upright ? seatCorrectionFor(rider, sock) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
-  if (seat.applied) {
-    const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
-    if (c) _mtF.set(c[0], c[1], c[2]);
+  const socketPos = _mtF.toArray();
+  let state = 'approximate', reason = null;
+  if (body && sock.seatAnchor !== 'surface') {
+    if (poseOffset) _mtF.add(_mtP.fromArray(poseOffset).applyQuaternion(socketQw));
+    if (body.anchor === 'root') state = 'anchored';
+    else {
+      rider?.av?.setAnchorWant?.(body.anchor);
+      const off = rider?.av?.anchorOffset?.();
+      if (off) { _mtF.sub(_mtP.fromArray(off).multiply(rider.av.root.scale).applyQuaternion(_mtR)); state = 'anchored'; }
+      else reason = rider?.av ? `measuring the ${body.anchor}` : 'body loading';
+    }
+  } else {
+    // v1's seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
+    const seat = upright ? seatCorrectionFor(rider, sock) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
+    if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
+    else reason = seat.reason;
   }
   outPos.copy(_mtF);
   _mtF.set(0, 0, 1).applyQuaternion(_mtR);
-  return { q: _mtR.toArray(), upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: bodyOf(sock)?.pose ?? 'sitchair', to: m.to,
-    seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
+  return { q: _mtR.toArray(), socketPos, socketQ: socketQw.toArray(), body, sock, upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: body?.clip ?? 'sitchair', to: m.to, slot: m.slot ?? null,
+    seatState: state, seatReason: reason };
 }
 
 // sky.js owns the current args; world.js only needs them to merge a weather
