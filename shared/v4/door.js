@@ -1880,6 +1880,10 @@ const TOOLS = {
   new(w, actor, a) {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
+    // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
+    if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+      if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || Object.keys(f).some((k) => !["world", "head", "name"].includes(k)))
+        refuse("shape", "new {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
     // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
     // here in custody) is tier 0; rewind_window is left at its default (1000 state entries).

@@ -236,3 +236,91 @@ export function translateV1World(srcDir: string, destDir: string) {
   dir.put(planned);
   return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
 }
+
+// ---------- fork and reset (v1 parity, done the v4 way) ----------
+const WORLD_NAME = /^[a-z0-9_-]{1,64}$/i;
+const headOf = (live: Any) => live.headAt(live.entries.length - 1);
+/** A thing's parents before it: a batch creates children after what they hang from. */
+function parentsFirst(st: Any): string[] {
+  const out: string[] = [], seen = new Set<string>();
+  const visit = (id: string, depth = 0) => { if (seen.has(id) || depth > 64) return; seen.add(id);
+    const p = st.entities[id]?.c.parent?.to; if (typeof p === "string" && st.entities[p]) visit(p, depth + 1); out.push(id); };
+  for (const id of Object.keys(st.entities)) if (id !== "@world") visit(id);
+  return out;
+}
+/** Every component of the source as ordinary door requests (the same gate as a hand edit), in batches under the
+ *  1 MiB line cap. Locks and pins are written last, after everything they'd protect exists. */
+function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => boolean) {
+  const reqs: Any[] = [], late: Any[] = [];
+  for (const [k, v] of Object.entries<Any>(st.entities["@world"]?.c ?? {})) if (!skipWorld(k)) reqs.push({ tool: "set", args: { id: "@world", component: k, value: v } });
+  for (const id of parentsFirst(st)) {
+    const { model, lock, ...comps } = st.entities[id].c;
+    reqs.push({ tool: "create", args: { id, ...(model !== undefined ? { model } : {}), components: comps } });
+    if (lock !== undefined) late.push({ tool: "set", args: { id, component: "lock", value: lock } });
+  }
+  const all = [...reqs, ...late]; let batch: Any[] = [], size = 0, acts = 0;
+  const flush = () => { if (!batch.length) return; const r = doorRequest(w, actor, "batch", { ops: batch, through_lock: true });
+    if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.op ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
+  for (const q of all) { const n = JSON.stringify(q).length; if (size + n > 400_000) flush(); batch.push(q); size += n; }
+  flush();
+  return acts;
+}
+const canonOf = (st: Any, skipWorld: (k: string) => boolean) => JSON.stringify(Object.keys(st.entities).sort().map((id) => [id,
+  Object.keys(st.entities[id].c).filter((k) => id !== "@world" || !skipWorld(k)).sort().map((k) => [k, st.entities[id].c[k]])]));
+
+/** Fork: a NEW world (its own genesis, so its own identity) whose founding act names where it came from
+ *  ({world, name, head}), holding a copy of the source's current state. Built in a hidden directory and renamed into
+ *  place only once its state equals the source's, so a failed fork leaves nothing. Chat history isn't copied: the
+ *  source's log stays the record, and the fork links to it (v1 copied the whole log file, every chat line included). */
+export function forkV4(src: V4Log, to: string, forker: string): { ok: true; worldId: string; things: number; acts: number } | { ok: false; err: string } {
+  if (!WORLD_NAME.test(to)) return { ok: false, err: `bad world name "${to}" — letters, digits, - and _ only` };
+  if (to === src.name) return { ok: false, err: "a world can't be copied onto itself" };
+  const dest = path.join(WORLDS_DIR, to);
+  if (fs.existsSync(dest)) return { ok: false, err: `world "${to}" already exists` };
+  const tmp = path.join(WORLDS_DIR, `.forking-${to}-${crypto.randomBytes(4).toString("hex")}`);
+  try {
+    const st = src.live.state();
+    fs.mkdirSync(tmp, { recursive: true });
+    const blobs = path.join(WORLDS_DIR, src.name, "v4-blobs");   // content-addressed (blueprints, script sources): all of them travel
+    if (fs.existsSync(blobs)) fs.cpSync(blobs, path.join(tmp, "v4-blobs"), { recursive: true });
+    const w = openLive(tmp, to, { catalogue: ENGINE_CATALOGUE });
+    const title = st.entities["@world"]?.c.about?.name ?? to;
+    const r0 = doorRequest(w, forker, "new", { title, from: { world: src.live.worldId, name: src.name, head: headOf(src.live) } });
+    if (!r0.ok) throw new Error(`founding refused: ${r0.refused?.reason}`);
+    const skip = (k: string) => k === "about" || k === `roles:${forker}`;   // the founding act wrote these
+    const acts = copyInto(w, forker, st, skip);
+    const back = w.state();
+    if (canonOf(back, skip) !== canonOf(st, skip)) throw new Error("the copy doesn't match the source (nothing was kept)");
+    fs.renameSync(tmp, dest);
+    return { ok: true, worldId: w.worldId, things: Object.keys(st.entities).length - 1, acts };
+  } catch (e: Any) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return { ok: false, err: String(e?.message ?? e) };
+  }
+}
+/** Reset: the world's log and remembered poses move into reset-<time>/ beside it (archived, never deleted; blobs
+ *  stay: they're content), and a fresh genesis is founded by the same owners, its founding act naming the world it
+ *  replaced. Returns the archive directory. The caller swaps in a fresh V4Log and tells everyone present. */
+export function resetV4(log: V4Log): string {
+  const st = log.live.state();
+  const owners = Object.entries<Any>(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith("roles:") && v?.role === "owner").map(([k]) => k.slice(6));
+  if (!owners.length) throw new Error("this world has no owner to found it again");
+  const prev = { world: log.live.worldId, name: log.name, head: headOf(log.live) };
+  const dir = path.join(WORLDS_DIR, log.name);
+  // found the fresh world ASIDE first: a refused founding changes nothing; only then do the files trade places
+  const fresh = path.join(WORLDS_DIR, `.refound-${log.name}-${crypto.randomBytes(4).toString("hex")}`);
+  try {
+    fs.mkdirSync(fresh, { recursive: true });
+    const w = openLive(fresh, log.name, { catalogue: ENGINE_CATALOGUE });
+    const r0 = doorRequest(w, owners[0], "new", { title: st.entities["@world"]?.c.about?.name ?? log.name, from: prev });
+    if (!r0.ok) throw new Error(`founding again refused: ${r0.refused?.reason}`);
+    for (const o of owners.slice(1)) { const r = doorRequest(w, owners[0], "set", { id: "@world", component: `roles:${o}`, value: { role: "owner" } });
+      if (!r.ok) throw new Error(`restoring owner ${o} refused: ${r.refused?.reason}`); }
+  } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
+  const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  fs.mkdirSync(arch, { recursive: true });
+  for (const f of ["v4.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
+  fs.renameSync(path.join(fresh, "v4.jsonl"), path.join(dir, "v4.jsonl"));
+  fs.rmSync(fresh, { recursive: true, force: true });
+  return arch;
+}

@@ -26,7 +26,7 @@ import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared
 import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { V4Log, isV4World } from "./v4/world.ts";
+import { V4Log, isV4World, resetV4 } from "./v4/world.ts";
 import { leaseRefusal } from "./rights.ts";
 
 /** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
@@ -543,6 +543,20 @@ export class World {
    *
    *  Returns the archive directory. The caller decides who owns the fresh
    *  world and how to tell everyone standing in it. */
+  /** A v4 world erased to zero (server/v4/world.ts resetV4: archived beside it, founded again by the same owners);
+   *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. */
+  resetV4(): string {
+    const arch = resetV4(this.v4!);
+    const v4 = new V4Log(this.name);
+    this.v4 = v4;
+    this.log = v4 as unknown as WorldLog;
+    v4.attach({
+      broadcast: (msg) => this.session.broadcast(msg),
+      rightsChanged: () => v4Rights(this),
+      debug: (kind, detail) => this.debug(kind, detail),
+    });
+    return arch;
+  }
   reset(): string {
     const arch = this.log.reset();
     this.bhv.disposeAll();

@@ -1,0 +1,113 @@
+// tools/v4/fork-reset-check.ts — world fork and reset on v4, against a real sequencer (scratch port and WORLDS_DIR).
+// usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/v4/fork-reset-check.ts
+//   FK  fork: owner-only; a NEW world (its own id) whose founding act names the source {world, name, head}; the copy's
+//       things and @world equal the source's; roles travel; chat does not; bad/taken names refused
+//   RS  reset: owner-only and name-confirmed; the old log is archived beside it; a fresh genesis whose founding act
+//       names the world it replaced; every owner is still an owner; the people present are told
+// @ts-nocheck
+import fs from "node:fs";
+import path from "node:path";
+import { ENGINE, scratch } from "./common.ts";
+import { readLog, fold } from "../../shared/v4/fold.js";
+
+const root = scratch("forkreset");
+const MODEL = "eidoverse/assets/models/crate_large_red.glb";   // a real catalogue model (the engine measures it)
+let pass = 0, fail = 0;
+const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 400)}` : ""}`); } };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
+const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", ...extra });
+const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+async function start() {
+  let port = 9410; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
+  const logf = path.join(root, `srv-${port}.log`);
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+  for (let i = 0; i < 80; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p }; } catch {} }
+  throw new Error("server didn't start: " + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : ""));
+}
+async function sock(port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") waiters.get(m.id)?.(m.reply); };
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  return { msgs,
+    async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true }));
+      for (let i = 0; i < 60 && !msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); await sleep(50);
+      return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
+    req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
+    async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); for (let i = 0; i < ms / 50; i++) { const hit = msgs.slice(k).find((x) => x.type === wantType || x.type === "error"); if (hit) return hit; await sleep(50); } return null; },
+    close: () => ws.close() };
+}
+const logOf = (name) => readLog(fs.readFileSync(path.join(W, name, "v4.jsonl")));
+const founding = (name) => logOf(name).find((e) => e.kind === "act" && e.verb === "new");
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));   // key order is not content
+const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, e.c]));
+
+ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken", "--owner", "Ann"]).code === 0, "(setup) found src and taken, Ann owns both");
+const S = await start();
+const ann = await sock(S.port); await ann.join("src", "Ann");
+const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
+const bobId = jb.snapshot?.v4?.you;
+// a world worth copying: a parent with a locked child, a light, sockets, @world settings and roles, and a chat line
+for (const r of [
+  await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { role: "builder" } }),
+  await ann.req("set", { id: "@world", component: "default-role", value: { role: "visitor" } }),
+  await ann.req("create", { id: "table1", model: MODEL, components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }),
+  await ann.req("create", { id: "lamp1", model: MODEL, components: { parent: { to: "table1" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { kind: "spot", angle: 0.5, intensity: 12 } } }),
+  await ann.req("set", { id: "lamp1", component: "lock", value: true }),
+  await ann.req("create", { id: "chair1", model: MODEL, components: { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } } }),
+  await ann.req("say", { text: "a private chat line from before the copy" }),
+]) ok(r.ok, "(setup) the source world takes it", r.refused);
+const readSrc = () => fold(logOf("src"));
+
+// ---- FK ----
+{ const r = await bob.raw({ type: "world-fork", to: "copy" }, "world-forked");
+  ok(r?.type === "error" && /needs its owner/.test(r.error) && !fs.existsSync(path.join(W, "copy")), "FK1 a builder can't copy the world (owner-only), and nothing is written", r); }
+{ const r = await ann.raw({ type: "world-fork", to: "bad name!" }, "world-forked"); ok(r?.type === "error" && /bad world name/.test(r.error), "FK2 a bad name is refused", r);
+  const r2 = await ann.raw({ type: "world-fork", to: "taken" }, "world-forked"); ok(r2?.type === "error" && /already exists/.test(r2.error), "FK2 a taken name is refused", r2);
+  const r3 = await ann.raw({ type: "world-fork", to: "src" }, "world-forked"); ok(r3?.type === "error", "FK2 a world can't be copied onto itself", r3); }
+const before = fs.readdirSync(W).filter((d) => d.startsWith("."));
+const fk = await ann.raw({ type: "world-fork", to: "copy" }, "world-forked", 8000);
+ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", fk);
+{ const src = readSrc(), { fold } = await import("../../shared/v4/fold.js"); const cp = fold(logOf("copy"));
+  const f = founding("copy"); const srcGen = logOf("src")[0];
+  ok(cp.worldId && cp.worldId !== fold(logOf("src")).worldId, "FK4 the copy is a NEW world (its own genesis, its own id)", [cp.worldId]);
+  ok(f?.body?.request?.from?.world === fold(logOf("src")).worldId && f.body.request.from.name === "src" && /^[0-9a-f]{64}$/.test(f.body.request.from.head), "FK4 its founding act names where it came from {world, name, head}", f?.body);
+  const a = thingsOf(src), b = thingsOf(cp); delete a["@world"].about; delete b["@world"].about;
+  ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].every((id) => canon(a[id]) === canon(b[id])),
+    "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
+  ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "visitor", "FK5 roles and the default role travel", b["@world"]);
+  ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
+  const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
+  ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }
+{ const c2 = await sock(S.port); const j = await c2.join("copy", "Ann");
+  ok(!!j.snapshot && j.snapshot.yourRights?.role === "owner", "FK8 the copy is served, and its owner is its owner", [j.errors, j.snapshot?.yourRights]); c2.close(); }
+
+// ---- RS ----
+const oldId = (await import("../../shared/v4/fold.js")).fold(logOf("src")).worldId;
+ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { role: "owner" } })).ok, "(RS setup) Bob becomes a second owner");
+{ const watcher = await sock(S.port); const jw = await watcher.join("src", "Cat");
+  const r0 = await watcher.raw({ type: "world-reset", name: "src" }, "world-reset");
+  ok(r0?.type === "error" && /needs its owner/.test(r0.error) && !fs.readdirSync(path.join(W, "src")).some((d) => d.startsWith("reset-")), "RS0 a visitor can't reset the world, and nothing moves", r0);
+  const r1 = await ann.raw({ type: "world-reset", name: "wrong" }, "world-reset"); ok(r1?.type === "error" && /confirmation mismatch/.test(r1.error), "RS1 the reset must name the world", r1);
+  const k = watcher.msgs.length;
+  const r = await ann.raw({ type: "world-reset", name: "src" }, "world-reset", 8000);
+  await sleep(300);
+  ok(r?.type === "world-reset" && watcher.msgs.slice(k).some((m) => m.type === "world-reset" && m.world === "src"), "RS2 the owner resets it, and everyone present is told", r);
+  const arch = fs.readdirSync(path.join(W, "src")).filter((d) => d.startsWith("reset-"));
+  ok(arch.length === 1 && fs.existsSync(path.join(W, "src", arch[0], "v4.jsonl")) && readLog(fs.readFileSync(path.join(W, "src", arch[0], "v4.jsonl"))).some((e) => e.kind === "say"),
+    "RS3 the old log is archived beside it (chat and all), never deleted", arch);
+  const { fold } = await import("../../shared/v4/fold.js"); const fresh = fold(logOf("src"));
+  ok(fresh.worldId !== oldId && Object.keys(fresh.entities).length === 1, "RS4 a fresh world: a new genesis, nothing in it but @world", Object.keys(fresh.entities));
+  ok(founding("src")?.body?.request?.from?.world === oldId, "RS4 its founding act names the world it replaced", founding("src")?.body?.request?.from);
+  const roles = Object.entries(fresh.entities["@world"].c).filter(([k, v]) => k.startsWith("roles:") && v.role === "owner").length;
+  ok(roles === 2, "RS5 both owners are still owners", fresh.entities["@world"].c);
+  const again = await sock(S.port); const ja = await again.join("src", "Ann");
+  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.state?.entities ?? {}).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
+  const w2 = await again.req("create", { id: "new-crate", model: MODEL });
+  ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);
+  watcher.close(); again.close(); }
+
+ann.close(); bob.close(); S.proc.kill();
+console.log(`[fork-reset-check] ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

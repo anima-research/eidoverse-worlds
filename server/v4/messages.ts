@@ -13,6 +13,7 @@
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one (the same per-client queue the v1 verb path uses).
+import { forkV4 } from "./world.ts";
 import type { Client, World } from "../world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.ts";
 
@@ -71,7 +72,30 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     ws.send(JSON.stringify({ type: "error", error: `${V1_VERB.reason} (this '${String(msg.verb ?? "")}' wasn't written) — reload the page for the current client` }));
   },
   "lease": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "leases aren't part of v4 worlds: carrying is grab/put/throw through the door (L6)" })); },
-  "world-fork": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "copying a v4 world isn't supported yet (slice 2)" })); },
-  "world-reset": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "erasing a v4 world isn't supported yet (slice 2)" })); },
+  // Copy the world you're standing in to a new name: a new world (its own identity) whose founding act names this one,
+  // holding a copy of its current state. Owner-only (it copies everything here; the owner's call).
+  "world-fork": ({ c, ws }, msg) => {
+    const w = c.world; if (!w?.v4) return;
+    const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
+    if (c.spectator) return err("spectators can't copy worlds — join embodied");
+    const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
+    const to = String(msg.to ?? "").slice(0, 64);
+    const r = forkV4(w.v4, to, actorOf(c));
+    if (!r.ok) return err(r.err);
+    console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
+    ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
+  },
+  // Erase the world you're standing in to zero. Owner-only, and the request must carry the world's own name (the
+  // client makes you type it). History is archived beside it, never destroyed; the same owners hold the fresh world.
+  "world-reset": ({ c, ws }, msg) => {
+    const w = c.world; if (!w?.v4) return;
+    const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
+    if (c.spectator) return err("spectators can't erase worlds — join embodied");
+    const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);
+    if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
+    let arch: string; try { arch = w.resetV4(); } catch (e: Any) { return err(`the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
+    console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
+    w.broadcast({ type: "world-reset", world: w.name, by: c.id });
+  },
 };
 export const v4Handler = (type: unknown) => (typeof type === "string" && Object.hasOwn(V4_MESSAGES, type) ? V4_MESSAGES[type] : undefined);
