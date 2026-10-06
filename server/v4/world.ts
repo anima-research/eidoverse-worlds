@@ -185,12 +185,9 @@ export function foundV4(dir: string, name: string, owner: string, title?: string
   // the owner is an account (human:…, agent:…, local:…); a bare name means `local:<name>`, the account a TRUST_NAMES
   // server gives that typed name. Its opaque id comes from the door directory (round-2 review R1).
   const acct = /^(human|agent|aid1|local):/.test(owner) ? owner : `local:${owner.toLowerCase()}`;
-  // the owner's id is minted for THIS world (pairwise ids, security review M6), so it's filed under the world's id —
-  // which the genesis the `new` request writes is what creates
-  const id = mintId();
+  const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()!, agent: /^(agent|aid1):/.test(acct) });
   const r = doorRequest(w, id, "new", { title: title ?? name });
   if (!r.ok) throw new Error(`founding refused: ${JSON.stringify(r.refused)}`);
-  directoryFor(path.dirname(dir)).put({ [id]: { name: acct.startsWith("local:") ? owner : acct.split(":").pop()!, subs: [acct], kind: /^(agent|aid1):/.test(acct) ? "agent" : "human", since: Date.now(), world: w.worldId } });
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
 
@@ -213,8 +210,7 @@ export function translateV1World(srcDir: string, destDir: string) {
     const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
     const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
     const key = acct ?? `name:${name}`;
-    // a NEW world: every person gets an id minted for it (pairwise, M6) — filed under its world id once the log exists
-    let id = memo.get(key) ?? null;
+    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this door
     if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "legacy", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
     memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
@@ -237,7 +233,6 @@ export function translateV1World(srcDir: string, destDir: string) {
   const tmp = path.join(destDir, "v4.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "v4.jsonl"));
-  for (const e of Object.values(planned)) e.world = back.worldId;
   dir.put(planned);
   return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
 }

@@ -507,7 +507,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // The newcomer is the one renamed; an anonymous one is marked as a guest.
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
-      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n))
+      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
         || (!!c.anonymous && dir.claimedName(n));
       if (taken(c.id)) {
         const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${(c.account ?? "").replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`;

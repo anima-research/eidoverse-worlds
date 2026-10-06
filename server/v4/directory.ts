@@ -8,10 +8,9 @@
 //   - a role is held by an id, and an id is reached only through its account (a `sub`): typing someone's display name
 //     gets you nothing. Two people who share a name are two ids; one person renamed is still one id.
 //   - forgetting a person is deleting their entries here: the log keeps ids that no longer mean anyone.
-//   - ids are PER WORLD (pairwise, M6): the same account wears a different id in every world, so two world logs —
-//     public and portable by design — can't be joined to follow a person across worlds. A world's slice of this file
-//     (exportSlice) travels with the world when it moves to another door. Worlds founded before pairwise ids (the file
-//     was v1 then) keep the door-wide ids they already have: `legacyWorlds`, fixed at that one-time upgrade.
+//   - one id per account per door, the same in every world (R 10-06 14:05: friends, messages and "ask to be invited",
+//     as VRChat does, need a person who stays the same person between worlds; per-world ids — review M6 — were
+//     tried and withdrawn). A world's slice of this file (exportSlice) travels with the world to another door.
 // Accounts (`sub`): "human:<provider>:<id>" from a verified session, "agent:token:<name>" for an operator-enrolled agent,
 // "aid1:<iss>:<sub>" for a home-node-verified agent, "local:<name>" only on a private TRUST_NAMES door. A connection
 // with no account is ANONYMOUS: a fresh id per connection, held in memory only (never written: M2), kind "anon".
@@ -21,7 +20,7 @@ import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../../shared/v4/fold.js";
 
 export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "legacy"; since: number; world?: string };
-type File = { v: 1 | 2; ids: Record<string, Entry>; legacyWorlds?: string[] };
+type File = { v: 1 | 2; ids: Record<string, Entry> };
 
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
@@ -31,16 +30,15 @@ const kindOfSub = (sub: string) => (sub.startsWith("agent:") || sub.startsWith("
 /** `existingWorlds`: the world ids already in this door, read only on the one-time v1 → v2 upgrade (they keep their
  *  door-wide ids). */
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
-  const read = (): File => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { v: 2, ids: {}, legacyWorlds: [] });
+  const read = (): File => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { v: 2, ids: {} });
   const d: File = read();
   if (d.v !== 2) {
-    d.legacyWorlds = existingWorlds(); d.v = 2;
+    d.v = 2; void existingWorlds;
     // v1 keyed an agent by its display slug (`agent:<name>`); v2 keys an enrolled agent by its enrolment
     // (`agent:token:<id>`), never a slug (C2). The enrolled agents keep their ids through the rename.
     for (const e of Object.values(d.ids)) e.subs = e.subs.map((s) => (/^agent:(?!token:)/.test(s) ? `agent:token:${s.slice(6)}` : s));
   }
-  const legacy = new Set(d.legacyWorlds ?? []);
-  const keyOf = (sub: string, world: string | null | undefined) => (world && !legacy.has(world) ? `${sub}|${world}` : sub);
+  const keyOf = (sub: string, _world?: string | null) => sub;   // door-wide: the same person in every world
   const byKey = new Map<string, string>();
   const index = (id: string, e: Entry) => { for (const s of e.subs) byKey.set(e.world ? `${s}|${e.world}` : s, id); };
   for (const [id, e] of Object.entries(d.ids)) index(id, e);
@@ -68,14 +66,13 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     resolve({ sub, name, agent = false, world = null }: { sub?: string | null; name: string; agent?: boolean; world?: string | null }): string {
       if (sub) { let id = byKey.get(keyOf(sub, world)); if (!id) { refresh(); id = byKey.get(keyOf(sub, world)); }
         if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
-        const pairwise = world && !legacy.has(world);
-        return add({ name, subs: [sub], kind: agent ? "agent" : kindOfSub(sub), since: now(), ...(pairwise ? { world } : {}) }); }
+        return add({ name, subs: [sub], kind: agent ? "agent" : kindOfSub(sub), since: now() }); }
       let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId();
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
       return id;
     },
     /** An identity with no account yet (a translated v1 name): holds its roles until an operator binds an account. */
-    legacy(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "legacy", since: now(), ...(world && !legacy.has(world) ? { world } : {}) }); },
+    legacy(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "legacy", since: now(),  }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
     bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
@@ -87,8 +84,6 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     put(entries: Record<string, Entry>) { for (const [id, e] of Object.entries(entries)) { if (d.ids[id]) throw new Error(`identity ${id} exists`);
         for (const s of e.subs) { const k = e.world ? `${s}|${e.world}` : s; if (byKey.has(k)) throw new Error(`${s} already wears ${byKey.get(k)}`); } }
       for (const [id, e] of Object.entries(entries)) { d.ids[id] = e; index(id, e); } save(); },
-    /** does this world use pairwise ids (anything founded after the upgrade)? */
-    pairwise: (world: string) => !legacy.has(world),
     nameOf: (id: string): string | null => get(id)?.name ?? null,
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */

@@ -22,6 +22,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
   ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
   ["server", "server-check.ts", 1],     // slice 2 at the server: real processes, real WebSockets, scratch ports; v1 byte-compared         // slice 2 in process: names, translator stamp, ancestor pins, live = whole-log, catalogue, projection
+  ["identity", "identity-check.ts", 1], // who a joiner is: C1-C3, H1, H3-H5 (security review 10-06), one identity per account
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
