@@ -1008,11 +1008,13 @@ function buildInfo() {
   }).catch(() => { versionAsk = null; return { sha: 'unknown', lines: ['build unknown — /version did not answer'] }; });
   return versionAsk;
 }
+// the projects this client is built on, their licences and sources (client/credits.html)
+const CREDITS_ROW = `<div class="minfo"><a href="/credits.html" target="_blank" rel="noopener">Credits &amp; licences ↗</a></div>`;
 function buildAbout(s) {
-  s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div><div class="minfo dim">asking the server…</div>`;
+  s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div><div class="minfo dim">asking the server…</div>${CREDITS_ROW}`;
   buildInfo().then((v) => {
     if (subFor !== 'about') return;
-    s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div>${v.lines.map((l) => `<div class="minfo">${escapeHtml(l)}</div>`).join('')}`;
+    s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div>${v.lines.map((l) => `<div class="minfo">${escapeHtml(l)}</div>`).join('')}${CREDITS_ROW}`;
     placeSub();
   });
 }
