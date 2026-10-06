@@ -13,17 +13,18 @@
 // tools/whisper-disable-test.ts and tools/voice-wiring-test.ts — moving a
 // body again means moving their patterns with it.
 
-import { enc as encV4 } from "../shared/v4/names.js";
-import { runVerb } from "./verbs.ts";
-import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
+import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
-import { rightsOf, isAdminId, leaseRefusal } from "./rights.ts";
-import { ROLE_RANK } from "../shared/fold.js";
+import { isOperator } from "./v4/operators.ts";
+import { directoryFor } from "./v4/directory.ts";
+import { actorOf as v4ActorOf } from "./v4/messages.ts";
+// the door's role ladder (shared/v4/door.js RANK), for the presence gates that mirror a door rule
+const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { simSnapshot } from "../shared/sim.js";
-import { worlds, forkWorld, type World, type Client } from "./world.ts";
+import { worlds, type World, type Client } from "./world.ts";
 import { pendingSnaps } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
@@ -42,52 +43,6 @@ export type MsgCtx = {
 };
 
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
-  "verb": ({ c, ws, now, expel }, msg) => {
-    // The authored plane in one call — table + shell live in
-    // server/verbs.ts (§15, 7b): preamble, validators, append +
-    // broadcast, after hooks, byte-identical. expel rides in the ctx,
-    // injected: verbs.ts must never import server.ts (the cycle break
-    // §15.1 pinned).
-    //
-    // eidosim@0.3.0: a spawn (its lib) or an epoch (every standing lib)
-    // needs the sequencer's box stamp, and summarizing a GLB is async
-    // while validators are not — so the cache is warmed HERE, on the
-    // wire. AUTHORED ORDER IS KEPT: a client whose verb is waiting on an
-    // asset read has every later verb of its own queued behind it (PR
-    // #160 review, B1 — a cold spawn followed by a place used to land as
-    // place-then-spawn, wrong forever in the log). A client with nothing
-    // in flight runs synchronously, in order, as before; only a lib this
-    // process has never seen pays the wait, once.
-    const w = c.world;
-    if (!w) return;
-    const gen = c.gen;
-    // Admission issues a new generation even when this socket rejoins the
-    // same world. Bind pending work to that acceptance, not just its name or
-    // world pointer (takeover and ordinary close can leave the latter set).
-    const current = () => gen != null && c.gen === gen && c.ws === ws
-      && c.world === w && !c.superseded && w.clients.has(c) && c.ws.readyState === 1;
-    const libs = () => msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
-      : msg.verb === "epoch" ? coldLibs(worldLibs(w.state)) : [];
-    // Recheck immediately before the synchronous commit path, after any read.
-    const run = () => { if (current()) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
-    if (!libs().length && !c.verbQueue) { run(); return; }
-    // The callback's try/catch cannot catch a continuation. Contain both
-    // validation and after-hook failures here, and leave a resolved queue so
-    // the next authored request still runs. Never discard a rejecting finally.
-    const tail: Promise<void> = (c.verbQueue ?? Promise.resolve())
-      .then(async () => {
-        if (!current()) return;
-        // A preceding queued spawn may have changed the epoch's box domain.
-        await warmBoxes(libs());
-        run();
-      })
-      .catch((err) => {
-        console.error(`[ws] "verb" from ${c.id} failed server-side:`, err);
-        try { ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* socket already gone */ }
-      });
-    c.verbQueue = tail;
-    void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
-  },
   "history": ({ c, ws, now, expel }, msg) => {
     // Deliberately available to spectators too: watching a show and
     // reading back what was said before you arrived is the same act.
@@ -219,86 +174,6 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const ring = (c.bcRing ??= []);
     ring.push(String(msg.tag ?? "").slice(0, LIMITS.ID_LEN));
     if (ring.length > LIMITS.BC_RING) ring.shift();
-    return;
-  },
-  "lease": ({ c, ws, now, expel }, msg) => {
-    // Entity animation leases — docs/leases.md. The server arbitrates
-    // (objects have no owning client), remembers the last streamed
-    // transform, and COMMITS it when the holder releases, vanishes, or
-    // goes stale. It never simulates: transforms in, transforms out,
-    // one `place` verb at rest. Presence semantics: never logged.
-    if (!c.world || c.spectator) return;
-    const w = c.world;
-    const id = String(msg.id ?? "").slice(0, LIMITS.ID_LEN);
-    const op = String(msg.op ?? "");
-    if (!id) return;
-
-    const sane = (a: unknown, n: number): number[] | null => {
-      if (!Array.isArray(a) || a.length !== n) return null;
-      const v = (a as unknown[]).map(Number);
-      return v.every(Number.isFinite) ? v : null;
-    };
-    if (op === "claim") {
-      if (!w.state.entities[id]) {
-        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: "no such entity" }));
-        return;
-      }
-      // physical play is USING the world (rank 0), like `use` — a
-      // per-world knob can gate this later without protocol changes.
-      // But the lease's outcome is a committed `place`, so the claim clears
-      // the edges a move does: guard, then lock (rights.ts leaseRefusal —
-      // the same answer settleLease re-asks at commit time).
-      const refused = leaseRefusal(w.state, { id: c.id, sub: c.sub }, id);
-      if (refused) {
-        w.debug("denied", { who: c.id, verb: "lease", why: refused });
-        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: refused }));
-        return;
-      }
-      const cur = w.leases.get(id);
-      if (cur && cur.holder !== c) {
-        const stale = Date.now() - cur.lastAt > LIMITS.LEASE_STALE_MS;
-        // proximity take: you can take what you can reach — the ball
-        // being dribbled past you is kickable, the one across the
-        // field is not. Distance vs the OBJECT's live position.
-        const at = cur.lastState?.p ?? w.state.entities[id].pos;
-        const me = c.lastPose?.p;
-        const near = !!me && Math.hypot(me[0] - at[0], me[2] - at[2]) <= LIMITS.LEASE_TAKE_M;
-        if (!stale && !(msg.take && near)) {
-          ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: `${cur.holder.id} is animating it` }));
-          return;
-        }
-        cur.holder.ws.send(JSON.stringify({ type: "lease", op: "lost", id, to: c.id }));
-      }
-      // per-client cap: a runaway plugin must not lease a whole world
-      let held = 0;
-      for (const L of w.leases.values()) if (L.holder === c) held++;
-      if (held >= LIMITS.LEASES_PER_CLIENT && !w.leases.has(id)) {
-        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: "too many live leases — release something" }));
-        return;
-      }
-      w.leases.set(id, { holder: c, lastState: w.leases.get(id)?.lastState ?? null, lastAt: Date.now() });
-      ws.send(JSON.stringify({ type: "lease", op: "granted", id, ...(w.leases.get(id)!.lastState ? { from: w.leases.get(id)!.lastState } : {}) }));
-      w.broadcast({ type: "lease", op: "claimed", id, by: c.id }, c);
-      return;
-    }
-
-    const L = w.leases.get(id);
-    if (!L || L.holder !== c) return;      // a lost holder's tail, dropped
-
-    if (op === "state") {
-      const p = sane(msg.p, 3);
-      if (!p) return;
-      const yaw = Number.isFinite(Number(msg.yaw)) ? Number(msg.yaw) : undefined;
-      const q = sane(msg.q, 4) ?? undefined;
-      L.lastState = { p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}) };
-      L.lastAt = Date.now();
-      w.broadcast({ type: "lease", op: "state", id, by: c.id, p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}) }, c);
-      return;
-    }
-    if (op === "release") {
-      w.settleLease(id, { p: sane(msg.p, 3), yaw: Number.isFinite(Number(msg.yaw)) ? Number(msg.yaw) : null, q: sane(msg.q, 4) });
-      return;
-    }
     return;
   },
   "bodydrag": ({ c, ws, now, expel }, msg) => {
@@ -467,7 +342,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
     // (a v4 world: the door's role, protocol/v4 slice 3b — v1's stranger default is builder, the door's is visitor)
-    if (ROLE_RANK[c.world.v4 ? c.world.v4.roleOf(encV4(c.id)) : rightsOf(c.world.state, c.id, c.sub).role] < 1) return;
+    if (ROLE_RANK[c.world.v4!.roleOf(v4ActorOf(c))] < 1) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
@@ -497,72 +372,16 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       pending.resolve({ ok: false, err: String(msg.error ?? "renderer returned no image"), status: 502 });
     }
   },
-  "world-fork": ({ c, ws, now, expel }, msg) => {
-    // Copy the world you are standing in to a new name. Owner-only
-    // (rank 2, like shaping terrain): the fork carries ALL history —
-    // every chat line ever said here — so duplicating it is the owner's
-    // call, not any visitor's. WORLD_ADMIN passes everywhere, which is
-    // also the only door for pre-permissions OPEN worlds.
-    if (!c.world) return;
-    if (c.spectator) {
-      ws.send(JSON.stringify({ type: "error", error: "spectators can't copy worlds — join embodied" }));
-      return;
-    }
-    const rights = rightsOf(c.world.state, c.id, c.sub);
-    if (ROLE_RANK[rights.role] < 2) {
-      ws.send(JSON.stringify({ type: "error", error: `copying a world needs its owner — you are a ${rights.role} here` }));
-      return;
-    }
-    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
-    const r = forkWorld(c.world, to);
-    if (!r.ok) {
-      ws.send(JSON.stringify({ type: "error", error: r.err }));
-      return;
-    }
-    console.log(`[world:${c.world.name}] copied → "${to}" by ${c.id}`);
-    ws.send(JSON.stringify({ type: "world-forked", from: c.world.name, to }));
-  },
-  "world-reset": ({ c, ws, now, expel }, msg) => {
-    // Erase the world you are standing in back to zero. Owner-only, and
-    // the message must carry the world's own name — the client makes you
-    // type it, the server refuses anything else, so a stray click can
-    // never be the thing that empties a world. History is archived, not
-    // destroyed (see World.reset).
-    if (!c.world) return;
-    if (c.spectator) {
-      ws.send(JSON.stringify({ type: "error", error: "spectators can't erase worlds — join embodied" }));
-      return;
-    }
-    const rights = rightsOf(c.world.state, c.id, c.sub);
-    if (ROLE_RANK[rights.role] < 2) {
-      ws.send(JSON.stringify({ type: "error", error: `erasing a world needs its owner — you are a ${rights.role} here` }));
-      return;
-    }
-    if (String(msg.name ?? "") !== c.world.name) {
-      ws.send(JSON.stringify({ type: "error", error: `confirmation mismatch — reset must name "${c.world.name}"` }));
-      return;
-    }
-    const w = c.world;
-    // Who owned it, before the log goes: a reset world must not become a
-    // land-rush — the same owners hold the fresh one. (An ADMIN resetting
-    // an OPEN world leaves it open: no owners existed, none are minted.)
-    const owners = Object.entries(w.state.roles ?? {})
-      .filter(([id, r2]) => id !== "*" && r2.role === "owner")
-      .map(([id]) => id);
-    const arch = w.reset();
-    for (const id of owners) {
-      w.commit("world", "grant", { id, role: "owner", gen: true });
-    }
-    console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
-    w.broadcast({ type: "world-reset", world: w.name, by: c.id });
-  },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
     // anyone present — bans are log entries and the log is public; a
     // list nobody can read is not an audit trail.
     if (!c.world) return;
-    const list = Object.entries(c.world.state.bans ?? {}).map(([id, b]) =>
-      `${id} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
+    // the door's moderation record (ban/unban, latest wins), named through the directory
+    const last = new Map<string, any>(); for (const m of c.world.v4!.live.mod) if (m.verb === "ban" || m.verb === "unban") last.set(m.who, m);
+    const dir = directoryFor(WORLDS_DIR);
+    const list = [...last.values()].filter((m) => m.verb === "ban").map((m) =>
+      `${dir.entry(m.who)?.name ?? m.who} — ${new Date(m.ts).toISOString().slice(0, 10)}${m.reason ? `: ${m.reason}` : ""}`);
     ws.send(JSON.stringify({ type: "mod", text: list.length
       ? `banned from "${c.world.name}" (${list.length}):\n${list.join("\n")}`
       : `nobody is banned from "${c.world.name}"` }));
@@ -572,7 +391,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // — so these are messages, gated on WORLD_ADMIN and persisted in
     // .bans.json (same posture as .sessions.json). Replies come back as
     // `mod` messages; refusals as `error`, like everything else.
-    if (!isAdminId(c.id, c.sub)) {
+    if (!isOperator(c.account)) {   // WORLD_ADMIN names ACCOUNTS (security review C3), never a typed name
       ws.send(JSON.stringify({ type: "error", error: "global moderation needs WORLD_ADMIN — per-world /ban is the owner tool" }));
       return;
     }
@@ -598,7 +417,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     // global-ban
-    if (isAdminId(id)) {
+    const present = [...worlds.values()].flatMap((w) => [...w.clients]).find((o) => o.id.toLowerCase() === id.toLowerCase());
+    if (isOperator(present?.account)) {
       ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` }));
       return;
     }

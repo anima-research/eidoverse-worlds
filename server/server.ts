@@ -1117,8 +1117,8 @@ const server = Bun.serve({
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
           // a v4 world answers some types itself (server/v4/messages.ts); v1 worlds never consult that table
-          const h = (c.world?.v4 ? v4Handler(msg.type) : undefined)
-            ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
+          // every world is v4: the door's own types first (server/v4/messages.ts), then the room's (presence, voice, chat lanes)
+          const h = v4Handler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
           if (h) h({ c, ws, now, expel }, msg);
         }
       }

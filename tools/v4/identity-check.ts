@@ -32,7 +32,7 @@ const mint = (over = {}) => { const now = Math.floor(Date.now() / 1000);
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
@@ -56,6 +56,7 @@ async function sock(port) {
       for (let i = 0; i < 60; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null) break; await sleep(50); }
       await sleep(50); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
+    raw: (m) => ws.send(JSON.stringify(m)),
     close: () => ws.close(),
   };
   return s;
@@ -144,6 +145,19 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(ban.ok && g.closed != null, "H4 a door ban removes the banned guest at once", [ban, g.closed]);
   const again = await sock(S3.port); const ja2 = await again.join("meadow", "someone-new");
   ok(!ja2.snapshot && /banned/.test(ja2.errors.join(" ")), "H4 the banned guest reconnecting as a fresh guest is refused (their connection is named)", ja2.errors);
+  // world-bans reads the door's moderation record (it read v1 state.bans: a v4 world always said "nobody is banned")
+  { const k = own.msgs.length; own.raw({ type: "world-bans" }); await sleep(300);
+    const t = own.msgs.slice(k).find((m) => m.type === "mod")?.text ?? "";
+    ok(/banned from "meadow" \(1\)/.test(t) && /test/.test(t), "world-bans lists the door's bans (who, and why)", t); }
+  // a live drag is presence gated on the DOOR's role for the person's directory identity (it looked up their name).
+  // Proven accounts only here: this world now bans every guest from this address (H4 above)
+  { const moss = await sock(S3.port); const jm = await moss.join("meadow", "Moss", { agentToken: "tok-moss" });
+    await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "visitor" } }); await sleep(100);
+    const k = own.msgs.length;
+    moss.raw({ type: "drag", id: "x", pos: [1, 0, 1] }); wren.raw({ type: "drag", id: "x", pos: [2, 0, 2] }); await sleep(300);
+    const drags = own.msgs.slice(k).filter((m) => m.type === "drag").map((m) => m.pos[0]);
+    ok(!!jm.snapshot && JSON.stringify(drags) === "[2]", "a visitor's live drag isn't relayed; a builder's is (the door's role for their identity)", [drags, jm.errors]);
+    moss.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
   ok(!!je.snapshot, "H4 …in that world only", je.errors);
   for (const s of [own, wren, again, elsewhere]) s.close(); S3.proc.kill(); }
