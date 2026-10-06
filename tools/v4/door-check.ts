@@ -702,5 +702,14 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "delete", { id: "desk" });
   ok(call("bob", "create", { id: "mug", model: "crate", place: { at: [6, 3] } }).refused?.code === "reused", "H7d …and after a second delete a stranger's create of a child's id is still refused"); }
 
+// LT: the light every engine shares — a spot's cone (half-angles, rad), and bounds the door holds for any component
+{ T += 100; process.env.V4_NOW = String(T); const L = (a) => request(openWorld(root, "lights"), "ann", "set", { id: "lamp", component: "light", value: a });
+  request(openWorld(root, "lights"), "ann", "new", { title: "lights" });
+  request(openWorld(root, "lights"), "ann", "create", { id: "lamp", model: "table-lamp" });
+  ok(L({ kind: "spot", angle: 0.5, inner: 0.3, range: 8, intensity: 20 }).ok, "LT1 a spot light with its cone (glTF/Godot half-angles) is taken");
+  ok(L({ kind: "point", intensity: -1 }).refused?.code === "bounds", "LT2 a negative intensity is refused (bounds)");
+  ok(L({ kind: "point", range: 0 }).refused?.code === "bounds", "LT2 a range of 0 is refused");
+  ok(L({ kind: "spot", angle: 2 }).refused?.code === "bounds", "LT2 a cone wider than a hemisphere (half-angle > π/2) is refused");
+  ok(L({ kind: "point", color: 0x1000000 }).refused?.code === "bounds", "LT2 a color past 0xffffff is refused"); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

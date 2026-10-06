@@ -14,6 +14,8 @@
 // Plus: her four dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world/flight divergences; every
 // launch rests where hers rests, re-checked by a carrier; deterministic; strict read-back clean); the sim build pin;
 // the hash shim (native = portable = the reference vectors).
+import { schemaRefusal } from "../../shared/v4/door.js";
+import { hexColor } from "../../shared/v4/translate-v1.js";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
@@ -93,6 +95,7 @@ function oldNorm(st: any) {
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
+    if (n.comp?.light && "color" in n.comp.light) n.comp.light = { ...n.comp.light, color: hexColor(n.comp.light.color) };   // declared: "#fff" → 0xffffff
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
   }
@@ -105,6 +108,12 @@ function oldNorm(st: any) {
     world.sky = sky; }
   return { ents, world };
 }
+// v4's angular impulse is v1's {impulse: x} (translate-v1 v4Reactions)
+function v1Reactions(rx: any) {
+  if (!rx || typeof rx !== "object") return rx; const out: any = {};
+  for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h;
+  return out;
+}
 function unproject(v4: any) {
   const ents: any = {}, world: any = {};
   for (const [id, comps] of Object.entries<any>(v4)) {
@@ -116,9 +125,12 @@ function unproject(v4: any) {
         else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = v;
         else if (k.startsWith("bans:")) (world.bans ??= {})[dec(k.slice(5))] = v;
         else if (k.startsWith("behavior:")) (world.behaviors ??= {})[dec(k.slice(9))] = v;
+        else if (k.startsWith("legacy:") && ["sky", "terrain", "grass", "epoch"].includes(dec(k.slice(7)))) {}   // folded back below
         else if (k.startsWith("legacy:")) world[dec(k.slice(7))] = v;
         else world[`??${k}`] = v;
       }
+      // a closed component's v1 leftovers ride beside it as legacy:<component> {key: value}: they fold back in
+      for (const c of ["sky", "terrain", "grass", "epoch"]) if (comps[`legacy:${c}`] && world[c] && typeof world[c] === "object") world[c] = { ...world[c], ...comps[`legacy:${c}`] };
       continue;
     }
     const e: any = {};
@@ -126,9 +138,12 @@ function unproject(v4: any) {
       if (k === "transform") { e.pos = v.pos; e.q = v.q; e.scale = v.scale; }
       else if (k === "model") e.lib = v;
       else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
+      else if (k.startsWith("legacy:") && comps[dec(k.slice(7))] !== undefined && dec(k.slice(7)) !== "parent") {}   // folded back below
       else if (k.startsWith("legacy:")) e[dec(k.slice(7))] = v;
-      else (e.comp ??= {})[dec(k)] = v;
+      else (e.comp ??= {})[dec(k)] = k === "reactions" ? v1Reactions(v) : v;
     }
+    for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith("legacy:") ? dec(k.slice(7)) : null;
+      if (c && comps[c] !== undefined && c !== "parent") e.comp[c] = { ...e.comp[c], ...v }; }
     ents[dec(id)] = e;
   }
   return { ents, world };
@@ -167,6 +182,11 @@ for (const p of logs.sort()) {
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
     else if (e.kind === "state") applyInPlace(v4, opsOf(e), s); }
   compareAt(k); if (loss) lossy++;
+  // the door takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
+  // closed component doesn't define rides beside it as legacy:<component>, so nothing is refused at the first edit)
+  { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.v4)) for (const [k, v] of Object.entries<any>(comps)) {
+      const why = schemaRefusal(k, v); if (why) bad.push(`${id}.${k}: ${why}`); }
+    check(`${name}: the door's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));
 }
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);

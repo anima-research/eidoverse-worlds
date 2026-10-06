@@ -389,10 +389,14 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   { const { translate } = await import('../shared/v4/translate-v1.js'); const { v1FoldBuild } = await import('../server/v4/build.ts');
     const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
-    check('…(a v1 lamp with flicker translates to v4 with flicker kept)', tr.final.v4.x?.light?.flicker === 1, JSON.stringify(tr.final.v4.x));
-    const W = scratchWorld('compwire').seed({ x: lamp });
-    const sent = W.sendAll(oe.ops);
-    check('…and the door takes the planner\'s edit of such a lamp (KNOWN BUG: refused, unknown key)', sent.ok, JSON.stringify(sent.refused)); }
+    // the translator now carries a key the v4 component doesn't define BESIDE it (legacy:light {flicker}), so the lamp
+    // itself is an ordinary v4 lamp: the planner's edit of it goes through the closed door
+    const tx = tr.final.v4.x;
+    check('…(a v1 lamp with flicker translates with flicker carried as legacy:light {flicker}, not inside light)', tx?.['legacy:light']?.flicker === 1 && !('flicker' in (tx?.light ?? {})), JSON.stringify(tx));
+    const tlamp = { ...lamp, comp: { ...lamp.comp, light: tx.light } };
+    const W = scratchWorld('compwire').seed({ x: tlamp });
+    const sent = W.sendAll(ed(tlamp, { 'light.intensity': 24 }).ops);
+    check('…and the door takes the planner\'s edit of such a (translated) lamp', sent.ok, JSON.stringify(sent.refused)); }
   check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.ops.length === 0 && /light: light color/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
   const rl = door(lamp, { 'remove.light': null });
   check('…its card is removable and remove.light writes delete light; through the door it is dark', card(lamp, 'Light', 'light')?.removable === true

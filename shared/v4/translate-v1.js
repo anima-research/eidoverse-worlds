@@ -13,6 +13,7 @@ import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "
 import { enc, encName, dec } from "./names.js";
 import { qNorm } from "../rot.js";
 import { sha256 } from "./hash.js";
+import { COMPONENTS } from "./catalogue.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -23,6 +24,26 @@ import { sha256 } from "./hash.js";
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
+// v1 took any key in any component; v4's catalogue components are closed (the door refuses an unknown key, L7). A
+// v1 key the v4 component doesn't define (a lamp's `flicker`) goes to legacy:<component> {key: value} beside it: carried,
+// never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
+// v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
+export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
+  if (!m) return x; const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
+function splitUnknown(c) {
+  if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
+  for (const [k, v] of Object.entries(c)) {
+    const name = k.split(":")[0], def = COMPONENTS[name];
+    if (!def?.fields || name === "legacy" || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    const extra = Object.keys(v).filter((f) => !(f in def.fields));
+    if (!extra.length) continue;
+    const lk = keyed("legacy", dec(k));
+    if (lk in c) continue;   // a v1 top-level field of the same name already holds that slot: leave the component whole
+    const keep = { ...v }, left = {};
+    for (const f of extra) { left[f] = v[f]; delete keep[f]; }
+    c[k] = keep; c[lk] = left;
+  }
+}
 function v4Reactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
@@ -124,6 +145,7 @@ export function project(st, seen = null, who = null) {
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("legacy", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
+  for (const c of Object.values(out)) splitUnknown(c);
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }
 

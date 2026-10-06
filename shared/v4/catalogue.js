@@ -25,8 +25,15 @@ export const COMPONENTS = {
   model:     { type: "string", help: "which model it shows: a name from find {kind: 'model'}" },
   label:     { type: "string", help: "its display name, a short string" },
   pivot:     { help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
-  parent:    { fields: { to: "string", order: "string" }, defaults: { order: "a0" }, help: "{to: id}; its transform becomes local to the parent" },
-  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", shadows: "bool", keep: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
+  // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
+  // Godot BoneAttachment3D): slot names one of the parent's sockets; seat presence uses the same word
+  parent:    { fields: { to: "string", order: "string", slot: "string" }, defaults: { order: "a0" }, help: "{to: id, slot?: one of its sockets}; its transform becomes local to the parent (to the socket, with slot)" },
+  // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
+  // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
+  // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
+  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", shadows: "bool", keep: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false }, enums: { kind: ["point", "spot"] },
+    ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 } },
+    help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0)" },
   motion:    { keyed: "optional", fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3" }, enums: { type: ["pendulum", "spin", "orbit", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },
   lock:      { help: "true: an edit lock (PROTOCOL-v4 §5; v1's lock, same meaning). Nobody, its locker and owners included, may move, replace or delete it, or anything attached to it; edits that don't relocate it (label, light, motion, reactions…) stay open. Any builder or owner may unlock it (delete {id, component: 'lock'}), or act through it by sending a request with through_lock: true. Not on @world. A door's gameplay lock is `door.locked`, not this" },
   sockets:   { map: "object", help: "{name: {pos, pose}}: places a body can sit" },

@@ -688,6 +688,9 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
+/** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
+ *  whether a translated world is one the door takes as it is (sweep). */
+export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v); return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
 function schemaCheck(at, comp, v) {
   const name = comp.split(":")[0], def = COMPONENTS[name];
   // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
@@ -708,6 +711,9 @@ function schemaCheck(at, comp, v) {
   if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
   for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
+  for (const [k, r] of Object.entries(def.ranges ?? {})) { const x = v[k]; if (x === undefined) continue;
+    const bad = (r.min !== undefined && x < r.min) || (r.gt !== undefined && x <= r.gt) || (r.max !== undefined && x > r.max);
+    if (bad) refuse("bounds", `${at}.${k} is ${x}; it must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
 }
 function handlerCheck(at, act, h) {
