@@ -11,6 +11,7 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
+import { bodyOf, socketQ } from '../../shared/components.js';
 import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
 // net.js does NOT import this module (its own note: "live grants keep it fresh
@@ -384,6 +385,7 @@ const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtM = new THREE.Matrix4();
+const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
 /** Fill outPos with rider's world seat position; returns {yaw, pose, to,
  *  seatState, seatReason} or null when not mounted (or the parent isn't live
  *  yet). `rider` is {path, av} — the roster path and live wrapper of the
@@ -414,16 +416,20 @@ export function mountTransform(riderId, outPos, rider) {
   // would displace the root laterally while the body's contact geometry
   // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
   // closed = today's root-at-socket, declared, never silent.
-  const seat = seatCorrectionFor(rider, sock);
+  // the rider's WHOLE rotation: the parent's, then the socket's (a rocket seat lies on its back), then the rider's own
+  // heading, where set, instead of the socket's. The seat-height correction is a world-up subtraction, so it only holds
+  // while the socket stands upright; a tilted socket seats the root at the socket, declared approximate.
+  parent.getWorldQuaternion(_mtQ);
+  _mtR.copy(_mtQ).multiply(Number.isFinite(m.yaw) ? _mtS.setFromAxisAngle(_UP, m.yaw) : _mtS.fromArray(socketQ(sock)));   // a rider's own heading replaces the socket's
+  const upright = _mtV.set(0, 1, 0).applyQuaternion(_mtR).y > 0.966;   // within 15°
+  const seat = upright ? seatCorrectionFor(rider, sock) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
   if (seat.applied) {
     const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
     if (c) _mtF.set(c[0], c[1], c[2]);
   }
   outPos.copy(_mtF);
-  parent.getWorldQuaternion(_mtQ);
-  _mtF.set(0, 0, 1).applyQuaternion(_mtQ);
-  const parentYaw = Math.atan2(_mtF.x, _mtF.z);
-  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to,
+  _mtF.set(0, 0, 1).applyQuaternion(_mtR);
+  return { q: _mtR.toArray(), upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: bodyOf(sock)?.pose ?? 'sitchair', to: m.to,
     seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
 }
 

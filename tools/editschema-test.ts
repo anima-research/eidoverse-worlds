@@ -32,7 +32,7 @@ const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.tool ===
 const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
-  comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 0 }, side: { pos: [0.4, 0.5, 0], yaw: 1 } }, recipe: { wood: 2 }, lock: true } };
+  comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} }, side: { pos: [0.4, 0.5, 0], q: [0, 0.479425538604203, 0, 0.8775825618903728], body: {} } }, recipe: { wood: 2 }, lock: true } };   // side: heading 1 rad
 // a lamp: a thing with a light component (v4 has no light-verb lights)
 const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, keep: true } } };
 const swing = { lib: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, comp: { motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } } };
@@ -47,7 +47,7 @@ console.log("\nschema is a function of the record:");
   check("locked → transform stays editable and says moving it asks first (the door decides, §5)", fieldAt(s, "pos.x")!.disabled !== true && /locked — moving it asks first/.test(fieldAt(s, "pos.x")!.hint), JSON.stringify(fieldAt(s, "pos.x")));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
   check("unknown comp 'recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
-  check("sockets: a list + per-slot channels", fieldAt(s, "sockets.slots")?.t === "list" && fieldAt(s, "sockets.side|yaw")?.value === 1);
+  check("sockets: a list + per-slot channels", fieldAt(s, "sockets.slots")?.t === "list" && Math.abs(fieldAt(s, "sockets.side|rot|1")?.value - 1) < 1e-6);
   const l = inspectSchema(lamp, "lamp");
   check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.keep")?.value === true && fieldAt(l, "light.range")?.value === 6);
   const w = inspectSchema(swing, "s");
@@ -84,9 +84,9 @@ console.log("\nedits → the fewest door ops:");
   check("…and the door refuses it `locked`; the chair hasn't moved", refused.ok === false && refused.refused?.code === "locked" && WL.rec("c1").pos[0] === 1, JSON.stringify(refused));
   const through = WL.send(rl.ops[0], { through_lock: true });
   check("…with through_lock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && WL.rec("c1").comp.lock === true, JSON.stringify(through.refused));
-  const rs = editOps(chair, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|yaw": "*=2" });
+  const rs = editOps(chair, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|rot|1": "*=2" });
   const cs = sets(rs, "sockets");
-  check("two socket edits = ONE merged set sockets keeping the other slot", cs.length === 1 && flat(rs.ops).length === 1 && near(cs[0].args.value.seat.pos[1], 0.6) && near(cs[0].args.value.side.yaw, 2) && cs[0].args.value.side.pos[0] === 0.4, JSON.stringify(cs));
+  check("two socket edits = ONE merged set sockets keeping the other slot", cs.length === 1 && flat(rs.ops).length === 1 && near(cs[0].args.value.seat.pos[1], 0.6) && near(cs[0].args.value.side.q[1], Math.sin(1)) && near(cs[0].args.value.side.q[3], Math.cos(1)) && cs[0].args.value.side.pos[0] === 0.4, JSON.stringify(cs));
   const rd = editOps(chair, "c1", { "sockets.del": "seat" });
   check("del keeps the rest", val(rd, "sockets").seat === undefined && val(rd, "sockets").side);
   const rd2 = editOps({ ...chair, comp: { sockets: { seat: { pos: [0, 0.5, 0] } } } }, "c1", { "sockets.del": "seat" });
@@ -137,7 +137,7 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   check("comp.+ of a type already there is refused; comp.+ '' is ignored", /already has/.test(editOps(unlocked, "c1", { "comp.+": "recipe" }).errors[0] ?? "") && editOps(unlocked, "c1", { "comp.+": "" }).ops.length === 0);
   check("sockets.del of a missing slot is an error, nothing sent", editOps(unlocked, "c1", { "sockets.del": "nope" }).ops.length === 0 && /no slot/.test(editOps(unlocked, "c1", { "sockets.del": "nope" }).errors[0] ?? ""));
   const ns = val(editOps(unlocked, "c1", { "sockets.back|pos|1": 0.7 }), "sockets");
-  check("a new slot name declares it (pos default [0,0.5,0], yaw 0) and keeps the others", ns.back.pos[1] === 0.7 && ns.back.pos[0] === 0 && ns.back.yaw === 0 && !!ns.seat && !!ns.side, JSON.stringify(ns));
+  check("a new slot name declares a seat (pos default [0,0.5,0], no rotation, body) and keeps the others", ns.back.pos[1] === 0.7 && ns.back.pos[0] === 0 && ns.back.q === undefined && ns.back.yaw === undefined && !!ns.back.body && !!ns.seat && !!ns.side, JSON.stringify(ns));
   const ch = channels(inspectSchema(swing, "s"));
   check("channels() carries the group and lists pos before motion", ch[0].group === "pos" && ch.findIndex((c) => c.group === "motion") > ch.findIndex((c) => c.group === "pos"));
   check("a label longer than 80 chars is cut", val(editOps(unlocked, "c1", { "flags.label": "x".repeat(100) }), "label").length === 80);

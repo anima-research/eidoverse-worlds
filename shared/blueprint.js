@@ -31,7 +31,7 @@
 // Pure: no DOM, no I/O. The door (server/verbs.ts), the fold (shared/fold.js),
 // the agent and the editor all ask the same questions here.
 
-import { canon, sha256hex, entityOf, componentsOf, compRefusal, RECORDS } from './components.js';
+import { canon, sha256hex, entityOf, componentsOf, compRefusal, RECORDS, socketQ } from './components.js';
 import { worldPose, childrenOf, socketOf } from './hierarchy.js';
 import { qNorm, qHeading } from './rot.js';
 
@@ -320,7 +320,7 @@ function nodeLives(merged, path) {
 const DEFAULT_KEY = {
   Lock: 'lock', Guard: 'guard', Hidden: 'hidden', Label: 'label',
   Pendulum: 'motion', Spin: 'motion', Orbit: 'motion', Bob: 'motion', Path: 'motion',
-  Seats: 'sockets', Reactions: 'reactions', Structure: 'structure', Captions: 'captions',
+  Sockets: 'sockets', Reactions: 'reactions', Structure: 'structure', Captions: 'captions',
   LookAt: 'look', Stage: 'stage', Particles: 'particles', Picture: 'picture', Sound: 'sound',
 };
 const COLLIDER_SHAPES = new Set(['exact', 'box']);
@@ -545,7 +545,7 @@ export function localComponents(world, ent) {
     else if (Array.isArray(sock?.pos)) tf.pos = sock.pos;
     if (rel.q !== undefined) tf.q = rel.q;
     if (rel.yaw !== undefined) tf.yaw = rel.yaw;
-    else if (rel.q === undefined && sock?.yaw != null) tf.yaw = sock.yaw;
+    else if (rel.q === undefined && sock) tf.q = socketQ(sock);
     return { ...c, params: tf };
   });
 }

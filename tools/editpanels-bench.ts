@@ -355,7 +355,7 @@ check('the Bob card\'s "remove Bob" removes the motion', await waitFor(`import('
 
 console.log('\nsockets: a seat on the light — a Seats card, list, per-slot channels, ✕ through the merged write:');
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'benchlamp', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } })), true`);
-check('a Seats card with the seat row', await waitFor(`${cardTitles}.includes('Seats') && [...${insp}.querySelectorAll('.sp-item-label')].some((l) => l.textContent === 'seat')`), JSON.stringify(await evalJson(cardTitles)));
+check('a Sockets card with the seat row', await waitFor(`${cardTitles}.includes('Sockets') && [...${insp}.querySelectorAll('.sp-item-label')].some((l) => l.textContent === 'seat')`), JSON.stringify(await evalJson(cardTitles)));
 check('seat x/y/z/yaw are the Seats card\'s rows, once each (no "sockets · " lane)', await evalJson(`(() => { const L = ${numLabels}; return ['seat x', 'seat y', 'seat z', 'seat yaw'].every((n) => L.filter((l) => l === n).length === 1) && !L.some((l) => /^sockets · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('motion', { id: 'benchlamp', type: 'spin', degPerSec: 30 })), true`);
 await waitFor(`${cardTitles}.includes('Spin')`);
@@ -855,7 +855,7 @@ console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was 
   await evalJson(`(document.activeElement?.blur?.(), dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true)`);
   check('Esc cancels the arming', await waitFor(`import('/lib/seatedit.js').then((m) => !m.seatArmed())`));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } }), true))`);
-  check('once it has a seat, "+ Seats" gives way to the Seats card', await waitFor(`!${btn} && ${cardTitles}.includes('Seats')`), JSON.stringify(await evalJson(cardTitles)));
+  check('once it has a seat, "+ Sockets" gives way to the Sockets card', await waitFor(`!${btn} && ${cardTitles}.includes('Sockets')`), JSON.stringify(await evalJson(cardTitles)));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: null }), true))`);
 }
 

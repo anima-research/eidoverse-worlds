@@ -711,5 +711,25 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(L({ kind: "point", range: 0 }).refused?.code === "bounds", "LT2 a range of 0 is refused");
   ok(L({ kind: "spot", angle: 2 }).refused?.code === "bounds", "LT2 a cone wider than a hemisphere (half-angle > π/2) is refused");
   ok(L({ kind: "point", color: 0x1000000 }).refused?.code === "bounds", "LT2 a color past 0xffffff is refused"); }
+// SK: sockets — a named attachment point; with body, a person attaches by using it (chair, swing, saddle, car seat)
+{ T += 100; process.env.V4_NOW = String(T); const R = (actor, tool, args) => request(openWorld(root, "sockets"), actor, tool, args);
+  R("ann", "new", { title: "sockets" });
+  R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  R("ann", "create", { id: "chair1", model: "chair" });
+  const sit = R("bob", "use", { id: "chair1", action: "sit" });
+  ok(sit.ok && sit.recorded === false && sit.attach?.to === "chair1" && sit.attach.slot === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat, in its pose", sit);
+  ok(R("ann", "create", { id: "horse", model: "crate", components: { sockets: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } }, pannier: { pos: [0.4, 0.8, 0] } } } }).ok, "SK2 sockets with and without a body are taken");
+  const look = R("bob", "inspect", { id: "horse" });
+  const offers = JSON.stringify(look);
+  ok(JSON.stringify(look.actions) === '["ride"]', "SK2 …it offers 'ride' (its body socket's action), and the bare attach point offers nothing", look.actions);
+  const ride = R("bob", "use", { id: "horse", action: "ride" });
+  ok(ride.ok && ride.attach?.slot === "saddle" && ride.attach.pose === "sit", "SK2 use {ride} attaches you at the saddle", ride);
+  R("ann", "create", { id: "throne", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { who: "owner" } } } } });
+  ok(R("bob", "use", { id: "throne", action: "sit" }).refused?.code === "rights" && R("ann", "use", { id: "throne", action: "sit" }).ok, "SK3 body.who: a builder may not sit on the owner's throne; the owner may");
+  const bad = (v) => R("ann", "set", { id: "horse", component: "sockets", value: v }).refused?.code;
+  ok(bad({ s: { pos: [0, 1, 0], pose: "sit" } }) === "schema", "SK4 a socket's pose lives in body (an unknown socket key is refused, with a did-you-mean)");
+  ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
+  ok(bad({ s: { body: {} } }) === "shape", "SK4 a socket needs its pos");
+  ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner"); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

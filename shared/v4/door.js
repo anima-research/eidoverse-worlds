@@ -7,6 +7,7 @@
 // Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
+import { bodyOf } from "../components.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -702,6 +703,22 @@ function schemaCheck(at, comp, v) {
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
+  if (name === "sockets") { const obj = v && typeof v === "object" && !Array.isArray(v); const nums = (a, n, lim) => Array.isArray(a) && a.length === n && a.every((x) => isNum(x) && Math.abs(x) <= lim);
+    if (!obj) refuse("shape", `${at} must be {<name>: {pos, q?, part?, body?}}`, COMPONENTS.sockets.help);
+    for (const [k, sk] of Object.entries(v)) { const sat = `${at}.${k}`;
+      if (!/^[a-z0-9][a-z0-9_-]{0,31}$/i.test(k)) refuse("shape", `${sat}: a socket's name is letters, digits, - and _ (up to 32)`, "");
+      if (!sk || typeof sk !== "object" || Array.isArray(sk)) refuse("shape", `${sat} must be {pos, q?, part?, body?}`, COMPONENTS.sockets.help);
+      unknownKeys(sat, sk, ["pos", "q", "part", "body"], "a socket");
+      if (!nums(sk.pos, 3, 1e4)) refuse("shape", `${sat}.pos must be [x, y, z] in the thing's own frame`, "");
+      if (sk.q !== undefined && !(nums(sk.q, 4, 1.0001) && Math.abs(Math.hypot(...sk.q) - 1) < 1e-3)) refuse("shape", `${sat}.q is a unit quaternion [x, y, z, w] (the socket's rotation in the thing's frame)`, "");
+      if (sk.part !== undefined && typeof sk.part !== "string") refuse("shape", `${sat}.part names a node of its model`, "");
+      if (sk.body !== undefined) { const b = sk.body;
+        if (!b || typeof b !== "object" || Array.isArray(b)) refuse("shape", `${sat}.body must be {action?, pose?, exit?, who?}`, COMPONENTS.sockets.help);
+        unknownKeys(`${sat}.body`, b, ["action", "pose", "exit", "who"], "a socket's body");
+        if (b.action !== undefined && !(typeof b.action === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(b.action))) refuse("shape", `${sat}.body.action is a verb in lower case ('sit', 'ride', 'drive')`, "");
+        if (b.pose !== undefined && typeof b.pose !== "string") refuse("shape", `${sat}.body.pose names a clip ('sitchair', 'sit')`, "");
+        if (b.exit !== undefined && !nums(b.exit, 3, 1e4)) refuse("shape", `${sat}.body.exit must be [x, y, z] in the thing's own frame`, "");
+        if (b.who !== undefined && !["visitor", "builder", "owner"].includes(b.who)) refuse("shape", `${sat}.body.who is visitor, builder or owner`, ""); } } }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
   if (!def.fields) return;
   const fields = Object.keys(def.fields);
@@ -1085,7 +1102,14 @@ function buildUse(ctx, a) {
   const offers = actionsOf(ctx.st, a.id);
   const action = a.action ?? offers[0];
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
-  if (action === "sit") return { presence: true, note: `you're seated on ${a.id} (presence: your frame says seat; nothing recorded)` };
+  const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
+  if (socks.length && !e.c.reactions?.[action]) {
+    const ok = socks.filter((x) => !x.body.who || RANK[roleOf(ctx.st, ctx.actor)] >= RANK[x.body.who]);
+    if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
+    const pick = (a.args?.slot && ok.find((x) => x.slot === a.args.slot)) || ok[0];
+    // attaching is presence (your frames say where you're attached; nothing is recorded), so the door only answers
+    return { presence: true, attach: { to: a.id, slot: pick.slot, pose: pick.body.pose }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded` };
+  }
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") refuse("no-runtime", `${a.id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
@@ -1129,9 +1153,12 @@ const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== P
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
 const toggleOf = (h) => { const comp = h.component ?? "door"; return { comp, field: h.field ?? (h.component === undefined ? "open" : undefined) }; };
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
+// the sockets a person can attach to: the thing's own, else its model's
+const bodySockets = (st, id) => { const e = st.entities[id]; const S = e?.c.sockets ?? modelOf(e?.c.model)?.sockets ?? {};
+  return Object.entries(S).map(([slot, s]) => ({ slot, body: bodyOf(s) })).filter((x) => x.body); };
 function actionsOf(st, id) {
-  const e = st.entities[id]; const m = modelOf(e?.c.model);
-  return [...Object.keys(e?.c.reactions ?? {}), ...((e?.c.sockets || m?.sockets) ? ["sit"] : [])];
+  const e = st.entities[id];
+  return [...new Set([...Object.keys(e?.c.reactions ?? {}), ...bodySockets(st, id).map((x) => x.body.action)])];
 }
 function offersFor(st, id, actor) {
   const e = st.entities[id]; const can = [], notForYou = [];
@@ -1934,7 +1961,7 @@ const TOOLS = {
   update: (w, actor, a) => commit(w, actor, "update", a, (ctx) => buildUpdate(ctx, a, w)),
   use(w, actor, a) {
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
-    if (probe.presence) return { ok: true, recorded: false, note: probe.note };
+    if (probe.presence) return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     return commit(w, actor, "use", a, (ctx) => buildUse(ctx, a));
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry

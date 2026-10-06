@@ -20,6 +20,7 @@ import * as OP from './v4/ops.js';
 import { enc } from './v4/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
+import { socketQ } from './components.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
 const r3 = (v) => +(+v).toFixed(4);
@@ -50,11 +51,11 @@ export function localOf(ent, world = null) {
   }
   const rel = ent.parent;
   const sock = socketOf(world, rel);
-  const q = qNorm(rel.q);
+  const q = qNorm(rel.q) ?? (rel.yaw == null && sock ? socketQ(sock) : null);
   return {
     mounted: true, to: rel.to, ...(rel.slot ? { slot: rel.slot } : {}),
     pos: [...(Array.isArray(rel.offset) ? rel.offset : sock?.pos ?? [0, 0, 0])].map((v) => Number(v) || 0),
-    q, yaw: q ? qHeading(q) : (rel.yaw ?? sock?.yaw ?? 0), scale,
+    q, yaw: q ? qHeading(q) : (rel.yaw ?? 0), scale,
     part: sock?.part ? String(sock.part) : null,
   };
 }

@@ -22,11 +22,15 @@
 //   Edits that share a verb coalesce: three transform channels are ONE place
 //   carrying the full pose; two socket fields are ONE merged comp.
 
+// the held poses a socket can give a person (the posture clips every body has)
+// a socket's rotation as [pitch, heading, roll]: q = qY(heading)·qX(pitch)·qZ(roll), the tilt in the turned frame (Maya order ZXY = three.js 'YXZ'), radians
+const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
+const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'stand'];
 import * as OP from './v4/ops.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
-import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
+import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
@@ -272,12 +276,22 @@ export function inspectSchema(ent, id, live = {}) {
     const slots = Object.keys(c.sockets);
     const fields = [{ t: 'list', k: 'slots', empty: 'no anchors yet', rows: slots.map((slot) => {
       const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
-      return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${Math.round((s.yaw ?? 0) * R2D)}°${s.part ? ` · rides ${s.part}` : ''}`, actions: [{ k: 'del', label: '✕', danger: true }] };
+      const b = bodyOf(s);
+      return { id: slot, label: slot, sub: `(${p.map((v) => (+v).toFixed(2)).join(', ')}) · ${sockRot(s).map((v) => Math.round(v * R2D)).join('/')}°${s.part ? ` · rides ${s.part}` : ''} · ${b ? `${b.action} (${b.pose})` : 'things attach'}`, actions: [{ k: 'del', label: '✕', danger: true }] };
     }) }];
     for (const slot of slots) {
       const s = c.sockets[slot] ?? {}; const p = s.pos ?? [0, 0.5, 0];
       ['x', 'y', 'z'].forEach((ax, i) => fields.push({ t: 'num', k: `${slot}|pos|${i}`, label: `${slot} ${ax}`, value: p[i], step: 0.05, dp: 2, unit: 'm' }));
-      fields.push({ t: 'num', k: `${slot}|yaw`, label: `${slot} yaw`, value: s.yaw ?? 0, step: 5, deg: true });
+      // its whole rotation (Unreal sockets): heading, then pitch and roll — a rocket's seat lies on its back
+      const e = sockRot(s);
+      [['heading', 1], ['pitch', 0], ['roll', 2]].forEach(([nm, ax]) => fields.push({ t: 'num', k: `${slot}|rot|${ax}`, label: `${slot} ${nm}`, value: round(e[ax], 6), step: 5, deg: true }));
+      // a socket a PERSON attaches to by using it (VRChat Station, Roblox Seat): a chair, a saddle, a car seat
+      const b = bodyOf(s);
+      fields.push({ t: 'check', k: `${slot}|body`, label: `${slot}: people attach`, value: !!b, hint: 'a person attaches here by using it (sit, ride…); off: an attachment point for things only' });
+      if (b) {
+        fields.push({ t: 'text', k: `${slot}|action`, label: `${slot} action`, value: b.action, hint: "what using it is called: sit, ride, lie…" });
+        fields.push({ t: 'enum', k: `${slot}|pose`, label: `${slot} pose`, value: b.pose, def: 'sitchair', options: SOCKET_POSES.map((v) => ({ v, label: v })) });
+      }
     }
     fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
     groups.push({ group: 'sockets', label: 'sockets', types: ['sockets'], fields });
@@ -440,7 +454,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         break;
       case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
-      case 'Seats': sec.fields = refs('sockets'); sec.removable = true; break;
+      case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
@@ -792,9 +806,17 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'del' && !next[raw]) { errors.push(`sockets.del: no slot ${JSON.stringify(raw)} on ${id}`); break; }
         if (k === 'del') { delete next[raw]; comps.set('sockets', Object.keys(next).length ? next : null); break; }
         const [slot, what, idx] = k.split('|');
-        const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], yaw: 0 });
-        const n = num(f ?? { value: what === 'yaw' ? cur.yaw ?? 0 : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'yaw', k }, raw); if (n == null) break;
-        if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); } else cur.yaw = round(n, 4);
+        const cur = next[slot] ?? (next[slot] = { pos: [0, 0.5, 0], body: {} });   // a new slot is a seat, as '+ seat' makes
+        if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); break; }
+        if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); break; }
+          cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); break; }
+        if (what === 'pose') { if (!SOCKET_POSES.includes(raw)) { errors.push(`sockets.${slot}|pose: one of ${SOCKET_POSES.join(', ')}`); break; }
+          cur.body = { ...(cur.body ?? {}), pose: raw }; if (raw === 'sitchair') delete cur.body.pose; comps.set('sockets', next); break; }
+        const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) break;
+        if (what === 'pos') { cur.pos = [...(cur.pos ?? [0, 0.5, 0])]; cur.pos[+idx] = round(n); }
+        else if (what === 'rot') { const q = setEulerChannel(socketQ(cur), 'ZXY', sockRot(cur), +idx, n).q.map((v) => round(v, 6)); delete cur.yaw;
+          if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
+        else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, pose)`); break; }
         comps.set('sockets', next);
         break;
       }

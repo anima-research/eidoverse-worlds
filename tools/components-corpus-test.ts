@@ -32,7 +32,7 @@ const hashes = Object.values(RECORDS).map((r: any) => r.hash);
 check(`every record has a distinct 64-hex hash (${hashes.length} records)`, hashes.every((h) => /^[0-9a-f]{64}$/.test(h)) && new Set(hashes).size === hashes.length);
 // design §6: a record's hash covers meaning, not prose
 {
-  const P: any = RECORDS.Pendulum; const S: any = RECORDS.Seats;
+  const P: any = RECORDS.Pendulum; const S: any = RECORDS.Sockets;
   const re = (r: any) => recordHash(JSON.parse(JSON.stringify(r)));
   const tweak = (r: any, f: (x: any) => void) => { const x = JSON.parse(JSON.stringify(r)); f(x); return recordHash(x); };
   check('every record\'s hash is recordHash of itself (the stored hash is the rule\'s)', Object.values(RECORDS).every((r: any) => re(r) === r.hash));

@@ -213,7 +213,7 @@ function applyImmediate(r) {
   const s = r.buf[r.buf.length - 1];
   if (!r.avatar || !s) return;
   r.avatar.root.position.set(...s.p);
-  r.avatar.root.rotation.y = s.yaw ?? 0;
+  r.avatar.root.rotation.set(0, s.yaw ?? 0, 0);
 }
 
 // Bone blending scratch. This runs per bone, per remote, per frame — nothing
@@ -391,7 +391,7 @@ export function updateRemotes(dt, now = performance.now()) {
       const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
       if (sw) {
         r.avatar.root.position.copy(_a);
-        r.avatar.root.rotation.y = sw.yaw;
+        r.avatar.root.quaternion.fromArray(sw.q);   // the socket's whole rotation
         // Declared seat state (#101): the ≈ marker and one console line per
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
@@ -446,7 +446,7 @@ export function updateRemotes(dt, now = performance.now()) {
 
       _a.set(...a.p); _b.set(...b.p);
       r.avatar.root.position.copy(_a).lerp(_b, k);
-      r.avatar.root.rotation.y = a.yaw + angleDelta(a.yaw, b.yaw ?? a.yaw) * k;
+      r.avatar.root.rotation.set(0, a.yaw + angleDelta(a.yaw, b.yaw ?? a.yaw) * k, 0);   // upright (a dismount from a tilted seat)
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt
       while (buf.length > 2 && buf[1].t < renderAt - 400) buf.shift();

@@ -4,6 +4,7 @@
 // Ids and component names arrive as the VIEW shows them (shared/v4/record.js decodes the translator's x-- escapes)
 // and are encoded here, once. A transform is always written whole ({pos, q, scale}); for a child it is LOCAL to its
 // parent (PROTOCOL-v4 §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
+import { socketQ } from '../components.js';
 import { enc, encName } from "./names.js";
 import { qNorm, qFromYaw, qWithHeading } from "../rot.js";
 
@@ -49,7 +50,7 @@ export function parent(world, id, to, { slot = null, pos = null, q = null, yaw =
   const sock = slot ? world?.entities?.[to]?.comp?.sockets?.[slot] : null;
   const local = {
     pos: finite3(pos) ? pos : finite3(sock?.pos) ? sock.pos : [0, 0, 0],
-    q: qNorm(q) ?? (Number.isFinite(yaw) ? qFromYaw(yaw) : Number.isFinite(sock?.yaw) ? qFromYaw(sock.yaw) : [0, 0, 0, 1]),
+    q: qNorm(q) ?? (Number.isFinite(yaw) ? qFromYaw(yaw) : sock ? socketQ(sock) : [0, 0, 0, 1]),
   };
   const t = set(id, "transform", { ...local, scale: scale3(ent?.scale3) ?? scale3(ent?.scale) ?? [1, 1, 1] });
   if (ent?.parent?.to === to && (ent.parent.slot ?? null) === (slot ?? null)) return t;

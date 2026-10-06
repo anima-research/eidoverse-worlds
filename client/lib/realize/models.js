@@ -33,7 +33,7 @@ import { attachLamps, releaseOwner, registerCaster, releaseCaster, requestLight,
 import { makeLight, updateLight, disposeLight, makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
-import { lightOf, colliderOf } from '../../../shared/components.js';
+import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
@@ -815,7 +815,8 @@ function execMount(id) {
   parent.add(child);   // transform becomes parent-relative
   child.position.set(...off);
   if (Array.isArray(rel.q) && rel.q.length === 4) child.quaternion.set(rel.q[0], rel.q[1], rel.q[2], rel.q[3]);
-  else child.rotation.set(0, rel.yaw ?? sock?.yaw ?? 0, 0);
+  else if (rel.yaw != null || !sock) child.rotation.set(0, rel.yaw ?? 0, 0);
+  else child.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation (a rocket's seat lies on its back)
   // a part socket glues the cargo INTO the moving node — attach preserves
   // world transform, baking the part's current phase into the offset
   const partNode = sock?.part ? findPart(parent, String(sock.part)) : null;

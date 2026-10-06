@@ -21,6 +21,7 @@
 // Everything else in here talks only to the WorldAgent and the sequencer's
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
+import { bodyOf } from "../shared/components.js";
 import { dec as decName } from "../shared/v4/names.js";
 import { actorName } from "../shared/v4/names.js";
 import { refusalText, warningText, touchWords } from "../shared/v4/refusal.js";
@@ -290,7 +291,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!on) { ag.setSeat(null); return text("you stand up"); }
       const rec: any = ag.foldRecord(on);
       if (!rec) return { content: [{ type: "text", text: `sit: nothing here called "${on}"` }], isError: true };
-      const socks = rec.comp?.sockets ?? {};
+      const socks = Object.fromEntries(Object.entries<any>(rec.comp?.sockets ?? {}).filter(([, s]) => bodyOf(s)));   // only sockets a person can attach to
       const slot = a.slot != null ? String(a.slot) : Object.keys(socks)[0];
       if (!slot || !socks[slot]) return { content: [{ type: "text", text: `sit: ${on} declares no seat${a.slot != null ? ` called "${a.slot}"` : ""} (its sockets: ${Object.keys(socks).join(", ") || "none"}) — a builder can add one: edit {"sockets.seat|pos|1": 0.5}` }], isError: true };
       ag.setSeat({ to: on, slot });

@@ -24,6 +24,8 @@ import { engage, release } from './keyhints.js';
 import { setEditMode, isEditing, deselect,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
+import { socketQ } from '../../shared/components.js';
+import { qMul, qFromYaw, qNorm } from '../../shared/rot.js';
 
 const raycaster = new THREE.Raycaster();
 
@@ -62,7 +64,7 @@ export function refreshSeatGizmos() {
     for (const [slot, sock] of Object.entries(bag.sockets)) {
       const g = makeSeatGizmo();
       g.position.set(...(sock.pos ?? [0, 0.5, 0]));
-      g.rotation.y = sock.yaw ?? 0;
+      g.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation
       root.add(g);
       seatGizmos.set(`${id}\x00${slot}`, g);
     }
@@ -208,7 +210,7 @@ function placeSeatAt(e) {
   const sockets = socketsOf(id);
   let slot = 'seat', n = 2;
   while (sockets[slot]) slot = `seat${n++}`;
-  sockets[slot] = { pos, yaw, ...(part ? { part } : {}) };
+  sockets[slot] = { pos, ...(yaw ? { q: qFromYaw(yaw).map((v) => +v.toFixed(6)) } : {}), ...(part ? { part } : {}), body: {} };   // '+ seat' places a seat: a person attaches here
   commitSockets(id, sockets, 'seat anchor');
   selectSeat({ id, slot });      // the comp echo builds the gizmo already selected
   flashHint(`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
@@ -269,7 +271,9 @@ function turnSeat(d) {
   const sockets = socketsOf(seatSel.id);
   const cur = sockets[seatSel.slot];
   if (!cur) return;
-  sockets[seatSel.slot] = { ...cur, yaw: +(((cur.yaw ?? 0) + d)).toFixed(3) };
+  // turn about the socket's OWN up (a tilted socket turns in its tilt)
+  const { yaw: _y, ...rest } = cur;
+  sockets[seatSel.slot] = { ...rest, q: qNorm(qMul(socketQ(cur), qFromYaw(d))).map((v) => +v.toFixed(6)) };
   commitSockets(seatSel.id, sockets, 'seat facing');
 }
 
@@ -313,6 +317,7 @@ registerHandler('sockets', (id, obj, k, value, opts) => {
   const [slot, what, idx] = k.split('|');
   const g = seatGizmos.get(`${id}\x00${slot}`);
   if (!g) return true;
-  if (what === 'pos') { const p = g.position.toArray(); p[+idx] = +value; g.position.set(...p); } else g.rotation.y = +value;
+  if (what === 'pos') { const p = g.position.toArray(); p[+idx] = +value; g.position.set(...p); }
+  else if (what === 'rot') { g.rotation.reorder('YXZ'); g.rotation[['x', 'y', 'z'][+idx]] = +value; }   // the inspector's heading/pitch/roll (Euler YXZ)
   return true;
 });

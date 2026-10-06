@@ -20,6 +20,7 @@
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
 import { ROT_MODES } from './euler.js';
+import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
 // ------------------------------------------------------------ canonical bytes
@@ -122,9 +123,9 @@ const DEFS = [
     params: { part, points: { t: 'list', of: 'vec3', default: [] }, speed: { t: 'num', unit: 'm/s', default: 1, min: 0 }, duration: { t: 'num', unit: 's', default: null, hint: 'instead of speed' },
       loop: { t: 'choice', options: ['loop', 'pingpong', 'once'], default: 'loop' }, face: { t: 'bool', default: true } },
     fallback: { visual: 'stands still', text: 'in motion (path)' } },
-  { name: 'Seats', category: 'Interaction', needs: ['Model'], summary: 'places to sit or mount things',
-    params: { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, pose?, part?}' } },
-    seat: { bodyDefault: [0, 0.5, 0], cargoDefault: [0, 0, 0], pose: 'sitchair' }, fallback: { text: 'sit/mount: <slots>' } },
+  { name: 'Sockets', category: 'Interaction', needs: ['Model'], summary: 'attachment points: a person attaches by using one (a chair, a swing, a saddle); things attach by parent',
+    params: { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, part?, body?: {action, pose, exit, who}}' } },
+    seat: { bodyDefault: [0, 0.5, 0], cargoDefault: [0, 0, 0], pose: 'sitchair' }, fallback: { text: 'attach points: <slots>' } },
   { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
     params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
     fallback: { text: 'on <to>' } },
@@ -306,7 +307,7 @@ export function componentsOf(ent) {
     // (none in the corpus) and stays an Annotation, so its bytes still return.
     if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
     if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
-    const simple = { sockets: ['Seats', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'] };
+    const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
     if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
     if (key === 'stage' && data && typeof data === 'object' && !Array.isArray(data)) { out.push({ type: 'Stage', key, params: { ...data } }); continue; }
@@ -370,7 +371,7 @@ export function entityOf({ components, stamps = {} }) {
         comp[inst.key ?? 'motion'] = bag;
         break;
       }
-      case 'Seats': comp[inst.key ?? 'sockets'] = p.slots; break;
+      case 'Sockets': comp[inst.key ?? 'sockets'] = p.slots; break;
       case 'Reactions': comp[inst.key ?? 'reactions'] = p.actions; break;
       case 'Structure': comp[inst.key ?? 'structure'] = p.plan; break;
       case 'Captions': comp[inst.key ?? 'captions'] = p.feed; break;
@@ -440,9 +441,9 @@ export function lightOf(ent) {
     keep: src.keep === true,
     day: src.day !== false,
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
-    kind: src.kind === 'spot' ? 'spot' : 'point',
+    // a point light is the default and says nothing more; a spot adds its kind and cone
     ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
-      return { angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })() : {}),
+      return { kind: 'spot', angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })() : {}),
   };
 }
 
@@ -486,3 +487,18 @@ export function compRefusal(type, data, ent = null) {
   }
   return null;
 }
+
+/** A socket's body block (shared by the door, the client and the agent): present = a person can attach there by
+ *  using it. The shape is the general one (VRChat Station, Roblox Seat, Unreal sockets): the action that attaches
+ *  you, the pose you hold, where you're set down when you leave (model frame), who may. A socket without one is an
+ *  attachment point for things only (parent {to, slot}). */
+export function bodyOf(sock) {
+  const b = sock && typeof sock === 'object' ? sock.body : null;
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
+  return { action: typeof b.action === 'string' && b.action ? b.action : 'sit', pose: typeof b.pose === 'string' && b.pose ? b.pose : 'sitchair',
+    exit: Array.isArray(b.exit) && b.exit.length === 3 && b.exit.every(Number.isFinite) ? b.exit : null, who: typeof b.who === 'string' ? b.who : null };
+}
+
+/** A socket's full rotation in its thing's frame (Unreal sockets: a transform, not a heading): a rocket's seat lies
+ *  on its back, a bunk lies flat. v1 sockets carried a bare yaw; read the same way here. */
+export const socketQ = (sock) => qNorm(sock?.q) ?? qFromYaw(Number.isFinite(sock?.yaw) ? sock.yaw : 0);

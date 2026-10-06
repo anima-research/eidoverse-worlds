@@ -8,6 +8,7 @@
 // in the world→flora→controller→chat→net→world knot, and this module must
 // not add another edge into it (§14.2).
 
+import { bodyOf } from '../../shared/components.js';
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
@@ -15,7 +16,7 @@ import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
-import { avatarMounts, mountTransform, comps, socketWorldPos, setBodySeat } from './world.js';
+import { avatarMounts, mountTransform, comps, socketWorldPos, setBodySeat, entities } from './world.js';
 import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
@@ -88,9 +89,13 @@ export function dismountMe() {
   const sw = mountTransform(CONFIG.name, _seatP);
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
-  off.x += Math.sin(yaw) * 0.7;
-  off.z += Math.cos(yaw) * 0.7;
+  // the socket's exit (its own frame), where it names one: off a horse to the side, out of a car door
+  const m = sw ? avatarMounts.get(CONFIG.name) : null;
+  const ex = m ? bodyOf(comps.get(m.to)?.sockets?.[m.slot])?.exit : null;
+  if (ex && entities.get(m.to)) { entities.get(m.to).updateWorldMatrix(true, false); off.set(...ex).applyMatrix4(entities.get(m.to).matrixWorld); }
+  else { off.x += Math.sin(yaw) * 0.7; off.z += Math.cos(yaw) * 0.7; }
   setBodySeat(CONFIG.name, null);        // presence: my next frame carries no seat, and everyone stands me up
+  getMe()?.root.rotation.set(0, yaw, 0);  // stand upright again (a rocket seat may have had me on my back)
   myState.pos.set(off.x, 0, off.z);
   setPosture('stand');
 }
@@ -104,7 +109,7 @@ export function updateMountedMe(dt) {
   myState.clip = sw.pose;
   if (me) {
     me.root.position.copy(_seatP);
-    me.root.rotation.y = sw.yaw;
+    me.root.quaternion.fromArray(sw.q);   // the socket's whole rotation: upright on a chair, on your back in a rocket
     me.setClip(sw.pose, 0);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it
@@ -128,6 +133,7 @@ function nearestSeat(arg, reach) {
     if (!bag.sockets) continue;
     if (want && !id.toLowerCase().startsWith(want)) continue;
     for (const slot of Object.keys(bag.sockets)) {
+      if (!bodyOf(bag.sockets[slot])) continue;   // an attachment point for things, not a seat
       const p = socketWorldPos(id, slot, _sitV);
       if (!p) continue;
       const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);

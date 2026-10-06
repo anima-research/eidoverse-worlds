@@ -36,7 +36,7 @@ const expectOf = (req: any, comp: string) => req?.args?.expect?.find((x: any) =>
 
 H.W.seed({
   lamp: { pos: [0, 2, 0], comp: { light: { color: 0xff8800, intensity: 16, range: 6 } } },
-  c1: { lib: "chair.glb", pos: [1, 0, 2], yaw: 0, comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 0 } } } },
+  c1: { lib: "chair.glb", pos: [1, 0, 2], yaw: 0, comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} } } } },
 });
 H.sync();
 H.entities.set("lamp", realized()); H.entities.set("c1", realized());
@@ -60,11 +60,11 @@ console.log("\na gesture belongs to one id:");
 {
   H.sent.length = 0;
   commitEdit("lamp", "light.range", 9, { live: true });       // a drag begins on the lamp
-  commitEdit("c1", "sockets.seat|yaw", 1);                     // …and c1 is edited before it ends
+  commitEdit("c1", "sockets.seat|rot|1", 1);                   // …and c1 is edited before it ends (heading 1 rad)
   await H.flush();
   const req = last();
-  check("c1's expect is computed from c1's own record (its sockets as they were)", req?.args.id === "c1" && expectOf(req, "sockets")?.value?.seat?.yaw === 0 && req.args.expect.every((x: any) => x.id === "c1"), JSON.stringify(req));
-  check("…and the sent sockets merged from the record (yaw 1, pos kept), accepted", req.args.value.seat.yaw === 1 && req.args.value.seat.pos[1] === 0.5 && c("c1").sockets.seat.yaw === 1, JSON.stringify(c("c1")));
+  check("c1's expect is computed from c1's own record (its sockets as they were)", req?.args.id === "c1" && expectOf(req, "sockets")?.value?.seat?.q === undefined && !!expectOf(req, "sockets")?.value?.seat && req.args.expect.every((x: any) => x.id === "c1"), JSON.stringify(req));
+  check("…and the sent sockets merged from the record (yaw 1, pos kept), accepted", Math.abs(req.args.value.seat.q?.[1] - Math.sin(0.5)) < 1e-6 && req.args.value.seat.pos[1] === 0.5 && Math.abs(c("c1").sockets.seat.q?.[1] - Math.sin(0.5)) < 1e-6, JSON.stringify(c("c1")));
   endGesture();
   H.other("set", { id: "lamp", component: "light", value: { ...c("lamp").light, range: 7 } });
   commitEdit("lamp", "light.range", 9);
@@ -98,10 +98,10 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
   await H.flush();
   const u2 = await V4.undo();
   check("resting a motion is delete motion; its undo re-issues the whole motion with its t0", H.sent.some((x: any) => x.tool === "delete" && x.args.component === "motion") && u2.ok && c("c1").motion?.t0 === 5 && c("c1").motion.degPerSec === 30, JSON.stringify([u2.refused, c("c1").motion]));
-  H.W.call("set", { id: "c1", component: "sockets", value: { seat: { pos: [0, 0.5, 0], yaw: 0 } } }); H.sync();
-  commitEdit("c1", "sockets.seat|yaw", Math.PI / 2);   // the panel commits RADIANS
+  H.W.call("set", { id: "c1", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: {} } } }); H.sync();
+  commitEdit("c1", "sockets.seat|rot|1", Math.PI / 2);   // the panel commits RADIANS (heading)
   await H.flush();
-  check("a numeric deg value from the panel is radians: π/2 lands as π/2, not π/2/57", Math.abs(c("c1").sockets.seat.yaw - Math.PI / 2) < 1e-3, String(c("c1").sockets.seat.yaw));
+  check("a numeric deg value from the panel is radians: π/2 lands as π/2, not π/2/57", Math.abs(c("c1").sockets.seat.q?.[1] - Math.SQRT1_2) < 1e-3, JSON.stringify(c("c1").sockets.seat));
   const rc = commitEdit("c1", "comp.recipe", "");
   check("a cleared JSON box refuses instead of removing (the button is the deliberate act)", !rc.ok && /remove recipe/.test(rc.errors[0]));
   check("schemaFor reads the fold record", schemaFor("lamp").groups.some((g: any) => g.group === "light") && schemaFor("nope").groups.length === 0);

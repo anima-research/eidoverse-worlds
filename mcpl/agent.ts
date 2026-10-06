@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { bodyOf } from "../shared/components.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
@@ -347,7 +348,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""]?.pose ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""])?.pose ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -999,7 +1000,7 @@ export class WorldAgent {
     const effective = this.eff(observation.who, this.serverNow());
     if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
     const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
-    const clip = socket?.pose ?? "sitchair";
+    const clip = bodyOf(socket)?.pose ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -3236,7 +3237,7 @@ export class WorldAgent {
    *  one contract, three declarations. Empty when the seat is profiled. */
   private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
     const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
-    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: sock?.pose ?? "sitchair" });
+    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: bodyOf(sock)?.pose ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
@@ -3353,7 +3354,8 @@ export class WorldAgent {
       // in one world disagree by when they joined.
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
-      if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
+      if (c.sockets) { const acts = [...new Set(Object.values<any>(c.sockets).map((s) => bodyOf(s)?.action).filter(Boolean))];
+        aff.push(`${acts.length ? `${acts.join("/")} here (use it): ` : "attach points: "}${Object.keys(c.sockets).join(", ")}`); }
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that

@@ -44,6 +44,20 @@ function splitUnknown(c) {
     c[k] = keep; c[lk] = left;
   }
 }
+// every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
+// using it). A v1 socket key v4 doesn't define rides in legacy:sockets {<slot>: {key: value}}.
+function v4Sockets(S, c) {
+  if (!S || typeof S !== "object" || Array.isArray(S)) return S;
+  const out = {}, left = {};
+  for (const [slot, s] of Object.entries(S)) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) { out[slot] = s; continue; }
+    const { pos, yaw, part, pose, ...rest } = s;
+    out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: pose !== undefined ? { pose } : {} };
+    if (Object.keys(rest).length) left[slot] = rest;
+  }
+  if (Object.keys(left).length) c[keyed("legacy", "sockets")] = left;
+  return out;
+}
 function v4Reactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
@@ -119,7 +133,7 @@ export function project(st, seen = null, who = null) {
     c.transform = t;
     if (e.lib !== undefined) c.model = e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = k === "reactions" ? v4Reactions(v) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k))) }

@@ -95,6 +95,10 @@ function oldNorm(st: any) {
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
+    // declared: a socket's yaw is its rotation about up, written as q (a zero yaw is no rotation)
+    if (n.comp?.sockets && typeof n.comp.sockets === "object") n.comp.sockets = Object.fromEntries(Object.entries<any>(n.comp.sockets).map(([k, s]) => {
+      if (!s || typeof s !== "object" || !("yaw" in s)) return [k, s]; const { yaw, ...r } = s;
+      return [k, Number.isFinite(yaw) && yaw !== 0 ? { ...r, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } : (Number.isFinite(yaw) ? r : s)]; }));
     if (n.comp?.light && "color" in n.comp.light) n.comp.light = { ...n.comp.light, color: hexColor(n.comp.light.color) };   // declared: "#fff" → 0xffffff
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
@@ -107,6 +111,13 @@ function oldNorm(st: any) {
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     world.sky = sky; }
   return { ents, world };
+}
+// v4's body socket is v1's seat (translate-v1 v4Sockets)
+function v1Sockets(S: any, left: any) {
+  if (!S || typeof S !== "object") return S; const out: any = {};
+  for (const [slot, s] of Object.entries<any>(S)) { if (!s || typeof s !== "object") { out[slot] = s; continue; }
+    const { body, ...r } = s; out[slot] = { ...r, ...(body?.pose !== undefined ? { pose: body.pose } : {}), ...(left?.[slot] ?? {}) }; }
+  return out;
 }
 // v4's angular impulse is v1's {impulse: x} (translate-v1 v4Reactions)
 function v1Reactions(rx: any) {
@@ -140,10 +151,10 @@ function unproject(v4: any) {
       else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
       else if (k.startsWith("legacy:") && comps[dec(k.slice(7))] !== undefined && dec(k.slice(7)) !== "parent") {}   // folded back below
       else if (k.startsWith("legacy:")) e[dec(k.slice(7))] = v;
-      else (e.comp ??= {})[dec(k)] = k === "reactions" ? v1Reactions(v) : v;
+      else (e.comp ??= {})[dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps["legacy:sockets"]) : v;
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith("legacy:") ? dec(k.slice(7)) : null;
-      if (c && comps[c] !== undefined && c !== "parent") e.comp[c] = { ...e.comp[c], ...v }; }
+      if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }
     ents[dec(id)] = e;
   }
   return { ents, world };
