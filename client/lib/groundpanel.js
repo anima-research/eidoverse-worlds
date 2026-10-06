@@ -15,7 +15,8 @@
 
 import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
-import { sendVerb } from './net.js';
+import { sendVerb, isV4 } from './net.js';
+import { send as sendV4 } from './v4edit.js';
 import { flashHint } from './ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
 import { paletteDefaults, terrainArgs, grassArgs } from '../../shared/grounddefs.js';
@@ -49,13 +50,18 @@ export function paintGround(body) {
 
     // the args are shared/grounddefs.js's — the Build tab's World section
     // writes the same ones for the same pick
-    const growTerrain = () => sendVerb('terrain', terrainArgs(pal, { seed: st.seed, shape: st.shape, tint: st.tint }));
+    // a v4 world takes door requests, written here (slice 3b): the ground is @world's terrain and grass components, so
+    // a pick is a `set` and mow is a `delete` — one act each, undoable like any edit. v1 worlds keep their verbs.
+    const ground = (component, value) => isV4()
+      ? sendV4(value == null ? { tool: 'delete', args: { id: '@world', component } } : { tool: 'set', args: { id: '@world', component, value } }, { what: component })
+      : sendVerb(component, value ?? { clear: true });
+    const growTerrain = () => ground('terrain', terrainArgs(pal, { seed: st.seed, shape: st.shape, tint: st.tint }));
     // what "grow" plants — every option is one bag on the singleton grass
     // verb, straight from the def; blade plantings take the height dial and
     // the tint row's colour column
     const growGrass = () => {
       st.grass = true;
-      sendVerb('grass', grassArgs(pal, st));
+      ground('grass', grassArgs(pal, st));
     };
     const isBlade = () => !!pal.plantings[st.plant]?.blade;
 
@@ -126,7 +132,7 @@ export function paintGround(body) {
     body.appendChild(dens.row);
     body.appendChild(btnRow(
       btn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
-      btn('mow', () => { st.grass = false; sendVerb('grass', { clear: true }); flashHint('field cleared'); }),
+      btn('mow', () => { st.grass = false; ground('grass', null); flashHint('field cleared'); }),
     ));
 
     // tint drives both terrain layer and grass colour

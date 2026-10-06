@@ -561,6 +561,23 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
+  // ---- GR: the ground panel writes in a v4 world (R 10-06: ground & grass panels broken). It sent v1 'terrain'/'grass'
+  // verbs, which fromv1 had no spelling for, so the page refused them itself and nothing reached the door. ----
+  { const st4 = () => fold(entries());
+    const gpanel = `const d = document.createElement('div'); document.body.appendChild(d); (await import('/lib/groundpanel.js')).paintGround(d); window.__gp = d;
+      window.__gbtn = (re) => [...window.__gp.querySelectorAll('button, .sp-btn')].find((b) => re.test(b.textContent)); return true;`;
+    await page(gpanel);
+    check("GR0 (setup) the ground panel paints, with its palette (async: wait for the button)", await waitFor(`!!window.__gbtn?.(/reshuffle/)`), await evalJson(`window.__gp?.textContent?.slice(0, 200)`));
+    const t0 = JSON.stringify(st4().entities["@world"]?.c?.terrain ?? null); let n0 = myActs().length;
+    await evalJson(`(window.__gbtn(/reshuffle/).click(), true)`);
+    check("GR1 reshuffle is ONE act, set @world terrain, and the ground changed", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && JSON.stringify(st4().entities["@world"]?.c?.terrain ?? null) !== t0),
+      { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 160))`) });
+    n0 = myActs().length; await evalJson(`(window.__gbtn(/grow/).click(), true)`);
+    check("GR2 grow plants grass: set @world grass", await waitDisk(() => myActs().length === n0 + 1 && !!st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });
+    n0 = myActs().length; await evalJson(`(window.__gbtn(/^mow$/).click(), true)`);
+    check("GR3 mow clears it: one act, and @world has no grass", await waitDisk(() => myActs().length === n0 + 1 && !st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });
+    await evalJson(`(window.__gp.remove(), true)`); }
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.v4.st)); return n.v4.stats.ingested > 10 && n.v4.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.v4.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.v4.stats, diff: d.diffView(s.state.st, r.viewState(n.v4.st)) }))`));
