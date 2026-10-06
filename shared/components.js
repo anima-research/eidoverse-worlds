@@ -439,6 +439,10 @@ export function lightOf(ent) {
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
     keep: src.keep === true,
     day: src.day !== false,
+    // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
+    kind: src.kind === 'spot' ? 'spot' : 'point',
+    ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
+      return { angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })() : {}),
   };
 }
 

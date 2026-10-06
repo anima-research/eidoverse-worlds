@@ -371,7 +371,8 @@ export function requestLight(key, spec) {
     color: 0xffd9a0, intensity: 16, range: 10, decay: 1.7,
     keep: false, authored: false, dayAware: false, owner: null,
     shadows: false,   // wants the casting slot (see SHADOW_SLOT)
-    ...spec, key, slot: -1,
+    spot: null,       // {angle, inner} (glTF half-angles, rad): a spot, lit from the SPOT pool, shining along obj's -Z
+    ...spec, key, slot: -1, sslot: -1,
   });
   assignDirty = true;
 }
@@ -386,7 +387,7 @@ export function requestLight(key, spec) {
  *
  *  Anything that CAN change the ordering still dirties: tier, the object being
  *  followed, or the owner. */
-const ORDERING_KEYS = ['keep', 'authored', 'obj', 'offset', 'pos', 'mirror', 'owner'];
+const ORDERING_KEYS = ['keep', 'authored', 'obj', 'offset', 'pos', 'mirror', 'owner', 'spot'];
 export function updateRequest(key, patch) {
   const r = requests.get(key);
   if (!r) return;
@@ -607,7 +608,8 @@ function assign(now) {
   camera.getWorldPosition(_eye);
   _lastCam.copy(_eye);
   assignDirty = false;
-  const ranked = [...requests.values()].map((r) => {
+  assignSpots();
+  const ranked = [...requests.values()].filter((r) => !r.spot).map((r) => {
     const d = worldPosOf(r, _p).distanceTo(_eye);
     return {
       r,
@@ -817,6 +819,51 @@ function trackShadowFar(pl) {
   pl.shadow.camera.updateProjectionMatrix();
 }
 
+// ---- the spot pool -------------------------------------------------------------
+// A spot (kind: 'spot' — glTF KHR_lights_punctual, Godot SpotLight3D) is its own light type in the renderer, so it gets
+// its own small fixed pool, born at boot like the point slots (a pool change is a recompile; a slot's values aren't).
+// Same ranking as the point pool (keep, authored, nearest); no shadows (the one casting slot is a point light).
+const _spotRaw = new URLSearchParams(globalThis.location?.search ?? '').get('spots');   // null when absent: Number(null) is 0
+const _spotParam = _spotRaw == null || _spotRaw === '' ? NaN : Number(_spotRaw);
+const N_SPOT = Number.isFinite(_spotParam) && _spotParam >= 0 ? Math.min(8, Math.round(_spotParam)) : 2;
+const spotSlots = [];
+for (let i = 0; i < N_SPOT; i++) {
+  const sl = new THREE.SpotLight(0xffffff, 0, 10, Math.PI / 4, 0, 1.7);
+  sl.name = `spot${i}`; sl.castShadow = false;
+  rigGroup.add(sl); rigGroup.add(sl.target);
+  spotSlots.push(sl);
+}
+function assignSpots() {
+  const ranked = [...requests.values()].filter((r) => r.spot).map((r) => ({ r, tier: r.keep ? 0 : r.authored ? 1 : 2,
+    d: worldPosOf(r, _p).distanceTo(_eye) * (r.sslot >= 0 ? 0.85 : 1) }))
+    .sort((a, b) => a.tier - b.tier || a.d - b.d || (a.r.key < b.r.key ? -1 : 1));
+  const win = new Set(ranked.slice(0, N_SPOT).map((x) => x.r));
+  for (const r of requests.values()) if (r.sslot >= 0 && (!win.has(r) || !r.spot)) r.sslot = -1;
+  const used = new Set([...win].map((r) => r.sslot).filter((i) => i >= 0));
+  let free = 0;
+  for (const r of win) { if (r.sslot >= 0) continue; while (used.has(free)) free++; if (free >= N_SPOT) break; r.sslot = free; used.add(free); }
+  for (const r of win) if (r.slot >= 0) r.slot = -1;   // a light that became a spot leaves the point pool
+}
+const _sq = new THREE.Quaternion(), _sfwd = new THREE.Vector3();
+function writeSpots() {
+  const lit = new Array(N_SPOT).fill(null);
+  for (const r of requests.values()) if (r.spot && r.sslot >= 0) lit[r.sslot] = r;
+  for (let i = 0; i < N_SPOT; i++) {
+    const sl = spotSlots[i], r = lit[i];
+    if (!r) { sl.intensity = 0; continue; }
+    worldPosOf(r, sl.position);
+    if (r.obj) r.obj.getWorldQuaternion(_sq); else _sq.identity();
+    _sfwd.set(0, 0, -1).applyQuaternion(_sq);   // glTF/Godot: a spot shines down its local -Z
+    sl.target.position.copy(sl.position).add(_sfwd);
+    sl.target.updateMatrixWorld();
+    sl.color.set(r.color);
+    sl.intensity = r.intensity * (r.dayAware ? dayGlow() : 1);
+    sl.distance = r.range; sl.decay = r.decay;
+    sl.angle = r.spot.angle;
+    sl.penumbra = r.spot.angle > 0 ? Math.min(1, Math.max(0, (r.spot.angle - (r.spot.inner ?? 0)) / r.spot.angle)) : 0;   // as three's GLTFLoader maps it
+  }
+}
+
 /** Call once per frame. Reassigns when needed; writes every slot's uniforms. */
 export function updateRig(now) {
   updateShadow();
@@ -824,8 +871,9 @@ export function updateRig(now) {
   if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.getWorldPosition(_eye)) > 2.25) {
     assign(now);
   }
+  writeSpots();
   const lit = new Array(N_SLOTS).fill(null);
-  for (const r of requests.values()) if (r.slot >= 0) lit[r.slot] = r;
+  for (const r of requests.values()) if (r.slot >= 0 && !r.spot) lit[r.slot] = r;
   for (let i = 0; i < N_SLOTS; i++) {
     const pl = slots[i], r = lit[i];
     if (!r) { pl.intensity = 0; continue; }
@@ -871,6 +919,8 @@ export function restoreALight() {
 }
 
 export const rigDebug = () => ({
+  spots: spotSlots.map((sl) => ({ intensity: +sl.intensity.toFixed(3), angle: +sl.angle.toFixed(4), penumbra: +sl.penumbra.toFixed(4),
+    pos: sl.position.toArray().map((x) => +x.toFixed(3)), dir: sl.target.position.clone().sub(sl.position).toArray().map((x) => +x.toFixed(3)) })),
   slots: N_SLOTS, cap: slotCap, dayness: dayness == null ? null : +dayness.toFixed(3),
   // Whether the next pass will recompute slot assignment. Exposed because the
   // 600ms cadence is a PROPERTY worth testing -- a per-frame patch that dirties

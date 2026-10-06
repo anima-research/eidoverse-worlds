@@ -4,8 +4,7 @@
 //   boot      the client boots into a v4 world (founded by tools/v4/world.ts in a scratch WORLDS_DIR) and finishes
 //   see       a thing created through the door BEFORE the visit is realized (the snapshot's projection)
 //   live      a thing another person creates through the door WHILE it watches is realized (projected v1 verbs)
-//   edit      the old UI's write path (a v1 `comp` verb from the page) becomes a door act in the v4 log
-//   refuse    a refused old-UI write reaches the page as an error (it toasts it; verb-refused)
+//   spot      a spot light set through the door lights a spot slot with its cone, shining down the thing's -Z
 //   errors    no page error and no console.error from the v4 path
 // The owned server runs with SKIP_OPT_SWEEP=1 and a scratch WORLDS_DIR; the world has no sky (the headless-sky
 // rule: no cloud bake in SwiftShader). Teardown (browser, server, scratch) is in finally.
@@ -19,22 +18,26 @@ import { request } from '../../shared/v4/door.js';
 import { readLog } from '../../shared/v4/fold.js';
 import { enc } from '../../shared/v4/names.js';
 import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
+import { directoryFor } from '../../server/v4/directory.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
 const KEY = 'v4probe';
 const worlds = mkdtempSync(join(tmpdir(), 'v4-client-'));
 const stage = (name, okv, detail) => console.log(`${okv ? 'ok  ' : 'FAIL'} ${name}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 400)}` : ''}`);
 let failed = 0; const check = (n, v, d) => { if (!v) failed++; stage(n, v, d); return v; };
-let world = null, b = null;
+let world = null, b = null, ANN = null, BOB = null;
 try {
   // the world: founded by Ann, a crate already standing in it, Bob a builder
   foundV4(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
   await warm([MODEL]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
-    const r1 = request(w, enc('Ann'), 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
-    const r2 = request(w, enc('Ann'), 'set', { id: '@world', component: `roles:${enc('Bob')}`, value: { role: 'builder' } });
+    // actors are the door directory's opaque ids (one per account, R 10-06): Ann founded it as local:ann; Bob will join
+    // this local door by name, so his account is local:bob
+    const dir = directoryFor(worlds); ANN = dir.idOfSub('local:ann'); BOB = dir.resolve({ sub: 'local:bob', name: 'Bob' });
+    const r1 = request(w, ANN, 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
+    const r2 = request(w, ANN, 'set', { id: '@world', component: `roles:${BOB}`, value: { role: 'builder' } });
     if (!r1.ok || !r2.ok) throw new Error(`setup: ${JSON.stringify([r1, r2])}`); }
-  world = await ownedWorld({ key: KEY, env: { WORLDS_DIR: worlds, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
+  world = await ownedWorld({ key: KEY, env: { WORLDS_DIR: worlds, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', TRUST_NAMES: '1' } });
   b = await launchBrowser();
   const pg = await b.page();
   const errors = [], logs = [];
@@ -58,25 +61,29 @@ try {
   const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws');
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const inbox = []; ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
-  ws.send(JSON.stringify({ type: 'join', world: 'garden', id: 'Bob', avatar: '', token: KEY }));
+  ws.send(JSON.stringify({ type: 'join', world: 'garden', id: 'Bob', avatar: '', token: KEY, v4fold: true }));
   for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'snapshot'); i++) await new Promise((r) => setTimeout(r, 100));
   ws.send(JSON.stringify({ type: 'v4', id: 1, tool: 'create', args: { id: 'crate-live', model: MODEL, place: { near: 'crate-before' } } }));
   for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'v4-result'); i++) await new Promise((r) => setTimeout(r, 100));
   const res = inbox.find((m) => m.type === 'v4-result');
   let live = false; for (let i = 0; i < 40 && !live; i++) { live = (await ents()).includes('crate-live'); if (!live) await new Promise((r) => setTimeout(r, 250)); }
+  if (!res?.ok) stage('live: Bob\'s replies', false, inbox.filter((m) => m.type !== 'presence').slice(0, 4).map((m) => [m.type, m.you ?? m.reply ?? m.error]));
   check('live: a crate Bob creates through the door while Ann watches is realized in her client', res?.ok && live, { reply: res?.reply?.ok ?? res?.reply?.refused, ents: await ents() });
-  // edit: the old UI's write path, from the page (the same send the Inspector's comp edits use)
-  await race(pg.evaluate(() => globalThis.EW.net.ws.send(JSON.stringify({ type: 'verb', verb: 'comp', args: { id: 'crate-live', type: 'label', data: 'labelled from the old UI' } }))));
-  let acted = null; for (let i = 0; i < 30 && !acted; i++) { await new Promise((r) => setTimeout(r, 200));
-    acted = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).find((e) => e.kind === 'act' && e.actor === enc('Ann') && e.body?.request?.component === 'label') ?? null; }
-  check('edit: the page\'s v1 `comp` verb became a door act in the v4 log (stamped Ann)', !!acted, acted);
-  // refuse: Ann pins it, Bob (over the page? no: Ann herself is owner) — the page tries to remove a pinned thing
-  ws.send(JSON.stringify({ type: 'v4', id: 2, tool: 'set', args: { id: 'crate-live', component: 'pinned', value: true } }));
-  await new Promise((r) => setTimeout(r, 300));
-  const refusals = await race(pg.evaluate(() => new Promise((res) => { const got = []; globalThis.EW.bus.on?.('verb-refused', (e) => got.push(e));
-    globalThis.EW.net.ws.send(JSON.stringify({ type: 'verb', verb: 'remove', args: { id: 'crate-live' } })); setTimeout(() => res(got), 1500); })), 5000);
-  check('refuse: removing a pinned thing from the page is refused, and the page hears why (verb-refused)', refusals.length === 1 && /pinned/.test(refusals[0]?.error), refusals);
-  check('refuse: …and the crate is still there', (await ents()).includes('crate-live'));
+  // (the old 'edit'/'refuse' stages sent v1 verbs from the page; v4 refuses those by design. The page's door-request
+  //  path is covered headlessly by editcommit/hierarchy-commit.)
+  // spot: a spot light set through the door (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in
+  // Ann's client with that cone, pointing where the thing's -Z points (here: pitched to face straight down)
+  const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // -90° about X: local -Z → world -Y
+  ws.send(JSON.stringify({ type: 'v4', id: 3, tool: 'batch', args: { ops: [
+    { tool: 'set', args: { id: 'crate-before', component: 'transform', value: { pos: [0, 2, 3], q: down, scale: [1, 1, 1] } } },
+    { tool: 'set', args: { id: 'crate-before', component: 'light', value: { kind: 'spot', angle: 0.4, inner: 0.1, intensity: 30, range: 9, keep: true } } }] } }));
+  let spot = null; for (let i = 0; i < 40; i++) { await new Promise((r) => setTimeout(r, 250));
+    spot = await race(pg.evaluate(() => globalThis.EW.lightrig().spots.find((x) => x.intensity > 0) ?? null)).catch(() => null); if (spot) break; }
+  if (!spot) stage('spot: debug', false, await race(pg.evaluate(() => { const d = globalThis.EW.lightrig(); const e = globalThis.EW.state?.st?.entities?.['crate-before'];
+    return { spots: d.spots, reqs: (d.requests ?? []).filter((r) => /crate/.test(r.key)), comp: e?.comp, kind: e?.kind }; })).catch((x) => String(x)));
+  check('spot: a spot light set through the door lights a spot slot with its cone (angle 0.4, penumbra (0.4-0.1)/0.4)',
+    !!spot && Math.abs(spot.angle - 0.4) < 1e-3 && Math.abs(spot.penumbra - 0.75) < 1e-3, { spot, reply: inbox.find((m) => m.type === 'v4-result' && m.id === 3)?.reply });
+  check('spot: …shining down the thing\'s -Z (here straight down)', !!spot && spot.dir[1] < -0.99, spot);
   ws.close();
   const v4Errors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
   stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);

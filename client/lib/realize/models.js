@@ -600,6 +600,7 @@ function syncCompLight(id) {
   const host = entities.get(id) ?? null;
   const spec = {
     color: L.color, intensity: L.intensity, range: L.range, keep: L.keep, dayAware: L.day,
+    spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,
     obj: host, pos: host ? null : [...(ent.pos ?? [0, 0, 0])],
   };
   let cl = compLights.get(id);
