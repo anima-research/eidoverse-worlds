@@ -1083,10 +1083,11 @@ function buildUse(ctx, a) {
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") refuse("no-runtime", `${a.id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
-  if (h?.kind === "pendulum-push") {
+  if (h?.kind === "impulse") {
+    if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
     if (!pivotOf(ctx.st, a.id)) refuse("no-pivot", `${a.id} swings but hangs from nothing above it`, `hang it first: place {id: '${a.id}', hang: <frame>}`);
-    const raw = a.args?.impulse ?? qrot(worldT(ctx.st, a.id).q, [0, 0, h.default ?? 1]);
+    const raw = a.args?.impulse ?? qrot(worldT(ctx.st, a.id).q, [0, 0, h.strength ?? 0.5]);
     const fwd = qrot(worldT(ctx.st, a.id).q, [0, 0, 1]); const along = raw[0] * fwd[0] + raw[1] * fwd[1] + raw[2] * fwd[2];
     const mag = Math.hypot(...raw);
     if (mag > 0 && Math.abs(along) < 0.3 * mag) refuse("sideways", `${a.id} swings front-to-back; that push is mostly sideways`, `push along its front ${JSON.stringify(fwd.map(r3))} (or the opposite)`);
@@ -1096,7 +1097,11 @@ function buildUse(ctx, a) {
     const now = ctx.w.now(), w0 = (2 * Math.PI) / (mo.period ?? 3.5), damp = mo.damp ?? 0;
     const t = mo.t0 != null ? Math.max(0, (now - mo.t0) / 1000) : 0;
     const a0 = (mo.amp ?? 0) * Math.exp(-damp * t), ph = w0 * t + (mo.phase ?? 0);
-    const th = a0 * Math.cos(ph), vel = -a0 * w0 * Math.sin(ph) + along * (h.gain ?? 0.25) * w0;
+    // Δω = Δv / L: the push's speed at the thing's centre over its distance from the hinge (world metres)
+    const pv = pivotOf(ctx.st, a.id), sc = worldT(ctx.st, a.id).scale;
+    const L = Math.max(0.2, Math.hypot(pv[0] * sc[0], pv[1] * sc[1], pv[2] * sc[2]));
+    const dw = a.args?.impulse == null && typeof h.angular === "number" ? h.angular : along / L;
+    const th = a0 * Math.cos(ph), vel = -a0 * w0 * Math.sin(ph) + dw;
     const amp = Math.min(mo.maxAmp ?? 0.9, Math.hypot(th, vel / w0)), phase = Math.atan2(-(vel / w0), th);
     reactionCap(ctx, a.id, "motion", action);
     ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), phase: r3(phase), t0: now })];
@@ -1205,9 +1210,11 @@ function skyValue(prev, verb, args, now) {
   const { dry, ...a } = args;
   const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "door" }));
   delete out.seq; delete out.by;
-  if (out.forecast && typeof out.forecast === "object") { delete out.forecast.seq; delete out.forecast.by; }
+  for (const k of ["forecast", "override"]) if (out[k] && typeof out[k] === "object") { delete out[k].seq; delete out[k].by; }
   return out;
 }
+function buildSky(ctx, a, w) { return [setOp("@world", "sky", skyValue(null, "sky", a, w.now()))]; }
+function buildWeather(ctx, a, w) { return [setOp("@world", "sky", skyValue(ctx.st.entities["@world"]?.c.sky ?? null, "weather", a, w.now()))]; }
 function buildUndo(ctx, a, w) {
   const X = actIndexOf(w); const E = w.entries;
   const mine = X.actsOf.get(ctx.actor) ?? [];
@@ -1941,15 +1948,17 @@ const TOOLS = {
   // the sky panel's two verbs, with v1's own meaning (shared/forecast.js foldSkyEntry, the same function v1's fold ran):
   // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
   // sky. v1 also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
-  sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => [setOp("@world", "sky", skyValue(null, "sky", a, w.now()))]),
-  weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => [setOp("@world", "sky", skyValue(ctx.st.entities["@world"]?.c.sky ?? null, "weather", a, w.now()))]),
+  sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
+  weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) {
     return commit(w, actor, "batch", a, (ctx) => {
       const all = []; let st = ctx.st;
       (a.ops ?? []).forEach((o, i) => {
-        const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace }[o.tool];
-        if (!B) refuse("shape", `batch op ${i}: '${o.tool}' can't go in a batch`, "batch takes create, set, delete, place");
+        // sky/weather are sets on @world.sky with v1's merge meaning, so they batch like any set (one act, one undo)
+        const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
+          sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.tool];
+        if (!B) refuse("shape", `batch op ${i}: '${o.tool}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
         const sub = { ...ctx, st };
         let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
         all.push(...ops); st = scratch(st, ops); sub.refs.forEach((r) => ctx.refs.add(r));

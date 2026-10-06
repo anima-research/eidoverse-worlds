@@ -598,7 +598,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   T += 100; sw("ann", "new", { title: "swingpush" });
   T += 100; sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   T += 100; sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
-  T += 100; sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "pendulum-push", gain: 0.25 } } });
+  T += 100; sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
   const mo = () => openWorld(root, "swingpush").state().entities.seat.c.motion;
   const theta = (m, at) => m ? pendulumTheta(m, Math.max(0, (at - m.t0) / 1000)) : 0;
   T += 100; const p1 = sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } });
@@ -618,6 +618,17 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     T = t + 5; sw("bob", "use", { id: "seat", action: "push", args: { impulse: [0, 0, 1] } }); m = mo(); amps.push(m.amp);
   }
   ok(amps.every((a, i) => i === 0 || a > amps[i - 1] - 1e-9) && amps[3] > amps[0] + 0.05, "SW3 pushing in rhythm builds the swing", amps);
+  // SW4 the angular form (v1's {impulse: x}, translated): from rest, a push adds exactly x rad/s of turn rate, so the
+  // amplitude is x / ω0. The linear form divides by the hinge distance; both are the general impulse (Godot
+  // apply_impulse / apply_torque_impulse)
+  T += 100; sw("ann", "create", { id: "seat2", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
+  T += 100; sw("ann", "set", { id: "seat2", component: "reactions", value: { push: { kind: "impulse", angular: 0.35 } } });
+  T += 100; const p4 = sw("bob", "use", { id: "seat2", action: "push" });
+  const m4 = openWorld(root, "swingpush").state().entities.seat2.c.motion; const w4 = 2 * Math.PI / m4.period;
+  ok(p4.ok && Math.abs(m4.amp - 0.35 / w4) < 2e-3, "SW4 an angular impulse adds exactly its turn rate (amp = angular / ω0)", { p4: p4.refused, amp: m4?.amp, want: 0.35 / w4 });
+  const tx = (await import("../../shared/v4/translate-v1.js")).translate(
+    [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
+  ok(/"reactions":\{"push":\{"kind":"impulse","angular":0.35\}\}/.test(JSON.stringify(tx)), "SW4 v1's {impulse: x} translates to the angular impulse, exactly", JSON.stringify(tx).match(/"reactions":[^}]*\}/)?.[0]);
 }
 
 // ---- DU: disk practice (platforms review 10-06 #5): a torn last line is cut at open, not kept as a malformed entry

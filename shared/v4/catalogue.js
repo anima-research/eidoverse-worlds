@@ -34,7 +34,11 @@ export const COMPONENTS = {
     handlers: {
       toggle: { args: { component: "the component to flip (default 'door')", field: "the field inside it to flip (default 'open' for a door; leave both out for a door). A named component with no field flips its whole value", unless: "a field of the same component that, when true, bars it (e.g. 'locked')" }, example: { open: { kind: "toggle", component: "door", field: "open", unless: "locked" } } },
       set: { args: { component: "which component", field: "optional: the field inside it to set", value: "the value it gets" }, example: { bolt: { kind: "set", component: "door", field: "locked", value: true, who: "builder" } } },
-      "pendulum-push": { args: { gain: "amplitude per unit impulse (default 0.25)", default: "impulse when none is given" }, example: { push: { kind: "pendulum-push", gain: 0.25 } } } },
+      // the general primitive pair (Godot apply_impulse / apply_torque_impulse; Unity AddForce / AddTorque with
+      // ForceMode.Impulse; Rapier and PhysX applyImpulse / applyTorqueImpulse): a push changes the thing's velocity at its
+      // centre (strength, m/s) or its turn rate about its axis (angular, rad/s). A hinged thing (a pendulum motion) takes
+      // strength as strength / its distance from the hinge, and angular as it is.
+      impulse: { args: { strength: "a push: the speed it gives the thing at its centre, m/s (default 0.5). A use may give its own push as args.impulse [x,y,z] (m/s)", angular: "or a turn: the turn rate it adds about the thing's axis, rad/s (instead of strength)" }, example: { push: { kind: "impulse", strength: 0.5 } } } },
     common: { kind: "the handler kind", who: "who may use it: builder|owner", teach: "text shown on refusal" } },
   door:      { fields: { open: "bool", locked: "bool" }, help: "{open: true/false, locked: true/false}: a door's own state. `locked` is gameplay (it bars the open handler); the edit lock is the separate `lock` component" },
   physics:   { fields: { kind: "string", who: "string" }, defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none"], who: ["visitor", "builder", "owner"] },
@@ -44,7 +48,7 @@ export const COMPONENTS = {
   // round-2 review R8 (2026-10-05): names the engine reads, carried by translated worlds, registered with their v1
   // meaning so it's fixed (L5). Fields from every v1 log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
-  sky:       { fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number", sun: "number", fill: "number", world: "string" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
+  sky:       { fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", override: "object", weatherK: "number", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number", sun: "number", fill: "number", world: "string" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
   grass:     { fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" }, help: "a grass or crop field {width, depth, center, species, density…}" },
   structure: { fields: { tile: "number", wallH: "number", wallT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
   particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "number", speed: "number", opacity: "number", lifetime: "number" }, help: "a particle emitter {preset, count, size, speed, lifetime…}" },

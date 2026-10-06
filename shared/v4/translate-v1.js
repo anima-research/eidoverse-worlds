@@ -21,6 +21,20 @@ import { sha256 } from "./hash.js";
 // it when the caller knows it (translate(…, {foldBuild}); server/v4/build.ts computes it from the files).
 // @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
+// v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
+// impulse, v4's {kind: "impulse", angular: x} exactly.
+function v4Reactions(rx) {
+  if (!rx || typeof rx !== "object") return rx;
+  const out = {};
+  for (const [k, h] of Object.entries(rx)) {
+    if (h && typeof h === "object" && h.kind == null && typeof h.impulse === "number") {
+      const { impulse, ...rest } = h;
+      out[k] = { ...rest, kind: "impulse", angular: impulse };
+    } else out[k] = h;
+  }
+  return out;
+}
+
 export const TRANSLATOR = "eidoverse/translate-v1@3";
 // @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
 // translating door's key is the sequencer and the only governance key, in tier 1 (the custodial default: tier 0
@@ -84,7 +98,7 @@ export function project(st, seen = null, who = null) {
     c.transform = t;
     if (e.lib !== undefined) c.model = e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = k === "reactions" ? v4Reactions(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k))) }

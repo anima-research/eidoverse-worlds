@@ -130,14 +130,14 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   H.other("set", { id: "t1", component: "transform", value: { ...c("t1").transform, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") } });
   check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0, String(val("x")));
   // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z
-  H.W.seed({ r1: { lib: "swing.glb", pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "pendulum-push", gain: 0.25 } } } } }); H.sync();
+  H.W.seed({ r1: { lib: "swing.glb", pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "impulse", strength: 0.5 } } } } }); H.sync();
   H.entities.set("r1", realized());
   const before = V4.stacks().undo.length;
   const rr = commitEdit("r1", "remove.motion", "both");
   await H.flush();
   check("a held compound edit is ONE request, one act on my undo stack", rr.ops.length === 2 && last().tool === "batch" && last().args.ops.length === 2 && V4.stacks().undo.length === before + 1 && !c("r1").motion && !c("r1").reactions, JSON.stringify([rr, last()]));
   const ub = await V4.undo();
-  check("…and one Ctrl+Z brings both back", ub.ok && c("r1").motion?.type === "pendulum" && c("r1").reactions?.push?.kind === "pendulum-push", JSON.stringify([ub.refused, c("r1")]));
+  check("…and one Ctrl+Z brings both back", ub.ok && c("r1").motion?.type === "pendulum" && c("r1").reactions?.push?.kind === "impulse", JSON.stringify([ub.refused, c("r1")]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

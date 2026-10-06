@@ -439,7 +439,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         sec.removable = inst.key != null;
         break;
       case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
-      case 'Lock': case 'Guard': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
+      case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
       case 'Seats': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
@@ -563,7 +563,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'motion', motion[name])], errors: [] };
   }
   const simple = { Pivot: ['pivot', { pos: Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value : [0, 0, 0] }], Lock: ['lock', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
-    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', { push: { impulse: 0.35 } }], Stage: ['stage', {}] };
+    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, type, data)], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
   // and it is written with its fields spelled out — the log records the result,

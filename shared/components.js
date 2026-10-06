@@ -153,7 +153,6 @@ const DEFS = [
   { name: 'LookAt', category: 'Interaction', summary: 'faces another entity (no realizer yet)',
     params: { target: { t: 'ref', default: null } }, fallback: { text: 'components: look' } },
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
-  { name: 'Guard', category: 'Rules', summary: 'only its placer, the owner or an operator may author it', params: {}, fallback: { text: '🛡 guarded by <placer>' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },
   { name: 'Label', category: 'Core', summary: 'a display name people see', params: { text: { t: 'text', default: '', max: 80 } }, fallback: { text: 'the label' } },
   { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: { feed: { t: 'json', default: null } }, fallback: { text: 'captions' } },
@@ -222,7 +221,7 @@ const MOTION_TYPE = Object.fromEntries(Object.entries(MOTION).map(([k, v]) => [v
 const MOTION_STAMPS = ['t0', 'cause', 'by'];
 // keys of the record that are not components: who/when the sequencer stamped
 const STAMPS = ['placer', 'born', 'actor', 'ts', 'box'];
-const FLAG = { lock: 'Lock', guard: 'Guard' };
+const FLAG = { lock: 'Lock' };   // v1's guard merged into lock (PROTOCOL-v4 §5): no v4 world carries one
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
@@ -357,7 +356,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
       case 'Parent': ent.parent = { ...p }; break;
       case 'Pivot': comp[inst.key ?? 'pivot'] = { pos: p.pos }; break;
-      case 'Lock': case 'Guard': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
+      case 'Lock': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
       case 'Pendulum': case 'Spin': case 'Orbit': case 'Bob': case 'Path': {
         const x = inst.extra ?? {};
