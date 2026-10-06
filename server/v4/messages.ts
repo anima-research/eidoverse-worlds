@@ -14,8 +14,9 @@
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one (the same per-client queue the v1 verb path uses).
 import type { Client, World } from "../world.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.ts";
 
-type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: unknown };
+type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string) => void };
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait"]);
 /** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
@@ -36,7 +37,7 @@ const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not 
 
 
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
-  "v4": ({ c, ws }, msg) => {
+  "v4": ({ c, ws, expel }, msg) => {
     // {tool, args}: a door request (a v1 `verb` in it is refused: clients spell at their own edge, 3c)
     const w = c.world; if (!w?.v4) return;
     const rid = msg.id ?? null;
@@ -47,7 +48,21 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
-      reply(await w.v4!.request(actorOf(c), tool, args));
+      const r = await w.v4!.request(actorOf(c), tool, args);
+      reply(r);
+      // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
+      // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
+      // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
+      if (r?.ok && (tool === "ban" || tool === "kick")) {
+        const who = String(args.who);
+        for (const t of [...w.clients]) if (t.v4id === who) {
+          if (tool === "ban" && t.anonymous && t.addr) {
+            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until: Date.now() + ADDR_BAN_MS, world: w.name, ...(args.reason ? { reason: String(args.reason) } : {}) };
+            saveGlobalBans();
+          }
+          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}`);
+        }
+      }
     });
   },
   "verb": ({ c, ws }, msg) => {

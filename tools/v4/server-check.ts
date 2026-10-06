@@ -7,7 +7,8 @@
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
 //   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
 //   S8  clients fold v4: the v4 cut and stream, no `log` entries; a client that doesn't read v4 is refused (3c)
-//   S7  v1 worlds unchanged: the same v1 script against this branch and against slice 1's tree (097eedcc), byte-
+//   S7  joining never founds a world (H3); [was: v1 worlds byte-compared against slice 1 — the server serves no v1 now]
+//      
 //       compared (logs, snapshots and every message each client received, with clock fields masked)
 // @ts-nocheck
 import fs from "node:fs";
@@ -215,17 +216,20 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ag.close(); }
 
 // ---- S6: translate a v1 world into a new v4 world ----
-{ // make a real v1 world through the same server (the v1 path is untouched in this process)
-  const a = await client(srv.port, "oldtown", "Ann");
-  a.verb("spawn", { id: "lamp_1", lib: "test/table.glb", pos: [1, 0, 1], yaw: 0.5 });
-  a.verb("comp", { id: "lamp_1", type: "label", data: "the old table" });
-  a.verb("spawn", { id: "cup_1", lib: "test/cup.glb", pos: [1, 0.75, 1] });
-  a.verb("mount", { id: "cup_1", to: "lamp_1", offset: [0, 0.75, 0] });
-  a.verb("comp", { id: "lamp_1", type: "sockets", data: { seat: { pos: [0.3, 0.75, 0.1], yaw: 1 } } });
-  a.verb("spawn", { id: "mug_1", lib: "test/cup.glb", pos: [7, 0, 7] });
-  a.verb("mount", { id: "mug_1", to: "lamp_1", slot: "seat" });
-  a.verb("say", { text: "hello from v1" });
-  await sleep(500); a.close(); await sleep(300);
+{ // an old (v1) world's log, as one arrives for translation: the server has no v1 runtime, so it's written as a file
+  // (the same verbs the old client sent: a grant, a spawn, a comp, a mount by offset and by socket, a say)
+  const T0 = 1790000000000; const L = [
+    { actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } },
+    { actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "test/table.glb", pos: [1, 0, 1], yaw: 0.5 } },
+    { actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "label", data: "the old table" } },
+    { actor: "Ann", verb: "spawn", args: { id: "cup_1", lib: "test/cup.glb", pos: [1, 0.75, 1] } },
+    { actor: "Ann", verb: "mount", args: { id: "cup_1", to: "lamp_1", offset: [0, 0.75, 0] } },
+    { actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "sockets", data: { seat: { pos: [0.3, 0.75, 0.1], yaw: 1 } } } },
+    { actor: "Ann", verb: "spawn", args: { id: "mug_1", lib: "test/cup.glb", pos: [7, 0, 7] } },
+    { actor: "Ann", verb: "mount", args: { id: "mug_1", to: "lamp_1", slot: "seat" } },
+    { actor: "Ann", verb: "say", args: { text: "hello from v1" } }];
+  fs.mkdirSync(path.join(W4, "oldtown"), { recursive: true });
+  fs.writeFileSync(path.join(W4, "oldtown", "log.jsonl"), L.map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
   const v1log = path.join(W4, "oldtown", "log.jsonl"); const before = fs.readFileSync(v1log);
   const tr = tool(["translate", "oldtown", "oldtown-v4"]);
   ok(tr.code === 0 && /0 divergences/.test(tr.out) && /mtime unchanged: true/.test(tr.out), "S6 translate writes a new v4 world and reports 0 divergences", tr.out);
@@ -234,7 +238,12 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(g.body.minor === 0 && typeof g.body.nonce === "string" && /^ed25519:/.test(g.body.sequencer) && !("translatedFrom" in g.body), "S6 genesis is §2.4's (minor, nonce, sequencer; no translatedFrom)", g.body);
   ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
-  const old = await client(srv.port, "oldtown", "Ann"), neu = await client(srv.port, "oldtown-v4", "Ann", V4);
+  // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the v4 copy
+  const { emptyState: v1Empty, foldEntry: v1Fold } = await import("../../shared/fold.js");
+  const v1st = v1Empty(); for (const l of fs.readFileSync(v1log, "utf8").split("\n").filter(Boolean)) v1Fold(v1st, JSON.parse(l));
+  const old = { snapshot: { state: v1st } }, neu = await client(srv.port, "oldtown-v4", "Ann", V4);
+  const oldv1 = await client(srv.port, "oldtown", "Ann");
+  ok(!oldv1.snapshot && oldv1.of("error").some((m) => /no world called "oldtown"/.test(m.error)), "S6 the server doesn't serve the old world itself: v4 only, an old log is translated", oldv1.msgs.map((m) => m.type)); oldv1.close();
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
@@ -244,11 +253,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const v4c = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl")))).entities;
   ok(JSON.stringify(v4c[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", slot: "seat" }) && JSON.stringify(v4c[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
     "S6 a translated mount is in the door's shape: transform local to the parent (here the socket's pos), parent {to, order, slot}", [v4c[enc("mug_1")].c.parent, v4c[enc("mug_1")].c.transform]);
-  ok(neu.snapshot.v4?.version === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.v4, "S6 v4 copy: v4 + Ann still owns it; the original: still v1", [neu.snapshot.yourRights, old.snapshot.v4]);
+  ok(neu.snapshot.v4?.version === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.v4, "S6 v4 copy: v4, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.v4]);
   ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
   ok(ed.ok, "S6 the translated world takes v4 edits from its owner", ed);
-  old.close(); neu.close(); }
+  void old; neu.close(); }
 
 // ---- S8: clients that fold v4 themselves (slice 3b): the v4 cut at join, the v4 stream, no projection ----
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second v4 world");
@@ -278,40 +287,17 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   a.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
+// ================= S7: joining never founds a world (security review 10-06 H3) =================
+// (S7 used to byte-compare v1 worlds against slice 1's tree; the server has no v1 runtime now, by design)
+{ const ghost = await client(srv.port, "nobodyhome", "Ann", V4);
+  ok(!ghost.snapshot && ghost.of("error").some((m) => /no world called "nobodyhome"/.test(m.error)) && !fs.existsSync(path.join(W4, "nobodyhome")),
+    "S7 joining a world name that doesn't exist is refused, and nothing is created on disk", [ghost.msgs.map((m) => m.type), fs.existsSync(path.join(W4, "nobodyhome"))]);
+  ghost.close(); }
+
 const errlog = fs.existsSync(srv.log + ".err") ? fs.readFileSync(srv.log + ".err", "utf8") : "";
 ok(!/failed server-side|v1 '.*' write has no path/.test(errlog + fs.readFileSync(srv.log, "utf8")), "S* the v4 server logged no server-side failure", errlog.slice(-600));
 srv.proc.kill();
 
-// ================= S7: v1 worlds, byte for byte against slice 1's tree =================
-{ const base = path.join(root, "base");
-  fs.mkdirSync(base, { recursive: true });
-  const ar = Bun.spawnSync(["sh", "-c", `git archive ${BASE} | tar -x -C ${base}`], { cwd: ENGINE });
-  ok(ar.exitCode === 0, `S7 extracted ${BASE} to compare against`, ar.stderr.toString());
-  for (const nm of ["node_modules", "client/node_modules"]) { const real = fs.realpathSync(path.join(ENGINE, nm)); fs.symlinkSync(real, path.join(base, nm)); }
-  const runV1 = async (tree: string, tag: string) => {
-    const worlds = path.join(root, `v1-${tag}`); fs.mkdirSync(worlds, { recursive: true });
-    const s = await startServer(tree, worlds, OPT, `v1-${tag}`);
-    const a = await client(s.port, "plain", "Ann"); await sleep(150);
-    const b = await client(s.port, "plain", "Bob");
-    const script: [any, string, any][] = [[a, "spawn", { id: "t1", lib: "test/table.glb", pos: [0, 0, 3], yaw: 0.25 }], [a, "comp", { id: "t1", type: "label", data: "a table" }],
-      [a, "grant", { id: "Bob", role: "builder" }], [b, "spawn", { id: "c1", lib: "test/cup.glb", pos: [0, 0.75, 3] }], [b, "mount", { id: "c1", to: "t1", offset: [0, 0.75, 0] }],
-      [a, "comp", { id: "t1", type: "lock", data: true }], [b, "place", { id: "t1", pos: [1, 0, 3] }], [b, "say", { text: "is it locked?" }], [a, "light", { id: "l1", pos: [0, 2, 0], intensity: 9 }],
-      [a, "motion", { id: "l1", type: "bob", amp: 0.1, period: 2 }], [b, "remove", { id: "c1" }], [a, "comp", { id: "t1", type: "lock", data: null }], [b, "place", { id: "t1", pos: [1, 0, 3], yaw: 1 }],
-      [b, "frobnicate", { id: "t1" }], [a, "dismount", { id: "Ann" }]];   // own body: fix/body-mount (57e0b81f) refuses a foreign one, deliberately
-    for (const [c, v, args] of script) { c.verb(v, args); await sleep(60); }
-    a.send({ type: "history", reqId: "h1", limit: 50 }); await sleep(400);
-    const out = { log: fs.readFileSync(path.join(worlds, "plain", "log.jsonl"), "utf8"), a: a.msgs, b: b.msgs };
-    a.close(); b.close(); await sleep(150); s.proc.kill(); return out;
-  };
-  const mask = (v: any): any => Array.isArray(v) ? v.map(mask) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, ["ts", "t", "t0", "gen", "incarnation", "throughSeq", "since", "spanMs", "at", "born", "lastAt"].includes(k) ? "·" : mask(x)])) : v;
-  // `avatars` is the body roster, read from the TREE's files (their mtimes ride the paths as ?v=): environment, not world
-  const keep = (ms: any[]) => ms.filter((m) => !["frame", "typing", "voice-service", "geom", "defs-updated", "surface-transition"].includes(m.type)).map((m) => (m.type === "snapshot" ? { ...m, avatars: "·" } : m));
-  const now = await runV1(ENGINE, "now"), was = await runV1(base, "base");
-  const logs = [now.log, was.log].map((t) => t.split("\n").filter(Boolean).map((l) => JSON.stringify(mask(JSON.parse(l)))).join("\n"));
-  ok(logs[0] === logs[1] && logs[0].split("\n").length >= 10, `S7 a v1 world's log: identical to ${BASE}'s, line for line (ts masked)`, [logs[0].length, logs[1].length, logs[0].split("\n").find((l, i) => l !== logs[1].split("\n")[i])]);
-  for (const k of ["a", "b"]) { const x = JSON.stringify(mask(keep(now[k]))), y = JSON.stringify(mask(keep(was[k])));
-    ok(x === y, `S7 every message client ${k} received matches ${BASE}'s (clock fields masked; ${keep(now[k]).length} messages)`, [x.length, y.length, x.slice([...x].findIndex((ch, i) => ch !== y[i]) - 80, [...x].findIndex((ch, i) => ch !== y[i]) + 120)]); }
-  ok(!JSON.stringify(now).includes('"v4"'), "S7 nothing v4 reaches a v1 world's clients"); }
 
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

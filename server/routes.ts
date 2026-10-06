@@ -409,7 +409,10 @@ const ROUTES: Route[] = [
       // seeing a token. (fkm web-ui precedent: "the WS is the authentication
       // event" — here inverted, the cookie is, and the WS rides it.)
       const session = sessionFromCookie(req.headers.get("cookie"));
-      if (srv.upgrade(req, { data: { session } })) return undefined as unknown as Response;
+      // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
+      const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+      const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);
+      if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
       return new Response("expected websocket", { status: 400 });
     },
   },

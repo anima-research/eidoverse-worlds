@@ -30,6 +30,8 @@ import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } fr
 export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
 let CAT = LAB_CATALOGUE;
 let THROUGH = false; // the request's through_lock flag, set by request() for one synchronous call (like CAT)
+// is this identity a guest (no account: the door directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
+let ISANON = () => false;
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
@@ -288,14 +290,16 @@ const RANK = { none: -1, visitor: 0, builder: 1, owner: 3 };
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && c[k]?.role === "owner"); };
 // §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
 // (`default-role`, what a v1 `roles['*']` becomes); absence means visitor.
-function roleOf(st, actor) {
+function roleOf(st, actor, anon = ISANON(actor)) {
   const c = st.entities?.["@world"]?.c; if (!c) return "none";
-  let r = c[`roles:${actor}`]?.role ?? c["default-role"]?.role ?? "visitor";
+  // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
+  // may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
+  let r = c[`roles:${actor}`]?.role ?? (anon ? "visitor" : c["default-role"]?.role ?? "visitor");
   if (RANK[r] === undefined) r = "visitor";
   return !ownersOf(st).length && RANK[r] > RANK.visitor ? "visitor" : r;
 }
 /** The role the door gives `actor` in a folded state (a view: what a client should be told it may do here). */
-export const roleIn = (st, actor) => roleOf(st, actor);
+export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
@@ -361,7 +365,8 @@ function wire(args) {
 }
 
 export function request(w, actor, tool, args = {}) {
-  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
+  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF, prevAnon = ISANON; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
+  ISANON = (id) => w.kindOf?.(id) === "anon";
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -392,7 +397,7 @@ export function request(w, actor, tool, args = {}) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; }
+  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; }
 }
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
@@ -515,6 +520,7 @@ function admit(w, st, who, ops) {
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
     rights(w, st, s, who, role, op, at);
     keyRights(w, st, s, who, op, at, keysMade);
+    seniority(w, st, who, op);
     // §3d H7: deleting an entity is admitted as deleting each of its components, so the creator rule applies per key
     if (op.verb === "delete" && op.comp === undefined && e) for (const c of Object.keys(e.c)) keyRights(w, st, s, who, { verb: "delete", id: op.id, comp: c }, `${op.id}.${c}`, keysMade);
     // §3d M6 (L5): a schemas:<name> value, once set, can't change (a new meaning is a new name). Setting the same value
@@ -591,6 +597,19 @@ const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
 // rule; PARTITION keys (terrain-tile:, ground-paint:) are pieces of one shared surface: ordinary rank rules only.
 // A keyed name with no schema here is an instance (note 49: the spec doesn't say; this is the safe side).
 export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
+// H5 (security review 10-06): owners are protected from each other by SENIORITY, as Matrix room v12 protects creators.
+// An owner can't change or remove the role of an owner who has been one longer (the founder, whose ownership is in
+// genesis or the founding grant, is the most senior and can't be demoted by anyone). Without it, a co-owner — or anyone
+// who got owner by mistake — could demote the founder and ban them, and only an operator editing the log could undo it.
+const ownerSince = (w, st, x) => (roleOf(st, x, false) === "owner" ? lastSetterOf(w, "@world", `roles:${x}`)?.seq ?? -1 : Infinity);
+function seniority(w, st, who, op) {
+  if (op.id !== "@world" || !op.comp?.startsWith("roles:") || who.cap) return;
+  const target = op.comp.slice(6);
+  if (target === who.actor || roleOf(st, target, false) !== "owner") return;
+  if (op.verb === "set" && op.value?.role === "owner") return;   // re-affirming an owner takes nothing from them
+  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))
+    refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
+}
 function keyRights(w, st, s, who, op, at, keysMade) {
   if (!isKeyed(op.comp) || op.verb === "create") return;
   if (keyKind(op.comp) === "partition") return;
@@ -610,6 +629,11 @@ function keyRights(w, st, s, who, op, at, keysMade) {
 function valueCheck(s, { id, comp, value: v }) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
+  // H5: everyone-is-owner would let any stranger remove the real owners; the default role tops out at builder
+  if (id === "@world" && comp === "default-role" && !["visitor", "builder", "none"].includes(v?.role))
+    refuse("shape", `${at}.role must be visitor, builder or none (got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
+  if (id === "@world" && comp.startsWith("roles:") && !["owner", "builder", "visitor", "none"].includes(v?.role))
+    refuse("shape", `${at}.role must be owner, builder, visitor or none (got ${JSON.stringify(v?.role)})`, "");
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); }
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
@@ -1902,7 +1926,12 @@ const TOOLS = {
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry
   ban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "banning needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "ban {who}", "");
+    if (roleOf(w.state(), a.who, false) === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be banned`, "an owner made after them can be demoted first (roles:<them>); then ban");
     w.appendMod({ actor, verb: "ban", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, banned: a.who, logged: "moderator log" }; },
+  // a kick removes a live session now (the door's server does the removing on this reply); they may come back
+  kick(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "kicking needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "kick {who}", "");
+    if (roleOf(w.state(), a.who, false) === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be kicked`, "");
+    w.appendMod({ actor, verb: "kick", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, kicked: a.who, logged: "moderator log" }; },
   unban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "unbanning needs owner", "");
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");

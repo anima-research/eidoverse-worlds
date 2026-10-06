@@ -14,6 +14,7 @@ import { TRUST_NAMES } from "./config.ts";
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
+import { isOperator } from "./v4/operators.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal, bodyRefusal } from "./rights.ts";
 import { resolveLibFile } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
@@ -24,9 +25,10 @@ import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
 // the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
 // worlds with the server is boot policy, not world mechanics.
-import { World, type Client, worlds, getWorld, wireSettledPose, wireV4 } from "./world.ts";
+import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireV4 } from "./world.ts";
+import { isV4World } from "./v4/world.ts";
 import { v4Handler, actorOf as v4ActorOf } from "./v4/messages.ts";
-import { directoryFor } from "./v4/directory.ts";
+import { directoryFor, foldName } from "./v4/directory.ts";
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
@@ -396,7 +398,19 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       c.ws.close?.(4005, "bad world name");
       return null;
     }
+    // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
+    // world behind it is refused, and only a v4 world is served (the old protocol has no runtime here: an old log is
+    // translated once, by the operator, into a new v4 world).
+    if (!worldExists(wname) || !isV4World(wname)) {
+      ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" here — check the link that brought you here` }));
+      c.ws.close?.(4005, "no such world");
+      return null;
+    }
     const w = getWorld(wname);
+    // C1 (security review 10-06): what this join proves is decided from THIS join's own credentials. Nothing a previous
+    // join on this socket proved carries over (a token presented once used to make every later join on the socket
+    // "verified", so a second join could wear any agent's name).
+    c.tokenVerified = false; c.auxBound = false; c.v4id = undefined;
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).
@@ -408,7 +422,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // (Hesperus finding #3: an unauthenticated join as "world" produced
     // entries indistinguishable from the sequencer's own.)
     c.id = c.id.replace(/[\u0000-\u001f\u007f]/g, "").trim();
-    if (!c.id || /^(world|\*)$/i.test(c.id) || /^bhv:/i.test(c.id)) {
+    // M3: format characters (zero-width, bidi overrides) and compatibility forms are how one name passes for another
+    c.id = c.id.normalize("NFKC").replace(/\p{Cf}/gu, "").trim();
+    // H2: an identity is never a name — a name shaped like one (u-…) would pass for the person who wears it
+    if (!c.id || /^(world|\*|door)$/i.test(c.id) || /^bhv:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
       return null;
@@ -444,41 +461,65 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
-    // Same display name, different PERSON (two guild members can share a
-    // nick): suffix the newcomer rather than letting takeover fight.
-    if (auth && !c.spectator) {
-      for (const other of w.clients) {
-        if (other !== c && !other.spectator && other.id === c.id && other.sub && other.sub !== c.sub) {
-          c.id = `${c.id}-${c.sub!.replace(/\D/g, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN);
-          break;
-        }
-      }
-    }
-    // Agent names are RESERVED: an id that appears in mcpl/tokens.json
-    // is claimable only with that agent's own bearer token (the MCPL
-    // door forwards it). Closes the "fable spoofable" hole for names we
-    // actually know; humans stay self-asserted until archipelago-home.
+    // ---- who this join is: an ACCOUNT, proven by this join's credential (C1/C2) ----
+    //   a verified session → its sub ("human:discord:…");
+    //   an enrolled agent's bearer (mcpl/tokens.json) → "agent:token:<id>", and its name is that enrolment's id;
+    //   a home-node aid1 credential of KIND agent → the enrolment that lists its subject, else "aid1:<iss>:<sub>";
+    //   a private TRUST_NAMES door → "local:<typed name>"; otherwise none: anonymous.
+    // A name reserved by an enrolment is claimable only with that enrolment's own proof. Never by a slug of a name.
     {
       const at = agentTokens();
       const tokStr = String(msg.agentToken ?? "");
-      let tokId = at.byToken.get(tokStr);
-      // The archipelago door forwards the agent's aid1 credential. An
-      // identity the home node vouches for satisfies the reservation
-      // exactly like a tokens.json bearer — same slug derivation as the
-      // MCPL door, so the two doors agree on who "fable" is.
-      if (!tokId) tokId = aid1JoinIdentity(tokStr)?.slug;
-      if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) c.tokenVerified = true;
-      if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
-        console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);
+      let account: string | null = auth && c.sub ? c.sub : null;
+      let agentName: string | null = null;
+      const enrolled = at.byToken.get(tokStr);
+      if (enrolled) { account = `agent:token:${enrolled.toLowerCase()}`; agentName = enrolled; }
+      else if (tokStr) {
+        const a = aid1JoinIdentity(tokStr);
+        if (!a || a.payload.kind !== "agent") {
+          ws.send(JSON.stringify({ type: "error", error: a ? "that credential isn't an agent's — sign in as yourself instead" : "that agent credential didn't verify" }));
+          c.ws.close?.(4004, "bad agent credential");
+          return null;
+        }
+        const viaEnrolment = at.bySub.get(a.payload.sub);
+        account = viaEnrolment ? `agent:token:${viaEnrolment.toLowerCase()}` : `aid1:${a.payload.iss}:${a.payload.sub}`;
+        agentName = viaEnrolment ?? a.slug;
+      }
+      if (agentName) { c.id = agentName.slice(0, LIMITS.ID_LEN); c.tokenVerified = true; c.agent = true; }
+      if (at.names.has(c.id.toLowerCase()) && account !== `agent:token:${c.id.toLowerCase()}`) {
+        console.log(`[perm] join refused: "${c.id}" is a reserved agent name (no proof of that enrolment)`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
         c.ws.close?.(4004, "reserved name");
         return null;
       }
+      if (!account && TRUST_NAMES) account = `local:${c.id.toLowerCase()}`;
+      // a connection that has joined stays who it proved it was: travel keeps the identity; a new one needs a new socket
+      if (c.account !== undefined && c.account !== account) {
+        ws.send(JSON.stringify({ type: "error", error: "this connection already joined as someone else — reconnect to join as another identity" }));
+        c.ws.close?.(4004, "identity is fixed per connection");
+        return null;
+      }
+      c.account = account;
+      c.anonymous = !account;
+    }
+    // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
+    // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).
+    // The newcomer is the one renamed; an anonymous one is marked as a guest.
+    if (!c.spectator) {
+      const dir = directoryFor(WORLDS_DIR);
+      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
+        || (!!c.anonymous && dir.claimedName(n));
+      if (taken(c.id)) {
+        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${(c.account ?? "").replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`;
+        let n = base.slice(0, LIMITS.ID_LEN), k = 2;
+        while (taken(n)) n = `${base.slice(0, LIMITS.ID_LEN - 3)} ${k++}`;
+        c.id = n;
+      }
     }
     // A v4 world's actor is an OPAQUE id from the door's directory (server/v4/directory.ts, never logged), reached only
-    // through an account: a verified session's sub, or a verified agent's token. With neither, a fresh id per
-    // connection. Typing someone's name never yields their id, so it never yields their role (round-2 review R2).
-    if (w.v4) c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.sub ?? (c.tokenVerified ? `agent:${c.id.toLowerCase()}` : TRUST_NAMES ? `local:${c.id.toLowerCase()}` : null), name: c.id, agent: !!c.tokenVerified });
+    // through an account; per world (pairwise ids, M6); anonymous ids live in memory only (M2). Typing someone's name
+    // never yields their id, so it never yields their role.
+    c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified, world: w.v4!.live.worldId });
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
@@ -486,12 +527,12 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // operator can never be locked out, which is also the unban path of
     // last resort.
     {
-      const gb = findBan(globalBans, c.id, c.sub);
-      // a v4 world's door bans by opaque id in its moderator log (review 10-06): the same door closes at join
-      const ban = gb ?? findBan(w.state.bans, c.id, c.sub) ?? (w.v4 && c.v4id && w.v4.bannedHere(c.v4id) ? { by: "a moderator" } : null);
-      if (ban && !isAdminId(c.id, c.sub)) {
-        console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "globally" : "here"} (by ${ban.by})`);
-        ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""} (by ${ban.by})` }));
+      // by ACCOUNT, or a guest by its hashed address while that ban lasts (H4); an operator is never locked out
+      const gb = findBan(globalBans, c.account, c.addr);
+      const ban = gb ?? findBan(globalBans, c.account, c.addr, Date.now(), w.name) ?? (c.v4id && w.v4!.bannedHere(c.v4id) ? { by: "a moderator" } as any : null);
+      if (ban && !isOperator(c.account)) {
+        console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "from this door" : "here"}`);
+        ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` }));
         c.ws.close?.(4006, "banned");
         return null;
       }
@@ -533,8 +574,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       //   · self-asserted primary with no bindable credential: REFUSE.
       //     Guessing would bless exactly the impostor this exists to
       //     stop; the primary can log in and rejoin to earn aux legs.
-      const auxBound = c.tokenVerified === true
-        || (typeof primary.sub === "string" && primary.sub.length > 0 && c.sub === primary.sub);
+      // an aux leg binds by ACCOUNT: the same proven account as its primary (a token-verified agent, or the same login)
+      const auxBound = !!c.account && c.account === primary.account;
       // Remember the binding so the attest gate (B3) admits the SAME
       // identity authority B1 does — a sub-bound human's voice leg, not
       // only a token-verified agent leg (Opus-5 review: gating attest on
@@ -581,7 +622,9 @@ function installJoin(c: Client, w: World) {
     let retiredGen: number | undefined;
     if (!(c.spectator && c.surface === "world")) {
       for (const other of [...w.clients]) {
-        if (other !== c && other.id === c.id
+        // a takeover is the SAME ACCOUNT re-arriving (H1): a typed name never kicks anyone, and anonymous sessions
+        // never take over (each is its own guest)
+        if (other !== c && other.id === c.id && !!c.account && other.account === c.account
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
@@ -621,19 +664,7 @@ function installJoin(c: Client, w: World) {
         id: c.id, surface: c.surface, gen: c.gen, retired: retiredGen ?? null });
       for (const t of w.clients) if (t !== c) t.ws.send(transition);
     }
-    // A brand-new world belongs to whoever first walks into it embodied:
-    // the grant goes through the log like any other fact, actor "world".
-    // (Pre-existing ownerless worlds stay OPEN — granting their first
-    // owner is a deliberate act by a WORLD_ADMIN, not a land-rush.)
-    // ("brand-new" tolerates the genesis dialect marker every fresh log
-    // now opens with — a world whose only history is its birth certificate
-    // still belongs to whoever steps in first)
-    if (!c.spectator && w.snapSeq < 0
-      && w.entries.every((e) => e.verb === "genesis")) {
-      w.commit("world", "grant",
-        { id: c.id, role: "owner", gen: true, ...(c.sub ? { sub: c.sub } : {}) });
-      console.log(`[world:${w.name}] new world — ${c.id} is its owner`);
-    }
+    // (a world's owner is named when it is FOUNDED — tools/v4/world.ts found, or the translator — never by being first in)
 }
 
 /** What a client is told it may do. A v4 world's role is the door's (slice 3b: v1's default for a stranger in an owned
@@ -716,8 +747,10 @@ const server = Bun.serve({
       try {
         const c: Client = { id: `anon-${nextClientNum++}`, ws, world: null, avatar: "", lastPose: null, spectator: false,
           msgWin: 0, msgCount: 0, verbWin: 0, verbCount: 0 };
-        const sess = (ws as unknown as { data?: { session?: HnSession | null } }).data?.session;
+        const data = (ws as unknown as { data?: { session?: HnSession | null; addr?: string } }).data;
+        const sess = data?.session;
         if (sess && sess.exp > Date.now()) { c.auth = sess; c.sub = sess.sub; }
+        c.addr = data?.addr ?? null;
         clients.set(ws, c);
       } catch (err) {
         console.error(`[ws] open failed server-side:`, err);

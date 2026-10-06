@@ -39,7 +39,7 @@ for (const dir of dirs) {
   const who = (k: string, sub?: string): string => {
     if (SYSTEM.has(k) || isMinted(k)) return k;
     const name = dec(k) ?? k;
-    const acct = sub ?? (agents.has(name.toLowerCase()) ? `agent:${name.toLowerCase()}` : trust ? `local:${name.toLowerCase()}` : undefined);
+    const acct = sub ?? (agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : trust ? `local:${name.toLowerCase()}` : undefined);
     const key = acct ?? `name:${name}`; let id = memo.get(key) ?? (acct ? directory.idOfSub(acct) : null);
     if (!id) { id = mintId(); planned[id] = { name, subs: acct ? [acct] : [], kind: acct?.startsWith("agent:") ? "agent" : acct ? "human" : "legacy", since: Date.now() }; }
     memo.set(key, id); return id; };
