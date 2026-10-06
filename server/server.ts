@@ -507,7 +507,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // The newcomer is the one renamed; an anonymous one is marked as a guest.
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
-      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
+      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n))
         || (!!c.anonymous && dir.claimedName(n));
       if (taken(c.id)) {
         const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${(c.account ?? "").replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`;
@@ -517,9 +517,9 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     // A v4 world's actor is an OPAQUE id from the door's directory (server/v4/directory.ts, never logged), reached only
-    // through an account; per world (pairwise ids, M6); anonymous ids live in memory only (M2). Typing someone's name
+    // through an account; one per account across the door's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
-    c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified, world: w.v4!.live.worldId });
+    c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
