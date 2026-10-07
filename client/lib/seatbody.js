@@ -73,7 +73,10 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   if (!body) return null;
   const obj = entities.get(m.to);
   const base = obj?.userData?.base ?? (obj ? { pos: obj.position.toArray(), yaw: obj.rotation.y } : null);
-  const signals = socketSignals({ comp, sock, base, nowMs, input: m.in });
+  // the occupant's input counts only where the socket routes it: movement (throttle/steer) when input.move takes the
+  // keys, the look (aimYaw/aimPitch) unless the view is locked — the same filter on every client
+  const inp = m.in ? { ...(body.input.move !== 'none' ? { throttle: m.in.throttle, steer: m.in.steer } : {}), ...(body.input.look !== 'locked' ? { aimYaw: m.in.aimYaw, aimPitch: m.in.aimPitch } : {}) } : null;
+  const signals = socketSignals({ comp, sock, base, nowMs, input: inp });
   const chosen = choosePose(body, seatChoices(riderId, m, body));
   const ev = evalPose(chosen.spec, signals);
   const sw = mountTransform(riderId, _p, { path, av }, ev.offset);

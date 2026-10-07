@@ -11,10 +11,12 @@
 //   anchor    hips (a seat) lands the hips joint on the socket; feet (a standing place) lands the soles on it
 //   swing     a phase-locked pose: the clip's time follows the pendulum's phase; the sitter tilts with the plank
 //   leaveBy   script: W and X don't get you off, the world does (the socket taken away); without it, W does
+//   remote    another person's input (throttle) riding their presence blends their seated body in this client
+//   enter     an approach point and an enter clip: the clip plays with its time locked to the carry onto the seat
 //   errors    no page error and no console.error from the v4 path
 // The owned server runs with SKIP_OPT_SWEEP=1 and a scratch WORLDS_DIR; the world has no sky (the headless-sky
 // rule: no cloud bake in SwiftShader). Teardown (browser, server, scratch) is in finally.
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
@@ -26,8 +28,14 @@ import { enc } from '../../shared/v4/names.js';
 import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
 import { directoryFor } from '../../server/v4/directory.ts';
 import { cycleOf } from '../../client/lib/socksignals.js';
+import { swingGlb } from './probe-swing-glb.mjs';
+import { OPT_DIR } from '../../server/config.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
+// a swing whose plank is its own part named the way a component key can name it (motion:plank): the probe's own
+// model, written beside the optimised assets for this run only (removed in finally)
+const SWING = `eidoverse/assets/models/v4probe-swing-${process.pid}.glb`;
+const SWING_FILE = join(OPT_DIR, SWING);
 const KEY = 'v4probe';
 const worlds = mkdtempSync(join(tmpdir(), 'v4-client-'));
 const stage = (name, okv, detail) => console.log(`${okv ? 'ok  ' : 'FAIL'} ${name}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 400)}` : ''}`);
@@ -36,7 +44,8 @@ let world = null, b = null, ANN = null, BOB = null;
 try {
   // the world: founded by Ann, a crate already standing in it, Bob a builder
   foundV4(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
-  await warm([MODEL]);
+  mkdirSync(join(SWING_FILE, '..'), { recursive: true }); writeFileSync(SWING_FILE, swingGlb());
+  await warm([MODEL, SWING]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
     // actors are the door directory's opaque ids (one per account, R 10-06): Ann founded it as local:ann; Bob will join
     // this local door by name, so his account is local:bob
@@ -182,31 +191,34 @@ try {
     await stand();
   }
 
-  // (c) a phase-locked swing pose follows the pendulum: the crate's mesh swings (a part pendulum); the seat rides that
-  //     part and its pose is {clip: 'walk', time: 'phase'}. The clip's time, as a fraction of its length, must equal the
-  //     pendulum's phase at the sequencer's clock — computed here from the motion component with the shared closed form
+  // (c) a phase-locked swing pose follows the pendulum: the swing's plank is a PART swinging on its own part motion
+  //     (motion:plank, the door stamping its t0 so every client agrees on its phase); the seat rides the plank and its
+  //     pose is {clip: 'walk', time: 'phase'}. The clip's time, as a fraction of its length, must equal the pendulum's
+  //     phase at the clock the seat read — computed here from the motion component with the shared closed form
   {
-    const r = await thing('swing', 0, 2.2, { motion: { type: 'pendulum', part: 'Crate_LP', axis: [1, 0, 0], amp: 0.5, period: 3, pivot: [0, 4, 0] },
-      sockets: { seat: { pos: [0, 2.6, 0], part: 'Crate_LP', body: { pose: { clip: 'walk', time: 'phase' } } } } }, 0.4);
+    const r = await door('create', { id: 'swing', model: SWING, components: { transform: { pos: [here[0], 0, here[2] + 2.2] },
+      'motion:plank': { type: 'pendulum', axis: [1, 0, 0], amp: 0.5, period: 3, pivot: [0, 1.5, 0] },
+      sockets: { seat: { pos: [0, 0.6, 0], part: 'plank', body: { pose: { clip: 'walk', time: 'phase' } } } } } });
     if (!r.ok) stage('swing: setup', false, r.refused);
     await realized('swing');
     const sat = await sit('swing', 'swing/seat');
     await sleep(1200);
     const rows = [];
     for (let i = 0; i < 8; i++) {
-      // the page's clip time and its sequencer clock, read together; the expected phase from the motion component the
-      // page holds, through the shared closed form here (the probe's own import, not the page's code)
-      const x = await ev(() => { const EW = globalThis.EW; const m = EW.comps.get('swing')?.motion;
+      // the page's clip time and the clock the seat read this frame's pose at (under load a headless frame can be a
+      // second away from this call); the expected phase from the motion component the page holds, through the shared
+      // closed form here (the probe's own import, not the page's code)
+      const x = await ev(() => { const EW = globalThis.EW; const m = EW.comps.get('swing')?.['motion:plank'];
         const a = EW.me().actions.walk; const r = EW.me().root; r.updateMatrixWorld();
-        // the clock the seat read this frame's pose at (under load a headless frame can be a second apart from this call)
         return { m, now: EW.me()._seatState?.now ?? null, clip: a ? a.time / a.getClip().duration : null, w: a?.getEffectiveWeight() ?? null, upZ: +r.matrixWorld.elements[6].toFixed(3) }; });
-      rows.push({ ...x, m: undefined, want: x.m ? cycleOf(x.m, x.now).phase : null });
+      rows.push({ t0: x.m?.t0, now: x.now, clip: x.clip, w: x.w, upZ: x.upZ, want: x.m ? cycleOf(x.m, x.now).phase : null });
       await sleep(260);
     }
     const d = rows.map((x) => { const e = Math.abs(x.clip - x.want); return Math.min(e, 1 - e); });
     const ups = rows.map((x) => x.upZ);
-    check('swing: seated on the swinging part, the walk clip holds the body (weight ≈ 1)', !!sat && rows.every((x) => x.w > 0.97), { sat, rows: rows.slice(0, 2) });
-    check('swing: …its time follows the pendulum\'s phase (within 0.03 of a cycle, every sample)', d.every((x) => x < 0.03) && new Set(rows.map((x) => x.want.toFixed(2))).size > 4, { d: d.map((x) => +x.toFixed(3)), rows });
+    check('swing: the plank\'s part motion carries the door\'s t0 (every client on one clock)', Number.isFinite(rows[0]?.t0), rows[0]);
+    check('swing: seated on the swinging plank, the walk clip holds the body (weight ≈ 1)', !!sat && rows.every((x) => x.w > 0.97), { sat, rows: rows.slice(0, 2) });
+    check('swing: …its time follows the pendulum\'s phase (within 0.03 of a cycle, every sample)', d.every((x) => x < 0.03) && new Set(rows.map((x) => x.want?.toFixed(2))).size > 4, { d: d.map((x) => +x.toFixed(3)), rows });
     check('swing: …and the sitter tilts with the plank (body up leans fore and aft)', Math.max(...ups) - Math.min(...ups) > 0.2, ups);
     await shoot('swing-phase');
     await stand();
@@ -256,6 +268,52 @@ try {
     await shoot('stand-on-plinth');
     await stand();
   }
+  // (f) another person's seat, driven by their input riding presence: Bob's frames say he sits on the cart's seat with
+  //     throttle 0.5 (input.move walk routes it); the seat blends sitchair → sit by throttle. Ann's client runs the same
+  //     driver for him (remotes.js → seatbody.js), so his body there is half and half.
+  {
+    const r = await thing('cart', 0, -2.2, { sockets: { seat: { pos: [0, 2.6, 0], body: { input: { move: 'walk' }, pose: { by: 'throttle', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
+    if (!r.ok) stage('remote: setup', false, r.refused);
+    await realized('cart');
+    const p = [here[0], 0, here[2] - 2.2];
+    let stop = false;
+    const frames = (async () => { while (!stop) { ws.send(JSON.stringify({ type: 'pose', pose: { p, yaw: 0, speed: 0, clip: 'idle', seat: { to: 'cart', slot: 'seat', in: { throttle: 0.5, steer: 0 } } } })); await sleep(66); } })();
+    const seen = await waitFor(() => { const EW = globalThis.EW; const r = [...EW.remotes.values()].find((x) => x.id === 'Bob');
+      const a = r?.avatar?.actions; const m = EW.avatarMounts.get('Bob');
+      if (!m || !a?.sit || !a?.sitchair) return null;
+      const w = { sit: +a.sit.getEffectiveWeight().toFixed(3), sitchair: +a.sitchair.getEffectiveWeight().toFixed(3), throttle: m.in?.throttle };
+      return Math.abs(w.sit - 0.5) < 0.03 ? w : null; }, null, 15000);
+    const last = seen ?? await ev(() => { const r = [...globalThis.EW.remotes.values()].find((x) => x.id === 'Bob'); const a = r?.avatar?.actions;
+      return { mount: globalThis.EW.avatarMounts.get('Bob') ?? null, sit: a?.sit?.getEffectiveWeight() ?? null, sitchair: a?.sitchair?.getEffectiveWeight() ?? null, kind: r?.avatar?.constructor?.name }; });
+    check('remote: Bob\'s throttle, riding his presence, blends his seated body in Ann\'s client (half sit, half sitchair)', !!seen && Math.abs(seen.sitchair - 0.5) < 0.03 && seen.throttle === 0.5, last);
+    stop = true; await frames;
+    ws.send(JSON.stringify({ type: 'pose', pose: { p, yaw: 0, speed: 0, clip: 'idle' } }));
+  }
+
+  // (g) getting on, warped: a seat with an approach point and an enter clip. Ann is carried to the approach point, then
+  //     the enter clip (stand_to_sit) plays with its time locked to the carry onto the seat, then the seat's pose holds
+  {
+    const r = await thing('bench', 1.8, -2.2, { sockets: { seat: { pos: [0, 2.6, 0], body: { approach: [0, 0, 0.6, 0], enter: 'stand_to_sit', leave: 'sit_to_stand' } } } });
+    if (!r.ok) stage('enter: setup', false, r.refused);
+    await realized('bench');
+    await ev(() => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: 'bench seat' }));
+    const trace = [];
+    const t0 = Date.now();
+    while (Date.now() - t0 < 9000) {
+      const x = await ev(() => { const EW = globalThis.EW, me = EW.me(); const st = me._seatState; const a = me.actions.stand_to_sit;
+        return st ? { t: st.now - st.t0, enter: a ? +a.getEffectiveWeight().toFixed(3) : null, et: a ? +(a.time / a.getClip().duration).toFixed(3) : null, root: me.root.position.toArray().map((v) => +v.toFixed(3)), clip: EW.myState.clip } : null; }).catch(() => null);
+      if (x) trace.push(x);
+      if (x && x.clip === 'sitchair' && trace.some((y) => y.clip === 'stand_to_sit')) break;   // on, after the enter
+      await sleep(120);
+    }
+    const mid = trace.filter((x) => x.clip === 'stand_to_sit' && x.enter > 0.9);
+    const ets = mid.map((x) => x.et);
+    check('enter: the enter clip plays while she is carried on (stand_to_sit holds the body, its time rising with the carry)',
+      mid.length >= 2 && ets.every((v, i) => i === 0 || v >= ets[i - 1]) && ets[ets.length - 1] - ets[0] > 0.2, trace.slice(0, 12));
+    const end = trace[trace.length - 1];
+    check('enter: …and it ends seated, the seat\'s own pose holding', end?.clip === 'sitchair', end);
+    await stand();
+  }
   ws.close();
   const v4Errors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
   stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);
@@ -266,6 +324,7 @@ try {
   try { await b?.close(); } catch {}
   try { await world?.close(); } catch {}
   rmSync(worlds, { recursive: true, force: true });
+  rmSync(SWING_FILE, { force: true });
 }
 console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a v4 world, sees it, edits it through the door, and hears refusals');
 process.exit(failed ? 1 : 0);
