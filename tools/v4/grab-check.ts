@@ -50,7 +50,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["throw: 0 only drops", "v4/door.js", ": g?.throw === 0 ? `${a.id} can't be thrown", ": false ? `${a.id} can't be thrown", ["R1"]],
   ["stay: a put with no pos stays at the hand", "v4/door.js", "if (pos === undefined && stay) pos = h.pose.pos.map(r3);", "", ["R2"]],
   ["stay: never called floating", "v4/door.js", ".filter((x) => !(stay && (x.kind === \"floating\" || x.kind === \"sunk\")))", ".filter(() => true)", ["R2"]],
-  ["release: return goes home at once", "v4/door.js", "if (g?.release === \"return\" && g.home) {", "if (false) {", ["R3"]],
+  ["release: return goes home at once", "v4/door.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
   ["a returning drop doesn't fly", "v4/door.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
   ["a returning throw doesn't fly", "v4/door.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
   ["home is stamped", "v4/door.js", "if (v.home === undefined) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
