@@ -13,6 +13,7 @@ export const comps = new Map();
 export const behaviors = new Map();
 export const editHolds = new Map();
 export function mountTransform() { return null; }
+export function setBodySeat() {}
 export function entityMeta() { return null; }
 export function findPart() { return null; }
 export function socketWorldPos() { return null; }
@@ -37,6 +38,7 @@ export function wingFoldPresence() { return null; }
 // xrbody.js — #197 has remotes.js apply remote XR poses. It reaches frames.js (and a DOM) through
 // its own cone, and the capsule recovery path never applies a pose, so it is replaced wholesale.
 export function applyRemoteXR() {}
+export function xrHandWorld() { return null; }   // seatbody.js: a socket's vr policy asks where a tracked hand is
 export function resetFingers() {}
 export const xrBodyDebug = () => null;
 // shared/presencewire.js — same: #197 wires presence through it; recovery never sends one.
