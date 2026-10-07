@@ -133,8 +133,17 @@ try {
   const here = await ev(() => globalThis.EW.me().root.position.toArray());
   const thing = (id, dx, dz, comps, y = 0) => door('create', { id, model: MODEL, components: { transform: { pos: [here[0] + dx, y, here[2] + dz], scale: [0.2, 0.2, 0.2] }, ...comps } });
   const realized = (id) => waitFor((i) => !!globalThis.EW.entities.get(i), id);
-  // the screenshots are the follow camera's own view (it rides the seat behind the body)
-  const shoot = async (name) => { if (SHOTS) await pg.screenshot({ path: `${SHOTS}/${name}.png` }); };
+  // the screenshots: the follow camera pulls in against the little crates and ends up in the hair, so a shot re-renders
+  // the scene from a camera of the probe's own, after the app's frame (a rAF callback behind the app's), then restores
+  // nothing — the app sets its camera again on its next frame. Pictures only; nothing is asserted from them.
+  const shoot = async (name, offset = [1.3, 0.5, 1.1]) => { if (!SHOTS) return;
+    await ev((o) => { const EW = globalThis.EW; const me = EW.me(); const h = me.vrm.humanoid.getRawBoneNode('hips').getWorldPosition(new EW.THREE.Vector3());
+      EW.__shot = { at: h.toArray(), from: [h.x + o[0], h.y + o[1], h.z + o[2]] };
+      if (!EW.__shotLoop) { EW.__shotLoop = true; const f = () => { const s = EW.__shot; if (s) { const c = EW.camera; c.up.set(0, 1, 0); c.position.set(...s.from); c.lookAt(...s.at); c.updateMatrixWorld();
+        try { EW.renderer.render(EW.scene, c); } catch {} } requestAnimationFrame(f); }; requestAnimationFrame(f); } }, offset);
+    await sleep(2500);
+    await pg.screenshot({ path: `${SHOTS}/${name}.png` });
+    await ev(() => { globalThis.EW.__shot = null; }); };
 
   // (a) reach: a hand target on a moving PART moves the hand with the part. The probe's swing model: its plank (node
   //     'plank') swings on a part pendulum (motion:plank); the seat stands still behind it and the left hand's target is
@@ -167,7 +176,7 @@ try {
     check('reach: seated behind the swing, a hand target on its swinging plank', !!sat && samples.length >= 6, { sat, n: samples.length });
     check('reach: …the part really moves (the target travels > 15 cm over a swing)', Math.max(...xs) - Math.min(...xs) > 0.15, { range: Math.max(...xs) - Math.min(...xs), n: samples.length });
     check('reach: …and the hand stays on it through the swing (every frame within 6 cm)', err.length > 0 && Math.max(...err) < 0.06, { err: err.map((e) => +e.toFixed(3)) });
-    await shoot('reach-on-part');
+    await shoot('reach-on-part', [1.1, 0.5, 0.2]);
     await stand();
   }
 
@@ -224,7 +233,7 @@ try {
     check('swing: seated on the swinging plank, the walk clip holds the body (weight ≈ 1)', !!sat && rows.every((x) => x.w > 0.97), { sat, rows: rows.slice(0, 2) });
     check('swing: …its time follows the pendulum\'s phase (within 0.03 of a cycle, every sample)', d.every((x) => x < 0.03) && new Set(rows.map((x) => x.want?.toFixed(2))).size > 4, { d: d.map((x) => +x.toFixed(3)), rows });
     check('swing: …and the sitter tilts with the plank (body up leans fore and aft)', Math.max(...ups) - Math.min(...ups) > 0.2, ups);
-    await shoot('swing-phase');
+    await shoot('swing-phase', [-1.5, 0.5, 0.6]);
     await stand();
   }
 
@@ -271,7 +280,7 @@ try {
     const said = sat ? null : await ev(() => document.body.innerText.split('\n').filter((l) => /plinth|seat|refused|sit|stand/i.test(l)).slice(-5)).catch(() => null);
     check('anchor: feet — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
       !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.comps.get('plinth')?.sockets ?? null) });
-    await shoot('stand-on-plinth');
+    await shoot('stand-on-plinth', [1.4, 0.2, 1.6]);
     await stand();
   }
   // (f) another person's seat, driven by their input riding presence: Bob's frames say he sits on the cart's seat with
@@ -306,7 +315,7 @@ try {
     await ev(() => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: 'bench seat' }));
     const trace = [];
     const t0 = Date.now();
-    while (Date.now() - t0 < 9000) {
+    while (Date.now() - t0 < 30000) {
       const x = await ev(() => { const EW = globalThis.EW, me = EW.me(); const st = me._seatState; const a = me.actions.stand_to_sit;
         // u: how far the carry is at this frame's seat clock (when the enter began, how long it lasts), read off the seat
         const t = st ? (st.now - st.t0) / 1000 : null; const u = st?.enterAt != null ? (t - st.enterAt) / st.de : null;
