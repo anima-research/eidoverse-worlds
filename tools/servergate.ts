@@ -1,7 +1,7 @@
 // servergate — the step-7 battery, one command.
 //
 //   bun tools/servergate.ts             # the core battery
-//   bun tools/servergate.ts --only permtest,comptest
+//   bun tools/servergate.ts --only permtest,smoke
 //
 // The server split (TEL0S_NOTES §15) walks through a dense lattice of
 // wire-contract suites, each with its own env header. This runner makes
@@ -10,8 +10,10 @@
 // env), runs the tool, kills the sequencer by child handle (§ Windows:
 // taskkill /T — the PID we hold is bun's own since we spawn
 // process.execPath, never the PATH shim), and prints a PASS/FAIL table.
-// Self-booting suites (smoke, authtest, support-lifecycle, collide-fold)
-// just run. Baseline this GREEN before touching server.ts; run it after
+// Self-booting suites (smoke, authtest, support-lifecycle) just run. (Protocol v1
+// removed 2026-10-07: the v1 wire matrices — comptest, modtest, locktest, leasetest,
+// worldops, compfold, behaviortest, collide-fold — went with it; their v4 successors
+// are in tools/v4/ (bun run test:v4).) Baseline this GREEN before touching server.ts; run it after
 // every slice.
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -54,16 +56,8 @@ type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<st
 const BATTERY: Row[] = [
   { name: "smoke", tool: "tools/smoke.ts", sweepPorts: [8987] },
   { name: "authtest", tool: "tools/authtest.ts", sweepPorts: [8992] },
-  { name: "collide-fold", tool: "tools/collide-fold-test.ts", sweepPorts: [8990] },
   { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000, sweepPorts: [8940] },
   { name: "permtest", tool: "tools/permtest.ts", server: true },
-  { name: "comptest", tool: "tools/comptest.ts", server: true },
-  { name: "modtest", tool: "tools/modtest.ts", server: true, serverEnv: { WORLD_ADMIN: "admin" } },
-  { name: "locktest", tool: "tools/locktest.ts", server: true },
-  { name: "leasetest", tool: "tools/leasetest.ts", server: true },
-  { name: "worldops", tool: "tools/worldops-test.ts", server: true },
-  { name: "compfold", tool: "tools/compfold-test.ts", server: true, serverEnv: { FOLD_EVERY: "1" } },
-  { name: "behaviortest", tool: "tools/behaviortest.ts", server: true, serverEnv: { BHV_TIMER_MIN: "1" }, timeoutMs: 240_000 },
 ];
 
 /** Kill whatever LISTENS on `port` (Windows netstat) — self-booting suites
