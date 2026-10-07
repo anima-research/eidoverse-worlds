@@ -19,6 +19,8 @@ import { viewState } from "./record.js";
 import { dec, learnNames, actorName } from "./names.js";
 
 const idOut = (s) => dec(s) ?? s;
+/** A say's spoken trio (the door validated it at admission; this is a reader's own guard): display metadata only. */
+export const spokenOf = (b) => (b?.spoken === true && Number.isSafeInteger(b.utt) ? { spoken: true, utt: b.utt, ...(Number.isFinite(b.t0) ? { t0: b.t0 } : {}) } : {});
 
 /** The fold as plain JSON (server side): {id: {born, c: {comp: {v: value} | {purged: true}}}}, the digest's own
  *  wrapping (§2.4), so a purged value can't be mistaken for a value. */
@@ -61,7 +63,7 @@ export function makeV4Client() {
       if (seq !== v.head + 1) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: `gap ${v.head} → ${seq}` }; }
       if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: e.kind }; }
       if (e?.kind === "state") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
-      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}) });
+      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });
       if (e?.kind === "act" && actor === null) actor = v.nameOf(e.actor);
       if (Number.isInteger(e?.ts)) ts = e.ts;
       v.head = seq; v.stats.ingested++;
