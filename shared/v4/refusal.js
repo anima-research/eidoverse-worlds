@@ -9,11 +9,32 @@
 import { dec, actorName, ACTOR_ID } from "./names.js";
 
 // an actor id (u-…) reads as its display name (names.js registry); an escaped name reads back as spelled
-const readable = (s) => String(s).replace(ACTOR_ID, (m) => actorName(m)).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
+const readable0 = (s) => String(s).replace(ACTOR_ID, (m) => actorName(m)).replace(/\bx--(?:[0-9a-f]{2})+\b/g, (m) => dec(m) ?? m);
+const readable = readable0;
 
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
   return readable(`${what} refused by the door (${r.code ?? "refused"}): ${r.reason ?? ""}${r.teach ? ` — ${r.teach}` : ""}`);
+}
+
+// ---- for people (ship list 10-07: "refusals shown to humans use tool syntax and hex ids") ----
+// A person reads what they tried and why, in words: no refusal code, no tool syntax (the door's teach is for agents and
+// is kept only when it's already plain words), and things named by their labels. `nameOf(id)` → how a person knows that
+// thing (its label, or what it is), or null when the word isn't a thing's id. An agent's tools keep refusalText, and the
+// client logs that too (the console), so nothing is lost for whoever wants the door's whole answer.
+const TOOLISH = /[{}[\]`]|=>|\w\s*\(|\b\w+:\s*['"\d[{tf]|through_lock|merge: true/;
+/** Ids in a sentence → names a person knows (a dotted path "lamp.light.intensity" → "Lamp's light intensity"). */
+export function namedFor(text, nameOf = () => null) {
+  return readable(String(text)).replace(/(?<![\w@-])([a-z0-9][a-z0-9-]{0,63})((?:\.[a-zA-Z][\w-]*(?::[\w-]+)?)*)(?![\w-])/g, (m, id, path) => {
+    const n = nameOf(id); if (!n) return m;
+    return path ? `${n}'s ${path.slice(1).split(".").join(" ")}` : n; });
+}
+/** "Couldn't move the crate: …" — a refusal as a person reads it. */
+export function plainRefusal(what, reply, nameOf = () => null) {
+  const r = reply?.refused ?? {};
+  const teach = typeof r.teach === "string" && r.teach && !TOOLISH.test(r.teach) ? r.teach : "";
+  const reason = String(r.reason ?? "it wasn't allowed").replace(/\s*\(§[^)]*\)/g, "");
+  return namedFor(`Couldn't ${what}: ${reason}${teach ? `. ${teach.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
 }
 
 // ---- the lock question (PROTOCOL-v4 §5; R's dialog, research 44 #1) ----
@@ -49,8 +70,9 @@ export const lockChoices = (verb) => [
 
 /** A door warning ({id, kind, …}) as one sentence for a person or an agent (agent lab: "the out-of-bounds warning doesn't
  *  say out of what"; "edit replies… warnings get lost"). */
-export function warningText(w) {
+export function warningText(w, nameOf = null) {
   if (!w || typeof w !== "object") return String(w);
+  const readable = (x) => (nameOf ? namedFor(x, nameOf) : readable0(x));   // a person's surface names things by label
   const id = readable(w.id ?? "?");
   switch (w.kind) {
     case "overlap": return `${id} overlaps ${readable(w.with)} by ${w.by} m`;

@@ -128,12 +128,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const u = call("bob", "undo", { through_lock: true });
     ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && W().state().entities.box.c.lock === true, "P32 …and undo {through_lock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
   { // the gameplay lock lives inside its own component: door {open, locked}
-    call("bob", "create", { id: "gate", model: "door", components: { door: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "door", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
-    ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.door.open === true, "P33 a visitor opens the door: toggle's default is door.open");
-    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && JSON.stringify(W().state().entities.gate.c.door) === '{"open":true,"locked":true}', "P34 bolting sets door.locked, inside the door's own component");
+    call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
+    ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
+    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && JSON.stringify(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
     const r = call("vic", "use", { id: "gate", action: "open" });
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
-    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.door?.locked === true, "P36 inspect shows why, and the door's state", i.notForYou);
+    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the door's state", i.notForYou);
     call("olive", "set", { id: "gate", component: "lock", value: true });
     ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the door (v1: use stays open)"); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
@@ -774,15 +774,15 @@ const w0 = () => openWorld(root, "tier0");
   R("ann", "create", { id: "rock", model: "crate" });
   const u0 = R("ann", "use", { id: "rock" });
   ok(u0.refused?.code === "no-action" && !/undefined/.test(JSON.stringify(u0)) && /nothing to use/.test(u0.refused.reason), "CP1 use with no action on a thing that offers nothing says so (not \"doesn't 'undefined'\")", u0);
-  R("ann", "create", { id: "gate", model: "crate", components: { door: { open: false }, reactions: { open: { kind: "toggle" } } } });
+  R("ann", "create", { id: "gate", model: "crate", components: { openable: { open: false }, reactions: { open: { kind: "toggle" } } } });
   const u1 = R("ann", "use", { id: "gate" });
-  ok(u1.ok && openWorld(root, "cp").state().entities.gate.c.door.open === true, "CP2 …on a thing with one action, it does that action", u1);
+  ok(u1.ok && openWorld(root, "cp").state().entities.gate.c.openable.open === true, "CP2 …on a thing with one action, it does that action", u1);
   R("ann", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle" }, knock: { kind: "set", component: "label", value: "knocked" } } });
   const u2 = R("ann", "use", { id: "gate" });
   ok(u2.refused?.code === "no-action" && /open, knock/.test(u2.refused.teach) && !/undefined/.test(JSON.stringify(u2)), "CP3 …on a thing with several, it asks which, naming them", u2);
-  R("ann", "create", { id: "hatch", model: "crate", components: { door: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "door", field: "locked", value: true, who: "owner" } } } });
+  R("ann", "create", { id: "hatch", model: "crate", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "owner" } } } });
   const u3 = R("vic", "use", { id: "hatch" });
-  ok(u3.ok && openWorld(root, "cp").state().entities.hatch.c.door.open === true, "CP3 …\"one action\" is one the asker may do: a visitor's bare use opens the hatch (its owner-only bolt isn't a choice for them)", u3);
+  ok(u3.ok && openWorld(root, "cp").state().entities.hatch.c.openable.open === true, "CP3 …\"one action\" is one the asker may do: a visitor's bare use opens the hatch (its owner-only bolt isn't a choice for them)", u3);
   for (let i = 0; i < 6; i++) R("ann", "set", { id: "rock", component: "label", value: `r${i}` });
   R("ann", "say", { text: "hello" }); R("vic", "create", { id: "nope", model: "crate" });   // vic: a visitor's refused attempt, on the record
   const all = R("ann", "history", { limit: 200 }).entries;

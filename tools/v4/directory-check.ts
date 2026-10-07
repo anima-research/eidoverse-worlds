@@ -238,11 +238,11 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const w: any = openLive(path.join(tmp, "worlds", "vu"), "vu", { now: () => (T += 1000), custodyFile: path.join(tmp, "vu-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:vu1", name: "Oda" }), vis = d.resolve({ sub: "human:discord:vu2", name: "Vee" });
   request(w, own, "new", { title: "vu" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
-  request(w, own, "create", { id: "gate", model: "door", components: { door: { open: false }, reactions: { open: { kind: "toggle", component: "door", field: "open" } } }, place: { at: [0, 4] } });
+  request(w, own, "create", { id: "gate", model: "door", components: { openable: { open: false }, reactions: { open: { kind: "toggle", component: "openable", field: "open" } } }, place: { at: [0, 4] } });
   const u: any = request(w, vis, "use", { id: "gate", action: "open" });
-  ok(u.ok && w.state().entities.gate.c.door.open === true, "V1 a visitor opens the gate through its handler", u.refused);
+  ok(u.ok && w.state().entities.gate.c.openable.open === true, "V1 a visitor opens the gate through its handler", u.refused);
   const back: any = request(w, vis, "undo", {});
-  ok(back.ok && w.state().entities.gate.c.door.open === false, "V2 …and can undo that, under the same handler (not builder rank)", back.refused);
+  ok(back.ok && w.state().entities.gate.c.openable.open === false, "V2 …and can undo that, under the same handler (not builder rank)", back.refused);
   request(w, vis, "use", { id: "gate", action: "open" }); request(w, own, "delete", { id: "gate", component: "reactions" });
   ok(request(w, vis, "undo", {}).refused?.code === "rights", "V3 with the handler gone, the capability is gone: the visitor's undo is refused on rank (asked again now, not at use time)"); }
 

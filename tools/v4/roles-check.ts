@@ -405,7 +405,7 @@ const cases: Case[] = [
       const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "visitor", fly: false } } });
       const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
       return { v: w["@world"][key], bo: w["@world"][bo], legacy: Object.keys(w["@world"]).filter((k) => k.startsWith("legacy:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.switches, tag: TV1.TRANSLATOR }; },
-    good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.gen === true && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.legacy.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag === "eidoverse/translate-v1@4" },
+    good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.gen === true && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.legacy.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag?.startsWith("eidoverse/translate-v1@") && +o.tag.split("@")[1] >= 4 },   // @4 brought fly → can.fly; later versions keep it
   { id: "T2", what: "the Commons (staging's commons-v4, read-only): a stranger is still a builder and now builds and generates by its default-role gen; a guest is a visitor", run() {
       const f = process.env.V4_COMMONS ?? "/home/claude/eido/staging/worlds/commons-v4/v4.jsonl";
       if (!fs.existsSync(f)) return { skipped: f };

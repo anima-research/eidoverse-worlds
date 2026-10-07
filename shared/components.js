@@ -131,10 +131,15 @@ const DEFS = [
   { name: 'Grabbable', category: 'Interaction', needs: ['Model'], summary: 'it can be picked up and carried: who may, how it is held (grips), where it goes when let go, what using it while held does',
     params: { spec: { t: 'json', default: {}, hint: '{who, enabled, steal, range, priority, hold, pose, grips, twoHanded, throw, release, returnAfter, home, fits, use, prompt, fx}' } },
     fallback: { text: 'can be picked up' }, note: 'wire: the grabbable component; a dynamic thing with no grabbable is carryable by physics.who (the migration fallback)' },
+  // openable (R 10-07; shared/v4/catalogue.js): it opens and closes when used. The spec is the component's whole value; the
+  // card edits open, locked, how it opens and how long it takes; its JSON hatch reaches the rest (part)
+  { name: 'Openable', category: 'Interaction', summary: 'opens and closes when someone uses it: a door, a gate, a lid, a hatch',
+    params: { spec: { t: 'json', default: {}, hint: '{open, locked, angle, axis, slide, time, part}' } },
+    fallback: { visual: 'drawn closed until a client animates it', text: 'opens (open or shut)' } },
   { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
     params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
     fallback: { text: 'on <to>' } },
-  { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (today: a pendulum push)',
+  { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (added here: a push that swings it; an Openable brings its own)',
     params: { actions: { t: 'json', default: {} } }, fallback: { text: 'reacts to: <actions>' } },
   { name: 'Particles', category: 'Effects', summary: 'fire, smoke, sparks…',
     params: { preset: { t: 'choice', options: ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'], default: null, required: true },
@@ -312,7 +317,7 @@ export function componentsOf(ent) {
     // (none in the corpus) and stays an Annotation, so its bytes still return.
     if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
     if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
-    const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'], grabbable: ['Grabbable', 'spec'] };
+    const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'], grabbable: ['Grabbable', 'spec'], openable: ['Openable', 'spec'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
     if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
     if (key === 'stage' && data && typeof data === 'object' && !Array.isArray(data)) { out.push({ type: 'Stage', key, params: { ...data } }); continue; }
@@ -378,6 +383,7 @@ export function entityOf({ components, stamps = {} }) {
       }
       case 'Sockets': comp[inst.key ?? 'sockets'] = p.slots; break;
       case 'Grabbable': comp[inst.key ?? 'grabbable'] = p.spec; break;
+      case 'Openable': comp[inst.key ?? 'openable'] = p.spec; break;
       case 'Reactions': comp[inst.key ?? 'reactions'] = p.actions; break;
       case 'Structure': comp[inst.key ?? 'structure'] = p.plan; break;
       case 'Captions': comp[inst.key ?? 'captions'] = p.feed; break;

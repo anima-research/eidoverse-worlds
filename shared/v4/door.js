@@ -1108,17 +1108,26 @@ function valueCheck(s, { id, comp, value: v }) {
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
   if (comp === "lock" && v !== true) refuse("shape", `${at} is true while locked; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
+  if (comp === "openable" && obj) {
+    if (v.angle !== undefined && v.slide !== undefined) refuse("shape", `${at} turns (angle) or slides (slide), not both`, "give one: angle (rad) to swing about its pivot, or slide [x, y, z] (m) to slide");
+    if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse("bounds", `${at}.slide is [x, y, z] in metres, each within 10`, "e.g. [0.9, 0, 0]: a sliding door moves its own width sideways"); }
+  if ((comp === "motion" || comp.startsWith("motion:")) && obj) {
+    if ("rpm" in v) refuse("schema", `${at}.rpm: a spin's rate is degPerSec here (degrees a second; rpm × 6)`, `e.g. {type: 'spin', degPerSec: ${Number.isFinite(v.rpm) ? +(v.rpm * 6).toFixed(4) : 36}}, or period (seconds a turn)`, { didYouMean: ["degPerSec"] });
+    if ((v.type === "spin" || v.type === "orbit") && v.degPerSec !== undefined && v.period !== undefined) refuse("shape", `${at} gives its speed twice (degPerSec and period)`, "give one: degPerSec (degrees a second) or period (seconds a turn)");
+    if (v.type === "path" && v.speed !== undefined && v.duration !== undefined) refuse("shape", `${at} gives its speed twice (speed and duration)`, "give one: speed (m/s) or duration (s from the first point to the last)");
+    if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
+      refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "L2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3");
-      if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'door', field: 'locked', value: true}");
+      if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'openable', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
-      handlerCheck(at, act, h); } }
+      handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
 
-  for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
+  for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v);
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
@@ -1159,7 +1168,11 @@ function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j)
 const nearMiss = (name) => Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the door takes as it is (sweep). */
-export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v); return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
+export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
+    // the enums too (valueCheck's): a translated motion {type: 'path'} passed this and was refused at the first edit
+    const ob = v && typeof v === "object" && !Array.isArray(v);
+    for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (ob && v[f] !== undefined && !allowed.includes(v[f])) return `shape: ${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`;
+    return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
 function schemaCheck(at, comp, v) {
   const name = comp.split(":")[0], def = COMPONENTS[name];
   // `param.<name>`: a number a script writes into a component for something else to read (seat poses that blend by
@@ -1172,6 +1185,7 @@ function schemaCheck(at, comp, v) {
   }
   // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
   // it's a near-miss of a registered name: that's a typo (ligth, transform@2), and it would be a new name forever (L5)
+  if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (L2), never stored`, "inspect {id} → derived.madeBy");
   if (!def) { if (!name.includes("/")) { const near = nearMiss(name);
       if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${name}')`, { didYouMean: near }); }
@@ -1196,6 +1210,25 @@ function schemaCheck(at, comp, v) {
     const bad = (r.min !== undefined && x < r.min) || (r.gt !== undefined && x <= r.gt) || (r.max !== undefined && x > r.max);
     if (bad) refuse("bounds", `${at}.${k} is ${x}; it must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
+}
+// N5 (review 10-07): a handler is checked when it's WRITTEN, not when the first visitor uses it. What it would write is
+// checked now as the door would check that write (a light's intensity 'bright' was taken, and the visitor got "must be
+// number"); a field it changes must be inside a component the thing has (a toggle on a plain crate wrote an invisible
+// openable); toggle flips true/false fields; an impulse swings a pendulum. Rights stay a use-time question (reactionCap).
+function effectCheck(s, id, act, h) {
+  const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== PURGED;
+  const where = `reactions.${act}`;
+  const would = (comp, value) => { try { valueCheck(s, { id, comp, value }); }
+    catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the door refuses: ${e.reason}`, e.teach, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
+  if (h.kind === "impulse" && c.motion && c.motion.type !== "pendulum") refuse("shape", `${where} pushes a swing, and ${id} moves by '${c.motion.type}'`, "an impulse swings a pendulum (motion {type: 'pendulum'}); use set or toggle for anything else");
+  if (h.kind !== "set" && h.kind !== "toggle") return;
+  const { comp, field } = h.kind === "toggle" ? toggleOf(h) : { comp: h.component, field: h.field };
+  if (field !== undefined && !isObj(c[comp])) refuse("no-target", `${where} changes ${comp}.${field}, and ${id} has no ${comp}`,
+    comp === "openable" && h.component === undefined ? "make it openable first (openable {open: false}), or name the component and field to flip" : `give it ${comp} first (in the same batch is fine)`);
+  const ftype = COMPONENTS[comp.split(":")[0]]?.fields?.[field];
+  if (h.kind === "toggle" && field !== undefined && ftype && ftype !== "bool" && ftype !== "any") refuse("shape", `${where} flips ${comp}.${field}, which is a ${ftype}; a toggle flips true/false`, "use a set handler to give it a value");
+  if (h.kind === "toggle") { if (field === undefined) would(comp, !c[comp]); else { would(comp, { ...c[comp], [field]: true }); would(comp, { ...c[comp], [field]: false }); } }
+  else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });
 }
 function handlerCheck(at, act, h) {
   const R = COMPONENTS.reactions; const allowed = [...Object.keys(R.common), ...Object.keys(R.handlers[h.kind]?.args ?? {})];
@@ -1712,8 +1745,13 @@ function buildUse(ctx, a) {
     reactionCap(ctx, a.id, "motion", action);
     ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), phase: r3(phase), t0: now })];
   }
-  // §5: a thing's gameplay state lives inside its own component (a door is `door: {open, locked}`), never as a top-level
+  // §5: a thing's gameplay state lives inside its own component (a door is `openable: {open, locked}`), never as a top-level
   // name beside the edit `lock`. A handler names its component and, for an object component, the field it changes.
+  // a handler that changes a field inside a component needs that component (it was there when the handler was written;
+  // someone has removed it since): say so, rather than write a component nothing draws (review 10-07: a toggle on a crate
+  // wrote an invisible door {open: true})
+  if ((h?.kind === "set" && h.field !== undefined) || (h?.kind === "toggle" && toggleOf(h).field !== undefined)) { const comp = h.kind === "set" ? h.component : toggleOf(h).comp;
+    if (!(e.c[comp] && typeof e.c[comp] === "object" && !Array.isArray(e.c[comp]))) refuse("no-handler", `${a.id} has no ${comp} any more, so '${action}' has nothing to change`, "someone who may edit it can add it back, or set its reactions again"); }
   if (h?.kind === "set") { const comp = h.component; reactionCap(ctx, a.id, comp, action); ctx.refs.add(a.id);
     return [setOp(a.id, comp, h.field === undefined ? h.value : { ...objOf(e.c[comp]), [h.field]: h.value })]; }
   if (h?.kind === "toggle") {
@@ -1725,9 +1763,9 @@ function buildUse(ctx, a) {
   refuse("no-handler", `${a.id} declares '${action}' but its handler kind isn't one this engine runs`, `handler kinds: ${Object.keys(COMPONENTS.reactions.handlers).join(", ")} (schema {component: 'reactions'})`);
 }
 const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== PURGED ? v : {});
-// toggle's defaults: the door's own `open` (component `door`, field `open`); a named component with no field toggles
+// toggle's defaults: an openable's `open` (component `openable`, field `open`); a named component with no field toggles
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
-const toggleOf = (h) => { const comp = h.component ?? "door"; return { comp, field: h.field ?? (h.component === undefined ? "open" : undefined) }; };
+const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (h.component === undefined ? "open" : undefined) }; };
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
 // the sockets a person can attach to: the thing's own, else its model's
 const bodySockets = (st, id) => { const e = st.entities[id]; const S = e?.c.sockets ?? modelOf(e?.c.model)?.sockets ?? {};
@@ -2498,7 +2536,7 @@ function describe(st, id, live = {}, holds = {}) {
   return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}) };
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}) };
 }
 
 // ---------- physics (design 20) ----------
@@ -2579,11 +2617,14 @@ function bodyBox(p) { return { min: [p[0] - TRACK.radius, p[1] + TRACK.step, p[2
 function solidAt(w, st, p, except = new Set(), cands = null) {
   const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);
   if (cands) spend(1 + (cands.length >> 3));   // a sub-step filters the step's candidates by box first
-  for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id)) continue;
+  for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id) || openNow(st, id)) continue;
     if (cands) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; }
     if (hitsIx(st, box, id, 0.01)) return id; }
   return null;
 }
+// an open openable (a whole door, not a cabinet's part) is out of the way: the teach above says "through a door someone
+// opens", and every browser's collider follows the drawn leaf (client/lib/openable.js reindexes it at rest)
+const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o && typeof o === "object" && o.open === true && !o.part; };
 function pathBlocked(w, st, from, to) {
   const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it
   for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);

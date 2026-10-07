@@ -100,6 +100,9 @@ function oldNorm(st: any) {
       if (!s || typeof s !== "object" || !("yaw" in s)) return [k, s]; const { yaw, ...r } = s;
       return [k, Number.isFinite(yaw) && yaw !== 0 ? { ...r, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] } : (Number.isFinite(yaw) ? r : s)]; }));
     if (n.comp?.light && "color" in n.comp.light) n.comp.light = { ...n.comp.light, color: hexColor(n.comp.light.color) };   // declared: "#fff" → 0xffffff
+    // declared (translate-v1@5 DROPPED motion.rpm): a spin's rpm is degPerSec = rpm × 6 (degPerSec wins when both were written)
+    if (n.comp) for (const [k, m] of Object.entries<any>(n.comp)) if ((k === "motion" || k.startsWith("motion:")) && m && typeof m === "object" && "rpm" in m) {
+      const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
   }
@@ -122,7 +125,7 @@ function v1Sockets(S: any, left: any) {
 // v4's angular impulse is v1's {impulse: x} (translate-v1 v4Reactions)
 function v1Reactions(rx: any) {
   if (!rx || typeof rx !== "object") return rx; const out: any = {};
-  for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h;
+  for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h?.component === "openable" ? { ...h, component: "door" } : h;
   return out;
 }
 function unproject(v4: any) {
@@ -151,7 +154,7 @@ function unproject(v4: any) {
       else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
       else if (k.startsWith("legacy:") && comps[dec(k.slice(7))] !== undefined && dec(k.slice(7)) !== "parent") {}   // folded back below
       else if (k.startsWith("legacy:")) e[dec(k.slice(7))] = v;
-      else (e.comp ??= {})[dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps["legacy:sockets"]) : v;
+      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps["legacy:sockets"]) : v;   // declared (DROPPED comp.door): v4's openable is v1's door
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith("legacy:") ? dec(k.slice(7)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }

@@ -61,7 +61,9 @@ const attacks = [
       const attack = s.call("vic", "use", { id: "jam", action: "jam" });
       return { attack, lookAfter: s.call("zed", "look", {}), createAfter: s.call("bob", "create", { model: "crate", place: { at: [5, 5] } }) }; },
     baseBad: (o) => crashed(o.attack) && crashed(o.lookAfter) && crashed(o.createAfter),
-    nowGood: (o) => o.attack.refused?.code === "shape" && ok(o.lookAfter) && ok(o.createAfter) },
+    // the handler itself is refused when written now (shiplist R2: a handler's effect is checked at write), so the use
+    // finds no 'jam' to do; either way nothing is written and every later read stands
+    nowGood: (o) => ["shape", "no-action"].includes(o.attack.refused?.code) && ok(o.lookAfter) && ok(o.createAfter) },
   { id: "H1f", what: "a handler outlives its author's rights (bob demoted, vic still uses bob's handler on a thing bob can't touch now)", run(s) { cast(s);
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [4, 0] } });
       s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked" } } });

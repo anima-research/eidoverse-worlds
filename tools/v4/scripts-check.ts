@@ -664,15 +664,15 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { a, after1, after2 }; },
     good: (o) => JSON.stringify(o.a) === '["ran"]' && o.after1 === "hello vic" && o.after2 === "bye vic" },
   { id: "E3", what: "changed:<comp>: a lever's door opening lights the path (a cascade across scripts, one activation per triggering entry)", run(s) { cast(s);
-      s.call("bob", "create", { id: "gate", model: "door", components: { door: { open: false } }, place: { at: [0, 0] } });
-      s.call("bob", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "door", field: "open" } } });
+      s.call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } });
+      s.call("bob", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
       s.call("bob", "create", { id: "path", model: "crate", place: { at: [3, 0] } });
-      install(s, "bob", "path", "lights", `world.on("changed:door", (e) => world.set("self", "glow", world.get("gate", "door").open === true));\n`, { scope: { ids: ["self", "gate"], comps: ["glow"] }, on: ["changed:door"] });
+      install(s, "bob", "path", "lights", `world.on("changed:openable", (e) => world.set("self", "glow", world.get("gate", "openable").open === true));\n`, { scope: { ids: ["self", "gate"], comps: ["glow"] }, on: ["changed:openable"] });
       s.call("vic", "use", { id: "gate", action: "open" }); const lit1 = comp(s, "path", "glow");
       s.call("vic", "use", { id: "gate", action: "open" }); const lit2 = comp(s, "path", "glow");
       const act = s.entries().findLast((e: any) => e.actor === "bhv:path" && e.kind === "act");
       return { lit1, lit2, on: act?.body?.on, by: act?.body?.trigger?.actor, comp: act?.body?.event?.comp }; },
-    good: (o) => o.lit1 === true && o.lit2 === false && o.on === "changed:door" && o.by === "vic" && o.comp === "door" },
+    good: (o) => o.lit1 === true && o.lit2 === false && o.on === "changed:openable" && o.by === "vic" && o.comp === "openable" },
   { id: "E4", what: "sleep and wake: nobody here → the timer sleeps (0 entries); someone arrives → ONE wake {slept}, then ticks; never a burst", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("bob", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });

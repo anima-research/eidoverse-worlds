@@ -17,7 +17,7 @@
 // Pure: imports only the motion closed forms (motioneval.js, itself pure and shared with the agent). It lives beside
 // them in client/lib because the browser is served client/ at its root: shared/ code can't reach back into it.
 
-import { evalWholeMotion, since, ampOf } from './motioneval.js';
+import { evalWholeMotion, since, ampOf, rateOf } from './motioneval.js';
 
 const TAU = 2 * Math.PI;
 const frac = (x) => x - Math.floor(x);
@@ -58,12 +58,11 @@ export function cycleOf(m, nowMs) {
       return { phase: frac(a / TAU), swing: Math.sign(ampOf(m)) * Math.exp(-damp * t) * Math.cos(a) };
     }
     case 'spin': {
-      const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;
-      const a = (m.phase ?? 0) + (rate * Math.PI / 180) * t;
+      const a = (m.phase ?? 0) + (rateOf(m, 36) * Math.PI / 180) * t;
       return { phase: frac(a / TAU), swing: Math.cos(a) };
     }
     case 'orbit': {
-      const a = (m.phase ?? 0) + ((m.degPerSec ?? 12) * Math.PI / 180) * t;
+      const a = (m.phase ?? 0) + (rateOf(m, 12) * Math.PI / 180) * t;
       return { phase: frac(a / TAU), swing: Math.cos(a) };
     }
     case 'bob': {
