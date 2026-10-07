@@ -54,7 +54,7 @@ function reap(p: Bun.Subprocess | null) {
 
 type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number; sweepPorts?: number[] };
 const BATTERY: Row[] = [
-  { name: "smoke", tool: "tools/smoke.ts", sweepPorts: [8987] },
+  { name: "smoke", tool: "tools/smoke.ts" },   // its own free port (8987 is a live sequencer here)
   { name: "authtest", tool: "tools/authtest.ts", sweepPorts: [8992] },
   { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000, sweepPorts: [8940] },
   { name: "permtest", tool: "tools/permtest.ts", server: true },
