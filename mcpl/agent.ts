@@ -662,6 +662,11 @@ export class WorldAgent {
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             break;
+          case "moderated":
+            // someone was removed or banned here, or a ban lifted: what bystanders are told (names only; the reason went
+            // to the person). v1 agents heard it as a log entry
+            this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
+            break;
           // ── media signalling (see onMedia) ─────────────────────────────
           // Forwarded verbatim to whoever holds this identity's audio. The
           // door does not interpret SDP; it is the authenticated carrier, and
@@ -2813,7 +2818,7 @@ export class WorldAgent {
   // still let an internal caller send utt:-1 or t0:NaN — two layers that
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
-  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }): Promise<any> {
     this._typingUntil = 0;
     const args: Record<string, unknown> = { text };
     if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
@@ -2821,9 +2826,9 @@ export class WorldAgent {
       args.utt = extra.utt;
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
-    // a v4 world takes door requests only: spelled at this edge like every building verb (the spoken trio is display
-    // metadata a v4 say doesn't carry yet)
-    void this.door("say", { text: args.text, ...(args.to ? { to: args.to } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); });
+    // a v4 world takes door requests only: spelled at this edge like every building verb. The spoken trio rides it (the
+    // door validates it again and clamps t0, as v1's say did)
+    return this.door("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
@@ -3258,7 +3263,7 @@ export class WorldAgent {
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
-      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — dismount {id: "${this.name}"} restores a stamped position.`);
+      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — sit with no \`on\` (or walking) gets you up, back to a stamped position.`);
     }
     // WHERE YOU ARE, ARCHITECTURALLY. A conjured building can only ever be
     // "a mesh 4m away"; a griddled one knows its own rooms, so standing inside
@@ -3373,7 +3378,7 @@ export class WorldAgent {
       if (c.sound) aff.push(describeSound(c.sound));
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
-      if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with through_lock: true)`);
       // guarded = its placer's to author: the server refuses comps, motion,
       // behaviors, moves and removal from anyone but them, the world's
       // owner, or an operator. Using it (use, sitting on it) stays open.
@@ -3385,7 +3390,7 @@ export class WorldAgent {
           ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
         aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
       }
-      if (c.hidden === true) aff.push(`hidden (not drawn; comp {id, type: "hidden", data: null} shows it)`);
+      if (c.hidden === true) aff.push(`hidden (not drawn; door {tool: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
       const copy = c.blueprint ? this.copyLineV4(e.id) : null;
@@ -3421,7 +3426,7 @@ export class WorldAgent {
       }
     }
     if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
-      L.push(`  (interact via world_verb: use {id, action} · sit/ride via mount {id: "${this.name}", to, slot} — both open to everyone; dismount {id: "${this.name}"} to get off)`);
+      L.push(`  (use a thing: door {tool: "use", args: {id, action?}} · sit or ride: sit {on: id, slot?} — both open to everyone; sit with no \`on\`, or walking, gets you up)`);
     }
 
     const unread = this.inbox.slice(this.inboxCursor);

@@ -167,7 +167,7 @@ export function worldFlightProvider({ rights = null, label = 'world-grant' } = {
       // "nobody has said you may", which is the same answer as "no".
       if (!r) return { enabled: false, reason: 'no world rights yet — not joined' };
       if (r.fly !== true) {
-        return { enabled: false, reason: 'this world has not granted you flight (owner: /grant <you> +fly)' };
+        return { enabled: false, reason: 'this world has not given you flight (flight isn\'t a grant in v4 worlds yet)' };
       }
       const names = ctx.avatar?.boneNames ?? null;
       if (!names) return { enabled: false, reason: 'no bone list available for this avatar' };
