@@ -8,7 +8,7 @@ import { CONFIG, bus, report, tee } from './base.js';
 import { releaseBodyGate } from './bodygate.js';
 import { armFlight, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
-import { setMyAvatarPath, wireAvatarSwitch } from './palette.js';
+import { setMyAvatarPath, wireAvatarSwitch } from './catalog.js';
 import { toast } from './ui.js';
 import { net } from './net.js';
 import { loadBodyPrefs, saveBodyPrefs } from './bodyscale.js';

@@ -284,11 +284,11 @@ export function applyAssetState(args) {
 
 /** Mirror one role record so the UI can say what you are here, live.
  *  Enforcement is the server's; narration is the LIVE driver's business
- *  (legacy case or causes.js), not this mirror's. */
+ *  (legacy case or livechat.js), not this mirror's. */
 export function applyGrantState(id, rec) {
-  // a role taken away: back to the world's default (the door reads @world default-role)
+  // a role taken away: back to the world's default (the authority reads @world default-role)
   if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: null }); return; }
-  worldRoles.set(id, { role: rec.role ?? 'visitor', gen: Boolean(rec.gen), fly: Boolean(rec.fly) });
+  worldRoles.set(id, { role: rec.role ?? 'visitor', gen: rec.can?.generate === true, fly: rec.can?.fly === true || Boolean(rec.fly) });
   bus.emit('roles', { id, ...worldRoles.get(id) });
   // (What I MAY DO is the server's answer, `your-rights`, re-sent whenever a role changes; this mirror is the HUD's.)
 }
@@ -299,7 +299,7 @@ export function applyGrantState(id, rec) {
 // rig budgets the caster set live by camera distance, reversibly.
 // lightrig.js §12.5.)
 
-// Per-world roles (@world roles:<id>), mirrored from the view. A mirror for UI honesty — the door enforces; this only
+// Per-world roles (@world roles:<id>), mirrored from the view. A mirror for UI honesty — the authority enforces; this only
 // lets the client SAY what someone is.
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;

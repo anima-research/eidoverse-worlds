@@ -1,8 +1,8 @@
 // Test stand-in for the renderer-bound edge of the settings panels' import cone — see
 // tools/settings-panels-test.ts. ONE file answers for core.js, base.js, governor.js,
-// lightrig.js, xrpanels.js, net.js, palette.js, avatar.js, controller.js, capnotice.js,
+// lightrig.js, xrpanels.js, net.js, catalog.js, avatar.js, controller.js, capnotice.js,
 // assets.js and mictoggle.js (the names never collide), so the suite drives the REAL
-// ui.js / frames.js / panels.js / presence.js / stylepanel.js / videopanel.js /
+// ui.js / windows.js / panels.js / presence.js / stylepanel.js / videopanel.js /
 // profile.js / bodies.js / mybody.js against a recorder instead of a GPU.
 //
 // core-stub's bus is inert (`on() {}`); these panels are wired THROUGH the bus
@@ -53,7 +53,7 @@ export const net = { joined: false };   // `avatars` arrives on the join snapsho
 export const sendJoin = rec('sendJoin');
 export const requestHistory = async () => ({ entries: [], hasMore: false });
 
-// ---- palette.js
+// ---- catalog.js
 let onSwitch = null;
 export const wireAvatarSwitch = (fn) => { onSwitch = fn; };
 export const switchAvatar = (path, name) => { calls.push(['switchAvatar', path, name]); return onSwitch?.(path, name); };

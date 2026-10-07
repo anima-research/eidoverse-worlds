@@ -23,7 +23,7 @@ import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
 import { initStructureUI } from './lib/structure_ui.js';
-import { initCauses } from './lib/realize/causes.js';
+import { initCauses } from './lib/realize/livechat.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
@@ -43,18 +43,18 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
-import { snapshot } from './lib/net_snap.js';
+import { capture } from './lib/net_capture.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  net, connect, initIdentity, loginUrl, wireNet, requestV4, sendPose, sendWhisper, sendTyping,
+  net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
 // may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
-const mayBuildStrict = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
-import { initPalette } from './lib/palette.js';
-import { initConjure } from './lib/conjure.js';
+const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
+import { initPalette } from './lib/catalog.js';
+import { initConjure } from './lib/generate.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
@@ -87,7 +87,7 @@ import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
 import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
-import { initV4Phys, physicsApi, simShown } from './lib/v4phys.js';
+import { initThingPhysics, physicsApi, simShown } from './lib/thingphysics.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
@@ -100,7 +100,7 @@ import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
 import { statusChip } from './lib/statuschips.js';
 import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
-import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
+import { registerSystem, startFrame, frameDebug } from './lib/frameloop.js';
 import { perf } from './lib/perf.js';
 import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
@@ -121,19 +121,19 @@ import { initXRKeyboard } from './lib/xrkeyboard.js';
 import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
-import { initLantern } from './lib/lantern.js';
+import { initLantern } from './lib/commandbar.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 
-// (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
+// (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
 
 if (CONFIG.params.has('mintthumbs')) {
-  // ?mintthumbs — seed the roster's portraits, then stop (lib/mint.js owns
+  // ?mintthumbs — seed the roster's portraits, then stop (lib/portraits.js owns
   // the why and the how). The else below is the entire normal boot.
-  await (await import('./lib/mint.js')).mintThumbnails();
+  await (await import('./lib/portraits.js')).mintThumbnails();
 } else {
 
 const isViewer = CONFIG.spectate || CONFIG.renderer;
@@ -147,7 +147,7 @@ setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
-// causes.js takes the fold-inert live verbs off the 'live-entry' bus.
+// livechat.js takes the fold-inert live verbs off the 'live-entry' bus.
 initModelsRealizer();
 initEnvironmentRealizer();
 initSocialRealizer();
@@ -352,7 +352,7 @@ function start() {
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered AFTER show, so it docks visible frames)
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
-  // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
+  // (lib/commandbar.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
 
   if (!isViewer) {
     // A body is never optional (owner, in-headset 09-04: no avatar at all, on
@@ -401,7 +401,7 @@ wireNet({
   myReachBag,
   toast,   // remotes.js — real bodies, real poses
   forgetBytes,    // the asset ledger, which only a client that loads assets has
-  snapshot,       // net_snap.js — the one part of the protocol that needs a renderer
+  capture,        // net_capture.js — the one part of the protocol that needs a renderer
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),
@@ -436,7 +436,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 // FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
-// Wired here for the same reason initV4Phys and wireNet are: net.js must not
+// Wired here for the same reason initThingPhysics and wireNet are: net.js must not
 // import the controller, so main.js is where the two meet. Live, not captured
 // -- a role change (your-rights) takes effect on the next resolve, and losing
 // fly grounds a body that is already in the air the next time it acts.
@@ -444,7 +444,7 @@ setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
-initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
@@ -560,7 +560,7 @@ const readyPoll = setInterval(() => {
 }, 400);
 
 // ---------------------------------------------------------------- frame loop
-// The loop itself lives in lib/frame.js (§14.2 6b); this is the LIST — the
+// The loop itself lives in lib/frameloop.js (§14.2 6b); this is the LIST — the
 // registration order IS the execution order, and it encodes the constraints
 // §14.1 documents: motion before remotes, sky → materials → rig,
 // voice-mouths before the avatar update, bodydrag before remotes, gaze
@@ -853,7 +853,7 @@ globalThis.whyIsItSilent = () => {
 };
 
 const EW = globalThis.EW = {
-  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, requestV4,
+  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, sendRequest,
   avatarMounts, serverNow, comps,   // who sits where (presence), the sequencer's clock the seats' signals read, the component bags
   skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have. A value
@@ -1018,7 +1018,7 @@ const EW = globalThis.EW = {
   },
   clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
-  physics: physicsApi, // grab/put/throw/drop/punt as door requests (v4phys.js): what runtime mods script against
+  physics: physicsApi, // grab/put/throw/drop/punt as door requests (thingphysics.js): what runtime mods script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
   foldParity,        // shadow-mode drift probe (TEL0S_NOTES §11.6)

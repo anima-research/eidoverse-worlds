@@ -4,8 +4,8 @@
 import { inspectSchema, editOps } from '../shared/editschema.js';
 import { bodyOf, socketQ } from '../shared/components.js';
 import { localOf } from '../shared/hierarchy.js';
-import { scratchWorld } from './v4/scratchdoor.ts';
-import * as OP from '../shared/v4/ops.js';
+import { scratchWorld } from './protocol/scratchworld.ts';
+import * as OP from '../shared/protocol/requests.js';
 import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
 
@@ -39,7 +39,7 @@ check('a heading edit on a tilted socket keeps the tilt (heading 90, pitch -90)'
 r = send(plan({ 'sockets.seat|action': 'ride', 'sockets.seat|pose': 'lie' }));
 check('action and pose: the body block, through the door', r.ok && bodyOf(C().sockets.seat)?.action === 'ride' && bodyOf(C().sockets.seat)?.pose === 'lie', [r.refused, C().sockets.seat]);
 const use = W.call('use', { id: 'rocket', action: 'ride' });
-check('…and a person uses it: the door attaches them there, in that pose (presence)', use.ok && use.attach?.slot === 'seat' && use.attach.pose === 'lie', use);
+check('…and a person uses it: the door attaches them there, in that pose (presence)', use.ok && use.attach?.socket === 'seat' && use.attach.pose === 'lie', use);
 check('a bad action is refused by the planner with the door\'s words', plan({ 'sockets.seat|action': 'Blast Off' }).ops.length === 0);
 
 // people off: an attachment point for things only
@@ -48,7 +48,7 @@ check('people attach: off → no body; the thing offers nothing to use', r.ok &&
 
 // a thing parented at the slot takes the socket's whole rotation as its local one
 W.call('create', { id: 'flag', model: 'crate' });
-W.sendAll([OP.parent(W.view(), 'flag', 'rocket', { slot: 'seat' })]);   // the planner: a slot gives the socket's pose
+W.sendAll([OP.parent(W.view(), 'flag', 'rocket', { socket: 'seat' })]);   // the planner: a socket gives the socket's pose
 const world = W.view().entities;
 const L = localOf(world.flag, world);
 check('a thing attached at a tilted socket rides it with the socket\'s rotation', !!L?.q && near(L.q, [-0.5, 0.5, 0.5, 0.5], 1e-4)   /* heading 90 then pitch -90: qY(90)·qX(-90) */, L);
@@ -165,10 +165,10 @@ r = W.call('set', { id: 'car', component: 'sockets', value: { driver: { pos: [0,
 check('…and refuses two drivers on one thing, in the shared words', r.refused?.code === 'shape' && /only one socket may drive/.test(r.refused.reason), r.refused);
 r = W.call('set', { id: 'car', component: 'sockets', value: { driver: { pos: [0, 0.6, 0], body: { ...FULL, who: undefined } }, back: { pos: [0, 0.6, -0.6], body: { action: 'drive', who: 'owner' } } } });
 const u = W.call('use', { id: 'car', action: 'drive' });
-check('use answers attach with what the body does: anchor, pose, reach, input, leaveBy…', u.ok && u.attach?.slot === 'driver' && u.attach.anchor === 'hips' && u.attach.leaveBy === 'jump'
+check('use answers attach with what the body does: anchor, pose, reach, input, leaveBy…', u.ok && u.attach?.socket === 'driver' && u.attach.anchor === 'hips' && u.attach.leaveBy === 'jump'
   && u.attach.input?.move === 'drive' && !!u.attach.reach?.leftHand && typeof u.attach.pose === 'object' && u.attach.fromSeat === true, u);
-check('…an explicit slot is honoured, an unknown one refused with its name', W.call('use', { id: 'car', action: 'drive', args: { slot: 'back' } }).attach?.slot === 'back'
-  && W.call('use', { id: 'car', action: 'drive', args: { slot: 'trunk' } }).refused?.code === 'no-action');
+check('…an explicit socket is honoured, an unknown one refused with its name', W.call('use', { id: 'car', action: 'drive', args: { socket: 'back' } }).attach?.socket === 'back'
+  && W.call('use', { id: 'car', action: 'drive', args: { socket: 'trunk' } }).refused?.code === 'no-action');
 
 // the inspector: rows for the common fields, edits through the planner and the door
 const carRows = () => inspectSchema(W.rec('car'), 'car').groups.find((g: any) => g.group === 'sockets')?.fields ?? [];

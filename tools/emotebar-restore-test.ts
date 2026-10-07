@@ -1,8 +1,8 @@
-// emote bar × the REAL frames.js: a bar the viewport auto-restores (no show()) is laid out exactly as show() lays it out.
+// emote bar × the REAL windows.js: a bar the viewport auto-restores (no show()) is laid out exactly as show() lays it out.
 // frames' own resize fit() already steps it clear of the glyphs either way; what the bar's onShow adds is snapTo's
 // rows for the narrowed width. Without it the restored bar was two columns wide and ONE row tall (nine tiles in a
 // one-row frame) until the 180 ms onResize snap caught up — watched red as `908,108,32` vs show()'s `908,108,184`.
-// emotebar-test drives the bar against a stub frame; this file exists because only the real frames.js has the
+// emotebar-test drives the bar against a stub frame; this file exists because only the real windows.js has the
 // viewport rule. Every other neighbour is still tools/emotebar-stub.mjs.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/emotebar-restore-test.ts
@@ -30,7 +30,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 const TILE = 32, GAP = 6, PAD = 7;
 const widthFor = (c: number) => c * TILE + (c - 1) * GAP + PAD * 2 + 2;
 
-await import('../client/lib/frames.js');   // stamps the layout version first, so the save below is not purged
+await import('../client/lib/windows.js');   // stamps the layout version first, so the save below is not purged
 // last session the viewport auto-hid the bar (never placed by hand); it comes back when the window is wide enough
 localStorage.setItem('ew-frame-emotes', JSON.stringify({ x: 336, y: 10, w: widthFor(9), h: 32, hidden: true, autoHidden: true }));
 const { initEmoteBar } = await import('../client/lib/emotebar.js');

@@ -51,7 +51,7 @@ try {
   console.log('real library clones loaded and instance color/depth pipelines warmed');
   const capture = async (on) => page.evaluate(async (enabled) => {
     const {renderWorld} = await import('/lib/render.js');
-    const {setSystemEnabled,frameDebug} = await import('/lib/frame.js');
+    const {setSystemEnabled,frameDebug} = await import('/lib/frameloop.js');
     for(const system of frameDebug()) setSystemEnabled(system.name,false);
     // Toggle directly without disposing warm pools for the A/B receipt.
     if(enabled) renderWorld();

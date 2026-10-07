@@ -5,7 +5,7 @@
 //
 // `world` is the fold's entities map ({ id: record }) — state.st.entities in
 // the browser, the agent's folded records in mcpl. A record's `parent`
-// ({ to, slot?, offset?, yaw?, q? }, written by `mount`) is the only edge.
+// ({ to, socket?, offset?, yaw?, q? }) is the only edge.
 //
 // A child's transform is LOCAL to its parent, exactly as the renderer
 // realizes it (client/lib/realize/models.js execMount): the child is added
@@ -16,8 +16,8 @@
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
-import * as OP from './v4/ops.js';
-import { enc } from './v4/names.js';
+import * as OP from './protocol/requests.js';
+import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 import { socketQ } from './components.js';
@@ -30,8 +30,8 @@ const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
 /** The socket a mount names, resolved on its carrier — or null. */
 export function socketOf(world, rel) {
-  if (!rel?.slot) return null;
-  const s = world?.[rel.to]?.comp?.sockets?.[rel.slot];
+  if (!rel?.socket) return null;
+  const s = world?.[rel.to]?.comp?.sockets?.[rel.socket];
   return s && typeof s === 'object' ? s : null;
 }
 
@@ -53,7 +53,7 @@ export function localOf(ent, world = null) {
   const sock = socketOf(world, rel);
   const q = qNorm(rel.q) ?? (rel.yaw == null && sock ? socketQ(sock) : null);
   return {
-    mounted: true, to: rel.to, ...(rel.slot ? { slot: rel.slot } : {}),
+    mounted: true, to: rel.to, ...(rel.socket ? { socket: rel.socket } : {}),
     pos: [...(Array.isArray(rel.offset) ? rel.offset : sock?.pos ?? [0, 0, 0])].map((v) => Number(v) || 0),
     q, yaw: q ? qHeading(q) : (rel.yaw ?? 0), scale,
     part: sock?.part ? String(sock.part) : null,
@@ -61,7 +61,7 @@ export function localOf(ent, world = null) {
 }
 
 /** The ids above `id`, nearest first. Stops at a missing carrier or a cycle
- *  (an old log may hold one; the door refuses new ones). */
+ *  (an old log may hold one; the authority refuses new ones). */
 export function ancestors(world, id) {
   const out = [];
   const seen = new Set([id]);
@@ -170,10 +170,10 @@ export function treeRows(world, { collapsed = new Set(), matches = null, extra =
   return rows;
 }
 
-/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the door requests (shared/v4/ops.js)
+/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the authority requests (shared/protocol/requests.js)
  *  for the Hierarchy's drag, the Parent card and the agent's edit. Its world pose is kept: under a parent the transform
  *  becomes local to it (pos, q and scale: the renderer composes a child's scale with its carrier's); as a root it is the
- *  world pose. One gesture, one batch, one act — the door's undo is the way back. Locks are the door's to ask about. */
+ *  world pose. One gesture, one batch, one act — the authority's undo is the way back. Locks are the authority's to ask about. */
 export function parentOps(world, id, to) {
   const errors = [];
   const ent = world?.[id];

@@ -47,7 +47,7 @@ def skeleton(e):
     s = {k: v for k, v in e.items() if k not in ("head", "sig")}
     if e.get("kind") in ("act", "say", "sim"):
         s["body"] = {"commit": body_commit(e["body"])}   # the whole body is purgeable
-    elif e.get("kind") == "state":
+    elif e.get("kind") == "change":
         b = dict(e["body"])
         if e["verb"] == "batch":
             b["ops"] = [skel_op(o) if o.get("verb") == "set" else o for o in b.get("ops", [])]
@@ -104,7 +104,7 @@ def seal(entries, priv, every=1):
     Mutates and returns entries. Genesis must already name the sequencer key."""
     world_id = "sha256:" + hashlib.sha256(jcs(entries[0]).encode()).hexdigest()
     for e in entries:
-        if e.get("kind") == "state":
+        if e.get("kind") == "change":
             ops = e["body"]["ops"] if e["verb"] == "batch" else [e["body"]] if e["verb"] == "set" else []
             for o in ops:
                 if "value" in o and "salt" not in o and (e["verb"] != "batch" or o.get("verb") == "set"):

@@ -1,5 +1,5 @@
 // texts — the browser realizer for the `text` component: a sign (batch 2; R 10-06 23:52: plain, first version, on the canvas text
-// path, one house font, no rich text). The meaning lives in shared/v4/catalogue.js (text) and shared/text.js (how it
+// path, one house font, no rich text). The meaning lives in shared/protocol/componentspec.js (text) and shared/text.js (how it
 // wraps); this file only draws it.
 //
 //   - Layout: shared/text.js layoutLines, by words, falling back to characters for a word wider than a line (CJK, a URL),
@@ -15,7 +15,7 @@ import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { entities, comps } from './world.js';
 import { layoutLines } from '../../shared/text.js';
-import { COMPONENTS } from '../../shared/v4/catalogue.js';
+import { COMPONENTS } from '../../shared/protocol/componentspec.js';
 
 const D = COMPONENTS.text.defaults;
 export const LINE_PX = 96, MAX_PX = 2048, MAX_EXTENT = 30;

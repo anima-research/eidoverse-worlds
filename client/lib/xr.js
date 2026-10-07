@@ -25,7 +25,7 @@ import { installDualWarm } from './xrwarm.js';   // content warms build both var
 import { makeEntryEffects, handleEntryFailure } from './xr_entry_effects.js';
 import { installEntryClock } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
-import { frameDebug } from './frame.js';
+import { frameDebug } from './frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
@@ -33,7 +33,7 @@ import { domQuadsScroll } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
 import { entities } from './world.js';
-import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './v4phys.js';   // world grabbing: the grabbable component's VR hands
+import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine } from './pointer.js';
@@ -694,7 +694,7 @@ async function enterVR({ retryOf = null } = {}) {
     try { renderer.xr.setFramebufferScaleFactor(xrResScale()); } catch (e) { report('xr res scale', e); }   // also BEFORE setSession: the layer is sized as the session starts
     floorSpace = floor;
     scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale();
-    bus.emit('xr:loop');   // frame.js hands the loop to three BEFORE setSession saves+wraps it (see frame.js)
+    bus.emit('xr:loop');   // frameloop.js hands the loop to three BEFORE setSession saves+wraps it (see frameloop.js)
     const tReq = performance.now();
     // BEFORE setSession, so it runs BEFORE three's own 'end' listener (registered inside setSession), which restarts
     // the desktop loop through window.requestAnimationFrame: with the in-session shim still installed that restart
@@ -1194,7 +1194,7 @@ export function updateXR(dtSec = 1 / 72) {
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
       if (!buttonsTrusted()) { triggerWas[side] = trig; continue; }
       // the world: grip takes a grabbable thing (near, else along the laser), letting go releases it, the trigger uses it
-      // (v4phys.js xrHand). A hand holding a thing is busy: no panel chord, no select. Aiming at a panel, the panel wins.
+      // (thingphysics.js xrHand). A hand holding a thing is busy: no panel chord, no select. Aiming at a panel, the panel wins.
       { const aimPanel = panelNow != null;
         const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: !aimPanel && !held, trig, pick: () => rayHitEntity(hand.ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
         if (gh.holding || gh.took) { triggerWas[side] = trig; continue; } }
@@ -1334,7 +1334,7 @@ function warmXRPipelines() {
   }, { p: P_AMBIENT });
 }
 export async function initXR() {
-  bindGrabPresenting(() => presenting);   // a tracked body holds with its own hands: no desktop hold pose on the arms (at init: never at module load, where an import cycle could find v4phys unevaluated)
+  bindGrabPresenting(() => presenting);   // a tracked body holds with its own hands: no desktop hold pose on the arms (at init: never at module load, where an import cycle could find thingphysics unevaluated)
   if (!navigator.xr) return;
   let supported = false;
   try { supported = await navigator.xr.isSessionSupported('immersive-vr'); }

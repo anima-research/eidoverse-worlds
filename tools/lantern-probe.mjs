@@ -1,4 +1,4 @@
-// lantern-probe — the lantern prompt (client/lib/lantern.js) and the HUD quiet defaults, in the REAL
+// lantern-probe — the lantern prompt (client/lib/commandbar.js) and the HUD quiet defaults, in the REAL
 // client against an owned scratch world (probe-harness). Clouds are forced OFF before boot: a cloudy sky
 // bakes on the CPU in headless Chromium and has frozen the host.
 //
@@ -265,7 +265,7 @@ try {
     const back = { frames: await shown(), hintGone: await pg.evaluate(() => document.getElementById('hintbar').classList.contains('gone')), pill: await rect(pg, '#lantern-pill') };
     check('Esc again brings back exactly those panels, and the hint gives the spot back at once', back.frames === before && back.hintGone && back.pill?.shown, JSON.stringify({ before, ...back }));
     // NO PANEL OPEN (owner, 10-01: "Basically only the dock should be visible"): Esc still puts the resting line away
-    await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+    await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
     await sleep(200);
     await pg.keyboard.press('Escape'); await sleep(300);
     const bare = { frames: await shown(), pill: await rect(pg, '#lantern-pill'), dock: await rect(pg, '#dock'),
@@ -276,7 +276,7 @@ try {
     await pg.keyboard.press('Escape'); await sleep(300);
     const bareBack = { frames: await shown(), pill: await rect(pg, '#lantern-pill') };
     check('…and the next Esc brings the resting line back, opening no panel', bareBack.frames === '' && bareBack.pill?.shown, JSON.stringify(bareBack));
-    await pg.evaluate(async (ids) => { const F = await import('/lib/frames.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
+    await pg.evaluate(async (ids) => { const F = await import('/lib/windows.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
     await sleep(200);
   }
 

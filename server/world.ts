@@ -1,9 +1,9 @@
 // eidoverse-worlds sequencer — the world itself.
 //
-// A World is one v4 world as this server holds it: its log (server/v4/world.ts V4Log: the door over the world's
+// A World is one v4 world as this server holds it: its log (server/worldlog.ts WorldLog: the authority over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
 // persisted). Every world this server serves is a v4 world: a directory that holds only an old log (the first
-// protocol's log.jsonl) is refused at open, with the command that translates it (tools/v4/import-v1/, run once by the
+// protocol's log.jsonl) is refused at open, with the command that translates it (tools/protocol/import-v1/, run once by the
 // operator).
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
 // server.ts — waking scripted worlds with the server is boot policy, not world mechanics.
@@ -11,8 +11,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
-import { V4Log, isV4World, resetV4 } from "./v4/world.ts";
-import { V4Scripts, type ScriptHost } from "./v4/scripts.ts";
+import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
+import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
@@ -26,18 +26,18 @@ export function wireSettledPose(fn: typeof settle) { settle = fn; }
 
 // A role change re-sends everyone's rights; that needs server.ts's rightsFor, so it arrives by injection like settle
 // (this module never imports server.ts).
-let v4Rights: (w: World) => void = () => {};
-export function wireV4(rights: typeof v4Rights) { v4Rights = rights; }
+let onRightsChanged: (w: World) => void = () => {};
+export function wireRights(rights: typeof onRightsChanged) { onRightsChanged = rights; }
 
 // ------------------------------------------------------------------- clients
 
 export type Client = {
-  id: string;          // participant's display name in this world (their identity is v4id, from the door directory)
+  id: string;          // participant's display name in this world (their identity is v4id, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;
   /** latest pose, forwarded to late joiners so they see everyone immediately.
    *  Minimal structure over an open record: the presence checks (scripts'
-   *  world.near, the door's held-thing reach) dereference `.p`, everything
+   *  world.near, the authority's held-thing reach) dereference `.p`, everything
    *  else rides opaque. */
   lastPose: ({ p?: [number, number, number] } & Record<string, unknown>) | null | undefined;
   avatar: string;      // VRM library path chosen at join
@@ -64,12 +64,12 @@ export type Client = {
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
   anonymous?: boolean; // no account: a guest (capped at visitor; named as one)
-  v4id?: string;      // a v4 world's actor: this connection's opaque id from the door directory (server/v4/directory.ts)
+  v4id?: string;      // a v4 world's actor: this connection's opaque id from the authority directory (server/directory.ts)
   v4fold?: boolean;    // the client said it folds the v4 stream itself (every current client does; one that doesn't is refused at join)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
-  /** this connection's door requests, one at a time in the order sent (server/v4/messages.ts) */
+  /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
 };
 
@@ -81,7 +81,7 @@ export class World {
   /** The runtime's flight recorder — the "why didn't it work" surface.
    *
    *  The world log holds what HAPPENED; this ring holds what DIDN'T and why:
-   *  requests the door refused, rate limits, script events. In-memory only,
+   *  requests the authority refused, rate limits, script events. In-memory only,
    *  capped, never persisted — it is diagnosis, not history. Readable by
    *  anyone in the world (ws `debug`, `/debug` in the client, `world_debug`
    *  over MCPL): the log is public, so the reasons things bounced off it are
@@ -91,10 +91,10 @@ export class World {
     this.debugLog.push({ ts: Date.now(), kind, ...detail });
     if (this.debugLog.length > 300) this.debugLog.splice(0, this.debugLog.length - 300);
   }
-  /** Runtime scripts: the door runs script:<name> components (server/v4/scripts.ts). */
-  bhv!: ScriptHost;
-  /** The world's log: the door over its directory (server/v4/world.ts). Replaced in place by resetV4. */
-  v4: V4Log;
+  /** Runtime scripts: the authority runs script:<name> components (server/scripts.ts). */
+  scripts!: ScriptHost;
+  /** The world's log: the authority over its directory (server/worldlog.ts). Replaced in place by resetWorld. */
+  log: WorldLog;
   /** The embodied plane: who is connected, poses received since the last stage-frame tick (latest wins; one frame per
    *  world per tick, fanned out once), and the frame bookkeeping server.ts's stage-frame tick writes. Never persisted. */
   clients = new Set<Client>();
@@ -121,62 +121,62 @@ export class World {
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
   sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
-  isGhost(c: Client): boolean { return !!(this.v4 && c.v4id && this.v4.ghostHere(c.v4id)); }
+  isGhost(c: Client): boolean { return !!(this.log && c.v4id && this.log.ghostHere(c.v4id)); }
   /** The hooks a v4 log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
    *  is sent the log with every say emptied (it can't read chat). */
-  private v4Host(v4: V4Log) {
+  private logHost(log: WorldLog) {
     return {
       broadcast: (msg: unknown) => this.broadcast(msg),
       broadcastLog: (msg: unknown, ghostMsg: unknown) => { const d = JSON.stringify(msg), g = JSON.stringify(ghostMsg);
-        const S = v4.sanctions();   // once per broadcast, not a moderator-log scan per client (review 10-07)
+        const S = log.sanctions();   // once per broadcast, not a moderator-log scan per client (review 10-07)
         for (const c of this.clients) { try { c.ws.send(c.v4id && (S[c.v4id] as any)?.ghost ? g : d); } catch { /* gone */ } } },
-      rightsChanged: () => v4Rights(this),
+      rightsChanged: () => onRightsChanged(this),
       debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
-      present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world" && !v4.ghostHere(c.v4id)).map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
+      present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world" && !log.ghostHere(c.v4id)).map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
     };
   }
 
   constructor(name: string) {
     this.name = name;
-    if (!isV4World(name)) throw new Error(`world "${name}" holds no v4 log here (a world saved by the old protocol is translated once: bun tools/v4/world.ts translate <its name> <a new name>)`);
-    this.v4 = this.openLog();
-    this.openSeq = this.v4.snapSeq + 1;   // past every chat line this world has numbered (v4seq × 1000)
+    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no v4 log here (a world saved by the old protocol is translated once: bun tools/protocol/world.ts translate <its name> <a new name>)`);
+    this.log = this.openLog();
+    this.openSeq = this.log.snapSeq + 1;   // past every chat line this world has numbered (seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running
     // server-side.
-    this.bhv = new V4Scripts(this.v4);
-    this.bhv.sync();
-    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, v4 head ${this.v4.head}, `
+    this.scripts = new WorldScripts(this.log);
+    this.scripts.sync();
+    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, v4 head ${this.log.head}, `
       + `${Object.keys(this.poses).length} remembered poses`);
   }
-  private openLog(): V4Log {
-    const v4 = new V4Log(this.name);
-    v4.attach(this.v4Host(v4));
-    return v4;
+  private openLog(): WorldLog {
+    const log = new WorldLog(this.name);
+    log.attach(this.logHost(log));
+    return log;
   }
 
-  /** The view of the world's fold (shared/v4/record.js) plus the chat window, for this server's own readers. */
-  get state() { return this.v4.state; }
-  get recentSays() { return this.v4.recentSays; }
-  get poses() { return this.v4.poses; }
+  /** The view of the world's fold (shared/protocol/view.js) plus the chat window, for this server's own readers. */
+  get state() { return this.log.state; }
+  get recentSays() { return this.log.recentSays; }
+  get poses() { return this.log.poses; }
 
   broadcast(msg: unknown, except?: Client) {
     const data = JSON.stringify(msg);
     for (const c of this.clients) if (c !== except) c.ws.send(data);
   }
   readHistory(opts: { before?: number; after?: number; limit?: number; verbs?: Set<string> | null }) {
-    return this.v4.readHistory(opts);
+    return this.log.readHistory(opts);
   }
-  rememberPose(id: string, pose: unknown) { this.v4.rememberPose(id, pose, settle); }
+  rememberPose(id: string, pose: unknown) { this.log.rememberPose(id, pose, settle); }
 
-  /** Erase the world back to zero (server/v4/world.ts resetV4: archived beside it, founded again by the same owners);
+  /** Erase the world back to zero (server/worldlog.ts resetWorld: archived beside it, founded again by the same owners);
    *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. Returns
    *  the archive directory. */
-  resetV4(): string {
-    const arch = resetV4(this.v4);
-    this.bhv.disposeAll();   // the old world's scripts stop with it: the fresh world has none
-    this.v4 = this.openLog();
-    this.bhv = new V4Scripts(this.v4);
-    this.bhv.sync();
+  resetWorld(): string {
+    const arch = resetWorld(this.log);
+    this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
+    this.log = this.openLog();
+    this.scripts = new WorldScripts(this.log);
+    this.scripts.sync();
     return arch;
   }
 }

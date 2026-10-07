@@ -8,17 +8,17 @@
 //   await act("set", { id: "console", component: "picture", value }, { who: "antra" });   // a live write, by antra
 //   await act("sky", { hours: 12 }, { at: T0 + 20 * 60e3 });            // …at a chosen door time
 //
-// The door is the real one (shared/v4/door.js request over server/v4/disk.ts openWorld, the tools/v4/door-check.ts
-// pattern), its clock pinned through V4_NOW: each request is stamped at `at`, or one second after the last. `who` is
+// The door is the real one (shared/protocol/authority.js request over server/filehost.ts openWorld, the tools/protocol/authority-check.ts
+// pattern), its clock pinned through PROTOCOL_NOW: each request is stamped at `at`, or one second after the last. `who` is
 // the display name the agent's percepts attribute the change to (the door's actor in a scratch world is its founder).
 // @ts-nocheck
-import { scratch } from "./v4/common.ts";
-import { request, LAB_CATALOGUE } from "../shared/v4/door.js";
-import { openWorld } from "../server/v4/disk.ts";
-import { viewState } from "../shared/v4/record.js";
-import { enc, encName } from "../shared/v4/names.js";
+import { scratch } from "./protocol/common.ts";
+import { request, LAB_CATALOGUE } from "../shared/protocol/authority.js";
+import { openWorld } from "../server/filehost.ts";
+import { viewState } from "../shared/protocol/view.js";
+import { enc, encName } from "../shared/protocol/names.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
-import { makeV4Client, stateView } from "../shared/v4/client.js";
+import { makeReplica, stateView } from "../shared/protocol/replica.js";
 
 // any model path the tests name: the lab's measured models where they exist, else one the door can name, unmeasured
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
@@ -27,19 +27,19 @@ let worldN = 0;
 export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start = 1_800_000_000_000 } = {}) {
   const root = scratch(tag); const name = `w${++worldN}`;
   let T = start, w = null;
-  const call = (tool, args = {}, at = null) => {
-    T = at ?? T + 1000; process.env.V4_NOW = String(T);
+  const call = (verb, args = {}, at = null) => {
+    T = at ?? T + 1000; process.env.PROTOCOL_NOW = String(T);
     w ??= Object.assign(openWorld(root, name), { catalogue: ANY_MODEL });
-    return request(w, owner, tool, args);
+    return request(w, owner, verb, args);
   };
-  const founded = call("new", { title: tag });
+  const founded = call("create-world", { title: tag });
   if (!founded.ok) throw new Error(`agentOnDoor: new refused: ${JSON.stringify(founded.refused)}`);
   const A = agent;
-  A.v4c = makeV4Client();
+  A.replica = makeReplica();
   let joined = false;
   /** the agent takes the door's current state as its next view */
   const sync = async (live: boolean, who: string | null = null, ts: number | null = null) => {
-    A.v4c.adopt({ state: stateView(w.state()), head: -1 });
+    A.replica.adopt({ state: stateView(w.state()), head: -1 });
     await A.applyView(joined ? live : false, who, ts ?? T);
     joined = true;
   };
@@ -59,8 +59,8 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
       await sync(false);
     },
     /** one door request (at `at`, door time), then the agent's next view of it (live unless {live: false}) */
-    act: async (tool: string, args: any, { who = "someone", at = null as number | null, live = true } = {}) => {
-      const r = call(tool, args, at);
+    act: async (verb: string, args: any, { who = "someone", at = null as number | null, live = true } = {}) => {
+      const r = call(verb, args, at);
       await sync(live, who, T);
       return r;
     },

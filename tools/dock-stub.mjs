@@ -2,7 +2,7 @@
 // sinks), mictoggle.js (the mic/ear/VR glyph surface the ∃ menu paints), xrpanels.js, assets.js, defs.js,
 // and the four panel modules initPanels() pulls in dynamically. One file, many specifiers — extra exports are
 // harmless, a MISSING one is a SyntaxError that takes the suite down before a single check runs.
-// frames.js, icons.js and dropdown.js stay REAL: the dock's contract is with them.
+// windows.js, icons.js and dropdown.js stay REAL: the dock's contract is with them.
 const handlers = new Map();
 export const bus = {
   on(t, f) { (handlers.get(t) ?? handlers.set(t, []).get(t)).push(f); },

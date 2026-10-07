@@ -170,7 +170,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
     const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     const self: Driver = {
       // the world's ground is @world's: terrain and grass are door sets of its components (the driver founded the world)
-      verb: async (v, a) => { dws.send(JSON.stringify({ type: "v4", id: `${id}-${++n}`, tool: "set", args: { id: "@world", component: v, value: a } })); await sleep(420); },
+      verb: async (v, a) => { dws.send(JSON.stringify({ type: "request", id: `${id}-${++n}`, verb: "set", args: { id: "@world", component: v, value: a } })); await sleep(420); },
       close: () => { try { dws.close(); } catch { /* fine */ } },
     };
     let n = 0;
@@ -179,7 +179,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolveP(self);
       if (m.type === "error") console.log(dim(`  ${id} refused: ${m.error}`));
-      if (m.type === "v4-result" && !m.ok) console.log(dim(`  ${id}'s ${m.tool} refused: ${JSON.stringify(m.reply?.refused)}`));
+      if (m.type === "reply" && !m.ok) console.log(dim(`  ${id}'s ${m.verb} refused: ${JSON.stringify(m.reply?.refused)}`));
     };
     dws.onerror = (e) => reject(new Error(`socket ${id}: ${String(e)}`));
     setTimeout(() => reject(new Error(`${id} never got a snapshot`)), 15_000);

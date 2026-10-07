@@ -8,17 +8,17 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-inspector-test.ts
 //
 // v4 port (2026-10-06): the corpus is the spec fixtures (and COMPONENTS_CORPUS) TRANSLATED to v4
-// (shared/v4/translate-v1.js, as a world is migrated) and read as the view (shared/v4/record.js) — the records a v4
+// (shared/protocol/translate-v1.js, as a world is migrated) and read as the view (shared/protocol/view.js) — the records a v4
 // inspector sees. Light-verb lights and guard are gone (a translated light is a thing with a light component).
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { inspectSchema, fieldAt, editOps, partLabel, libLabel } from '../shared/editschema.js';
 import { componentsOf } from '../shared/components.js';
-import { translate } from './v4/import-v1/translate-v1.js';
-import { viewState } from '../shared/v4/record.js';
-import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/v4/fold.js';
-import { v1FoldBuild } from './v4/import-v1/build.ts';
-import { scratchWorld, flat } from './v4/scratchdoor.ts';
+import { translate } from './protocol/import-v1/translate-v1.js';
+import { viewState } from '../shared/protocol/view.js';
+import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/protocol/fold.js';
+import { v1FoldBuild } from './protocol/import-v1/build.ts';
+import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -40,7 +40,7 @@ for (const p of logs) {
   const old: any[] = [];
   for (const line of readFileSync(p, 'utf8').split('\n')) { if (!line) continue; try { old.push(JSON.parse(line)); } catch { /* skip */ } }
   let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch { untranslated++; continue; }
-  const st: any = v4Empty(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'state') applyInPlace(st, opsOf(e), seq); });
+  const st: any = v4Empty(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
   for (const [id, e] of Object.entries(viewState(st).entities ?? {})) ents.push([id, e]);
 }
 console.log(`${ents.length} final entities from ${logs.length} logs, translated to v4 (${untranslated} untranslatable)`);
@@ -105,18 +105,18 @@ const v = (set: Record<string, unknown>, e: any = crate) => editOps(e, 'c1', set
 const through = (set: Record<string, unknown>) => { const W = scratchWorld('compinspector').seed({ c1: crate }); const r = v(set); const res = W.sendAll(r.ops); return { r, res, after: W.rec('c1') }; };
 {
   const a = through({ 'add.Spin': 'arm' });
-  check('add.Spin on a part → set motion:arm {spin 36°/s}', JSON.stringify(a.r.ops) === JSON.stringify([{ tool: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36 } } }]), JSON.stringify(a.r.ops));
+  check('add.Spin on a part → set motion:arm {spin 36°/s}', JSON.stringify(a.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'motion:arm', value: { type: 'spin', degPerSec: 36 } } }]), JSON.stringify(a.r.ops));
   check('…through the door: the part spins, the whole-entity pendulum is untouched', a.res.ok && a.after.comp['motion:arm']?.type === 'spin' && a.after.comp['motion:arm'].degPerSec === 36 && a.after.comp.motion?.type === 'pendulum', JSON.stringify([a.res.refused, a.after.comp]));
 }
 check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spin': '' }).ops.length === 0 && /already moves as a whole/.test(v({ 'add.Spin': '' }).errors[0] ?? ''));
 {
   const m = through({ 'remove.motion': null });
-  check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ tool: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after.comp?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
+  check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after.comp?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
   const l = through({ 'remove.lock': null });
-  check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ tool: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after.comp?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
+  check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after.comp?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
   // step 2 (design §6): a lamp is a Model with a Light component
   const L = through({ 'add.Light': null });
-  check('add.Light on a model → set light with its fields spelled out (write-new-on-edit)', JSON.stringify(L.r.ops) === JSON.stringify([{ tool: 'set', args: { id: 'c1', component: 'light', value: { color: 0xffd9a0, intensity: 16, range: 10 } } }]), JSON.stringify(L.r.ops));
+  check('add.Light on a model → set light with its fields spelled out (write-new-on-edit)', JSON.stringify(L.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'light', value: { color: 0xffd9a0, intensity: 16, range: 10 } } }]), JSON.stringify(L.r.ops));
   check('…through the door it is lit with exactly those values (a lock doesn\'t bar a light)', L.res.ok && L.after.comp?.light?.color === 0xffd9a0 && L.after.comp.light.intensity === 16 && L.after.comp.light.range === 10, JSON.stringify([L.res.refused, L.after.comp]));
 }
 check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());

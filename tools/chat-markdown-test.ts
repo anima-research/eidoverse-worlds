@@ -15,7 +15,7 @@ plugin({
   setup(b) {
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here('./chat-core-stub.mjs') }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here('./chat-base-stub.mjs') }));
-    b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/windows\.js$/ }, () => ({ path: here('./chat-frames-stub.mjs') }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here('./chat-net-stub.mjs') }));
   },
 });
@@ -151,7 +151,7 @@ console.log('CHAT — People Here swaps sides');
 
   // S1/F4: a mod's markup INSIDE the real .chat-side. My earlier claim that a
   // mod cannot reach here was FALSE — mods.js:88 hands a mod makeFrame and
-  // frames.js returns the LIVE chat frame for a bare id, so a local mod (an
+  // windows.js returns the LIVE chat frame for a bare id, so a local mod (an
   // in-page ES module, mods.js:5-8) can mount into this very body. Planted
   // FIRST so an unbounded lookup finds it before the real head: the captures
   // must address the nodes initChat wrote, not the first match by class.

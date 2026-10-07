@@ -35,7 +35,7 @@ const _captured = new Set<number>();
 (Element.prototype as any).releasePointerCapture = function (id: number) { _captured.delete(id); (this as any).__cap = undefined; };
 (Element.prototype as any).hasPointerCapture = function (id: number) { return (this as any).__cap === id; };
 
-const { makeFrame } = await import("../client/lib/frames.js");
+const { makeFrame } = await import("../client/lib/windows.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -179,7 +179,7 @@ const tiny = dragEast(-9999, "up");
 check("width clamps at minW", f.state.w >= 100, `w=${f.state.w} (delta ${tiny})`);
 
 // --- the south clamp budgets in BODY space, subtracts a VIEWPORT margin ---
-{ // frames.js:144 clamps state.h to `innerHeight - s0.y - 4`, then the frame
+{ // windows.js:144 clamps state.h to `innerHeight - s0.y - 4`, then the frame
   // renders `chrome` px taller — so a resize to the legal maximum ends past the
   // bottom edge, unreachable under html,body{overflow:hidden}. fit() does not
   // share the bug (it clamps against root.offsetHeight), but the resize

@@ -2,7 +2,7 @@
 //
 //   bun tools/frames-layout-test.ts
 //
-// frames-resize-test covers the resize drag's finish path. This suite covers what the rest of frames.js
+// frames-resize-test covers the resize drag's finish path. This suite covers what the rest of windows.js
 // promises: a frame can never leave the viewport (the -8 margins, on drag AND on resize), the edge/corner
 // hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui.js's arrange-exit
 // guard), a frame resting on an edge rides that edge through a window resize, z-indexes stay inside the
@@ -47,7 +47,7 @@ localStorage.setItem("ew-ui-locked", "0");
 (document as any).elementFromPoint = () => null;
 
 const { makeFrame, resizeZoneAt, setLocked, isLocked, escapeToggle, escapeIsClaimed, claimEscape, allFrames, chromeCost } =
-  await import("../client/lib/frames.js");
+  await import("../client/lib/windows.js");
 
 // happy-dom measures nothing; report each frame's real state so the zone math and the drag clamp can see it
 function measurable(f: any, chromeH = 30) {
@@ -340,17 +340,17 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   // unlatched path would produce, and asserting against it passed either way
   // (round 2: deleting markMoved left this green).
   const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
-  // BINDS frames.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
+  // BINDS windows.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
   // Measured (round 5, correcting the round-2 note that stood here): deleting
   // the drag-end markMoved() alone leaves this GREEN at 61/0; deleting the
   // resize-finish one alone turns it RED at 60/1. The reason is the capture
   // phase — the resize handler registers
   // `document.addEventListener('pointerup', finish, true)`, so a title-bar
   // drag's pointerup reaches finish() (and its f.markMoved?.()) BEFORE the
-  // drag's own up() runs. So the drag-end call at frames.js:454 is the line
+  // drag's own up() runs. So the drag-end call at windows.js:454 is the line
   // nothing binds. Left in place: it is correct, and removing a guard because
   // no test reaches it is the wrong direction.
-  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, frames.js:181)",
+  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
 
@@ -400,7 +400,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
       // not chase it further.
       // To bind it later: a fixture whose root.offsetHeight really is state.h +
       // chrome, so the anchor and the ceiling are far apart. The product change
-      // itself (frames.js: `!moved &&` on the y anchor) is one token and is
+      // itself (windows.js: `!moved &&` on the y anchor) is one token and is
       // disclosed in the commit.
       check("a hand-placed frame is still on screen after a fit", ybar.state.y >= 8, `y=${ybar.state.y}`);
       // the CLAMP is NOT gated: shrink the viewport under it and it must come inside

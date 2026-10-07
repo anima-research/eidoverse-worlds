@@ -10,9 +10,9 @@ amendment to the first protocol and is now the physics part of protocol v4
 the log was redone for v4: launches are `sim` entries, and the log records
 where things come to rest.*
 
-Status: normative for v4 worlds whose `@world.sim` names an engine, with a
+Status: normative for v4 worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` (eidosim), `shared/simmath.js`,
-`shared/terrainmath.js`, and the sim layer `shared/v4/simlayer.js`. MUST /
+`shared/terrainmath.js`, and the sim layer `shared/protocol/simlayer.js`. MUST /
 SHOULD / MAY are RFC-2119.
 
 ## 0. The idea
@@ -24,7 +24,7 @@ to fly runs a **deterministic engine** instead: the log records the
 the *result* (where the thing came to rest, caused by that intent). Every
 reader that carries the engine replays the flight bit for bit and checks
 that it lands where the log says; every reader that doesn't still folds the
-world exactly, because the rest is an ordinary state entry. Nothing about
+world exactly, because the rest is an ordinary change entry. Nothing about
 the world depends on carrying the engine; only watching the flight does.
 
 ## 1. Two folds, one truth
@@ -32,13 +32,13 @@ the world depends on carrying the engine; only watching the flight does.
 - **The fold** (PROTOCOL.md §3): pure, per-entry state transitions. It
   never reads `sim` entries and never runs an engine.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
-  state entries and its `sim` entries (launches, lifts, catches), run by
-  the engine `@world.sim` names. It owns what is in the air between a launch
-  and its rest. It never writes the log; the door does, from its own copy.
+  change entries and its `sim` entries (launches, lifts, catches), run by
+  the engine `@world.physics-engine` names. It owns what is in the air between a launch
+  and its rest. It never writes the log; the authority does, from its own copy.
 
-A state entry whose `cause` is a launch IS that body's rest, and its value
+A change entry whose `cause` is a launch IS that body's rest, and its value
 MUST equal where the engine has the body. A carrier checks this; a
-disagreement is evidence against the door, not a second truth.
+disagreement is evidence against the authority, not a second truth.
 
 ## 2. Covenant I — owned numerics
 
@@ -71,14 +71,14 @@ re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
-- `@world.sim` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
-  sets `engine`; the **door stamps `build`**, the hash of the exact files
-  that implement it (determinism is per binary). The reference door carries
+- `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
+  sets `engine`; the **authority stamps `build`**, the hash of the exact files
+  that implement it (determinism is per binary). The reference authority carries
   `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
-  `shared/v4/simlayer.js`; `bun run test:v4` recomputes it from the files
+  `shared/protocol/simlayer.js`; `bun run test:v4` recomputes it from the files
   and fails if they changed without a new name).
-- **Changing the engine is a cut**: the door refuses to change or delete
-  `@world.sim` while anything is in flight (an owner may force it, freezing
+- **Changing the engine is a cut**: the authority refuses to change or delete
+  `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
 - **A reader that doesn't carry the named build MUST NOT recompute the
@@ -99,7 +99,7 @@ The eidosim laws, each kept exactly as written:
   earliest contact resolved, so a fast body can't cross a thin wall
   between two tick endpoints.
 - **0.3.0 — the world's things are colliders.** Each thing's shape enters
-  the sim only as stamped by the door into the log (`physics.shape`, its
+  the sim only as stamped by the authority into the log (`physics.shape`, its
   measured box): a static's top is ground, its side is a wall.
 - **0.2.0 — terrain-aware ground** (`shared/terrainmath.js`).
 - **0.1.0 — ballistic flight** with bounces on a flat ground plane.
@@ -121,7 +121,7 @@ The eidosim laws, each kept exactly as written:
 ## 5. Covenant IV — tick-indexed time
 
 - Sim time is a dense tick counter of `tickMs` steps. The only clock is the
-  entries' `ts` (the door's admission time); wall clock never enters the
+  entries' `ts` (the authority's admission time); wall clock never enters the
   sim.
 - An intent takes effect at the **first tick boundary at or after its
   entry's `ts`**, by fixed quantization. Two implementations replaying the
@@ -145,11 +145,11 @@ between several hands.
 ## 7. Other engines — moddable physics
 
 A physics mod is an engine: a named, versioned implementation a world
-selects in `@world.sim`. What it must be is exactly what §2–§5 say — owned
+selects in `@world.physics-engine`. What it must be is exactly what §2–§5 say — owned
 numerics, no clock, no randomness, ordered iteration; its constants are its
 version; it reads only what is stamped in entries; it advances by ticks. To
-be carried, it registers beside eidosim in the door's engine table
-(`ENGINES` in `shared/v4/simlayer.js`) with its build hash, and passes the
+be carried, it registers beside eidosim in the authority's engine table
+(`ENGINES` in `shared/protocol/simlayer.js`) with its build hash, and passes the
 same conformance (§8). An engine only the server carries would need the
 server to stream its state to clients as presence — never folded — while
 the log stays exact for everyone.
@@ -163,5 +163,5 @@ the log stays exact for everyone.
 - **Cross-engine**: results MUST be bit-identical across JavaScript
   engines (tools/simmath-test.ts for the kernel; the `browser` suite runs
   the shared core in headless Chromium byte for byte against bun).
-- `bun tools/v4/run.ts phys physlive` runs the physics suites: launches,
+- `bun tools/protocol/run.ts phys physlive` runs the physics suites: launches,
   rests by cause, carriers, the running server and a client's fold.

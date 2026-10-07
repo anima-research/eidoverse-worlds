@@ -1,7 +1,7 @@
 // hierarchy-test — the scene tree as a pure function of the world view (design §3
 // "Children", §5 "Hierarchy"; shared/hierarchy.js), checked against the REAL
-// door (a scratch v4 world, tools/v4/scratchdoor.ts, read back through
-// shared/v4/record.js viewState) and against three.js composing Object3Ds the
+// door (a scratch v4 world, tools/protocol/scratchworld.ts, read back through
+// shared/protocol/view.js viewState) and against three.js composing Object3Ds the
 // way the renderer does.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-test.ts
@@ -23,8 +23,8 @@ import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { treeRows, treeOf, cycleRefusal, parentOps, worldPose, localOf, childrenOf, kindHint, ancestors } from '../shared/hierarchy.js';
 import { inspectSchema, editOps, fieldAt, describeSchema } from '../shared/editschema.js';
 import { qNorm, qFromYaw, qHeading } from '../shared/rot.js';
-import { scratchWorld, flat } from './v4/scratchdoor.ts';
-import { enc } from '../shared/v4/names.js';
+import { scratchWorld, flat } from './protocol/scratchworld.ts';
+import { enc } from '../shared/protocol/names.js';
 
 let pass = 0, fail = 0;
 const fails: string[] = [];
@@ -33,7 +33,7 @@ const rnd = (() => { let s = 777; return () => ((s = (s * 1664525 + 1013904223) 
 const near = (a: number[], b: number[], eps: number) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
 const sameRot = (a: number[], b: number[], eps: number) => near(a, b, eps) || near(a, b.map((v) => -v), eps);
 const LIB = 'eidoverse/assets/models/table_oak_round.glb';
-const tfOf = (r: any) => flat(r.ops).find((o: any) => o.tool === 'set' && o.args.component === 'transform')?.args.value;
+const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
 
 // ---------------------------------------------------------------- 1. the tree
 console.log('tree building from a v4 world\'s view');
@@ -95,15 +95,15 @@ console.log('cycle refusal');
   check('the door refuses a looped parent (`loop`) and the table stays a root', r.ok === false && r.refused?.code === 'loop' && !D.rec('table').parent, JSON.stringify(r));
   const ok = D.send(parentOps(W, 'bulb', 'table').ops[0]);
   check('…and takes an honest one (bulb onto table, through parentOps)', ok.ok && D.rec('bulb').parent?.to === 'table', JSON.stringify(ok.refused));
-  // a lock: the planner lets the door ask (no planner error); the door refuses the move, and through_lock answers it
+  // a lock: the planner lets the door ask (no planner error); the door refuses the move, and throughLock answers it
   D.call('set', { id: 'lamp', component: 'lock', value: true });
   const LW = D.view().entities;
   const lp = parentOps(LW, 'lamp', null);
   check('a locked thing: parentOps plans the unparent (the door is the one to ask)', lp.errors.length === 0 && lp.ops.length === 1, JSON.stringify(lp));
   const lr = D.send(lp.ops[0]);
   check('…and the door refuses it `locked`; lamp still under table', lr.ok === false && lr.refused?.code === 'locked' && D.rec('lamp').parent?.to === 'table', JSON.stringify(lr));
-  const lt = D.send(lp.ops[0], { through_lock: true });
-  check('…through_lock unparents it, in place', lt.ok && !D.rec('lamp').parent && near(D.rec('lamp').pos, [0, 1, 0], 1e-3), JSON.stringify([lt.refused, D.rec('lamp')]));
+  const lt = D.send(lp.ops[0], { throughLock: true });
+  check('…throughLock unparents it, in place', lt.ok && !D.rec('lamp').parent && near(D.rec('lamp').pos, [0, 1, 0], 1e-3), JSON.stringify([lt.refused, D.rec('lamp')]));
 }
 
 // ---------------------------------------------------------------- 3. local ⇄ world
@@ -186,14 +186,14 @@ function threeWorld(W: any, id: string) {
   const W: any = { box: { lib: LIB, pos: [1, 0, 0], q: qNorm([0.3, 0.2, 0.1, 0.9]), scale: 2 }, ball: { lib: LIB, pos: [1, 1, 0], yaw: 0, scale: 1 } };
   const pv = parentOps(W, 'ball', 'box');
   const o = flat(pv.ops);
-  check('parenting: ONE batch, set parent {to} then a whole local transform (scale local: 1/2 under a ×2 box)', pv.ops.length === 1 && pv.ops[0].tool === 'batch' && o.length === 2 && o[0].args.component === 'parent' && o[0].args.value.to === 'box'
+  check('parenting: ONE batch, set parent {to} then a whole local transform (scale local: 1/2 under a ×2 box)', pv.ops.length === 1 && pv.ops[0].verb === 'batch' && o.length === 2 && o[0].args.component === 'parent' && o[0].args.value.to === 'box'
     && o[1].args.component === 'transform' && o[1].args.value.q.length === 4 && o[1].args.value.pos.length === 3 && near(o[1].args.value.scale, [0.5, 0.5, 0.5], 1e-9), JSON.stringify(pv.ops));
   const un = flat(parentOps({ ...W, ball: { ...W.ball, parent: { to: 'box', offset: [0, 0.5, 0] } } }, 'ball', null).ops);
-  check('unparenting: delete parent, then the whole WORLD transform', un.length === 2 && un[0].tool === 'delete' && un[0].args.component === 'parent' && un[1].args.component === 'transform' && near(un[1].args.value.scale, [2, 2, 2], 1e-9), JSON.stringify(un));
+  check('unparenting: delete parent, then the whole WORLD transform', un.length === 2 && un[0].verb === 'delete' && un[0].args.component === 'parent' && un[1].args.component === 'transform' && near(un[1].args.value.scale, [2, 2, 2], 1e-9), JSON.stringify(un));
   check('an id that needs escaping is encoded once in the parent target', flat(parentOps({ Box: W.box, ball: W.ball }, 'ball', 'Box').ops)[0].args.value.to === enc('Box'));
   const L = localOf({ ...W.ball, parent: { to: 'box', yaw: 0.5 } }, W);
   check('localOf a yaw-only mount: q null, yaw the relative turn', L.q === null && L.yaw === 0.5 && L.mounted);
-  const S = localOf({ ...W.ball, parent: { to: 'chair', slot: 'seat' } }, { ...W, chair: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } } });
+  const S = localOf({ ...W.ball, parent: { to: 'chair', socket: 'seat' } }, { ...W, chair: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } } });
   check('localOf a socket mount: the socket\'s pos and yaw', near(S.pos, [0, 0.5, 0], 0) && S.yaw === 3);
 }
 
@@ -235,7 +235,7 @@ console.log("a child's channel box: local, and an edit writes one local transfor
   const e5 = editOps(W.lamp, 'lamp', { 'pos.x': 11 }, { world: W });
   check('a root writes its world transform', flat(e5.ops).length === 1 && tfOf(e5).pos[0] === 11 && tfOf(e5).pos[2] === 10);
   // a part-socket rider: read-only, says why
-  const ride: any = { cart: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } }, box: { lib: LIB, pos: [0, 0, 0], parent: { to: 'cart', slot: 'deck' } } };
+  const ride: any = { cart: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } }, box: { lib: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
   const e6 = editOps(ride.box, 'box', { 'pos.x': 1 }, { world: ride });
   check('a rider of a moving part: translate refused with the reason', e6.ops.length === 0 && /moving part plank/.test(e6.errors.join()));
 }

@@ -20,7 +20,7 @@ plugin({
     // rimward: CONFIG/bus/report live in base.js (the renderer-free substrate) — same stub, or the
     // test's CONFIG.name never reaches chat.js and every mention assertion passes vacuously (PR #160 B6)
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here("./chat-base-stub.mjs") }));
-    b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here("./chat-frames-stub.mjs") }));
+    b.onResolve({ filter: /^\.\/windows\.js$/ }, () => ({ path: here("./chat-frames-stub.mjs") }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here("./chat-net-stub.mjs") }));
   },
 });
@@ -194,7 +194,7 @@ openPane();
 }
 const rows2 = () => [...frameStub.body!.querySelectorAll(".chat-side-list .who-row")];
 check("the People Here pane lists everyone", rows2().length === 3, `${rows2().length} rows`);
-// A BUTTON, not a div — this IS the fix. frames.js:_contentClaims exempts only
+// A BUTTON, not a div — this IS the fix. windows.js:_contentClaims exempts only
 // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface, so a div row was
 // claimed by the frame's pointerdown and the dblclick never arrived. R,
 // 2026-09-11: "the Chat panel treats names in the roster as a

@@ -1,5 +1,5 @@
 // emotebar-test substitutes this for every neighbour emotebar.js imports except icons.js (pure). ONE file,
-// resolved for frames.js / avatar.js / controller.js / mybody.js / xrpanels.js / base.js — each module's
+// resolved for windows.js / avatar.js / controller.js / mybody.js / xrpanels.js / base.js — each module's
 // names are disjoint, so one export table serves them all. Everything is a recorder the test reads.
 
 // ---- base.js: the bus
@@ -12,7 +12,7 @@ export const bus = {
 export const CONFIG = { name: 'tester' };
 export function report() {}
 
-// ---- frames.js: a frame that carries the refs emotebar rides (_state, _paint, show)
+// ---- windows.js: a frame that carries the refs emotebar rides (_state, _paint, show)
 export const frames = [];
 export function makeFrame(key, opts = {}) {
   const el = document.createElement('div');
@@ -56,11 +56,11 @@ export const getMe = () => ({ playEmote: (n) => played.push(n) });
 export const xrPanels = [];
 export function registerXRPanel(p) { xrPanels.push(p); }
 
-// ---- frames.js: chromeCost is RE-EXPORTED FROM THE REAL MODULE, not stubbed.
+// ---- windows.js: chromeCost is RE-EXPORTED FROM THE REAL MODULE, not stubbed.
 // This suite drives the real emotebar.js against recorders, and roomFor()'s whole
 // job is the anchor arithmetic chromeCost() performs. A stubbed copy would make
 // every assertion a statement about THIS FILE rather than about the product.
 // The specifier is deliberately '../client/lib/...': emotebar-test's resolver
-// filter is `^\./frames\.js$`, anchored to a leading './', so this is not
+// filter is `^\./windows\.js$`, anchored to a leading './', so this is not
 // rewritten back to the stub.
-export { chromeCost } from '../client/lib/frames.js';
+export { chromeCost } from '../client/lib/windows.js';

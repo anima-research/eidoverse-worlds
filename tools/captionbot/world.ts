@@ -2,7 +2,7 @@
 // screen names in its `captioners {ids}` (whoever may edit the screen sets
 // that), and sends one door `caption` request per final line. It reads the
 // stage cue (a `stage` component on the screen) off its own fold of the
-// world (shared/v4/client.js), so `speaker` is the operator's word, never
+// world (shared/protocol/replica.js), so `speaker` is the operator's word, never
 // the bot's guess.
 //
 // RECEIPTS (Mica, #187 review B3). A line is not done when it is sent; it is
@@ -30,7 +30,7 @@
 // perception, not history. This client keeps nothing the world does not.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
-import { makeV4Client } from '../../shared/v4/client.js';
+import { makeReplica } from '../../shared/protocol/replica.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {
@@ -81,7 +81,7 @@ export class WorldClient {
   private lastSentAt = 0;
   private halted: string | null = null;
   private titled = false;
-  private v4 = makeV4Client();
+  private v4 = makeReplica();
   private reqId = 0;
   private inflightId: string | null = null;
   session: string;
@@ -125,12 +125,12 @@ export class WorldClient {
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
-      } else if (msg.type === 'v4-log') {
+      } else if (msg.type === 'log') {
         const r = this.v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
         if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
         const sp = this.screen()?.comp?.stage?.speaker;
         if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
-      } else if (msg.type === 'v4-result' && msg.id === this.inflightId) {
+      } else if (msg.type === 'reply' && msg.id === this.inflightId) {
         const p = this.inflight; this.inflightId = null;
         if (!p) return;
         if (msg.reply?.ok) this.onEcho(p.args);
@@ -197,7 +197,7 @@ export class WorldClient {
     this.sent++;
     this.opts.onSend?.(p.key);
     this.inflightId = `c${++this.reqId}`;
-    this.ws.send(JSON.stringify({ type: 'v4', id: this.inflightId, tool: 'caption', args: p.args }));
+    this.ws.send(JSON.stringify({ type: 'request', id: this.inflightId, verb: 'caption', args: p.args }));
     // no receipt in time: unconfirmed, so resend — the door dedupes
     this.ackTimer = setTimeout(() => {
       this.ackTimer = null;

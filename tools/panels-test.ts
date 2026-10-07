@@ -208,7 +208,7 @@ console.log("\nsoft limits are LIVE across an in-place update (typing past softM
   sf.set(F(120), edit);                       // same shape: update in place, softMax now 120
   check("same node", sf.frame.body.querySelector(".sp-num") === inp);
   // off the origin: happy-dom gives every frame a zero rect, so (0,0) sits in
-  // frames.js's document-level resize band and the FRAME takes the pointer
+  // windows.js's document-level resize band and the FRAME takes the pointer
   inp.dispatchEvent(pe("pointerdown", 300)); inp.dispatchEvent(pe("pointermove", 400)); inp.dispatchEvent(pe("pointerup", 400));
   // the drag previews at the cap and ends where it began → nothing to commit;
   // the binding is that no preview ever went ABOVE the refreshed cap, and none sat at the stale one

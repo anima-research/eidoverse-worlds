@@ -9,7 +9,7 @@
 // socket fields = one merged `set sockets`), honours relative math on the face
 // scale (degrees), hard limits, read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
-// ops go through the real door on a scratch world (tools/v4/scratchdoor.ts)
+// ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
 // and the v4 state is read back as the view.
 //
 // v4 port (2026-10-06): light-verb lights (kind:'light') and guard/placer are gone from v4 — a lamp is a thing
@@ -17,7 +17,7 @@
 // door refuses the move (code `locked`), so that is now checked at the door.
 
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
-import { scratchWorld, flat } from "./v4/scratchdoor.ts";
+import { scratchWorld, flat } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
 
 let pass = 0, fail = 0;
@@ -27,14 +27,14 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const near = (a: number, b: number, e = 1e-6) => Math.abs(a - b) < e;
 // the door ops one edit planned: sets / deletes of one component
-const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.tool === "set" && o.args.component === comp);
-const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.tool === "delete" && o.args.component === comp);
+const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "set" && o.args.component === comp);
+const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "delete" && o.args.component === comp);
 const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
   comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} }, side: { pos: [0.4, 0.5, 0], q: [0, 0.479425538604203, 0, 0.8775825618903728], body: {} } }, recipe: { wood: 2 }, lock: true } };   // side: heading 1 rad
 // a lamp: a thing with a light component (v4 has no light-verb lights)
-const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, keep: true } } };
+const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, important: true } } };
 const swing = { lib: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, comp: { motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } } };
 const cargo = { lib: "crate.glb", pos: [9, 9, 9], yaw: 0, actor: "r", ts: 1, parent: { to: "truck", offset: [0, 1, 0] } };
 
@@ -49,7 +49,7 @@ console.log("\nschema is a function of the record:");
   check("unknown comp 'recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
   check("sockets: a list + per-slot channels", fieldAt(s, "sockets.slots")?.t === "list" && Math.abs(fieldAt(s, "sockets.side|rot|1")?.value - 1) < 1e-6);
   const l = inspectSchema(lamp, "lamp");
-  check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.keep")?.value === true && fieldAt(l, "light.range")?.value === 6);
+  check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.important")?.value === true && fieldAt(l, "light.range")?.value === 6);
   const w = inspectSchema(swing, "s");
   check("a driven thing: transform tinted, rest pose", fieldAt(w, "pos.x")!.driven === "motion" && fieldAt(w, "pos.x")!.value === 5);
   check("motion group covers the whole comp AND the part", fieldAt(w, "motion.amp")?.t === "num" && fieldAt(w, "motion.plank|degPerSec")?.value === 60);
@@ -82,8 +82,8 @@ console.log("\nedits → the fewest door ops:");
   const WL = scratchWorld("editschema").seed({ c1: chair });
   const refused = WL.send(rl.ops[0]);
   check("…and the door refuses it `locked`; the chair hasn't moved", refused.ok === false && refused.refused?.code === "locked" && WL.rec("c1").pos[0] === 1, JSON.stringify(refused));
-  const through = WL.send(rl.ops[0], { through_lock: true });
-  check("…with through_lock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && WL.rec("c1").comp.lock === true, JSON.stringify(through.refused));
+  const through = WL.send(rl.ops[0], { throughLock: true });
+  check("…with throughLock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && WL.rec("c1").comp.lock === true, JSON.stringify(through.refused));
   const rs = editOps(chair, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|rot|1": "*=2" });
   const cs = sets(rs, "sockets");
   check("two socket edits = ONE merged set sockets keeping the other slot", cs.length === 1 && flat(rs.ops).length === 1 && near(cs[0].args.value.seat.pos[1], 0.6) && near(cs[0].args.value.side.q[1], Math.sin(1)) && near(cs[0].args.value.side.q[3], Math.cos(1)) && cs[0].args.value.side.pos[0] === 0.4, JSON.stringify(cs));
@@ -93,7 +93,7 @@ console.log("\nedits → the fewest door ops:");
   check("deleting the last slot removes the comp (delete sockets)", dels(rd2, "sockets").length === 1 && sets(rd2, "sockets").length === 0, JSON.stringify(rd2));
   const rL = editOps(lamp, "lamp", { "light.intensity": "-=10%", "light.noon": true, "light.color": "#00ff00" });
   const lv = sets(rL, "light");
-  check("light edits = ONE set light: intensity 18, day:false, color parsed, range and keep kept", lv.length === 1 && flat(rL.ops).length === 1 && lv[0].args.value.intensity === 18 && lv[0].args.value.day === false && lv[0].args.value.color === 0x00ff00 && lv[0].args.value.range === 6 && lv[0].args.value.keep === true, JSON.stringify(lv));
+  check("light edits = ONE set light: intensity 18, day:false, color parsed, range and important kept", lv.length === 1 && flat(rL.ops).length === 1 && lv[0].args.value.intensity === 18 && lv[0].args.value.day === false && lv[0].args.value.color === 0x00ff00 && lv[0].args.value.range === 6 && lv[0].args.value.important === true, JSON.stringify(lv));
   const rM = editOps(swing, "s", { "motion.amp": "+=10", "motion.plank|degPerSec": 90 });
   const mv = sets(rM, "motion"), cv = sets(rM, "motion:plank");
   check("whole motion → set motion keeping t0; part → set motion:plank; rpm retired", mv.length === 1 && mv[0].args.value.t0 === 123 && near(mv[0].args.value.amp, 0.4 + 10 / 180 * Math.PI, 1e-4) && cv.length === 1 && cv[0].args.value.degPerSec === 90 && cv[0].args.value.rpm === undefined, JSON.stringify(rM));
@@ -162,7 +162,7 @@ console.log("\ndescribeSchema reads like an inspector:");
   check("a child says its frame and its parent", /frame: local to its parent, truck/.test(t2) && /parent\.to = truck/.test(t2));
   // a read-only field in v4: a rider on a carrier's MOVING PART socket (its pose is baked at the part's phase)
   const world = { truck: { lib: "truck.glb", pos: [0, 0, 0], yaw: 0, comp: { sockets: { bed: { pos: [0, 1, 0], yaw: 0, part: "arm" } } } },
-    k: { ...cargo, parent: { to: "truck", slot: "bed" } } };
+    k: { ...cargo, parent: { to: "truck", socket: "bed" } } };
   const t3 = describeSchema(inspectSchema(world.k, "k", { world }));
   check("read-only fields say why (a part-socket rider)", /read-only: rides truck's moving part arm/.test(t3), t3.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
   const t4 = describeSchema(inspectSchema({ ...cargo, comp: { lock: true } }, "k"));
@@ -175,7 +175,7 @@ console.log("\nguard is merged into lock (PROTOCOL-v4 §5): an old habit is taug
   const g = editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.guard": true });
   check("flags.guard is refused, naming flags.lock; nothing sent", g.ops.length === 0 && /merged into `lock`/.test(g.errors[0] ?? "") && /flags\.lock/.test(g.errors[0] ?? ""), JSON.stringify(g));
   check("the schema has no guard field (Flags: lock, hidden, label)", !fieldAt(inspectSchema({ pos: [0, 0, 0], comp: { guard: true } }, "old"), "flags.guard"));
-  check("flags.lock → set lock true / delete lock", JSON.stringify(editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.lock": true }).ops) === JSON.stringify([{ tool: "set", args: { id: "crate", component: "lock", value: true } }])
+  check("flags.lock → set lock true / delete lock", JSON.stringify(editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.lock": true }).ops) === JSON.stringify([{ verb: "set", args: { id: "crate", component: "lock", value: true } }])
     && dels(editOps({ pos: [0, 0, 0], comp: { lock: true } }, "crate", { "flags.lock": false }), "lock").length === 1);
 }
 

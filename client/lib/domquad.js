@@ -8,7 +8,7 @@
 // returned, with its display state, on exit. Fallback for comparison: ?canvasquads=1.
 import { THREE, renderer } from './core.js';
 import { tee, bus } from './base.js';
-import { allFrames, getFrame } from './frames.js';
+import { allFrames, getFrame } from './windows.js';
 import { HTMLMesh } from './vendor/htmlmesh.js';
 import { quadMaterial } from './quadcolour.js';
 

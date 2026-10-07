@@ -77,8 +77,8 @@ console.log("\n━━ tools over the MCPL connection ━━");
 const lookRes = await conn.sendToolsCall("look", {});
 const lookText = (lookRes.content as any[]).filter((b) => b.type === "text").map((b) => b.text).join("");
 check("look returns perception", lookText.includes('You are "claude"'), lookText.slice(0, 80));
-const walkRes = await conn.sendToolsCall("walk_to", { x: 2, z: -2 });
-check("walk_to arrives", JSON.stringify(walkRes).includes("arrived"));
+const walkRes = await conn.sendToolsCall("move", { to: [2, 0, -2] });
+check("move arrives", JSON.stringify(walkRes).includes("arrived"));
 
 console.log("\n━━ world chat → channels/incoming pushes ━━");
 const bystander = new WorldAgent({ name: "bystander" });

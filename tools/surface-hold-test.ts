@@ -8,7 +8,7 @@
 //   bun tools/surface-hold-test.ts
 //
 // Recut (#57 B1 re-review): the hold path lives in the live-cause dispatcher
-// (client/lib/realize/causes.js) now, not world.js — the applyEntry switch is
+// (client/lib/realize/livechat.js) now, not world.js — the applyEntry switch is
 // gone (TEL0S_NOTES §11). Same six pinned behaviors, same real bus, driven
 // through handleLiveCause exactly as net.js's 'live-entry' does.
 import { plugin } from "bun";
@@ -18,7 +18,7 @@ const STUB = fileURLToPath(new URL("./world-hold-stub.mjs", import.meta.url));
 plugin({
   name: "world-hold-stub",
   setup(build) {
-    // causes.js imports ../core.js and ../chat.js (from realize/) and
+    // livechat.js imports ../core.js and ../chat.js (from realize/) and
     // ./models.js (PORTED only) — all stubbed; the bus must be REAL.
     for (const f of ["^\\.\\./core\\.js$", "^\\.\\./chat\\.js$", "^\\./models\\.js$"]) {
       build.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
@@ -27,7 +27,7 @@ plugin({
 });
 
 const stub = await import("./world-hold-stub.mjs");
-const causes = await import("../client/lib/realize/causes.js");
+const causes = await import("../client/lib/realize/livechat.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {

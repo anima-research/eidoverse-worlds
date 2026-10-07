@@ -243,7 +243,7 @@ try {
       if (m.type === "snapshot") resolve(true);
       // chat is the v4-log stream's say entries; their actors are opaque ids, named by the stream
       if (m.type === "snapshot") Object.assign(names, m.v4?.names ?? {});
-      if (m.type === "v4-log") { Object.assign(names, m.names ?? {});
+      if (m.type === "log") { Object.assign(names, m.names ?? {});
         for (const e of m.entries ?? []) if (e?.kind === "say") seen.push({ who: names[e.actor] ?? e.actor, text: e.body?.text }); }
     };
   });
@@ -366,7 +366,7 @@ try {
   check("granted: channels/open answers with the channel", !!r.result?.channel, JSON.stringify(r).slice(0, 120));
 
   // ---- phase 3: live mention routing (observer → world → door → host) ------
-  obs.send(JSON.stringify({ type: "v4", id: "obs-say", tool: "say", args: { text: "hey @claude — live mention check" } }));
+  obs.send(JSON.stringify({ type: "request", id: "obs-say", verb: "say", args: { text: "hey @claude — live mention check" } }));
   const mention = await full.waitFor((m) =>
     m.method === "channels/incoming" &&
     JSON.stringify(m.params ?? {}).includes("live mention check"), 8000);

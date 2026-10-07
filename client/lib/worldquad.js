@@ -5,11 +5,11 @@
 // the sky lives in a closure with the clock rules (skypanel gather()) — not
 // duplicated here; the quad says 'preview' and the desk commits. owner, 09-04
 // 22:02: every slot opens that frame's quad; this is the world frame's.
-import * as OP from '../../shared/v4/ops.js';
-import { sendOps } from './v4edit.js';
+import * as OP from '../../shared/protocol/requests.js';
+import { sendOps } from './editwrites.js';
 import { bus } from './base.js';
 import { myState } from './controller.js';
-import { starterModels } from './palette.js';
+import { starterModels } from './catalog.js';
 import { defsRegistry } from './defs.js';
 import { previewSky, skyArgs } from './sky.js';
 import { registerXRPanel } from './xrpanels.js';

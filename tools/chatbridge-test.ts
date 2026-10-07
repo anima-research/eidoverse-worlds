@@ -28,7 +28,7 @@ const join_ = (id: string) => new Promise<{ ws: WebSocket; msgs: any[] }>((res, 
   ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); msgs.push(m); if (m.type === "snapshot") { clearTimeout(t); res({ ws, msgs }); } if (m.type === "error") { clearTimeout(t); rej(new Error(m.error)); } };
   ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", id, v4fold: true }));
 });
-const say = (c: { ws: WebSocket }, text: string) => c.ws.send(JSON.stringify({ type: "v4", id: `t-${Math.random()}`, tool: "say", args: { text } }));
+const say = (c: { ws: WebSocket }, text: string) => c.ws.send(JSON.stringify({ type: "request", id: `t-${Math.random()}`, verb: "say", args: { text } }));
 
 let pass = 0, fail = 0;
 const check = (what: string, c: boolean, detail = "") => { if (c) pass++; else fail++; console.log(`  ${c ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${what}${!c && detail ? `  — ${detail}` : ""}`); };

@@ -68,7 +68,7 @@
 // relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the
 // drag; hard limits bound everything.
 
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';

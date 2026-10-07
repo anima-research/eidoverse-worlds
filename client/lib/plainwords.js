@@ -1,9 +1,9 @@
-// plainwords — the door's refusals and warnings as a PERSON reads them (ship list 10-07): what they tried and why, with
-// things named by their labels (or what they are), never hex ids or tool syntax. shared/v4/refusal.js does the wording;
+// plainwords — the authority's refusals and warnings as a PERSON reads them (ship list 10-07): what they tried and why, with
+// things named by their labels (or what they are), never hex ids or tool syntax. shared/protocol/refusal.js does the wording;
 // this file knows the world: which words are things here, and what people call them. Agents keep refusalText.
 import { comps, entities } from './world.js';
 import { state } from './state.js';
-import { plainRefusal, warningText } from '../../shared/v4/refusal.js';
+import { plainRefusal, warningText } from '../../shared/protocol/refusal.js';
 
 const stem = (lib) => String(lib).split('/').pop().replace(/\.glb$/i, '').replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim();
 /** How a person knows thing `id`: “its label”, else "the <model>", else "that thing"; null when `id` isn't a thing here. */

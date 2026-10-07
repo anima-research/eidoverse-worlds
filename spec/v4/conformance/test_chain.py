@@ -18,10 +18,10 @@ priv, other = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
 KEY = "ed25519:" + chain.b64u(raw(priv.public_key()))
 
 def build(every=2):
-    g = {"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": chain.b64u(os.urandom(16)), "owners": [[KEY]], "sequencer": KEY}}  # §2.4 + §3d
+    g = {"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": chain.b64u(os.urandom(16)), "owners": [[KEY]], "sequencer": KEY}}  # §2.4 + §3d
     import hashlib
     wid = "sha256:" + hashlib.sha256(v4read.jcs(g).encode()).hexdigest()
-    st = lambda verb, body: {"world": wid, "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": verb, "body": body}
+    st = lambda verb, body: {"world": wid, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": verb, "body": body}
     es = [g, {"world": wid, "kind": "act", "ts": 1, "actor": "alice", "verb": "place", "body": {}},
           st("create", {"id": "lamp-1"}),
           st("set", {"id": "lamp-1", "comp": "light", "value": {"i": 2.5}}),
@@ -68,8 +68,8 @@ t = copy.deepcopy(es)
 chain.purge_line(t[4])
 import hashlib
 wid = t[1]["world"]
-t.append({"world": wid, "kind": "purge", "ts": 3, "actor": "door", "verb": "purge", "body": {"values": [{"seq": 4}]}})
-t.append({"world": wid, "kind": "purge", "ts": 3, "actor": "door", "verb": "purge", "body": {"values": [{"seq": 5, "op": 1}]}})
+t.append({"world": wid, "kind": "purge", "ts": 3, "actor": "system", "verb": "purge", "body": {"values": [{"seq": 4}]}})
+t.append({"world": wid, "kind": "purge", "ts": 3, "actor": "system", "verb": "purge", "body": {"values": [{"seq": 5, "op": 1}]}})
 chain.purge_line(t[5], 1)
 for e in t: e.pop("head", None) if e is t[-1] or e is t[-2] else None
 body = dump(t)
@@ -87,7 +87,7 @@ check("5c the fold shows both values as purged", rd.view()["lamp-1"].get("note")
 t = copy.deepcopy(es)
 r0 = chain.verify(dump(t))
 chain.purge_line(t[6])
-t.append({"world": t[1]["world"], "kind": "purge", "ts": 3, "actor": "door", "verb": "purge", "body": {"values": [{"seq": 6}]}})
+t.append({"world": t[1]["world"], "kind": "purge", "ts": 3, "actor": "system", "verb": "purge", "body": {"values": [{"seq": 6}]}})
 t = chain.seal(t, priv, 10_000)
 for i, e in enumerate(t[:len(es)]):
     if es[i].get("head"): e["head"], e["sig"] = es[i]["head"], es[i]["sig"]

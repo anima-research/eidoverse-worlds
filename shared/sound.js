@@ -89,7 +89,7 @@ export function normalizeSound(data) {
     return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}' };
   }
   const tier = mediaTier(data.src, 'audio');
-  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.teach}` };
+  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.fix}` };
   const notes = [];
   const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
@@ -108,7 +108,7 @@ export function normalizeSound(data) {
     const t0 = Number(data.t0);
     if (Number.isFinite(t0) && t0 > 0) sound.t0 = t0;
     else notes.push('t0 is not an epoch-ms number — ignored; listeners will not agree on the playhead');
-  } else if (sound.playing) notes.push('no t0 — the door stamps one when it starts; without it each client starts from the top');
+  } else if (sound.playing) notes.push('no t0 — the authority stamps one when it starts; without it each client starts from the top');
   if (data.alt != null) {
     const alt = String(data.alt).replace(/\s+/g, ' ').trim();
     if (graphemes(alt) > SOUND_ALT_MAX) { notes.push(`alt clipped to ${SOUND_ALT_MAX} characters`); sound.alt = graphemeList(alt).slice(0, SOUND_ALT_MAX).join(''); }
@@ -118,7 +118,7 @@ export function normalizeSound(data) {
   return { ok: true, sound, tier, notes };
 }
 
-/** The one line look() carries for a sound — the same string on the door, in mcpl and in every client, from the same
+/** The one line look() carries for a sound — the same string on the authority, in mcpl and in every client, from the same
  *  bag. Says what the author said is playing (quoted, as data), whether it is, and how far it carries; never claims
  *  anything about the audio. `now` (ms) lets a one-shot say how long ago it was started. */
 export function describeSound(data, now = null) {

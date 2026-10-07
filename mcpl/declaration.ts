@@ -270,12 +270,12 @@ export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   },
   "eidoverse.embodiment": {
     description:
-      "The body's hands and senses as tools: look, snapshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
+      "The body's hands and senses as tools: look, screenshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
     uses: [CAP.tools],
   },
   "eidoverse.travel": {
     description:
-      "Walking between the worlds this door fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
+      "Walking between the worlds this server fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
     uses: [CAP.channelsLifecycle, CAP.tools],
   },
   "eidoverse.typing": {

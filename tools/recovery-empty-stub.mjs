@@ -35,7 +35,7 @@ export function retargetPoseAnimation() { return null; }
 export function applyWingFoldPresence() {}
 export function applyOwnedWingFold() {}
 export function wingFoldPresence() { return null; }
-// xrbody.js — #197 has remotes.js apply remote XR poses. It reaches frames.js (and a DOM) through
+// xrbody.js — #197 has remotes.js apply remote XR poses. It reaches windows.js (and a DOM) through
 // its own cone, and the capsule recovery path never applies a pose, so it is replaced wholesale.
 export function applyRemoteXR() {}
 export function xrHandWorld() { return null; }   // seatbody.js: a socket's vr policy asks where a tracked hand is

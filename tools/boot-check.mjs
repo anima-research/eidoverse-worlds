@@ -189,7 +189,7 @@ try {
       fail(`controls unreachable at ${g.vw}x${g.vh} — the pixel at their centre belongs to other chrome (${where}):\n  `
         + stolen.map((c) => `"${c.id}" covered by ${c.owner}`).join('\n  '));
     }
-    // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
+    // The PRODUCT promises right <= innerWidth - 8 (windows.js clamp, snapPosition,
     // and the resize rider all use the same 8px margin). Checking only
     // `right > vw + 1` left a 9px band where a frame violates the clamp and still
     // passes — so this could never catch the most likely way that invariant
@@ -197,7 +197,7 @@ try {
     // allowance. (agent review round 3)
     // x and y do NOT share a margin, and that is deliberate in the product:
     // fit()/snapPosition clamp x to 8, but the SOUTH resize clamps to
-    // `innerHeight - s0.y - 4` (frames.js:144) so a resize can reach as low as a
+    // `innerHeight - s0.y - 4` (windows.js:144) so a resize can reach as low as a
     // drag — the comment there records the choice. Asserting 8 on both axes made
     // this probe stricter than the code it guards: a legal resize to the bottom
     // edge produced bottom=840 against a limit of 837 and failed. Match each

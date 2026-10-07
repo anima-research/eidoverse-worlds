@@ -263,7 +263,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       const msg = (t, warn = false) => { const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; } };
       const bagFrom = (playingNow) => {
         const data = { src: q('src').value.trim(), volume: Number(q('volume').value), radius: Number(q('radius').value), loop: !!q('loop').checked, playing: playingNow };
-        const alt = q('look').value.trim(); if (alt) data.alt = alt;   // (re)start: the door stamps t0 on its clock
+        const alt = q('look').value.trim(); if (alt) data.alt = alt;   // (re)start: the authority stamps t0 on its clock
         return data;
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());
@@ -293,7 +293,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
 });
 
 // ---- the edit-mode inspector's gestures (fields: the schema's `sound` group).
-// A new sound plays (R 10-07: no start-paused); the door stamps its t0. Before the file picker: whose it is to upload.
+// A new sound plays (R 10-07: no start-paused); the authority stamps its t0. Before the file picker: whose it is to upload.
 function pickFile(accept) {
   return new Promise((resolve) => {
     const inp = Object.assign(document.createElement('input'), { type: 'file', accept });

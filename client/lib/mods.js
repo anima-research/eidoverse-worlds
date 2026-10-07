@@ -25,7 +25,7 @@
 import { bus, CONFIG, report } from './base.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { logChat } from './chat.js';
 
 // ---------------------------------------------------------------- storage
@@ -130,7 +130,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.
-// EW: entities, remotes, myState, me(), THREE, scene, requestV4 (door requests), physics (grab/put/throw/punt), bus…
+// EW: entities, remotes, myState, me(), THREE, scene, sendRequest (door requests), physics (grab/put/throw/punt), bus…
 export default ({ EW, ui, onTick }) => {
   ui.flashHint('hello from a mod');
   let t = 0;

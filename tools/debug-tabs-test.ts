@@ -2,7 +2,7 @@
 // The remembered tab is chosen at boot while Debug is still closed; before the tabs, every group was a
 // collapsible that built on first open, and the tabs must keep that (an unvisited panel costs nothing).
 //
-// frames.js is the REAL module (only its ./base.js is stubbed), so every way the frame comes back on screen is
+// windows.js is the REAL module (only its ./base.js is stubbed), so every way the frame comes back on screen is
 // the shipped one — including the viewport auto-restore, which never goes through show().
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/debug-tabs-test.ts
@@ -26,7 +26,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 localStorage.setItem('ew-tab-debug', 'body');   // the tab remembered from last time
-await import('../client/lib/frames.js');           // stamps the layout version first, so the save below is not purged
+await import('../client/lib/windows.js');           // stamps the layout version first, so the save below is not purged
 // last session the viewport auto-hid Debug while it was open; it comes back when the window is wide enough again
 localStorage.setItem('ew-frame-debug', JSON.stringify({ x: 700, y: 200, w: 250, h: 460, hidden: true, autoHidden: true }));
 const { initDebug } = await import('../client/lib/debug.js');

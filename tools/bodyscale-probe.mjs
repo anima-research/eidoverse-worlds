@@ -103,7 +103,7 @@ try {
 
   // ---------------------------------------------------------------- the Profile on the sizer
   await S.pg.evaluate(async () => {
-    const F = await import('/lib/frames.js');
+    const F = await import('/lib/windows.js');
     for (const f of F.allFrames()) if (f.visible && f.id !== 'profile') f.hide();
     F.getFrame('profile').show();
     document.querySelector('.frame[data-frame="profile"] .pf-tab[data-tab="avatars"]')?.click();
@@ -152,7 +152,7 @@ try {
   check('the wire: my packets carry scale 1.5 (and no plateY while it is auto)', w150?.scale === 1.5 && !('plateY' in (w150 ?? {})), JSON.stringify(w150 && { scale: w150.scale, plateY: w150.plateY }));
   const v150 = await until(async () => { const v = await view(W.pg, 'sizer'); return v && Math.abs(v.scene - 1.5) < 1e-3 && v; });
   check('the watcher draws the sizer at 150 % (vrm.scene; its root stays 1)', !!v150 && v150.root === 1, JSON.stringify(v150));
-  const hide = (pg) => pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) if (f.visible) f.hide(); });
+  const hide = (pg) => pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) if (f.visible) f.hide(); });
   await hide(W.pg);
   await sleep(1500);
   await shot(W.pg, 'remote-sizer-150-beside-ref-100');

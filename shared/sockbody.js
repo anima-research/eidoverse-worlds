@@ -29,7 +29,7 @@
 //     who      'builder'        visitor | builder | owner
 //   }
 //
-// Pure: no DOM, no three, no clock. The door validates with checkSockets; client, door and agent read with bodyOf.
+// Pure: no DOM, no three, no clock. The authority validates with checkSockets; client, door and agent read with bodyOf.
 
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
@@ -43,7 +43,7 @@ export const UPS = ['world', 'socket'];
 export const VR_POLICIES = ['snap', 'track', 'near'];
 export const TIMES = ['loop', 'phase'];
 export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
-// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the door (whoRank)
+// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
 const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
  *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
@@ -90,7 +90,7 @@ export function poseClip(spec) {
   return null;
 }
 
-/** A socket's body block, read generously with its defaults (shared by the door, the client and the agent). Null when
+/** A socket's body block, read generously with its defaults (shared by the authority, the client and the agent). Null when
  *  the socket has none: an attachment point for things only (parent {to, slot}). `pose` is the spec as written (a
  *  clip name, or an object); `clip` is the one name it stands for. Absent leaveBy is 'any' (moving, jumping or getting
  *  up all leave: what every seat did before leaveBy existed). */
@@ -193,10 +193,10 @@ export function reachWins(policy, hand, target) {
   return true;
 }
 
-// ---------------------------------------------------------------- the door's check
+// ---------------------------------------------------------------- the authority's check
 
 /** The whole `sockets` component, checked (closed keys, ranges, enums, the one-driver rule). Null when good, else
- *  {code: 'shape'|'schema', reason, teach, didYouMean?} — the door refuses with it verbatim, and the inspector's planner
+ *  {code: 'shape'|'schema', reason, fix, didYouMean?} — the authority refuses with it verbatim, and the inspector's planner
  *  speaks the same words. */
 export function checkSockets(v, at = 'sockets') {
   if (!isObj(v)) return bad('shape', `${at} must be {<name>: {pos, q?, part?, body?}}`);
@@ -301,7 +301,7 @@ function keys(at, v, allowed, what) {
     return bad('schema', `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ''}`, `${what} takes: ${allowed.join(', ')}`, dym); }
   return null;
 }
-const bad = (code, reason, teach = '', didYouMean = null) => ({ code, reason, teach, ...(didYouMean?.length ? { didYouMean } : {}) });
+const bad = (code, reason, fix = '', didYouMean = null) => ({ code, reason, fix, ...(didYouMean?.length ? { didYouMean } : {}) });
 // a near miss: a prefix either way, or an edit distance of at most a third of the word
 function near(k, allowed) {
   const x = String(k).toLowerCase();

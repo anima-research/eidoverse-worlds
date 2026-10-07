@@ -1,13 +1,13 @@
 // components-corpus-test — the component view is lossless on every world we have.
 //
 // The primitives (sha256, canon), the step-2 spellings (synthetic entity records), and then the corpus: for every v4
-// world log, fold it (shared/v4/fold.js), take the view a client reads (shared/v4/record.js viewState), and read every
+// world log, fold it (shared/protocol/fold.js), take the view a client reads (shared/protocol/view.js viewState), and read every
 // entity as components (shared/components.js componentsOf) and back (entityOf). The bytes must come back identical
 // (canonical JSON), and every key must land in a component parameter, a declared stamp, or `extra` (which is counted
 // and printed, never silently dropped). One differing entity anywhere = red.
 //
 // Corpus: spec/v4/fixtures (always), plus any dirs in COMPONENTS_CORPUS (colon-separated; each is searched for
-// <world>/v4.jsonl).
+// <world>/world.jsonl).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-corpus-test.ts
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,7 +59,7 @@ const st0 = { actor: 'a', ts: 1, born: 1 };
 const cases: [string, any, string[]][] = [
   // [name, folded entity, expected "Type:key" list after Transform]
   ['a lamp: a Model and a comp.light on one entity', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, range: 8 } }, ...st0 }, ['Model:', 'Light:light']],
-  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, keep: true } }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, important: true } }, ...st0 }, ['Model:', 'Light:light']],
   ['comp.light with day:true kept verbatim', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: true } }, ...st0 }, ['Model:', 'Light:light']],
   ['comp.light with a key no record names (extra, not lost)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 1, flicker: 0.3, burnsAtNoon: 'x' } }, ...st0 }, ['Model:', 'Light:light']],
   ['an empty comp.light {} (all defaults)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: {} }, ...st0 }, ['Model:', 'Light:light']],
@@ -87,12 +87,12 @@ for (const [name, ent, want] of cases) {
     canon(back) === canon(ent) && canon(got) === canon(['Transform:', ...want]), `got ${got.join(' + ')} / ${canon(back)}`);
 }
 check('lightOf reads both spellings with the fold\'s defaults; the legacy one wins when both',
-  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true })
+  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
   && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, comp: { light: { color: 4 } } })?.color === 1
   && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false })?.day === false
   && lightOf({ lib: L, comp: { light: 'on' } }) === null && lightOf({ lib: L }) === null);
 check('lightOf never lets a bad field reach the rig (NaN, string, negative → default)',
-  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, keep: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true }));
+  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
 check('colliderOf: comp.collider wins, a bad shape falls back to legacy collide, absent = undefined',
   colliderOf({ collide: 'box', comp: { collider: { shape: 'exact' } } }) === 'exact'
   && colliderOf({ collide: 'box', comp: { collider: { shape: 'mesh' } } }) === 'box'
@@ -104,13 +104,13 @@ check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add o
   && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 
 // ------------------------------------------------------------ the corpus (v4)
-// Every v4 world log we have: fold it (shared/v4/fold.js), take the view a client reads (record.js viewState: the
+// Every v4 world log we have: fold it (shared/protocol/fold.js), take the view a client reads (view.js viewState: the
 // entity records the editor's componentsOf reads), and every entity must read as components and write back exact.
 // (Protocol v1 removed, 2026-10-07: the v1 corpus went with it — every entry of every v1 log through the v1 fold, the
 //  @world sky/terrain/grass components after every v1 world verb, and each entity saved as a blueprint and PLACED
 //  through placeVerbs into the v1 fold. v4 blueprints are the door's: tools/blueprint-test.ts sections 6–7.)
-const { readLog, fold } = await import('../shared/v4/fold.js');
-const { viewState } = await import('../shared/v4/record.js');
+const { readLog, fold } = await import('../shared/protocol/fold.js');
+const { viewState } = await import('../shared/protocol/view.js');
 const logs: string[] = [];
 const walk = (d: string, depth = 0) => {
   if (depth > 4 || !existsSync(d)) return;
@@ -118,14 +118,14 @@ const walk = (d: string, depth = 0) => {
     const p = join(d, n);
     let st; try { st = statSync(p); } catch { continue; }
     if (st.isDirectory()) { if (n === 'node_modules' || n === '.git') continue; walk(p, depth + 1); }
-    else if (n.endsWith('.jsonl') && (n === 'v4.jsonl' || d.endsWith(join('spec', 'v4', 'fixtures')))) logs.push(p);
+    else if (n.endsWith('.jsonl') && (n === 'world.jsonl' || d.endsWith(join('spec', 'v4', 'fixtures')))) logs.push(p);
   }
 };
 walk(join(import.meta.dir, '..', 'spec', 'v4', 'fixtures'));
 for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
 const seen = new Set<string>(); const unique: string[] = [];
 for (const p of logs) { const h = createHash('md5').update(readFileSync(p)).digest('hex'); if (!seen.has(h)) { seen.add(h); unique.push(p); } }
-console.log(`\nthe corpus: ${unique.length} distinct v4 world logs (${logs.length} found; COMPONENTS_CORPUS adds dirs holding <world>/v4.jsonl)`);
+console.log(`\nthe corpus: ${unique.length} distinct v4 world logs (${logs.length} found; COMPONENTS_CORPUS adds dirs holding <world>/world.jsonl)`);
 let checkedE = 0; const bad: string[] = []; const types = new Map<string, number>(); const extras = new Map<string, number>();
 for (const path of unique) {
   let view: any;

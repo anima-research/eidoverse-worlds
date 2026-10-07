@@ -1,14 +1,14 @@
 // Chat bridge: mirrors a world's spoken chat into one Discord text channel,
 // and carries that channel's messages back in as speech.
 //
-//   world WS (embodied "discord") ── `say` entries of the v4-log stream ──▶ Discord channel
+//   world WS (embodied "discord") ── `say` entries of the log stream ──▶ Discord channel
 //   Discord channel ── messages ──▶ a door `say` request {text: "author: …"}
 //
 // The world speaks protocol v4: the join says `v4fold: true` (a client that
-// doesn't is refused), chat arrives as `say` entries in the `v4-log` stream
+// doesn't is refused), chat arrives as `say` entries in the `log` stream
 // (actors are opaque ids; the stream's `names` and the snapshot's v4.names say
-// who they are), and a say is a door request {type: "v4", id, tool: "say",
-// args: {text}} answered by `v4-result` (a refusal is logged, not retried).
+// who they are), and a say is a door request {type: "request", id, verb: "say",
+// args: {text}} answered by `reply` (a refusal is logged, not retried).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world
@@ -157,7 +157,7 @@ async function pumpWorld() {
     const m = toWorld.shift()!;
     let text = `${m.author}: ${m.text}`;
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
-    worldWs.send(JSON.stringify({ type: "v4", id: `chatbridge-${++reqN}`, tool: "say", args: { text } }));
+    worldWs.send(JSON.stringify({ type: "request", id: `chatbridge-${++reqN}`, verb: "say", args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;
@@ -165,7 +165,7 @@ async function pumpWorld() {
 
 // ---------------------------------------------------------------- world socket
 
-let lastSeq = -Infinity; // dedupe guard across reconnects (a v4-log re-delivery overlaps live)
+let lastSeq = -Infinity; // dedupe guard across reconnects (a log re-delivery overlaps live)
 let myId: string | null = null; // the bridge's own identity (opaque), from the snapshot
 const names: Record<string, string> = {}; // identity → display name (the door's directory, as the world sends it)
 
@@ -183,7 +183,7 @@ function connectWorld() {
     let msg: any;
     try { msg = JSON.parse(String(ev.data)); } catch { return; }
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
-    if (msg.type === "v4-result") {
+    if (msg.type === "reply") {
       if (!msg.ok) log(`world refused ${msg.tool}: ${msg.reply?.refused?.reason ?? JSON.stringify(msg.reply?.refused ?? msg.reply)}`);
       return;
     }
@@ -200,7 +200,7 @@ function connectWorld() {
       pumpWorld().catch((e) => log(`world pump error: ${e.message}`));
       return;
     }
-    if (msg.type !== "v4-log") return;
+    if (msg.type !== "log") return;
     Object.assign(names, msg.names ?? {});
     (msg.entries ?? []).forEach((e: any, i: number) => {
       if (e?.kind !== "say") return;

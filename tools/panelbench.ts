@@ -90,11 +90,11 @@ console.log('\ndebug panel (rows.js builds every family):');
     };
   })()`);
   // 12 dials + blink 6 + hair 6 + limp 2 + wings 14 + joints ≥4 = 44+;
-  // 2 view rows + 9 switches = 11 checkboxes; the joint picker select;
+  // 2 view rows + 9 permissions = 11 checkboxes; the joint picker select;
   // re-drop/pause/reset + per-family reset/copy pairs
   check('debug panel builds', !!counts, JSON.stringify(counts));
   check('...all slider families present (≥44)', (counts?.sliders ?? 0) >= 44, `${counts?.sliders}`);
-  check('...switches + view toggles (≥11)', (counts?.checks ?? 0) >= 11, `${counts?.checks}`);
+  check('...permissions + view toggles (≥11)', (counts?.checks ?? 0) >= 11, `${counts?.checks}`);
   check('...the joint picker', (counts?.selects ?? 0) >= 1);
   check('...the button rows (≥9)', (counts?.buttons ?? 0) >= 9, `${counts?.buttons}`);
 }

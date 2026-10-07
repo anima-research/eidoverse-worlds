@@ -18,12 +18,12 @@
 // Panels ▾ click away, never gone.
 
 import { bus } from './base.js';
-import { getFrame, allFrames } from './frames.js';
+import { getFrame, allFrames } from './windows.js';
 import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace } from './build.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
-import * as V4 from './v4edit.js';
+import * as V4 from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 

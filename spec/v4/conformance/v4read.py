@@ -35,7 +35,7 @@ FOLD_VERSIONS = {4}            # GUESS-03: version is the integer 4
 KNOWN_MINORS = {0}             # §3d H6: a reader that doesn't know the minor refuses the world
 MAX_LINE_BYTES = 1 << 20       # GUESS-12: spec says "size caps", gives none
 MAX_DEPTH = 64                 # GUESS-12
-KINDS = {"genesis", "state", "act", "sim", "say", "purge", "sequencer"}
+KINDS = {"genesis", "change", "act", "sim", "say", "purge", "sequencer"}
 ENVELOPE = {"world", "kind", "ts", "actor", "for", "grant", "by", "cause",
             "verb", "body", "head", "sig"}   # head/sig: chain points (spec 2.4, chain.py)
 OPS = {"create", "set", "delete", "batch"}
@@ -386,10 +386,10 @@ class Reader:
         # -- purge first (L1 Purge: "applied before anything else") --
         purged = self.collect_purges(entries)
 
-        # -- fold state entries in seq order --
+        # -- fold change entries in seq order --
         self.world = {"@world": {}}       # GUESS-07: @world live from genesis
         for seq, e in enumerate(entries):
-            if e is None or e.get("kind") != "state":
+            if e is None or e.get("kind") != "change":
                 continue
             try:
                 ops = self.shape_ops(seq, e, purged)
@@ -422,9 +422,9 @@ class Reader:
         if "for" in e:
             # L4 / 5: "until identities have keys, for is not written at all"
             raise Malformed("for-before-keys")   # GUESS-16
-        if kind == "state":
+        if kind == "change":
             c = e.get("cause")
-            # L3: every state entry has a cause; GUESS-17: integer, earlier seq
+            # L3: every change entry has a cause; GUESS-17: integer, earlier seq
             if not (type(c) is float and c.is_integer() and 0 <= c < seq):
                 raise Malformed("cause", repr(c))
         elif "cause" in e:
@@ -472,7 +472,7 @@ class Reader:
 
     @staticmethod
     def governance_target(e, k):
-        if e is None or e.get("kind") != "state" or not isinstance(e.get("body"), dict):
+        if e is None or e.get("kind") != "change" or not isinstance(e.get("body"), dict):
             return False
         b = e["body"]
         if e.get("verb") == "batch":
@@ -482,7 +482,7 @@ class Reader:
             o = dict(b, verb=e.get("verb")) if k is None else None
         return isinstance(o, dict) and o.get("verb") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
 
-    # -- turning a state entry into a flat op list --
+    # -- turning a change entry into a flat op list --
     def shape_ops(self, seq, e, purged):
         verb, body = e["verb"], e["body"]
         if verb not in OPS:

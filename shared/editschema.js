@@ -27,12 +27,12 @@
 const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
 // the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
 const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
-import * as OP from './v4/ops.js';
+import * as OP from './protocol/requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './picture.js';
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { COMPONENTS as V4C } from './v4/catalogue.js';
+import { COMPONENTS as SPEC } from './protocol/componentspec.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -45,7 +45,7 @@ const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
 export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
 // a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
-// tools/v4/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
+// tools/protocol/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
 const rateOf = (m, def) => (Number.isFinite(m.degPerSec) ? m.degPerSec : Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m.rpm) ? m.rpm * 6 : def);
 export const PARTICLE_PRESETS = ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'];
 const round = (v, dp = 3) => +(+v).toFixed(dp);
@@ -95,14 +95,14 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
  *  @param live  optional viewer extras: { casting?: boolean,
  *               parts?: string[] (the model's named mesh parts — a picture's `part`
  *               becomes a dropdown and '+ picture' is offered), now?: number }
- *               Who may change it is the door's to decide (it refuses, saying why). */
+ *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
   const c = ent.comp ?? {};
   const mounted = !!ent.parent;
   const locked = !!c.lock;
-  // a lock doesn't make the pose read-only here: the door refuses the move, and a person (or agent) who may lift the lock
-  // is asked "This is locked. Move anyway?" — or answers it with through_lock (PROTOCOL-v4 §5). Same for every surface.
+  // a lock doesn't make the pose read-only here: the authority refuses the move, and a person (or agent) who may lift the lock
+  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL-v4 §5). Same for every surface.
   // the pose the channel box shows and edits: a child's is LOCAL to its parent
   // (design §3) — the mount's offset and relative q, as the renderer realizes
   // it — never the fold's pre-mount pos, which nothing draws while it rides
@@ -197,7 +197,7 @@ export function inspectSchema(ent, id, live = {}) {
   // arming: arm, then click a row or the thing in the world. Only shown once a
   // `look` comp exists (add it via + component) so we add no UI to things that
   // don't use it — the field TYPE is the deliverable; this is its demonstrator.
-  // look-at (batch 2; the wire name, `look` is one letter off `lock` and the door refuses it): a group per key, its
+  // look-at (batch 2; the wire name, `look` is one letter off `lock` and the authority refuses it): a group per key, its
   // fields addressed `look-at.<k>` for the whole thing and `look-at.<part>|<k>` for a part's
   const laKeys = Object.keys(c).filter((k) => (k === 'look-at' || k.startsWith('look-at:')) && isBag(c[k]));
   if (laKeys.length) {
@@ -224,7 +224,7 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'color', k: 'color', label: 'color', value: src.color ?? 0xffd9a0, def: 0xffd9a0 },
       { t: 'num', k: 'intensity', label: 'brightness', value: src.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, src.intensity ?? 16) },
       { t: 'num', k: 'range', label: 'range', value: src.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, src.range ?? 10), unit: 'm' },
-      { t: 'check', k: 'keep', label: 'keep lit', value: src.keep === true, hint: 'first claim on a light slot, never governor-shed' },
+      { t: 'check', k: 'important', label: 'important', value: src.important === true, hint: 'always casts: first claim on a light slot, never governor-shed' },
       { t: 'check', k: 'noon', label: 'burns at noon', value: src.day === false, hint: 'opts out of the day cycle' },
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
@@ -334,7 +334,7 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'sockets', label: 'sockets', types: ['sockets'], fields });
   }
 
-  // openable (R 10-07; shared/v4/catalogue.js): open and locked are its state; it turns `angle` about its pivot (or slides
+  // openable (R 10-07; shared/protocol/componentspec.js): open and locked are its state; it turns `angle` about its pivot (or slides
   // `slide` in its own frame) over `time`. The hinge buttons put the pivot on an edge of the model's own box (live.box).
   if (isBag(c.openable)) {
     const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box;
@@ -358,7 +358,7 @@ export function inspectSchema(ent, id, live = {}) {
   }
 
   // grabbable (shared/grab.js): the common fields as rows, read with their defaults; grips, home and fx through its JSON
-  // hatch below. Every edit is checked by the same checkGrabbable the door refuses with.
+  // hatch below. Every edit is checked by the same checkGrabbable the authority refuses with.
   if (c.grabbable && typeof c.grabbable === 'object') {
     const g = grabOf({ grabbable: c.grabbable }) ?? grabOf({ grabbable: {} }); const raw = c.grabbable;
     const opts = (list) => list.map((v) => ({ v, label: v }));
@@ -424,7 +424,7 @@ export function inspectSchema(ent, id, live = {}) {
   }
 
   // sound (shared/sound.js): positional audio, silent past its radius. Tuning a PLAYING sound keeps its t0 (nobody's
-  // playhead jumps); play and restart send no t0, and the door stamps one, so everyone starts together.
+  // playhead jumps); play and restart send no t0, and the authority stamps one, so everyone starts together.
   if (c.sound && typeof c.sound === 'object') {
     const d = c.sound; const playing = d.playing !== false;
     const tier = mediaTier(d.src, 'audio');
@@ -457,17 +457,17 @@ export function inspectSchema(ent, id, live = {}) {
   if (isBag(c.story)) {
     const st = c.story;
     groups.push({ group: 'story', label: 'story', types: ['story'], fields: [
-      { t: 'text', k: 'title', label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${V4C.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` },
-      { t: 'text', k: 'text', label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${V4C.story.ranges.text.maxLen}` },
+      { t: 'text', k: 'title', label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${SPEC.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` },
+      { t: 'text', k: 'text', label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${SPEC.story.ranges.text.maxLen}` },
       { t: 'text', k: 'marks', label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' },
     ] });
   }
 
   // text (batch 2): a sign
   if (isBag(c.text)) {
-    const tx = c.text; const D = V4C.text.defaults;
+    const tx = c.text; const D = SPEC.text.defaults;
     groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
-      { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${V4C.text.ranges.text.maxLen} characters, ≤ 16 lines` },
+      { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` },
       { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
       { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
       { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
@@ -482,7 +482,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // scripts (v4, research 41): each script:<name> gets an on/off switch, `paused`, like Unity's `enabled`. Flipping it
   // writes only {paused} (a merge), so it needs nothing of the script (its source, its scope) and adopts nothing: the
-  // script's sponsor stays who it was (R on lab 49 F4), and the door's `scripts` view says who paused it, from the log
+  // script's sponsor stays who it was (R on lab 49 F4), and the authority's `scripts` view says who paused it, from the log
   const scriptKeys = Object.keys(c).filter((k) => k.startsWith('script:') && isBag(c[k]));
   if (scriptKeys.length) groups.push({ group: 'script', label: 'scripts', types: scriptKeys,
     fields: scriptKeys.map((k) => ({ t: 'check', k: k.slice(7), label: 'paused', value: c[k].paused === true,
@@ -525,8 +525,8 @@ const WIRE_BLOCKED = {
   Parent: () => 'give it a parent: drag its row onto another in the Hierarchy, or pick one in this card',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
-// not offered by Add Component: what the door refuses today. LookAt writes `look`, a near-miss of `lock` (batch 2 is
-// renaming it look-at). tools/v4/shiplist-check.ts R1 sends every offered entry to the real door: all must be accepted.
+// not offered by Add Component: what the authority refuses today. LookAt writes `look`, a near-miss of `lock` (batch 2 is
+// renaming it look-at). tools/protocol/shiplist-check.ts R1 sends every offered entry to the real door: all must be accepted.
 const NOT_OFFERED = new Set(['LookAt']);
 /** A library path as the inspector header shows it: the file stem, first three words. */
 export const libLabel = (lib) => String(lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ');
@@ -576,7 +576,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Parent': sec.info = ent.parent?.slot ? [['socket', String(ent.parent.slot)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
+      case 'Parent': sec.info = ent.parent?.socket ? [['socket', String(ent.parent.socket)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
@@ -819,7 +819,7 @@ export function channels(schema) {
   return out;
 }
 
-// ---------------------------------------------------------------- edits → door ops (shared/v4/ops.js)
+// ---------------------------------------------------------------- edits → door ops (shared/protocol/requests.js)
 
 /** Look a field up by dotted address. */
 export function fieldAt(schema, key) {
@@ -935,12 +935,12 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'light': {
-        // the light component: merge into its bag, keep/day stored only in their non-default state, validated once at
+        // the light component: merge into its bag, important/day stored only in their non-default state, validated once at
         // the end like picture/sound
         const b = bag('light', () => ({}));
         if (f.t === 'num') { const n = num(f, raw); if (n == null) break; b[k] = n; }
         else if (k === 'color') b.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
-        else if (k === 'keep') { if (bool(raw)) b.keep = true; else delete b.keep; }
+        else if (k === 'important') { if (bool(raw)) b.important = true; else delete b.important; }
         else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
         break;
       }
@@ -975,8 +975,8 @@ export function editOps(ent, id, edits, live = {}) {
         if (what === 'body') { if (bool(raw)) cur.body = cur.body ?? {}; else delete cur.body; comps.set('sockets', next); break; }
         if (what === 'action') { const v = String(raw).trim().toLowerCase(); if (!/^[a-z][a-z0-9-]{0,31}$/.test(v)) { errors.push(`sockets.${slot}|action: a verb in lower case (sit, ride)`); break; }
           cur.body = { ...(cur.body ?? {}), action: v }; if (v === 'sit') delete cur.body.action; comps.set('sockets', next); break; }
-        // the rest of the body block: each field written the way the door reads it (shared/sockbody.js), a default left
-        // out, and the result checked with the door's own check, so a refusal here reads as the door's would
+        // the rest of the body block: each field written the way the authority reads it (shared/sockbody.js), a default left
+        // out, and the result checked with the authority's own check, so a refusal here reads as the authority's would
         const BODY = ['anchor', 'pose', 'leaveBy', 'who', 'fromSeat', 'enter', 'leave', 'input', 'look', 'reach', 'hold', 'poses', 'sync', 'approach', 'exit'];
         if (BODY.includes(what)) {
           const b = cur.body = { ...(cur.body ?? {}) };
@@ -999,7 +999,7 @@ export function editOps(ent, id, edits, live = {}) {
             put('look', lk, undefined); }
           else { const v = json(raw); if (v === null) break; put(what, v, undefined); }
           const bad = checkSockets(next);
-          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
           comps.set('sockets', next); break;
         }
         const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) break;
@@ -1033,7 +1033,7 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
         else next[k] = raw;
         const bad = checkGrabbable(next);
-        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
         comps.set('grabbable', next);
         break;
       }
@@ -1064,7 +1064,7 @@ export function editOps(ent, id, edits, live = {}) {
           comps.set('reactions', Object.keys(rx).length ? rx : null); break; }
         // a new sound plays (R 10-07: no start-paused; its radius keeps it to its place)
         const b = bag('sound', () => ({ playing: true, loop: true, volume: 0.8, radius: 12 })); if (!b) { errors.push('sound: silenced in this same edit'); break; }
-        // play and restart send no t0: the door stamps it (shared/v4/door.js stampMedia), on its clock, for everyone
+        // play and restart send no t0: the authority stamps it (shared/protocol/authority.js stampMedia), on its clock, for everyone
         if (k === 'play') { b.playing = true; delete b.t0; }
         else if (k === 'pause') { b.playing = false; }
         else if (k === 'loop' || k === 'spatial') b[k] = bool(raw);
@@ -1114,8 +1114,8 @@ export function editOps(ent, id, edits, live = {}) {
         else if (group === 'text' && k === 'outline') next.outline = bool(raw);
         else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);
         else { errors.push(`${key}: no such field`); break; }
-        // the door's rules, here first (the same catalogue): a refusal is a hint before any round-trip
-        const lim = V4C[group].ranges; for (const [fk, r] of Object.entries(lim)) if (typeof next[fk] === 'string' && r.maxLen && graphemes(next[fk]) > r.maxLen) errors.push(`${group}.${fk}: ${graphemes(next[fk])} characters; at most ${r.maxLen}`);
+        // the authority's rules, here first (the same catalogue): a refusal is a hint before any round-trip
+        const lim = SPEC[group].ranges; for (const [fk, r] of Object.entries(lim)) if (typeof next[fk] === 'string' && r.maxLen && graphemes(next[fk]) > r.maxLen) errors.push(`${group}.${fk}: ${graphemes(next[fk])} characters; at most ${r.maxLen}`);
         comps.set(group, next); break;
       }
       case 'script': {   // the switch: only {paused}, merged (needs no knowledge of the script; adopts nothing)
@@ -1128,7 +1128,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (raw == null || raw === '') { comps.set(k, null); break; }
         let data = raw;
         if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { errors.push(`comp.${k}: not valid JSON (${e.message})`); break; } }
-        // the JSON door is not a way around the evaluators' rules — nor the door's
+        // the JSON door is not a way around the evaluators' rules — nor the authority's
         if ((k === 'light' || k === 'collider') && compRefusal(k, data, ent)) { errors.push(`comp.${k}: ${compRefusal(k, data, ent)}`); break; }
         if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data); if (bad) { errors.push(`comp.grabbable: ${bad.reason}`); break; } }
         if ((k === 'picture' || k === 'sound') && data != null) {

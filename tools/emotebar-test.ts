@@ -12,7 +12,7 @@ const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({
   name: 'emotebar-stubs',
   setup(b) {
-    for (const m of ['frames', 'avatar', 'emotedefs', 'controller', 'mybody', 'xrpanels', 'base']) {
+    for (const m of ['windows', 'avatar', 'emotedefs', 'controller', 'mybody', 'xrpanels', 'base']) {
       b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./emotebar-stub.mjs') }));
     }
   },
@@ -57,7 +57,7 @@ check('3 posture tiles + 6 emote tiles = 9', tiles().length === 9, `${tiles().le
 check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
 check('emotes follow in EMOTE_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.emote === EMOTE_ORDER[i] && t.title === `${EMOTE_ORDER[i]} — key ${i + 1}`));
 // minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
-// (frames.js:155), so a 124px floor made ONE column unreachable by drag however
+// (windows.js:155), so a 124px floor made ONE column unreachable by drag however
 // snapTo computed — R: "Emote bar still can't go 1x wide, 9x tall." The 3-column
 // floor still applies on the WIDTH-ONLY path inside snapTo (see below); it just
 // no longer blocks the frame itself.
@@ -273,7 +273,7 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // fixed room (272, correct) and the bar STILL opened at 48 — because
   // `Math.min(48, 272)` is 48. The stored value could never recover.
   //
-  // The distinction already exists in the product: frames.js:193 marks a resize as
+  // The distinction already exists in the product: windows.js:193 marks a resize as
   // deliberate ("a resize is deliberate too"), so a dragged bar has `_placed = true`
   // and show() skips the clamp entirely (`f._placed ? null : roomFor()`). So this
   // fixture now asserts what it meant — a PLACED bar keeps its width — and the
@@ -306,12 +306,12 @@ check('a 10px drag floors at ONE column, wrapping to 9 rows', f._state.w === wid
 // VERTICAL. R, 2026-09-11: "can you also make it arrange vertically? I can't
 // make it stack 1 wide 9 tall, for example." snapTo derived BOTH w and h from
 // the column count, so the bar could only ever be as tall as its width implied.
-// frames.js:427 already passes (state.w, state.h); this rider was discarding the
+// windows.js:427 already passes (state.w, state.h); this rider was discarding the
 // second argument. The 1-column floor applies only when a height was asked for,
 // so the width-only path below still clamps at 3.
 // VERTICAL, BY WRAPPING. R, 2026-09-11: "1 wide 9 tall". Columns come from the
 // dragged WIDTH and the rows follow — height is a consequence, never an input.
-// An earlier version took rows from a dragged height and, because frames.js:427
+// An earlier version took rows from a dragged height and, because windows.js:427
 // always passes one, the bar pinned itself at nine rows and refused to wrap:
 // "forcibly go 9x down and not wrap to the buttons at all."
 f.opts.onResize(48); await sleep(230);

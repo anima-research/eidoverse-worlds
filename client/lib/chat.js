@@ -16,7 +16,7 @@ import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
 // conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
@@ -871,7 +871,7 @@ function paintSide(force = false) {
   sideEl('head').textContent =
     others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
   const html = people.length
-      // A BUTTON, not a div. _contentClaims (frames.js:80) exempts only
+      // A BUTTON, not a div. _contentClaims (windows.js:80) exempts only
       // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface — so a
       // <div> row was swallowed by root's pointerdown and the dblclick never
       // fired. R, 2026-09-11: "the Chat panel treats names in the roster as a
@@ -1002,8 +1002,8 @@ export function initChat({ send, whisper, typing, people, person }) {
       // with nothing repainting the strip — so a panel dragged narrow kept the
       // arrows hidden and its overflowing tabs unreachable (R, 2026-09-11: "the
       // side-scroll buttons in the chat panel are missing, so you can't go to a
-      // tab that's off-screen because the panel is too narrow"). frames.js has
-      // called onResize(w, h) all along (frames.js:437); chat simply never
+      // tab that's off-screen because the panel is too narrow"). windows.js has
+      // called onResize(w, h) all along (windows.js:437); chat simply never
       // passed one. Debounced like emotebar's (emotebar.js:53).
       onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
@@ -1041,7 +1041,7 @@ export function initChat({ send, whisper, typing, people, person }) {
   // Hand the captures to whoever holds this frame. ui.js's Tab handler needs
   // these exact nodes and must not re-derive them: `:scope >` bounds DEPTH but
   // not ORDER, so a mod PREPENDING a .chat-cols into this body wins a class
-  // lookup — and that door is real (mods.js:88 hands out makeFrame, frames.js
+  // lookup — and that door is real (mods.js:88 hands out makeFrame, windows.js
   // returns the LIVE chat frame for a bare id, and a local mod is an in-page
   // ES module with the whole document). The frame object is the seam: both
   // sides already hold it via getFrame('chat'), so neither file imports the

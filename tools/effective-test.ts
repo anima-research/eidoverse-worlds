@@ -7,15 +7,15 @@
  *
  * The scenes are written as old-protocol entries (that is how these cases were
  * first recorded) and folded by the old-world importer's fold
- * (tools/v4/import-v1/fold.js) into entity records the agent reads as its view
- * — the record shape (shared/v4/record.js) began as that fold's projection.
+ * (tools/protocol/import-v1/fold.js) into entity records the agent reads as its view
+ * — the record shape (shared/protocol/view.js) began as that fold's projection.
  *
  * Expected values are HAND-COMPUTED from the closed forms — never from the
  * code under test. Worked math is inline at each case.
  */
 
 import { WorldAgent } from "../mcpl/agent.ts";
-import { emptyState, foldEntry } from "./v4/import-v1/fold.js";
+import { emptyState, foldEntry } from "./protocol/import-v1/fold.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {

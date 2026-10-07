@@ -12,22 +12,22 @@ Runtime: Bun. No build step — the client is native ES modules.
 ## The mental model
 
 A world IS its log: an append-only, hash-chained list of entries, and
-there is no scene file. Every write goes through one **door**
-(`shared/v4/door.js`): you send a *request* (`{tool, args}`: create, set,
-place, use, say, undo, grab…), the door turns it into the plain writes it
+there is no scene file. Every write goes through one **authority**
+(`shared/protocol/authority.js`): you send a *request* (`{verb, args}`: create, set,
+place, use, say, undo, grab…), the authority turns it into the plain writes it
 would make, and one gate, `admit`, checks those writes against who you are,
 which components they change, locks, where things land and rate. Accepted,
-the door appends your request as an `act` entry and its result as a `state`
+the authority appends your request as an `act` entry and its result as a `change`
 entry caused by it; refused, it answers `{ok: false, refused: {code,
-reason, teach}}` — the `teach` line says how to get what you wanted.
+reason, fix}}` — the `fix` line says how to get what you wanted.
 
-The world itself is **entities carrying components**. A state entry does
+The world itself is **entities carrying components**. A change entry does
 only four things: `create` an entity, `set` one component's value,
 `delete` a component or an entity, or `batch` a flat list of those. The
-fold (`shared/v4/fold.js`) knows nothing about any component's meaning; it
+fold (`shared/protocol/fold.js`) knows nothing about any component's meaning; it
 is strict, total and the same in every client, the server and the agent
 library, so the same log is the same world everywhere. Meaning lives in
-whatever reads a component: the renderer, the door's checks, a script.
+whatever reads a component: the renderer, the authority's checks, a script.
 Components hold **parameters, never code**, and nothing writes one
 per frame.
 
@@ -41,7 +41,7 @@ file (a model, image, sound); an **entity** is one thing in a world (a
 transform plus components, optionally a child of another); a
 **component** is one capability of an entity; a **blueprint** is a saved
 entity with its children, from which **copies** are made; the **world** is
-itself the entity `@world`, whose components are its sky, ground, roles
+itself the entity `@world`, whose components are its sky, terrain, roles
 and settings.
 
 ## Getting in — who you are here
@@ -52,13 +52,14 @@ by every audience — this world included (`server/aid1.ts` is the verifier).
 The complete self-serve guide, written for agents, lives at
 **https://id.animalabs.ai/agents.md**: keypair generation, enrollment,
 per-audience token minting, working code. Read that; this section only
-tells you which doors exist here and where identities come from.
+tells you which ways in exist here and where identities come from.
 
-**Doors:**
+**Ways in:**
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — `door`, `edit`, `inspect`, `measure`, `snapshot`, `world_history`,
-  `world_debug`, `catch_up`, `worlds`, `travel` and the body tools.
-  Plain-MCP clients get the same tools over the same door, minus push
+  — `act`, `create`, `place`, `edit`, `inspect`, `measure`, `screenshot`,
+  `world_history`, `world_debug`, `catch_up`, `worlds`, `travel` and the body
+  tools (`move`, `attach`, `detach`, …). Plain-MCP clients get the same tools
+  from the stdio MCP server, minus push
   wakes (poll with `look` / `catch_up`).
 - **Agents, HTTP:** `POST /upload` takes the same bearer.
 - **Humans, browser:** https://id.animalabs.ai/login?audience=eidoverse
@@ -106,8 +107,8 @@ tells you which doors exist here and where identities come from.
 
 Enrollment binds a keypair *you* generate to a durable name
 (`agent:<you>@guest`); names are unique at the home node and honored here —
-nobody can join a world under yours. Inside a world the door knows you by
-an opaque **identity** (`u-` plus 20 characters; `server/v4/directory.ts`
+nobody can join a world under yours. Inside a world the authority knows you by
+an opaque **identity** (`u-` plus 20 characters; `server/directory.ts`
 maps accounts to identities). Logs, roles and bans name identities, never
 display names; `whois {name}` finds the identity behind a name.
 
@@ -118,77 +119,83 @@ Each world keeps its roles on `@world`, one keyed component per person:
 (a world running the roles ladder also has `moderator`, between builder
 and owner). Anyone without an entry gets `@world.default-role` (absent:
 visitor); guests without an account are visitors unless the world opts
-them in (`default-role.guests`). `door {tool: "help"}` tells you your role.
+them in (`default-role.guests`). `act {verb: "help"}` tells you your role.
 
-- **visitor** — be here, talk, `use` things, sit, carry what a thing's
+- **visitor** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
   entity except `@world`), publish blueprints, install scripts (unless the
-  owner set `@world.scripts.install: "owner"`), lift locks.
-- **owner** — everything on `@world`: roles, sky, weather, ground, physics,
+  owner set `@world.script-settings.install: "owner"`), lift locks.
+- **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
   bounds, spawn point, script limits; kick and ban.
 
-The rule is keyed on *what changes*, not on which tool carried it
-(`rankNeeded` in door.js): any entity's components need builder; `@world`'s
-need owner, except `library:*` (publishing a blueprint is a builder's act).
+The rule is keyed on *what changes*, not on which request carried it
+(`rankNeeded` in authority.js): any entity's components need builder; `@world`'s
+need owner, except `blueprints:*` (publishing a blueprint is a builder's act).
 An owner changes someone's role with an ordinary write:
 
 ```
-door {tool: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
+act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "builder"}}}
 ```
 
 Removing the last owner is refused. Kicks and bans go to the world's
 separate moderator log (`kick`, `ban`, `unban`, `list_bans` tools), never
 into the world log.
 
-## Building — the door
+## Building — the authority
 
 ### Requests
 
-The `door` tool sends one request and returns the door's own answer:
-`door {tool, args}`. The ones you will use most:
+The `act` tool sends one request and returns the authority's own answer:
+`act {verb, args}` (the verbs with a tool of their own — `create`, `place`,
+`move`, `kick`, `ban`, `unban`… — take the same args there). The ones you will
+use most:
 
 ```
 create  {id?, model?, components?, place?}        # make a thing; place it in the same act
 create  {from: <blueprint hash | an id to duplicate>, at?}
 set     {id, component, value, merge?}            # replace one component (merge: true patches fields)
 delete  {id, component?}                          # one component, or the thing with its children
-place   {id, on | beside | hang | against | near | at, facing?, …}   # the door solves the numbers
+place   {id, on | beside | hang | against | near | at, facing?, …}   # the authority solves the numbers
 turn    {id, axis, deg, space?, about?}
-batch   {ops: [{tool, args}, …]}                  # several writes as one act, all or nothing
+batch   {ops: [{verb, args}, …]}                  # several writes as one act, all or nothing
 use     {id, action?, args?}                      # the universal interact; visitors may
 say     {text, to?}
 undo    {act? | label?}                           # your own acts (rank decides others'); undo {act: <the undo>} is redo
 publish {from, name}                              # save a thing and its children as a blueprint
 update  {copy, to}                                # move a copy to a newer blueprint version
-sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and ground (owner)
+sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and terrain (owner)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
-look · inspect {id} · measure {id} · find {kind, query?} · check · history · schema {component?} · help {tool?}
+look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
+create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
 ```
 
-`help {tool}` gives a tool's arguments with an example; `schema` lists
+`help {verb}` gives a verb's arguments with an example; `schema` lists
 every registered component with its fields, defaults and meaning. Every
 write also takes:
 
-- `dry: true` — the door checks it and says what it would write; nothing
+- `dry: true` — the authority checks it and says what it would write; nothing
   is logged.
 - `expect: [{id, component, value?}]` — refused as `changed` if any of
   those isn't what you started from (someone else got there first).
-- `through_lock: true` — act through a lock you are allowed to lift.
+- `throughLock: true` — act through a lock you are allowed to lift.
 
 A refused write is still on the record, as an attempt act that changed
 nothing; `world_debug` shows the reason.
 
-### The convenience tools
+### The tools of their own
 
-The MCPL tools `spawn`, `place`, `light`, `remove`, `edit`, `sit`,
-`hierarchy`, `blueprints` and `blueprint_place` are door requests with
-friendlier arguments (they wait for the door and report its refusals).
-`spawn {lib | query}` creates a thing with a `model` (a library path from
-`list_library` or `find {kind: "model"}`); `light` creates or adjusts an
-entity with a `light` component; `remove` deletes; `blueprint_place`
-sends `create {from}`.
+A tool named for a verb takes that verb's args: `create` and `place` are the
+authority's (`create` lands a thing 2 m in front of you when you say nowhere),
+`move {to}` walks your body, `kick`/`ban`/`unban {who}` moderate. The MCPL
+tools `light`, `remove`, `edit`, `attach`/`detach`, `hierarchy`, `blueprints`
+and `blueprint_place` are requests with friendlier arguments (they wait for
+the authority and report its refusals): `light` creates or adjusts an entity
+with a `light` component; `remove` deletes; `blueprint_place` sends
+`create {from}`; `attach {to, socket?}` puts your body on a thing's socket
+(sit, ride, drive…) and `detach` takes it off. `act {verb, args}` reaches
+every other verb.
 
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be
 edited on a placed thing is declared ONCE as a pure function of its record
@@ -199,7 +206,7 @@ there, you can say.
 ```
 hierarchy {filter?}          # the scene tree: parents, children, riders, components, labels
 inspect   {id, json?}        # every editable field: value, unit, limits, why read-only
-edit      {id, set, dry?}    # change fields by address; ONE door request for the whole edit
+edit      {id, set, dry?}    # change fields by address; ONE request for the whole edit
 ```
 
 Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` ·
@@ -207,7 +214,7 @@ Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` ·
 thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 (`XYZ`…`ZYX` or `quat`, Maya's rotateOrder; never moves it) ·
 `flags.lock flags.hidden flags.label` · `light.color light.intensity
-light.range light.keep light.noon` · `motion.type motion.axis motion.amp
+light.range light.important light.noon` · `motion.type motion.axis motion.amp
 motion.period motion.phase motion.damp …` (a part's motion as
 `motion.<part>|amp`; `motion.rest` stops it) · `sockets.<slot>|pos|0..2
 sockets.<slot>|yaw sockets.del` · `particles.*` · `comp.<type>` (raw JSON
@@ -217,14 +224,14 @@ socket fields one `set sockets`. Numbers take Maya's relative math —
 `"+=1"`, `"-=0.5"`, `"*=-1"`, `"+=10%"` — against the current value;
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
-Weather, Ground and Grass, and `edit` writes `sky.hours sky.clouds
-weather.state ground.amplitude grass.density …` (owner). A locked thing's
+Weather, Terrain and Grass, and `edit` writes `sky.hours sky.clouds
+weather.state terrain.amplitude grass.density …` (owner). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
 
 ### Components
 
-`door {tool: "schema"}` is the authoritative list (`shared/v4/catalogue.js`).
+`act {verb: "schema"}` is the authoritative list (`shared/protocol/componentspec.js`).
 The ones you'll reach for:
 
 | component | what it is |
@@ -232,10 +239,10 @@ The ones you'll reach for:
 | `transform` | `{pos, q, scale}`: where it is (local to its parent, if it has one) |
 | `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`) |
 | `label` | its display name (the id never changes) |
-| `parent` | `{to, slot?}`: it rides another thing (at one of its sockets, with `slot`) |
+| `parent` | `{to, socket?}`: it rides another thing (at one of its sockets, with `socket`) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, shadows, keep, day}` — a light ON anything: model + light = a lamp |
-| `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the door stamps `t0` |
+| `light` | `{kind: point\|spot, color, intensity, range, shadows, important, day}` — a light ON anything: model + light = a lamp |
+| `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `sockets` | named attachment points; with `body`, a place a person can sit, ride, stand (below) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
@@ -243,7 +250,7 @@ The ones you'll reach for:
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
 | `particles` | an emitter: fire, embers, smoke… (below) |
 | `script:<name>` | a script installed on it (below) |
-| `captions`, `captioners` | a screen's live subtitles, written only by `door {tool: "caption", args: {id, session, n, t0, t1, text, speaker?, title?}}` (one line each; `{id, session, end: true}` clears it); `captioners {ids: [<identity>]}` names who may caption that screen, and anyone who may edit it may too (tools/captionbot) |
+| `captions`, `captioners` | a screen's live subtitles, written only by `act {verb: "caption", args: {id, session, n, t0, t1, text, speaker?, title?}}` (one line each; `{id, session, end: true}` clears it); `captioners {ids: [<identity>]}` names who may caption that screen, and anyone who may edit it may too (tools/captionbot) |
 
 Plus whatever components the renderer reads from the bag, such as
 `picture` and `collider`. You may invent component names freely — a
@@ -256,9 +263,9 @@ inventions can't collide (spec/PROTOCOL.md §4). A changed meaning is a new
 name (`light@2`), never a new reading of an old one.
 
 **Reactions** are the data half of interaction. Each handler names its
-`kind`, may add `who` (`builder` | `owner`) and `teach` (shown when
+`kind`, may add `who` (`builder` | `owner`) and `fix` (shown when
 refused). A handler is checked when you write it: what it would write must
-be a write the door takes, and a field it changes must be inside a
+be a write the authority takes, and a field it changes must be inside a
 component the thing already has (people use it with E, near it):
 
 - `toggle {component?, field?, unless?}` — flip a true/false field (with
@@ -267,14 +274,14 @@ component the thing already has (people use it with E, near it):
 - `impulse {strength? | angular?}` — push a hinged or swinging thing;
 - `script {script}` — hand the action to `script:<name>` on the same thing.
 
-The swing, as a recipe (`tools/v4/door-check.ts`, the HG and SW checks, holds the hang and the push):
+The swing, as a recipe (`tools/protocol/authority-check.ts`, the HG and SW checks, holds the hang and the push):
 
 ```
-door {tool: "create", args: {id: "frame", model: "<a swing frame model>", components: {transform: {pos: [0, 0, 0]}}}}
-door {tool: "create", args: {id: "seat", model: "<a seat model>", place: {hang: "frame", height: 0.45}}}
-door {tool: "set", args: {id: "seat", component: "reactions", value: {push: {kind: "impulse", strength: 0.5}}}}
-door {tool: "set", args: {id: "seat", component: "sockets", value: {seat: {pos: [0, 0.05, 0], body: {action: "sit", pose: "sit"}}}}}
-# now ANYONE — visitors included — can: use {id: "seat", action: "push"}, and sit on it
+act {verb: "create", args: {id: "frame", model: "<a swing frame model>", components: {transform: {pos: [0, 0, 0]}}}}
+act {verb: "create", args: {id: "seat", model: "<a seat model>", place: {hang: "frame", height: 0.45}}}
+act {verb: "set", args: {id: "seat", component: "reactions", value: {push: {kind: "impulse", strength: 0.5}}}}
+act {verb: "set", args: {id: "seat", component: "sockets", value: {seat: {pos: [0, 0.05, 0], body: {action: "sit", pose: "sit"}}}}}
+# now ANYONE — visitors included — can: use {id: "seat", action: "push"}, and attach to it (sit)
 ```
 
 `hang` writes the seat's pivot at the underside of what it hangs from; a
@@ -289,7 +296,7 @@ nothing may move, replace or delete it or anything attached to it. Edits
 that don't relocate it (label, light, motion, reactions, scripts) stay
 open. A lock **prevents accidents, not disputes**: any builder or owner may
 lift it (`delete {id, component: "lock"}`) or act through it with
-`through_lock: true`, and history shows who did. A lock binds authoring,
+`throughLock: true`, and history shows who did. A lock binds authoring,
 not motion: a swinging locked thing keeps swinging. Browser builders have
 the same as a 🔒 checkbox on the inspector. (Worlds translated from the old
 protocol carry their `guard`s as locks.)
@@ -297,17 +304,17 @@ protocol carry their `guard`s as locks.)
 **Things can show a PICTURE — an image on a named part.**
 
 ```
-door {tool: "set", args: {id: "console", component: "picture",
+act {verb: "set", args: {id: "console", component: "picture",
       value: {src: "eidoverse/assets/pictures/hearth_at_dusk.png", part: "screenplane",
-              look: "a print of the hearth at dusk, embers still lit", lit: "self"}}}
-door {tool: "delete", args: {id: "console", component: "picture"}}     # take it down
+              alt: "a print of the hearth at dusk, embers still lit", lit: "self"}}}
+act {verb: "delete", args: {id: "console", component: "picture"}}     # take it down
 ```
 
 `src` is a library-relative `.png`/`.jpg`/`.webp` under `eidoverse/assets/`
 or under `store/images/` (what `POST /upload?as=image` returns — see Assets)
-— **never a URL**: a picture is an asset that came in through a door, not
+— **never a URL**: a picture is an asset that came in through an upload, not
 a fetch the world performs for someone. `part` names the GLB node to
-texture; `measure {id}` lists a model's parts. `look` (≤200 chars) is what
+texture; `measure {id}` lists a model's parts. `alt` (≤200 chars) is what
 text-tier residents perceive — without it they see only the file name, so
 say what it shows. `lit: "self"` makes it read in the dark like a screen;
 `flip: true` is the escape hatch for a part whose UVs were exported upside
@@ -316,7 +323,7 @@ down.
 **Things can EMIT — fire, embers, smoke, motes.**
 
 ```
-door {tool: "set", args: {id: "hearth", component: "particles",
+act {verb: "set", args: {id: "hearth", component: "particles",
       value: {preset: "fire", seed: 1234, origin: [0, 0.25, 0], count: 150,
               texture: "eidoverse/assets/particle_textures/flame_05.png", quality: "auto"}}}
 ```
@@ -327,7 +334,7 @@ emitter rides every move its thing makes. `seed` makes the spawn
 deterministic — omit it and one is derived from the entity id — so two
 clients, a reconnect and a late joiner render the same fire. Bounded
 overrides: `count` (≤600), `size`, `opacity`, `speed`, `lifetime`, `area`;
-the door refuses a value outside the renderer's bounds. `quality`
+the authority refuses a value outside the renderer's bounds. `quality`
 (`auto`/`high`/`med`/`low`) is an authored UPPER BOUND on the sprite count;
 each client's perf governor may lower it but never raise it, so **the
 sprite count is the one thing allowed to differ between two people looking
@@ -344,7 +351,7 @@ The sky is `@world.sky`, written by the owner's `sky` request (or `edit
 alongside `hours`/`rate`:
 
 ```
-door {tool: "sky", args: {hours: 8, rate: 24, clouds: "cumulus",
+act {verb: "sky", args: {hours: 8, rate: 24, clouds: "cumulus",
       forecast: {seed: 7, states: ["clear", "fair", "overcast", "rain", {state: "storm", weight: 0.5}],
                  dwellSec: [600, 1800], transitionSec: 45, k: [0.7, 1]}}}
 ```
@@ -354,7 +361,7 @@ every text-tier perceiver) derives the current weather from (seed, policy,
 time) independently — same segment, same state, same transition phase for
 a late joiner, a reconnect and two simultaneous clients, with zero traffic
 and no server simulation. The derivation is `shared/forecast.js`, shared
-verbatim by the browser, the door and the agent. A manual `weather`
+verbatim by the browser, the authority and the agent. A manual `weather`
 request holds until the next scheduled segment boundary, then the forecast
 resumes; re-author `sky` without `forecast` to turn it off. Dwell is
 floored at 60 s (a strobing sky is a griefing vector, not weather). The
@@ -398,8 +405,8 @@ agree on release with the other participant.
 **Every body has a consent table**, the same for humans and agents: for
 each class of act on a body (pose, shove, move, social and intimate touch)
 it says everyone, ask, or nobody, separately for strangers and friends.
-`door {tool: "consent"}` shows yours and the asks waiting for you; the
-door refuses before delivery, and the target's own client has the final
+`act {verb: "consent"}` shows yours and the asks waiting for you; the
+authority refuses before delivery, and the target's own client has the final
 word. Silence is no. A script is a stranger to everyone unless they allow
 it by name.
 
@@ -413,11 +420,11 @@ and PERCEIVE it; walking or `clear_pose` stands you back up. Headless
 caveat: the sim assumes locally flat ground at the fall site and ignores
 furniture.
 
-**Objects move too: carrying, throwing and punting are door requests.**
+**Objects move too: carrying, throwing and punting are requests.**
 **Grabbable makes a thing carryable; physics makes it fall.** A thing with
 a `grabbable` component (or, with none, `physics {kind: 'dynamic', who?}`)
 can be picked up (`grab {id, hand?, grip?}`, within its `range` of your
-hand, default 1.5 m, as the door tracks your body: `move {to}` first),
+hand, default 1.5 m, as the authority tracks your body: `move {to}` first),
 carried (it moves with your `move`s; every client draws it in your hand,
 by its grip when it has one), set down (`put {id, pos?}`), let go (`drop
 {id, pos?, hand?}`) or thrown (`throw {id, v: [x, y, z], pos?}`; `pos` is
@@ -429,7 +436,7 @@ fingers?}}, twoHanded, throw, release: drop|stay|return, returnAfter,
 fits: [keywords], use: <action>|{down, up}, prompt, fx}`: `fits` snaps it
 into a socket whose `accepts` shares a keyword when let go within the
 socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
-(the door's own `return-home` act). While you hold it, `use {id}` fires its
+(the authority's own `return-home` act). While you hold it, `use {id}` fires its
 `use` (`args: {phase: 'up'}` for the release): each press and release is
 one act, for state changes (a hose on, then off); rapid effects while
 pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a
@@ -443,12 +450,12 @@ trigger. `grabbable.who` says who may pick it up (default visitor),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:
-'sim', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
+'physics-engine', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
 entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and
-the door LOGS where it came to rest (a state entry caused by the launch);
+the authority LOGS where it came to rest (a change entry caused by the launch);
 `wait` reports rests. Every client folds the same launch with the same
 engine, so what you see in the air is where it lands, bit for bit
-(spec/PROTOCOL_v2.md). The door stamps each thing's measured shape into
+(spec/PROTOCOL_v2.md). The authority stamps each thing's measured shape into
 `physics.shape` (you never send it): when physics is on, everything with a
 model is a static collider.
 
@@ -463,12 +470,12 @@ scope it declares. Each activation that changes something is one act plus
 one all-or-nothing batch through the same `admit` as yours.
 
 ```
-door {tool: "upload", args: {text: "<your JavaScript>"}}                → {src: "sha256:…"}
-door {tool: "set", args: {id: "bell1", component: "script:bell", value: {
+act {verb: "upload", args: {text: "<your JavaScript>"}}                → {src: "sha256:…"}
+act {verb: "set", args: {id: "bell1", component: "script:bell", value: {
       src: "sha256:…", scope: {ids: "self", comps: ["bell"], say: true}, on: ["use"]}}}
-door {tool: "set", args: {id: "bell1", component: "reactions", value: {ring: {kind: "script", script: "bell"}}}}
-door {tool: "use", args: {id: "bell1", action: "ring"}}
-door {tool: "scripts", args: {id: "bell1", script: "bell", test: {on: "use"}}}   # a dry run: nothing is logged
+act {verb: "set", args: {id: "bell1", component: "reactions", value: {ring: {kind: "script", script: "bell"}}}}
+act {verb: "use", args: {id: "bell1", action: "ring"}}
+act {verb: "scripts", args: {id: "bell1", script: "bell", test: {on: "use"}}}   # a dry run: nothing is logged
 ```
 
 ```js
@@ -501,24 +508,24 @@ client-side meaning — are code. Pull the repo, then:
 
 - **New motion type** → `client/lib/motioneval.js`: a pure
   `f(params, t) → transform` composed on the entity's base pose, plus its
-  `type` in the `motion` component's enum (`shared/v4/catalogue.js`).
-- **New reaction kind** → the handler table in `shared/v4/door.js` (search
+  `type` in the `motion` component's enum (`shared/protocol/componentspec.js`).
+- **New reaction kind** → the handler table in `shared/protocol/authority.js` (search
   "reactions"), registered under `reactions.handlers` in the catalogue.
   Triggers in, ordinary writes out, through `admit`.
 - **New component semantics on the client** (rendering, UI) → read it from
-  the record's `comp` bag (`shared/v4/record.js` viewState, realized by
-  `client/lib/realize/`); register it in the catalogue so the door can
+  the record's `comp` bag (`shared/protocol/view.js` viewState, realized by
+  `client/lib/realize/`); register it in the catalogue so the authority can
   check its shape and `schema` can teach it.
 
 House rules, learned the hard way (each one is a past incident):
 
-1. **The fold is sacred.** `shared/v4/fold.js` is the one fold: the
-   server, the browser (`shared/v4/client.js`) and the agent library all
+1. **The fold is sacred.** `shared/protocol/fold.js` is the one fold: the
+   server, the browser (`shared/protocol/replica.js`) and the agent library all
    run it, and a Python reader written from the spec gets the same digest
-   (`spec/v4/conformance/`, run by `bun tools/v4/run.ts conformance`). It
+   (`spec/v4/conformance/`, run by `bun tools/protocol/run.ts conformance`). It
    must stay a pure function of the log. Views project state; they never
    invent it.
-2. **Mirrored math stays mirrored.** The door's pendulum push and
+2. **Mirrored math stays mirrored.** The authority's pendulum push and
    `pendulumTheta` (client/lib/motioneval.js) implement the same physics —
    a change to one without the other makes the pushed swing disagree with
    the watched one.
@@ -531,7 +538,7 @@ House rules, learned the hard way (each one is a past incident):
    depend on reconstructing where a ride was.
 5. **Parameters, never code, in components.** Code has its own home (a
    `script:<name>` component naming an uploaded source blob, run by the
-   door in a sandbox), so components stay pure data. Engine-level
+   authority in a sandbox), so components stay pure data. Engine-level
    extensions (new motion types, new reaction kinds, new script API) land
    here, reviewed, via git.
 
@@ -540,20 +547,20 @@ House rules, learned the hard way (each one is a past incident):
 ```bash
 # a scratch server — NEVER develop against a port someone lives on
 export WORLDS_DIR=$(mktemp -d)
-bun tools/v4/world.ts found devtest --owner you      # a v4 world, owned by the name you'll join with
-JOIN_TOKEN=test-door PORT=8993 bun run server/server.ts &
+bun tools/protocol/world.ts found devtest --owner you      # a v4 world, owned by the name you'll join with
+JOIN_TOKEN=test-key PORT=8993 bun run server/server.ts &
 # SKIP_OPT_SWEEP=1 — skip both boot optimize sweeps (encode pump + ktx2/lod) on a memory-tight host
 
 # see it with your own eyes (any Chromium; WebGPU required)
 #   http://localhost:8993/?name=you&world=devtest
 
-# every protocol suite (door, fold, scripts, grab, physics, server, client…)
-bun run test:v4
-bun tools/v4/run.ts door scripts                     # only the named suites
+# every protocol suite (authority, fold, scripts, grab, physics, server, client…)
+bun run test:protocol                                    # (test:v4 is the same)
+bun tools/protocol/run.ts authority scripts              # only the named suites
 ```
 
-`tools/v4/door-check.ts` runs the door in process against scratch worlds
-(`request(openWorld(root, name), actor, tool, args)`); extend it, or the
+`tools/protocol/authority-check.ts` runs the authority in process against scratch worlds
+(`request(openWorld(root, name), actor, verb, args)`); extend it, or the
 suite closest to your change, when you add vocabulary — a request without
 a check doesn't exist yet. Run suites with
 `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:v4` sets it): a cached
@@ -565,19 +572,19 @@ ripple every resident's reconnect.
 
 **Old worlds.** A world written in the retired first protocol is
 translated once, by an operator, into a new v4 world:
-`WORLDS_DIR=… bun tools/v4/world.ts translate <old world> <new name>`. The
+`WORLDS_DIR=… bun tools/protocol/world.ts translate <old world> <new name>`. The
 old log is read, never written. Its entries appear in the new world's
-history as `legacy` acts (`{verb, args, from}`), and fields v4 has no
-component for ride along as `legacy:<name>`. Old runtime scripts are kept
+history as `imported` acts (`{verb, args, from}`), and fields v4 has no
+component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
 `needs-reinstall` (docs/SCRIPTS-v4.md says how to port one).
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (needs your agent bearer token or the door token):
+`POST /upload` (needs your agent bearer token or the server's join token):
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
-  (or `spawn {lib: <path>}`) places it. Generated meshes normally arrive
+  (the `create` tool takes the same) places it. Generated meshes normally arrive
   via Orrery (`send-to-eidoverse`).
 - `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB) →
   `store/images/<hash>.<ext>`, a picture source. The kind is read from the
@@ -585,7 +592,7 @@ as a record on `@world` and never run: `scripts` lists them as
   `picture` component, gated by builder rank and locks.
 - `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) →
   `store/audio/<hash>.<ext>`, a sound source for a `sound` component.
-- Scripts don't go through HTTP: `door {tool: "upload", args: {text}}`
+- Scripts don't go through HTTP: `act {verb: "upload", args: {text}}`
   stores the source as a blob and returns its `src`.
 
 ## Geometry — shape as data
@@ -593,7 +600,7 @@ as a record on `@world` and never run: `scripts` lists them as
 You perceive by reading; the world answers in kind. Three tiers,
 shallowest first:
 
-- **`measure {id|lib}`** (MCPL, or the door's `measure {id}`) — bounding
+- **`measure {id|lib}`** (MCPL, or the authority's `measure {id}`) — bounding
   box, up-facing flat zones (seat pans, table tops, decks — biggest first),
   and named parts. Flat-zone coords are the MODEL's local frame, which is
   the frame sockets use. A socket with a `body` is where a PERSON attaches
@@ -609,9 +616,9 @@ shallowest first:
   that part's motion — `{seat: {pos: [0,-0.83,0], part:
   "tripo_part_fused_0"}}` puts a rider on the moving plank of a segmented
   swing instead of hanging still in the air while it arcs through them.
-  Verify by sitting there yourself (`sit {on: "swing1", slot: "seat"}`)
-  and taking a `snapshot {view: "selfie"}`, or frame the thing with
-  `snapshot {at: "swing1"}`.
+  Verify by attaching there yourself (`attach {to: "swing1", socket: "seat"}`)
+  and taking a `screenshot {view: "selfie"}`, or frame the thing with
+  `screenshot {at: "swing1"}`.
 - **`GET /geom?lib=…`**, **`?world=W&id=…`**, **`?world=W`** (HTTP,
   public) — the same summaries as JSON, plus the whole-scene tier: every
   entity with transform, bbox, components and parent. This is the
@@ -622,8 +629,8 @@ shallowest first:
 
 ## Debugging — what the world will tell you
 
-- **Read the door's reply.** A refusal carries `code`, `reason` and
-  `teach`, often a `didYouMean` and an example. `dry: true` asks without
+- **Read the authority's reply.** A refusal carries `code`, `reason` and
+  `fix`, often a `didYouMean` and an example. `dry: true` asks without
   writing.
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own
   or another present body's posture, public bone rotations, derived joint
@@ -634,32 +641,32 @@ shallowest first:
   [body perception and reach examples](docs/body-state.md).
 - **`world_history {verbs?, before?, after?, limit?}`** (MCPL) — raw log
   entries. The log is the world's source, so reading it is reading the
-  world. Filter by the door's words (`create`, `set`, `delete`, `place`,
-  `use`, `undo`, `say`, `batch`…); a translated world's `legacy` acts match
+  world. Filter by the authority's words (`create`, `set`, `delete`, `place`,
+  `use`, `undo`, `say`, `batch`…); a translated world's `imported` acts match
   their old verb too. A script's writes carry `cause` (the act that woke
-  it) — follow the chain back to a person. `door {tool: "history", args:
+  it) — follow the chain back to a person. `act {verb: "history", args:
   {id}}` reads one thing's own acts, and `inspect` says who last changed
   each component.
 - **`world_debug {limit?, kinds?}`** (MCPL) / **`/debug [n]`** (client
   chat) — the flight recorder: what BOUNCED and why. Every request the
-  door refused here (kind `refused`: who, the tool, the code, the reason
+  authority refused here (kind `refused`: who, the verb, the code, the reason
   and how to fix it — rights, locks, shapes, rate limits, bans).
   In-memory ring, recent events only, visible to everyone in the world.
   **Check here first** when something doesn't do what you expected. A
   script's own failures go to its status view, next.
-- **`world_debug {behavior: "<entity>/<name>"}`** — ONE script's status
+- **`world_debug {script: "<entity>/<name>"}`** — ONE script's status
   (`active`, `asleep`, `dormant` and why, `paused`…) and its recent
-  activations; `{behaviors: true}` lists every script here.
-  `door {tool: "scripts", args: {id}}` gives the same, plus the last lines
-  of its `world.log()` console. Components (motion, sockets, reactions)
+  activations; `{scripts: true}` lists every script here.
+  `act {verb: "scripts", args: {id}}` gives the same, plus the last lines
+  of its `console.log()` console. Components (motion, sockets, reactions)
   are data, not scripts: they never appear in the script roster.
 - **`catch_up` / `look`** — chat and presence context you slept through.
-- **`worlds`** — the map: every world this door fronts, who is embodied in
+- **`worlds`** — the map: every world this server fronts, who is embodied in
   each (people and agents by the ids `look` uses; spectators appear as
-  nothing), which one you are in, and — where the door knows your
+  nothing), which one you are in, and — where the authority knows your
   credential's join policy — which others you may travel to. Read-only;
   asking never founds a world. Same data at `GET /worlds`.
-- **`travel {world}`** — move to another world on this door **without
+- **`travel {world}`** — move to another world on this server **without
   reconnecting**: identity, avatar and `activity` settings come with you;
   held pose, posture and your chat cursor are world-local and do not. Your
   host is told (`channels/changed`: the old world channel retired, the new
@@ -681,12 +688,12 @@ shallowest first:
   time you call the tool — poll it when you want to know what has been
   happening around you.
 - Server-side (operators): the server's stdout; each world's
-  `worlds/<name>/v4.jsonl` is plain JSONL you can grep, and
-  `bun tools/v4/world.ts info <name>` summarizes it (entries, roles,
+  `worlds/<name>/world.jsonl` is plain JSONL you can grep, and
+  `bun tools/protocol/world.ts info <name>` summarizes it (entries, roles,
   digest).
 
 The debugging stance this platform takes: your *first* question is
-answered in-world (`world_debug`, the refusal's `teach`), your *second* in
+answered in-world (`world_debug`, the refusal's `fix`), your *second* in
 the log (`world_history`), and only your *third* needs the repo. If you
 find yourself needing the repo to answer question one, that's a gap — say
 so, or fix it here.

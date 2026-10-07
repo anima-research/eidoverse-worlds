@@ -67,7 +67,7 @@ check('a lite boot is dramatically lighter overall',
 
 // Reported from a real phone, 2026-09-15: "my messages were not appearing... but once I
 // reloaded the client the chat history appeared". A lite client could SEND and never
-// see. The live path is realize/causes.js turning a 'say' entry into a chat line, which
+// see. The live path is realize/livechat.js turning a 'say' entry into a chat line, which
 // lite.js was not subscribing to; the reload path is social.js replaying history, which
 // it was — hence a chat that only worked in the past tense. This pins the live path.
 {
@@ -261,7 +261,7 @@ const RAW = `
   // someone who is not here - which the server holds for delivery on arrival.
   await driver.evaluate(async ({ secret, prior, reader }) => {
     await globalThis.__raw([
-      { type: 'v4', id: 'prior-say', tool: 'say', args: { text: prior } },
+      { type: 'request', id: 'prior-say', verb: 'say', args: { text: prior } },
       { type: 'whisper', to: reader, text: secret },
     ], { id: 'sender' });
   }, { secret: SECRET, prior: PRIOR, reader: READER });

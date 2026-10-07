@@ -113,16 +113,16 @@ const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 /** The scene's old authoring words, as v4 door requests (the world speaks v4: every write is a door request). A
  *  v4 "moving platform" is any motion component; v4 has no `path` motion, so a path becomes a bob, which moves it all
  *  the same. Requests go out in order on one socket and the door answers them in order. */
-const doorOf = (v: string, a: any): { tool: string; args: any }[] => {
+const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
   const tf = (x: any) => ({ ...(x.pos ? { pos: x.pos } : {}), ...(typeof x.yaw === "number" ? { q: qFromYaw(x.yaw) } : {}) });
   switch (v) {
-    case "spawn": return [{ tool: "create", args: { id: a.id, model: a.lib, components: { transform: tf(a) } } }];
-    case "place": return [{ tool: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
-    case "remove": return [{ tool: "delete", args: { id: a.id } }];
-    case "motion": return a.type ? [{ tool: "set", args: { id: a.id, component: "motion", value: { type: "bob", axis: [0, 0, 1], amp: 3, period: 4 } } }]
-      : [{ tool: "delete", args: { id: a.id, component: "motion" } }];
-    case "mount": return [{ tool: "set", args: { id: a.id, component: "parent", value: { to: a.to } } }];
-    case "dismount": return [{ tool: "delete", args: { id: a.id, component: "parent" } }, { tool: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
+    case "spawn": return [{ verb: "create", args: { id: a.id, model: a.lib, components: { transform: tf(a) } } }];
+    case "place": return [{ verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
+    case "remove": return [{ verb: "delete", args: { id: a.id } }];
+    case "motion": return a.type ? [{ verb: "set", args: { id: a.id, component: "motion", value: { type: "bob", axis: [0, 0, 1], amp: 3, period: 4 } } }]
+      : [{ verb: "delete", args: { id: a.id, component: "motion" } }];
+    case "mount": return [{ verb: "set", args: { id: a.id, component: "parent", value: { to: a.to } } }];
+    case "dismount": return [{ verb: "delete", args: { id: a.id, component: "parent" } }, { verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
     default: throw new Error(`no v4 door request for '${v}'`);
   }
 };
@@ -135,9 +135,9 @@ function hand(world: string, name: string) {
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, v4fold: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
-      if (m.type === "v4-result" && !m.ok) console.log(`  (door refused ${m.tool}: ${JSON.stringify(m.reply?.refused)})`);
+      if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
       if (m.type === "snapshot") res({
-        verb: (v: string, a: any) => { for (const r of doorOf(v, a)) ws.send(JSON.stringify({ type: "v4", id: `${name}-${++n}`, ...r })); },
+        verb: (v: string, a: any) => { for (const r of requestsOf(v, a)) ws.send(JSON.stringify({ type: "request", id: `${name}-${++n}`, ...r })); },
         send: (o: any) => ws.send(JSON.stringify(o)),
         close: () => ws.close(),
       });

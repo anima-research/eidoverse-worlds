@@ -16,13 +16,13 @@
 // A number a motion comp drives shows its REST pose, tinted: `place` moves
 // the base the motion composes onto, which is the honest thing to edit.
 
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/protocol/requests.js';
 import { worldHistoryRows, historyView, HISTORY_MODES } from './historyrows.js';
 import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { requestDebug, requestV4, v4 } from './net.js';
+import { requestDebug, sendRequest, replica } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -37,7 +37,7 @@ import { WEATHERS } from '../../shared/forecast.js';
 import { copiesOf } from '../../shared/blueprint.js';
 import { openNewScript, mayScript } from './scriptnew.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, newBuilding } from './structure_ui.js';
-import { starterModels } from './palette.js';
+import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
 import { schemaFor, commitEdit, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
@@ -45,10 +45,10 @@ import { channels, fieldAt } from '../../shared/editschema.js';
 import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { reindexCollider } from './colliders.js';
-import * as V4 from './v4edit.js';
+import * as V4 from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
-import { agoWords, touchWords } from '../../shared/v4/refusal.js';
-import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
+import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
+import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -110,7 +110,7 @@ function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
 // the world's display name: @world's about.name, else the name in its address
-const worldName = () => v4.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
+const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
@@ -171,17 +171,17 @@ function syncOutlines() {
 // ---------------------------------------------------------------- scripts roster
 // the behavior runtime, for 📜 badges in the tree and the Behaviors group —
 // the same world_debug an agent reads, polled while the panels are up
-let behaviors = [];   // the world's scripts (the door's status view, via world_debug {behaviors}): {id: "<thing>/<name>", attach, status, …}
-/** The door ops that remove one script: script:<name> on its thing, or an imported world's carried behaviour record. */
+let behaviors = [];   // the world's scripts (the authority's status view, via world_debug {behaviors}): {id: "<thing>/<name>", attach, status, …}
+/** The authority ops that remove one script: script:<name> on its thing, or an imported world's carried behaviour record. */
 const unbindOps = (id) => { const s = String(id); const i = s.indexOf('/');
-  return s.startsWith('behavior:') ? [OP.unset('@world', s)] : i > 0 ? [OP.unset(s.slice(0, i), `script:${s.slice(i + 1)}`)] : []; };
+  return s.startsWith('imported-behavior:') ? [OP.unset('@world', s)] : i > 0 ? [OP.unset(s.slice(0, i), `script:${s.slice(i + 1)}`)] : []; };
 const running = (b) => b.status === 'active' || b.status === 'asleep';
 let shown = false;
 let rosterTimer = 0;
 async function refreshBehaviors() {
   try {
-    const r = await requestDebug({ behaviors: true });
-    behaviors = (r?.events ?? []).filter((e) => e.kind === 'behavior');
+    const r = await requestDebug({ scripts: true });
+    behaviors = (r?.events ?? []).filter((e) => e.kind === 'script');
     repaintAll();
   } catch { /* the roster is a refinement, never a gate */ }
 }
@@ -216,7 +216,7 @@ function hierarchyFields() {
     const badges = badgesFor(id);
     if (!entities.get(id)) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
-    const bpLink = world[id]?.comp?.blueprint;
+    const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
       lockable: V4.mayLift(),   // §5: only builders and owners lock and unlock
@@ -324,8 +324,8 @@ function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
-  const nudge = n === 2 && !rec.comp?.blueprint ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
-  // the door copies it, and what's attached to it: create {from: id}, one act
+  const nudge = n === 2 && !rec.comp?.['copy-of'] ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
+  // the authority copies it, and what's attached to it: create {from: id}, one act
   V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
     const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
@@ -419,7 +419,7 @@ function cardRow(schema, id, addr) {
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
 function pushCards(f, schema, id, { locked = false } = {}) {
-  const touched = id !== WORLD_ID ? doorInspect(id)?.touched ?? {} : {};
+  const touched = id !== WORLD_ID ? authorityInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
     const key = `c:${sec.key ?? sec.type}`;
     const prov = sec.present !== false ? touchLine(touched[wireOf(sec)]) : null;
@@ -446,7 +446,7 @@ function pushCards(f, schema, id, { locked = false } = {}) {
 }
 
 /** The world entity in the Inspector: a header, then its Sky / Weather /
- *  Ground / Grass cards from shared/worldentity.js — edited through the sky,
+ *  Terrain / Grass cards from shared/worldentity.js — edited through the sky,
  *  weather, terrain and grass verbs (inspect.js commitEdit routes @world). */
 function worldFields() {
   const schema = schemaFor(WORLD_ID);
@@ -461,20 +461,20 @@ function worldFields() {
   return shown;
 }
 
-// who made it: no thing stores it (L2: a view over the log, never stored), so ask the door once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
-// the door's inspect, per thing, re-asked whenever its components change (the key): who made it, and who last changed
+// who made it: no thing stores it (L2: a view over the log, never stored), so ask the authority once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
+// the authority's inspect, per thing, re-asked whenever its components change (the key): who made it, and who last changed
 // each component and when (touched: R 10-04, "where a value came from"; within a recent window, beyond = older)
 const inspectCache = new Map();
-function doorInspect(id) {
+function authorityInspect(id) {
   const key = JSON.stringify(V4.compsOf(id));
   const c = inspectCache.get(id);
   if (c?.key === key) return c.reply;
   inspectCache.set(id, { key, reply: c?.reply ?? null });   // keep showing the last answer while the new one comes
-  requestV4('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
+  sendRequest('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
   return c?.reply ?? null;
 }
 function placedBy(id, meta) {
-  const r = doorInspect(id);
+  const r = authorityInspect(id);
   return r ? (r.derived?.madeBy ? V4.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
 // a card's v4 component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
@@ -482,7 +482,7 @@ const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
 const ago = (ts) => agoWords(ts);
 const touchLine = (t) => touchWords(t);
 function lastChange(id) {
-  const t = Object.entries(doorInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
+  const t = Object.entries(authorityInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
   if (!t) return null;
   const [comp, v] = t; const sec = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === comp);
   return v.created ? `made by ${V4.nameOf(v.by)} · ${ago(v.ts)}` : `${V4.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
@@ -576,7 +576,7 @@ function inspectorFields() {
   // Scripts: the ones on this thing, and (desktop: it's a card with a source box) a new one (scriptnew.js: upload, then
   // one act). Its own group, so it never folds under the VR-only Add Component rows above.
   if (mine.length || id !== WORLD_ID) f.push({ t: 'group', k: 'behaviors', label: mine.length ? `Scripts (${mine.length})` : 'Scripts', open: isOpen(id, 'behaviors') });
-  if (mine.length) f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
+  if (mine.length) f.push({ t: 'list', k: 'scripts', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
   if (id !== WORLD_ID) f.push({ t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, disabled: !mayScript(),
     hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' });
   f.push({ t: 'btn', k: 'remove', label: 'remove', danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
@@ -674,7 +674,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     if (JSON.stringify(next) === JSON.stringify(before)) return;
     // the whole transform (local for a child): a heading turns it about up keeping its tilt; scale sets all three axes
     const patch = { pos: next.pos, ...(k === 'yaw' ? { yaw: next.yaw } : {}), ...(k === 'scale' ? { scale: next.scale } : {}) };
-    V4.sendOps([OP.pose(foldRecord(id), id, patch)], { what: `move ${id}`, revert: () => V4.revertPose(id) });
+    V4.sendOps([OP.setTransform(foldRecord(id), id, patch)], { what: `move ${id}`, revert: () => V4.revertPose(id) });
     repaintAll();
     return;
   }
@@ -695,7 +695,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   switch (action) {
     case 'remove': removeMany([id]); break;
     case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
-    case 'bhv': watchScript(payload); break;   // a script row → the Console, watching it
+    case 'scripts': watchScript(payload); break;   // a script row → the Console, watching it
     case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
       flashHint(`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
@@ -705,26 +705,26 @@ function inspectorDispatch(action, payload, field, opts = {}) {
 
 // ---------------------------------------------------------------- console
 // The behavior runtime made visible (the legacy World panel's 📜 scripts): every
-// script bound in this world, and one script's live world.log() ring, polled
+// script bound in this world, and one script's live console.log() ring, polled
 // while the frame is open. Agents read the same thing through world_debug.
 let watching = null;           // behavior id whose log is open
 let watchLog = null;           // { status, lines } from the last poll
 async function refreshWatch() {
   if (!watching) { watchLog = null; return; }
   try {
-    const d = await requestDebug({ behavior: watching, limit: 40 });
+    const d = await requestDebug({ script: watching, limit: 40 });
     watchLog = { status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
   } catch { /* a poll that fails keeps the last good tail */ }
 }
 function consoleFields() {
-  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-v4.md)',
+  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-replica.md)',
     rows: behaviors.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`,
       sub: [b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers}⏲` : null, !running(b) ? (b.status ?? 'paused') : null].filter(Boolean).join(' · '),
       active: b.id === watching,
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) }];
   if (watching) {
     f.push({ t: 'group', k: 'clog', label: `${watching} — ${watchLog?.status ?? '…'}`, open: true });
-    f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: '(console empty — world.log() writes here)' });
+    f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: '(console empty — console.log() writes here)' });
   }
   f.push({ t: 'info', label: '', value: 'click a script to watch its log · /debug = flight recorder' });
   return f;
@@ -745,7 +745,7 @@ function consoleDispatch(action, payload) {
 }
 
 function removeMany(ids) {
-  // a locked thing is asked about by the door's refusal ("This is locked. Delete anyway?"), not filtered out here
+  // a locked thing is asked about by the authority's refusal ("This is locked. Delete anyway?"), not filtered out here
   const go = ids.filter((id) => entities.get(id));
   if (!go.length) return false;
   V4.del(go); clearExtras(); return true;   // one request: delete, or a batch of them (one act)
@@ -756,7 +756,7 @@ function removeMany(ids) {
 // so the viewport carries nothing but the world. B opens edit mode on this tab the first time;
 // editlayout.js remembers the last tab after that (edittabs.js). Three sections, every one a
 // RE-HOST of something that already worked — nothing here is a second implementation:
-//   Blueprints  the starters and the library (palette.js, /library-models): a raw model is a
+//   Blueprints  the starters and the library (catalog.js, /library-models): a raw model is a
 //               blueprint of one Model, and placing one is exactly what placing from the library
 //               always did (build.js holdGhost → spawn). "add light" is a blueprint of one Light.
 //               Saved blueprints arrive with step 6; the group is there, empty, saying so.
@@ -764,7 +764,7 @@ function removeMany(ids) {
 //               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
 //               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
 //   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
-//               defs/sky/_presets.json, Ground and Grass from defs/ground/_palette.json (the same
+//               defs/sky/_presets.json, Terrain and Grass from defs/ground/_palette.json (the same
 //               args groundpanel writes, shared/grounddefs.js), Weather. A pick replaces the
 //               current choice through the existing sky / terrain / grass / weather verbs, as one
 //               Ctrl+Z step. "World" selects @world: its every field, in the Inspector.
@@ -773,7 +773,7 @@ function removeMany(ids) {
 // that, offers the Library (placing a model 1.5 m ahead: worldquad.js spawnAhead) and the World.
 const buildFolds = {};
 let libQ = '';            // the Library search box
-let libHits = null;       // search results; null = the curated starters (an empty box shows those, as palette.js does)
+let libHits = null;       // search results; null = the curated starters (an empty box shows those, as catalog.js does)
 let libSeq = 0;
 async function searchLibrary(q) {
   libQ = q; const n = ++libSeq;
@@ -809,15 +809,15 @@ const blueprintFields = (pics) => [
  *  as the ghost (build.js holdBlueprint) on desktop, or places one 1.5 m ahead in VR. Save as
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  door's publish (a person here, or an agent). */
-function savedFields(pics) { return savedFieldsV4(); }
-/** v4: this world's library is @world library:<hash> (the door's publish writes it); a copy is the door's
- *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the door's publish {from, name} on the selection. */
-function savedFieldsV4() {
-  const lib = V4.library(); const sel = selection();
+function savedFields(pics) { return savedFieldsHere(); }
+/** v4: this world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
+ *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the authority's publish {from, name} on the selection. */
+function savedFieldsHere() {
+  const lib = V4.blueprints(); const sel = selection();
   return [
     { t: 'info', label: 'saved here', value: lib.length ? `${lib.length} blueprint${lib.length === 1 ? '' : 's'} in this world` : 'none yet — select something and save it' },
     { t: 'btn', k: 'bpsave', label: 'save as blueprint', icon: 'boxes', disabled: !sel.length,
-      hint: sel.length ? `save ${sel.length === 1 ? sel[0] : `these ${sel.length} things`} (and what's attached) to this world's library — the door's publish, the same request an agent sends` : 'select something first' },
+      hint: sel.length ? `save ${sel.length === 1 ? sel[0] : `these ${sel.length} things`} (and what's attached) as one of this world's blueprints — the authority's publish, the same request an agent sends` : 'select something first' },
     ...(lib.length ? [{ t: 'tiles', k: 'bp', value: null, options: lib.map((b) => ({ v: b.hash, label: String(b.name ?? b.hash.slice(7, 15)), icon: 'boxes',
       hint: `${b.parts ?? '?'} part${b.parts === 1 ? '' : 's'} · ${b.hash.slice(0, 15)} — places a copy 1.5 m ahead of you` })) }] : []),
   ];
@@ -851,7 +851,7 @@ function worldBuildFields() {
   return f;
 }
 const WORLD_PICKS = { wsky: 'sky', wshape: 'shape', wtint: 'tint', wplant: 'plant', wwx: 'weather' };
-/** A World tile: the pick as one door request (shared/worldentity.js worldPick): one act, one Ctrl+Z. */
+/** A World tile: the pick as one request (shared/worldentity.js worldPick): one act, one Ctrl+Z. */
 function pickWorld(action, v) {
   const kind = action === 'wplant' && v === '@mow' ? 'mow' : WORLD_PICKS[action];
   const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: Date.now(), mayShape: mayShape() });
@@ -920,7 +920,7 @@ function buildVRDispatch(action, payload) {
 
 // ---------------------------------------------------------------- History
 // the right column's second page (R 10-04, research 56): the selected thing's acts, newest first, or the whole world's
-// with nothing selected — read from the log on demand through the same door request an agent uses (history {id,
+// with nothing selected — read from the log on demand through the same request an agent uses (history {id,
 // before}), a page at a time: recent by default, Older… for the deep search. Nothing stored.
 // Credits are filter modes here (R 10-07: no third tab, no hand credits): by time, by person, biggest contributors, by
 // what changed (client/lib/historyrows.js historyView). The view's mode is this viewer's, never logged.
@@ -928,7 +928,7 @@ const hist = { key: null, entries: [], next: null, loading: false, id: null, mod
 function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
   hist.loading = true;
-  requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
+  sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id) return;
     const rows = id ? r.entries : worldHistoryRows(r.entries, V4.nameOf);
     hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();

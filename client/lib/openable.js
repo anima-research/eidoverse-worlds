@@ -1,11 +1,11 @@
 // openable — a thing that opens and closes when someone uses it (R 10-07: the behaviour, not the asset: a door, a
-// gate, a lid, a hatch; shared/v4/catalogue.js `openable`). The log holds its STATE (open: true/false); every client
+// gate, a lid, a hatch; shared/protocol/componentspec.js `openable`). The log holds its STATE (open: true/false); every client
 // tweens toward it over `time` seconds, the conventional door (Unity/Godot/Roblox recipes, Unreal's door timeline): a
 // turn of `angle` about `axis` through the thing's pivot, or a slide of `slide` in its own frame. The tween is
 // presentation, never logged: a late joiner draws it as it is, with no swing. A part (`part`) moves instead of the whole
 // thing, about the part's own origin (motion.js's part convention).
 //
-// The pure halves (openFraction, openPose) live in motioneval.js (no THREE, no DOM: tools/v4/shiplist-check.ts and an
+// The pure halves (openFraction, openPose) live in motioneval.js (no THREE, no DOM: tools/protocol/shiplist-check.ts and an
 // agent can read them); tickOpenables applies them.
 import { entities, comps, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';

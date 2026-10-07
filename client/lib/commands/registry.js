@@ -17,7 +17,7 @@
 export const COMMANDS = [
   { name: 'w', aliases: ['whisper'], help: '/w <name> <message> — whisper, privately' },
   { name: 'r', aliases: ['reply'], help: 'reply to the last whisper you got' },
-  { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the door: renaming mid-visit isn\'t supported yet)' },
+  { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'emote', help: '/emote <name> — the emote bar\'s gestures (🎭, or number keys)' },
   { name: 'sit', help: '/sit [thing] [slot] — sit down, on a seat if one is near (or the one you name)' },

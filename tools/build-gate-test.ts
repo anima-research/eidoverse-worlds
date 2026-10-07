@@ -6,7 +6,7 @@
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({ name: 'build-gate-stubs', setup(b) {
-  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'frames', 'seatedit'])
+  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'seatedit'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./build-gate-stub.mjs') }));
 } });
 
@@ -28,9 +28,9 @@ console.log('BUILD GATE — who may enter edit mode');
 // PERMISSIVE WHEN UNKNOWN. net.myRights has no declaration in net.js's object
 // literal; it lands at the snapshot or a live grant, so it is undefined for the
 // whole pre-snapshot window. Denying there would make a build click vanish on a
-// slow join. conjure.js:144 (`net.myRights?.gen !== false`) is the same idiom.
+// slow join. generate.js:144 (`net.myRights?.gen !== false`) is the same idiom.
 asRole(undefined);
-check('rights not yet known: permitted (pre-snapshot, matches conjure.js)', build.mayEdit() === true);
+check('rights not yet known: permitted (pre-snapshot, matches generate.js)', build.mayEdit() === true);
 asRole('builder');
 check('builder: permitted', build.mayEdit() === true);
 asRole('owner');

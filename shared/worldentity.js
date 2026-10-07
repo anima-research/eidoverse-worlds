@@ -2,7 +2,7 @@
 //
 // A world's sky, ground and grass are the world entity's components in v4 (the view shows them as state.sky,
 // state.terrain, state.grass; weather is part of the sky). This file reads them as ONE entity whose components are
-// Sky, Weather, Ground and Grass (records in shared/components.js), and writes every edit as door requests: the
+// Sky, Weather, Terrain and Grass (records in shared/components.js), and writes every edit as requests: the
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
@@ -11,15 +11,15 @@
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration
-//   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as door requests
-//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one door request
+//   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as requests
+//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one request
 //
 // "One sky per world" is not a rule here: Sky is one-per-entity, and there is
 // one world entity. Picking a sky preset REPLACES the Sky component's params
 // (pickSky); the Weather component is a different component and is carried
 // across the sky verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
 
-import * as OP from './v4/ops.js';
+import * as OP from './protocol/requests.js';
 import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
@@ -63,7 +63,7 @@ export function worldComponents(st) {
     const s = pick(sky, SKY_STAMPS);
     if (Object.keys(s).length) stamps.sky = s;
   } else if (sky != null) components.push({ type: 'Sky', key: 'sky', raw: sky });
-  if (terrain != null) components.push(isBag(terrain) ? { type: 'Ground', key: 'terrain', params: { ...terrain } } : { type: 'Ground', key: 'terrain', raw: terrain });
+  if (terrain != null) components.push(isBag(terrain) ? { type: 'Terrain', key: 'terrain', params: { ...terrain } } : { type: 'Terrain', key: 'terrain', raw: terrain });
   if (grass != null) components.push(isBag(grass) ? { type: 'Grass', key: 'grass', params: { ...grass } } : { type: 'Grass', key: 'grass', raw: grass });
   return { id: WORLD_ID, components, stamps };
 }
@@ -76,7 +76,7 @@ export function worldOf({ components = [], stamps = {} } = {}) {
     if ('raw' in c) { out[c.key] = c.raw; continue; }
     switch (c.type) {
       case 'Sky': case 'Weather': out.sky = { ...(out.sky ?? {}), ...c.params }; break;
-      case 'Ground': out.terrain = { ...c.params }; break;
+      case 'Terrain': out.terrain = { ...c.params }; break;
       case 'Grass': out.grass = { ...c.params }; break;
       default: throw new Error(`worldOf: ${c.type} is not a world component`);
     }
@@ -123,10 +123,10 @@ export function pickSky(sky, preset) {
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
 
-/** One world change as its door request (v4): the sky and weather are the door's `sky`/`weather` tools (they stamp the
+/** One world change as its request (v4): the sky and weather are the authority's `sky`/`weather` tools (they stamp the
  *  clock: PROTOCOL-v4 sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
-const skyOp = (args) => ({ tool: 'sky', args });
-const weatherOp = (weather) => ({ tool: 'weather', args: { weather } });
+const skyOp = (args) => ({ verb: 'sky', args });
+const weatherOp = (weather) => ({ verb: 'weather', args: { weather } });
 const terrainOp = (args) => OP.set(WORLD_ID, 'terrain', args);
 const grassOp = (args) => (args == null ? OP.unset(WORLD_ID, 'grass') : OP.set(WORLD_ID, 'grass', args));
 
@@ -160,11 +160,11 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
 
 /** The world entity's inspector schema — the same shape inspectSchema returns
  *  ({ id, groups, sections }), so editpanels' cards, the VR quad, describeSchema
- *  and fieldAt all read it unchanged. Addresses: sky.* weather.state ground.*
+ *  and fieldAt all read it unchanged. Addresses: sky.* weather.state terrain.*
  *  grass.* (grass.mow mows).
  *  @param live { now?: number, mayShape?: boolean } — mayShape false = this viewer
  *  is known not to hold owner rank (sky/terrain/grass/weather are owner verbs);
- *  undefined = unknown: nothing is disabled on its account and the door decides. */
+ *  undefined = unknown: nothing is disabled on its account and the authority decides. */
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
@@ -197,22 +197,22 @@ export function worldSchema(st, live = {}) {
     { t: 'enum', k: 'state', label: 'weather', value: eff?.weather ?? 'clear', def: 'clear', options: WEATHERS.map((v) => ({ v, label: v })), ...ro,
       ...(f && !ro.hint ? { hint: 'a forecast governs: a pick holds until the next segment boundary, then the forecast resumes' } : {}) },
     { t: 'info', label: 'now', value: eff ? `${eff.weather ?? 'clear'} — ${eff.source === 'forecast' ? 'the forecast\'s' : eff.source === 'manual' ? `set by ${eff.by ?? '?'} until the next segment` : 'authored'}` : 'clear — no sky authored yet' },
-    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the door's sky tool (its forecast)` }] : []),
+    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the authority's sky tool (its forecast)` }] : []),
   ];
   groups.push({ group: 'weather', label: 'Weather', fields: wxFields });
 
-  // Ground
+  // Terrain
   const t = isBag(terrain) ? terrain : null;
   const layerColor = colorInt(Array.isArray(t?.layers) ? t.layers[0]?.color : null);
-  const groundFields = t ? [
+  const terrainFields = t ? [
     { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? 0, def: 0, min: 0, softMax: 12, step: 0.1, dp: 1, unit: 'm', ...ro },
     { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? 0, step: 1, dp: 0, ...ro },
     { t: 'num', k: 'size', label: 'size', value: t.size ?? 160, min: 1, softMax: 1000, step: 10, dp: 0, unit: 'm', ...ro },
     { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, min: 2, max: 512, step: 1, dp: 0, ...ro },
     { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, min: 0, softMax: 200, step: 1, dp: 0, unit: 'm', ...ro },
     ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
-  ] : [{ t: 'info', label: '', value: 'no ground authored: the default flat ground. Pick a shape in Build ▸ World' }];
-  groups.push({ group: 'ground', label: 'Ground', fields: groundFields });
+  ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
+  groups.push({ group: 'terrain', label: 'Terrain', fields: terrainFields });
 
   // Grass
   const g = isBag(grass) ? grass : null;
@@ -229,7 +229,7 @@ export function worldSchema(st, live = {}) {
   // the cards (design §5): one per component, in the inspector's order
   const have = new Set(worldComponents(st).components.map((c) => c.type));
   const list = groups.map(({ group, fields }) => {
-    const type = { sky: 'Sky', weather: 'Weather', ground: 'Ground', grass: 'Grass' }[group];
+    const type = { sky: 'Sky', weather: 'Weather', terrain: 'Terrain', grass: 'Grass' }[group];
     const rec = RECORDS[type];
     return { type, key: group, title: type, hash: rec.hash, category: rec.category, summary: rec.summary,
       fields: fields.filter((x) => x.k != null).map((x) => `${group}.${x.k}`), removable: false,
@@ -238,10 +238,10 @@ export function worldSchema(st, live = {}) {
   return { id: WORLD_ID, world: true, groups, sections: { header: [], list, add: [], lib: null, libLabel: 'the world' } };
 }
 
-// ---------------------------------------------------------------- edits → door requests
+// ---------------------------------------------------------------- edits → requests
 
-/** Turn `edit @world` edits into the fewest door requests: every sky.* edit is
- *  ONE re-authored sky, weather.state ONE weather, ground.* ONE terrain set, grass.*
+/** Turn `edit @world` edits into the fewest requests: every sky.* edit is
+ *  ONE re-authored sky, weather.state ONE weather, terrain.* ONE terrain set, grass.*
  *  ONE grass set (grass.mow: delete @world grass). Relative math works on numbers, as
  *  on any entity. Pure: never sends, never mutates `st`. */
 export function worldEditOps(st, edits, live = {}) {
@@ -249,10 +249,10 @@ export function worldEditOps(st, edits, live = {}) {
   const now = live.now ?? 0;
   const schema = worldSchema(st, live);
   const errors = [];
-  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false;
+  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false;   // ground: the terrain patch
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
-    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state ground.* grass.*; inspect @world lists them)`); continue; }
+    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.*; inspect @world lists them)`); continue; }
     if (f.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     const group = key.slice(0, key.indexOf('.')); const k = key.slice(key.indexOf('.') + 1);
     let v = raw;
@@ -282,7 +282,7 @@ export function worldEditOps(st, edits, live = {}) {
         else skyPatch[k] = v;
         break;
       case 'weather': weather = v; break;
-      case 'ground':
+      case 'terrain':
         ground ??= {};
         if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: hex(v) }));
         else ground[k] = v;
@@ -301,7 +301,7 @@ export function worldEditOps(st, edits, live = {}) {
 
 // ---------------------------------------------------------------- the Build tab's World tiles
 
-/** A preset pick from Build ▸ World, as one door request: picking replaces the current
+/** A preset pick from Build ▸ World, as one request: picking replaces the current
  *  choice of that kind.
  *    kind 'sky'     v = a sky preset name (ctx.presets, defs/sky/_presets.json) → sky (pickSky)
  *    kind 'weather' v = one of WEATHERS                                          → weather

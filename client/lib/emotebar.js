@@ -4,7 +4,7 @@
 // the key that fires it. The tile this bar fired stays lit ~1.5 s (long enough to read). House .tile/.tiles rules
 // only — no private layout here (live, 09-04: this file had been hand-rolled).
 
-import { makeFrame, chromeCost } from './frames.js';
+import { makeFrame, chromeCost } from './windows.js';
 import { bus } from './base.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './emotedefs.js';   // names + glyphs, no engine
 import { getMe } from './mybody.js';
@@ -33,7 +33,7 @@ export function initEmoteBar() {
   const widthFor = (cols) => cols * TILE + (cols - 1) * GAP + PAD * 2 + 2;   // +2: frame edges
   const POSTURE_TILES = 3;   // sit / stand / lie lead the grid (live, 09-05) — they count toward the rows
   const rowsFor = (cols) => Math.ceil((POSTURE_TILES + EMOTE_ORDER.length) / cols);
-  // state.h is the body's CONTENT height (frames.js paints body.style.height; the body
+  // state.h is the body's CONTENT height (windows.js paints body.style.height; the body
   // pads 7px top+bottom on top of it) — so rows + gaps only, no pad term
   const heightFor = (cols) => rowsFor(cols) * ROW_H + (rowsFor(cols) - 1) * GAP;
   let snapT = null;
@@ -41,7 +41,7 @@ export function initEmoteBar() {
   const f = makeFrame('emotes', {
     title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
       // minW was widthFor(3)=124px and a REAL resize clamps at f.minW
-      // (the east/west resize clamp in frames.js), so 124px admitted exactly three columns — ONE column was
+      // (the east/west resize clamp in windows.js), so 124px admitted exactly three columns — ONE column was
       // unreachable by drag no matter what snapTo computed. R hit it at once:
       // "Emote bar still can't go 1x wide, 9x tall." My own test had called
       // onResize(48, 336) directly and sailed past the clamp: a fixture that
@@ -63,7 +63,7 @@ export function initEmoteBar() {
     // consequence, never an input.
     //
     // The previous version took rows from a dragged height and was wrong in the
-    // PRODUCT even though the suite passed: frames.js:427 calls
+    // PRODUCT even though the suite passed: windows.js:427 calls
     // `onResize(state.w, state.h)` ALWAYS, so the `h == null` branch I wrote
     // only ever ran in my own test. Live, every resize carried a height, so a
     // tall drag pinned the bar at nine rows and refused to wrap, and a short one
@@ -111,7 +111,7 @@ export function initEmoteBar() {
   // an anchor the obstacle DECLARES, not a test against its rendered geometry.
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair.
-    // ANCHOR-AWARE: chromeCost() (frames.js) reads each obstacle's DECLARED side and
+    // ANCHOR-AWARE: chromeCost() (windows.js) reads each obstacle's DECLARED side and
     // charges it to the correct accumulator. Taking g.right from everything was true
     // only of left-anchored chrome.
     let costL = 0, costR = 0;
@@ -176,7 +176,7 @@ export function initEmoteBar() {
     // roomFor()'s list it drove room negative and snapTo wrote w:48 (a 9-tall column)
     // to storage; removing the card from that list fixed room (272, correct) and the
     // bar STILL opened at 48, because min(48, 272) = 48. The same shape as the frame
-    // width ratchet in frames.js:fit().
+    // width ratchet in windows.js:fit().
     //
     // An UNPLACED bar has no claim on a stored width — its width is always a function
     // of the room available now. A PLACED one (the owner dragged it) keeps what they
@@ -184,7 +184,7 @@ export function initEmoteBar() {
     const room = f._placed ? null : roomFor();
     snapTo(room == null ? f._state.w : room);
     // TODO(mobile): the general form of this lives at the persistence key in
-    // frames.js (`const LS = ...`) — one saved layout serves every surface. What
+    // windows.js (`const LS = ...`) — one saved layout serves every surface. What
     // follows is this module's instance of it, kept here because the measurements
     // and the rejected fixes are specific to the bar.
     //

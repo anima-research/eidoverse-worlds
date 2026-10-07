@@ -12,7 +12,7 @@ import { bodyOf } from '../../shared/components.js';
 import { mayLeave } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
-import { requestV4 } from './net.js';
+import { sendRequest } from './net.js';
 import { plain } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
 import { THREE } from './core.js';
@@ -263,7 +263,7 @@ function nearestSeat(arg, reach) {
  *  from anywhere). When nothing is in reach but a seat exists further out,
  *  SAY so — the silent ground-sit fallback read as "sitting is broken" to
  *  anyone standing four meters from a swing they could name but not see.
- *  In a v4 world the door is asked first (`use {id, action, args: {slot}}`):
+ *  In a v4 world the authority is asked first (`use {id, action, args: {slot}}`):
  *  it checks who may and answers with what the body does; nothing is logged.
  *  Already seated, I may move straight to a socket that allows it (fromSeat). */
 let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes every earlier answer stale
@@ -287,7 +287,7 @@ export function trySitOn(arg, slot = null) {
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
-  requestV4('use', { id: best.id, action: best.body.action, args: { slot: best.slot } }).then((r) => {
+  sendRequest('use', { id: best.id, action: best.body.action, args: { socket: best.slot } }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
   });
   return true;

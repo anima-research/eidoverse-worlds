@@ -22,7 +22,7 @@
 //     throw       1             0..3: scales the release velocity (0: it can only be dropped)
 //     release     'drop'        drop | stay (hangs where you let go) | return (goes home)
 //     returnAfter 0             s, 0..3600: goes home after this long unheld (0: never)
-//     home        (stamped)     {pos, q, parent?}: where it goes home to (the door stamps its transform then)
+//     home        (stamped)     {pos, q, parent?}: where it goes home to (the authority stamps its transform then)
 //     fits        []            keywords: it snaps into a socket whose `accepts` shares one, released within its radius
 //     use         null          a reactions action, or {down, up}: what the use button fires while held
 //     prompt      null          hover text (≤ 40); absent: "Pick up <label>"
@@ -30,12 +30,12 @@
 //                               presses use (presence: never logged; a hose's spray, a muzzle flash)
 //   }
 //
-// Pure: no DOM, no three, no clock. The door validates with checkGrabbable; client, door and agent read with grabOf.
+// Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; client, door and agent read with grabOf.
 
 import { HUMANOID_BONES } from './humanoid.js';
 
 export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
-// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the door (whoRank)
+// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
 const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
 export const HOLDS = ['auto', 'press', 'toggle'];
 export const POSES = ['hand', 'carry', 'torch', 'pistol', 'two-hand', 'shoulder'];
@@ -46,12 +46,12 @@ export const RELEASES = ['drop', 'stay', 'return'];
 export const KEYS = ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'pose', 'grips', 'twoHanded', 'throw', 'release', 'returnAfter', 'home', 'fits', 'use', 'prompt', 'fx'];
 export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
-// the door's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
+// the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
 // Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
 export const DEFAULT_WHO = 'visitor';   // R 10-07: "I vote for visitors being able to grab and throw" (a world narrows it per thing with who)
 export const DEFAULTS = Object.freeze({ enabled: true, who: DEFAULT_WHO, steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
   twoHanded: false, throw: 1, release: 'drop', returnAfter: 0, home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
-/** The door's hand reach today (door.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
+/** The authority's hand reach today (authority.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
 export const HAND_REACH = 1.5;
 /** A free socket takes a released thing that fits within this many metres of it, unless it says otherwise. */
 export const SOCKET_RADIUS = 0.15;
@@ -81,10 +81,10 @@ export function gripOf(g) {
 
 /**
  * What a hand may do with a thing, read from its components (an entity's `c`) with every default filled in, or null
- * when it can't be held at all. The ONE reader: the door's gates, the client and the agent all ask this.
+ * when it can't be held at all. The ONE reader: the authority's gates, the client and the agent all ask this.
  *
  * Migration (research §Decisions 5): a thing with `physics {kind: 'dynamic'}` and no `grabbable` reads as
- * {who: physics.who ?? 'builder'} plus the defaults, which reproduce what the door did before grabbable existed: the
+ * {who: physics.who ?? 'builder'} plus the defaults, which reproduce what the authority did before grabbable existed: the
  * latest grab wins, reach 1.5 m from the hand, held by its centre in the right hand, dropped or thrown on release.
  * `source` says which it was ('grabbable' or 'physics').
  */
@@ -122,7 +122,7 @@ export function useOf(u) {
   if (isObj(u)) { const d = typeof u.down === 'string' && ACTION_RE.test(u.down) ? u.down : null, p = typeof u.up === 'string' && ACTION_RE.test(u.up) ? u.up : null; return d || p ? { down: d, up: p } : null; }
   return null;
 }
-/** The returning modes need a home: stamped by the door when one is wanted and none is set. */
+/** The returning modes need a home: stamped by the authority when one is wanted and none is set. */
 export const wantsHome = (v) => isObj(v) && (v.release === 'return' || (num(v.returnAfter) && v.returnAfter > 0));
 
 /** The hold pose a body without tracked hands takes for this thing: the declared one, else by size (one hand under
@@ -152,7 +152,7 @@ export function fitsSocket(g, sock) {
 }
 export const socketRadius = (sock) => (num(sock?.radius) ? sock.radius : SOCKET_RADIUS);
 
-/** What every client is told of a hold (the door's presence plane, sent whenever it changes and in every join cut):
+/** What every client is told of a hold (the authority's presence plane, sent whenever it changes and in every join cut):
  *  who holds it, with which hand, by which grip or at which offset, and the second hand. Never logged. */
 export function holdWire(h) {
   if (!isObj(h)) return null;
@@ -228,10 +228,10 @@ export function armPose(preset, hand = 'right') {
 /** Does this preset take both arms (the thing sits between the hands)? */
 export const bothArms = (preset) => !!ARMS[preset]?.other;
 
-// ---------------------------------------------------------------- the door's check
+// ---------------------------------------------------------------- the authority's check
 
 /** The whole `grabbable` component, checked (closed keys, ranges, enums, grips). Null when good, else
- *  {code: 'shape'|'schema'|'bounds', reason, teach, didYouMean?} — the door refuses with it verbatim, and the inspector's
+ *  {code: 'shape'|'schema'|'bounds', reason, fix, didYouMean?} — the authority refuses with it verbatim, and the inspector's
  *  planner speaks the same words. */
 export function checkGrabbable(v, at = 'grabbable') {
   if (!isObj(v)) return bad('shape', `${at} must be an object {who?, grips?, release?, …} ({} takes every default)`);
@@ -263,8 +263,8 @@ export function checkGrabbable(v, at = 'grabbable') {
     }
   }
   if (v.home !== undefined) { const h = v.home;
-    if (!isObj(h) || !nums(h.pos, 3, 1e5) || (h.q !== undefined && !unitQ(h.q)) || Object.keys(h).some((k) => !['pos', 'q', 'parent'].includes(k))) return bad('shape', `${at}.home is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, slot?}} (where it goes home to; the door stamps it)`);
-    if (h.parent !== undefined && !(isObj(h.parent) && typeof h.parent.to === 'string' && (h.parent.slot === undefined || typeof h.parent.slot === 'string') && Object.keys(h.parent).every((k) => ['to', 'slot', 'order'].includes(k)))) return bad('shape', `${at}.home.parent is {to: <id>, slot?}`); }
+    if (!isObj(h) || !nums(h.pos, 3, 1e5) || (h.q !== undefined && !unitQ(h.q)) || Object.keys(h).some((k) => !['pos', 'q', 'parent'].includes(k))) return bad('shape', `${at}.home is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, socket?}} (where it goes home to; the authority stamps it)`);
+    if (h.parent !== undefined && !(isObj(h.parent) && typeof h.parent.to === 'string' && (h.parent.socket === undefined || typeof h.parent.socket === 'string') && Object.keys(h.parent).every((k) => ['to', 'socket', 'order'].includes(k)))) return bad('shape', `${at}.home.parent is {to: <id>, socket?}`); }
   if (v.fits !== undefined && !(Array.isArray(v.fits) && v.fits.length <= MAX_FITS && v.fits.every((x) => typeof x === 'string' && WORD_RE.test(x)))) return bad('shape', `${at}.fits is up to ${MAX_FITS} keywords (letters, digits, - and _, up to 32 each): a socket whose accepts shares one takes it`);
   if (v.use !== undefined && v.use !== null && !useOf(v.use)) return bad('shape', `${at}.use names a reactions action ('light'), or {down: 'fire', up: 'cease'}`);
   if (isObj(v.use) && Object.keys(v.use).some((k) => !['down', 'up'].includes(k))) return bad('schema', `${at}.use takes down and up`);
@@ -287,7 +287,7 @@ function keys(at, v, allowed, what) {
     return bad('schema', `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ''}`, `${what} takes: ${allowed.join(', ')}`, dym); }
   return null;
 }
-const bad = (code, reason, teach = '', didYouMean = null) => ({ code, reason, teach, ...(didYouMean?.length ? { didYouMean } : {}) });
+const bad = (code, reason, fix = '', didYouMean = null) => ({ code, reason, fix, ...(didYouMean?.length ? { didYouMean } : {}) });
 function near(k, allowed) {
   const x = String(k).toLowerCase();
   const lev = (a, b) => { const d = Array.from({ length: b.length + 1 }, (_, j) => j);

@@ -25,7 +25,7 @@ import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
 import { toast, paintRangesIn } from './ui.js';
 

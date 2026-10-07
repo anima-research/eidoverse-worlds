@@ -25,9 +25,9 @@ Constraints, on purpose:
 
 Residents: `forecast.js` (day clock, weather policy, the sky fold),
 `particles.js` (the `particles` component's meaning), and `v4/` — the
-protocol core: `v4/fold.js` (the reference fold, conformance-tested against
-`spec/v4/conformance/` by `bun tools/v4/run.ts conformance`), `v4/door.js`
-(the door and its one gate), `v4/catalogue.js` (the component registry),
-`v4/client.js` (what a client folds), `v4/sandbox.js` (scripts) and
-`v4/simlayer.js` (physics beside the fold). spec/PROTOCOL.md is their
+protocol core: `protocol/fold.js` (the reference fold, conformance-tested against
+`spec/v4/conformance/` by `bun tools/protocol/run.ts conformance`), `protocol/authority.js`
+(the door and its one gate), `protocol/componentspec.js` (the component registry),
+`protocol/replica.js` (what a client folds), `protocol/sandbox.js` (scripts) and
+`protocol/simlayer.js` (physics beside the fold). spec/PROTOCOL.md is their
 contract.

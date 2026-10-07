@@ -143,7 +143,7 @@ try {
   check("agent name via Discord nick → reserved, rejected", s6.closedWith === 4004, `code=${s6.closedWith}`);
 
   // ---- /upload gate: an aid1 agent credential reaches the upload door (Digi's finding #5). (The v1 runtime-script
-  // store, /upload?as=script, went with protocol v1: a v4 script is a door `upload {text}`, tools/v4/scripts-check.ts.)
+  // store, /upload?as=script, went with protocol v1: a v4 script is a door `upload {text}`, tools/protocol/scripts-check.ts.)
   const upTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });
   const glb = new Uint8Array(16); new DataView(glb.buffer).setUint32(0, 0x46546c67, true);   // a glTF header
   const up = (tok: string) => fetch(`${HTTP}/upload?token=${encodeURIComponent(tok)}`, { method: "POST", body: glb });

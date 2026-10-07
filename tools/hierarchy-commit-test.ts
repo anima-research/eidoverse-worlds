@@ -1,22 +1,22 @@
 // hierarchy-commit — a drag in the Hierarchy is ONE undo step (design §5),
 // through the client's real commit path (client/lib/inspect.js commitEdit →
-// client/lib/v4edit.js sendOps → the door), headless. The Hierarchy's drop and
+// client/lib/editwrites.js sendOps → the door), headless. The Hierarchy's drop and
 // the inspector's Parent field both call commitEdit(id, 'parent.to', onto);
 // this checks what that sends, what the door makes of it, and that the
-// client's own Ctrl+Z (v4edit.undo: the door's undo of my last act) takes it back.
+// client's own Ctrl+Z (editwrites.undo: the door's undo of my last act) takes it back.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-commit-test.ts
 //
-// v4 port (2026-10-06): the wire is the real v4 door on a scratch world (tools/v4/inspectharness.ts stubs the page
-// around inspect.js/v4edit.js). One drag = one request (a batch: set parent + the LOCAL transform, scale included), so
+// v4 port (2026-10-06): the wire is the real v4 door on a scratch world (tools/protocol/inspectharness.ts stubs the page
+// around inspect.js/editwrites.js). One drag = one request (a batch: set parent + the LOCAL transform, scale included), so
 // "a mount and a scale place" and the client-side inverse list are gone: undo is the door's, by act. A lock is the
 // door's to refuse, and the client asks "Move anyway?" (v4 §5).
-import { inspectHarness } from "./v4/inspectharness.ts";
+import { inspectHarness } from "./protocol/inspectharness.ts";
 import { worldPose } from "../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
 const H = inspectHarness("hiercommit");
 const { commitEdit } = await import("../client/lib/inspect.js");
-const V4 = await import("../client/lib/v4edit.js");
+const V4 = await import("../client/lib/editwrites.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -44,8 +44,8 @@ console.log("\none drag = one request = one undo step:");
   const r = commitEdit("book", "parent.to", "shelf");
   await H.flush();
   const req = H.sent.at(-1);
-  check("the drop sent ONE request: a batch of set parent {to: shelf} and the local transform", r.ok && H.sent.length === 1 && req.tool === "batch"
-    && req.args.ops.map((o: any) => `${o.tool} ${o.args.component}`).join() === "set parent,set transform" && req.args.ops[0].args.value.to === "shelf", JSON.stringify(H.sent));
+  check("the drop sent ONE request: a batch of set parent {to: shelf} and the local transform", r.ok && H.sent.length === 1 && req.verb === "batch"
+    && req.args.ops.map((o: any) => `${o.verb} ${o.args.component}`).join() === "set parent,set transform" && req.args.ops[0].args.value.to === "shelf", JSON.stringify(H.sent));
   check("…its expect pins what it sets as the drag began (parent absent, the old transform)", Array.isArray(req.args.expect) && req.args.expect.some((x: any) => x.component === "parent" && !("value" in x)) && req.args.expect.some((x: any) => x.component === "transform" && JSON.stringify(x.value) === JSON.stringify(JSON.parse(before).transform)), JSON.stringify(req.args.expect));
   check("the door has it under the shelf, where it stood (and its world size: 0.8 under a ×2 shelf is a local 0.4)", W().book.parent?.to === "shelf" && near(worldPose(W(), "book")!.pos, W0.pos, 2e-3) && Math.abs(worldPose(W(), "book")!.scale - 0.8) < 1e-6 && Math.abs(W().book.scale - 0.4) < 1e-6, JSON.stringify(W().book));
   check("ONE act on my undo stack", V4.stacks().undo.length === 1, JSON.stringify(V4.stacks()));
@@ -68,7 +68,7 @@ console.log("\nrefusals send nothing; a lock is the door's question:");
   H.choose = "through";
   commitEdit("book", "parent.to", "shelf");
   await H.flush();
-  check("…answering \"move anyway\" re-sends the same request through_lock: parented, lock kept, one act", W().book.parent?.to === "shelf" && W().book.comp?.lock === true && H.sent.at(-1).args.through_lock === true && V4.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
+  check("…answering \"move anyway\" re-sends the same request throughLock: parented, lock kept, one act", W().book.parent?.to === "shelf" && W().book.comp?.lock === true && H.sent.at(-1).args.throughLock === true && V4.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
   const asked = H.asked.length;
   await V4.undo();   // the lock binds the undo too: I'm asked again, and "move anyway" (still H.choose) takes it back
   H.W.call("delete", { id: "book", component: "lock" }); H.sync();
@@ -83,7 +83,7 @@ console.log("\nunparent (drag to the root zone, the ✕ on Parent, or `unparent`
   await H.flush();
   const req = H.sent.at(-1);
   // the book is scaled 0.8, so the lamp's world size is 0.8 of its own: the world transform carries it
-  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.tool === "batch" && req.args.ops[0].tool === "delete" && req.args.ops[0].args.component === "parent"
+  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.verb === "batch" && req.args.ops[0].tool === "delete" && req.args.ops[0].args.component === "parent"
     && near(req.args.ops[1].args.value.pos, W0.pos, 2e-3) && near(req.args.ops[1].args.value.scale, [0.8, 0.8, 0.8], 1e-9), JSON.stringify(H.sent));
   check("the door: a root, same world pose and size", !W().lamp.parent && near(worldPose(W(), "lamp")!.pos, W0.pos, 2e-3) && Math.abs(worldPose(W(), "lamp")!.scale - W0.scale) < 1e-9, JSON.stringify(W().lamp));
   const u = await V4.undo();

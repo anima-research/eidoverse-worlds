@@ -15,13 +15,13 @@ K_SEQ = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"
 K_TIER1 = "ed25519:iUs8tlcXt9q0Zq1OuuCX-llZgf5YdLA9vJ5aoaEFpkg"
 NONCE, NONCE2 = "XWVu1u7BpaZTDFSETYiphg", "dLedD3Y4zEayxxDNGOBM6w"
 GBODY = {"version": 4, "minor": 0, "nonce": NONCE, "owners": [[K_OWNER]], "sequencer": K_SEQ}
-GEN = {"kind": "genesis", "actor": "door", "verb": "genesis", "body": GBODY}
+GEN = {"kind": "genesis", "actor": "system", "verb": "genesis", "body": GBODY}
 GEN_LINE = json.dumps(GEN)
 WID = "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(GEN_LINE.encode())).encode()).hexdigest()
 
 
 def st(verb, body, cause=1, **kw):
-    e = {"world": WID, "kind": "state", "ts": 1, "actor": "door", "cause": cause,
+    e = {"world": WID, "kind": "change", "ts": 1, "actor": "system", "cause": cause,
          "verb": verb, "body": body}
     e.update(kw)
     return json.dumps(e)
@@ -75,7 +75,7 @@ BASE = r.digest()
 # 2 key order / whitespace / number spelling must not change the digest
 r2 = run("02-spelling", [GEN_LINE, ACT,
     st("create", {"id": "lamp-1"}),
-    '{"body":{"value":{"c":"#fff","i":25e-1},"comp":"light","id":"lamp-1"},"verb":"set","cause":1.0,"ts":1e0,"actor":"door","kind":"state","world":"%s"}' % WID,
+    '{"body":{"value":{"c":"#fff","i":25e-1},"comp":"light","id":"lamp-1"},"verb":"set","cause":1.0,"ts":1e0,"actor":"system","kind":"change","world":"%s"}' % WID,
     st("batch", {"ops": [{"verb": "create", "id": "chair"},
                          {"verb": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1.0, 2e0]},
                          {"verb": "set", "id": "@world", "comp": "roles:alice", "value": "own\u0065r"}]})])
@@ -84,8 +84,8 @@ check("02 spelling-invariant digest", r2.digest() == BASE, r2.diag)
 # 3 duplicate keys (top-level and nested, and escaped-equal)
 r = run("03-dupkeys", [GEN_LINE, ACT,
     st("create", {"id": "a"}),
-    '{"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":1},"verb":"delete"}' % WID,
-    '{"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"k":1,"\\u006b":2}}}' % WID])
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":1},"verb":"delete"}' % WID,
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"k":1,"\\u006b":2}}}' % WID])
 check("03 dup keys malformed, shape nothing", codes(r) == [(3, "malformed:ijson-dupkey"), (4, "malformed:ijson-dupkey")]
       and r.view() == {"@world": {}, "a": {}}, codes(r))
 
@@ -93,9 +93,9 @@ check("03 dup keys malformed, shape nothing", codes(r) == [(3, "malformed:ijson-
 bad = ["-0", "-0.0", "-0e3", "NaN", "Infinity", "-Infinity", "1e400", "-1e-400", "1" + "0" * 400]
 lines = [GEN_LINE, ACT, st("create", {"id": "a"})]
 for b in bad:
-    lines.append('{"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":%s}}' % (WID, b))
+    lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":%s}}' % (WID, b))
 lines.append(st("set", {"id": "a", "comp": "y", "value": 0}))
-lines.append('{"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"z","value":9007199254740993}}' % WID)
+lines.append('{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"z","value":9007199254740993}}' % WID)
 r = run("04-numbers", lines)
 mal = [c for s, c in codes(r) if c.startswith("malformed")]
 check("04 all nine bad numbers + 2^53+1 malformed (PROTOCOL-v4 L1: big ints refused, not rounded)",
@@ -172,9 +172,9 @@ r = run("09-purge", [GEN_LINE, ACT,
     st("set", {"id": "a", "comp": "z"}),                                         # 5: value bytes already gone
     st("set", {"id": "a", "comp": "w", "value": "old"}),                         # 6
     st("set", {"id": "a", "comp": "w", "value": "new"}),                         # 7
-    json.dumps({"world": WID, "kind": "purge", "actor": "door", "verb": "purge",
+    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
                 "body": {"values": [{"seq": 3}, {"seq": 4, "op": 1}, {"seq": 5}, {"seq": 6}, {"seq": 2}]}}),  # 8
-    json.dumps({"world": WID, "kind": "purge", "actor": "door", "verb": "purge",
+    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
                 "body": {"values": [{"seq": 8}, {"seq": 99}]}}),                 # 9
 ])
 v = r.view()["a"]
@@ -196,9 +196,9 @@ check("10c empty log -> no-world", r.status == "no-world")
 r = run("11-envelope", [GEN_LINE, ACT,
     st("create", {"id": "a"}, seq=2),
     st("create", {"id": "b"}, extra=1),
-    json.dumps({"world": WID, "kind": "state", "actor": "door", "verb": "create", "body": {"id": "c"}}),
+    json.dumps({"world": WID, "kind": "change", "actor": "system", "verb": "create", "body": {"id": "c"}}),
     st("create", {"id": "d"}, cause=99),
-    json.dumps({"world": WID, "kind": "teleport", "actor": "door", "verb": "x", "body": {}}),
+    json.dumps({"world": WID, "kind": "teleport", "actor": "system", "verb": "x", "body": {}}),
     st("create", {"id": "e"}, **{"for": "bob"}),
     st("create", {"id": "f"}, cause=1.5),
     st("create", {"id": "g"}, cause=0),       # cause = genesis: allowed by this reader
@@ -214,16 +214,16 @@ r = run("12b-bom", None, raw=b"\xef\xbb\xbf" + GEN_LINE.encode() + b"\n")
 check("12b BOM on genesis -> no-world", r.status == "no-world", codes(r))
 r = run("12c-text", [GEN_LINE, ACT, st("create", {"id": "a"})], raw=None)
 data = (GEN_LINE + "\n" + ACT + "\n" + st("create", {"id": "a"}) + "\n").encode()
-data += b'{"ts":1,"world":"' + WID.encode() + b'","kind":"state","actor":"\xff","cause":1,"verb":"create","body":{"id":"b"}}\n'
-data += ('{"ts":1,"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ud800"}}\n' % WID).encode()
-data += ('{"ts":1,"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ufdd0"}}\n' % WID).encode()
+data += b'{"ts":1,"world":"' + WID.encode() + b'","kind":"change","actor":"\xff","cause":1,"verb":"create","body":{"id":"b"}}\n'
+data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ud800"}}\n' % WID).encode()
+data += ('{"ts":1,"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"s","value":"\\ufdd0"}}\n' % WID).encode()
 r = run("12c-strings", None, raw=data)
 check("12c bad utf-8 / lone surrogate / noncharacter malformed",
       [c for s, c in codes(r)] == ["malformed:ijson-utf8", "malformed:ijson-surrogate", "malformed:ijson-noncharacter"], codes(r))
 
 # 13 depth cap and deep nesting that would blow a recursive parser
 r = run("13-depth", [GEN_LINE, ACT, st("create", {"id": "a"}),
-    '{"world":"%s","kind":"state","actor":"door","cause":1,"verb":"set","body":{"id":"a","comp":"d","value":%s}}' % (WID, "[" * 100000 + "]" * 100000)])
+    '{"world":"%s","kind":"change","actor":"system","cause":1,"verb":"set","body":{"id":"a","comp":"d","value":%s}}' % (WID, "[" * 100000 + "]" * 100000)])
 check("13 100k-deep array malformed, not a crash", (3, "malformed:cap-depth") in codes(r), codes(r))
 
 # 14 batch with one bad name: whole batch shapes nothing; batch with semantic no-op: rest applies
@@ -265,14 +265,14 @@ def gen_with(**kw):
     for k, v in kw.items():
         if v is _DEL: b.pop(k, None)
         else: b[k] = v
-    return json.dumps({"kind": "genesis", "actor": "door", "verb": "genesis", "body": b})
+    return json.dumps({"kind": "genesis", "actor": "system", "verb": "genesis", "body": b})
 _DEL = object()
 def wid_of(line):
     return "sha256:" + hashlib.sha256(R.jcs(R.parse_ijson(line.encode())).encode()).hexdigest()
 def gen_log(name, gline):
     w = wid_of(gline)
     return run(name, [gline, json.dumps({"world": w, "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}),
-                      json.dumps({"world": w, "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}})])
+                      json.dumps({"world": w, "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": "create", "body": {"id": "a"}})])
 SMALL_NEG = "ed25519:" + "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"  # same y, sign bit set ("-0")
 import base64 as _b
 _b64 = lambda raw: _b.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -307,7 +307,7 @@ r = run("20-purge-roles", [GEN_LINE, ACT,
     st("batch", {"ops": [{"verb": "set", "id": "@world", "comp": "roles:alice", "value": {"role": "owner"}},
                          {"verb": "set", "id": "@world", "comp": "note", "value": "a phone number"}]}),          # 2
     st("set", {"id": "@world", "comp": "roles:bob", "value": {"role": "builder"}}),                               # 3
-    json.dumps({"world": WID, "kind": "purge", "actor": "door", "verb": "purge",
+    json.dumps({"world": WID, "kind": "purge", "actor": "system", "verb": "purge",
                 "body": {"values": [{"seq": 2, "op": 0}, {"seq": 2, "op": 1}, {"seq": 3}]}})])                    # 4
 check("20 purge of roles: ignored (diagnosed), the note purged",
       r.view()["@world"] == {"roles:alice": {"v": {"role": "owner"}}, "note": {"purged": True}, "roles:bob": {"v": {"role": "builder"}}}

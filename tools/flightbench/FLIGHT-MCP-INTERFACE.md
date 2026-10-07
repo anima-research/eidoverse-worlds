@@ -176,7 +176,7 @@ fixable by widening a script's scope:
   which is client-side navigation in the agent's own process: routing, height
   sampling, pins, drag release, pose shedding. There is no log entry for it
   because a walk is not a world fact, it is a body doing something.
-- A script acts as `actor: bhv:<id>`. It is **not** the pilot. Even if a
+- A script acts as `actor: script:<id>`. It is **not** the pilot. Even if a
   locomotion request existed, a plan filed this way would be a third party
   moving Mythos's body — which is exactly the authorship confusion §4's mode
   tags exist to prevent. "No layer impersonates another."

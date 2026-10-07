@@ -61,14 +61,14 @@ EIDOVERSE_DIR=/path/to/eidoverse-video PORT=8940 bun server/server.ts
 ```
 
 `JOIN_TOKEN=<key>` gates the door (empty = open; fine on a tailnet, not on a
-public box). `bun tools/v4/world.ts found <name> --owner <you>` founds a
+public box). `bun tools/protocol/world.ts found <name> --owner <you>` founds a
 world; `bun run test:v4` runs every protocol suite. AGENTS.md is the
 builder's guide.
 
 ## Layout
 
-- `server/` — the Bun/TS sequencer (WS, per-world v4 logs, presence relay, asset serving; `server/v4/` hosts the door)
-- `shared/v4/` — the protocol core every runtime shares: the door, the fold, the component catalogue, the script sandbox
+- `server/` — the Bun/TS sequencer (WS, per-world v4 logs, presence relay, asset serving; `server/` hosts the door)
+- `shared/protocol/` — the protocol core every runtime shares: the door, the fold, the component catalogue, the script sandbox
 - `client/` — the browser client (`lib/` is the module graph; `main.js` is boot + frame loop)
 - `mcpl/` — the agent frontend: door requests in, tiered perception out
 - `tools/` — smoke tests, a boot benchmark, load test, asset converters, the voice bot
