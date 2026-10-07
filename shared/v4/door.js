@@ -334,23 +334,41 @@ const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
 // reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the door's clock). Records
 // name identities, never display names. A record without `until` (a translated v1 ban, an owner's ban "until lifted",
 // an old kick) is permanent for a ban and no cooldown for a kick.
+// Every record since the last LIFT of its kind (unban, unmute, unghost) that is still in force counts, and the STRONGEST
+// wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
+// owner's permanent one used to replace it, the newest record alone being read). Lifting goes through personLift.
 const latestOf = (w, who, verbs) => { let r = null; for (const m of w.mod) if (m.who === who && verbs.includes(m.verb)) r = m; return r; };
 const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());
-/** The ban in force on `who` (the record), or null. */
-export const banOf = (w, who) => { const m = latestOf(w, who, ["ban", "unban"]); return m?.verb === "ban" && inForce(w, m) ? m : null; };
+const sinceLift = (recs, verb, lifts) => { let out = []; for (const m of recs) { if (lifts.includes(m.verb)) out = []; else if (m.verb === verb) out.push(m); } return out; };
+const strongest = (a) => a.reduce((x, m) => (!x ? m : x.until === undefined ? x : m.until === undefined || m.until > x.until ? m : x), null);
+const recsOf = (w, who) => w.mod.filter((m) => m.who === who);
+/** The sanctions of one kind in force on `who` now, every one (a lift must be allowed over each). */
+export function inForceOf(w, who, kind, recs = recsOf(w, who)) {
+  const lifts = { ban: ["unban"], kick: ["unban"], mute: ["unmute"], ghost: ["unghost"] }[kind];
+  return sinceLift(recs, kind, lifts).filter((m) => inForce(w, m) && (kind !== "kick" || m.until !== undefined));
+}
+const banFrom = (w, who, recs) => strongest(inForceOf(w, who, "ban", recs));
+const kickFrom = (w, who, recs) => strongest(inForceOf(w, who, "kick", recs));
+const muteFrom = (w, who, channel, recs) => { const a = inForceOf(w, who, "mute", recs); if (!a.length) return null;
+  const channels = [...new Set(a.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
+  if (channel && !channels.includes(channel)) return null;
+  const top = strongest(a); return { ...top, channels, until: a.some((m) => m.until === undefined) ? undefined : Math.max(...a.map((m) => m.until)) }; };
+const ghostFrom = (w, who, recs) => strongest(inForceOf(w, who, "ghost", recs)) ?? (w.presence?.ghosts?.[who] ? { verb: "ghost", who, chosen: true, ts: w.presence.ghosts[who].ts } : null);
+/** The ban in force on `who` (the strongest record), or null. */
+export const banOf = (w, who) => banFrom(w, who, recsOf(w, who));
 export const isBanned = (w, who) => !!banOf(w, who);
 /** The kick whose cooldown still runs (they can't rejoin until m.until), or null. An unban ends it early. */
-export const kickOf = (w, who) => { const m = latestOf(w, who, ["kick", "unban"]); return m?.verb === "kick" && m.until !== undefined && m.until > w.now() ? m : null; };
-/** The mute in force (m.channels says which), or null. `channel` narrows it to "voice" or "chat". */
-export const muteOf = (w, who, channel) => { const m = latestOf(w, who, ["mute", "unmute"]); return m?.verb === "mute" && inForce(w, m) && (!channel || (m.channels ?? ["voice", "chat"]).includes(channel)) ? m : null; };
+export const kickOf = (w, who) => kickFrom(w, who, recsOf(w, who));
+/** The mute in force (channels: the union of every mute in force, until: the latest), or null; `channel` narrows it. */
+export const muteOf = (w, who, channel) => muteFrom(w, who, channel, recsOf(w, who));
 /** Ghost (PLAN 10-06: in the world, outside society): the sanction in force, else the mode its holder chose. */
-export const ghostOf = (w, who) => { const m = latestOf(w, who, ["ghost", "unghost"]); if (m?.verb === "ghost" && inForce(w, m)) return m;
-  return w.presence?.ghosts?.[who] ? { verb: "ghost", who, chosen: true, ts: w.presence.ghosts[who].ts } : null; };
-/** Everything in force now, per identity (the Moderation panel's Bans tab; the server's join and voice gates). */
+export const ghostOf = (w, who) => ghostFrom(w, who, recsOf(w, who));
+/** Everything in force now, per identity (the Moderation panel's Bans tab; the server's join, voice and ghost gates).
+ *  One pass over the moderator log, so the server's sweep stays linear in it. */
 export function sanctionsNow(w) {
-  const who = new Set(w.mod.map((m) => m.who).filter((x) => typeof x === "string"));
-  for (const k of Object.keys(w.presence?.ghosts ?? {})) who.add(k);
-  const out = {}; for (const x of who) { const b = banOf(w, x), k = kickOf(w, x), m = muteOf(w, x), g = ghostOf(w, x);
+  const by = new Map(); for (const m of w.mod) if (typeof m.who === "string") { let a = by.get(m.who); if (!a) by.set(m.who, (a = [])); a.push(m); }
+  for (const k of Object.keys(w.presence?.ghosts ?? {})) if (!by.has(k)) by.set(k, []);
+  const out = {}; for (const [x, recs] of by) { const b = banFrom(w, x, recs), k = kickFrom(w, x, recs), m = muteFrom(w, x, undefined, recs), g = ghostFrom(w, x, recs);
     if (b || k || m || g) out[x] = { ...(b ? { ban: b } : {}), ...(k ? { kick: k } : {}), ...(m ? { mute: m } : {}), ...(g ? { ghost: g } : {}) }; }
   return out;
 }
@@ -431,14 +449,17 @@ export function request(w, actor, tool, args = {}) {
       refuse("custody", "this door doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
-    if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    if (w.exists && tool !== "help" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
+    // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
+    // body and what it held were never released)
+    if (w.exists && tool !== "help" && tool !== "leave" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    if (w.exists && tool !== "help" && tool !== "leave" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
     // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
     // legacy role `none` (a demotion below visitor): outside membership, it holds no switch and no voice; it may look,
     // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
     if (w.exists && !GHOST_OK.has(tool) && tool !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
       refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${tool}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
-    if (w.exists && !GHOST_OK.has(tool) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
+    // ghost: only the chosen mode's own toggle (ghost {on}) passes; ghost {who} is a sanction, an act on someone
+    if (w.exists && (!GHOST_OK.has(tool) || (tool === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
       refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     if (h && w.exists) { settleSim(w); returnDue(w); expireAsks(w); }
@@ -468,7 +489,8 @@ export function request(w, actor, tool, args = {}) {
 // byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the door's own state (rate,
 // identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the door counts
 // what it didn't write, and the next refusal it does write says how many (`unrecorded`).
-const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost"]);
+// "muted": its refusal would put the muted words in the public log (review 10-07)
+const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
 // what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
 const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
 function logRefusal(w, actor, tool, args, code) {
@@ -742,12 +764,16 @@ function ownerSince(w, st, x) {
 export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = Infinity;
   for (const k of ownersOf(st)) { const x = k.slice(6), t = ownerSince(w, st, x); if (t < at) { at = t; best = x; } } return best; }
 function seniority(w, st, who, op) {
-  if (op.id !== "@world" || !op.comp?.startsWith("roles:") || who.cap) return;
+  if (op.id !== "@world" || !op.comp?.startsWith("roles:")) return;
+  // a capability acts with its holder's rights, seniority included (review 10-07: a junior owner's reaction demoted the
+  // founder); the door's own scoped follow-ups (rest, door, handle, founding) never write a role
+  const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
+  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
   const target = op.comp.slice(6);
-  if (target === who.actor || roleOf(st, target, false) !== "owner") return;
+  if (target === holder || roleOf(st, target, false) !== "owner") return;
   // a write that keeps them owner is still a write to a more senior owner's entry: refused like any other (it used to
   // pass as a "re-affirm", and reset their seniority: S0-1). Your own entry, and juniors', remain yours to write.
-  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))
+  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))
     refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
 }
 // The grant rule (research §3, server rule 5): a roles:<id> write by someone who isn't an owner needs grantRoles, and
@@ -2782,13 +2808,16 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
 }
 /** Lifting a sanction (unban, unmute, unghost): the switch, and the record's rule: an owner, its author, or someone
  *  who outranks its author (strict: unban, unmute) or stands at their rank or above (ghost: "lifted only at that rank or higher"). */
-function personLift(w, actor, a, verb, rec, { strict, power = verb }) {
+function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
   if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
-  if (!rec) return;
-  if (roleOf(st, actor) === "owner" || rec.actor === actor) return;
+  if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");   // review 10-07
+  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07)
+  for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {
+  if (roleOf(st, actor) === "owner" || rec.actor === actor) continue;
   const mine = rankOf(st, actor), theirs = rankOf(st, rec.actor);
   if (strict ? mine <= theirs : mine < theirs) refuse("rank", `${said(rec.actor)} (${roleOf(st, rec.actor)}) made this ${verb}; only they, an owner${strict ? ", or someone who outranks them" : ", or someone at their rank or above"} may lift it`, `ask ${said(rec.actor)} or an owner`, { by: rec.actor });
+  }
 }
 const TOOLS = {
   ...PHYSICS_TOOLS,
@@ -2833,7 +2862,8 @@ const TOOLS = {
     const live = livePoses(w.sim());
     const tree = (id, d) => [{ ...describe(st, id, live, w.presence.holds), depth: d }, ...Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === id).flatMap((k) => tree(k, d + 1))];
     const all = ids.flatMap((id) => tree(id, 0));
-    const P = w.presence; const bodies = Object.entries(P.bodies).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
+    // a ghost's body is unseen by everyone else (review 10-07)
+    const P = w.presence; const bodies = Object.entries(P.bodies).filter(([id]) => id === actor || !ghostOf(w, id)).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
       ...(b.poseBy ? { posedBy: b.poseBy } : {}), ...(b.draggedBy ? { draggedBy: b.draggedBy } : {}), touchedBy: Object.entries(P.reaches ?? {}).filter(([, r]) => r.to === id).map(([k]) => k) }));
     return { ok: true, things: all.slice(0, lim), ...(all.length > lim ? { truncated: true, total: all.length } : {}), bodies };
   },
@@ -2944,7 +2974,7 @@ const TOOLS = {
     if (!Array.isArray(ch) || !ch.length || ch.some((c) => c !== "voice" && c !== "chat") || new Set(ch).size !== ch.length) refuse("shape", "mute.channels is ['voice'], ['chat'] or both", "leave it out for both");
     const until = minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a mute", required: true });
     w.appendMod({ actor, verb: "mute", who: a.who, channels: ch, until, ...reasonOf(a) }); return { ok: true, muted: a.who, channels: ch, until, ...t, logged: "moderator log" }; },
-  unmute: (w, actor, a) => { personLift(w, actor, a, "mute", muteOf(w, a.who), { strict: true });
+  unmute: (w, actor, a) => { personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true });
     w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
   // a kick removes a live session now (the door's server does the removing on this reply); they may come back after
   // `minutes` (default 10, at most 60: VRChat's kick is a one-hour bar)
@@ -2959,22 +2989,21 @@ const TOOLS = {
     const until = a.days === undefined ? undefined : Math.floor(w.now() + a.days * 86400000);
     w.appendMod({ actor, verb: "ban", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, banned: a.who, ...(until !== undefined ? { until } : { until: null }), ...t, logged: "moderator log" }; },
   unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");
-    personLift(w, actor, a, "ban", banOf(w, a.who) ?? kickOf(w, a.who), { strict: true });
+    personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true });
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
   // ghost (PLAN 10-06): `ghost {on}` with no who is the mode you choose (presence: never logged; spectate);
   // `ghost {who, minutes?, reason}` is a sanction (kick holders, on a rank below; capped like a mute below owner)
   ghost: (w, actor, a) => {
     if (a.who === undefined || a.who === actor) { if (typeof a.on !== "boolean") refuse("shape", "ghost {on: true|false}: become a ghost here (unseen; you can't interact or talk), or come back", "or ghost {who, minutes, reason} to ghost someone (kick holders)");
-      const sanc = latestOf(w, actor, ["ghost", "unghost"]);
-      if (!a.on && sanc?.verb === "ghost" && inForce(w, sanc)) refuse("ghost", "you were made a ghost by a moderator; that isn't yours to end", "a moderator ranked at or above them can bring you back");
+      if (!a.on && inForceOf(w, actor, "ghost").length) refuse("ghost", "you were made a ghost by a moderator; that isn't yours to end", "a moderator ranked at or above them can bring you back");
       const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor]; w.presenceDirty = true;
       return { ok: true, ghost: a.on, chosen: true, recorded: false }; }
     const t = personAct(w, actor, a, "ghost", ["kick"], { noOwner: "made a ghost" });
     const owner = roleOf(w.state(), actor) === "owner";
     const until = a.minutes === undefined && owner ? undefined : minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a ghost sanction", required: true });
     w.appendMod({ actor, verb: "ghost", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, ghosted: a.who, until: until ?? null, ...t, logged: "moderator log" }; },
-  unghost: (w, actor, a) => { const m = latestOf(w, a.who, ["ghost", "unghost"]);
-    personLift(w, actor, a, "ghost", m?.verb === "ghost" && inForce(w, m) ? m : null, { strict: false, power: "kick" });
+  unghost: (w, actor, a) => {
+    personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" });
     w.appendMod({ actor, verb: "unghost", who: a.who }); return { ok: true, unghosted: a.who }; },
   // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
   // from the world log (roles:* writes, read-only) and the door's automatic cool-downs
@@ -2987,13 +3016,15 @@ const TOOLS = {
       .map((r) => ({ ...r, by: said(r.actor), name: typeof r.who === "string" ? said(r.who) : undefined, ...(r.until !== undefined ? { inForce: r.until > w.now() } : {}) }));
     return { ok: true, records: out, ...(out.length === lim ? { next: out.at(-1).ts, more: "send before: next for older" } : {}) }; },
   bans: (w, actor) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the ban list is for people who hold a moderation power", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
-    const now = Object.entries(sanctionsNow(w)).map(([who, x]) => ({ who, name: said(who), role: roleOf(st, who), ...x }));
-    const ended = []; const seen = new Set(); for (let i = w.mod.length - 1; i >= 0; i--) { const m = w.mod[i]; if (m.verb !== "ban" || seen.has(m.who)) continue; seen.add(m.who); if (!banOf(w, m.who)) ended.push({ ...m, name: said(m.who) }); }
+    const byName = (m) => (m && m.actor ? { ...m, by: said(m.actor) } : m);   // the author by name: the asker's page may not know an absent moderator
+    const now = Object.entries(sanctionsNow(w)).map(([who, x]) => ({ who, name: said(who), role: roleOf(st, who), ...Object.fromEntries(Object.entries(x).map(([k, m]) => [k, byName(m)])) }));
+    const ended = []; const seen = new Set(); for (let i = w.mod.length - 1; i >= 0; i--) { const m = w.mod[i]; if (m.verb !== "ban" || seen.has(m.who)) continue; seen.add(m.who); if (!banOf(w, m.who)) ended.push({ ...byName(m), name: said(m.who) }); }
     return { ok: true, now, ended: ended.slice(0, 100) }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
-    // a chat mute refuses says and whispers, except a whisper to someone holding a moderation power (so they can ask why)
-    { const m = muteOf(w, actor, "chat"); if (m && !(typeof a.to === "string" && WARN_OR_MOD(w.state(), a.to)))
-      refuse("muted", `you're muted in this world's chat until ${new Date(m.until).toISOString()}${m.reason ? ` (${m.reason})` : ""}`, "you may still whisper to a moderator: say {text, to: <them>}", { until: m.until }); }
+    // a chat mute refuses every say: a say with `to` is still a public line in the log (review 10-07). Asking a moderator
+    // why goes as a WHISPER (point-to-point, never logged; the server lets a muted person whisper moderators only)
+    { const m = muteOf(w, actor, "chat"); if (m)
+      refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "you may still whisper to a moderator (/w <name>)", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),

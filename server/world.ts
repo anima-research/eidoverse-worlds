@@ -477,7 +477,8 @@ export class World {
     return {
       broadcast: (msg: unknown) => this.session.broadcast(msg),
       broadcastLog: (msg: unknown, ghostMsg: unknown) => { const d = JSON.stringify(msg), g = JSON.stringify(ghostMsg);
-        for (const c of this.clients) { try { c.ws.send(this.isGhost(c) ? g : d); } catch { /* gone */ } } },
+        const S = v4.sanctions();   // once per broadcast, not a moderator-log scan per client (review 10-07)
+        for (const c of this.clients) { try { c.ws.send(c.v4id && (S[c.v4id] as any)?.ghost ? g : d); } catch { /* gone */ } } },
       rightsChanged: () => v4Rights(this),
       debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
       present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world" && !v4.ghostHere(c.v4id)).map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),

@@ -11,7 +11,8 @@
 //   ID  one account is the same identity in every world on the door (per-world ids, review M6, withdrawn: R 10-06)
 //   RS  roles and moderation at the server (research roles S4): your-rights from the door, voice-moderate as the door's
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
-//       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited
+//       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited;
+//       RS8 whispers obey mutes and ghost; RS9 ghost history/presence, the ban list, a guest's kick by address
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -280,6 +281,31 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const forks = own.msgs.slice(k2).filter((m) => m.type === "world-forked" || m.type === "error").map((m) => m.type === "error" ? m.error : `forked ${m.to}`);
     ok(junior?.type === "error" && /most senior/.test(junior.error) && forks[0] === "forked heath-copy" && /copied .* ago/.test(forks[1] ?? ""),
       "RS7 a junior owner can't erase the world (the most senior owner's act); a second copy within a minute is refused", [junior, forks]); }
+  // RS8: whispers travel point-to-point (never logged), around the door: a chat mute and ghost must reach them too
+  { const vy = await sock(S4.port); const jv = await vy.join("heath", "Vole", { agentToken: mint({ kind: "agent", name: "Vole", sub: "agent:vole@home.test" }) });
+    const mo = await sock(S4.port); await mo.join("heath", "Fern", { agentToken: "tok-fern" });   // Fern: still a moderator
+    await own.req("mute", { who: you(jv), minutes: 10, channels: ["chat"] }); await sleep(200);
+    const k = vy.msgs.length; vy.raw({ type: "whisper", to: "Rowan-b", text: "psst" }); vy.raw({ type: "whisper", to: "Fern", text: "why was I muted?" }); await sleep(400);
+    const vyErr = vy.msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error);
+    const fernGot = mo.msgs.some((m) => m.type === "whisper" && m.text === "why was I muted?");
+    await own.req("unmute", { who: you(jv) }); await own.req("ghost", { who: you(jv), minutes: 10 }); await sleep(300);
+    const k2 = vy.msgs.length; mo.raw({ type: "whisper", to: "Vole", text: "secret" }); vy.raw({ type: "whisper", to: "Fern", text: "boo" }); await sleep(400);
+    const ghostGot = vy.msgs.slice(k2).some((m) => m.type === "whisper" && m.text === "secret"), ghostSent = mo.msgs.some((m) => m.type === "whisper" && m.text === "boo");
+    ok(vyErr.some((e) => /muted/.test(e)) && fernGot && !ghostGot && !ghostSent, "RS8 a chat-muted person's whisper reaches only a moderator; a ghost neither receives nor sends whispers", [vyErr, fernGot, ghostGot, ghostSent]);
+    // RS9 (review 10-07): the ghost (Vole) reads no chat through the history message, and its presence messages
+    // (an anim) reach nobody; a visitor can't read the ban list; a guest's kick holds against a fresh guest connection
+    const k3 = vy.msgs.length; vy.raw({ type: "history", reqId: "h1" }); await sleep(400);
+    const hist = vy.msgs.slice(k3).find((m) => m.type === "history");
+    const k4 = mo.msgs.length; vy.raw({ type: "anim", dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }); await sleep(400);
+    const animSeen = mo.msgs.slice(k4).some((m) => m.type === "anim" && m.id === "Vole");
+    const gv = await sock(S4.port); const jg = await gv.join("heath", "visitor-x");   // a guest (no account on this door)
+    const kb = gv.msgs.length; gv.raw({ type: "world-bans" }); await sleep(300);
+    const visBans = gv.msgs.slice(kb).find((m) => m.type === "mod")?.text ?? "";
+    const kk = await own.req("kick", { who: you(jg), minutes: 0.5 }); await sleep(300);
+    const g2 = await sock(S4.port); const jg2 = await g2.join("heath", "visitor-y");
+    ok(hist && (hist.entries ?? []).length === 0 && !animSeen && /moderation power/.test(visBans) && kk.ok && !jg2.snapshot,
+      "RS9 a ghost's history is empty and its anim reaches nobody; the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [hist?.entries?.length, animSeen, visBans.slice(0, 60), kk.ok, jg2.errors]);
+    for (const x of [vy, mo, gv, g2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 
 // ---- one person, one identity on this door (R 10-06: friends, messages, invites need it; per-world ids withdrawn) ----

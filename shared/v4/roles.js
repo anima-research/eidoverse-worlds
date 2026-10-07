@@ -84,7 +84,8 @@ export function roleDef(wc, id) {
     if (!d && wc?.scripts?.install === "owner") can.scripts = false;
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
   }
-  if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank)) return null;
+  // a rank written around the door (a hand-edited log, an old translation) is range-checked here too: never above the owner
+  if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return null;
   return { id, name: typeof d.name === "string" ? d.name : id, rank: d.rank, can: { ...on(), ...(isObj(d.can) ? pickSwitches(d.can) : {}) }, custom: true, ...(d.note ? { note: d.note } : {}) };
 }
 const pickSwitches = (can) => Object.fromEntries(Object.entries(can).filter(([k, v]) => Object.hasOwn(SWITCHES, k) && typeof v === "boolean"));

@@ -27,7 +27,7 @@ import { summarizeGlb } from "./geometry.ts";
 // worlds with the server is boot policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireV4 } from "./world.ts";
 import { isV4World } from "./v4/world.ts";
-import { v4Handler, actorOf as v4ActorOf } from "./v4/messages.ts";
+import { v4Handler, actorOf as v4ActorOf, gagged } from "./v4/messages.ts";
 import { MOD_POWERS } from "../shared/v4/roles.js";
 import { directoryFor, foldName } from "./v4/directory.ts";
 import { warmBoxes, worldLibs } from "./boxes.ts";
@@ -707,18 +707,19 @@ const accessBypass = (w: World, id: string) => { const e = w.v4!.rightsOf(id); r
  *   - the muted badges every client draws (mod-state: identity → until), when the set changes. */
 export function sanctionSweep(w: World) {
   if (!w.v4) return;
+  const S = w.v4.sanctions();   // one pass over the moderator log per world per sweep (review 10-07: it was one per client)
   for (const c of [...w.clients]) {
     if (c.spectator || (c.surface ?? "world") !== "world" || !c.v4id) continue;
-    const ghost = w.isGhost(c); const voice = ghost || !!w.v4.mutedHere(c.v4id, "voice");
+    const x = S[c.v4id] as any; const ghost = !!x?.ghost; const voice = ghost || !!x?.mute?.channels?.includes("voice");
     if (voice !== !!c.sfuMuted && (voice || c.sfuMuted !== undefined)) { try { setSfuModeratorMute(w.name, c.id, voice); } catch (err) { console.error(`[world:${w.name}] sfu mute`, err); } }
     c.sfuMuted = voice;
     const was = c.ghostHidden ?? false;
     if (ghost !== was) {
       c.ghostHidden = ghost;
-      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } }
-      else w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, v4id: c.v4id, ...(c.anonymous ? { guest: true } : {}) }, c);
+      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.bhv.onPresence("leave", c.id, c.v4id); }
+      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, v4id: c.v4id, ...(c.anonymous ? { guest: true } : {}) }, c); w.bhv.onPresence("enter", c.id, c.v4id); }
     }
-    const mine = JSON.stringify([ghost, w.v4.mutedHere(c.v4id)?.until ?? null]);
+    const mine = JSON.stringify([ghost, x?.mute?.until ?? null, x?.mute?.channels ?? null]);
     if (c.sanctionKey !== mine) { const first = c.sanctionKey === undefined; c.sanctionKey = mine;
       if (!first) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } }
   }
@@ -727,7 +728,7 @@ export function sanctionSweep(w: World) {
   const live = new Set([...w.clients].filter((c) => c.sfuMuted).map((c) => c.id));
   for (const id of [...(w.sfuMutedIds ?? [])]) if (!live.has(id)) { try { setSfuModeratorMute(w.name, id, false); } catch { /* relay gone */ } }
   w.sfuMutedIds = live;
-  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(w.v4.sanctions())) if ((x as any).mute) muted[id] = (x as any).mute.until;
+  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
   const key = JSON.stringify(muted);
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
 }
@@ -759,7 +760,8 @@ function buildSnapshot(w: World, c: Client) {
       // a client that folds v4 draws the view of ITS OWN fold of the cut above, and reads only the chat window here
       // (client/lib/net.js onSnapshot, mcpl/agent.ts): the whole v1-shaped view rode along unread, 47 of the Commons'
       // 71 KB (Commons audit #8)
-      state: w.v4 && c.v4fold ? (w.isGhost(c) ? { recentChat: [], chatTotal: 0 } : { recentChat: (jp.state as any).recentChat ?? [], chatTotal: (jp.state as any).chatTotal ?? 0 }) : jp.state,
+      state: w.v4 && c.v4fold ? (w.isGhost(c) ? { recentChat: [], chatTotal: 0 } : { recentChat: (jp.state as any).recentChat ?? [], chatTotal: (jp.state as any).chatTotal ?? 0 })
+        : w.v4 && w.isGhost(c) ? { ...(jp.state as any), recentChat: [], chatTotal: 0 } : jp.state,   // a ghost's aux legs too (review 10-07)
       throughSeq: jp.throughSeq,
       entries: jp.tail,
       // dialect 3: the sim fold's cut, adopted by the joiner (absent
@@ -949,10 +951,10 @@ const server = Bun.serve({
           if (w.v4) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
           if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.v4id ? { v4id: c.v4id } : {}), ...(w.v4 && c.anonymous ? { guest: true } : {}) }, c);
           if (w.v4) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
-          if (!c.spectator) w.bhv.onPresence("enter", c.id, c.v4id);
+          if (!c.spectator && !c.ghostHidden) w.bhv.onPresence("enter", c.id, c.v4id);   // scripts don't sense a ghost
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
-          if (!c.spectator) {
+          if (!c.spectator && !c.ghostHidden) {   // a ghost gets held whispers when the ghost ends (its next join)
             const held = pendingWhispers.get(whisperKey(w.name, c.id));
             if (held?.length) {
               for (const m of held) ws.send(JSON.stringify(m));
@@ -1144,10 +1146,14 @@ const server = Bun.serve({
           if (!target) { ws.send(JSON.stringify({ type: "error", error: "nobody here by that name to mute" })); return; }
           const muted = msg.muted === true;
           const minutes = typeof msg.minutes === "number" ? msg.minutes : 60;
+          // the voice control's unmute lifts a VOICE mute: one that also covers chat is lifted where its whole record is
+          // (Moderation › Bans, /unmute), not ended quietly from a voice button (review 10-07)
+          if (!muted && w.v4.mutedHere(target, "chat")) { ws.send(JSON.stringify({ type: "error", error: "that mute covers chat too: lift it in Moderation › Bans (or /unmute)" })); return; }
           void w.v4.request(v4ActorOf(c), muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
+              if (muted) for (const t of w.clients) if (t.v4id === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
               const name = [...w.clients].find((t) => t.v4id === target)?.id ?? target;
               const note = JSON.stringify({ type: "voice-moderated", id: name, v4id: target, muted, by: c.id, ...(muted ? { until: r.until } : {}) });
@@ -1179,7 +1185,7 @@ const server = Bun.serve({
           // a v4 world answers some types itself (server/v4/messages.ts); v1 worlds never consult that table
           // every world is v4: the door's own types first (server/v4/messages.ts), then the room's (presence, voice, chat lanes)
           const h = v4Handler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
-          if (h) h({ c, ws, now, expel, sweep: sanctionSweep }, msg);
+          if (h && !gagged(c, String(msg.type))) h({ c, ws, now, expel, sweep: sanctionSweep }, msg);
         }
       }
       } catch (err) {

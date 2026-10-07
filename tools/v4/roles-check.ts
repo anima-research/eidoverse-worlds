@@ -35,9 +35,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["role-defs: unique ranks", "v4/roles.js", "if (ranks.has(r)) return bad(", "if (false) return bad(", ["R3"]],
   ["role-defs: no custom role at a built-in's rank", "v4/roles.js", "if ([RANK.builder, RANK.moderator].includes(d.rank)) return bad(", "if (false) return bad(", ["R3"]],
   ["role-defs: no owner key", "v4/roles.js", "if (id === \"owner\") return bad(\"shape\", \"role-defs can't define owner", "if (false) return bad(\"shape\", \"role-defs can't define owner", ["R4"]],
-  ["role-defs: custom ranks 1–254", "v4/roles.js", "d.rank < 1 || d.rank > 254)", "d.rank < 1)", ["R4"]],
+  ["role-defs: custom ranks 1–254", "v4/roles.js", "if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad(\"rank\"", "if (!Number.isInteger(d.rank) || d.rank < 1) return bad(\"rank\"", ["R4"]],
   ["role-defs: built-in ranks are fixed", "v4/roles.js", "if (d.rank !== undefined && d.rank !== BUILTIN[id].rank) return bad(\"rank\"", "if (false) return bad(\"rank\"", ["R4"]],
-  ["custom roles resolve to their rank", "v4/roles.js", "if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank)) return null;", "return null;", ["R5", "R6", "S2", "S4"]],
+  ["custom roles resolve to their rank", "v4/roles.js", "if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return null;", "return null;", ["R5", "R6", "S2", "S4"]],
   ["none holds nothing at -1", "v4/roles.js", "if (id === \"none\") return { id, name: \"No role\", rank: RANK.none,", "if (id === \"none\") return { id, name: \"No role\", rank: 0,", ["R5"]],
   ["default-role: never owner", "v4/door.js", "if (id === \"@world\" && comp === \"default-role\" && (v?.role === \"owner\" ||", "if (id === \"@world\" && comp === \"default-role\" && (false ||", ["R6", "K2"]],
   ["guests: at most the default role (write)", "v4/door.js", "(R.GUESTS_AT_MOST_DEFAULT && R.rankOfRole(wcS, v.guests) > R.rankOfRole(wcS, v.role))", "false", ["R6"]],
@@ -66,12 +66,22 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a ban with no end is an owner's", "v4/door.js", "if (a.days === undefined && !owner) refuse(", "if (false) refuse(", ["M1"]],
   ["the moderator ban cap", "v4/door.js", "if (a.days !== undefined && a.days > R.MOD_BAN_MAX_DAYS && !owner) refuse(", "if (false) refuse(", ["M1"]],
   ["bans end by the clock", "v4/door.js", "const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());", "const inForce = (w, m) => !!m;", ["M2", "M3", "G2"]],
-  ["a banned person is refused", "v4/door.js", "if (w.exists && tool !== \"help\" && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
-  ["chat mute refuses say", "v4/door.js", "{ const m = muteOf(w, actor, \"chat\"); if (m &&", "{ const m = null; if (m &&", ["M3"]],
-  ["a muted whisper reaches only moderators", "v4/door.js", "if (m && !(typeof a.to === \"string\" && WARN_OR_MOD(w.state(), a.to)))", "if (m && !(typeof a.to === \"string\"))", ["M3"]],
-  ["mute channels", "v4/door.js", "&& (!channel || (m.channels ?? [\"voice\", \"chat\"]).includes(channel)) ? m : null;", "? m : null;", ["M3"]],
+  // the independent review (10-07)
+  ["the strongest sanction in force wins", "v4/door.js", "const strongest = (a) => a.reduce(", "const strongest = (a) => a.slice(-1)[0] ?? null; const _s = (a) => a.reduce(", ["V1"]],
+  ["a mute's channels are the union", "v4/door.js", "const channels = [...new Set(a.flatMap((m) => m.channels ?? [\"voice\", \"chat\"]))];", "const channels = strongest(a).channels ?? [\"voice\", \"chat\"];", ["V1b"]],
+  ["a lift needs rights over every record", "v4/door.js", "for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {", "for (const rec of (Array.isArray(recs) ? recs.slice(-1) : recs ? [recs] : [])) {", ["V2"]],
+  ["nobody lifts their own", "v4/door.js", "if (a.who === actor) refuse(\"rank\", `you can't lift a ${verb} on yourself`", "if (false) refuse(\"rank\", `you can't lift a ${verb} on yourself`", ["V5"]],
+  ["ghost {who} is not the chosen mode", "v4/door.js", "|| (tool === \"ghost\" && args?.who !== undefined && args.who !== actor)", "", ["V4"]],
+  ["leave passes the kick gate", "v4/door.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor))", "if (w.exists && tool !== \"help\" && kickOf(w, actor))", ["K5"]],
+  ["a muted refusal isn't logged", "v4/door.js", "\"kicked\", \"ghost\", \"muted\"]);", "\"kicked\", \"ghost\"]);", ["V7"]],
+  ["look hides a ghost", "v4/door.js", ".filter(([id]) => id === actor || !ghostOf(w, id))", "", ["V8"]],
+  ["custom ranks are range-checked on read", "v4/roles.js", "|| d.rank < 1 || d.rank > 254) return null;", ") return null;", ["V9"]],
+  ["seniority binds a capability's holder", "v4/door.js", "const cap = who.cap; if (cap && cap.kind !== \"reaction\" && cap.kind !== \"script\") return;", "const cap = who.cap; if (cap) return;", ["V10"]],
+  ["a banned person is refused", "v4/door.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
+  ["chat mute refuses say", "v4/door.js", "{ const m = muteOf(w, actor, \"chat\"); if (m)", "{ const m = null; if (m)", ["M3", "V3"]],
+  ["mute channels", "v4/door.js", "  if (channel && !channels.includes(channel)) return null;", "", ["M3"]],
   ["mute cap", "v4/door.js", "if (minutes > cap && (ownerCap ||", "if (false && (ownerCap ||", ["M4", "M5"]],
-  ["a kick's cooldown", "v4/door.js", "if (w.exists && tool !== \"help\" && kickOf(w, actor)) refuse(\"kicked\"", "if (false) refuse(\"kicked\"", ["M5"]],
+  ["a kick's cooldown", "v4/door.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor)) refuse(\"kicked\"", "if (false) refuse(\"kicked\"", ["M5"]],
   ["lifting goes by the record's author", "v4/door.js", "if (strict ? mine <= theirs : mine < theirs) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M6", "G2"]],
   ["lifting needs the switch", "v4/door.js", "if (!may(st, actor, power) && roleOf(st, actor) !== \"owner\") refuse(\"rights\", `lifting a", "if (false) refuse(\"rights\", `lifting a", ["M6"]],
   ["grant: grantRoles", "v4/door.js", "if (n === \"grant\") return eff.can.grantRoles ? null : \"grantRoles\";", "if (n === \"grant\") return null;", ["M7"]],
@@ -88,10 +98,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["modlog is for moderation powers", "v4/door.js", "modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== \"owner\") refuse(", "modlog: (w, actor, a) => { const st = w.state(); if (false) refuse(", ["M9"]],
   ["guests rank by their guest role", "v4/roles.js", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? \"visitor\" : base;", ["M10", "R6"]],
   // ghost
-  ["a ghost can't interact or talk", "v4/door.js", "if (w.exists && !GHOST_OK.has(tool) && ghostOf(w, actor)) {", "if (false) {", ["G1", "G3"]],
+  ["a ghost can't interact or talk", "v4/door.js", "args.who !== actor)) && ghostOf(w, actor)) {", "args.who !== actor)) && false) {", ["G1", "G3"]],
   ["a ghost can't read chat", "v4/door.js", "const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === \"say\");", "const match = (e) => match0(e);", ["G1"]],
   ["a ghost may look and walk", "v4/door.js", "const GHOST_OK = new Set([\"help\", \"look\",", "const GHOST_OK = new Set([\"help\",", ["G1"]],
-  ["a sanction isn't the ghost's to end", "v4/door.js", "if (!a.on && sanc?.verb === \"ghost\" && inForce(w, sanc)) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
+  ["a sanction isn't the ghost's to end", "v4/door.js", "if (!a.on && inForceOf(w, actor, \"ghost\").length) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
   ["the chosen mode", "v4/door.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
   // S5, S6
   ["translation: v1 fly → can.fly", "v4/translate-v1.js", "return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest;", "return v;", ["T1"]],
@@ -102,7 +112,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["badges: guests are guests", "v4/roles.js", "if (p.anon) return { text: \"guest\", tone: \"guest\" };", "", ["P4"]],
   // the review's findings
   ["seniority: the start of the unbroken run", "v4/door.js", "if (o.verb === \"set\" && o.comp === comp && o.value?.role === \"owner\") since = i; else return since; } }", "if (o.verb === \"set\" && o.comp === comp && o.value?.role === \"owner\") return i; else return since; } }", ["F5"]],
-  ["seniority: no re-affirm of a senior owner", "v4/door.js", "  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))", "  if (op.value?.role === \"owner\") return;\n  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))", ["F1"]],
+  ["seniority: no re-affirm of a senior owner", "v4/door.js", "  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))", "  if (op.value?.role === \"owner\") return;\n  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))", ["F1"]],
   ["none holds no voice and no hands", "v4/door.js", "&& w.state().entities?.[\"@world\"] && roleOf(w.state(), actor) === \"none\")", "&& false)", ["F3"]],
   ["CONTROL (no-op: must stay green)", "v4/roles.js", "// ---------------- the other caps (research §5) ----------------", "// ---------------- the other caps (research §5)  ----------------", []],
 ];
@@ -306,13 +316,13 @@ const cases: Case[] = [
       s.advance(DAY + MIN);
       return { a: show(a), b: show(b), during, after: { ann: D.isBanned(s.w(), "ann"), vic: D.isBanned(s.w(), "vic"), vicCall: show(s.call("vic", "look")) }, written: s.w().mod.length - n }; },
     good: (o) => o.a === "ok" && o.b === "ok" && o.during.ann && o.during.vic && o.during.vicCall === "banned" && o.after.ann && !o.after.vic && o.after.vicCall === "ok" && o.written === 0 },
-  { id: "M3", what: "mute: a chat-muted person's say is refused with its until; their whisper to a moderator lands; it ends by the clock", run(s) { cast(s);
+  { id: "M3", what: "mute: a chat-muted person's say is refused with its until, a say `to` a moderator too (public: V3); a voice mute leaves chat; it ends by the clock", run(s) { cast(s);
       const m = s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"], reason: "flood" });
       const say = s.call("vic", "say", { text: "hi" }), wh = s.call("vic", "say", { text: "why?", to: "mo" }), toBob = s.call("vic", "say", { text: "psst", to: "bob" });
       const voiceOnly = s.call("mo", "mute", { who: "ann", minutes: 5, channels: ["voice"] }); const annSay = s.call("ann", "say", { text: "still here" });
       s.advance(6 * MIN); const later = s.call("vic", "say", { text: "back" });
       return { m: show(m), say: code(say), until: say.refused?.until, wh: show(wh), toBob: code(toBob), voiceOnly: show(voiceOnly), annSay: show(annSay), voiceMuted: !!D.muteOf?.(s.w(), "ann", "voice"), later: show(later) }; },
-    good: (o) => o.m === "ok" && o.say === "muted" && typeof o.until === "number" && o.wh === "ok" && o.toBob === "muted" && o.voiceOnly === "ok" && o.annSay === "ok" && o.voiceMuted === false && o.later === "ok" },
+    good: (o) => o.m === "ok" && o.say === "muted" && typeof o.until === "number" && /^refused muted/.test(o.wh) && o.toBob === "muted" && o.voiceOnly === "ok" && o.annSay === "ok" && o.voiceMuted === false && o.later === "ok" },
   { id: "M4", what: "mute caps: 7 days at most below owner; minutes is required; a builder has no mute", run(s) { cast(s);
       return { long: code(s.call("mo", "mute", { who: "vic", minutes: 7 * 1440 + 1 })), none: code(s.call("mo", "mute", { who: "vic" })), bob: code(s.call("bob", "mute", { who: "vic", minutes: 5 })),
         weekOk: show(s.call("mo", "mute", { who: "vic", minutes: 7 * 1440 })) }; },
@@ -443,7 +453,63 @@ const cases: Case[] = [
   { id: "F5", what: "the founder editing their own entry (a note) doesn't make them junior: a co-owner still can't demote them", run(s) { cast(s);
       role(s, "jun", { role: "owner" }); const note = set(s, "olive", "roles:olive", { role: "owner", note: "founder" });
       return { note: show(note), demote: code(set(s, "jun", "roles:olive", { role: "visitor" })), olive: eff(s, "olive")?.role }; },
-    good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" }
+    good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" },
+
+  // ---------------- V: the independent review's findings (10-07), each red before its fix ----------------
+  { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban, 1-minute voice mute, short ghost or kick under an owner's leaves the owner's in force", run(s) { cast(s);
+      role(s, "ann2", { role: "visitor" }); role(s, "gh", { role: "visitor" }); role(s, "kk", { role: "visitor" });
+      s.call("olive", "ban", { who: "vic" }); const b = s.call("mo", "ban", { who: "vic", days: 0.0001 });
+      s.call("olive", "mute", { who: "ann", minutes: 10080 }); const m = s.call("mo", "mute", { who: "ann", minutes: 1, channels: ["voice"] });
+      s.call("olive", "ghost", { who: "gh" }); s.call("mo", "ghost", { who: "gh", minutes: 0.01 });
+      s.call("olive", "kick", { who: "kk", minutes: 60 }); s.call("mo", "kick", { who: "kk", minutes: 0.01 });
+      const now0 = s.now(); const banUntil = D.banOf(s.w(), "vic")?.until ?? "never", kickLeft = (D.kickOf(s.w(), "kk")?.until ?? 0) - now0;   // while both are in force: the strongest is read
+      s.advance(20_000);
+      return { b: show(b), m: show(m), banUntil, kickLeft, banned: D.isBanned(s.w(), "vic"), annSay: code(s.call("ann", "say", { text: "hi" })), ghost: !!D.ghostOf(s.w(), "gh"), kicked: !!D.kickOf(s.w(), "kk") }; },
+    good: (o) => o.banUntil === "never" && o.kickLeft > 50 * MIN && o.banned && o.annSay === "muted" && o.ghost && o.kicked },
+  { id: "V1b", what: "a mute's channels are the union of every mute in force: a longer voice-only mute over a shorter chat mute keeps chat muted", run(s) { cast(s);
+      s.call("olive", "mute", { who: "vic", minutes: 10, channels: ["chat"] }); s.call("mo", "mute", { who: "vic", minutes: 60, channels: ["voice"] });
+      return { say: code(s.call("vic", "say", { text: "hi" })), ch: D.muteOf(s.w(), "vic")?.channels }; },
+    good: (o) => o.say === "muted" && o.ch?.includes("chat") && o.ch?.includes("voice") },
+  { id: "V2", what: "lifting needs the rights over every sanction in force: a moderator's unmute can't lift an owner's mute stacked under their own", run(s) { cast(s);
+      s.call("olive", "mute", { who: "vic", minutes: 600 }); s.call("mo", "mute", { who: "vic", minutes: 5 });
+      return { un: code(s.call("mo", "unmute", { who: "vic" })), still: !!D.muteOf(s.w(), "vic") }; },
+    good: (o) => o.un === "rank" && o.still },
+  { id: "V3", what: "a chat mute refuses every door say, `to` included (a door say with `to` is public, in the log): asking a moderator is a whisper", run(s) { cast(s);
+      s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] });
+      return { to: code(s.call("vic", "say", { text: "why?", to: "mo" })) }; },
+    good: (o) => o.to === "muted" },
+  { id: "V4", what: "a ghost can't sanction anyone (ghost {who} is not the chosen mode); a ghost may still end a ghost they chose", run(s) { cast(s);
+      s.call("olive", "ghost", { who: "mo", minutes: 60 }); const g = s.call("mo", "ghost", { who: "vic", minutes: 60 });
+      s.call("bob", "ghost", { on: true }); const back = s.call("bob", "ghost", { on: false });
+      return { g: code(g), back: show(back) }; },
+    good: (o) => o.g === "ghost" && o.back === "ok" },
+  { id: "V5", what: "nobody lifts their own sanction (a muted builder holding mute can't unmute themself)", run(s) { cast(s);
+      role(s, "bob", { role: "builder", can: { mute: true } }); s.call("mo", "mute", { who: "bob", minutes: 60 }); role(s, "mo", { role: "visitor" });
+      return { self: code(s.call("bob", "unmute", { who: "bob" })), still: !!D.muteOf(s.w(), "bob") }; },
+    good: (o) => o.self === "rank" && o.still },
+  { id: "K5", what: "kept: a kicked or banned person's leave still settles (the server's departure sends it): their body is gone from presence", run(s) { cast(s);
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("mo", "kick", { who: "vic" });
+      const l = s.call("vic", "leave"); return { l: show(l), body: !!s.w().presence.bodies.vic }; },
+    good: (o) => o.l === "ok" && !o.body },
+  { id: "V7", what: "a muted person's refused say isn't written to the public log (it would carry the text)", run(s) { cast(s);
+      s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] }); const n0 = s.entries().length; s.call("vic", "say", { text: "secret words" });
+      return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words") }; },
+    good: (o) => o.leaked === false },
+  { id: "V8", what: "look doesn't list a ghost's body to anyone else (unseen); the ghost still sees their own", run(s) { cast(s);
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("bob", "move", { to: [1, 0, 1] }); s.call("vic", "ghost", { on: true });
+      return { bob: (s.call("bob", "look").bodies ?? []).map((b: any) => b.id), vic: (s.call("vic", "look").bodies ?? []).map((b: any) => b.id) }; },
+    good: (o) => !o.bob.includes("vic") && o.bob.includes("bob") && o.vic.includes("vic") },
+  { id: "V9", what: "a custom role's rank is range-checked when read: a rank written around the door (300) never reads above the owner", run() {
+      return { r: RL.roleDef ? RL.roleDef({ "role-defs": { boss: { name: "Boss", rank: 300 } } }, "boss") : "no roles.js" }; },
+    good: (o) => o.r === null },
+  { id: "V10", what: "a junior owner's script can't write a senior owner's role (seniority binds a capability by its holder)", run(s) { cast(s);
+      role(s, "jun", { role: "owner" });
+      const up = s.call("jun", "upload", { text: "export default (world, e) => { world.set('@world', 'roles:olive', { role: 'visitor' }); }" });
+      const ins = s.call("jun", "set", { id: "@world", component: "script:coup", value: { src: up.src, scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] } });
+      s.call("jun", "set", { id: "@world", component: "reactions", value: { coup: { kind: "set", component: "roles:olive", value: { role: "visitor" } } } });
+      const use = s.call("vic", "use", { id: "@world", action: "coup" });
+      return { use: code(use) ?? show(use), olive: eff(s, "olive")?.role }; },
+    good: (o) => o.olive === "owner" }
 ];
 
 // ---------------- run ----------------

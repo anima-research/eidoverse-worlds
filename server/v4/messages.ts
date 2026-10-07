@@ -60,6 +60,14 @@ function modLine(w: World, by: string, tool: string, who: string) {
 }
 /** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
+/** Presence messages a ghost or a role-less person doesn't send (they'd show them, or act on someone), and the one a
+ *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
+const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
+export function gagged(c: Client, type: string): boolean {
+  const w = c.world; if (!w?.v4 || !c.v4id || !QUIET.has(type)) return false;
+  if (w.isGhost(c) || w.v4.rightsOf(c.v4id).role === "none") return true;
+  return type === "caption" && !!w.v4.mutedHere(c.v4id);
+}
 export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };
 
 /** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. */
@@ -113,17 +121,25 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
-        if (happened) { const text = modLine(w, c.id, tool, who);
+        const ghostHere = [...w.clients].some((t) => t.v4id === who && w.isGhost(t));   // unseen: never named to bystanders
+        if (happened && !ghostHere) { const text = modLine(w, c.id, tool, who);
           for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
       }
+      // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
+      if (r?.ok && tool === "unban" && typeof args.who === "string") { let n = 0;
+        for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
+        if (n) saveGlobalBans(); }
       // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
       if (r?.ok && (tool === "ban" || tool === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.v4id === who) {
-          if (tool === "ban" && t.anonymous && t.addr) {
-            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until: Date.now() + ADDR_BAN_MS, world: w.name, ...(args.reason ? { reason: String(args.reason) } : {}) };
+          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
+          // also name its connection's address in this world, or reconnecting would shed them (review 10-07)
+          if (t.anonymous && t.addr) {
+            const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
+            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
           const back = r.until ? ` — you may come back ${tool === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
