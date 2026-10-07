@@ -1,7 +1,14 @@
 # Eidoverse Worlds — Scaling, Snapshot, and Performance Plan
 
-Status: proposed  
+Status: proposed (2026-07); predates protocol v4  
 Date: 2026-07-25  
+
+*Read this as the July plan it was. Protocol v4 (spec/PROTOCOL.md) has since
+settled some of it: the log is door requests (acts) and their results
+(state entries of `create` / `set` / `delete`), a joiner adopts a cut of the
+fold instead of replaying, and a checkpoint is a view whose digest the log
+records. The planes, the performance targets and the storage and loading
+work below are unchanged by that.*  
 Rollback checkpoint: `a99adaa` (`checkpoint current eidoverse world prototype`)
 
 Implementation is paused pending review of this plan. The checkpoint working
@@ -43,7 +50,7 @@ Durable authored state:
 
 - Entities and their current transforms.
 - Terrain, sky, grass, lighting, and environment.
-- Published assets and behaviors.
+- Published assets and scripts.
 - Ownership and permissions.
 - Stage configuration and persistent props.
 
@@ -138,10 +145,11 @@ appear.
 
 The server maintains this state incrementally:
 
-- `spawn` inserts an entity.
-- `place` updates its current transform.
-- `remove` deletes it.
-- Environment verbs replace their corresponding current values.
+- `create` inserts an entity.
+- `set` replaces one component (a move is a new `transform`).
+- `delete` removes a component or the entity.
+- The world's sky, ground and grass are components on `@world`, replaced
+  the same way.
 - Asset publication updates the current vocabulary.
 - Chat and ephemeral presence do not alter the world-state structure.
 
@@ -568,7 +576,8 @@ Before public performances:
 - Authenticated sessions and invites.
 - Explicit spectator, performer, host, moderator, renderer, and agent roles.
 - Server-assigned identity; clients cannot impersonate names.
-- Server-controlled embodiment leases.
+- Server-checked settlement of anything a body holds (v4: the door's
+  grab/put/throw).
 - Schema validation for every message.
 - Message and upload limits.
 - Per-role rate limits.
@@ -611,8 +620,8 @@ Before public performances:
 
 ### 18.1 Storage correctness
 
-- Reducer golden tests for every verb.
-- Spawn, place, and remove collapse correctness.
+- Reducer golden tests for every state operation.
+- Create, set, and delete collapse correctness.
 - Environment last-value correctness.
 - Legacy migration verification.
 - Segment-boundary range queries.

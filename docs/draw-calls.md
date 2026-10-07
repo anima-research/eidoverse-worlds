@@ -29,7 +29,7 @@ Overlapping, mirrored and sheared fallback cases were pixel-identical.
 The separate full-client probe exercises real GLB parsing, shared prototypes,
 the warm conductor, caster selection and source identities. Its 32-crate view
 changed 42 pixels; eight differed by more than two channel levels. It also
-checks fold parity after place, mount, remove, reconcile and disabling batching.
+checks fold parity after moving, parenting and removing a thing, a reconcile, and disabling batching.
 
 ## What is already batched
 
