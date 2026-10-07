@@ -34,7 +34,7 @@ import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
 import { WEATHERS } from '../../shared/forecast.js';
 import { copiesOf } from '../../shared/blueprint.js';
-import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
+import { structureTools, currentTool as structureTool, setTool as setStructureTool, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
@@ -755,7 +755,7 @@ function removeMany(ids) {
 //               always did (build.js holdGhost → spawn). "add light" is a blueprint of one Light.
 //               Saved blueprints arrive with step 6; the group is there, empty, saying so.
 //   Tools       the transform tools (build.js setTool — the same call as Q/G/E/R), the building
-//               tools (structure_ui.js — its TOOLS, its setTool, its OWN undo stack, labelled so)
+//               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
 //               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
 //   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
 //               defs/sky/_presets.json, Ground and Grass from defs/ground/_palette.json (the same
@@ -867,7 +867,6 @@ function buildFields() {
     { t: 'tiles', k: 'xtool', value: seatArmed() ? 'seat' : null, disabled: !sel && !seatArmed(),
       options: [{ v: 'seat', label: 'seat', icon: 'armchair', hint: sel ? `click where a sitter goes on ${sel}` : 'select a thing first, then click where a sitter goes' }] },
     { t: 'btn', k: 'snew', label: 'new building', icon: 'plus', hint: 'start a new building on the ground in view' },
-    { t: 'btn', k: 'sundo', label: 'undo building edit', icon: 'undo2', disabled: !undoDepth(), hint: 'undo the last building edit — its own stack, separate from Ctrl+Z' },
     ...worldBuildFields(),
   ];
 }
@@ -882,7 +881,6 @@ function buildDispatch(action, payload) {
     case 'stool': cancelSeatArm(); setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
     case 'xtool': if (seatArmed()) cancelSeatArm(); else { if (structureTool()) setStructureTool(null); armSeatPlacement(sceneSelected()); } break;
     case 'snew': newBuilding(null); break;
-    case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
     case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;
