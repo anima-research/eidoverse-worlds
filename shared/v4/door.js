@@ -253,7 +253,13 @@ function obbs(st, id) {
 }
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const satCost = (A, B) => (isI(A.ax) && isI(B.ax) ? 1 : 80);   // work units (the spatial index's budget)
+const NONE = new Set();
+const isI = (ax) => ax[0][0] === 1 && ax[0][1] === 0 && ax[0][2] === 0 && ax[1][0] === 0 && ax[1][1] === 1 && ax[1][2] === 0 && ax[2][0] === 0 && ax[2][1] === 0 && ax[2][2] === 1;
 function satDepth(A, B) { // smallest penetration over the 15 axes; <= 0 means separated
+  // two unrotated boxes (most pairs): the 15 axes are the world's three, so the same numbers in the same order, without
+  // building them (a place's search tests thousands of pairs)
+  if (isI(A.ax) && isI(B.ax)) { let b = Infinity; for (let i = 0; i < 3; i++) { const p = A.h[i] + B.h[i] - Math.abs(B.c[i] - A.c[i]); if (p < b) b = p; if (b <= 0) return b; } return b; }
   const d = B.c.map((v, i) => v - A.c[i]); let best = Infinity;
   const axes = [...A.ax, ...B.ax]; for (const a of A.ax) for (const b of B.ax) { const c = crs(a, b); const n = Math.hypot(...c); if (n > 1e-6) axes.push(c.map((v) => v / n)); }
   for (const L of axes) { const ra = A.h.reduce((t, h, i) => t + h * Math.abs(dot(A.ax[i], L)), 0), rb = B.h.reduce((t, h, i) => t + h * Math.abs(dot(B.ax[i], L)), 0);
@@ -277,11 +283,160 @@ function surfacesOf(st, id) {
       return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[1])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[1])) - k] }; }
     return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
 }
+// ---------- the spatial index (review 10-06 S0-2 / security pass 2 H-A) ----------
+// The door is synchronous and every world on a server shares its one thread, so no request may cost the world's size
+// squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
+// what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
+//   Per thing: its world AABB, oriented boxes and surfaces, cached on its ENTITY OBJECT (a live world's states share every
+//   entity a write didn't touch: server/v4/live.ts applyShared), valid while its model entry and every ancestor's entity
+//   object are the same ones. So a write re-measures only what it touched.
+//   Per folded state: a 4 m grid over those boxes (huge things on a list of their own), built on the state's first query.
+//   A state is never mutated once folded or previewed (admit's working copy is never queried), so neither is its index.
+// Every answer lists candidates in the state's key order, so a first-hit or best-so-far loop over them picks exactly what
+// the loop over Object.keys picked. The work budget (WORK, set per call by enter) bounds what one call may spend in these
+// searches, counted in units of about 0.1 µs of this laptop's time (measured: a candidate scanned ≈ 1, an axis-aligned
+// box test ≈ 1, a rotated one ≈ 80, a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
+// clock backstop (WORK_BUDGET.ms from the call's start, read every 64 units) bounds a host that is far slower. Past
+// either, a read or a solver is refused (too-costly) rather than holding every world's thread.
+export const WORK_BUDGET = { units: 250000, ms: 150 };
+const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
+let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
+const spend = (n, what = WORK.what ?? "this", teach = "ask about less at once: check {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
+  if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
+    refuse("too-costly", `${what} would take more of the door's time than one request may have (it's shared by every world on this server)`, teach); } };
+const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
+function geoOf(st, id) {
+  const e = st.entities[id]; if (!e) return null;
+  // what its world box reads: its model entry, and the transform and parent VALUES of it and each ancestor (a value is
+  // replaced, never changed in place, so these identities say whether anything it depends on changed)
+  const m = geomOf(e.c.model); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
+  while (p && n++ <= 33 && st.entities[p]) { const x = st.entities[p]; chain.push(x, x.c.transform, x.c.parent); p = x.c.parent?.to; }
+  const g = GEO.get(e);
+  if (g && g.id === id && g.m === m && g.chain.length === chain.length && g.chain.every((x, i) => x === chain[i])) return g;
+  const box = m ? aabb(st, id) : null; const ob = box ? obbs(st, id) : []; const surfs = box ? surfacesOf(st, id) : [];
+  // each oriented box's own world AABB (a cheap reject before the 15-axis test), and the box the grid files it under
+  const ext = ob.map((o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; });
+  let q = null;
+  if (box) { q = { min: box.min.slice(), max: box.max.slice() };
+    for (const x of ext) for (let i = 0; i < 3; i++) { q.min[i] = Math.min(q.min[i], x.min[i]); q.max[i] = Math.max(q.max[i], x.max[i]); }
+    for (const s of surfs) { q.min[0] = Math.min(q.min[0], s.min[0]); q.max[0] = Math.max(q.max[0], s.max[0]); q.min[2] = Math.min(q.min[2], s.min[1]); q.max[2] = Math.max(q.max[2], s.max[1]); q.max[1] = Math.max(q.max[1], s.y); } }
+  const rec = { id, m, chain, box, obbs: ob, ext, surfs, q };
+  GEO.set(e, rec); return rec;
+}
+const cellOf = (v) => Math.floor(v / CELL);
+const cellKey = (i, k) => (i + 1e6) * 2e6 + (k + 1e6);
+// the grid cells a record is filed under (null: a huge thing, on the `big` list)
+const cellsOf = (g) => { if (g.cells !== undefined) return g.cells;
+  const x0 = cellOf(g.q.min[0]), x1 = cellOf(g.q.max[0]), z0 = cellOf(g.q.min[2]), z1 = cellOf(g.q.max[2]);
+  if ((x1 - x0 + 1) * (z1 - z0 + 1) > BIG || !Number.isFinite(x0 + x1 + z0 + z1)) return (g.cells = null);
+  const out = []; for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push(cellKey(x, z)); return (g.cells = out); };
+// The index a state's queries use. Kept incrementally: a state that shares nearly every entity with the one indexed last
+// (the next state of the same world: a write, or a preview of one) is derived from it, re-filing only the things that
+// changed, appeared or went (and everything riding on them); anything else is built whole. Both give the same index.
+const LASTIX = new WeakMap(); // catalogue → the index built or derived last
+// a state that is changed in place after it's read (a batch's working copy, and previews of it): indexed whole, never
+// derived from or kept as the last (a derivation compares entity objects, which such a state changes under them)
+const VOLATILE = new WeakSet();
+function spatial(st) {
+  const ver = CAT.version ?? 0; let ix = SPATIAL.get(st);
+  if (ix && ix.cat === CAT && ix.ver === ver) return ix;
+  if (VOLATILE.has(st.entities)) { ix = buildIx(st, ver); SPATIAL.set(st, ix); return ix; }
+  const prev = LASTIX.get(CAT);
+  ix = (prev && prev.ver === ver && deriveIx(prev, st)) || buildIx(st, ver);
+  SPATIAL.set(st, ix); LASTIX.set(CAT, ix); return ix;
+}
+function fileIx(ix, id, g, cloned) {
+  const cs = cellsOf(g); if (!cs) { ix.big.push(id); return; }
+  for (const k of cs) { let a = ix.grid.get(k); if (!a) ix.grid.set(k, (a = [])); else if (cloned && !cloned.has(k)) { ix.grid.set(k, (a = a.slice())); } cloned?.add(k); a.push(id); }
+}
+function buildIx(st, ver) {
+  const ix = { cat: CAT, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
+  for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
+    const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
+  return ix;
+}
+function deriveIx(prev, st) {
+  const E = st.entities, P = prev.ents; if (E === P) return null;
+  const keys = Object.keys(E); const changed = [];
+  for (const id of keys) if (E[id] !== P[id]) { changed.push(id); if (changed.length > 256) return null; }
+  const added = changed.filter((id) => !prev.order.has(id));
+  if (added.some((id) => /^(0|[1-9]\d*)$/.test(id))) return null;   // an integer-like key sorts first, not last: build whole
+  const removed = prev.order.size + added.length > keys.length ? [...prev.order.keys()].filter((id) => E[id] === undefined) : [];
+  // what rides on a changed or removed thing moved with it (its world box comes from the chain): re-file it too
+  const pk = kidsOfIx(prev, P); const touched = new Set([...changed, ...removed]); const todo = [...touched];
+  if (added.length) { const nu = new Set(added); for (const id of keys) if (nu.has(E[id].c.parent?.to)) todo.push(id); }   // a link to a thing that just appeared
+  while (todo.length) { const t = todo.pop(); touched.add(t); for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k); if (touched.size > 2048) return null; }
+  const ix = { cat: CAT, ver: prev.ver, ents: E, order: prev.order, next: prev.next, rec: new Map(prev.rec), grid: new Map(prev.grid), big: prev.big, kids: prev.kids, memo: new Map() };
+  if (added.length || removed.length) { ix.order = new Map(prev.order); for (const id of removed) ix.order.delete(id); for (const id of added) ix.order.set(id, ix.next++);
+    let last = -1; for (const id of keys) { const o = ix.order.get(id); if (!(o > last)) return null; last = o; } }   // the key order is what Object.keys says, or build whole
+  const cloned = new Set();
+  for (const id of touched) { const old = prev.rec.get(id);
+    if (old) { ix.rec.delete(id); const cs = cellsOf(old);
+      if (cs) for (const k of cs) { const a = ix.grid.get(k); if (!a) continue; const b = a.filter((x) => x !== id); if (b.length) ix.grid.set(k, b); else ix.grid.delete(k); cloned.add(k); } } }
+  ix.big = prev.big.filter((x) => !touched.has(x));
+  for (const id of touched) { if (E[id] === undefined) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
+  // the children map is rebuilt (lazily) only when a parent link changed
+  if (added.length || removed.length || changed.some((id) => P[id]?.c.parent?.to !== E[id]?.c.parent?.to)) ix.kids = null;
+  return ix;
+}
+function kidsOfIx(ix, ents) {
+  if (ix.kids) return ix.kids; const kids = new Map();
+  for (const id of Object.keys(ents)) { const p = ents[id].c.parent?.to; if (p) { let a = kids.get(p); if (!a) kids.set(p, (a = [])); a.push(id); } }
+  return (ix.kids = kids);
+}
+const kidsMap = (st) => kidsOfIx(spatial(st), st.entities);
+/** For tests: does the index this state's queries use (built or derived) file exactly what a fresh build files? A list
+ *  of differences, empty when it does. */
+export function indexAudit(w) {
+  const prevCat = CAT; CAT = w.catalogue ?? LAB_CATALOGUE;
+  try { const st = w.state(); const ix = spatial(st); const fresh = buildIx(st, ix.ver); const out = [];
+    const norm = (x) => ({ ids: [...x.rec.keys()].sort().join(), grid: [...x.grid.entries()].map(([k, a]) => `${k}:${[...a].sort().join()}`).sort().join(";"), big: [...x.big].sort().join(),
+      order: Object.keys(st.entities).filter((id) => x.order.has(id)).sort((a, b) => x.order.get(a) - x.order.get(b)).join(), boxes: [...x.rec.entries()].map(([id, g]) => `${id}:${JSON.stringify(g.q)}`).sort().join() });
+    const a = norm(ix), b = norm(fresh); for (const k of Object.keys(a)) if (a[k] !== b[k]) out.push(k);
+    if (JSON.stringify([...kidsMap(st).entries()]) !== JSON.stringify([...kidsOfIx({ kids: null }, st.entities).entries()])) out.push("kids");
+    for (const id of Object.keys(st.entities)) if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(aabb(st, id)) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(aabb(st, id) ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; }
+    return out; } finally { CAT = prevCat; }
+}
+// the things whose box meets [min, max] (closed: touching counts), in the state's key order
+function near(st, min, max) {
+  const ix = spatial(st);
+  const x0 = cellOf(min[0]), x1 = cellOf(max[0]), z0 = cellOf(min[2]), z1 = cellOf(max[2]);
+  // what's filed in those cells (and the huge things), once each, in key order: memoized per cell range (a search asks
+  // the same few ranges thousands of times)
+  const wide = !((x1 - x0 + 1) * (z1 - z0 + 1) <= ix.grid.size); const k0 = wide ? 0 : cellKey(x0, z0), k1 = wide ? -1 : cellKey(x1, z1);
+  let m1 = ix.memo.get(k0); if (!m1) { if (ix.memo.size > 4096) ix.memo.clear(); ix.memo.set(k0, (m1 = new Map())); }
+  let cand = m1.get(k1);
+  if (!cand) { const seen = new Set(); cand = [];
+    const take = (id) => { if (!seen.has(id)) { seen.add(id); cand.push(id); } };
+    if (wide) { for (const a of ix.grid.values()) a.forEach(take); }   // a query wider than the world: every filed thing once
+    else for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) ix.grid.get(cellKey(x, z))?.forEach(take);
+    ix.big.forEach(take);
+    if (cand.length > 1) cand.sort((a, b) => ix.order.get(a) - ix.order.get(b));
+    m1.set(k1, cand); }
+  const out = [];
+  for (const id of cand) { const q = ix.rec.get(id).q;
+    if (q.min[0] <= max[0] && q.max[0] >= min[0] && q.min[1] <= max[1] && q.max[1] >= min[1] && q.min[2] <= max[2] && q.max[2] >= min[2]) out.push(id); }
+  spend(10 + cand.length + (cand.length >> 2));
+  return out;
+}
+// hits(), through the index's cached boxes: the same 15-axis test, after each box's cheap AABB reject
+function hitsIx(st, box, id, eps) {
+  const g = spatial(st).rec.get(id); if (!g) return false; const B = boxToObb(box); spend(10);
+  for (let k = 0; k < g.obbs.length; k++) { const x = g.ext[k];
+    if (x.min[0] > box.max[0] || x.max[0] < box.min[0] || x.min[1] > box.max[1] || x.max[1] < box.min[1] || x.min[2] > box.max[2] || x.max[2] < box.min[2]) continue;
+    spend(satCost(B, g.obbs[k])); if (satDepth(B, g.obbs[k]) > eps) return true; }
+  return false;
+}
+// descendants() through the index's children map (a set: callers here only ask membership)
+function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
+  for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
+
 function supportBelow(st, x, z, y, ignore = new Set()) {
   let best = { y: 0, id: "ground" };
-  for (const id of Object.keys(st.entities)) {
+  const ix = spatial(st);
+  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {
     if (ignore.has(id)) continue;
-    for (const s of surfacesOf(st, id))
+    for (const s of ix.rec.get(id).surfs)
       if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };
   }
   return best;
@@ -291,8 +446,9 @@ function supportBelow(st, x, z, y, ignore = new Set()) {
 // under its centre — so a thing physics left resting is never called floating by the door (playtest 22, F5).
 function supportUnder(st, b, ignore) {
   let best = { y: 0, id: "ground" };
-  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;
-    for (const s of surfacesOf(st, id)) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
+  const ix = spatial(st);
+  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;
+    for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
   return best;
 }
 
@@ -377,17 +533,17 @@ function wire(args) {
   return out;
 }
 
-// The door's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID and the mint's world)
-// and the world's per-call queues and clock. ONE save/restore for every entry point (request, withDoor):
+// The door's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID, the mint's world, the
+// work budget) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withDoor):
 // review 10-06 S3 found two hand-written copies that already disagreed, and a nested call (leave → request(drop), or a
 // host callback re-entering the door) reset the outer call's queues under it. enter() saves everything, sets this call's,
 // and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
 // the door's own work.
 function enter(w, actor) {
-  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now };
-  CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w;
+  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now };
+  CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w; WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
   ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
-  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; };
+  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; };
 }
 export function request(w, actor, tool, args = {}) {
   const exit = enter(w, actor);
@@ -1179,25 +1335,36 @@ function buildPlace(ctx, a) {
 }
 
 // Physical checks on every write (A2).
-function warnings(st, ids) {
-  const out = []; const all = Object.keys(st.entities);
-  const B = boundsOf(st);
-  for (const id of ids) {
-    const b = aabb(st, id); if (!b) continue;
-    const fam = new Set([id, ...descendants(st, id)]); // a parent is NOT exempt: a bell inside its lamp pole is still inside it
-    const mine = obbs(st, id);
-    for (const o of all) { if (fam.has(o)) continue;
-      const pair = mine.flatMap((a) => obbs(st, o).map((sb) => satDepth(a, sb)).filter((p) => p > 0.02));
-      if (pair.length && !out.some((x) => x.kind === "overlap" && x.id === o && x.with === id)) out.push({ id, kind: "overlap", with: o, by: r3(Math.max(...pair)) }); }
+// The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
+// is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
+// after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
+function warnings(st, ids, strict = false) {
+  const out = []; const ix = spatial(st); const pairs = new Set();
+  const B = boundsOf(st); let k = 0; const was = WORK.what; WORK.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
+  try {
+  for (; k < ids.length; k++) { const id = ids[k];
+    const g = ix.rec.get(id); const b = g?.box; if (!b) continue;
+    const fam = familyOf(st, id); // a parent is NOT exempt: a bell inside its lamp pole is still inside it
+    const mine = g.obbs;
+    for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);
+      const pair = [];
+      for (let i = 0; i < mine.length; i++) for (let j = 0; j < go.obbs.length; j++) { const x = g.ext[i], y = go.ext[j];
+        if (x.min[0] > y.max[0] || x.max[0] < y.min[0] || x.min[1] > y.max[1] || x.max[1] < y.min[1] || x.min[2] > y.max[2] || x.max[2] < y.min[2]) continue;
+        spend(satCost(mine[i], go.obbs[j])); const p = satDepth(mine[i], go.obbs[j]); if (p > 0.02) pair.push(p); }
+      if (pair.length && !pairs.has(`${o}\u0000${id}`)) { out.push({ id, kind: "overlap", with: o, by: r3(Math.max(...pair)) }); pairs.add(`${id}\u0000${o}`); } }
     const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
-    const sup = supportBelow(st, cx, cz, b.min[1], new Set([id, ...descendants(st, id)]));
-    const hungFrom = ancestors(st, id).find((p) => { const pb = aabb(st, p); return pb && pb.max[1] > b.max[1]; });
+    const sup = supportBelow(st, cx, cz, b.min[1], fam);
+    const hungFrom = ancestors(st, id).find((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.max[1] > b.max[1]; });
     if (!hungFrom && sup.y - b.min[1] > 0.005 && sup.y - b.min[1] < 0.3) out.push({ id, kind: "sunk", depth: r3(sup.y - b.min[1]), into: sup.id });
-    const mounted = ancestors(st, id).some((p) => { const pb = aabb(st, p); return pb && pb.min[1] <= b.min[1] && pb.max[1] >= b.max[1]; });
-    const under = supportUnder(st, b, new Set([id, ...descendants(st, id)]));
+    const mounted = ancestors(st, id).some((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.min[1] <= b.min[1] && pb.max[1] >= b.max[1]; });
+    const under = supportUnder(st, b, fam);
     if (b.min[1] - under.y > 0.03 && !hungFrom && !mounted) out.push({ id, kind: "floating", gap: r3(b.min[1] - under.y), above: under.id });
     if (B && (b.min[0] < B.min[0] || b.max[0] > B.max[0] || b.min[2] < B.min[2] || b.max[2] > B.max[2])) out.push({ id, kind: "out-of-bounds", bounds: B });
   }
+  } catch (e) {
+    if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
+    out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the door's time than one request may have; check {id} checks one thing" });
+  } finally { WORK.what = was; }
   return out;
 }
 
@@ -2254,7 +2421,7 @@ const PHYSICS_TOOLS = {
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-    const bad = warnings(plan.after, [a.id]).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
+    const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = stateEntry(w, plan, act);
@@ -2671,7 +2838,7 @@ const TOOLS = {
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith("library:")).map(([k, v]) => ({ hash: `sha256:${k.slice(8)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
     return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
-  check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities)) }; },
+  check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
   history(w, actor, a) {
     // one thing's history, newest first, paged backwards (R 10-04: recent by default, deeper on request): before = the seq
     // to continue from (the reply's `next`), limit = how many acts per page

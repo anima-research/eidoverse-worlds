@@ -24,6 +24,7 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
+import { doorTime } from "./readmeter.ts";
 import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
 import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
@@ -130,7 +131,7 @@ export class V4Log {
   requestSync(actor: string, tool: string, args: Record<string, unknown> = {}) {
     this.stats.requests++;
     const from = this.live.entries.length; const held = this.holdsKey();
-    const r = doorRequest(this.live, actor, tool, args);
+    const t0 = performance.now(); const r = doorRequest(this.live, actor, tool, args); if (r && typeof r === "object") doorTime.set(r, performance.now() - t0);
     if (this.live.entries.length > from) this.afterWrite(from);
     if (this.holdsKey() !== held) this.host?.broadcast({ type: "v4-holds", world: this.name, holds: this.holds() });
     return r;
