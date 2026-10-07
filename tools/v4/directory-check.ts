@@ -72,7 +72,12 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
   const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "v4.jsonl"), "utf8").split("\n")[0]).body;
   ok(a.worldId !== b.worldId, "K4 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
-  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga); }
+  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga);
+  // the old world remembered where each person stood by display NAME; the copy remembers it by identity
+  fs.writeFileSync(path.join(W, "old", "poses.json"), JSON.stringify({ Ann: { p: [4, 0, 5], yaw: 1 }, Nobody: { p: [0, 0, 0] } }));
+  const c = translateV1World(path.join(W, "old"), path.join(W, "c"));
+  const pc = JSON.parse(fs.readFileSync(path.join(W, "c", "poses.json"), "utf8")); const ann = Object.keys(pc)[0];
+  ok(c.poses === 1 && /^u-[a-z2-7]{20}$/.test(ann) && pc[ann].p[0] === 4 && !("Ann" in pc) && !("Nobody" in pc), "K6 a translated world's remembered places are keyed by identity (Ann's id), and a name the log never knew is dropped", pc); }
 
 // ---- B: budgets and attempts (round-2 R6, R7) ----
 { let T = 1800000000000; const d = directoryAt(file); const kindOf = (id: string) => d.entry(id)?.kind ?? null;

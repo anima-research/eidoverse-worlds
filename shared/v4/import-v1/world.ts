@@ -63,6 +63,13 @@ export function translateV1World(srcDir: string, destDir: string) {
   const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("bans:"));
   if (banned.length) { const m = modLogAt(path.join(destDir, "v4.mod.jsonl"));
     for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "door", verb: "ban", who: k.slice(5), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
-  return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
+  // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
+  // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
+  let poses = 0;
+  const oldPoses = path.join(srcDir, "poses.json");
+  if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
+    for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
+    if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
+  return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses };
 }
 

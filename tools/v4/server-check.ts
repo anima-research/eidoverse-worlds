@@ -1,16 +1,16 @@
-// tools/v4/server-check.ts — slice 2 at the server: real sequencer processes, real WebSockets, scratch ports and a
+// tools/v4/server-check.ts — the server: real sequencer processes, real WebSockets, scratch ports and a
 // scratch WORLDS_DIR (never the repo's worlds, never ports 8968/8970). usage: bun tools/v4/server-check.ts
 //   S1  found a v4 world (tools/v4/world.ts), join it: the snapshot says v4, the founder is its owner
 //   S2  writes are door requests: create (a measured GLB), place ON it (the engine catalogue), every client sees it
 //   S3  refusals reach the asker: a locked edit, an old-style verb (writes nothing), a visitor's create, a spectator's write
 //   S4  undo through the door; the log on disk is v4, strictly readable, and every client's own v4 fold = the log
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
-//   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
+//   S6  the importer translates an old world once into a new v4 world: the old log's bytes are untouched, the copy is
+//       visitable, and the old directory itself is not served
 //   S8  clients fold v4: the v4 cut and stream, no `log` entries; a client that doesn't read v4 is refused (3c)
 //   SP  physics: v4-holds to everyone, a joiner's cut carries holds and the sim, leaving while holding drops it
-//   S7  joining never founds a world (H3); [was: v1 worlds byte-compared against slice 1 — the server serves no v1 now]
-//      
-//       compared (logs, snapshots and every message each client received, with clock fields masked)
+//   S7  joining never founds a world (H3)
+//   CB  the captioner bot through the door's caption tool (the screen's captioners; the server-stamped generation)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -21,7 +21,6 @@ import { viewState } from "../../shared/v4/record.js";
 import { enc } from "../../shared/v4/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
 
-const BASE = process.env.V4_BASE ?? "097eedcc"; // slice 1's head: the v1 server before this slice
 const root = scratch("server");
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
@@ -460,7 +459,6 @@ await sleep(200);
   bot.close(); own.close(); await sleep(200); }
 
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
-// (S7 used to byte-compare v1 worlds against slice 1's tree; the server has no v1 runtime now, by design)
 { const ghost = await client(srv.port, "nobodyhome", "Ann", V4);
   ok(!ghost.snapshot && ghost.of("error").some((m) => /no world called "nobodyhome"/.test(m.error)) && !fs.existsSync(path.join(W4, "nobodyhome")),
     "S7 joining a world name that doesn't exist is refused, and nothing is created on disk", [ghost.msgs.map((m) => m.type), fs.existsSync(path.join(W4, "nobodyhome"))]);
