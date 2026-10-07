@@ -13,6 +13,7 @@
 // the server-side convenience tier.
 
 import { statSync } from "node:fs";
+import { solidsFromTriangles } from "./v4/solids.ts";
 // the one classifier both runtimes share (#84) — grid math and constants
 // live there; this file only supplies vertices from gltf-transform accessors
 import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID,
@@ -100,11 +101,15 @@ export type GeomSummary = {
   /** mesh nodes present in the FILE but attached to no scene — broken
    *  exports. No renderer draws them; never aim a motion at one. */
   orphans?: string[];
+  /** solid parts as boxes [[lo], [hi]] in the model frame (server/v4/solids.ts): walls, floors and roofs of a building
+   *  with its rooms left open; absent for a small model or one too big to measure (its bbox stands) */
+  solids?: number[][][];
 };
 
 const cache = new Map<string, { mtime: number; sum: GeomSummary }>();
 const CACHE_MAX = 64;
 const SAMPLE_ABOVE_TRIS = 500_000;
+const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
 /** Summarize one GLB file. Returns null when parsing is unavailable/fails. */
 export async function summarizeGlb(absPath: string): Promise<GeomSummary | null> {
@@ -155,6 +160,8 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
   }
   const stride = tris > SAMPLE_ABOVE_TRIS ? Math.ceil(tris / SAMPLE_ABOVE_TRIS) : 1;
 
+  // the triangles in the model frame, for its solid parts (server/v4/solids.ts), when the mesh is walked whole
+  const soup = tris <= SOLIDS_MAX_TRIS ? new Float32Array(tris * 9) : null; let soupN = 0;
   // Flat zones bucketed by height (2.5cm) — up-facing triangles only.
   const buckets = new Map<number, { area: number; x: [number, number]; z: [number, number]; ySum: number; n: number }>();
   const nodes: GeomSummary["nodes"] = [];
@@ -199,6 +206,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
             if (out[a] > nMax[a]) nMax[a] = out[a];
           }
         }
+        if (soup && soupN + 9 <= soup.length) { soup.set(va, soupN); soup.set(vb, soupN + 3); soup.set(vc, soupN + 6); soupN += 9; }
         // up-facing? cross(ab, ac).y dominant and positive
         const abx = vb[0] - va[0], aby = vb[1] - va[1], abz = vb[2] - va[2];
         const acx = vc[0] - va[0], acy = vc[1] - va[1], acz = vc[2] - va[2];
@@ -395,6 +403,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     }
   }
 
+  const solids = ok && soup ? solidsFromTriangles(soup.subarray(0, soupN), min, max) : null;
   const sum: GeomSummary = {
     tris,
     bbox: ok ? {
@@ -408,6 +417,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     ...(lie !== undefined ? { lie } : {}),
     ...(topGrid ? { topGrid } : {}),
     ...(orphans.length ? { orphans } : {}),
+    ...(solids ? { solids } : {}),
   };
   cache.set(absPath, { mtime, sum });
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);

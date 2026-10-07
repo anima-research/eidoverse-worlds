@@ -598,9 +598,10 @@ function logRefusal(w, actor, tool, args, code) {
   try {
     // a tool the door doesn't have is recorded too (an agent's invented tool is part of what it tried), when it's a name
     if (!w.exists || !(TOOLS[tool] || /^[a-z][a-z0-9-]{0,31}$/.test(String(tool))) || READ_ONLY.has(tool) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
-    // a step of a body the door already tracks is presence, recorded neither when taken nor when refused (a person's
-    // client keeps the track current several times a second; a seated or flying body would write a refusal each time)
-    if (tool === "move" && args?.teleport !== true && w.presence.bodies[actor]) return;
+    // a body's track is presence: a refused move (a step, an arrival or a teleport) is never recorded. A person's client
+    // keeps the track current several times a second and answers a refused step with a teleport; a person indoors, flying
+    // or seated wrote a permanent, broadcast refusal every few seconds (review 10-06 S0-3). An ACCEPTED teleport is an act.
+    if (tool === "move") return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
     if (UNLOGGED.has(code)) return;
     let req = stripDry(args ?? {}); try { checkIJSON(req); } catch { req = { unloggable: "not I-JSON" }; } const j = jcs(req);
