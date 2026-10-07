@@ -26,8 +26,6 @@ export const fetchBytes = async () => new ArrayBuffer(0);
 export const forgetBytes = () => {};
 
 // world
-export const applyEntry = async () => {};
-export const stateToEntries = () => [];
 export const avatarMounts = new Map();
 // #101: seats.js (real, unmocked) pulls the clip digest from the assets
 // module — null here means every stub seat reads declared-approximate,

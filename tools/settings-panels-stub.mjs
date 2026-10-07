@@ -50,7 +50,6 @@ export const registerXRPanel = (p) => { xrPanels.set(p.id, p); calls.push(['regi
 
 // ---- net.js
 export const net = { joined: false };   // `avatars` arrives on the join snapshot (net.js) — the suite sets it when it simulates one
-export const sendVerb = rec('sendVerb');
 export const sendJoin = rec('sendJoin');
 export const requestHistory = async () => ({ entries: [], hasMore: false });
 
