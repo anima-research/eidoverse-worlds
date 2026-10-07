@@ -12,7 +12,7 @@
 // The world speaks protocol v4 (shared/protocol/authority.js): a join says `v4fold: true`,
 // the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
 // write is a request {type: "request", id, verb, args} answered by `reply`,
-// and what the door wrote reaches every client as `v4-log` entries. A world is
+// and what the door wrote reaches every client as `log` entries. A world is
 // founded by its operator (bun tools/protocol/world.ts found); joining never founds one.
 // Against a running server, the worlds WORLD, WORLD-hist, WORLD-noise,
 // WORLD-ground, WORLD-light and WORLD-pose must exist, owned by the names this
@@ -70,7 +70,7 @@ class Client {
     });
   }
   send(o: unknown) { this.ws.send(JSON.stringify(o)); }
-  /** one door request, answered by its v4-result ({ok, reply}) */
+  /** one door request, answered by its reply ({ok, reply}) */
   req(verb: string, args: unknown = {}): Promise<any> {
     const id = `${this.id}-${++this.n}`;
     return new Promise((res) => {
@@ -174,9 +174,9 @@ try {
   const r2 = await alice.req("set", { id: "box1", component: "transform", value: { pos: [5, 0, 5] }, merge: true });
   const r3 = await alice.req("say", { text: "hello world" });
   await sleep(300);
-  check("each request is answered (v4-result ok)", r1.ok && r2.ok && r3.ok, JSON.stringify([r1.reply?.refused, r2.reply?.refused, r3.reply?.refused]));
+  check("each request is answered (reply ok)", r1.ok && r2.ok && r3.ok, JSON.stringify([r1.reply?.refused, r2.reply?.refused, r3.reply?.refused]));
   const echoed = alice.entries();
-  check("what the door wrote echoes back to its author as v4-log entries", echoed.length >= 3 && echoed.some((e) => e.kind === "say" && e.body?.text === "hello world"), `${echoed.length} entries`);
+  check("what the door wrote echoes back to its author as log entries", echoed.length >= 3 && echoed.some((e) => e.kind === "say" && e.body?.text === "hello world"), `${echoed.length} entries`);
   check("log positions are dense and ordered, right after the join's head",
     echoed.every((e, i) => e.seq === head0 + 1 + i), echoed.map((e) => e.seq).join(","));
   check("entries carry their actor (the author's identity)", echoed.every((e) => e.actor === alice.me), JSON.stringify([...new Set(echoed.map((e) => e.actor))]));

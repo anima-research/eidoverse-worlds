@@ -17,7 +17,7 @@ def check(name, ok, detail=""):
     passed, failed = passed + (1 if ok else 0), failed + (0 if ok else 1)
 
 # The world speaks protocol v4: a join says v4fold (an embodied client that doesn't is refused), a say is a door
-# request answered by v4-result, and chat reaches clients as `say` entries of the v4-log stream (actors are opaque
+# request answered by reply, and chat reaches clients as `say` entries of the log stream (actors are opaque
 # ids; the stream's `names` and the snapshot's v4.names say who). A say's chat number — what an attest names — is
 # its log position × 1000 (server/worldlog.ts sayLine).
 NAMES = {}

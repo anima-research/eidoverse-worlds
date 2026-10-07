@@ -1,14 +1,14 @@
 // Chat bridge: mirrors a world's spoken chat into one Discord text channel,
 // and carries that channel's messages back in as speech.
 //
-//   world WS (embodied "discord") ── `say` entries of the v4-log stream ──▶ Discord channel
+//   world WS (embodied "discord") ── `say` entries of the log stream ──▶ Discord channel
 //   Discord channel ── messages ──▶ a door `say` request {text: "author: …"}
 //
 // The world speaks protocol v4: the join says `v4fold: true` (a client that
-// doesn't is refused), chat arrives as `say` entries in the `v4-log` stream
+// doesn't is refused), chat arrives as `say` entries in the `log` stream
 // (actors are opaque ids; the stream's `names` and the snapshot's v4.names say
 // who they are), and a say is a door request {type: "request", id, verb: "say",
-// args: {text}} answered by `v4-result` (a refusal is logged, not retried).
+// args: {text}} answered by `reply` (a refusal is logged, not retried).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world
@@ -165,7 +165,7 @@ async function pumpWorld() {
 
 // ---------------------------------------------------------------- world socket
 
-let lastSeq = -Infinity; // dedupe guard across reconnects (a v4-log re-delivery overlaps live)
+let lastSeq = -Infinity; // dedupe guard across reconnects (a log re-delivery overlaps live)
 let myId: string | null = null; // the bridge's own identity (opaque), from the snapshot
 const names: Record<string, string> = {}; // identity → display name (the door's directory, as the world sends it)
 
