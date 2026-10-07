@@ -343,6 +343,9 @@ export function sendPose(now) {
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
+  // what I press while I hold a thing (grabbable's presence tier: every receiver draws its fx while this rides;
+  // absent = not pressing). Never logged: a use.down/up that changes the world is a door request of its own
+  if (s.useHeld) pose.use = s.useHeld;
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
   if (s.pose !== undefined) pose.pose = s.pose;

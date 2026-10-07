@@ -33,6 +33,7 @@
 
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
+import { checkAccepts } from './grab.js';
 
 export const ANCHORS = ['hips', 'feet', 'head', 'root'];
 export const LEAVE_BY = ['jump', 'menu', 'script'];
@@ -47,7 +48,8 @@ export const WHO = ['visitor', 'builder', 'owner'];
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */
 export const SIGNALS = ['speed', 'turn', 'phase', 'swing', 'throttle', 'steer', 'aimYaw', 'aimPitch'];
 export const BODY_KEYS = ['action', 'anchor', 'pose', 'poses', 'sync', 'approach', 'enter', 'leave', 'exit', 'reach', 'hold', 'look', 'input', 'leaveBy', 'fromSeat', 'who'];
-export const SOCKET_KEYS = ['pos', 'q', 'part', 'body'];
+// accepts/radius (shared/grab.js): a free socket takes a released thing whose grabbable.fits shares a keyword, within radius
+export const SOCKET_KEYS = ['pos', 'q', 'part', 'body', 'accepts', 'radius'];
 export const REACH_KEYS = ['at', 'q', 'part', 'hint', 'vr'];
 export const LOOK_KEYS = ['yaw', 'pitch', 'up'];
 export const INPUT_KEYS = ['move', 'look'];
@@ -205,6 +207,7 @@ export function checkSockets(v, at = 'sockets') {
     if (!nums(sk.pos, 3)) return bad('shape', `${sat}.pos must be [x, y, z] in the thing's own frame`);
     if (sk.q !== undefined && !unitQ(sk.q)) return bad('shape', `${sat}.q is a unit quaternion [x, y, z, w] (the socket's rotation in the thing's frame)`);
     if (sk.part !== undefined && !(typeof sk.part === 'string' && sk.part)) return bad('shape', `${sat}.part names a node of its model`);
+    if ((r = checkAccepts(sk, sat))) return r;
     if (sk.body === undefined) continue;
     r = checkBody(sk.body, `${sat}.body`); if (r) return r;
     if (sk.body.input?.move === 'drive') drivers.push(k);

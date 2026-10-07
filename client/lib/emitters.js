@@ -221,11 +221,32 @@ bus.on('entity', ({ id, kind }) => {
 
 bus.on('world-reset', () => clearEmitters());
 
+// ---- the presence tier of a held thing (grabbable.fx) -----------------------
+// While a holder presses use, every client draws the thing's own fx (a hose's spray, a muzzle flash), from its
+// component data and the holder's presence (pose.use): never a stream of logged acts. Its own registry, keyed
+// fx:<id>, so it never replaces the thing's own particles component; the emitter hangs off the thing at fx.at.
+const fxRegistry = makeEmitterRegistry({
+  autos: autos(),
+  build: (emitter, { id }) => build(emitter, { id: id.slice(3) }),
+  onError: (e, id) => console.warn(`[emitters] ${id}: ${e?.message ?? e}`),
+});
+const fxOn = new Set();
+/** Turn a held thing's fx on (fx = grabbable.fx {particles, at}) or off (null). Idempotent. */
+export function setPressFx(id, fx) {
+  if (!fx) { if (fxOn.delete(id)) void fxRegistry.apply(`fx:${id}`, null); return; }
+  if (!entities.get(id)) return;
+  const norm = normalizeParticles({ ...fx.particles, origin: fx.at ?? [0, 0, 0] }, { entityId: id });
+  if (!norm.ok || !norm.emitter) { if (fxOn.delete(id)) void fxRegistry.apply(`fx:${id}`, null); return; }
+  fxOn.add(id); void fxRegistry.apply(`fx:${id}`, norm.emitter);
+}
+export const pressFxOn = () => [...fxOn];
+
 /** World teardown (a world switch, a reset): every emitter goes, and the
  *  global hook array comes back to where it started. */
 export function clearEmitters() {
   pending.clear();
   registry.retireAll();
+  fxRegistry.retireAll(); fxOn.clear();
   for (const h of [...handles]) retireEmitter(h, autos());
   handles.clear();
 }

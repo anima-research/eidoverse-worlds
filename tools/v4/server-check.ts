@@ -224,6 +224,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && !ag.entities.get("carriage")?.comp?.sockets; i++) await sleep(50);
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
+  // grabbable (slice 5): look says what a hand may do with a thing, the door's own reading (shared/grab.js describeGrab)
+  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
+  for (let i = 0; i < 40 && !ag.entities.get("lantern")?.comp?.grabbable; i++) await sleep(50);
+  const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
+  ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*door grab \{id: "lantern"\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
   const th = await HANDLERS.sit(ag, { on: "carriage", slot: "throne" }, {} as any, "sit");
   ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e sit on the owner's throne: the door refuses a builder", th.content[0].text);
   const dv = await HANDLERS.sit(ag, { on: "carriage", action: "drive" }, {} as any, "sit");
@@ -420,6 +425,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const c = await client(srv.port, "pitch", "Cy", V4);
   ok(c.snapshot?.v4?.holds?.ball?.by === B, "SP2 a joiner's cut says who holds what", c.snapshot?.v4?.holds);
   ok(c.snapshot?.v4?.sim?.spec?.engine === "eidosim@0.5.0" && c.snapshot.v4.sim.sim?.epoch, "SP2 …and carries the sim where the door's clock stands (a joiner folds later launches with it)", c.snapshot?.v4?.sim?.spec);
+  // the hold record (grabbable, slice 3): which hand rides the same presence message, so every client draws it there
+  ok((await b.req("grab", { id: "ball", hand: "left" })).ok, "SP5 Bob moves it to his left hand (presence: nothing logged)"); await sleep(200);
+  ok(a.of("v4-holds").at(-1)?.holds?.ball?.hand === "left" && a.of("v4-holds").at(-1)?.holds?.ball?.by === B, "SP5 …and everyone is told which hand holds it", a.of("v4-holds").at(-1));
   const n = a.of("v4-log").length; b.close(); await sleep(400);
   const launched = a.of("v4-log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === "ball");
   ok(launched.length === 1 && a.of("v4-holds").at(-1)?.holds?.ball === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("v4-holds").at(-1)]);
@@ -463,6 +471,31 @@ srv.proc.kill();
   ok(r.snapshot?.state?.chatTotal === N0 + lines, "SH2 the join's chatTotal counts every line, not the ones since load", [r.snapshot?.state?.chatTotal, N0 + lines]);
   r.close(); srvB.proc.kill(); }
 
+// ================= SK: the server is killed while someone holds a thing (no clean close: no leave, no drop) =================
+// The live server keeps presence in memory, so the hold is gone after a restart, but in a world that runs physics the
+// grab's `lift` took the thing out of the engine, and nothing settles it: it would stay a ghost (no body, no collider)
+// until someone moved it. At load, the door settles what the log still has lifted with nobody holding it, as leave does
+// (door return-held: where the log last had it; a grabbable that returns goes home).
+{ ok(tool(["found", "crash", "--owner", "Ann"]).code === 0, "SK found a physics world");
+  const srvA = await startServer(ENGINE, W4, OPT, "v4-sk");
+  const a = await client(srvA.port, "crash", "Ann", V4); await sleep(100);
+  await a.req("set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } });
+  await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } });
+  await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.4, 1] } });
+  const b = await client(srvA.port, "crash", "Bob", V4); await sleep(150);
+  await b.req("move", { to: [0, 0, 0.5] }); const g1 = await b.req("grab", { id: "ball" }); const g2 = await b.req("grab", { id: "torch" });
+  ok(g1.ok && g2.ok, "SK Bob holds the ball and the torch", [g1.refused, g2.refused]);
+  await b.req("move", { to: [0, 0, 2] }); await sleep(300);
+  srvA.proc.kill(9); await srvA.proc.exited; a.ws.close(); b.ws.close();   // SIGKILL: no leave, no drop, no clean close
+  const before = readLog(fs.readFileSync(path.join(W4, "crash", "v4.jsonl"))).length;
+  const srvB = await startServer(ENGINE, W4, OPT, "v4-sk2");
+  const c = await client(srvB.port, "crash", "Cy", V4); await sleep(200);
+  const L = readLog(fs.readFileSync(path.join(W4, "crash", "v4.jsonl")));
+  const after = L.slice(before).map((e) => `${e.actor === "door" ? "door" : "?"}:${e.kind}:${e.verb}${e.body?.id ? `:${e.body.id}` : ""}`);
+  const k = heldBy(c); const bodies = Object.keys(k?.sim?.sim?.statics ?? {});   // a thing at rest is a static in the engine (shared/sim.js)
+  ok(after.includes("door:act:return-held:ball") && after.includes("door:act:return-home:torch"), "SK1 after the restart, the door settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
+  ok(!Object.keys(c.snapshot?.v4?.holds ?? {}).length && bodies.includes("ball") && bodies.includes("torch"), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.v4?.holds, bodies]);
+  c.close(); srvB.proc.kill(); }
 
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

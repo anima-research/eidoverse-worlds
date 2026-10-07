@@ -23,6 +23,9 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   // held pose (bone quats), body pins and reach descriptors ride the same packet and are lerped by
   // every receiver — a NaN anywhere inside them is the same fault. Deep finite-check, bounded depth.
   for (const k of ["pose", "pins", "reach", "seat"]) if (p[k] != null && !finiteDeep(p[k], 0)) return null;   // seat: its input signals (seat.in) are numbers every receiver blends by
+  // use: what a holder is pressing while they hold a thing ({id, hand}: grabbable's presence tier; every receiver draws
+  // the thing's own fx while it rides). Strings only: anything else costs the field, never the whole pose
+  if ("use" in p && !(p.use && typeof p.use === "object" && !Array.isArray(p.use) && typeof (p.use as Record<string, unknown>).id === "string" && Object.keys(p.use as object).every((k) => k === "id" || (k === "hand" && ["left", "right"].includes(String((p.use as Record<string, unknown>).hand)))))) delete p.use;
   // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
   // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
   for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];

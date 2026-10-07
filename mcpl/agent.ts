@@ -6,6 +6,7 @@
 
 import { bodyOf } from "../shared/components.js";
 import { describeBody, mayLeave } from "../shared/sockbody.js";
+import { grabOf, describeGrab } from "../shared/grab.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
@@ -3367,6 +3368,8 @@ export class WorldAgent {
         if (lines.length) aff.push(`use it (sit {on: "${e.id}", slot}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
+      // what a hand may do with it (shared/grab.js: the door's own reader, so a dynamic thing with no grabbable counts)
+      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — door grab {id: "${e.id}"}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that
       // owns it — "emitting fire", not a sprite inventory and not a bare

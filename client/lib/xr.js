@@ -33,6 +33,7 @@ import { domQuadsScroll } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
 import { entities } from './world.js';
+import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './v4phys.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine } from './pointer.js';
@@ -1192,6 +1193,11 @@ export function updateXR(dtSec = 1 / 72) {
       hand.laser.visible = grip || trig || panelNow != null || plate != null;
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
       if (!buttonsTrusted()) { triggerWas[side] = trig; continue; }
+      // the world: grip takes a grabbable thing (near, else along the laser), letting go releases it, the trigger uses it
+      // (v4phys.js xrHand). A hand holding a thing is busy: no panel chord, no select. Aiming at a panel, the panel wins.
+      { const aimPanel = panelNow != null;
+        const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: !aimPanel && !held, trig, pick: () => rayHitEntity(hand.ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
+        if (gh.holding || gh.took) { triggerWas[side] = trig; continue; } }
       if (grip && trig && !held) tryGrab(side);   // panels only
       if (!grip && held?.hand === side) releaseGrab();
       if (trig && !triggerWas[side] && !grip && !(radialOpen && side === 'right')) {
@@ -1328,6 +1334,7 @@ function warmXRPipelines() {
   }, { p: P_AMBIENT });
 }
 export async function initXR() {
+  bindGrabPresenting(() => presenting);   // a tracked body holds with its own hands: no desktop hold pose on the arms (at init: never at module load, where an import cycle could find v4phys unevaluated)
   if (!navigator.xr) return;
   let supported = false;
   try { supported = await navigator.xr.isSessionSupported('immersive-vr'); }

@@ -7,8 +7,9 @@
 // Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
-import { bodyOf } from "../components.js";
+import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
+import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -394,8 +395,8 @@ export function request(w, actor, tool, args = {}) {
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    w.changedQ = []; w.sayQ = [];
-    if (h && w.exists) { settleSim(w); expireAsks(w); }
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
+    if (h && w.exists) { settleSim(w); returnDue(w); expireAsks(w); }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
@@ -406,6 +407,7 @@ export function request(w, actor, tool, args = {}) {
     if (expect !== undefined) expectCheck(w, expect);
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
+    drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
@@ -613,9 +615,14 @@ function rights(w, st, s, who, role, op, at) {
   if (cap.kind === "script") return scriptRights(st, cap, op, at, need);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
   if (cap.kind === "reaction" && RANK[roleOf(st, cap.author)] < RANK[need]) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
-  if (cap.kind === "handle") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
-    if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can carry`, "");
-    if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may move ${op.id} by hand; you are ${role}`, "ask the owner to set physics.who"); }
+  // a hand's settlement: who may is grabbable.who (grabOf: the one reader, with the physics fallback); a punt is a kick,
+  // not a hand, and keeps physics.who (research: "physics.who now means who may punt or push it")
+  if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
+    if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can punt`, "");
+    if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
+  else if (cap.kind === "handle") { const g = grabOf(st.entities[op.id]?.c);
+    if (!g) refuse("not-grabbable", `${op.id} isn't something you can carry`, "");
+    if (RANK[role] < RANK[g.who]) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
   // founding: once, before any state, in a world whose genesis names this door's operator key (founded here)
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
@@ -770,6 +777,8 @@ function schemaCheck(at, comp, v) {
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
   if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.teach || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
+  // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
+  if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.teach || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
   if (!def.fields) return;
   const fields = Object.keys(def.fields);
@@ -815,7 +824,7 @@ function commit(w, actor, tool, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = stampShapes(ctx, build(ctx));
+  const ops = stampHomes(ctx, stampShapes(ctx, build(ctx)));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, tool, sent, ctx.actExtra);
@@ -1292,7 +1301,7 @@ function offersFor(st, id, actor) {
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c.scripts; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
-const SCRIPT_EVENTS = ["use", "say", "enter", "leave"];
+const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
@@ -1519,6 +1528,52 @@ export function tick(w) {
     return ran;
   });
 }
+/** A world opened after its host stopped without settling presence (a crash, a SIGKILL: no leave ran). Holds are
+ *  presence. A host that persists presence (server/v4/disk.ts) still has the hold, with no one connected to let go: it's
+ *  settled as `leave` settles it (a drop as the holder, which its grabbable may send home, into a socket or straight
+ *  down; a drop the door refuses becomes its return-held). A host that keeps presence in memory (server/v4/live.ts)
+ *  has lost the hold, but in a world that runs physics the grab's `lift` took the thing out of the engine and nothing
+ *  put it back: it would stay a ghost (no body, no collider) until someone moved it. That is settled by the door as
+ *  leave's refusal is: a return-held act (cause: the lift) writing where the log last had it, which seats it in the
+ *  engine again, or, for a grabbable that returns, a return-home. `present` = identities connected now (none, at
+ *  load). Returns what it settled. */
+export function settleOrphans(w, present = []) {
+  if (!w.exists || w.state().status !== "ok") return [];
+  const here = new Set(present); const out = [];
+  for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {
+    const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
+    // a holder the door won't take requests from now (banned since): the hold just ends (presence), and what the log
+    // lifted is settled below by the door, as leave's own refusal is (review 10-06)
+    if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
+  withDoor(w, () => {
+    const st = w.state(); if (!st.entities["@world"]?.c.sim) return;
+    for (const [id, lift] of orphanLifts(w)) {
+      if (w.presence.holds[id] || !st.entities[id]) continue;
+      const g = grabOf(st.entities[id].c);
+      if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
+      const t = w.state().entities[id].c.transform; if (!t) continue;
+      let plan; try { plan = admit(w, w.state(), { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
+      stateEntry(w, plan, w.append({ kind: "act", actor: "door", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
+      out.push({ id, returned: "where the log had it" });
+    }
+  });
+  if (out.length) w.savePresence();
+  return out;
+}
+// Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
+// no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
+function orphanLifts(w) {
+  const lifted = new Map();
+  w.entries.forEach((e, seq) => {
+    if (!isE(e)) return;
+    if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
+    else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
+    else if (e.kind === "state") for (const o of opsQuiet(e)) {
+      if (o.id === "@world" && o.comp === "sim") { lifted.clear(); continue; }
+      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
+  });
+  return lifted;
+}
 /** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by`. The act's
  *  cause is the entry that made the script's sponsor (an arrival isn't logged on every path). */
 export function presenceEvent(w, kind, who) {
@@ -1530,6 +1585,21 @@ export function presenceEvent(w, kind, who) {
     drainScripts(w);
     return ran;
   });
+}
+// grab and release (grabbable; research grab §3): every script whose scope covers the thing and lists the event hears
+// it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
+// when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
+// is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
+// snap), slot? and to? (release), seq (the act) when logged.
+const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
+function drainHeld(w) {
+  let guard = 0;
+  while (w.heldQ?.length && guard++ < 64) { const { kind, id, ev } = w.heldQ.shift(); const st = w.state();
+    for (const { id: sid, name, v } of allScripts(st)) {
+      if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;
+      const sp = sponsorOf(w, sid, `script:${name}`);
+      activate(w, sid, name, { on: kind, id, ...ev, ...(ev.seq !== undefined ? { cause: ev.seq } : sp ? { cause: sp.sponsorAt } : {}) }); } }
+  if (w.heldQ) w.heldQ.length = 0;
 }
 // What a request's (or an activation's) entries set off: `changed:<comp>` for a state entry that changes <comp> on an id
 // in the script's scope; `say` for a say entry. One activation per (script, triggering entry); a script never hears its own.
@@ -1948,9 +2018,10 @@ function buildDuplicate(ctx, a) {
 
 // ---------- reads ----------
 function describe(st, id, live = {}, holds = {}) {
-  const e = st.entities[id]; const t = worldT(st, id);
-  return { id, name: e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id, at: t.pos.map((n) => Math.round(n * 100) / 100),
-    ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100) } : {}),
+  const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
+  return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
+    ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
+    ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
     ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}) };
 }
 
@@ -2074,22 +2145,31 @@ const PHYSICS_TOOLS = {
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     const held = w.presence.holds[a.id];
-    if (held?.by === actor) return { ok: true, recorded: false, holding: a.id, inHandAt: held.pose.pos.map(r3), note: "you're already holding it" };
-    const ph = e.c.physics;
-    if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
-    const need = ph.who ?? "builder"; if (RANK[roleOf(st, actor)] < RANK[need]) refuse("rights", `only a ${need} may pick up ${a.id}`, "ask someone who can, or ask the owner to set physics.who: 'visitor'");
+    if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
+    if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
+    if (held?.by === actor) return secondHand(w, actor, a, held, e);
+    // grabOf (shared/grab.js) is the one reader: grabbable, or a dynamic thing's physics.who (the migration fallback)
+    const g = grabOf(e.c);
+    if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
+    if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
+    const need = g.who; const role = roleOf(st, actor); if (RANK[role] < RANK[need]) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
+    if (held && !g.steal && RANK[role] < RANK.owner) refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
-    const d = dist(handOf(me), here); if (d > REACH) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${REACH} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
+    // range (grabbable): from the hand; past arm's reach the door grants it as a pull (the thing flies to the hand: a
+    // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
+    const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
+    const how = holdHow(a, g); // which hand, by which grip or offset: refused before anything is written
     const prev = w.presence.holds[a.id]; const notes = [];
+    if (d > REACH) notes.push({ id: a.id, pulled: r3(d), why: `it was ${r3(d)} m away; its grabbable.range lets it fly to your hand` });
     if (prev && prev.by !== actor) notes.push({ id: a.id, takenFrom: prev.by, why: "the latest grab wins; they were told" });
     // what rested on it (and isn't its child, which rides along) loses its support (playtest 22, F3)
     const fam = new Set([a.id, ...descendants(st, a.id)]);
     const dependents = live ? [] : Object.keys(st.entities).filter((k) => { if (fam.has(k)) return false; const b = aabb(st, k);
       return b && !st.entities[k].c.parent && supportUnder(st, b, new Set([k, ...descendants(st, k)])).id === a.id; });
-    for (const k of dependents) { const pk = st.entities[k].c.physics; const role = roleOf(st, actor);
+    for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
-      if (RANK[role] < RANK.builder && !(pk?.kind === "dynamic" && RANK[role] >= RANK[pk.who ?? "builder"])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
+      if (RANK[role] < RANK.builder && !(gk && gk.enabled && RANK[role] >= RANK[gk.who])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
     const spec = st.entities["@world"]?.c.sim;
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
@@ -2116,15 +2196,45 @@ const PHYSICS_TOOLS = {
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
     const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
-    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled };
+    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };
     w.savePresence();
-    return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...(notes.length ? { notes } : {}) };
+    heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
+    return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
   },
   // P3: putting something down is a settlement: a claim the door checks like any write, then logs as a plain result.
-  put(w, actor, a) {
+  // grabbable says where it goes (research §3): home (release: return), into a socket that accepts it (fits), where
+  // the hand let go (release: stay), or straight down onto what's below (drop, the default).
+  put(w, actor, a, how = "put") {
     const me = body(w, actor); const h = holdOf(w, actor, a.id);
-    const st = w.state(); const t = worldT(st, a.id);
+    const st = w.state(); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
+    const facts = () => ({ handled: h.handled, presence: { ...presenceFacts(me), held: h.pose.pos.map(r3) } });
+    // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
+    // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
+    // snap are the holder's settlements too, as a plain put is)
+    if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
+      const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
+    { const role = roleOf(st, actor); if (g && RANK[role] < RANK[g.who]) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
+    // home: the holder's act, then the door's return (its own act, caused by the release)
+    if (g?.release === "return" && g.home) {
+      const ret = returnPlan(w, st, a.id, g);
+      if (ret.plan) { rateCheck(w, actor); const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "return" }));
+        const back = returnHome(w, a.id, ret.plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "return", seq: act });
+        return { ok: true, act, seq: back.seq, settled: { id: a.id, home: g.home }, handled: h.handled, release: "return", notes: [{ id: a.id, why: "its grabbable.release is return: it went home" }] }; }
+    }
+    // a socket that accepts it, within that socket's radius of where it's let go (Resonite Snapper, XRI Socket)
+    const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
+    if (snap.to) {
+      const hs = worldT(st, snap.to.to).scale;
+      const ops = [setOp(a.id, "parent", { to: snap.to.to, slot: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
+      const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
+      const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", slot: { to: snap.to.to, slot: snap.to.slot } }));
+      const seq = stateEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, slot: snap.to.slot, seq: act });
+      return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, slot: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, slot: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
+    }
+    // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
+    const stay = g?.release === "stay";
     let pos = a.pos;
+    if (pos === undefined && stay) pos = h.pose.pos.map(r3);
     if (pos === undefined) { // no pose given: straight down from where it's held, onto what's below (the door resolves)
       const fam = new Set([a.id, ...descendants(st, a.id)]); const sup = supportBelow(st, h.pose.pos[0], h.pose.pos[2], h.pose.pos[1], fam);
       pos = [r3(h.pose.pos[0]), sup.y, r3(h.pose.pos[2])]; }
@@ -2134,19 +2244,41 @@ const PHYSICS_TOOLS = {
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-    const bad = warnings(plan.after, [a.id]);
+    const bad = warnings(plan.after, [a.id]).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
-    const act = w.append(actOf(w, actor, "put", a, { handled: h.handled, presence: { ...presenceFacts(me), held: h.pose.pos.map(r3) } }));
+    const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = stateEntry(w, plan, act);
-    delete w.presence.holds[a.id]; w.savePresence();
-    return { ok: true, seq, act, settled: { id: a.id, pos }, handled: h.handled };
+    delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: stay ? "stay" : how, seq: act });
+    return { ok: true, seq, act, settled: { id: a.id, pos }, handled: h.handled, ...(stay ? { release: "stay" } : {}), ...(snap.notes.length ? { notes: snap.notes } : {}) };
   },
-  throw(w, actor, a) { return launch(w, actor, a, "throw"); },
-  drop(w, actor, a) {
-    if (!w.state().entities["@world"]?.c.sim) { // no physics: set straight down from where the hand let go
+  // research §Decisions 1: what flies is a dynamic thing in a world that runs physics. Anything else let go is set
+  // straight down, and a throw of it is a drop that says so: a VR hand lets go with its velocity whatever the world is
+  // (v4phys.release sends throw when the hand moves), and refusing it left the thing stuck in the hand.
+  // grabbable.throw scales the velocity (0: it can only be dropped); release: return sends it home instead of flying.
+  throw(w, actor, a) {
+    if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
+    const g = grabOf(w.state().entities[a.id]?.c);
+    const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c.sim ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
+      : g?.throw === 0 ? `${a.id} can't be thrown (its grabbable.throw is 0): it was let go` : g?.release === "return" ? null : undefined;
+    if (why !== undefined) {
+      const r = PHYSICS_TOOLS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
+      return r.ok && why ? { ...r, notes: [...(r.notes ?? []), { id: a.id, thrown: "set down", why }] } : r;
+    }
+    return launch(w, actor, a, "throw", g);
+  },
+  drop(w, actor, a, how = "drop") {
+    if (a.hand !== undefined) { const h = holdOf(w, actor, a.id); if (!["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
+      if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) { // one hand of two lets go: the other keeps it (presence, unlogged)
+        if (a.hand === h.hand) { h.hand = h.second.hand; delete h.offset; if (h.second.grip) h.grip = h.second.grip; else delete h.grip; }
+        delete h.second; w.savePresence(); return { ok: true, recorded: false, holding: a.id, hand: h.hand, note: `your ${a.hand} hand let go; your ${h.hand} hand still holds it` }; }
+      if (a.hand !== h.hand) refuse("not-holding", `your ${a.hand} hand isn't holding ${a.id} (your ${h.hand} hand is)`, `drop {id: '${a.id}'} lets go`); }
+    const st = w.state(); const g = grabOf(st.entities[a.id]?.c);
+    // what doesn't fly is set down from where the hand let go; so is what goes home, into a socket, or stays
+    const sets = !fliesIn(st, a.id) || g?.release === "return" || g?.release === "stay" || (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);
+    if (sets) {
       if (a.pos !== undefined) { const me = body(w, actor); const h = holdOf(w, actor, a.id); h.pose.pos = releasePos(me, a.pos); }
-      return PHYSICS_TOOLS.put(w, actor, { id: a.id }); }
-    return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop");
+      return PHYSICS_TOOLS.put(w, actor, { id: a.id }, how); }
+    return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
   // the kick physobj offered (/punt, an agent's world_verb punt), as a sim intent (design 20, P4: "punt is a sim intent
   // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
@@ -2175,7 +2307,7 @@ const PHYSICS_TOOLS = {
     if (sp > max) { const sent = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent, kept: v.map(r3), why: `capped at ${max} m/s` }); }
     // L7 (33 F3): the write it decides (its rest), admitted now as a launch's is: rights, locks, rate. A thing in the air
     // is the engine's (L6: no write may touch it in flight), so for a volley the gates above are the whole check.
-    if (!flying) admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
+    if (!flying) admit(w, st, { actor, cap: { kind: "handle", via: "punt", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
     else rateCheck(w, actor);
     const act = w.append(actOf(w, actor, "punt", a, { presence: presenceFacts(me), ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
@@ -2219,6 +2351,123 @@ function recentRests(w, now) {
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 };
 const noNeg0 = (n) => (n === 0 ? 0 : n); // I-JSON has no -0; an engine can make one (the same number, written as 0)
+// The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
+// Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
+// by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
+// this record: nothing streams, nothing is logged.
+function holdHow(a, g) {
+  const names = Object.keys(g.grips);
+  if (a.grip !== undefined) {
+    if (!names.length) refuse("no-grip", `it has no grips (grabbable.grips); it's held where you take it`, "leave grip out");
+    if (!g.grips[a.grip]) refuse("no-grip", `it has no grip called '${a.grip}'`, `its grips: ${names.join(", ")}`, { didYouMean: guess(String(a.grip), names) });
+  }
+  const hand = a.hand ?? (a.grip !== undefined && g.grips[a.grip].hand !== "either" ? g.grips[a.grip].hand : "right");
+  if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse("wrong-hand", `the ${a.grip} grip is for a ${g.grips[a.grip].hand} hand, not your ${hand}`, `grab {id, grip: '${a.grip}', hand: '${g.grips[a.grip].hand}'}`);
+  const grip = a.grip ?? pickGrip(g, hand);
+  if (grip) return { hand, grip };
+  return { hand, ...(a.offset ? { offset: { pos: a.offset.pos.map(r3), q: a.offset.q.map((n) => Math.round(n * 1e6) / 1e6) } } : {}) };
+}
+// Grabbing what you already hold with your OTHER hand: a two-handed thing takes it in both (the second hand on a
+// secondary grip steers it: Godot SECOND, Unity Multiple); anything else swaps hands (Godot SWAP). The same hand, or no
+// hand named, is a no-op, as before.
+function secondHand(w, actor, a, h, e) {
+  const g = grabOf(e.c); const hand = a.hand;
+  if (!g || hand === undefined || hand === h.hand || hand === h.second?.hand) return { ok: true, recorded: false, holding: a.id, inHandAt: h.pose.pos.map(r3), hand: h.hand, note: "you're already holding it" };
+  if (g.twoHanded) {
+    if (a.grip !== undefined && !g.grips[a.grip]) refuse("no-grip", `it has no grip called '${a.grip}'`, `its grips: ${Object.keys(g.grips).join(", ") || "none"}`, { didYouMean: guess(String(a.grip), Object.keys(g.grips)) });
+    const grip = a.grip ?? pickGrip(g, hand, { role: "secondary" });
+    h.second = { hand, ...(grip ? { grip } : {}) }; w.savePresence();
+    return { ok: true, recorded: false, holding: a.id, hand: h.hand, second: h.second, note: "in both hands: the second steers it" };
+  }
+  const how = holdHow(a, g); delete h.grip; delete h.offset; delete h.second; Object.assign(h, how); w.savePresence();
+  return { ok: true, recorded: false, holding: a.id, ...how, note: `moved to your ${hand} hand` };
+}
+// a release flies (a sim launch) only for a dynamic thing in a world that runs physics; anything else is set down
+const fliesIn = (st, id) => !!st.entities["@world"]?.c.sim && st.entities[id]?.c.physics?.kind === "dynamic";
+// The socket a released thing snaps into (research §3, Resonite Snapper with XRI's radius): the nearest socket, on
+// anything but itself or what it carries, whose `accepts` shares a keyword with its grabbable.fits and whose world point
+// is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
+// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a v4 child's transform is
+// local to its parent; the slot names which socket it's in).
+function snapTarget(st, id, g, p) {
+  const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
+  const fam = new Set([id, ...descendants(st, id)]);
+  for (const [hid, he] of Object.entries(st.entities)) {
+    if (hid === "@world" || fam.has(hid)) continue;
+    const socks = he.c.sockets ?? modelOf(he.c.model)?.sockets; if (!socks || typeof socks !== "object") continue;
+    for (const [slot, sk] of Object.entries(socks)) {
+      if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;
+      const ht = worldT(st, hid); const off = qrot(ht.q, sk.pos.map((v, i) => v * ht.scale[i])); const sp = ht.pos.map((v, i) => v + off[i]);
+      const d = dist(sp, p); if (d > socketRadius(sk)) continue;
+      if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.slot === slot)) { out.notes.push({ passedOver: { to: hid, slot }, why: "something already sits in that socket" }); continue; }
+      const lk = [hid, ...ancestors(st, hid)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: { to: hid, slot }, why: `${lk} is locked` }); continue; }
+      if (!out.to || d < out.to.d) out.to = { to: hid, slot, d, sock: sk };
+    }
+  }
+  return out;
+}
+// Home (research §3): where a returning thing goes. A door act (actor door, verb return-home) whose cause is the
+// release, then its state entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
+// parent that's gone) means it stays where it is.
+function returnPlan(w, st, id, g) {
+  const e = st.entities[id]; const hp = g.home.parent;
+  if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
+  const ops = [...(hp ? [setOp(id, "parent", { order: "a0", ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
+  try { return { plan: admit(w, st, { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
+  catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
+}
+function returnHome(w, id, plan, cause) {
+  const act = w.append({ kind: "act", actor: "door", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
+  return { act, seq: stateEntry(w, plan, act) };
+}
+// What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the door's follow-up to one):
+// the entry and the release that caused it. An edit, a script or a return isn't one (they don't send it home).
+const HAND_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), DOOR_AFTER = new Set(["settle", "return-lost", "return-held"]);
+function lastRelease(w, id) {
+  const lt = lastTouch(w, id, "transform"); if (!lt) return null;
+  const se = w.entries[lt.seq]; const c = w.entries[se?.cause]; if (!isE(c)) return null;
+  const byHand = (c.kind === "act" && (HAND_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "door" && DOOR_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
+  return byHand ? { seq: lt.seq, ts: se.ts, release: c.kind === "sim" ? c.cause : se.cause } : null;
+}
+const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
+  const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
+  return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null) && (e.c.parent?.slot ?? null) === (home.parent?.slot ?? null); };
+// returnAfter (research §3): at the first request after a thing has been unheld that long since a hand or physics last
+// moved it, the door sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
+// moved it, and a return isn't a release.
+function returnDue(w) {
+  const st = w.state(); const now = w.now(); let sf = null;
+  for (const [id, e] of Object.entries(st.entities)) {
+    const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
+    const g = grabOf(e.c); if (!g?.home || w.presence.holds[id]) continue;
+    if (st.entities["@world"]?.c.sim) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
+    const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || sameHome(st, id, g.home)) continue;
+    const { plan } = returnPlan(w, w.state(), id, g); if (plan) returnHome(w, id, plan, r.release);
+  }
+}
+// A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
+// that moves a thing whose home was where it stood carries the home with it (a builder moving the key moves its hook…
+// home). A builder may set home outright; one that isn't where the thing stands is left alone.
+const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
+  return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.slot ? { slot: c.parent.slot } : {}) } } : {}) }; };
+function stampHomes(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops;
+  const after = scratch(ctx.st, ops); const out = ops.slice();
+  const ids = new Set(ops.filter((o) => o.verb === "create" || (o.verb === "set" && ["grabbable", "transform", "parent"].includes(o.comp)) || (o.verb === "delete" && o.comp === "parent")).map((o) => o.id));
+  for (const id of ids) {
+    const v = after.entities[id]?.c.grabbable; if (!wantsHome(v)) continue;
+    const setsG = ops.some((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id);
+    let home = null;
+    const born = ops.some((o) => o.verb === "create" && o.id === id);   // a copy or an instance goes home to where it was made, not to its source's home (review 10-06)
+    if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);
+    else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);
+    if (!home) continue;
+    const k = out.findIndex((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id); const val = { ...v, home };
+    if (k >= 0) out[k] = setOp(id, "grabbable", val); else out.push(setOp(id, "grabbable", val));
+    ctx.notes.push({ id, component: "grabbable", field: "home", kept: home, why: v.home === undefined ? "stamped: where it goes home to (its transform now)" : "moved with it: its home was where it stood" });
+  }
+  return out;
+}
 function flyingWorld(st) {
   const spec = st.entities["@world"]?.c.sim;
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}}");
@@ -2235,7 +2484,7 @@ function releasePos(me, pos) {
   const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the door tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
   return pos.map(noNeg0);
 }
-function launch(w, actor, a, tool) {
+function launch(w, actor, a, tool, g = null) {
   const me = body(w, actor); const h = holdOf(w, actor, a.id);
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id);
@@ -2245,11 +2494,13 @@ function launch(w, actor, a, tool) {
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
-  const notes = []; let v = a.v; const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
-  if (sp > max) { v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `capped at ${max} m/s` }); }
+  const notes = []; let v = a.v;
+  if (g && g.throw !== 1 && tool === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
+  const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
+  if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, tool, a, { handled: h.handled, presence: presenceFacts(me) }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
-  delete w.presence.holds[a.id]; w.savePresence();
+  delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: tool, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
 // ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
@@ -2376,8 +2627,8 @@ const TOOLS = {
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
-        body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?}", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
+        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
@@ -2447,6 +2698,24 @@ const TOOLS = {
   publish: (w, actor, a) => commit(w, actor, "publish", a, (ctx) => buildPublish(ctx, a, w)),
   update: (w, actor, a) => commit(w, actor, "update", a, (ctx) => buildUpdate(ctx, a, w)),
   use(w, actor, a) {
+    // use while held (grabbable.use; research grab §3): the holder's use with no action fires the thing's own: its down,
+    // or its up with args.phase 'up' (a hose turns on, then off: each one act). The request is logged as sent; the act
+    // and the script's event say it was held, in which hand, and which phase. Rapid or continuous effects while pressed
+    // (a muzzle flash, a spray) are presence, never a stream of acts: grabbable.fx, drawn by every client.
+    const hold = w.presence.holds[a.id]; let held = null; const sent = a;
+    // review 10-06: the up of a press is taken from whoever pressed down, even when the thing has left their hand since
+    // (taken by someone, dropped with the button still down): a hose that was turned on gets turned off. Once.
+    const P = (w.presence.pressed ??= {}); const lateUp = a.args?.phase === "up" && P[a.id]?.by === actor && hold?.by !== actor;
+    const holding = hold?.by === actor || lateUp;
+    if (a.args?.held === true && !holding) refuse("not-holding", `you aren't holding ${a.id}`, `grab {id: '${a.id}'} first, or leave held out`);
+    if (holding) {
+      const g = grabOf(w.state().entities[a.id]?.c); const phase = a.args?.phase === "up" ? "up" : "down";
+      held = { held: true, hand: (lateUp ? P[a.id].hand : hold.hand) ?? "right", phase };
+      if (phase === "down") P[a.id] = { by: actor, hand: held.hand }; else delete P[a.id]; w.presenceDirty = true;
+      if (a.action === undefined && g?.use) { const action = phase === "up" ? g.use.up : g.use.down;
+        if (!action) return { ok: true, recorded: false, held, note: `${a.id} does nothing on use ${phase} (its grabbable.use names no ${phase})` };
+        a = { ...a, action }; }
+    }
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
     if (probe.presence) return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
@@ -2459,12 +2728,12 @@ const TOOLS = {
         if (v1 || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
           refuse("no-runtime", `${a.id}'s '${probe.action}' runs the v1 behaviour '${v1 ? v1[0].slice(9) : probe.script}', carried by translation; v4 doesn't run v1 source`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists v1 behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
-      const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}) };
+      const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
-      rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", a, { runs: key }));
-      return { ok: true, act, recorded: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
+      rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", sent, { runs: key, ...(held ? { held, action: probe.action } : {}) }));
+      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
     }
-    return commit(w, actor, "use", a, (ctx) => buildUse(ctx, a));
+    return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry
   ban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "banning needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "ban {who}", "");

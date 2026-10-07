@@ -435,7 +435,7 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
 // physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
-initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to });
+initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({

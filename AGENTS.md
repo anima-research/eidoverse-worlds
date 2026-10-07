@@ -155,13 +155,24 @@ you. Target movement, posture change and falling do not revoke that
 tracking relation. Target-side revoke is not implemented yet (issue #183);
 agree on release with the other participant.
 
-**Objects move too: carrying, throwing and punting are door requests** (v4; design 20). A thing with
-`physics {kind: 'dynamic', who?}` can be picked up (`grab {id}`, within 1.5 m of your hand as the door tracks your
-body: `move {to}` first), carried (it moves with your `move`s; every client draws it in your hand), set down
-(`put {id, pos?}`), let go (`drop {id, pos?}`) or thrown (`throw {id, v: [x, y, z], pos?}`; `pos` is where your hand
-lets go). `punt {id, power? | v?}` kicks a thing at your feet into flight (or volleys one in the air beside you);
-it is never `kick`, which is moderation's remove-a-person. Humans have T (pick up / put down), C (throw / punt) and
-`/grab /put /drop /throw /punt`. `physics.who` says who may (default builder); locks bind as they bind a place.
+**Objects move too: carrying, throwing and punting are door requests** (v4; design 20). **Grabbable makes a thing
+carryable; physics makes it fall.** A thing with a `grabbable` component (or, with none, `physics {kind: 'dynamic',
+who?}`) can be picked up (`grab {id, hand?, grip?}`, within its `range` of your hand, default 1.5 m, as the door
+tracks your body: `move {to}` first), carried (it moves with your `move`s; every client draws it in your hand, by its
+grip when it has one), set down (`put {id, pos?}`), let go (`drop {id, pos?, hand?}`) or thrown (`throw {id, v: [x, y,
+z], pos?}`; `pos` is where your hand lets go; in a world with no physics a throw is set down, and says so). `look`
+says what a hand may do with each thing. `grabbable` (`schema {component: 'grabbable'}`; shared/grab.js):
+`{who, enabled, steal, range, priority, hold, pose, grips: {<name>: {pos, q?, hand?, role?, fingers?}}, twoHanded,
+throw, release: drop|stay|return, returnAfter, fits: [keywords], use: <action>|{down, up}, prompt, fx}`: `fits` snaps
+it into a socket whose `accepts` shares a keyword when let go within the socket's `radius` (a key on its hook);
+`return`/`returnAfter` send it home (the door's own `return-home` act). While you hold it, `use {id}` fires its
+`use` (`args: {phase: 'up'}` for the release): each press and release is one act, for state changes (a hose on, then
+off); rapid effects while pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a stream of acts.
+Scripts hear `grab` and `release` (docs/SCRIPTS-v4.md). `punt {id, power? | v?}` kicks a thing at your feet into
+flight (or volleys one in the air beside you); it is never `kick`, which is moderation's remove-a-person. Humans
+have T (pick up / put down), C (throw / punt), the left button to use what they hold, `/grab /put /drop /throw
+/punt`, and in VR the grip (near, or the laser out to `range`) and the trigger. `grabbable.who` says who may pick
+it up (default builder), `physics.who` who may punt it; locks bind as they bind a place.
 Flight needs the world to run physics: `set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}}`
 (owner). Then a launch is a `sim` entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and the door
 LOGS where it came to rest (a state entry caused by the launch); `wait` reports rests. Every client folds the same
