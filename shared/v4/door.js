@@ -8,7 +8,7 @@
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf } from "../components.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
+import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
@@ -509,7 +509,8 @@ function admit(w, st, who, ops) {
   // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.sim) may freeze it (P6, force).
   const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "door"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
-  let s = st; const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
+  let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
+  const prevOf = new Map(); // script: sets → the key's value just before that op, within this write
   ops.forEach((raw, i) => {
     const { verb, ...rest } = raw; const op = { verb, ...shapeOneOrRefuse(verb, rest, i) };
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
@@ -549,10 +550,11 @@ function admit(w, st, who, ops) {
       const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = held ? null : ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
       const k = own ?? anc;
       if (k) lockCheck(w, st, who, role, k, op, at); }
-    s = applyOps(s, [op]); norm.push(op);
+    if (op.verb === "set" && op.comp.startsWith("script:")) prevOf.set(op, s.entities[op.id]?.c[op.comp]); // the value just before it
+    applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
-  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
+  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -1323,12 +1325,16 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
 // world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
 // ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
 // chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
-export const DUTY = { windowMs: 1000, maxMs: 500 };
+export const DUTY = { windowMs: 1000, maxMs: 500, worldShare: 0.6 }; // one world gets at most worldShare of it (fairness between worlds)
 /** A host sets the process's script duty (a big server may give scripts more of each second; a test that fires a thousand
  *  activations in a tight loop opens it wide). Returns the previous setting. */
-export function setScriptDuty({ windowMs = DUTY.windowMs, maxMs = DUTY.maxMs } = {}) { const was = { ...DUTY }; Object.assign(DUTY, { windowMs, maxMs }); dutyLog.length = 0; return was; }
+export function setScriptDuty({ windowMs = DUTY.windowMs, maxMs = DUTY.maxMs, worldShare = DUTY.worldShare } = {}) { const was = { ...DUTY }; Object.assign(DUTY, { windowMs, maxMs, worldShare }); dutyLog.length = 0; return was; }
 const dutyLog = [];
-const dutyLeft = () => { const t = performance.now(); while (dutyLog.length && t - dutyLog[0].at > DUTY.windowMs) dutyLog.shift(); return DUTY.maxMs - dutyLog.reduce((n, d) => n + d.ms, 0); };
+// what's left of the duty for world `wid`: the process's, and that world's share of it
+const dutyLeft = (wid) => { const t = performance.now(); while (dutyLog.length && t - dutyLog[0].at > DUTY.windowMs) dutyLog.shift();
+  const all = dutyLog.reduce((n, d) => n + d.ms, 0), mine = dutyLog.reduce((n, d) => n + (d.w === wid ? d.ms : 0), 0);
+  return Math.min(DUTY.maxMs - all, DUTY.maxMs * DUTY.worldShare - mine); };
+const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per person per minute: they run code and log nothing
 // door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
@@ -1369,12 +1375,16 @@ function activate(w, id, name, ev) {
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
-  if (!dry && dutyLeft() <= 0) return out("refused", { code: "busy", why: `this door's scripts have used their ${DUTY.maxMs} ms of the last second (every world here shares it); it runs again when there's time`, sponsor: sp.sponsor });
+  if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the door's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
+  if (dry) { const now0 = w.now(), who = ev.by ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
+    if (D0.length >= DRY.n) return out("refused", { code: "rate", why: `${said(who)} has asked for ${D0.length} dry runs in the last minute; at most ${DRY.n}` });
+    D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
-  if (!dry) { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms });
+  { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
+  if (!dry) { const ms = performance.now() - t0;
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};

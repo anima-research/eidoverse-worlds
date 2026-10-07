@@ -8,7 +8,7 @@
 //            because an audit re-run must drop exactly the same writes. In order, against the batch so far, by JCS.
 //   paramKey a component's `param.<name>` field: a number a script writes for something else to read (seat poses
 //            that blend by signals read `param.<name>`; RESEARCH-socket-body 2026-10-06).
-import { applyOps, jcs } from "./fold.js";
+import { cowState, applyCow, jcs } from "./fold.js";
 import { sha256 } from "./hash.js";
 
 export const LANG = "js";
@@ -60,11 +60,11 @@ export const seedOf = (worldId, actSeq, key) => sha256(`${worldId}|${actSeq}|${k
 
 // drop a set equal to the value it would replace, or a delete of what isn't there, judged in order against the batch so far
 export function elide(st, ops) {
-  let s = st; const out = [];
+  const s = cowState(st); const out = [];
   for (const o of ops) { const e = s.entities[o.id];
     if (o.verb === "set" && e && o.comp in e.c && jcs(e.c[o.comp]) === jcs(o.value)) continue;
     if (o.verb === "delete" && (!e || (o.comp !== undefined && !(o.comp in e.c)))) continue;
-    out.push(o); try { s = applyOps(s, [o]); } catch { /* the gate names the shape problem */ } }
+    out.push(o); try { applyCow(s, [o]); } catch { /* the gate names the shape problem */ } }
   return out;
 }
 

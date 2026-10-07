@@ -23,7 +23,7 @@
 // builtin, and one such call (String#indexOf on crafted text, BigInt toString, an out-of-memory inside Array#fill) once
 // held the door's thread for 1–13 s (review, 2026-10-06). The host side stays on the door's thread, so an activation is
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
-import { applyOps, jcs, isEntityId, isComponent } from "./fold.js";
+import { jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamKey } from "./scriptrules.js";
 
 let Q = null, unavailable = null;
@@ -109,8 +109,26 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace
 export function makeHost(x) {
   const L = { ...LIMITS, ...(x.limits ?? {}) };
   const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: [] }; let nearAt = 0, countAt = 0, nameAt = 0;
-  let calls = 0, minted = 0, stop = null, cur = x.st, pending = [];
-  const view = () => { if (pending.length) { for (const o of pending) { try { cur = applyOps(cur, [o]); } catch { /* admit names it */ } } pending = []; } return cur; };
+  let calls = 0, minted = 0, stop = null;
+  // read-your-writes without copying the world: an overlay of the things this activation wrote (id → entity, or null if
+  // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (a review
+  // found 32 writes then a read cloned a big world 32 times, on the door's thread, past the deadline). The door's
+  // admit still judges the real batch; this view is only what the script reads back.
+  const base = x.st.entities, ov = new Map(); let idsIdx = null, kidsIdx = null;
+  const entOf = (id) => (ov.has(id) ? ov.get(id) : base[id] ?? null);
+  const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };
+  const apply = (o) => {
+    if (o.verb === "create") { if (!entOf(o.id)) ov.set(o.id, { born: -1, c: Object.create(null) }); return; }
+    if (o.verb === "delete" && o.comp === undefined) { ov.set(o.id, null); return; }
+    const e = writable(o.id); if (!e) return;
+    if (o.verb === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
+  };
+  const parentOf = (e) => (e?.c?.parent && typeof e.c.parent.to === "string" ? e.c.parent.to : null);
+  const allIds = () => { idsIdx ??= Object.keys(base).sort(); return [...new Set([...idsIdx, ...ov.keys()])].filter((k) => entOf(k)).sort(); };
+  const kidsOf = (id) => { if (!kidsIdx) { kidsIdx = new Map(); for (const k of Object.keys(base)) { const p = parentOf(base[k]); if (p) { let a = kidsIdx.get(p); if (!a) kidsIdx.set(p, (a = [])); a.push(k); } } }
+    const out = new Set((kidsIdx.get(id) ?? []).filter((k) => !ov.has(k)));
+    for (const [k, e] of ov) if (e && parentOf(e) === id) out.add(k);
+    return [...out].sort(); };
   const self = (id) => (id === "self" ? x.self : id);
   class HostError extends Error {}
   const wantId = (id, what) => { if (!isEntityId(id)) throw new HostError(`${what}: '${id}' isn't an entity id`); return id; };
@@ -121,26 +139,26 @@ export function makeHost(x) {
   const host = (q) => {
     const [verb, ...a] = q;
     switch (verb) {
-      case "get": { read(); const st = view(); const e = st.entities[self(a[0])]; if (!e) return null; if (a[1] === null) return copy(e.c); return copy(e.c[a[1]]); }
-      case "children": { read(); const st = view(); const id = self(a[0]); return Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === id).sort().slice(0, L.ids); }
-      case "ids": { read(); return Object.keys(view().entities).sort().slice(0, L.ids); }
+      case "get": { read(); const e = entOf(self(a[0])); if (!e) return null; if (a[1] === null) return copy(e.c); return copy(e.c[a[1]]); }
+      case "children": { read(); return kidsOf(self(a[0])).slice(0, L.ids); }
+      case "ids": { read(); return allIds().slice(0, L.ids); }
       case "near": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError("world.near(r): r is metres, 0–1000");
         const ids = x.reads ? x.reads.near?.[nearAt]?.ids ?? [] : (x.near ? x.near(r) : []); nearAt++; reads.near.push({ r, ids: ids.slice() }); return ids.slice(); }
       case "name": { read(); const id = a[0]; // a display name lives in the door's directory, outside the log: recorded, so a re-run agrees
         const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names.push({ id, name: n }); return n; }
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
-      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: a[2] }; ops.push(op); pending.push(op); return null; }
+      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: a[2] }; ops.push(op); apply(op); return null; }
       case "param": { write(); const id = wantId(self(a[0]), "world.param"), comp = wantComp(a[1], "world.param"), key = `param.${a[2]}`;
         if (!isParamKey(key)) throw new HostError(`world.param: '${a[2]}' isn't a parameter name (a letter, then letters, digits, _ or -, up to 32)`);
         if (typeof a[3] !== "number") throw new HostError(`world.param: ${key} is a number (a signal), got ${JSON.stringify(a[3])}`);
-        const st = view(); const was = st.entities[id]?.c[comp]; const base = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
-        const op = { verb: "set", id, comp, value: { ...base, [key]: a[3] } }; ops.push(op); pending.push(op); return null; }
-      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); pending.push(op); return null; }
+        const was = entOf(id)?.c[comp]; const prev = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
+        const op = { verb: "set", id, comp, value: { ...prev, [key]: a[3] } }; ops.push(op); apply(op); return null; }
+      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
         const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 8)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
-        write(); const mk = { verb: "create", id }; ops.push(mk); pending.push(mk);
-        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: v }; ops.push(op); pending.push(op); }
+        write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
+        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: v }; ops.push(op); apply(op); }
         return id; }
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }
@@ -259,9 +277,11 @@ function lineOf(c, deadline) {
   let naps = 0, last = false;
   for (;;) {
     const i = c.pend.indexOf("\n"); if (i >= 0) { const l = c.pend.slice(0, i); c.pend = c.pend.slice(i + 1); return l; }
-    let n = 0; try { n = fsm.readSync(c.rfd, c.buf, 0, c.buf.length, null); } catch (e) { if (e?.code !== "EAGAIN") return null; }
-    if (n > 0) { c.pend += c.dec.decode(c.buf.subarray(0, n), { stream: true }); naps = 0; continue; }
-    if (c.proc.exitCode !== null || c.proc.signalCode) return null;
+    let n = -1; try { n = fsm.readSync(c.rfd, c.buf, 0, c.buf.length, null); } catch (e) { if (e?.code !== "EAGAIN") { c.gone = true; return null; } }
+    if (n > 0) { c.pend += c.dec.decode(c.buf.subarray(0, n), { stream: true }); c.opened = true; naps = 0; continue; }
+    // 0 = end of file: nobody holds the write end. Before the child has opened it (still starting) that's normal; after,
+    // it means the child is gone, whether or not it has been reaped yet (exitCode stays null until the event loop runs)
+    if ((n === 0 && c.opened) || c.proc.exitCode !== null || c.proc.signalCode) { c.gone = true; return null; }
     // past the deadline, look once more: if THIS thread was the one held up (a GC, an oversleeping nap), the answer may
     // already be waiting in the pipe, and killing a process that replied in time would fail an innocent script
     const left = deadline - performance.now(); if (left <= 0) { if (last) return null; last = true; continue; }
@@ -276,7 +296,7 @@ function send(c, str, deadline) {
 }
 function refill() { while (pool.length < WANT) { const c = spawnChild(); if (!c) break; pool.push(c); } }
 // a warm process: one that has said ready. One still loading QuickJS is waited for, bounded; a dead one is replaced
-const dead = (c) => c.proc.exitCode !== null || !!c.proc.signalCode;
+const dead = (c) => !!c.gone || c.proc.exitCode !== null || !!c.proc.signalCode;
 function takeReady(until) {
   refill();
   for (;;) {
@@ -289,25 +309,35 @@ function takeReady(until) {
     nap(1);
   }
 }
+// take in any {ready} lines already waiting (never waits): a process is warm once it said so
+function pollReady() { for (const c of pool) if (!c.ready && lineOf(c, 0) !== null) c.ready = true; }
 /** Start the warm processes now (a door that holds scripts calls this at load, so its first activation doesn't wait). */
-export function warm() { if (canIsolate()) refill(); }
+export function warm() { if (canIsolate()) { refill(); pollReady(); } }
 /** A view for tests and status: is isolation on, how many processes were killed, how many were started. */
-export const isolationStats = () => ({ isolated: canIsolate(), kills, spawned, warm: pool.filter((c) => c.ready).length });
+export const isolationStats = () => (fsm && pollReady(), { isolated: canIsolate(), kills, spawned, warm: pool.filter((c) => c.ready || c.opened).length, next: pool.find((c) => c.ready || c.opened)?.proc.pid ?? null });
 if (globalThis.process?.on) process.on("exit", () => { for (const c of pool) closeChild(c, true); });
+// the CPU a process has used, ms (Linux /proc: utime + stime, clock ticks; null where there's no /proc). At a deadline it
+// tells a script that kept its process busy (a loop, a native call: `time`, its failure) from a process the host never
+// got round to running (a loaded machine: `unavailable`, not the script's failure). The kill happens either way.
+const TICK_MS = 10; // USER_HZ is 100 on Linux (getconf CLK_TCK)
+function cpuMs(pid) { try { const f = fsm.readFileSync(`/proc/${pid}/stat`, "utf8"); const r = f.slice(f.lastIndexOf(")") + 2).split(" ");
+  return (Number(r[11]) + Number(r[12])) * TICK_MS; } catch { return null; } }
+export const STARVED = 0.3; // a job that got under this share of the deadline's wall time on a CPU was starved, not stuck
 /** Run one activation with its VM side in a sandbox process. Same input and result as runScript. */
 export function runIsolated(x) {
   const h = makeHost(x); const L = h.limits;
   if (!Q) return h.finish({ fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})` } });
   const c = takeReady(performance.now() + WARM_MS);
   if (!c) return h.finish({ fuel: 0, fail: { code: "unavailable", why: "no sandbox process is ready" } });
-  const deadline = performance.now() + L.wallMs + GRACE;
+  const sentAt = performance.now(), deadline = sentAt + L.wallMs + GRACE, cpu0 = cpuMs(c.proc.pid);
   const stop = (fail) => { pool.splice(pool.indexOf(c), 1); closeChild(c, true); refill(); return h.finish(fail); };
   if (!send(c, JSON.stringify({ text: x.text, input: h.input, event: x.event, limits: L, max: MAX }), deadline)) return stop({ fuel: null, fail: { code: "sandbox", why: "couldn't hand the job to the sandbox process" } });
   for (;;) {
     const l = lineOf(c, deadline);
-    if (l === null) { const died = c.proc.exitCode !== null || !!c.proc.signalCode; if (!died) kills++;
-      return stop({ fuel: null, fail: died ? { code: "sandbox", why: "the sandbox process died" }
-        : { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop or a native call that wouldn't yield)` } }); }
+    if (l === null) { const died = dead(c); if (died) return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process died" } });
+      kills++; const cpu1 = cpuMs(c.proc.pid), wall = performance.now() - sentAt, used = cpu0 !== null && cpu1 !== null ? cpu1 - cpu0 : null;
+      if (used !== null && used < STARVED * wall) return stop({ fuel: null, fail: { code: "unavailable", why: `stopped at the ${L.wallMs + GRACE} ms deadline, but the host was too busy to run it (its process had ${used} ms of CPU in ${Math.round(wall)} ms): not the script's doing` } });
+      return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop or a native call that wouldn't yield${used !== null ? `; ${used} ms of CPU` : ""})` } }); }
     let m; try { m = JSON.parse(l); } catch { return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unreadable" } }); }
     if (typeof m.h === "string") { if (!send(c, h.call(m.h), deadline)) return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline` } }); continue; }
     if (m.done) return h.finish(m.done); // the process stays warm for the next job
