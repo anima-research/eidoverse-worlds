@@ -2279,16 +2279,18 @@ function holdOf(w, actor, id) {
 // declares one. Every settlement (grab, put, throw) measures reach from the track and records the presence it used.
 const TRACK = { speed: 6, cap: 4, step: 0.8, radius: 0.2, height: 1.7, spawnR: 2 };
 function bodyBox(p) { return { min: [p[0] - TRACK.radius, p[1] + TRACK.step, p[2] - TRACK.radius], max: [p[0] + TRACK.radius, p[1] + TRACK.height, p[2] + TRACK.radius] }; }
-function solidAt(w, st, p, except = new Set()) {
-  const box = bodyBox(p); const held = new Set(Object.keys(w.presence.holds));
-  for (const id of Object.keys(st.entities)) { if (id === "@world" || held.has(id) || except.has(id) || !geomOf(st.entities[id].c.model)) continue; if (hits(box, st, id, 0.01)) return id; }
+// both ask the spatial index: only what the body's box (or the whole step's swept box) meets is tested (review 10-06 S0-2)
+function solidAt(w, st, p, except = new Set(), cands = null) {
+  const box = bodyBox(p); const held = w.presence.holds;
+  for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id)) continue; if (hitsIx(st, box, id, 0.01)) return id; }
   return null;
 }
 function pathBlocked(w, st, from, to) {
   const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it
-  for (const id of Object.keys(st.entities)) if (geomOf(st.entities[id].c.model) && hits(b0, st, id, 0.01)) already.add(id);
+  for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);
+  const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));
   const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));
-  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already); if (hit) return hit; }
+  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
   return null;
 }
 const presenceFacts = (me) => ({ at: me.at.slice(), hand: handOf(me).map(r3), trackTs: me.ts });
