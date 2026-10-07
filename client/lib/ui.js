@@ -715,7 +715,7 @@ function paintDock() {
       // an entry may title itself by state (the wrench: "leave edit mode (B)" while it is the way out);
       // otherwise the dock's own name · key. setTitle: write only on change (the tooltip chip borrows it)
       setTitle(b, open ? (entry.title?.(!!entry.active?.()) ?? dockTitle(entry))
-        : dockTitle(entry, ' — needs build rights in this world'));
+        : dockTitle(entry, entry.deadWhy?.() ?? ' — needs build rights in this world'));
       b.hidden = !entry.active?.() && !pins.has(id);
       // never `on` AND `dead`: .on's brand ink and edge-bar come later in the
       // sheet at equal specificity, so the pair rendered as "active but

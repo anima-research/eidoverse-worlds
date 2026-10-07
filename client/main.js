@@ -46,7 +46,7 @@ import {
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
-import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { initConjure } from './lib/conjure.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
@@ -196,11 +196,12 @@ initDock([
     active: () => isEditing(),
     // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
     title: (on) => (on ? 'leave builder mode (B)' : null),
-    gate: () => ['builder', 'owner'].includes(net.myRights?.role),
+    gate: () => editSurface() && ['builder', 'owner'].includes(net.myRights?.role),   // no edit mode on a phone (build.js editSurface)
+    deadWhy: () => (editSurface() ? null : ' — builder mode is for a desktop or tablet'),
   },
 ]);
 // the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
-setMenuSources({ buildRights: () => ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
+setMenuSources({ buildRights: () => editSurface() && ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
 paintPresence(presence());            // the dot needs the button: after initDock
 bus.on('presence:me', paintPresence);
 initDebug({

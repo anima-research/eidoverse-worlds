@@ -387,6 +387,19 @@ try {
   const SKIP_REST = ONLY.length > 0 && !ONLY.includes('phys');
   if (SKIP_REST) stage('rest of the probe skipped (PROBE_ONLY)', true, ONLY);
   if (!SKIP_REST) {
+  // history: a refused attempt reads as an attempt in the editor's whole-world History, never as a deed (Commons parity
+  // audit 10-06: "refused acts print as done"). Ann asks for something the door refuses, then the page builds History
+  // rows from the live door's answer with the module the browser actually serves (client/lib/historyrows.js).
+  {
+    const rows = await race(pg.evaluate(async () => {
+      const EW = globalThis.EW; const r0 = await EW.requestV4('delete', { id: 'no-such-thing-probe' });
+      const h = await EW.requestV4('history', { limit: 30 });
+      const { worldHistoryRows } = await import(new URL('lib/historyrows.js', location.href).href);
+      return { refusedReply: !r0?.ok, rows: worldHistoryRows(h.entries, EW.V4?.nameOf ?? ((x) => x)).slice(0, 4) };
+    }), 20000).catch((e) => ({ err: String(e) }));
+    const tried = rows?.rows?.find((x) => x.target === 'no-such-thing-probe');
+    check('history: a refused attempt reads "tried … refused", not as done', rows?.refusedReply && tried?.refused && /tried .* refused/.test(tried.text), rows);
+  }
   // (the old 'edit'/'refuse' stages sent v1 verbs from the page; v4 refuses those by design. The page's door-request
   //  path is covered headlessly by editcommit/hierarchy-commit.)
   // spot: a spot light set through the door (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in

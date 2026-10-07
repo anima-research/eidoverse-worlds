@@ -17,6 +17,7 @@
 // the base the motion composes onto, which is the honest thing to edit.
 
 import * as OP from '../../shared/v4/ops.js';
+import { worldHistoryRows } from './historyrows.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
@@ -923,8 +924,7 @@ function histLoad(id, more = false) {
   hist.loading = true;
   requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id) return;
-    const rows = id ? r.entries : r.entries.filter((e) => e.kind === 'act').reverse().map((e) => ({ seq: e.seq, by: e.actor, who: V4.nameOf(e.actor), verb: e.verb,
-      changed: [e.body?.request?.component].filter(Boolean), target: e.body?.request?.id ?? null, ts: e.ts ?? null }));
+    const rows = id ? r.entries : worldHistoryRows(r.entries, V4.nameOf);
     hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();
   }).catch(() => { hist.loading = false; });
 }
@@ -937,7 +937,7 @@ function historyFields() {
   if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
   for (const e of hist.entries) {
     const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
-    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: `${e.who ?? V4.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
+    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? V4.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
   }
   if (id && hist.next != null) f.push({ t: 'btn', k: 'older', label: 'Older…', hint: 'read further back in the log (a deeper search, 20 at a time)' });
   return f;
