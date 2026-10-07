@@ -301,7 +301,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   attach: async (ag, a) => {
-      // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit.
+      // a body on a seat is PRESENCE (bodies aren't entities; nothing is logged): my frames carry it while I sit.
       // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). The authority is asked
       // first (use {id, action, args: {socket}}): it checks who may. The seat's leaveBy decides how I get
       // off, and fromSeat whether I may move to it without standing.
@@ -877,7 +877,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(L.join("\n"));
   },
   blueprints: async (ag, a) => {
-      // the world's blueprints (v4): @world blueprints:<hash> → {name, parts}, written by the authority's publish; a placed copy
+      // the world's blueprints: @world blueprints:<hash> → {name, parts}, written by the authority's publish; a placed copy
       // carries a `copy-of` component naming the hash it came from
       const lib = ag.worldBlueprints();
       const copies: Record<string, string[]> = {};

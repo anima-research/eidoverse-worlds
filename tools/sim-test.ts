@@ -305,10 +305,10 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     mk(3, 30, "spawn", { id: "b", lib: "b.glb", pos: [0, 0, 0] }),
     mk(4, 500, "punt", { id: "b", dir: [1, 0.1, 0], power: 20 }),
   ];
-  const v4 = fold(story("eidosim@0.4.0", 66)); advanceSim(v4.sim, 2000);
+  const law4 = fold(story("eidosim@0.4.0", 66)); advanceSim(law4.sim, 2000);
   check("0.4: a 0.2m body at 20 m/s meets a 0.1m wall (66ms tick) and rests on the near side",
-    v4.sim.bodies.b.resting === true && v4.sim.bodies.b.p[0] + 0.1 <= 4.55 + 1e-9,
-    `rest x ${v4.sim.bodies.b.p[0]}`);
+    law4.sim.bodies.b.resting === true && law4.sim.bodies.b.p[0] + 0.1 <= 4.55 + 1e-9,
+    `rest x ${law4.sim.bodies.b.p[0]}`);
   const coarse = fold(story("eidosim@0.4.0", 250, [[-0.5, 0, -0.5], [0.5, 1, 0.5]], [[-0.25, 0, -2], [0.25, 2, 2]])); advanceSim(coarse.sim, 2000);
   check("0.4: a 1m body at 20 m/s on a 250ms tick still meets a 0.5m wall",
     coarse.sim.bodies.b.resting === true && coarse.sim.bodies.b.p[0] + 0.5 <= 4.35 + 1e-9, `rest x ${coarse.sim.bodies.b.p[0]}`);

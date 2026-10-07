@@ -1,13 +1,13 @@
-// tools/protocol/common.ts — what the v4 suites share: where the engine is, a scratch root per run, and the optional
+// tools/protocol/common.ts — what the protocol suites share: where the engine is, a scratch root per run, and the optional
 // control arm.
 //
-// The suites came from the v4 lab (code/v4-lab @ 11db981). There, each attack/probe ran twice: through the lab's
+// The suites came from the protocol lab (the protocol lab @ 11db981). There, each attack/probe ran twice: through the lab's
 // door or fold BEFORE the fix (a commit extracted from the lab's git) and through today's. The "before" run is the
 // control: it shows the probe really is an attack. Those commits live in the lab's repository, not this one, so
 // here the control arm runs only when PROTOCOL_LAB points at a lab checkout; without it the suites check today's code
 // alone and say the control was skipped. Today's side is the gate either way.
 //
-// Locks (slice 3a, PROTOCOL-v4 §5): the engine's door calls the edit lock `lock` and refuses with code `locked`; the
+// Locks (slice 3a, PROTOCOL §5): the engine's door calls the edit lock `lock` and refuses with code `locked`; the
 // lab's doors called it `pinned` and refused with `pinned`. The control arm stays meaningful WITHOUT a name map,
 // because both lab doors the control extracts (4f62913 and c9b4a67) already read `lock` as their legacy alias of
 // `pinned` (`pinnedC = c?.pinned === true || c?.lock === true`). So every suite sends the same `lock` request to both
@@ -25,7 +25,7 @@ export const LAB = process.env.PROTOCOL_LAB ? path.resolve(process.env.PROTOCOL_
 export function scratch(tag: string) {
   const base = process.env.PROTOCOL_SCRATCH ?? os.tmpdir();
   fs.mkdirSync(base, { recursive: true });
-  const d = fs.mkdtempSync(path.join(base, `v4-${tag}-`)) + "/";
+  const d = fs.mkdtempSync(path.join(base, `proto-${tag}-`)) + "/";
   fs.mkdirSync(d + "worlds", { recursive: true }); fs.mkdirSync(d + "store", { recursive: true });
   if (!process.env.PROTOCOL_KEEP) process.on("exit", () => fs.rmSync(d, { recursive: true, force: true })); // also when a suite throws part-way (PROTOCOL_KEEP=1 keeps it to read)
   return d;
@@ -40,4 +40,4 @@ export function labAt(commit: string, files: string[], tag: string) {
   return d;
 }
 
-export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "control arm skipped (set PROTOCOL_LAB=<v4-lab checkout> to run it)");
+export const controlNote = () => (LAB ? `control arm: lab ${LAB}` : "control arm skipped (set PROTOCOL_LAB=<protocol lab checkout> to run it)");

@@ -1,4 +1,4 @@
-// tools/protocol/nov1-check.ts — the branch runs v4 only (R 2026-10-06: "There should be no more v1 anywhere"). Every
+// tools/protocol/nov1-check.ts — the branch runs the current protocol only (R 2026-10-06: "There should be no more v1 anywhere"). Every
 // runtime file a client, an agent or the server runs (client/, mcpl/, server/, shared/), and the long-running bots that
 // join worlds (DEPLOYED), is scanned; it fails on:
 //   - runtime code reaching the old-world importer (tools/protocol/import-v1/): a relative
@@ -33,9 +33,9 @@ const RULES = [
   [/\bsendVerbs?\s*\(/, "sends a v1 verb (sendVerb)"],
   [new RegExp(`type:\\s*${Q}verb${Q}|type\\s*===?\\s*${Q}verb${Q}|case\\s+${Q}verb${Q}`), "a v1 `verb` message (sent or handled)"],
   [new RegExp(`\\bsendLease\\s*\\(|type:\\s*${Q}lease${Q}|type\\s*===?\\s*${Q}lease${Q}|case\\s+${Q}lease${Q}`), "a v1 lease (sent or handled)"],
-  // (v1's `log` message and its WorldLog class were retired with v1; the names pass of 2026-10-07 gave both names to v4:
-  // `log` is the v4 entries stream (was v4-log), WorldLog the per-world log (was WorldLog). A v1 client is refused at join,
-  // so it never reads a v4 `log`; the v1 entry points below still mark old code.)
+  // (v1's `log` message and its WorldLog class were retired with v1; the names pass of 2026-10-07 gave both names to the
+  // current protocol: `log` is its entries stream, WorldLog its per-world log. A v1 client is refused at join, so it
+  // never reads the new `log`; the v1 entry points below still mark old code.)
   [/\bworld_verb\b/, "names world_verb (the v1 verb tool)"],
   [/\b(foldEntry|stateToEntries|VERB_NEEDS|rightsIn|BehaviorHost|settleLease|publishEntry|onEntryCommitted)\b/, "a v1 fold / rights / log entry point"],
 ];

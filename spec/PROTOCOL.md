@@ -1,17 +1,18 @@
-# The eidoverse world protocol, v4
+# The eidoverse world protocol
 
 **License: CC0 1.0 (public domain).** This document and the conformance
-suite beside it (`v4/conformance/`) may be implemented, copied, and modified
+suite beside it (`conformance/`) may be implemented, copied, and modified
 by anyone, from any codebase, under any license, without permission or
 attribution. The reference implementation in this repository is separately
 licensed (AGPL); *the contract is free*. SMTP being free is what made the
 mail ecosystem exist.
 
-Status: v4.0, normative for logs whose genesis says `version: 4, minor: 0`.
+Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
+minor: 0` (the version history is at the end).
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
 file it. The reference fold is `shared/protocol/fold.js`; a second reader, written
-in Python from this document alone, is `v4/conformance/v4read.py`, and the
+in Python from this document alone, is `conformance/reader.py`, and the
 two agree on every conformance log (§11).
 
 ## 0. The one idea
@@ -88,7 +89,7 @@ tolerates a legacy `by` field, which nothing reads.)
   usually the act that asked for it.
 - **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
   digest); read only by readers that carry the world's engine
-  (`PROTOCOL_v2.md`).
+  (`PHYSICS.md`).
 - **`say`** — chat: `body {text, to?}`. Never world state.
 - **`purge`** — the one rule that changes the record (§12).
 - **`sequencer`** — governance: handing the writer role on, or an owner
@@ -332,7 +333,7 @@ all-or-nothing batch through the same `admit`. Every cause chain ends at a
 person. **Replay never re-runs code**: the fold reads the batch. An auditor
 may re-run the source with the recorded event, clock, seed and presence
 reads and compare. The reference API, limits and determinism rules are
-`docs/SCRIPTS-v4.md`.
+`docs/SCRIPTS.md`.
 
 ## 9. Conventions
 
@@ -366,21 +367,21 @@ so every runtime gets the same bits.
   authority's practice: it changes no old log, and it grants nothing — its writes pass
   `admit` like everyone's.
 - **The four operations, the envelope, the kinds and the fold are fixed.**
-  Changing them is a new `minor` (or `version`) in genesis; a reader that
+  Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
   a different digest.
 
 ## 11. Conformance
 
-`v4/conformance/` holds the suite:
+`conformance/` holds the suite:
 
 - `EXAMPLE-01.jsonl` folds to status `ok` and digest
   `80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581`.
 - `logs/` — hostile logs (duplicate keys, `-0`, big integers, surrogates,
   nested batches, bad names, purges of purges, bad genesis shapes…), each
   with the status, digest and diagnostic codes a conforming reader gives.
-- `v4read.py` — the reference reader, written from this document;
-  `test_v4read.py` its tests. `chain.py` and `test_chain.py` — the chain,
+- `reader.py` — the reference reader, written from this document;
+  `test_reader.py` its tests. `chain.py` and `test_chain.py` — the chain,
   signatures and purge (§12). `ed25519/` — the key vectors (§13).
 
 `bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
@@ -399,7 +400,7 @@ argument will be short.
   `salt` (base64url, ≥ 16 random bytes). The fold ignores `salt` and
   `commit`.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
-  Ed25519 over UTF-8 `"eidoverse-v4-head:<world id>:<seq>:<head hex>"`, by
+  Ed25519 over UTF-8 `"eidoverse-head:<world id>:<seq>:<head hex>"`, by
   the sequencer key named in genesis (or the latest handoff). The authority signs
   at least every write it commits. A client SHOULD remember the last `(seq,
   head)` it saw for each world and check that the log extends it on its next
@@ -422,14 +423,16 @@ argument will be short.
 ## 13. Genesis and governance
 
 - **Genesis** (seq 0, `kind: "genesis"`, actor `system`, verb `genesis`):
-  `body {version: 4, minor: 0, nonce, owners: [[<key>…], …], sequencer,
-  quorum?, rewind_window?, parent?}`. Exactly those fields within a known
-  minor. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
+  `body {dialect: "eidoverse-log", v: 4, minor: 0, nonce, owners: [[<key>…], …],
+  sequencer, quorum?, rewind_window?, parent?}`. Exactly those fields within a
+  known minor. `dialect` and `v` are the shape every eidoverse log has
+  announced itself with since its first genesis (`{v, dialect}`); `v` is the
+  protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
   worlds founded with the same keys must not share an id). `owners` are rank
   tiers of keys, tier 0 highest; `quorum` optionally gives each tier's
   threshold; `parent {world, seq, head}` names the world a fork came from.
   Genesis seeds no state: the founding act then writes `@world` through the
-  gate. A missing or malformed genesis means "no world"; a `version` or
+  gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
   `minor` the reader doesn't implement means "unknown version" and no world.
 - **Keys** are `ed25519:<base64url of 32 bytes>`. Registration refuses a key
   that is small-order in any sign-bit encoding or has y ≥ p; verification
@@ -446,9 +449,23 @@ argument will be short.
 ## 14. Worlds from the first protocol
 
 The first protocol (an untyped verb log) is retired. An old world's log can
-be translated once, one way, into a new v4 world
+be translated once, one way, into a new world
 (`bun tools/protocol/world.ts translate <old> <new>`); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
-produced; fields with no v4 component ride along as `imported:<name>`. A
-translated world is an ordinary v4 world from then on.
+produced; fields with no component in this protocol ride along as `imported:<name>`. A
+translated world is an ordinary world from then on.
+
+## Version history
+
+A log says which protocol reads it in its genesis, `{dialect: "eidoverse-log",
+v}`. File names, wire fields and code don't carry the number.
+
+| `v` | What it is | Text |
+|---|---|---|
+| 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
+| 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md` | this document |
+
+Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
+world.

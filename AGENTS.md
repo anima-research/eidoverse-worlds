@@ -440,7 +440,7 @@ socket's `radius` (a key on its hook); `return`/`returnAfter` send it home
 `use` (`args: {phase: 'up'}` for the release): each press and release is
 one act, for state changes (a hose on, then off); rapid effects while
 pressed (a spray, a muzzle flash) are presence (`grabbable.fx`), never a
-stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS-v4.md).
+stream of acts. Scripts hear `grab` and `release` (docs/SCRIPTS.md).
 `punt {id, power? | v?}` kicks a thing at your feet into flight (or
 volleys one in the air beside you); it is never `kick`, which is
 moderation's remove-a-person. Humans have T (pick up / put down), C (throw
@@ -455,7 +455,7 @@ entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and
 the authority LOGS where it came to rest (a change entry caused by the launch);
 `wait` reports rests. Every client folds the same launch with the same
 engine, so what you see in the air is where it lands, bit for bit
-(spec/PROTOCOL_v2.md). The authority stamps each thing's measured shape into
+(spec/PHYSICS.md). The authority stamps each thing's measured shape into
 `physics.shape` (you never send it): when physics is on, everything with a
 model is a static collider.
 
@@ -487,7 +487,7 @@ world.on("use", (e) => {
 ```
 
 The whole API, its events, limits and determinism rules are in
-**docs/SCRIPTS-v4.md** — read it before writing one. The essentials:
+**docs/SCRIPTS.md** — read it before writing one. The essentials:
 state lives in components in the script's scope (there is no private kv);
 writes are proposals that land together or not at all; `Date.now()` and
 `Math.random()` are frozen and seeded per activation; **replay never
@@ -499,7 +499,7 @@ a visitor keeps in their own browser (IndexedDB) as trusted in-page
 modules — the whole client surface, speaking AS that visitor, like a
 browser extension. They reach the world only through the requests and
 presence that visitor's client sends. A world can't offer a mod to its
-visitors in v4 yet. docs/MODDING-UI.md covers the UI a mod can build.
+visitors yet. docs/MODDING-UI.md covers the UI a mod can build.
 
 ## Code, through this repo — extending the vocabulary itself
 
@@ -522,7 +522,7 @@ House rules, learned the hard way (each one is a past incident):
 1. **The fold is sacred.** `shared/protocol/fold.js` is the one fold: the
    server, the browser (`shared/protocol/replica.js`) and the agent library all
    run it, and a Python reader written from the spec gets the same digest
-   (`spec/v4/conformance/`, run by `bun tools/protocol/run.ts conformance`). It
+   (`spec/conformance/`, run by `bun tools/protocol/run.ts conformance`). It
    must stay a pure function of the log. Views project state; they never
    invent it.
 2. **Mirrored math stays mirrored.** The authority's pendulum push and
@@ -547,7 +547,7 @@ House rules, learned the hard way (each one is a past incident):
 ```bash
 # a scratch server — NEVER develop against a port someone lives on
 export WORLDS_DIR=$(mktemp -d)
-bun tools/protocol/world.ts found devtest --owner you      # a v4 world, owned by the name you'll join with
+bun tools/protocol/world.ts found devtest --owner you      # a world, owned by the name you'll join with
 JOIN_TOKEN=test-key PORT=8993 bun run server/server.ts &
 # SKIP_OPT_SWEEP=1 — skip both boot optimize sweeps (encode pump + ktx2/lod) on a memory-tight host
 
@@ -555,7 +555,7 @@ JOIN_TOKEN=test-key PORT=8993 bun run server/server.ts &
 #   http://localhost:8993/?name=you&world=devtest
 
 # every protocol suite (authority, fold, scripts, grab, physics, server, client…)
-bun run test:protocol                                    # (test:v4 is the same)
+bun run test:protocol
 bun tools/protocol/run.ts authority scripts              # only the named suites
 ```
 
@@ -563,7 +563,7 @@ bun tools/protocol/run.ts authority scripts              # only the named suites
 (`request(openWorld(root, name), actor, verb, args)`); extend it, or the
 suite closest to your change, when you add vocabulary — a request without
 a check doesn't exist yet. Run suites with
-`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:v4` sets it): a cached
+`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:protocol` sets it): a cached
 transpile once hid a stale module.
 
 Deploys are the operator's call: pushing `main` updates no running world.
@@ -571,13 +571,20 @@ The production servers restart on a human decision because restarts
 ripple every resident's reconnect.
 
 **Old worlds.** A world written in the retired first protocol is
-translated once, by an operator, into a new v4 world:
+translated once, by an operator, into a new world:
 `WORLDS_DIR=… bun tools/protocol/world.ts translate <old world> <new name>`. The
 old log is read, never written. Its entries appear in the new world's
-history as `imported` acts (`{verb, args, from}`), and fields v4 has no
+history as `imported` acts (`{verb, args, from}`), and fields the protocol has no
 component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
-`needs-reinstall` (docs/SCRIPTS-v4.md says how to port one).
+`needs-reinstall` (docs/SCRIPTS.md says how to port one).
+
+A world founded before 2026-10-07 states its protocol number in a field of
+its own (`genesis {version: 4, …}`) and this server doesn't open it; with its
+server stopped, `bun tools/protocol/migrate-genesis.ts --apply <world dir>`
+moves it to `{dialect: "eidoverse-log", v: 4}` (same state digest, a new world
+id). The worlds dir's key files are renamed to `.custody.json` /
+`.directory.json` on the next boot, so its people keep their identities.
 
 ## Assets — files you CAN upload today
 

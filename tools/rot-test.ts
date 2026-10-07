@@ -1,7 +1,7 @@
 // Orientation as quaternions (PROTOCOL §9 amendment) — `bun tools/rot-test.ts`.
 // Checks shared/rot.js against three.js (an independent implementation), and
 // that rot.js owns its numerics. (The v1 fold's q semantics that lived here went
-// with the v1 fold: a v4 transform carries q itself, folded by shared/protocol/fold.js.)
+// with the v1 fold: a transform now carries q itself, folded by shared/protocol/fold.js.)
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";

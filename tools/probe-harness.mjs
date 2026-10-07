@@ -88,7 +88,7 @@ function armSignals() {
   process.once('uncaughtException', onThrow); process.once('unhandledRejection', onThrow);
 }
 
-// `worlds`: the v4 worlds founded in the scratch WORLDS_DIR before boot. The server never founds a world on join (a
+// `worlds`: the worlds founded in the scratch WORLDS_DIR before boot. The server never founds a world on join (a
 // name with no world behind it is refused, security review 10-06 H3), so a probe's page reaching ?world=<name> needs
 // that world founded first; staging and commons (the client's default) always are. `owner` founds them.
 export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {}, worlds = [], owner = 'owner' } = {}) {

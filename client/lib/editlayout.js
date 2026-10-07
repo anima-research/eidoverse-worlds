@@ -23,7 +23,7 @@ import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPA
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
-import * as V4 from './editwrites.js';
+import * as Edits from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 
@@ -40,7 +40,7 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
   { id: 'select', icon: 'mousePointer2', key: 'Q', title: 'select (Q) — click picks, a drag never moves' },
   { id: 'move', icon: 'move', key: 'G', title: 'move (G) — drag moves; Shift+drag raises · G again or right-click: world / object axes' },
   { id: 'rotate', icon: 'rotateCw', key: 'E', title: 'rotate (E) — drag turns about up · E again or right-click: world / object axes' },
-  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes; the handles stretch one axis (a v4 world)' },
+  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes; the handles stretch one axis' },
   { id: 'pivot', icon: 'locateFixed', key: 'P', title: 'pivot (P) — drag where it turns and scales from; it snaps to the model\'s centre, base, corners and faces. The thing never moves' },
 ];
 
@@ -117,7 +117,7 @@ function build() {
   menus.append(
     menu('Edit', () => [
       { label: 'undo\tCtrl+Z', run: undo, title: KEYHINTS.undo.before },
-      { label: 'redo\tCtrl+Shift+Z', run: () => V4.redo(), title: KEYHINTS.undo.before },
+      { label: 'redo\tCtrl+Shift+Z', run: () => Edits.redo(), title: KEYHINTS.undo.before },
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },

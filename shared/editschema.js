@@ -102,7 +102,7 @@ export function inspectSchema(ent, id, live = {}) {
   const mounted = !!ent.parent;
   const locked = !!c.lock;
   // a lock doesn't make the pose read-only here: the authority refuses the move, and a person (or agent) who may lift the lock
-  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL-v4 §5). Same for every surface.
+  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL §5). Same for every surface.
   // the pose the channel box shows and edits: a child's is LOCAL to its parent
   // (design §3) — the mount's offset and relative q, as the renderer realizes
   // it — never the fold's pre-mount pos, which nothing draws while it rides
@@ -480,7 +480,7 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
-  // scripts (v4, research 41): each script:<name> gets an on/off switch, `paused`, like Unity's `enabled`. Flipping it
+  // scripts (research 41): each script:<name> gets an on/off switch, `paused`, like Unity's `enabled`. Flipping it
   // writes only {paused} (a merge), so it needs nothing of the script (its source, its scope) and adopts nothing: the
   // script's sponsor stays who it was (R on lab 49 F4), and the authority's `scripts` view says who paused it, from the log
   const scriptKeys = Object.keys(c).filter((k) => k.startsWith('script:') && isBag(c[k]));
@@ -887,7 +887,7 @@ export function editOps(ent, id, edits, live = {}) {
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
-    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` in v4 (PROTOCOL-v4 §5): set flags.lock'); continue; }   // an old habit, taught
+    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); continue; }   // an old habit, taught
     if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
     if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); continue; }
@@ -1186,7 +1186,7 @@ export function editOps(ent, id, edits, live = {}) {
   }
   if (parented && place) { errors.push('parent: a parent edit goes alone — move it before or after, not in the same edit'); place = null; parented = null; }
   if (parented) ops.push(...parented.ops);
-  // one whole transform (v4 §2.3): local to the parent for a child, which is the pose the channels edit (pv)
+  // one whole transform (§2.3): local to the parent for a child, which is the pose the channels edit (pv)
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
   for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }

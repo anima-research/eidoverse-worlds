@@ -1,6 +1,6 @@
 // tools/protocol/build-probe.ts — ship-list group B (10-07) in a real browser: one headless Chromium against a scratch
 // sequencer (tools/harness.ts scratchBench), run under the house guards like client-check:
-//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/build-probe.ts      (test:v4's `build-client` does this)
+//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/build-probe.ts      (test:protocol's `build-client` does this)
 //   ST  a building edit lands on the SELECTED building (not the world's first), as ONE act with expect; Ctrl+Z (the
 //       editor's one undo) puts it back; after someone else changes it, Ctrl+Z writes nothing over their work; the
 //       Create panel has no second "undo building edit"
@@ -22,7 +22,7 @@ const ME = "editbot", WORLD = "buildp";
 process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("v4build", {
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("build", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "build probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -44,19 +44,19 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.cut?.you) BOB = m.cut.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__hints = []; addEventListener('ew-keyhint', (e) => __hints.push(e.detail));
-    import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); });` });
+    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`);
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", v4fold: true })); await sleep(600);
+  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(600);
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("(setup) edit mode opens", await waitFor(`document.body.classList.contains('edit-mode')`));

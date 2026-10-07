@@ -8,6 +8,7 @@ import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, mintId, type Entry } from "../../../server/directory.ts";
 import { agentTokens } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
+import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal } from "../../../shared/protocol/authority.js";
 import { readLog, fold, digest } from "../../../shared/protocol/fold.js";
 import { translate } from "./translate-v1.js";
@@ -44,7 +45,7 @@ export function translateV1World(srcDir: string, destDir: string) {
   for (const e of old) { const a = e?.args ?? {};
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
-  const cust = custodyAt(path.join(path.dirname(destDir), ".v4-custody.json"));
+  const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
   const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log

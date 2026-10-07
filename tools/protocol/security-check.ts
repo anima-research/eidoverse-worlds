@@ -99,12 +99,12 @@ const srv = await startServer(ENGINE, W, OPT, "sec");
 
 console.log("\n=== C1: re-join same socket as another agent → refused ===");
 // C1: tokenVerified/auxBound sticky across re-joins on one socket
-// Attack: join as Alice (with token), close, re-join as "bob" (agent slug) with no token → gets bob's v4id + takes over
+// Attack: join as Alice (with token), close, re-join as "bob" (agent slug) with no token → gets bob's actorId + takes over
 // Fix: per-join locals, identity fixed once joined per socket
 {
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
-  const aliceId = alice.snapshot?.v4?.you;
-  ok(aliceId, "C1 Alice joins and gets her v4id", aliceId);
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
+  const aliceId = alice.snapshot?.cut?.you;
+  ok(aliceId, "C1 Alice joins and gets her actorId", aliceId);
 
   // Simulate attacker trying to rejoin on same socket as another agent
   // (This requires understanding server state tracking — the test confirms identity doesn't persist)
@@ -112,8 +112,8 @@ console.log("\n=== C1: re-join same socket as another agent → refused ===");
   await sleep(100);
 
   // Attacker tries to rejoin same socket as different person
-  const attacker = await client(srv.port, "sec-test", "bob", { v4fold: true });
-  const attackerId = attacker.snapshot?.v4?.you;
+  const attacker = await client(srv.port, "sec-test", "bob", { replica: true });
+  const attackerId = attacker.snapshot?.cut?.you;
   ok(attackerId && attackerId !== aliceId, "C1 after close + rejoin on the same port, identity is fresh (not alice's)", attackerId);
   attacker.close();
 }
@@ -123,7 +123,7 @@ console.log("\n=== C2: aid1 human token as agent → refused; subs match ===");
 // Attack: join with a human aid1 token as agent, display name slugs to target agent name
 // Fix: require kind==="agent"; accounts keyed by sub; reservation by sub
 {
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
   const snapshot = alice.snapshot;
   // The server should not accept a human aid1 token and make it agent identity
   // This is more of an auth.ts check — for now, confirm Alice joined as a person (not agent:alice)
@@ -136,10 +136,10 @@ console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
 // Attack: set WORLD_ADMIN="Alice" (bare name) → Alice can ban/unban across all worlds
 // Fix: subs only, refuse boot if entry has no ':'
 {
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
   // Alice is the founder, so she CAN ban
-  const bob = await client(srv.port, "sec-test", "Bob", { v4fold: true });
-  const BOB_ID = bob.snapshot?.v4?.you;
+  const bob = await client(srv.port, "sec-test", "Bob", { replica: true });
+  const BOB_ID = bob.snapshot?.cut?.you;
   await sleep(100);
 
   const banAlice = await alice.req("ban", { who: BOB_ID, reason: "test" });
@@ -153,21 +153,21 @@ console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
   bob.close();
 }
 
-console.log("\n=== H1: typed name takeover → v4id keyed ===");
-// H1: v4 presence keyed by typed name allows impersonate/eavesdrop by typing name
+console.log("\n=== H1: typed name takeover → actorId keyed ===");
+// H1: presence keyed by typed name allows impersonate/eavesdrop by typing name
 // Attack: join as "Alice", then someone else joins as "Alice" → same session/roles/whispers
-// Fix: key on c.v4id in v4 worlds; takeover only same account; unique present names
+// Fix: key on c.actorId in worlds; takeover only same account; unique present names
 {
   // Use a separate server without TRUST_NAMES, so anonymous guests get assigned no account
   const h1srv = await startServer(ENGINE, W, OPT, "h1", { TRUST_NAMES: "" });
 
-  const alice1 = await client(h1srv.port, "sec-test", "Alice", { v4fold: true });
-  const alice1Id = alice1.snapshot?.v4?.you;
+  const alice1 = await client(h1srv.port, "sec-test", "Alice", { replica: true });
+  const alice1Id = alice1.snapshot?.cut?.you;
   const alice1Name = alice1.snapshot?.yourName ?? "Alice";
   await sleep(100);
 
-  const alice2 = await client(h1srv.port, "sec-test", "Alice", { v4fold: true });
-  const alice2Id = alice2.snapshot?.v4?.you;
+  const alice2 = await client(h1srv.port, "sec-test", "Alice", { replica: true });
+  const alice2Id = alice2.snapshot?.cut?.you;
   const alice2Name = alice2.snapshot?.yourName ?? "Alice";
 
   ok(alice1Id && alice2Id && alice1Id !== alice2Id, "H1 two joins with same display name get different actorIds (keyed on id, not name)", [alice1Id, alice2Id, alice1Name, alice2Name]);
@@ -175,17 +175,17 @@ console.log("\n=== H1: typed name takeover → v4id keyed ===");
   alice2.close();
 }
 
-console.log("\n=== H2: rightsOf keyed by name (old v1 code) → use v4 role ===");
-// H2: v1 rightsOf over v4 view keyed by name; typing owner's u- id as name passes rights check
-// Fix: all v4 rights via w.log.roleOf(c.v4id); refuse names matching ^u-[a-z2-7]{20}$
+console.log("\n=== H2: rightsOf keyed by name (old v1 code) → use role ===");
+// H2: v1 rightsOf over the view keyed by name; typing owner's u- id as name passes rights check
+// Fix: all rights via w.log.roleOf(c.actorId); refuse names matching ^u-[a-z2-7]{20}$
 {
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
-  const bob = await client(srv.port, "sec-test", "Bob", { v4fold: true });
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
+  const bob = await client(srv.port, "sec-test", "Bob", { replica: true });
   await sleep(150);
 
   // Bob is a visitor (not owner/builder); try to set a component
   const set = await bob.req("set", { id: "@world", component: "sky", value: { hours: 18 } });
-  ok(set.refused?.code === "rights" || set.ok === false, "H2 visitor cannot set world properties (rights checked by v4id, not name)", set);
+  ok(set.refused?.code === "rights" || set.ok === false, "H2 visitor cannot set world properties (rights checked by actorId, not name)", set);
   alice.close();
   bob.close();
 }
@@ -196,22 +196,22 @@ console.log("\n=== H3: joining founds world → getWorld after admission ===");
 // Fix: refuse unknown worlds without founding authority; getWorld after admission
 {
   // Try to join a world that doesn't exist (and shouldn't be founded by a random join)
-  const intruder = await client(srv.port, "nonexistent-world", "Intruder", { v4fold: true });
+  const intruder = await client(srv.port, "nonexistent-world", "Intruder", { replica: true });
   ok(!intruder.snapshot, "H3 joining a non-existent world is refused (world not founded on join)", intruder.msgs.map((m) => m.type));
   intruder.close();
 }
 
 console.log("\n=== H4: anon fresh id per connection → capped at visitor; ban expels ===");
 // H4: anonymous gets fresh id on reconnect (ban/rollback reset); door ban doesn't expel
-// Fix: anon capped at visitor; expel on ban + v4 kick
+// Fix: anon capped at visitor; expel on ban + kick
 {
   // Join as guest (anon)
-  const guest1 = await client(srv.port, "sec-test", "Guest", { v4fold: true });
-  const guest1Id = guest1.snapshot?.v4?.you;
+  const guest1 = await client(srv.port, "sec-test", "Guest", { replica: true });
+  const guest1Id = guest1.snapshot?.cut?.you;
   await sleep(100);
 
   // Get the founder to ban this guest
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
   const banResult = await alice.req("ban", { who: guest1Id, reason: "test" });
   ok(banResult.ok, "H4 founder can ban a guest", banResult);
   await sleep(150);
@@ -227,9 +227,9 @@ console.log("\n=== H5: owners unprotected → founder/seniority rank; cap defaul
 // H5: owners can ban each other; default-role = undefined → anyone becomes owner
 // Fix: founder/seniority rank (Matrix v12); cap default-role at builder
 {
-  const alice = await client(srv.port, "sec-test", "Alice", { v4fold: true });
-  const bob = await client(srv.port, "sec-test", "Bob", { v4fold: true });
-  const BOB_ID = bob.snapshot?.v4?.you;
+  const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
+  const bob = await client(srv.port, "sec-test", "Bob", { replica: true });
+  const BOB_ID = bob.snapshot?.cut?.you;
   await sleep(100);
 
   // Alice (owner) tries to demote Bob (junior owner)
@@ -237,11 +237,11 @@ console.log("\n=== H5: owners unprotected → founder/seniority rank; cap defaul
   await sleep(100);
 
   // Now Bob tries to demote Alice (should fail: Alice is founder, Bob is junior)
-  const demoResult = await bob.req("set", { id: "@world", component: `roles:${alice.snapshot?.v4?.you}`, value: { role: "visitor" } });
+  const demoResult = await bob.req("set", { id: "@world", component: `roles:${alice.snapshot?.cut?.you}`, value: { role: "visitor" } });
   ok(demoResult.refused?.code === "rank" || demoResult.ok === false, "H5 junior owner cannot demote founder (rank check)", demoResult);
 
   // Check that joining anon doesn't automatically grant owner role
-  const guest = await client(srv.port, "sec-test", "Guest", { v4fold: true });
+  const guest = await client(srv.port, "sec-test", "Guest", { replica: true });
   const guestRole = guest.snapshot?.yourRights?.role;
   ok(guestRole === "visitor" || !guestRole?.includes("owner"), "H5 guest/anon default-role is capped at visitor (not owner)", guestRole);
   guest.close();
@@ -256,21 +256,21 @@ console.log("\n=== M2: directory files: two writers (CLI + server) lose entries 
   // Rapid joins (many anons) should not corrupt the directory file
   const clients = [];
   for (let i = 0; i < 5; i++) {
-    clients.push(await client(srv.port, "sec-test", `Guest${i}`, { v4fold: true }));
+    clients.push(await client(srv.port, "sec-test", `Guest${i}`, { replica: true }));
     await sleep(50);
   }
   // All should have gotten unique actorIds, no error
-  const ids = clients.map((c) => c.snapshot?.v4?.you);
+  const ids = clients.map((c) => c.snapshot?.cut?.you);
   const unique = new Set(ids).size;
   ok(unique === ids.length, "M2 rapid joins all get unique actorIds (no collision from directory race)", [unique, ids.length]);
   for (const c of clients) c.close();
 }
 
 console.log("\n=== M6: one id per server → per-world pairwise ids ===");
-// M6: same account in two new v4 worlds gets the same v4id (cross-world linkability)
+// M6: same account in two new worlds gets the same actorId (cross-world linkability)
 // Fix: per-world pairwise ids HMAC(door secret, worldId||account)
 // NOTE: This test is deferred (part 1 implements M6 but full coverage requires more setup).
-// The implementation is in directory.ts keyOf() and the v4 world creation.
+// The implementation is in directory.ts keyOf() and the world creation.
 {
   ok(true, "M6 deferred: pairwise ids are implemented (directory.ts keyOf + world creation)");
 }

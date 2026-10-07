@@ -45,10 +45,10 @@ import { channels, fieldAt } from '../../shared/editschema.js';
 import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { reindexCollider } from './colliders.js';
-import * as V4 from './editwrites.js';
+import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
-import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are requests
+import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -219,7 +219,7 @@ function hierarchyFields() {
     const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
-      lockable: V4.mayLift(),   // §5: only builders and owners lock and unlock
+      lockable: Edits.mayLift(),   // §5: only builders and owners lock and unlock
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
@@ -326,13 +326,13 @@ function duplicate(id) {
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
   const nudge = n === 2 && !rec.comp?.['copy-of'] ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
   // the authority copies it, and what's attached to it: create {from: id}, one act
-  V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-    const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+  Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
+    const out = Edits.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
 function toggleLock(id) {
   const locked = !!comps.get(id)?.lock;
-  if (V4.mayLift()) V4.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here');
+  if (Edits.mayLift()) Edits.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here');
 }
 function findSelected() {
   const sel = sceneSelected(); const obj = entities.get(sel); if (!obj) return;
@@ -466,7 +466,7 @@ function worldFields() {
 // each component and when (touched: R 10-04, "where a value came from"; within a recent window, beyond = older)
 const inspectCache = new Map();
 function authorityInspect(id) {
-  const key = JSON.stringify(V4.compsOf(id));
+  const key = JSON.stringify(Edits.compsOf(id));
   const c = inspectCache.get(id);
   if (c?.key === key) return c.reply;
   inspectCache.set(id, { key, reply: c?.reply ?? null });   // keep showing the last answer while the new one comes
@@ -475,9 +475,9 @@ function authorityInspect(id) {
 }
 function placedBy(id, meta) {
   const r = authorityInspect(id);
-  return r ? (r.derived?.madeBy ? V4.nameOf(r.derived.madeBy) : 'unknown') : '…';
+  return r ? (r.derived?.madeBy ? Edits.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
-// a card's v4 component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
+// a card's component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
 const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
 const ago = (ts) => agoWords(ts);
 const touchLine = (t) => touchWords(t);
@@ -485,7 +485,7 @@ function lastChange(id) {
   const t = Object.entries(authorityInspect(id)?.touched ?? {}).filter(([, v]) => v.by).sort((a, b) => b[1].seq - a[1].seq)[0];
   if (!t) return null;
   const [comp, v] = t; const sec = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === comp);
-  return v.created ? `made by ${V4.nameOf(v.by)} · ${ago(v.ts)}` : `${V4.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
+  return v.created ? `made by ${Edits.nameOf(v.by)} · ${ago(v.ts)}` : `${Edits.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
 function inspectorFields() {
@@ -642,7 +642,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
       // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
       const ops = [], errors = [];
       for (const each of ids) { const plan = planEdit(each, key, v); errors.push(...plan.errors); ops.push(...plan.ops); }
-      if (ops.length) V4.sendOps(ops, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => V4.revertPose(x)) });
+      if (ops.length) Edits.sendOps(ops, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => Edits.revertPose(x)) });
       if (errors.length) flashHint(errors.join(' · '), 5000);
       repaintAll();
     }
@@ -674,7 +674,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     if (JSON.stringify(next) === JSON.stringify(before)) return;
     // the whole transform (local for a child): a heading turns it about up keeping its tilt; scale sets all three axes
     const patch = { pos: next.pos, ...(k === 'yaw' ? { yaw: next.yaw } : {}), ...(k === 'scale' ? { scale: next.scale } : {}) };
-    V4.sendOps([OP.setTransform(foldRecord(id), id, patch)], { what: `move ${id}`, revert: () => V4.revertPose(id) });
+    Edits.sendOps([OP.setTransform(foldRecord(id), id, patch)], { what: `move ${id}`, revert: () => Edits.revertPose(id) });
     repaintAll();
     return;
   }
@@ -694,7 +694,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   }
   switch (action) {
     case 'remove': removeMany([id]); break;
-    case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'scripts': watchScript(payload); break;   // a script row → the Console, watching it
     case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
       flashHint(`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
@@ -738,7 +738,7 @@ function consoleDispatch(action, payload) {
   switch (action) {
     case 'cwatch': watching = payload === watching ? null : payload; refreshWatch().then(repaintAll); break;
     case 'cgoto': { const b = behaviors.find((x) => x.id === payload); if (b?.attach && entities.has(b.attach)) sceneSelect(b.attach); break; }
-    case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
     case 'fold': break;   // the log header is not a fold
   }
   repaintAll();
@@ -748,7 +748,7 @@ function removeMany(ids) {
   // a locked thing is asked about by the authority's refusal ("This is locked. Delete anyway?"), not filtered out here
   const go = ids.filter((id) => entities.get(id));
   if (!go.length) return false;
-  V4.del(go); clearExtras(); return true;   // one request: delete, or a batch of them (one act)
+  Edits.del(go); clearExtras(); return true;   // one request: delete, or a batch of them (one act)
 }
 
 // ---------------------------------------------------------------- build
@@ -810,10 +810,10 @@ const blueprintFields = (pics) => [
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  door's publish (a person here, or an agent). */
 function savedFields(pics) { return savedFieldsHere(); }
-/** v4: this world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
+/** This world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the authority's publish {from, name} on the selection. */
 function savedFieldsHere() {
-  const lib = V4.blueprints(); const sel = selection();
+  const lib = Edits.blueprints(); const sel = selection();
   return [
     { t: 'info', label: 'saved here', value: lib.length ? `${lib.length} blueprint${lib.length === 1 ? '' : 's'} in this world` : 'none yet — select something and save it' },
     { t: 'btn', k: 'bpsave', label: 'save as blueprint', icon: 'boxes', disabled: !sel.length,
@@ -825,7 +825,7 @@ function savedFieldsHere() {
 const aheadPose = () => { const yaw = myState.yaw ?? 0;
   return { pos: [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5].map((v) => +v.toFixed(2)), q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)].map((v) => +v.toFixed(4)) }; };
 /** A copy 1.5 m ahead, facing the way you face — the hand-free place (worldquad.js spawnAhead's pose). */
-function placeAhead(hash) { return V4.copyBlueprint(hash, aheadPose()); }
+function placeAhead(hash) { return Edits.copyBlueprint(hash, aheadPose()); }
 
 /** The World section: one row of tiles per component, each reading its current choice. */
 function worldBuildFields() {
@@ -856,7 +856,7 @@ function pickWorld(action, v) {
   const kind = action === 'wplant' && v === '@mow' ? 'mow' : WORLD_PICKS[action];
   const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: Date.now(), mayShape: mayShape() });
   if (r.errors.length) { flashHint(r.errors.join(' · '), 5000); return r; }
-  V4.sendOps(r.ops, { what: kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`, expect: false });
+  Edits.sendOps(r.ops, { what: kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`, expect: false });
   flashHint(kind === 'mow' ? 'field cleared' : `${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);
   return r;
 }
@@ -891,7 +891,7 @@ function buildDispatch(action, payload) {
     case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;
       const name = ids.length === 1 ? String(foldRecord(ids[0])?.comp?.label ?? ids[0]) : `${ids.length} things`;
-      V4.publish(ids, name).then((r) => { if (r.ok) flashHint(`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
+      Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
     case 'libq': searchLibrary(String(payload ?? '').trim()); return;
     case 'place': {
       const m = libModels().find((x) => x.path === payload);
@@ -930,24 +930,24 @@ function histLoad(id, more = false) {
   hist.loading = true;
   sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id) return;
-    const rows = id ? r.entries : worldHistoryRows(r.entries, V4.nameOf);
+    const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
     hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();
   }).catch(() => { hist.loading = false; });
 }
 function historyFields() {
   const id = worldSel ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
-  const key = id ? `${id}|${JSON.stringify(V4.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
+  const key = id ? `${id}|${JSON.stringify(Edits.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
   if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; } hist.id = id; histLoad(id); }
   const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (comps.get(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
-  const view = historyView(hist.entries, V4.nameOf, { mode: hist.mode, who: hist.who });
-  const people = historyView(hist.entries, V4.nameOf, { mode: 'top' }).people ?? [];
+  const view = historyView(hist.entries, Edits.nameOf, { mode: hist.mode, who: hist.who });
+  const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
   f.push({ t: 'enum', k: 'mode', label: 'show', value: hist.mode, options: HISTORY_MODES.map(([v, label]) => ({ v, label })), hint: 'the same log, seen four ways: who made this what it is (the Credits) is "biggest contributors"' });
   if (hist.mode === 'person') f.push({ t: 'enum', k: 'who', label: 'person', value: hist.who ?? '', options: [{ v: '', label: '(pick someone)' }, ...people.map((p) => ({ v: p.by, label: `${p.who} (${p.deeds})` }))] });
   if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
   const row = (e) => {
     const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
-    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? V4.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
+    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? Edits.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
   };
   if (view.mode === 'top') for (const p of view.people) f.push({ t: 'btn', k: `who:${p.by}`, label: `${p.who} — ${p.did.join(' · ') || 'tried'}${p.deeds > 1 ? ` (${p.deeds})` : ''}`, hint: `${p.deeds} change${p.deeds === 1 ? '' : 's'}${p.tried ? `, ${p.tried} refused` : ''} in what's loaded — click for their history` });
   else if (view.mode === 'kind') for (const g of view.groups) { f.push({ t: 'info', label: '', value: `${g.kind} (${g.rows.length})` }); g.rows.forEach(row); }
@@ -1010,7 +1010,7 @@ export function initEditPanels() {
     frames.set(p.id, sf);
   }
   bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights', 'v4-applied']) bus.on(ev, repaintAll);   // v4-applied: a v4 world's library lives on @world, which the realizers never touch
+  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights', 'log-applied']) bus.on(ev, repaintAll);   // log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])

@@ -16,7 +16,7 @@
 
 import { WorldAgent } from "../mcpl/agent.ts";
 import { normalizePolicy, segmentAt } from "../shared/forecast.js";
-import { agentOnDoor } from "./agent-v4.ts";
+import { agentOnDoor } from "./agent-scratch.ts";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -28,7 +28,7 @@ const T0 = 1_754_000_000_000;
 const MIN = 60e3, HOUR = 3600e3;
 const policyArgs = { seed: 7, states: ["clear", "overcast", "rain"], dwellSec: [300, 900], transitionSec: 20 };
 
-// The sky is @world's, written through the v4 door's `sky` / `weather` tools (tools/agent-v4.ts: a scratch door with a
+// The sky is @world's, written through the authority's `sky` / `weather` tools (tools/agent-scratch.ts: a scratch door with a
 // pinned clock, the agent fed its own fold's views). The door stamps the sky's ts with ITS clock: each rig's door
 // stands at T0 when the sky is set. Provenance (which entry, by whom) is the LOG's: the door strips seq/by from the
 // value, so the agent must read them from the entry that wrote it.

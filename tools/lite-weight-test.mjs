@@ -170,7 +170,7 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
     await new Promise((res) => { sock.onopen = res; });
     const q = new URLSearchParams(location.search);
     sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id: q.get('name'),
-      avatar: globalThis.__ewWantAvatar ?? 'claude', spectate: false, renderer: false, token: q.get('key'), v4fold: true }));
+      avatar: globalThis.__ewWantAvatar ?? 'claude', spectate: false, renderer: false, token: q.get('key'), replica: true }));
     await new Promise((res) => setTimeout(res, 1200));
     sock.send(JSON.stringify({ type: 'pose', pose }));
     await new Promise((res) => setTimeout(res, 800));
@@ -234,7 +234,7 @@ const RAW = `
     const sock = new WebSocket(proto + '://' + location.host + '/ws');
     await new Promise((res, rej) => { sock.onopen = res; sock.onerror = rej; });
     sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id,
-      avatar: 'claude', spectate: false, renderer: false, token: q.get('key'), v4fold: true }));
+      avatar: 'claude', spectate: false, renderer: false, token: q.get('key'), replica: true }));
     await new Promise((res) => setTimeout(res, wait));
     for (const m of msgs) { sock.send(JSON.stringify(m)); await new Promise((res) => setTimeout(res, 250)); }
     await new Promise((res) => setTimeout(res, wait));

@@ -164,7 +164,7 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/protocol/authority.js");
 const F = await import(TREE + "shared/protocol/fold.js");
 const RL = await import(TREE + "shared/protocol/roles.js").catch(() => ({}));   // absent at the base commit (--control)
-const TV1 = await import(TREE + "tools/protocol/import-v1/translate-v1.js").catch(() => import(TREE + "shared/protocol/translate-v1.js")).catch(() => ({}));   // moved to tools/protocol/import-v1 on staging (v4-nov1)
+const TV1 = await import(TREE + "tools/protocol/import-v1/translate-v1.js").catch(() => import(TREE + "shared/protocol/translate-v1.js")).catch(() => ({}));   // moved to tools/protocol/import-v1 on staging (the no-v1 pass)
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("roles");
 
@@ -408,9 +408,9 @@ const cases: Case[] = [
   { id: "T2", what: "the Commons (staging's v1 commons-0927, read-only, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is a visitor", run() {
       // PROTOCOL_COMMONS: an already-translated world log; else the v1 Commons translated in process (R 10-07: the Commons is
       // re-translated from its latest v1 log at merge time, so a saved translation would only test an older importer)
-      const v4f = process.env.PROTOCOL_COMMONS, v1f = process.env.V1_COMMONS ?? "/home/claude/eido/staging/worlds/commons-0927/log.jsonl";
-      if (!v4f && !fs.existsSync(v1f)) return { skipped: v1f };
-      const st = v4f ? F.fold(F.readLog(fs.readFileSync(v4f)))
+      const commonsLog = process.env.PROTOCOL_COMMONS, v1f = process.env.V1_COMMONS ?? "/home/claude/eido/staging/worlds/commons-0927/log.jsonl";
+      if (!commonsLog && !fs.existsSync(v1f)) return { skipped: v1f };
+      const st = commonsLog ? F.fold(F.readLog(fs.readFileSync(commonsLog)))
         : F.fold(TV1.translate(fs.readFileSync(v1f, "utf8").split("\n").filter((l: string) => l.trim()).map((l: string) => JSON.parse(l))).out);
       const e = D.effectiveIn?.(st, "u-aaaaaaaaaaaaaaaaaaaa"), g = D.effectiveIn?.(st, "u-bbbbbbbbbbbbbbbbbbbb", { anon: true });
       return { role: D.roleIn(st, "u-aaaaaaaaaaaaaaaaaaaa"), sw: e?.permissions, guest: g?.role }; },

@@ -172,7 +172,7 @@ register('punt', (arg) => {
   }
   puntThing(arg);
 });
-// carrying (v4 worlds: requests; T and C are the keys)
+// carrying (requests; T and C are the keys)
 register('grab', (arg) => grab((arg || '').trim() || undefined));
 register('put', (arg) => put((arg || '').trim() || undefined));
 register('drop', (arg) => drop((arg || '').trim() || undefined));
@@ -473,7 +473,7 @@ export function initCommands() {
   let saidRights = null;
   bus.on('your-rights', (r) => {
     // only worth a line when the world actually restricts — open worlds stay silent — and only when what you may do
-    // changed (a v4 server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
+    // changed (a server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
     const key = JSON.stringify([r.role, r.roleName, r.permissions ?? null, r.gen, r.fly, !!r.ghost, !!r.muted]);
     if (key === saidRights) return; saidRights = key;
     if (!r.open && r.role !== 'owner') {

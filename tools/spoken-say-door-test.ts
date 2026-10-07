@@ -52,7 +52,7 @@ try {
     const t = setTimeout(() => rej(new Error("watcher join timeout — is the owned world up?")), 8000);
     watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", spectate: true, v4fold: true }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", spectate: true, replica: true }));
   });
 
   // The advertised MCPL surface, exactly as a schema-driven client would use it.
@@ -76,7 +76,7 @@ try {
     for (let i = 0; i < 80 && !replies.has(id); i++) await sleep(100);
     return replies.get(id);
   };
-  // what reached the log: the `say` entries of the v4-log stream ({actor: display name, args: the say body})
+  // what reached the log: the `say` entries of the log stream ({actor: display name, args: the say body})
   const saysSeen = () => saysIn(seen).map((x) => ({ actor: x.actor, seq: x.seq, args: x.body }));
 
   // 0. Schema discoverability (B1): the advertised tool declares the trio.

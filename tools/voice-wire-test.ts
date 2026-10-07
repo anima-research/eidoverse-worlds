@@ -47,7 +47,7 @@ async function join_(id: string, extra: Record<string, unknown> = {}): Promise<S
       if (m.type === "snapshot") { s.snapshot = m; clearTimeout(t); res(); }
       if (m.type === "frame" && m.poses?.[OWNER]) s.last = m.poses[OWNER];
     };
-    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, v4fold: true, ...extra }));
+    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, replica: true, ...extra }));
   });
   return s;
 }

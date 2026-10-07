@@ -21,7 +21,7 @@ const _v2 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v3 = new THREE.Vector3();
-const _v4 = new THREE.Vector3();
+const _nbW = new THREE.Vector3();
 
 /** The spine column: the guards that are elliptical rather than round. */
 const TORSO_COLUMN = new Set(['hips', 'spine', 'chest', 'neck', 'head']);
@@ -244,7 +244,7 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
   for (const g of chain.guards ?? []) {
     guards.push({
       a: root.worldToLocal(g.na.getWorldPosition(_v3)).toArray(),
-      b: root.worldToLocal(g.nb.getWorldPosition(_v4)).toArray(),
+      b: root.worldToLocal(g.nb.getWorldPosition(_nbW)).toArray(),
       r: g.r,
       ...(g.warpK ? { warp: {
         r: qRot(qParent, chain.right), u: qRot(qParent, chain.up), f: qRot(qParent, chain.fwd),

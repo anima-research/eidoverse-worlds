@@ -2,7 +2,7 @@
 
 *Historical working notes (2026-08 to 2026-09). Where they speak of the
 world protocol (verbs, `comp`, `mount`, dialect 3, the v1 fold) they mean
-the first protocol, since replaced by v4 (spec/PROTOCOL.md); the loading,
+the first protocol, since replaced by the current protocol (spec/PROTOCOL.md); the loading,
 lighting and performance work stands.*
 
 Status: working notes, 2026-08-08. Orientation + diagnosis by Fable (three

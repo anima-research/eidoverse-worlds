@@ -60,13 +60,13 @@ export function chooseXR({ title, body = '', choices = [], cancel = null } = {})
 }
 
 // a refusal in a headset: the toast's words, on the quad, until OK (never on top of an open question)
-bus.on('v4-refused', ({ text }) => {
+bus.on('edit-refused', ({ text }) => {
   if (!xrActive() || pending) return;
   chooseXR({ title: 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
 // a warning on a write that went through, likewise (the desk shows it as a toast)
-bus.on('v4-warned', ({ text }) => {
+bus.on('edit-warned', ({ text }) => {
   if (!xrActive() || pending) return;
   chooseXR({ title: 'done — with a warning', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });

@@ -1,6 +1,6 @@
 // tools/protocol/batch2-probe.ts — batch 2 in a real browser: one headless Chromium against a scratch sequencer (tools/harness.ts
 // scratchBench), one stage per visible component, plus the privacy proof for media links. Run it under the house guards
-// (test:v4's `client-b2` suite does: flock on the headless lock, perf-guard).
+// (test:protocol's `client-b2` suite does: flock on the headless lock, perf-guard).
 //
 //   PRIV  an untrusted link (a picture's and a sound's) is NEVER requested by a viewer who hasn't opted in: every https
 //         request the page makes is caught at the network layer (CDP Fetch: paused, recorded, failed: nothing leaves the
@@ -24,7 +24,7 @@ const ENGINE = path.resolve(import.meta.dir, "../..");
 const ME = "b2bot", WORLD = "b2";
 process.env.TRUST_NAMES = "1";
 let worldsDir = "";
-const { cdp, cws, evalJson, cleanup, die, BASE } = await scratchBench("v4b2", {
+const { cdp, cws, evalJson, cleanup, die, BASE } = await scratchBench("batch2", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "batch 2 probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -53,7 +53,7 @@ try {
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
-  check("B1 v4 world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  check("B1 world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
   // the media modules are loaded by the page (main.js imports them): wait for them to answer
   await waitFor(`Promise.all([import('/lib/sounds.js'), import('/lib/pictures.js'), import('/lib/texts.js'), import('/lib/lookats.js')]).then(() => true)`);
   const empty = (id: string, pos: number[], components: any = {}) => req("create", { id, components: { transform: { pos }, ...components } });

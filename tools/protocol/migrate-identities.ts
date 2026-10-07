@@ -1,8 +1,8 @@
-// tools/protocol/migrate-identities.ts — move an existing engine v4 world from name identities to directory ids (round-2
+// tools/protocol/migrate-identities.ts — move an existing engine world from name identities to directory ids (round-2
 // review R1), and seal it (R3). For the worlds founded or translated before b1ec40b1; a fresh translation does this
 // itself. Run with the world's server STOPPED (it holds the old log in memory).
 //   - every actor and every roles:/imported-bans: key that names a person becomes an opaque id from the authority directory
-//     (<worlds dir>/.v4-directory.json). The account: a reserved agent name -> agent:<slug>; with --trust-names (a
+//     (<worlds dir>/.directory.json). The account: a reserved agent name -> agent:<slug>; with --trust-names (a
 //     PRIVATE server that runs TRUST_NAMES=1) a bare name -> local:<name>, the account a join there gets; otherwise a
 //     legacy identity an operator binds later. An escaped name (x--…) is read back first. A `sub` in a role value
 //     moves into the directory. A say's `to` follows its person. Act bodies (requests as sent) are left as written.
@@ -19,6 +19,7 @@ import { seal } from "../../shared/protocol/authority.js";
 import { dec } from "../../shared/protocol/names.js";
 import { directoryFor, mintId, type Entry } from "../../server/directory.ts";
 import { custodyAt } from "../../server/custody.ts";
+import { custodyFileIn } from "../../server/keyfiles.ts";
 import { agentTokens } from "../../server/auth.ts";
 import { ENGINE } from "./common.ts";
 
@@ -33,7 +34,7 @@ for (const dir of dirs) {
   const old = readLog(raw); const oldSt = fold(old);
   if (oldSt.status !== "ok") { out.push({ dir, skipped: `folds to ${oldSt.status}` }); continue; }
   const worlds = path.dirname(path.resolve(dir));
-  const directory = directoryFor(worlds); const cust = custodyAt(path.join(worlds, ".v4-custody.json"));
+  const directory = directoryFor(worlds); const cust = custodyAt(custodyFileIn(worlds));
   if (cust.sequencer() !== old[0].body.sequencer) { out.push({ dir, skipped: "this worlds dir's custody doesn't hold the world's sequencer key" }); continue; }
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const who = (k: string, sub?: string): string => {
@@ -62,7 +63,7 @@ for (const dir of dirs) {
   const newSt = fold(readLog(text));
   const tmp = f + ".id-tmp"; fs.writeFileSync(tmp, text);
   const py = (args: string[]) => { try { return JSON.parse(Bun.spawnSync(["python3", "-B", ...args]).stdout.toString()); } catch { return {}; } };
-  const rd = py([path.join(ENGINE, "spec/v4/conformance/v4read.py"), tmp, "--json"]), ch = py([path.join(ENGINE, "spec/v4/conformance/chain.py"), "verify", tmp]);
+  const rd = py([path.join(ENGINE, "spec/conformance/reader.py"), tmp, "--json"]), ch = py([path.join(ENGINE, "spec/conformance/chain.py"), "verify", tmp]);
   // (a JSON copy loses the fold's PURGED sentinel, so a world with purges is refused here rather than misjudged)
   const purged = old.some((e: any) => e?.kind === "purge");
   const same = !purged && newSt.status === "ok" && digest(newSt) === digest(want);

@@ -4,7 +4,7 @@
 // is World.scripts: the calls server.ts makes (onPresence, tick, inspect, list), routed to the authority:
 //   tick        the authority's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
 //               on the server's 1 s clock (server.ts system "behaviors");
-//   onPresence  enter / leave events, by the person's v4 identity;
+//   onPresence  enter / leave events, by the person's identity;
 //   inspect/list the authority's status view (suspended / paused / stopped / dormant + why / asleep / active), plus the
 //               old behaviours an imported world still names, which say plainly that they need re-installing as
 //               script:<name>.
@@ -15,7 +15,7 @@ type Any = any;
 export interface ScriptHost {
   sync(): void;
   disposeAll(): void;
-  onPresence(kind: "enter" | "leave", id: string, v4id?: string): void;
+  onPresence(kind: "enter" | "leave", id: string, actorId?: string): void;
   tick(now: number): void;
   inspect(id: string): { status: string; ring: { ts: number; line: string }[] } | null;
   list(): { id: string; status: string; attach?: string; src: string; timers: number }[];
@@ -25,7 +25,7 @@ export class WorldScripts implements ScriptHost {
   constructor(private log: WorldLog) {}
   sync() { /* the authority reads script:<name> from the fold on every activation: nothing to load or reconcile */ }
   disposeAll() { /* each activation is its own sandbox, disposed when it ends */ }
-  onPresence(kind: "enter" | "leave", _id: string, v4id?: string) { if (v4id) this.log.presenceScripts(kind, v4id); }
+  onPresence(kind: "enter" | "leave", _id: string, actorId?: string) { if (actorId) this.log.presenceScripts(kind, actorId); }
   tick(_now: number) { this.log.tickScripts(); }
   /** One script's console ring + status: id is "<entity>/<name>" (or "<entity>" for its first script). */
   inspect(id: string) {

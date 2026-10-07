@@ -71,7 +71,7 @@ systems, not bone poses.
 - Contested interactions (two hands, one object) are settled by the door:
   it tracks who holds what and checks every put, drop and throw. Physics,
   where a world turns it on, is a deterministic engine every client runs
-  on the same logged launches (spec/PROTOCOL_v2.md) — still not a server
+  on the same logged launches (spec/PHYSICS.md) — still not a server
   simulating for everyone.
 - Trust/identity: keys per participant, capabilities per world (build rights,
   entry, visibility). Aligns with the connectome Archipelago design
@@ -138,7 +138,7 @@ Building blocks:
 - **`grabbable` / `physics`** — a thing a hand can carry, and a thing that
   falls and flies when the world runs physics.
 
-**Scripts** are the Layer-2 tier (docs/SCRIPTS-v4.md): a `script:<name>`
+**Scripts** are the Layer-2 tier (docs/SCRIPTS.md): a `script:<name>`
 component naming an uploaded source, run by the door in a QuickJS sandbox
 with its sponsor's rights narrowed to a declared scope, fuel- and
 rate-budgeted, paused loudly after repeated failures. Each activation is

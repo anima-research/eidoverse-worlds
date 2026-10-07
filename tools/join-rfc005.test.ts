@@ -36,7 +36,7 @@ async function freePort(): Promise<number> {
 const WPORT = await freePort(), MPORT = await freePort();
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-join-"));
 const tokensPath = join(worldsDir, "tokens.json");
-// the worlds an agent may join exist before the run (joining never founds one; a v4 world is founded by its operator)
+// the worlds an agent may join exist before the run (joining never founds one; a world is founded by its operator)
 foundWorlds(worldsDir, ["commons", "annex"]);
 // Bound to worldsDir, per the review: the door's durable state lives with the
 // rest of this run's scratch and dies with it.
@@ -332,7 +332,7 @@ async function watchWorld(w: string, id: string) {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
     ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); events.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm", v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm", replica: true }));
   });
   return { ws, events };
 }

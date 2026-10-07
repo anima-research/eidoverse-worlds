@@ -1,4 +1,4 @@
-// tools/protocol/fork-reset-check.ts — world fork and reset on v4, against a real sequencer (scratch port and WORLDS_DIR).
+// tools/protocol/fork-reset-check.ts — world fork and reset, against a real sequencer (scratch port and WORLDS_DIR).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/fork-reset-check.ts
 //   FK  fork: owner-only; a NEW world (its own id) whose founding act names the source {world, name, head}; the copy's
 //       things and @world equal the source's; roles travel; chat does not; bad/taken names refused
@@ -33,7 +33,7 @@ async function sock(port) {
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
-    async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true }));
+    async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true }));
       for (let i = 0; i < 60 && !msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); await sleep(50);
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
@@ -49,7 +49,7 @@ ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken"
 const S = await start({ FOUND_PER_ACCOUNT: "2", FOUND_GAP_MS: "0", FOUND_PER_HOUR: "3" });
 const ann = await sock(S.port); await ann.join("src", "Ann");
 const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
-const bobId = jb.snapshot?.v4?.you;
+const bobId = jb.snapshot?.cut?.you;
 // a world worth copying: a parent with a locked child, a light, sockets, @world settings and roles, and a chat line
 for (const r of [
   await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { role: "builder" } }),
@@ -116,14 +116,14 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const roles = Object.entries(fresh.entities["@world"].c).filter(([k, v]) => k.startsWith("roles:") && v.role === "owner").length;
   ok(roles === 2, "RS5 both owners are still owners", fresh.entities["@world"].c);
   const again = await sock(S.port); const ja = await again.join("src", "Ann");
-  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.v4?.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
+  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.cut?.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
   const w2 = await again.req("create", { id: "new-crate", model: MODEL });
   // the fresh world's scripts run (the server's tick and arrivals reach THIS world's script host, not the archived one's)
   const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "greet", { last: e.by }); });' });
   const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["greet"] }, on: ["enter"] } });
   const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee"); await sleep(1500);
   const greet = fold(logOf("src")).entities["new-crate"]?.c.greet;
-  ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.v4?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
+  ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.cut?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
   arriving.close();
   ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);
   watcher.close(); again.close(); }

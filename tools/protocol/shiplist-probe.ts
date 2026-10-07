@@ -1,5 +1,5 @@
 // tools/protocol/shiplist-probe.ts — the ship list's group A in a real browser (one headless Chromium against a scratch
-// sequencer, tools/harness.ts scratchBench; test:v4 runs it under the house guards, like client-check):
+// sequencer, tools/harness.ts scratchBench; test:protocol runs it under the house guards, like client-check):
 //   D   a desktop visitor's door: the hint bar offers "E open “Gate”" within reach; E opens it through the authority (one
 //       use act); every client draws it swinging (it turns about its hinge over its time, then rests open); E again
 //       offers "close" and closes it
@@ -20,7 +20,7 @@ const ME = "shipbot", WORLD = "ship4";
 process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("v4ship", {
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("shiplist", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "ship list probe"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -40,13 +40,13 @@ const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
 try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__warned = [];
-    import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); m.bus.on('v4-warned', (e) => __warned.push(e)); });` });
+    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-warned', (e) => __warned.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
-  check("boot: a v4 world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
 
   // each stage stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red)
   const stage = async (id: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };

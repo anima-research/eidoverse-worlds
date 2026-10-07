@@ -57,7 +57,7 @@ const STRUCTURE = {
 const ws = new WebSocket(`${URL_}?token=${encodeURIComponent(TOKEN)}`);
 const send = (o: unknown) => ws.send(JSON.stringify(o));
 
-ws.onopen = () => send({ type: 'join', world: WORLD, id: ID, token: TOKEN, v4fold: true });
+ws.onopen = () => send({ type: 'join', world: WORLD, id: ID, token: TOKEN, replica: true });
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = JSON.parse(String(ev.data));

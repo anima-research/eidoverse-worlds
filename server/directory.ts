@@ -1,8 +1,8 @@
-// server/directory.ts — who an identity is (PROTOCOL-v4 §2.3: "the mapping from an identity to a person lives
+// server/directory.ts — who an identity is (PROTOCOL §2.3: "the mapping from an identity to a person lives
 // outside the log, so purging a person never needs the skeleton"). Round-2 review R1/R2 (10-05); security review
 // 10-06 (M2, M6, H4).
 //
-// Every actor a v4 log names is an OPAQUE id, `u-` + 20 base32 characters, minted here. Nothing about the person is in
+// Every actor a log names is an OPAQUE id, `u-` + 20 base32 characters, minted here. Nothing about the person is in
 // the log: their display name, the account(s) that prove them, and anything else about them live in this file, which
 // is never logged and is written 0600. So:
 //   - a role is held by an id, and an id is reached only through its account (a `sub`): typing someone's display name
@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
+import { directoryFileIn } from "./keyfiles.ts";
 
 export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "imported"; since: number; world?: string };
 type File = { v: 1 | 2; ids: Record<string, Entry> };
@@ -104,7 +105,7 @@ export function foldName(s: string): string {
   return String(s).normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
 }
 
-/** The world ids already standing in a worlds dir (each v4 world's genesis hash, read from its log's second line). */
+/** The world ids already standing in a worlds dir (each world's genesis hash, read from its log's second line). */
 function worldIdsIn(worldsDir: string): string[] {
   const out: string[] = [];
   if (!fs.existsSync(worldsDir)) return out;
@@ -120,6 +121,6 @@ function worldIdsIn(worldsDir: string): string[] {
 const cache = new Map<string, Directory>();
 /** The one directory for a worlds dir (shared by every world in it, and by the translator writing into it). */
 export function directoryFor(worldsDir: string): Directory {
-  const f = path.join(path.resolve(worldsDir), ".v4-directory.json");
+  const f = directoryFileIn(worldsDir);
   let d = cache.get(f); if (!d) cache.set(f, (d = directoryAt(f, Date.now, () => worldIdsIn(path.resolve(worldsDir))))); return d;
 }

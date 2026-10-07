@@ -5,7 +5,7 @@
 //   G2  presence plausibility (L6, 25d M3): the authority's own track of each body; settlements check against it
 //   G3  rate per actor (L7): every logged word, not only state writes
 //   G4  two hands, one crate (25c L6 falsifier)
-// Ported from code/v4-lab/gaps-check.js @ 11db981; the "before" door (lab c9b4a67) is the control arm and runs only
+// Ported from the protocol lab's gaps-check.js @ 11db981; the "before" door (lab c9b4a67) is the control arm and runs only
 // with PROTOCOL_LAB (see common.ts). usage: bun tools/protocol/gaps-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
@@ -216,7 +216,7 @@ const cases = [
       s.call("vic", "move", { to: [2, 0, 0.3] }, 1000); s.call("vic", "grab", { id: "ball-3" }); s.call("vic", "throw", { id: "ball-3", v: [0, 3, 0] });
       s.call("vic", "wait", {}, 8000); s.call("vic", "wait", {}, 100);
       return { g, pin, t, rests: restIds(s) }; },
-    baseBad: (o) => ok(o.g) && ok(o.pin) && ok(o.t) && !o.rests.includes("cup") && !o.rests.includes("ball-3"), nowGood: (o) => ok(o.t) && o.rests.includes("cup") && o.rests.includes("ball-3") }, // PROTOCOL-v4 §5: holding suspends parent constraints until it settles, so the throw goes and both rest (the lab refused the throw instead: note 34 #11; either way nothing stalls)
+    baseBad: (o) => ok(o.g) && ok(o.pin) && ok(o.t) && !o.rests.includes("cup") && !o.rests.includes("ball-3"), nowGood: (o) => ok(o.t) && o.rests.includes("cup") && o.rests.includes("ball-3") }, // PROTOCOL §5: holding suspends parent constraints until it settles, so the throw goes and both rest (the lab refused the throw instead: note 34 #11; either way nothing stalls)
   { id: "R2c", what: "…and by a third: the cup is thrown off the table, then the TABLE is locked while the cup flies (a flying thing keeps its logged parent)", run(s) { phys(s);
       s.call("olive", "create", { id: "tbl", model: "table", place: { at: [0, 3] } }); s.call("bob", "move", { to: [0, 0, 2.6] }, 1000);
       s.call("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { on: "tbl" } });

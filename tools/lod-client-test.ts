@@ -97,7 +97,7 @@ const REC = stub.server.recipe as string;
 const enc = encodeURIComponent(REC);
 const lib = (id: string) => `eidoverse/assets/models/${id}.glb`;
 const GEOM = { bbox: { size: [1, 1, 1], center: [0, 0.5, 0] } };   // diag 1.73 → R ≈ 86.9m, auto edge ≈ 39m, halved ≈ 19.5m
-// the world: a scratch v4 door; the realizer is fed the views a v4 client's own fold reaches after each write
+// the world: a scratch authority; the realizer is fed the views a client's own fold reaches after each write
 const W = scratchWorld('lodclient');
 const door = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
 /** Place an entity on the z axis, `z` metres from the camera at the origin.
@@ -229,7 +229,7 @@ const sinceMark = (mark: number, id: string) => stub.colliderLog.slice(mark).fil
 const deps: [string, (id: string) => void][] = [
   ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`rider-of-${id}`, { to: id })],
   ['cargo is parented to it (parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); door('set', { id: `cargo-${id}`, component: 'parent', value: { to: id } }); }],
-  ['a part motion arrives (comp.motion.part)', (id) => door('set', { id, component: 'motion', value: { type: 'pendulum', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 } })],   // a swinging door is a pendulum on v4
+  ['a part motion arrives (comp.motion.part)', (id) => door('set', { id, component: 'motion', value: { type: 'pendulum', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 } })],   // a swinging door is a pendulum now
   ['an edit hold begins (editHolds)', (id) => stub.editHolds.add(id)],
 ];
 let k = 0;

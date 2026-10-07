@@ -14,7 +14,7 @@ export function readLogBytes(logPath: string): Buffer {
   const b = fs.readFileSync(logPath);
   if (b.length === 0 || b[b.length - 1] === 0x0a) return b;
   const keep = b.lastIndexOf(0x0a) + 1;
-  console.warn(`[v4] ${logPath}: cut a torn last line (${b.length - keep} bytes, no newline) left by an interrupted write`);
+  console.warn(`[log] ${logPath}: cut a torn last line (${b.length - keep} bytes, no newline) left by an interrupted write`);
   fs.truncateSync(logPath, keep);
   return b.subarray(0, keep);
 }

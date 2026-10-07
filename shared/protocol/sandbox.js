@@ -1,4 +1,4 @@
-// shared/protocol/sandbox.js — the v4 script sandbox: real JavaScript in QuickJS compiled to WASM (research 41 §3.13, §6:
+// shared/protocol/sandbox.js — the script sandbox: real JavaScript in QuickJS compiled to WASM (research 41 §3.13, §6:
 // a SEPARATE VM, never same-VM compartments; Figma's Realms scar). The authority never imports this file (browsers import the
 // authority); a host injects `runScript` as io.scripts (server/livehost.ts, server/filehost.ts), and an auditor calls it
 // directly to re-run an activation from what its act records (shared/protocol/scriptaudit.js).
@@ -32,7 +32,7 @@ catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); }
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
 export const sandboxAvailable = () => (Q ? true : unavailable);
 
-// The whole script-facing API, in one place (docs: docs/SCRIPTS-v4.md). Runs inside the VM before the source.
+// The whole script-facing API, in one place (docs: docs/SCRIPTS.md). Runs inside the VM before the source.
 const PRELUDE = String.raw`"use strict";
 (() => {
   const host = globalThis.__host; delete globalThis.__host;

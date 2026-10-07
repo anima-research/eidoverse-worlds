@@ -47,7 +47,7 @@ export const comps = new Map();
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. */
 export const avatarMounts = new Map();
-/** A body's seat is PRESENCE (PROTOCOL-v4: bodies aren't entities; nothing is logged): its owner's pose frame carries
+/** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
  *  `seat: {to, slot}` while seated, so every receiver sets it from the frame and clears it when a frame comes without
  *  one. My own is set here by localbody.js and rides my frames (net.js sendPose). */
 export function setBodySeat(id, seat) {

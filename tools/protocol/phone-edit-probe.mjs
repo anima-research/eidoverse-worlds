@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
 import { foundWorld } from '../../server/worldlog.ts';
 
-const KEY = 'v4phone';
-const worlds = mkdtempSync(join(tmpdir(), 'v4-phone-'));
+const KEY = 'phoneprobe';
+const worlds = mkdtempSync(join(tmpdir(), 'phone-probe-'));
 let failed = 0; const check = (n, v, d) => { if (!v) failed++; console.log(`${v ? 'ok  ' : 'FAIL'} ${n}${d !== undefined ? ` — ${JSON.stringify(d).slice(0, 300)}` : ''}`); };
 let world = null, browser = null;
 try {

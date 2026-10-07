@@ -1,6 +1,6 @@
 // worldentity — the world entity `@world` (design §3), as an ALIAS both ways.
 //
-// A world's sky, ground and grass are the world entity's components in v4 (the view shows them as state.sky,
+// A world's sky, ground and grass are the world entity's components (the view shows them as state.sky,
 // state.terrain, state.grass; weather is part of the sky). This file reads them as ONE entity whose components are
 // Sky, Weather, Terrain and Grass (records in shared/components.js), and writes every edit as requests: the
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
@@ -123,8 +123,8 @@ export function pickSky(sky, preset) {
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
 
-/** One world change as its request (v4): the sky and weather are the authority's `sky`/`weather` tools (they stamp the
- *  clock: PROTOCOL-v4 sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
+/** One world change as its request: the sky and weather are the authority's `sky`/`weather` tools (they stamp the
+ *  clock: PROTOCOL sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
 const skyOp = (args) => ({ verb: 'sky', args });
 const weatherOp = (weather) => ({ verb: 'weather', args: { weather } });
 const terrainOp = (args) => OP.set(WORLD_ID, 'terrain', args);

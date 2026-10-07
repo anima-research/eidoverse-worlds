@@ -1,11 +1,11 @@
-// tools/protocol/browser-check.ts — the shared v4 core in a real browser (headless Chromium), against the same work in bun.
+// tools/protocol/browser-check.ts — the shared protocol core in a real browser (headless Chromium), against the same work in bun.
 // A grep for node: imports isn't evidence that the client can import these files; loading them in a page is.
 // One static server (this process, /shared only), one page, no world server, no WebGL. (The old-world importer,
 // tools/protocol/import-v1/, runs once at the operator's command, never in a browser: it isn't loaded here.)
 // Checks, each computed in the page AND here, then compared:
 //   1. every shared/protocol module a client runs imports (fold, hash, catalogue, toolspec, simlayer, door, names, record, …);
 //   2. the page hashes with the portable sync sha256 (no Bun there), and agrees with bun's native hasher;
-//   3. the lab cottage folds to the lab's digest;
+//   3. the lab cottage folds to its pinned digest;
 //   4. the authority, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
 // usage: bun tools/protocol/browser-check.ts   (CHROME=<path> to pick a browser build)
 import fs from "node:fs";
@@ -13,7 +13,9 @@ import { chromium } from "playwright";
 import { ENGINE } from "./common.ts";
 import { sha256 } from "../../shared/protocol/hash.js";
 
-const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b";
+// the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
+// was confirmed independently)
+const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
 const MODS = ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
 
 // the work, as one function that runs unchanged in bun and in the page (only the import base differs)
@@ -46,13 +48,13 @@ const work = async (base: string, texts: { cottage: string }) => {
 };
 
 const texts = {
-  cottage: fs.readFileSync(ENGINE + "spec/v4/fixtures/lab-cottage.jsonl", "utf8"),
+  cottage: fs.readFileSync(ENGINE + "spec/conformance/lab-cottage.jsonl", "utf8"),
 };
 const here = await work("file://" + ENGINE.replace(/\/$/, ""), texts);
 
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const p = decodeURIComponent(new URL(req.url).pathname);
-  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><link rel=icon href=\"data:,\"><title>v4</title>", { headers: { "content-type": "text/html" } });
+  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><link rel=icon href=\"data:,\"><title>protocol</title>", { headers: { "content-type": "text/html" } });
   if (!/^\/(shared)\/[A-Za-z0-9_\-./]+\.js$/.test(p) || p.includes("..")) return new Response("no", { status: 404 });
   const f = ENGINE + p.slice(1); if (!fs.existsSync(f)) return new Response("missing", { status: 404 });
   return new Response(fs.readFileSync(f), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
@@ -85,7 +87,7 @@ try {
   const cmp: [string, any, any][] = [["sha256('abc')", here.abc, there.abc], ["cottage digest", here.cottage, there.cottage],
     ["door results", JSON.stringify(here.door.results), JSON.stringify(there.door.results)], ["door log", here.door.log, there.door.log]];
   for (const [k, a, b] of cmp) { console.log(`${a === b ? "same" : "DIFF"} ${k.padEnd(16)} bun ${String(a).slice(0, 64)}${a === b ? "" : `  page ${String(b).slice(0, 64)}`}`); if (a !== b) fails.push(`${k} differs`); }
-  if (here.cottage !== LAB_DIGEST) fails.push("cottage digest is not the lab's");
+  if (here.cottage !== PINNED_DIGEST) fails.push("cottage digest is not the pinned one");
   if (here.door.n < 8 || !here.door.results.includes("ok")) fails.push(`the authority scenario wrote too little (${here.door.n} lines)`);
   console.log(`door: ${here.door.results.join(", ")} (${here.door.n} lines)`);
 } catch (e: any) { fails.push(`probe: ${e.message}`); }

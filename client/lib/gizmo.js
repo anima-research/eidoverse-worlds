@@ -19,7 +19,7 @@ import { sendDrag } from './net.js';
 import { registerSystem } from './frameloop.js';
 import { sceneSelected } from './scenegraph.js';
 import { getTool, getSpace, isEditing, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
-import * as V4 from './editwrites.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
+import * as Edits from './editwrites.js';   // slice 3b: a release is one request with expect
 import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
@@ -32,8 +32,8 @@ const R2D = 180 / Math.PI;
 let controls = null;
 let helper = null;
 let attachedId = null;
-let start = null;        // { rec, scale, v4? } at drag start (v4: the components the release's expect names)
-let cancelled = false;   // v4: Esc during the drag — the thing goes back, and the release writes nothing (§3a)
+let start = null;        // { rec, scale, comps? } at drag start (the components the release's expect names)
+let cancelled = false;   // Esc during the drag — the thing goes back, and the release writes nothing (§3a)
 let lastSent = 0;
 // the pivot (research 52, Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as
 // the thing, and the thing follows the proxy: objWorld = proxy × offset (offset fixed at drag start). A turn or a size
@@ -86,7 +86,7 @@ function editable(id, mode) {
 }
 
 function sync() {
-  // v4: a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
+  // a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
   // (and offers to move it anyway); detaching mid-drag left the preview stranded with nothing sent
   if (start) return;
   const id = sceneSelected();
@@ -110,7 +110,7 @@ function beginDrag() {
   engage('gizmo');
   if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
-  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), v4: V4.compsOf(attachedId) } : null;
+  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
 }
 function onChange() {
@@ -150,7 +150,7 @@ function endPivotDrag() {
     for (const [name, h] of hotspots(box)) { const d = Math.hypot(...h.map((v, i) => (v - p[i]) * [s.x, s.y, s.z][i])); if (d < 0.15 && (!best || d < best.d)) best = { name, h, d }; }
     if (best) { p = best.h.map((v) => Math.round(v * 1e4) / 1e4); snapped = best.name; } }
   const data = p.every((v) => v === 0) ? null : { pos: p };   // back at the origin = no pivot
-  V4.sendOps([data ? OP.set(id, 'pivot', data) : OP.unset(id, 'pivot')], { what: `pivot of ${id}`, expect: false });
+  Edits.sendOps([data ? OP.set(id, 'pivot', data) : OP.unset(id, 'pivot')], { what: `pivot of ${id}`, expect: false });
   import('./ui.js').then((m) => m.flashHint(snapped ? `pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
@@ -172,15 +172,15 @@ function endDrag() {
   if (errors.length || !ops.length) { start = null; return; }
   // presence until now; the release is ONE request, expecting where the drag started
   const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;
-  const base = start.v4 ? { [id]: start.v4 } : null; start = null;
-  bus.emit('gizmo-v4', { id, ops });
-  V4.sendOps(ops, { what, base, revert: () => V4.revertPose(id) });
+  const base = start.comps ? { [id]: start.comps } : null; start = null;
+  bus.emit('gizmo-release', { id, ops });
+  Edits.sendOps(ops, { what, base, revert: () => Edits.revertPose(id) });
 }
 
 /** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */
 function cancelDrag() {
   if (!start || !attachedId) return false;
-  cancelled = true; V4.revertPose(attachedId); refreshOutline();
+  cancelled = true; Edits.revertPose(attachedId); refreshOutline();
   import('./ui.js').then((m) => m.flashHint('cancelled — nothing written'));
   return true;
 }

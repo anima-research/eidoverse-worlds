@@ -1,4 +1,4 @@
-// shared/protocol/view.js — the v4 fold as the records the renderer, the panels and the agent's tools read (slice 3c).
+// shared/protocol/view.js — the fold as the records the renderer, the panels and the agent's tools read (slice 3c).
 // A VIEW, not a protocol: no verbs, no second fold. Pure; browser, server and agent run the same code.
 //   viewOf(id, c)      one entity: {lib, pos, q, yaw, scale (one number), scale3? (non-uniform), parent?, comp?, …}
 //   viewState(folded) the whole world: {entities, sky, terrain, grass, assets, roles, bans, …}
@@ -18,7 +18,7 @@ const HIDDEN_WORLD = new Set(["physics-engine", "imported-epoch", "about", "boun
 const IMP = "imported:", IMP_BANS = "imported-bans:";
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
-/** One v4 entity's components as the record readers use. */
+/** One entity's components as the record readers use. */
 export function viewOf(id, c) {
   const rec = {};
   if (typeof c.model === "string") rec.lib = c.model;
@@ -39,7 +39,7 @@ export function viewOf(id, c) {
   return rec;
 }
 
-/** The whole v4 fold as the world view. chat: an optional recentChat window to carry (chat isn't in the fold). */
+/** The whole fold as the world view. chat: an optional recentChat window to carry (chat isn't in the fold). */
 export function viewState(folded, { recentChat = [], chatTotal = 0 } = {}) {
   const st = emptyView();
   st.recentChat = clone(recentChat); st.chatTotal = chatTotal;

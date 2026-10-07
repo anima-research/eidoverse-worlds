@@ -34,7 +34,7 @@ import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
-import * as V4 from './editwrites.js';   // protocol/v4 slice 3b: in a v4 world every write here is a request
+import * as Edits from './editwrites.js';   // slice 3b: every write here is a request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -78,7 +78,7 @@ export const editSurface = () => !(globalThis.matchMedia?.('(pointer: coarse)').
 export const mayEdit = () => {
   if (!editSurface()) return false;
   const r = net.myRights; const role = r?.role;
-  // a v4 world says what you may do as permissions (research roles S4): build, whatever the role is called (a moderator,
+  // a world says what you may do as permissions (research roles S4): build, whatever the role is called (a moderator,
   // a custom role); an older server still says only the role
   if (Array.isArray(r?.permissions)) return r.permissions.includes('build');
   return role === undefined || ['builder', 'owner'].includes(role);
@@ -200,7 +200,7 @@ function showInspector(id) {
     `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes">+ seat</button>`;
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
-    V4.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
+    Edits.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
   };
   inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
   inspector.style.display = 'flex';
@@ -419,7 +419,7 @@ export function updateBuild() {
         // ORIGIN sits under the cursor, which is both a jump and usually wrong —
         // you grabbed a crate by its corner, not by its pivot.
         if (dragging.world) {
-          // v4: the grab offset, the aim and the result are WORLD points; a mounted child's object position is local
+          // the grab offset, the aim and the result are WORLD points; a mounted child's object position is local
           // to its parent (turned, scaled), so the world target is brought into that frame last (research 44 #5)
           _w.copy(aim.point).add(dragging.grab);
           if (aim.onto) _w.y = aim.point.y;
@@ -476,9 +476,9 @@ function commitSpawn() {
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
-  if (ghost.bp) V4.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
-  else if (ghost.lib === '@light') V4.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
-  else V4.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
+  if (ghost.bp) Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
+  else if (ghost.lib === '@light') Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
+  else Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   cancelGhost();
 }
 
@@ -493,8 +493,8 @@ function commitPlace(before) {
   const o = selected.obj;
   // the drag was presence; the release is ONE request (the whole transform, local for a child), expecting where it started
   const id = selected.id;
-  V4.sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, { pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) })],
-    { what: `move ${id}`, base: before.v4 ? { [id]: before.v4 } : null, revert: () => V4.revertPose(id) });
+  Edits.sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, { pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) })],
+    { what: `move ${id}`, base: before.comps ? { [id]: before.comps } : null, revert: () => Edits.revertPose(id) });
 }
 
 const _up = new THREE.Vector3(0, 1, 0), _turn = new THREE.Quaternion(), _q = new THREE.Quaternion();
@@ -504,7 +504,7 @@ function snapshotOf(obj) {
 
 export function undo() {
   // the authority's undo {act} of MY last act (it refuses what others changed since)
-  deselect(); return V4.undo();
+  deselect(); return Edits.undo();
 }
 
 // Edit mode's panels own the selection the inspector SHOWS (a tree pick sets
@@ -525,7 +525,7 @@ function removeTargets() {
 
 function removeSelected() {
   if (!selected) return;
-  V4.del([selected.id]); deselect();   // a locked thing: the authority asks ("This is locked. Delete anyway?")
+  Edits.del([selected.id]); deselect();   // a locked thing: the authority asks ("This is locked. Delete anyway?")
 }
 
 // ============================================================ pointer
@@ -568,8 +568,8 @@ canvas.addEventListener('mousedown', (e) => {
   dragging = {
     id,
     world,
-    // v4: the components this gesture starts from: the release's `expect`
-    before: { ...snapshotOf(root), v4: V4.compsOf(id) },
+    // the components this gesture starts from: the release's `expect`
+    before: { ...snapshotOf(root), comps: Edits.compsOf(id) },
     lastSent: 0,
     armed: false,
     startX: e.clientX,
@@ -630,13 +630,13 @@ canvas.addEventListener('click', (e) => {
 
 // ============================================================ keys
 
-/** Something mid-gesture that Esc should cancel before anything else (gizmo.js, in a v4 world). */
+/** Something mid-gesture that Esc should cancel before anything else (gizmo.js). */
 let escapeHook = () => false;
 export function setEscapeHook(fn) { escapeHook = fn; }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
-    // v4 (§3a): Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
-    if (dragging?.armed) { const id = dragging.id; dragging = null; V4.revertPose(id); flashHint('move cancelled — nothing written'); return; }
+    // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
+    if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); return; }
     if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
@@ -650,7 +650,7 @@ bus.on('key', (e) => {
   // after you have gone back to looking.
   // redo is Ctrl+Shift+Z or Ctrl+Y (the authority's undo of my undo)
   if ((e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) {   // keys: undo
-    e.preventDefault?.(); V4.redo(); return; }
+    e.preventDefault?.(); Edits.redo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
   if (!editMode) return;
 

@@ -260,8 +260,8 @@ export function sendJoin() {
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
     token: CONFIG.token,
-    // this client folds the world's v4 stream itself (the server refuses a client that doesn't)
-    v4fold: true,
+    // this client folds the world's log stream itself (the server refuses a client that doesn't)
+    replica: true,
   }));
 }
 
@@ -285,11 +285,11 @@ function onReply(msg) {
   p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the authority sent no reply body' } });
 }
 /** The authority's fresh entries: fold them (replica.ingest), then hand state.js the new view of that fold (it tells the
- *  realizers what changed, in v4 terms). Chat lines take the chat path (they aren't world state). */
+ *  realizers what changed, in the protocol's terms). Chat lines take the chat path (they aren't world state). */
 function onLog(msg) {
   if (!replica.active) return;
   const r = replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
-  if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
+  if (r.resync) { console.warn(`[replica] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
   // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
   // Numbered seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
@@ -300,7 +300,7 @@ function onLog(msg) {
     else if (e.seq > lastSeq) { lastSeq = e.seq; bus.emit('live-entry', e); noteSpeaking(e.actor); }
   }
   if (r.changed) narrate(applyView(replica.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
-  bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
+  bus.emit('log-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
 /** Say in chat who changed someone's role here, as the world's own narration (a ban or a kick arrives as `moderated`). */
 function narrate(d, actor) {
@@ -658,7 +658,7 @@ async function handle(msg) {
       // before transplanting it into a fresh record.
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
       ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
-      if (msg.v4id) identities.set(msg.id, msg.v4id);
+      if (msg.actorId) identities.set(msg.id, msg.actorId);
       if (msg.guest) guests.add(msg.id); else guests.delete(msg.id);
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');
@@ -946,9 +946,9 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
-  identities.clear(); guests.clear(); if (msg.v4?.you) net.you = msg.v4.you;
+  identities.clear(); guests.clear(); if (msg.cut?.you) net.you = msg.cut.you;
   for (const p of msg.present) {
-    if (p.v4id) identities.set(p.id, p.v4id);
+    if (p.actorId) identities.set(p.id, p.actorId);
     if (p.guest) guests.add(p.id);
     ensureRemote(p.id, p.avatar, { agent: p.agent, authority: true })
       .then(() => { if (p.pose) pushPose(p.id, p.pose); })
@@ -957,8 +957,8 @@ async function onSnapshot(msg) {
 
   // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
-  if (!msg.v4?.state) { replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
-  replica.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('holds', msg.v4.holds ?? {});
+  if (!msg.cut?.state) { replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
+  replica.adopt(msg.cut); bus.emit('my-acts', msg.cut.mine ?? []); bus.emit('cut-adopted'); bus.emit('holds', msg.cut.holds ?? {});
   shadowHydrate(replica.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
 
   hydrating = true; pendingLive = [];

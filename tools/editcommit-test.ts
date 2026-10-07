@@ -1,17 +1,17 @@
-// editcommit — inspect.js commitEdit, headless, against the real v4 door.
+// editcommit — inspect.js commitEdit, headless, against the real authority.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/editcommit-test.ts
 //
 // The client's half of the shared schema: a live call previews through the
 // group's handler and never sends; the final call sends ONE door request whose
-// `expect` names what it changes AS IT STOOD WHEN THE GESTURE BEGAN — the v4
+// `expect` names what it changes AS IT STOOD WHEN THE GESTURE BEGAN — the
 // form of the "a scrub's before leaked into the next selection" bug the first
-// review round found (v1 computed an undo inverse from it; v4 sends it as
+// review round found (v1 computed an undo inverse from it; now it is sent as
 // expect, and the door refuses `changed` if someone wrote it since).
 // tools/protocol/inspectharness.ts stubs the page (the realized world, the wire to the
 // scratch door, the dialogs); inspect.js, editwrites.js, the schema and the door are real.
 //
-// v4 port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
+// the protocol port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
 // by act; a lamp is a light COMPONENT edited with set). Each old inverse check became either the expect the request
 // carries (what it started from) or the door's undo of the act, read back.
 import { inspectHarness } from "./protocol/inspectharness.ts";
@@ -19,7 +19,7 @@ import { qFromEuler, sameRotation } from "../shared/euler.js";
 import { qFromYaw } from "../shared/rot.js";
 const H = inspectHarness("editcommit");
 const { commitEdit, registerHandler, endGesture, schemaFor } = await import("../client/lib/inspect.js");
-const V4 = await import("../client/lib/editwrites.js");
+const Edits = await import("../client/lib/editwrites.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -91,12 +91,12 @@ console.log("\nrefusals, gestures, and the door's undo of the other edits:");
   commitEdit("c1", "comp.recipe", null);   // what the 'remove recipe' button sends
   await H.flush();
   check("removing it: delete recipe", last().verb === "delete" && last().args.component === "recipe" && c("c1").recipe === undefined, JSON.stringify(last()));
-  const u = await V4.undo();
+  const u = await Edits.undo();
   check("…and Ctrl+Z (the door's undo of that act) restores {wood: 2}", u.ok && c("c1").recipe?.wood === 2, JSON.stringify([u.refused, c("c1")]));
   H.W.call("set", { id: "c1", component: "motion", value: { type: "spin", degPerSec: 30, t0: 5 } }); H.sync();
   commitEdit("c1", "motion.rest", 1);
   await H.flush();
-  const u2 = await V4.undo();
+  const u2 = await Edits.undo();
   check("resting a motion is delete motion; its undo re-issues the whole motion with its t0", H.sent.some((x: any) => x.verb === "delete" && x.args.component === "motion") && u2.ok && c("c1").motion?.t0 === 5 && c("c1").motion.degPerSec === 30, JSON.stringify([u2.refused, c("c1").motion]));
   H.W.call("set", { id: "c1", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: {} } } }); H.sync();
   commitEdit("c1", "sockets.seat|rot|1", Math.PI / 2);   // the panel commits RADIANS (heading)
@@ -116,7 +116,7 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   await H.flush();
   check("tilting a yaw-only thing sends ONE set transform with a tilted q", r.ok && last().verb === "set" && last().args.component === "transform" && Math.abs(last().args.value.q[0]) > 1e-3, JSON.stringify(last()));
   check("…its expect is the old transform (the q of its old yaw), and the door took it", JSON.stringify(expectOf(last(), "transform")?.value) === was && sameRotation(c("t1").transform.q, qFromEuler([30 * Math.PI / 180, 0.5, 0], "XYZ"), 1e-9), JSON.stringify([last().args.expect, c("t1").transform]));
-  const u = await V4.undo();
+  const u = await Edits.undo();
   check("…and its undo restores exactly the old q of its yaw (a bare yaw would keep the tilt)", u.ok && JSON.stringify(c("t1").transform) === was && sameRotation(c("t1").transform.q, qFromYaw(0.5), 1e-9), JSON.stringify([u.refused, c("t1").transform]));
   commitEdit("t1", "rot.x", 30 * Math.PI / 180); await H.flush();
   // drive it into gimbal lock through the panel: Y to 90°
@@ -132,11 +132,11 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z
   H.W.seed({ r1: { lib: "swing.glb", pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "pendulum", amp: 0, period: 3.5 }, reactions: { push: { kind: "impulse", strength: 0.5 } } } } }); H.sync();
   H.entities.set("r1", realized());
-  const before = V4.stacks().undo.length;
+  const before = Edits.stacks().undo.length;
   const rr = commitEdit("r1", "remove.motion", "both");
   await H.flush();
-  check("a held compound edit is ONE request, one act on my undo stack", rr.ops.length === 2 && last().verb === "batch" && last().args.ops.length === 2 && V4.stacks().undo.length === before + 1 && !c("r1").motion && !c("r1").reactions, JSON.stringify([rr, last()]));
-  const ub = await V4.undo();
+  check("a held compound edit is ONE request, one act on my undo stack", rr.ops.length === 2 && last().verb === "batch" && last().args.ops.length === 2 && Edits.stacks().undo.length === before + 1 && !c("r1").motion && !c("r1").reactions, JSON.stringify([rr, last()]));
+  const ub = await Edits.undo();
   check("…and one Ctrl+Z brings both back", ub.ok && c("r1").motion?.type === "pendulum" && c("r1").reactions?.push?.kind === "impulse", JSON.stringify([ub.refused, c("r1")]));
 }
 

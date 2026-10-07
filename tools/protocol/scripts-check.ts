@@ -1,4 +1,4 @@
-// tools/protocol/scripts-check.ts — v4 scripts (research 41; the lab's 46 B-cases, ported from its toy language to real
+// tools/protocol/scripts-check.ts — scripts (research 41; the lab's 46 B-cases, ported from its toy language to real
 // JavaScript in the QuickJS sandbox), through the real authority, plus `use` → script and a timer through a real server.
 //   bun tools/protocol/scripts-check.ts                 every case (the server cases start a scratch sequencer)
 //   bun tools/protocol/scripts-check.ts --only B2,B5    just those
@@ -728,7 +728,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
-      // bellkeeper: kv → a component in scope; emit('motion') → set motion (pivot is its own component in v4); emit('say') → say
+      // bellkeeper: kv → a component in scope; emit('motion') → set motion (pivot is its own component now); emit('say') → say
       s.call("bob", "create", { id: "bell1", model: "bell", components: { pivot: { pos: [0, 1.6, 0] } }, place: { at: [0, 0] } });
       install(s, "bob", "bell1", "keeper", `world.on("use", (e) => {
   if (e.action !== "ring") return;
@@ -740,7 +740,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 `, { scope: { ids: "self", comps: ["bellkeeper", "motion"], say: true }, on: ["use"], knobs: { period: 2.2, note: "the bell tolls" } });
       s.call("bob", "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "keeper" } } });
       const ring = s.call("vic", "use", { id: "bell1", action: "ring" });
-      // greeter: world-level in v1; in v4 a script lives on a thing (a sign), and hears every arrival
+      // greeter: world-level in v1; now a script lives on a thing (a sign), and hears every arrival
       s.call("bob", "create", { id: "sign", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "sign", "greeter", `world.on("enter", (e) => {
   const met = (world.get("self", "greeter")?.met ?? 0) + 1;
@@ -808,7 +808,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 ];
 
 // ---------------- S: the real server ----------------
-const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
+const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
   const W4 = path.join(root, "srv"); fs.mkdirSync(W4, { recursive: true });
   const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" };
   const f = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env });
@@ -823,9 +823,9 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
     const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-      ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", v4fold: true }));
+      ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
       for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.v4?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
+      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });
@@ -867,7 +867,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
         ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", v4fold: true }));
+        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
         for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
         return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");

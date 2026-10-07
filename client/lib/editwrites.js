@@ -34,10 +34,10 @@ export const nameOf = (id) => actorName(id);
 // ---- my acts: what Ctrl+Z and redo walk (seeded at join from the server's act index, so it survives a reload) ----
 const undoStack = [];   // my act seqs, newest last
 const redoStack = [];   // my undo acts, newest last
-bus.on('v4-mine', (m) => { undoStack.splice(0, undoStack.length, ...(Array.isArray(m) ? m : [])); redoStack.length = 0; });
+bus.on('my-acts', (m) => { undoStack.splice(0, undoStack.length, ...(Array.isArray(m) ? m : [])); redoStack.length = 0; });
 export const stacks = () => ({ undo: [...undoStack], redo: [...redoStack] });
 
-/** A thing's v4 components as this client folds them now (a copy), or null. */
+/** A thing's components as this client folds them now (a copy), or null. */
 export function compsOf(id) { const e = replica.st?.entities?.[idIn(id)]; return e ? clone({ ...e.c }) : null; }
 /** expect entries for these things' components, from `base` (id → comps, a gesture's start) or the fold now. */
 export function expectOf(ids, comps, base = null) {
@@ -74,7 +74,7 @@ export function showRefusal(what, r) {
   const text = plain(what, r), agentText = refusalText(what, r);
   console.info('[editwrites] refused:', agentText);
   toast(text, 'warn', 9000);
-  bus.emit('v4-refused', { what, refused: r.refused, text, agentText });
+  bus.emit('edit-refused', { what, refused: r.refused, text, agentText });
   return text;
 }
 /** Show the authority's warnings on a write that went through (it overlaps, it floats…): they were only ever shown to agents. */
@@ -83,7 +83,7 @@ export function showWarnings(what, r) {
   if (!ws.length) return null;
   const text = `Done, but ${ws.slice(0, 3).map(warnPlain).join('; ')}${ws.length > 3 ? ` (and ${ws.length - 3} more)` : ''}`;
   toast(text, 'info', 7000);
-  bus.emit('v4-warned', { what, warnings: ws, text });
+  bus.emit('edit-warned', { what, warnings: ws, text });
   return text;
 }
 
@@ -98,7 +98,7 @@ export function send(req, opts = {}) {
 }
 const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
 async function sendNow(req, { what = req.verb, revert = null, record = true } = {}) {
-  bus.emit('v4-sending', { req, what });
+  bus.emit('edit-sending', { req, what });
   let r = await sendRequest(req.verb, req.args);
   // A lock (§5, R's dialog): someone who may lift it is asked "This is locked. Move anyway?" —
   //   ✓ through: the SAME request with throughLock: one act, the lock stays on;
@@ -112,23 +112,23 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
     console.info('[editwrites] lock:', refusalText(what, r));
     const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });   // a DOM card isn't drawn in a headset (xrask.js)
-    bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
+    bus.emit('edit-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await sendRequest(req.verb, { ...req.args, throughLock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }
     const k = r.refused.lock;
     const u = await sendRequest('delete', { id: k, component: 'lock' });
     if (!u.ok) { r = u; what = `unlock ${idOut(k)}`; break; }
     if (Number.isInteger(u.act)) remember(u.act);
-    bus.emit('v4-done', { what: `unlock ${idOut(k)}`, req: { verb: 'delete', args: { id: k, component: 'lock' } }, reply: u });
+    bus.emit('edit-done', { what: `unlock ${idOut(k)}`, req: { verb: 'delete', args: { id: k, component: 'lock' } }, reply: u });
     r = await sendRequest(req.verb, req.args);
   }
   if (r.ok) {
     if (record && Number.isInteger(r.act)) remember(r.act);
-    bus.emit('v4-done', { what, req, reply: r });
+    bus.emit('edit-done', { what, req, reply: r });
     showWarnings(what, r);
   } else {
     try { revert?.(); } catch (e) { console.warn('[editwrites] revert', e); }
-    if (cancelled) { flashHint('cancelled — nothing written'); bus.emit('v4-cancelled', { what, refused: r.refused }); }
+    if (cancelled) { flashHint('cancelled — nothing written'); bus.emit('edit-cancelled', { what, refused: r.refused }); }
     else showRefusal(what, r);
   }
   return r;
@@ -197,7 +197,7 @@ export function publish(ids, name) {
 export function copyBlueprint(hash, at) {
   return send({ verb: 'create', args: { from: hash, ...(at ? { at } : {}) } }, { what: 'place a copy' });
 }
-/** This world's blueprints, read from the v4 fold (@world blueprints:<hash> → {name, parts}). */
+/** This world's blueprints, read from the fold (@world blueprints:<hash> → {name, parts}). */
 export function blueprints() {
   const c = replica.st?.entities?.['@world']?.c ?? {};
   return Object.keys(c).filter((k) => k.startsWith('blueprints:')).map((k) => ({ hash: `sha256:${k.slice('blueprints:'.length)}`, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) }));

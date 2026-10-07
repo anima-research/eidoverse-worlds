@@ -1,6 +1,6 @@
-// tools/protocol/scratchworld.ts — a scratch v4 world behind the real authority, for the planner tests (tools/*-test.ts) that
+// tools/protocol/scratchworld.ts — a scratch world behind the real authority, for the planner tests (tools/*-test.ts) that
 // check the RESULT of an edit: seed the records a test reads (view form), send the planner's requests, read the
-// v4 state back as the view the planners read (shared/protocol/view.js viewState). Same pattern as tools/protocol/authority-check.ts:
+// state back as the view the planners read (shared/protocol/view.js viewState). Same pattern as tools/protocol/authority-check.ts:
 // request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";

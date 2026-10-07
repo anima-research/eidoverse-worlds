@@ -51,7 +51,7 @@ import {
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
-// may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
+// may I build here: the build switch (the authority's), else the role (an older server); unknown = no (strict)
 const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
 import { initPalette } from './lib/catalog.js';
 import { initConjure } from './lib/generate.js';
@@ -443,7 +443,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
-// physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
+// physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 // reach descriptors resolve against the same bodies everyone renders; my own
@@ -1037,7 +1037,7 @@ const EW = globalThis.EW = {
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
-  simShown,                    // the sim as drawn: a copy of this client's v4 sim layer at the server's clock
+  simShown,                    // the sim as drawn: a copy of this client's sim layer at the server's clock
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   warm: warmStats,             // the conductor's queue (§16.2.A)

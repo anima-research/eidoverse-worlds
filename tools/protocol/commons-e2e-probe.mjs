@@ -32,7 +32,7 @@ try {
   while (Date.now() - t0 < 120000) { ready = logs.find((l) => /^\[boot\] ready in \d+ms/.test(l)) ?? null;
     const gone = await race(pg.evaluate(() => { const sp = document.getElementById('splash'); return !sp || sp.classList.contains('gone'); })).catch(() => false);
     if (ready && gone) break; await sleep(250); }
-  const net = await race(pg.evaluate(() => ({ joined: !!globalThis.EW?.net?.joined, you: globalThis.EW?.net?.myId, role: globalThis.EW?.net?.myRights?.role, v4: !!globalThis.EW?.net?.you })));
+  const net = await race(pg.evaluate(() => ({ joined: !!globalThis.EW?.net?.joined, you: globalThis.EW?.net?.myId, role: globalThis.EW?.net?.myRights?.role, hasId: !!globalThis.EW?.net?.you })));
   if (!check('boot: the page boots into the translated world and joins it', !!ready && net.joined && !!net.role, { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-6) })) throw new Error('boot gate failed');
   // see: every thing in this client's own fold of the cut is an entity on screen
   const want = (await (await fetch(`${ORIGIN}/geom?world=${WORLD}&boxes=0`)).json()).entities?.length ?? 0;   // the server's view of the authority's state
@@ -50,7 +50,7 @@ try {
   // live: an agent-like socket creates and removes a thing through the authority
   ws = new WebSocket(ORIGIN.replace('http', 'ws') + '/ws'); const inbox = [];
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; }); ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
-  ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', v4fold: true }));
+  ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', replica: true }));
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'snapshot' || m.type === 'error'); i++) await sleep(100);
   const req = (id, verb, args) => { ws.send(JSON.stringify({ type: 'request', id, verb, args })); };
   const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the authority never reuses an id: a fresh one each run

@@ -3,14 +3,14 @@
 //   bun tools/smoke.ts                       # against a throwaway server
 //   URL=ws://host:8940/ws WORLD=<name> bun tools/smoke.ts   # against a running one (see below)
 //
-// This covers the wire, not the renderer: join and the v4 cut, door requests and
+// This covers the wire, not the renderer: join and the cut, door requests and
 // their order, presence batching, the two NON-logged channels (whisper, drag),
 // identity takeover, and the invariant that matters most — a private message
 // must never reach the world log, because the log is public, permanent, and
 // readable by everyone who ever joins.
 //
-// The world speaks protocol v4 (shared/protocol/authority.js): a join says `v4fold: true`,
-// the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
+// The world speaks the protocol (shared/protocol/authority.js): a join says `replica: true`,
+// the snapshot carries the authority's cut (`cut`) and the chat window (`state`), every
 // write is a request {type: "request", id, verb, args} answered by `reply`,
 // and what the door wrote reaches every client as `log` entries. A world is
 // founded by its operator (bun tools/protocol/world.ts found); joining never founds one.
@@ -57,7 +57,7 @@ class Client {
       this.ws.onopen = () => this.ws.send(JSON.stringify({
         type: "join", world: this.opts.world ?? WORLD, id: this.id,
         avatar: "eidoverse/assets/vrms/claude.vrm",
-        agent: this.opts.agent, token: TOKEN, v4fold: true,
+        agent: this.opts.agent, token: TOKEN, replica: true,
       }));
       this.ws.onmessage = (ev) => {
         const m = JSON.parse(String(ev.data));
@@ -83,7 +83,7 @@ class Client {
   /** the door's entries this client was sent, numbered */
   entries() { return this.of("log").flatMap((m) => m.entries.map((e: any, i: number) => ({ seq: m.from + i, ...e }))); }
   says() { return this.entries().filter((e) => e.kind === "say"); }
-  get me() { return this.snapshot?.v4?.you as string | undefined; }
+  get me() { return this.snapshot?.cut?.you as string | undefined; }
   close() { this.ws.close(); }
 }
 const joined = async (id: string, world = WORLD, opts: { agent?: boolean } = {}) => { const c = new Client(id, { ...opts, world }); await c.connect(); return c; };
@@ -162,12 +162,12 @@ try {
   const alice = await joined("alice");
   check("join returns a snapshot", !!alice.snapshot);
   check("snapshot names you", alice.snapshot.you === "alice", alice.snapshot.you);
-  check("the snapshot is a v4 cut (version, head, the fold's state) and carries no history",
-    alice.snapshot.v4?.version === 4 && Number.isInteger(alice.snapshot.v4?.head) && !!alice.snapshot.v4?.state && !("entries" in alice.snapshot),
-    JSON.stringify(Object.keys(alice.snapshot.v4 ?? {})));
+  check("the snapshot is a cut (version, head, the fold's state) and carries no history",
+    alice.snapshot.cut?.dialect === "eidoverse-log" && alice.snapshot.cut?.v === 4 && Number.isInteger(alice.snapshot.cut?.head) && !!alice.snapshot.cut?.state && !("entries" in alice.snapshot),
+    JSON.stringify(Object.keys(alice.snapshot.cut ?? {})));
   check("you are told your identity: an opaque directory id, not your name", /^u-[a-z2-7]{20}$/.test(alice.me ?? ""), alice.me);
   check("the founder, joining by name, is the world's owner", alice.snapshot.yourRights?.role === "owner", JSON.stringify(alice.snapshot.yourRights));
-  const head0 = alice.snapshot.v4.head;
+  const head0 = alice.snapshot.cut.head;
 
   // --- door requests are answered, ordered, echoed, and persisted
   const r1 = await alice.req("create", { id: "box1", components: { transform: { pos: [1, 0, 2] } } });
@@ -186,8 +186,8 @@ try {
   // --- a second body sees the world by its cut
   const bob = await joined("bob", WORLD, { agent: true });
   check("a late joiner's cut holds the world as it is now (box1 where it was moved)",
-    JSON.stringify(bob.snapshot.v4.state?.box1?.c?.transform?.v?.pos ?? bob.snapshot.v4.state?.[Object.keys(bob.snapshot.v4.state).find((k) => k.includes("box1")) ?? ""]?.c?.transform?.v?.pos) === "[5,0,5]",
-    JSON.stringify(Object.keys(bob.snapshot.v4.state ?? {})));
+    JSON.stringify(bob.snapshot.cut.state?.box1?.c?.transform?.v?.pos ?? bob.snapshot.cut.state?.[Object.keys(bob.snapshot.cut.state).find((k) => k.includes("box1")) ?? ""]?.c?.transform?.v?.pos) === "[5,0,5]",
+    JSON.stringify(Object.keys(bob.snapshot.cut.state ?? {})));
   check("a late joiner gets the chat window", (bob.snapshot.state?.recentChat ?? []).some((c: any) => c.text === "hello world" && c.actor === "alice"), JSON.stringify(bob.snapshot.state));
   check("late joiner sees who is present", bob.snapshot.present.some((p: any) => p.id === "alice"));
   await sleep(300);
@@ -281,14 +281,14 @@ try {
     check("sixty things built, moved, and half removed, as three batches", c1.ok && c2.ok && c3.ok, JSON.stringify([c1.reply?.refused, c2.reply?.refused, c3.reply?.refused]));
     await sleep(300);
     const late = await joined("latecomer", fw);
-    const st = late.snapshot.v4?.state ?? {};
+    const st = late.snapshot.cut?.state ?? {};
     const things = Object.keys(st).filter((k) => k !== "@world" && /f\d+$/.test(k));
     check("the cut survives removals", things.length === 30, `${things.length} things`);
     const f31 = st[things.find((k) => k.endsWith("f31")) ?? ""]?.c?.transform?.v?.pos;
     check("the cut holds the LATEST transforms", f31?.[2] === 5, JSON.stringify(f31));
     check("a joiner is not handed the history (no entries; the cut's head says where it stands)",
-      !("entries" in late.snapshot) && late.snapshot.v4.head >= 4, `head ${late.snapshot.v4.head}`);
-    check("the full history stays on disk", EXTERNAL ? true : logLines(fw).length === late.snapshot.v4.head + 1, `${logLines(fw).length} lines, head ${late.snapshot.v4.head}`);
+      !("entries" in late.snapshot) && late.snapshot.cut.head >= 4, `head ${late.snapshot.cut.head}`);
+    check("the full history stays on disk", EXTERNAL ? true : logLines(fw).length === late.snapshot.cut.head + 1, `${logLines(fw).length} lines, head ${late.snapshot.cut.head}`);
     builder.close(); late.close();
   }
 
@@ -360,7 +360,7 @@ try {
     const t = await owner.req("set", { id: "@world", component: "terrain", value: { seed: 7, size: 160, amplitude: 2.6, flatRadius: 16, layers: [{ color: "#4a5d33", repeat: 16 }] } });
     const g = await owner.req("set", { id: "@world", component: "grass", value: { width: 90, depth: 80, spacing: 0.26, perCell: 4, color: 0x3a5a2c } });
     check("the owner sets terrain and grass on @world", t.ok && g.ok, JSON.stringify([t.reply?.refused, g.reply?.refused]));
-    const w = (c: Client) => c.snapshot.v4?.state?.["@world"]?.c ?? {};
+    const w = (c: Client) => c.snapshot.cut?.state?.["@world"]?.c ?? {};
     const a = await joined("g-after", gw);
     check("terrain is in a joiner's cut", w(a).terrain?.v?.amplitude === 2.6, JSON.stringify(w(a).terrain));
     check("grass is in a joiner's cut", w(a).grass?.v?.perCell === 4, JSON.stringify(w(a).grass));
@@ -381,14 +381,14 @@ try {
     const p = await owner.req("set", { id: "lamp1", component: "transform", value: { pos: [5, 1.5, -2] }, merge: true });
     check("a light is created and moved through the door", c.ok && p.ok, JSON.stringify([c.reply?.refused, p.reply?.refused]));
     const late = await joined("lightlate", lw);
-    const key = Object.keys(late.snapshot.v4.state).find((k) => k.endsWith("lamp1")) ?? "";
-    const ent = late.snapshot.v4.state[key]?.c ?? {};
+    const key = Object.keys(late.snapshot.cut.state).find((k) => k.endsWith("lamp1")) ?? "";
+    const ent = late.snapshot.cut.state[key]?.c ?? {};
     check("a light is a thing with a light component (no model)", !!ent.light && !ent.model, JSON.stringify(ent));
     check("a light carries its colour and intensity", ent.light?.v?.color === 0xffcc88 && ent.light?.v?.intensity === 20, JSON.stringify(ent.light));
     check("a light moves like any thing (latest transform)", ent.transform?.v?.pos?.[0] === 5, JSON.stringify(ent.transform));
     const d = await owner.req("delete", { id: "lamp1" });
     const after = await joined("lightlater", lw);
-    check("removing a light drops it from the world", d.ok && !Object.keys(after.snapshot.v4.state).some((k) => k.endsWith("lamp1")));
+    check("removing a light drops it from the world", d.ok && !Object.keys(after.snapshot.cut.state).some((k) => k.endsWith("lamp1")));
     owner.close(); late.close(); after.close();
   }
 

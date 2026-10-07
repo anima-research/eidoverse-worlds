@@ -16,13 +16,13 @@ def check(name, ok, detail=""):
     print(("  ✓ " if ok else "  ✗ ") + name + (f"  [{detail}]" if detail and not ok else ""))
     passed, failed = passed + (1 if ok else 0), failed + (0 if ok else 1)
 
-# The world speaks protocol v4: a join says v4fold (an embodied client that doesn't is refused), a say is a door
+# The world speaks the protocol: a join says replica (an embodied client that doesn't is refused), a say is a door
 # request answered by reply, and chat reaches clients as `say` entries of the log stream (actors are opaque
-# ids; the stream's `names` and the snapshot's v4.names say who). A say's chat number — what an attest names — is
+# ids; the stream's `names` and the snapshot's cut.names say who). A say's chat number — what an attest names — is
 # its log position × 1000 (server/worldlog.ts sayLine).
 NAMES = {}
 def learn(m):
-    if m.get("type") == "snapshot": NAMES.update((m.get("v4") or {}).get("names") or {})
+    if m.get("type") == "snapshot": NAMES.update((m.get("cut") or {}).get("names") or {})
     if m.get("type") == "log": NAMES.update(m.get("names") or {})
 def says_in(events):
     out = []
@@ -39,7 +39,7 @@ def say_req(text):
 
 async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
-    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "v4fold": True}
+    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "replica": True}
     if surface: msg["surface"] = surface
     if agent_token: msg["agentToken"] = agent_token
     await ws.send(json.dumps(msg))
@@ -249,7 +249,7 @@ async def main():
     # voice retirement, or every say from a rejoining actor with no leg
     # waits the full window against the ghost.
     p4, e8, c8, _ = await join("hesp3", agent_token="surf-lab-hesp3")
-    v4, e9, c9, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
+    v3, e9, c9, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
     await asyncio.sleep(0.4)
     ew2.clear()
     await p4.close()                       # primary dies; aux gets reaped 4007
@@ -326,7 +326,7 @@ async def main():
     check("T21 the embodied primary survives its malformed accessory", c12() is None, str(c12()))
 
     # T22 (review finding 3): attest survives later entries. (v1 folded entries[]
-    # out from under the say every FOLD_EVERY appends; v4 keeps the last 256 says
+    # out from under the say every FOLD_EVERY appends; the server keeps the last 256 says
     # in recentSays) — the receipt must still resolve and broadcast `performed`.
     v6, e14, c14, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
     await asyncio.sleep(0.4)
@@ -362,7 +362,7 @@ async def main():
         try: await w.close()
         except Exception: pass
 
-    for w in (w1, w2, v4):
+    for w in (w1, w2, v3):
         try: await w.close()
         except Exception: pass
 

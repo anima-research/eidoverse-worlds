@@ -2,7 +2,7 @@
 
 *A historical ledger. Many entries were earned under the first world
 protocol (its verb log, `comp`/`mount`/`grant`, behaviors, leases), which
-has since been replaced by protocol v4 (spec/PROTOCOL.md); the code paths
+has since been replaced by the current protocol (spec/PROTOCOL.md); the code paths
 they cite are gone. The lessons are kept because they outlive the code that
 taught them. Nothing here describes how the current protocol works — for
 that, read AGENTS.md.*

@@ -1,6 +1,6 @@
-// tools/protocol/run.ts — every protocol-v4 suite, one command:
-//   bun run test:v4                 (= BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/run.ts)
-//   PROTOCOL_LAB=<v4-lab checkout>        also run the control arms (the lab's pre-fix door and fold; see common.ts)
+// tools/protocol/run.ts — every protocol suite, one command:
+//   bun run test:protocol           (= BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/run.ts)
+//   PROTOCOL_LAB=<protocol lab checkout>        also run the control arms (the lab's pre-fix door and fold; see common.ts)
 //   PROTOCOL_WORLDS=<dir>[:<dir>…]        where the sweep looks for world logs (default: the checkout's parent directory)
 //   bun tools/protocol/run.ts hostile phys    run only the named suites
 // Each suite runs in its own process (they pin the authority's clock through PROTOCOL_NOW). Prints each suite's tail; exits 1
@@ -10,7 +10,8 @@ import { ENGINE, controlNote } from "./common.ts";
 
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
-  ["hostile", "hostile-check.ts", 2],   // PROTOCOL-v4 §6 proof 1: hostile logs against the strict fold
+  ["nonumber", "nonumber-check.ts", 1], // R 10-07 "a version number isn't a name": the protocol's number lives only in genesis {dialect, v}
+  ["hostile", "hostile-check.ts", 2],   // PROTOCOL §6 proof 1: hostile logs against the strict fold
   ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the authority (admit, L7)
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
@@ -67,5 +68,5 @@ for (const [name, file, tail] of SUITES) {
   for (const l of out.slice(-tail)) console.log(l);
 }
 console.log(`\n${controlNote()}`);
-console.log(`v4: ${failed.length ? `FAILED: ${failed.join(", ")}` : "all suites pass"} (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
+console.log(`protocol: ${failed.length ? `FAILED: ${failed.join(", ")}` : "all suites pass"} (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
 process.exit(failed.length ? 1 : 0);

@@ -10,9 +10,9 @@
 // scale (degrees), hard limits, read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
 // ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
-// and the v4 state is read back as the view.
+// and the state is read back as the view.
 //
-// v4 port (2026-10-06): light-verb lights (kind:'light') and guard/placer are gone from v4 — a lamp is a thing
+// the protocol port (2026-10-06): light-verb lights (kind:'light') and guard/placer are gone — a lamp is a thing
 // with a `light` component, guard merged into lock. A lock no longer makes the pose read-only in the schema: the
 // door refuses the move (code `locked`), so that is now checked at the door.
 
@@ -33,7 +33,7 @@ const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
   comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} }, side: { pos: [0.4, 0.5, 0], q: [0, 0.479425538604203, 0, 0.8775825618903728], body: {} } }, recipe: { wood: 2 }, lock: true } };   // side: heading 1 rad
-// a lamp: a thing with a light component (v4 has no light-verb lights)
+// a lamp: a thing with a light component (there are no light-verb lights now)
 const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, important: true } } };
 const swing = { lib: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, comp: { motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } } };
 const cargo = { lib: "crate.glb", pos: [9, 9, 9], yaw: 0, actor: "r", ts: 1, parent: { to: "truck", offset: [0, 1, 0] } };
@@ -157,20 +157,20 @@ console.log("\ndescribeSchema reads like an inspector:");
   const t = describeSchema(inspectSchema(lamp, "lamp"));
   check("names dotted addresses with values and units", /light\.intensity = 20/.test(t) && /light\.range = 6 m/.test(t) && /pos\.y = 2 m/.test(t));
   check("says how to edit", /edit \{id, set:/.test(t));
-  check("names what each group writes in v4 terms (set <component>), not a v1 verb", /light \(light\.\* → set light\)/.test(t) && /\(pos\.\* → set transform\)/.test(t) && !/→ (place|mount|comp|light)\)/.test(t), t.split("\n").filter((l) => /→/.test(l)).join(" || "));
+  check("names what each group writes in the protocol's terms (set <component>), not a v1 verb", /light \(light\.\* → set light\)/.test(t) && /\(pos\.\* → set transform\)/.test(t) && !/→ (place|mount|comp|light)\)/.test(t), t.split("\n").filter((l) => /→/.test(l)).join(" || "));
   const t2 = describeSchema(inspectSchema(cargo, "k"));
   check("a child says its frame and its parent", /frame: local to its parent, truck/.test(t2) && /parent\.to = truck/.test(t2));
-  // a read-only field in v4: a rider on a carrier's MOVING PART socket (its pose is baked at the part's phase)
+  // a read-only field: a rider on a carrier's MOVING PART socket (its pose is baked at the part's phase)
   const world = { truck: { lib: "truck.glb", pos: [0, 0, 0], yaw: 0, comp: { sockets: { bed: { pos: [0, 1, 0], yaw: 0, part: "arm" } } } },
     k: { ...cargo, parent: { to: "truck", socket: "bed" } } };
   const t3 = describeSchema(inspectSchema(world.k, "k", { world }));
   check("read-only fields say why (a part-socket rider)", /read-only: rides truck's moving part arm/.test(t3), t3.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
   const t4 = describeSchema(inspectSchema({ ...cargo, comp: { lock: true } }, "k"));
-  check("a locked thing is NOT read-only in the description (the door asks; v4 §5)", !/read-only/.test(t4) && /pos\.x = 0/.test(t4), t4.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
+  check("a locked thing is NOT read-only in the description (the door asks; §5)", !/read-only/.test(t4) && /pos\.x = 0/.test(t4), t4.split("\n").filter((l) => /pos\.x/.test(l)).join(" || "));
   check("parseEntry passes numbers and refuses garbage", parseEntry(4, 0) === 4 && parseEntry("x", 0) === null);
 }
 
-console.log("\nguard is merged into lock (PROTOCOL-v4 §5): an old habit is taught, never silently turned into a lock:");
+console.log("\nguard is merged into lock (PROTOCOL §5): an old habit is taught, never silently turned into a lock:");
 {
   const g = editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.guard": true });
   check("flags.guard is refused, naming flags.lock; nothing sent", g.ops.length === 0 && /merged into `lock`/.test(g.errors[0] ?? "") && /flags\.lock/.test(g.errors[0] ?? ""), JSON.stringify(g));

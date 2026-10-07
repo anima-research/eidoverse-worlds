@@ -1,10 +1,10 @@
-// shared/protocol/scriptrules.js — the parts of v4 scripts (research 41) that the AUTHORITY, the SANDBOX and an AUDITOR must agree on
+// shared/protocol/scriptrules.js — the parts of scripts (research 41) that the AUTHORITY, the SANDBOX and an AUDITOR must agree on
 // byte for byte. Pure: no node: imports, no sandbox (the authority is imported by browsers; the sandbox is injected).
 //   LIMITS   the budgets an activation runs under (41 §3.10), named once.
 //   SOURCE   what a script's source blob is: {lang: "js", api: 1, text}, stored by its sha256 name (§2.2).
 //   hygiene  refusals at install that teach (41 §3.12): Trojan Source, code hidden past column 1000, a BOM.
 //   seedOf   the activation's seed = H(world ‖ act seq ‖ entity/script key) (41 §3.7): what Math.random runs from.
-//   elide    PROTOCOL-v4 §3d: dropping no-op writes in a SCRIPT batch is a stated rule, not free authority practice,
+//   elide    PROTOCOL §3d: dropping no-op writes in a SCRIPT batch is a stated rule, not free authority practice,
 //            because an audit re-run must drop exactly the same writes. In order, against the batch so far, by JCS.
 //   paramKey a component's `param.<name>` field: a number a script writes for something else to read (seat poses
 //            that blend by signals read `param.<name>`; RESEARCH-socket-body 2026-10-06).

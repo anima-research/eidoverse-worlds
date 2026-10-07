@@ -1,5 +1,5 @@
 // Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
-// Ported from code/v4-lab/phys-check.js @ 11db981; only paths changed. usage: bun tools/protocol/phys-check.ts
+// Ported from the protocol lab's phys-check.js @ 11db981; only paths changed. usage: bun tools/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";

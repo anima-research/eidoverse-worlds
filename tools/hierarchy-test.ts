@@ -1,12 +1,12 @@
 // hierarchy-test — the scene tree as a pure function of the world view (design §3
 // "Children", §5 "Hierarchy"; shared/hierarchy.js), checked against the REAL
-// door (a scratch v4 world, tools/protocol/scratchworld.ts, read back through
+// door (a scratch world, tools/protocol/scratchworld.ts, read back through
 // shared/protocol/view.js viewState) and against three.js composing Object3Ds the
 // way the renderer does.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-test.ts
 //
-// 1. tree building from a v4 world's view (nesting, folds, the filter opening a
+// 1. tree building from a world's view (nesting, folds, the filter opening a
 //    folded path, a hand-written loop showing both members as roots)
 // 2. cycle refusal (the pure rule, parentOps, editOps and the door's `set parent`)
 // 3. local ⇄ world: parent in place / unparent keep the world pose, through
@@ -14,11 +14,11 @@
 // 4. a child's channel box: local values, and an edit writes ONE local transform
 // 5. undo: the door's `undo` takes a parent edit back to exactly what it was
 //
-// v4 port (2026-10-06): mount/dismount/place are gone: parenting is `set parent` + a LOCAL `set transform` (scale
+// the protocol port (2026-10-06): mount/dismount/place are gone: parenting is `set parent` + a LOCAL `set transform` (scale
 // local too), so "a scaled carrier needs an extra place", "an upright turn travels as a bare yaw" and the v1
-// inverses have no v4 meaning; undo is the door's. Guards are gone (merged into lock); a lock is the door's to
+// inverses have no meaning here; undo is the door's. Guards are gone (merged into lock); a lock is the door's to
 // refuse. Light-verb lights are gone (a lamp is a thing with a light component). The v1 server's vMount is
-// replaced by the door's `set parent` loop refusal; a body sitting down is presence in v4, not a mount.
+// replaced by the door's `set parent` loop refusal; a body sitting down is presence, not a mount.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { treeRows, treeOf, cycleRefusal, parentOps, worldPose, localOf, childrenOf, kindHint, ancestors } from '../shared/hierarchy.js';
 import { inspectSchema, editOps, fieldAt, describeSchema } from '../shared/editschema.js';
@@ -36,7 +36,7 @@ const LIB = 'eidoverse/assets/models/table_oak_round.glb';
 const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
 
 // ---------------------------------------------------------------- 1. the tree
-console.log('tree building from a v4 world\'s view');
+console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
     table: { lib: LIB, pos: [0, 0, 0] },
@@ -111,7 +111,7 @@ console.log('parent in place, unparent in place: the world pose survives the doo
 const randQ = () => qNorm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5, rnd() - 0.5])!;
 const randPos = () => [(rnd() - 0.5) * 20, rnd() * 4, (rnd() - 0.5) * 20];
 /** The renderer's composition, independently: three.js Object3Ds built from
- *  the view's records (a child's pos/q/scale are LOCAL to its parent, v4 §2.3). */
+ *  the view's records (a child's pos/q/scale are LOCAL to its parent, §2.3). */
 function threeWorld(W: any, id: string) {
   const objs = new Map<string, THREE.Object3D>();
   const scene = new THREE.Scene();
@@ -250,7 +250,7 @@ console.log('a parent edit undoes to exactly what it was (the door\'s undo)');
       book: { lib: LIB, pos: [1, 1.5, 1], q: qNorm([0.2, 0, 0.3, 0.9]), scale: 0.8, ...(start === 'other' ? { parent: { to: 'desk', offset: [0.2, 0.9, 0], yaw: 0.3 } } : {}) },
     });
     const W = D.view().entities;
-    const snap = D.state().entities.book.c;   // the v4 components as they stood
+    const snap = D.state().entities.book.c;   // the components as they stood
     const W0 = worldPose(W, 'book')!;
     const r = editOps(W.book, 'book', { 'parent.to': 'shelf' }, { world: W });
     check(`(${start}) the edit is ONE request (set parent + local transform)`, r.ops.length === 1 && flat(r.ops).length === 2 && r.errors.length === 0, JSON.stringify(r));

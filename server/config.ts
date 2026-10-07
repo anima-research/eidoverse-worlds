@@ -10,7 +10,7 @@ import { totalmem } from "node:os";
 
 export const PORT = Number(process.env.PORT ?? 8940);
 /** Where the server listens. Default every interface, as always; HOST=127.0.0.1 keeps a test world on this machine
- *  only (research 44: R's first v4 world is served locally, and exposed on the tailnet separately, after a check). */
+ *  only (research 44: R's first world is served locally, and exposed on the tailnet separately, after a check). */
 export const HOST = process.env.HOST ?? "0.0.0.0";
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.

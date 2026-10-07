@@ -48,7 +48,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function human(name: string): Promise<{ ws: WebSocket; send: (m: any) => void; close: () => void }> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "snapshot") res({
@@ -106,7 +106,7 @@ check("pushable=false: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 
-// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A v4 push is
+// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A push is
 //     presence, never in the log, so there is nothing to replay.)
 ag.close?.();
 await sleep(200);

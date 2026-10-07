@@ -7,8 +7,8 @@
 // lower to door requests, checked through the real door.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-inspector-test.ts
 //
-// v4 port (2026-10-06): the corpus is the spec fixtures (and COMPONENTS_CORPUS) TRANSLATED to v4
-// (shared/protocol/translate-v1.js, as a world is migrated) and read as the view (shared/protocol/view.js) — the records a v4
+// the protocol port (2026-10-06): the corpus is the spec fixtures (and COMPONENTS_CORPUS) TRANSLATED
+// (shared/protocol/translate-v1.js, as a world is migrated) and read as the view (shared/protocol/view.js) — the records an
 // inspector sees. Light-verb lights and guard are gone (a translated light is a thing with a light component).
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,7 +16,7 @@ import { inspectSchema, fieldAt, editOps, partLabel, libLabel } from '../shared/
 import { componentsOf } from '../shared/components.js';
 import { translate } from './protocol/import-v1/translate-v1.js';
 import { viewState } from '../shared/protocol/view.js';
-import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/protocol/fold.js';
+import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
@@ -40,11 +40,11 @@ for (const p of logs) {
   const old: any[] = [];
   for (const line of readFileSync(p, 'utf8').split('\n')) { if (!line) continue; try { old.push(JSON.parse(line)); } catch { /* skip */ } }
   let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch { untranslated++; continue; }
-  const st: any = v4Empty(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
+  const st: any = emptyState(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
   for (const [id, e] of Object.entries(viewState(st).entities ?? {})) ents.push([id, e]);
 }
-console.log(`${ents.length} final entities from ${logs.length} logs, translated to v4 (${untranslated} untranslatable)`);
-check('every corpus log translates to v4, and the corpus is not empty', untranslated === 0 && ents.length > 10, `${untranslated} / ${ents.length}`);
+console.log(`${ents.length} final entities from ${logs.length} logs, translated (${untranslated} untranslatable)`);
+check('every corpus log translates, and the corpus is not empty', untranslated === 0 && ents.length > 10, `${untranslated} / ${ents.length}`);
 
 const probs: string[] = [];
 let cards = 0;
@@ -120,10 +120,10 @@ check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spi
   check('…through the door it is lit with exactly those values (a lock doesn\'t bar a light)', L.res.ok && L.after.comp?.light?.color === 0xffd9a0 && L.after.comp.light.intensity === 16 && L.after.comp.light.range === 10, JSON.stringify([L.res.refused, L.after.comp]));
 }
 check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());
-// KNOWN BUG (reported 2026-10-06, not fixed here): guard is merged into lock in v4, but shared/components.js RECORDS
+// KNOWN BUG (reported 2026-10-06, not fixed here): guard is merged into lock, but shared/components.js RECORDS
 // still has Guard, so Add Component offers it UNBLOCKED; choosing it then fails ("Guard: added by a gesture, not a
 // value (see its card)") — a menu entry that can only error. Either drop it from the list or block it saying "use Lock".
-check('Add Component does not offer Guard as addable (merged into Lock in v4) (KNOWN BUG)', (() => { const g = inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'); return !g || (!!g.blocked && /lock/i.test(g.blocked)); })(),
+check('Add Component does not offer Guard as addable (merged into Lock) (KNOWN BUG)', (() => { const g = inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'); return !g || (!!g.blocked && /lock/i.test(g.blocked)); })(),
   JSON.stringify([inspectSchema(crate, 'c1').sections.add.find((a: any) => a.name === 'Guard'), editOps(crate, 'c1', { 'add.Guard': null }).errors]));
 
 console.log(`\n${pass} passed, ${fail} failed`);

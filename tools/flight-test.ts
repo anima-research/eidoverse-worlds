@@ -1031,7 +1031,7 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
   // agent. The browser had the SAME hole and worse -- applyGrantState() merged
   // grants by hand and was exported and called by nothing, so the "live grant"
-  // fix was dead code that read like a fix. Now (protocol v4) neither side
+  // fix was dead code that read like a fix. Now (the protocol) neither side
   // computes rights at all: the server's `your-rights` answer, re-sent whenever
   // a role changes, is the whole truth (server.ts rightsFor reads the door's
   // roles record).
@@ -1234,7 +1234,7 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'pilot', world: 'bench' });
   let authored = 0;
-  // every way an agent writes: the door (v4 requests, say included) and its say helper
+  // every way an agent writes: the door (requests, say included) and its say helper
   ag.door = async () => { authored++; return { ok: true }; };
   ag.say = async () => { authored++; return { ok: true }; };
   ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });

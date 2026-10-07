@@ -5,7 +5,7 @@
 // scene through the scheduler; this file never does.
 //
 // net.js folds the door's stream (shared/protocol/replica.js) and hands this module each new view (applyView); this module
-// says what changed, in v4 terms (shared/protocol/viewdiff.js). Events are invalidation signals, not data carriers:
+// says what changed, in the protocol's terms (shared/protocol/viewdiff.js). Events are invalidation signals, not data carriers:
 // subscribers are told WHAT changed and read the world from state.st:
 //   {type:'hydrated'} · {type:'reset'}
 //   {type:'change', id, what: 'born'|'gone'|'pose'|'parent'|'comp', comp?}

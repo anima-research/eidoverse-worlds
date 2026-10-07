@@ -14,7 +14,7 @@
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
-// what a genuine component called "n0abc" keeps. Two different old names, one v4 name. Here a component name the
+// what a genuine component called "n0abc" keeps. Two different old names, one name. Here a component name the
 // grammar refuses always takes the x-- form, so "0abc" → "x--30616263" and "n0abc" stays "n0abc". The lab still
 // has the old rule (noted for it in research 37; the lab is not edited from here).
 import { sha256, utf8Hex } from "./hash.js";
@@ -45,7 +45,7 @@ export function dec(s) {
 }
 
 // ---- display names for actors (round-2 review R1) ----
-// A v4 actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
+// A actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
 // directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
 // process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
 // person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.

@@ -4,7 +4,7 @@ For whoever merges `overhaul/rimward` into anima/main (or cherry-picks from
 it). Everything here carries a commit on this branch; the sections are
 ordered by what upstream most needs to know. Compiled 2026-08-30 (§24r).
 Historical: that merge has happened, and the world protocol it describes
-has since been replaced by v4 (spec/PROTOCOL.md); file names are as of then.
+has since been replaced by the current protocol (spec/PROTOCOL.md); file names are as of then.
 
 ## 1. Bugs found in upstream's own tree (fixed here, unfixed there)
 

@@ -236,7 +236,7 @@ const cases: Case[] = [
         { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "fire", lib: "crate", pos: [3, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "tree", type: "story", data: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.", assetAuthor: "SkyeShark", plantedBy: "mica", practice: "One tree, renewing, not accumulating. The next event belongs to the next planter.", markedEntity: "fire" } } }];
-      const r = TV1.translate(old, {}); const c = r.final.v4[TV1.enc("tree")] ?? {};
+      const r = TV1.translate(old, {}); const c = r.final.translated[TV1.enc("tree")] ?? {};
       return { story: c.story, imported: c["imported:story"], div: r.stats.divergences }; },
     good: (o) => o.story?.title === "The first marker tree" && o.story?.text === "Mica's fire — already burning when FC arrived.\n\nOne tree, renewing, not accumulating. The next event belongs to the next planter." && JSON.stringify(o.story?.marks) === '["fire"]'
       && Object.keys(o.story).sort().join() === "marks,text,title" && o.imported?.plantedBy === "mica" && o.imported?.assetAuthor === "SkyeShark" && !o.div },

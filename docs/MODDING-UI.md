@@ -60,7 +60,7 @@ onTick, onDispose}`; five consecutive tick throws pause it; disabling runs its
 `onDispose` handlers and removes its panels, but an imported module can't be
 unloaded until the page reloads. Untrusted code should instead join as **its
 own participant** (its own identity and rights), not run as a hand in your
-glove. A world can't offer mods to its visitors in v4 yet.
+glove. A world can't offer mods to its visitors yet.
 
 ## 4. The class contract — read and restyle the built-in chrome
 

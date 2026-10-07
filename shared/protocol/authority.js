@@ -1,16 +1,16 @@
-// The v4 authority (from the lab's authority). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
+// The authority (from the protocol lab's authority). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
-// PROTOCOL-v4 L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
+// PROTOCOL L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
 // locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is
 // `changeEntry`, and it takes only what `admit` returned.
-// Ported from the v4 lab (code/v4-lab/authority.js @ 11db981). Engine change: storage is injected. The lab's openWorld
+// Ported from the protocol lab (the protocol lab's authority.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
+import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION } from "./fold.js";
 import { COMPONENTS, PENDULUM } from "./componentspec.js";
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
@@ -153,7 +153,7 @@ export function worldOf(io) {
       obj.body = { ...obj.body, salt: nonce16(w) };
     if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
       const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
-      obj.head = head; obj.sig = io.custody.sign(`eidoverse-v4-head:${w.worldId}:${seq}:${head}`); }
+      obj.head = head; obj.sig = io.custody.sign(`eidoverse-head:${w.worldId}:${seq}:${head}`); }
     const line = JSON.stringify(obj);
     const [parsed] = readLog(line); let bad = parsed instanceof Malformed ? parsed : null;
     if (!bad) try { checkEntry(parsed, seq); } catch (x) { bad = x; }
@@ -206,7 +206,7 @@ export function seal(entries, { sign, random } = {}) {
       else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
     }
     prev = chainStep(prev, e);
-    if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-v4-head:${wid}:${i}:${prev}`); }
+    if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-head:${wid}:${i}:${prev}`); }
     out.push(e);
   }
   return out;
@@ -222,7 +222,7 @@ function versionSeq(w, v, what) {
 }
 const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-// PROTOCOL-v4 §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
+// PROTOCOL §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
 // untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
@@ -770,7 +770,7 @@ function guess(s, opts) {
 // or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
 // Everything that doesn't relocate it stays open: labels, lights,
 // reactions, sockets, `use`, sitting on it, and motion (the old matrix keeps motion open: "sit / use / motion / other comps
-// all stay open while locked"; v4's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
+// all stay open while locked"; today's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
 // physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
 // and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
 const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
@@ -926,7 +926,7 @@ function shapeOneOrRefuse(verb, op, i) {
 // L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
 // needs is a SWITCH (roles.js), never a rank:
 //   a thing          build when you make it or made it; editOthers when someone else made it
-//   @world.blueprints:*  build (publish);  @world.assets:*  generate (the v4 landing of the old `asset` spend gate)
+//   @world.blueprints:*  build (publish);  @world.assets:*  generate (where the old `asset` spend gate landed)
 //   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
 //                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
@@ -1893,7 +1893,7 @@ function offersFor(st, id, actor) {
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
 }
 
-// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, code/v4-lab/authority.js @ 2300bae, on a real sandbox) ----------
+// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, the protocol lab's authority.js @ 2300bae, on a real sandbox) ----------
 // A script is a keyed component `script:<name>` naming a source blob ({lang: "js", api, text}, by its sha256 name) and a
 // declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
@@ -1933,7 +1933,7 @@ function installCheck(w, st, s, who, op) {
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
   const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install (41 §3.12): reviewers must see what runs");
   w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
-  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS-v4.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
+  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
     refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
@@ -2271,7 +2271,7 @@ function scriptsOf(w, st, id) {
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
 export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }
 // an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The authority never runs them.
-const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
+const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for today's script API (docs/SCRIPTS.md), upload {text}, then set script:<name> {src, scope, on}";
 function importedBehaviours(w, st) {
   return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
     attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: IMPORTED_WHY }));
@@ -3046,7 +3046,7 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.e
 // The socket a released thing snaps into (research §3, Resonite Snapper with XRI's radius): the nearest socket, on
 // anything but itself or what it carries, whose `accepts` shares a keyword with its grabbable.fits and whose world point
 // is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
-// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a v4 child's transform is
+// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a child's transform is
 // local to its parent; the slot names which socket it's in).
 function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
@@ -3304,10 +3304,10 @@ const VERBS = {
       if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || Object.keys(f).some((k) => !["world", "head", "name"].includes(k)))
         refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
-    // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
+    // §2.4 + §3d: {dialect, v, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
     // here in custody) is tier 0; rewind_window is left at its default (1000 change entries).
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
-    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
+    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
@@ -3325,7 +3325,7 @@ const VERBS = {
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
         people: ["warn {who, reason}", "mute {who, minutes, channels?: ['voice','chat'], reason?} / unmute {who}", "kick {who, minutes?, reason?} (default 10, ≤ 60)", "ban {who, days?, reason?} (≤ 30 days below owner; owners: leave days out for until lifted) / unban {who}",
           "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
-        scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
+        scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
         physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
@@ -3432,7 +3432,7 @@ const VERBS = {
         const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
         if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
-          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice("imported-behavior:".length) : probe.script}', carried by translation; the authority doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists imported behaviours as needs-reinstall`);
+          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice("imported-behavior:".length) : probe.script}', carried by translation; the authority doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
@@ -3525,12 +3525,12 @@ const VERBS = {
   // checked here (to teach early) and again at install (what binds).
   upload(w, actor, a) {
     if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts permission"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
-    if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS-v4.md");
+    if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS.md");
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
       U.push(now); w.presenceDirty = true; }
     const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused (41 §3.12): reviewers must see what runs");
-    const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS-v4.md shows the API");
+    const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS.md shows the API");
     if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
     return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };
   },

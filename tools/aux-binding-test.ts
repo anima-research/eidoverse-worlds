@@ -49,7 +49,7 @@ const dial = (joinMsg: Record<string, unknown>): Promise<Sock> => new Promise((r
     if (m.type === "snapshot" || m.type === "error") { clearTimeout(t); res({ ws, seen, closed }); } };
   ws.onclose = (ev) => { clearTimeout(t); closeRes({ code: ev.code });
     res({ ws, seen, closed }); };  // refused sockets may close before/without error frame
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", v4fold: true, ...joinMsg }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", replica: true, ...joinMsg }));
 });
 
 try {

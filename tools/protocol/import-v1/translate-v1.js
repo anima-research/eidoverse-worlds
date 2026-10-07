@@ -9,7 +9,7 @@
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/protocol/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
-import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "../../../shared/protocol/fold.js";
+import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
@@ -47,7 +47,7 @@ function splitUnknown(c) {
 }
 // every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
 // using it). A v1 socket key v4 doesn't define rides in imported:sockets {<slot>: {key: value}}.
-function v4Sockets(S, c) {
+function newSockets(S, c) {
   if (!S || typeof S !== "object" || Array.isArray(S)) return S;
   const out = {}, left = {};
   for (const [slot, s] of Object.entries(S)) {
@@ -59,7 +59,7 @@ function v4Sockets(S, c) {
   if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
   return out;
 }
-function v4Story(v) {
+function newStory(v) {
   const out = { ...v };
   if (typeof v.practice === "string" && v.practice.trim()) out.text = (typeof v.text === "string" && v.text ? `${v.text}\n\n` : "") + v.practice.trim();
   if (typeof v.markedEntity === "string" && v.markedEntity) out.marks = [enc(v.markedEntity)];
@@ -67,12 +67,12 @@ function v4Story(v) {
 }
 // v1's spin took rpm or degPerSec; v4's is degPerSec (rpm × 6, lossless: the renderer read rpm × 6). degPerSec wins
 // when both were written, as the renderer had it.
-function v4Motion(m) {
+function newMotion(m) {
   if (!m || typeof m !== "object" || Array.isArray(m) || !("rpm" in m)) return m;
   const { rpm, ...rest } = m;
   return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
 }
-function v4Reactions(rx) {
+function newReactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
   for (const [k, h] of Object.entries(rx)) {
@@ -114,7 +114,7 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // the nonce is derived from the source and one fixed key stands in for both.
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { version: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -169,9 +169,9 @@ export function project(st, seen = null, who = null) {
     c.transform = t;
     if (e.lib !== undefined) c.model = e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : k === "motion" || k.startsWith("motion:") ? v4Motion(v) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
-    if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = v4Story(c.story); // @5: a marker's words, in story's shape
+    if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is
@@ -258,6 +258,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: project(v1, null, who), v4: v4project(v4) } };
+  return { out, stats, final: { v1: project(v1, null, who), translated: v4project(v4) } };
 }
 

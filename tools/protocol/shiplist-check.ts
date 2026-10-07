@@ -57,7 +57,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["motion: a part's enums", "shared/protocol/authority.js", "for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(\":\")[0]]?.enums ?? {})) if (obj", "for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj", ["M2"]],
   ["the orbit's period", "client/lib/motioneval.js", "if (Number.isFinite(m.period) && m.period > 0) return 360 / m.period;", "", ["M3"]],
   ["the editor reads the rate as the evaluator does", "shared/editschema.js", "Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : ", "", ["M3"]],
-  ["the importer: rpm → degPerSec", "tools/protocol/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? v4Motion(v) : v;", "v;", ["M4"]],
+  ["the importer: rpm → degPerSec", "tools/protocol/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? newMotion(v) : v;", "v;", ["M4"]],
   ["the editor's rate drops the period", "shared/editschema.js", "if (param === 'degPerSec') { delete next.rpm; delete next.period; }", "if (param === 'degPerSec') { delete next.rpm; }", ["M5"]],
   ["Add Path starts where it stands", "shared/editschema.js", "Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };", "Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };", ["M5"]],
   ["help: physics.who's default", "shared/protocol/componentspec.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
@@ -132,7 +132,7 @@ const world = (tag = "ship") => SD.scratchWorld(tag);
 // a v1 log (the importer's input): genesis, then entries as the old server wrote them
 const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
   ...entries.map((e, i) => ({ seq: i + 1, ts: 10 + i, actor: "olive", ...e }))];
-const finalOf = (r: any) => r.final.v4;
+const finalOf = (r: any) => r.final.translated;
 
 // ---- O: openable ----
 await C("O0", "the door model is still in the lab models (the asset keeps its name)", () => !!LAB.MODELS?.door);
@@ -333,8 +333,8 @@ await C("P2", "a warning for a person names things by label (an agent's still by
 });
 await C("P3", "the client shows a person the plain words and the authority's warnings (edit sends), and a moderator's warning on the XR quad in a headset", () => {
   const src = (f: string) => { try { return fs.readFileSync(path.join(T, f), "utf8"); } catch { return ""; } };
-  const v4e = src("client/lib/editwrites.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
-  return [/toast\(text, 'warn'/.test(v4e) && /const text = plain\(what, r\)/.test(v4e) && /showWarnings\(what, r\)/.test(v4e) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('v4-warned'/.test(xr),
+  const editSrc = src("client/lib/editwrites.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
+  return [/toast\(text, 'warn'/.test(editSrc) && /const text = plain\(what, r\)/.test(editSrc) && /showWarnings\(what, r\)/.test(editSrc) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('edit-warned'/.test(xr),
     "(the browser stages in tools/protocol/shiplist-probe.ts watch these happen)"];
 });
 
