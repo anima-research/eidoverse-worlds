@@ -81,8 +81,10 @@ export class V4Log {
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
     this._state = this.view();
-    // chat: the last 40 says, through the window's own rule
-    for (const e of this.live.entries.filter((e: Any) => e && e.kind === "say").slice(-40)) this.hearSay(e);
+    // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
+    const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
+    if (this._state) (this._state as Any).chatTotal = Math.max(0, says.length - 40);
+    for (const e of says.slice(-40)) this.hearSay(e);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the door
   }
@@ -92,9 +94,12 @@ export class V4Log {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldState;
   }
   /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
-  private hearSay(e: Any) {
+  private sayLine(e: Any): LogEntry {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    const line = { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}) } } as LogEntry;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}) } } as LogEntry;
+  }
+  private hearSay(e: Any) {
+    const line = this.sayLine(e);
     hear(this._state, { actor: line.actor, text: (line.args as Any).text, ts: line.ts, seq: line.seq });
     this.record(line);
   }
@@ -159,9 +164,15 @@ export class V4Log {
   flushLog() { /* lines are appended synchronously by the door's writeLine */ }
   reset(): string { throw new Error(`v4 world "${this.name}": reset isn't supported in a v4 world yet`); }
   readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null }) {
-    const out = this.hist.filter((e) => e.seq < before && e.seq > after && (!verbs || verbs.has(e.verb))).slice(-limit);
-    const oldest = out.length ? out[0].seq : null;
-    return { entries: out, oldestSeq: oldest, hasMore: false };
+    // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since
+    // load (Commons audit #2: scrollback stopped at 40 and told people it was "the beginning of this world")
+    if (verbs && !verbs.has("say")) return { entries: [], oldestSeq: null, hasMore: false };
+    const out: LogEntry[] = []; let more = false; const E = this.live.entries;
+    for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
+      const seq = e.seq * 1000; if (seq >= before) continue; if (seq <= after) break;
+      if (out.length === limit) { more = true; break; } out.push(this.sayLine(e)); }
+    out.reverse();
+    return { entries: out, oldestSeq: out.length ? out[0].seq : null, hasMore: more };
   }
   /** Bring the view up to date (the chat window is kept), before anyone reads it again. */
   private freshen() {

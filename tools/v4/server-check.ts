@@ -298,6 +298,26 @@ const errlog = fs.existsSync(srv.log + ".err") ? fs.readFileSync(srv.log + ".err
 ok(!/failed server-side|v1 '.*' write has no path/.test(errlog + fs.readFileSync(srv.log, "utf8")), "S* the v4 server logged no server-side failure", errlog.slice(-600));
 srv.proc.kill();
 
+// ================= SH: chat history pages back through the whole log, across a restart (Commons audit #2: it stopped
+// at the 40 lines heard since load, said hasMore: false, and the page told people this was "the beginning") =================
+{ const lines = 50; const w = path.join(W4, "garden");
+  const N0 = readLog(fs.readFileSync(path.join(w, "v4.jsonl"))).filter((e) => e.kind === "say").length;
+  const srvA = await startServer(ENGINE, W4, OPT, "v4-sh");
+  const t = await client(srvA.port, "garden", "Ann", V4);
+  let said = 0; for (let i = 0; i < lines; i++) { const r = await t.req("say", { text: `line ${i}` }); if (r.ok) said++; else { await sleep(1100); i--; } }
+  t.close(); srvA.proc.kill(); await sleep(300);
+  const srvB = await startServer(ENGINE, W4, OPT, "v4-sh2");   // a restart: only what's on disk
+  const r = await client(srvB.port, "garden", "Bob", V4);
+  const page = (before?: number) => new Promise<any>((res) => { const id = `h${Math.random()}`; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "history" && m.reqId === id) { r.ws.removeEventListener("message", on); res(m); } };
+    r.ws.addEventListener("message", on); r.send({ type: "history", reqId: id, limit: 25, verbs: ["say"], ...(before !== undefined ? { before } : {}) }); });
+  const got: any[] = []; let p = await page(); got.unshift(...p.entries); let guard = 0;
+  while (p.hasMore && guard++ < 20) { p = await page(p.oldestSeq); got.unshift(...p.entries); }
+  const texts = got.map((e) => e.args?.text);
+  ok(got.length === N0 + lines && texts.at(-1) === `line ${lines - 1}` && texts.indexOf("line 0") === N0 && !p.hasMore,
+    "SH1 after a restart, paging back with history reaches every chat line ever said here, in order, and says when it's done", [got.length, N0 + lines, texts.slice(0, 3), p.hasMore]);
+  ok(r.snapshot?.state?.chatTotal === N0 + lines, "SH2 the join's chatTotal counts every line, not the ones since load", [r.snapshot?.state?.chatTotal, N0 + lines]);
+  r.close(); srvB.proc.kill(); }
+
 
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
