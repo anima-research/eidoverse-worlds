@@ -33,6 +33,7 @@ import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { advanceSim, tickOf } from '../../shared/sim.js';
 import { onWorldChange } from './state.js';
+import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, HAND_REACH } from '../../shared/grab.js';
 
 const REACH = 1.5, HAND_Y = 1.1;                  // the door's: a hand reaches 1.5 m from feet + 1.1 m (door.js)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the door's punt reach, from the feet
@@ -42,14 +43,27 @@ const PUNT_POWER = 4;                             // physobj's default: a barrel
 
 let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing(): bool }
 export function initV4Phys(h) { hooks = h; pushHostHook(frame); }
+// Am I in a headset? xr.js binds this (it imports this module, never the other way round): a tracked body holds with
+// its own hands, so the hold pose's arms are only for a body without them.
+let presenting = () => false;
+export const bindPresenting = (fn) => { presenting = fn; };
 
 // ---------------------------------------------------------------- who holds what (door presence)
-let holds = {};     // id -> { by: v4 identity }
+let holds = {};     // id -> the door's hold record: { by: v4 identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
+const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
 bus.on('v4-holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
-  for (const id of Object.keys(before)) if (!holds[id]) released(id);
-  for (const id of Object.keys(holds)) if (!before[id]) suspendCollider(id, true);
+  for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
+  for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
 });
+// the hand reaches out and the thing comes to it (Unity Attach Ease In, Godot LERP, Meta pull): presence only, every
+// client the same; a far grab (grabbable.range past arm's reach) flies a little longer
+function startPull(id) {
+  const obj = entities.get(id); if (!obj) return;
+  obj.updateWorldMatrix(true, false); const from = obj.getWorldPosition(new THREE.Vector3());
+  const hand = handOf(holds[id].by, holds[id].hand ?? 'right'); const d = hand ? from.distanceTo(hand) : 0;
+  pulls.set(id, { from, t0: performance.now(), dur: Math.min(400, Math.max(120, d / 8 * 1000)) });
+}
 // A put (or anything that writes where a held thing is) arrives as a state entry BEFORE the door's holds message says
 // the hand is empty (server order: the log, then presence). From that entry on the fold has it: stop drawing it in the
 // hand, or a frame between the two messages would leave it drawn there after the realizer placed it.
@@ -77,7 +91,7 @@ let arrived = false, moving = null, lastTrack = 0, doorAt = null, lastMove = nul
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = v4.st?.entities; if (!es) return false; if (es['@world']?.c.sim) return true;
-  for (const id in es) if (es[id].c.physics?.kind === 'dynamic') return true; return false; };
+  for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('v4-joined', () => { arrived = false; doorAt = null; holds = {}; });
 /** Bring the door's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
@@ -124,17 +138,48 @@ function tickTrack(now) {
 
 // ---------------------------------------------------------------- the hand
 const _hp = new THREE.Vector3(), _fw = new THREE.Vector3();
-/** Where a holder's hand is in the world: their avatar's right hand bone, else in front of their chest. */
-function handOf(v4id, out = _hp) {
-  const pid = presenceIdOf(v4id);
-  const av = pid === null ? hooks?.me() : pid ? remotes.get(pid)?.avatar : null;
+const avatarOf = (v4id) => { const pid = presenceIdOf(v4id); return pid === null ? hooks?.me() : pid ? remotes.get(pid)?.avatar : null; };
+/** Is this holder's body tracked (a headset: their own hands hold it)? */
+function tracked(v4id) { const pid = presenceIdOf(v4id); if (pid === null) return presenting(); const r = pid ? remotes.get(pid) : null; return !!(r?.xrSample || r?.lastPose?.xr); }
+/** Where a holder's hand is in the world: their avatar's hand bone (left or right), else in front of their chest. */
+function handOf(v4id, side = 'right', out = _hp) {
+  const av = avatarOf(v4id);
   // the RAW bone: the skinned skeleton the person sees. (The normalized rig is a proxy; on a cloned avatar it can be
   // another body's — the browser probe saw Bob's box drawn in Ann's hand through it.)
-  const bone = av?.vrm?.humanoid?.getRawBoneNode?.('rightHand') ?? av?.vrm?.humanoid?.getNormalizedBoneNode?.('rightHand');
+  const bone = av?.vrm?.humanoid?.getRawBoneNode?.(`${side}Hand`) ?? av?.vrm?.humanoid?.getNormalizedBoneNode?.(`${side}Hand`);
   if (bone) { bone.updateWorldMatrix(true, false); return bone.getWorldPosition(out); }
   const root = av?.root; if (!root) return null;
   root.getWorldPosition(out); root.getWorldDirection(_fw); _fw.y = 0; if (_fw.lengthSq() > 1e-9) _fw.normalize();
   return out.set(out.x + _fw.x * 0.35, out.y + HAND_Y, out.z + _fw.z * 0.35);
+}
+// The PALM's frame, in the world (shared/grab.js: a grip says where the palm goes: +Z out of the palm, +Y along the
+// fingers' base, from the little finger to the index). Read off the hand's own raw bones (wrist, index, middle and little
+// knuckles), so it is right for any rig: the normalized rig is a proxy that can belong to another body (see handOf). The
+// origin sits in the closed hand, three quarters of the way to the knuckles and a little out of the palm. A rig without
+// finger bones uses the normalized hand's rotation (palm down, fingers out in its T-pose).
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3();
+const _px = new THREE.Vector3(), _py = new THREE.Vector3(), _pz = new THREE.Vector3(), _pm = new THREE.Matrix4();
+const PALM_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);   // grip frame in a T-pose hand bone
+function palmOf(v4id, side, out) {
+  const av = avatarOf(v4id); const H = av?.vrm?.humanoid; if (!H) return null;
+  const raw = (n) => H.getRawBoneNode?.(n) ?? null;
+  const hand = raw(`${side}Hand`); if (!hand) return null;
+  hand.updateWorldMatrix(true, true); hand.getWorldPosition(_pa);
+  const mid = raw(`${side}MiddleProximal`), idx = raw(`${side}IndexProximal`), lit = raw(`${side}LittleProximal`);
+  if (mid && idx && lit) {
+    mid.getWorldPosition(_pb); idx.getWorldPosition(_pc); lit.getWorldPosition(_pd);
+    const len = _pb.distanceTo(_pa);
+    _px.subVectors(_pb, _pa).normalize();          // along the fingers
+    _py.subVectors(_pc, _pd).normalize();          // across the knuckles, little → index
+    if (side === 'right') _pz.crossVectors(_py, _px); else _pz.crossVectors(_px, _py);
+    _pz.normalize(); _py.sub(_pd.copy(_pz).multiplyScalar(_py.dot(_pz))).normalize(); _px.crossVectors(_py, _pz);
+    _pm.makeBasis(_px, _py, _pz); out.q.setFromRotationMatrix(_pm);
+    out.p.copy(_pa).lerp(_pb, 0.75).addScaledVector(_pz, len * 0.25);
+    return out;
+  }
+  const n = H.getNormalizedBoneNode?.(`${side}Hand`); if (!n) return null;
+  n.updateWorldMatrix(true, false); n.getWorldQuaternion(out.q).multiply(PALM_Q); out.p.copy(_pa);
+  return out;
 }
 // a thing's visual centre, local to its origin (its collider box): held by its middle, not its base
 const _c = new THREE.Vector3();
@@ -143,6 +188,9 @@ function localCentre(id, obj) {
   const s = obj.scale ?? { x: 1, y: 1, z: 1 };
   return _c.set((b.min.x + b.max.x) / 2 * (s.x || 1), (b.min.y + b.max.y) / 2 * (s.y || 1), (b.min.z + b.max.z) / 2 * (s.z || 1));
 }
+/** A thing's measured size (its collider box × scale), or null. */
+function sizeOf(id, obj) { const b = colliders.get(id)?.box; if (!b) return null; const s = obj?.scale ?? { x: 1, y: 1, z: 1 };
+  return [(b.max.x - b.min.x) * (s.x || 1), (b.max.y - b.min.y) * (s.y || 1), (b.max.z - b.min.z) * (s.z || 1)]; }
 const _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _s = new THREE.Vector3();
 /** Draw obj at a WORLD pose whatever its scene parent (a thing that rested on a table may hang under it). */
 function setWorldPose(obj, pos, quat) {
@@ -152,16 +200,70 @@ function setWorldPose(obj, pos, quat) {
   obj.position.copy(pos).applyMatrix4(_m);
   if (quat) { obj.parent.matrixWorld.decompose(_w, _q, _s); obj.quaternion.copy(_q.invert().multiply(quat)); }
 }
-const _held = new THREE.Vector3(), _hq = new THREE.Quaternion();
+const compsOf = (id) => v4.st?.entities?.[id]?.c ?? null;
+const _held = new THREE.Vector3(), _hq = new THREE.Quaternion(), _ws = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tp = new THREE.Vector3();
+const _gq = new THREE.Quaternion(), _gv = new THREE.Vector3(), _v2 = new THREE.Vector3(), _aq = new THREE.Quaternion();
+const P1 = { p: new THREE.Vector3(), q: new THREE.Quaternion() }, P2 = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+/** Where a held thing goes, from the holder's hand bone and the door's hold record (every client computes the same):
+ *  a grip puts the palm on the grip (VRChat ExactGrip, Unity Attach Transform); an offset keeps it where the hand took
+ *  it (Unreal Free); neither, it's held by its centre (what the door did before grips). A second hand on a twoHanded
+ *  thing steers it: the line from the primary grip to the secondary one points from hand to hand. A body without
+ *  tracked hands carrying in both arms holds it between them. Returns the world {p, q} (q null: keep its rotation). */
+function heldPose(id, h, obj) {
+  const g = grabOf(compsOf(id)); const side = h.hand ?? 'right';
+  const grip = h.grip ? g?.grips?.[h.grip] : null;
+  obj.getWorldScale(_ws);
+  if (!tracked(h.by) && g && bothArms(holdPoseOf(g, sizeOf(id, obj))) && !grip) {
+    const a = palmOf(h.by, 'right', P1), b = palmOf(h.by, 'left', P2);
+    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); return { p: _tp.copy(a.p).lerp(b.p, 0.5).sub(_held), q: null }; }
+  }
+  const palm = (grip || h.offset) ? palmOf(h.by, side, P1) : null;
+  if (palm && grip) {
+    _gq.fromArray(grip.q); _tq.copy(palm.q).multiply(_gq.invert());
+    _tp.copy(palm.p).sub(_gv.fromArray(grip.pos).multiply(_ws).applyQuaternion(_tq));
+    const sg = h.second?.grip ? g.grips[h.second.grip] : null;
+    if (g.twoHanded && h.second && sg) { const p2 = palmOf(h.by, h.second.hand, P2);
+      if (p2) { _gv.fromArray(sg.pos).sub(_v2.fromArray(grip.pos)).multiply(_ws).applyQuaternion(_tq);
+        _v2.subVectors(p2.p, palm.p);
+        if (_gv.lengthSq() > 1e-8 && _v2.lengthSq() > 1e-8) { _aq.setFromUnitVectors(_gv.normalize(), _v2.normalize()); _tq.premultiply(_aq); _tp.sub(palm.p).applyQuaternion(_aq).add(palm.p); } } }
+    return { p: _tp, q: _tq };
+  }
+  if (palm && h.offset) { _tq.copy(palm.q).multiply(_gq.fromArray(h.offset.q)); _tp.copy(palm.p).add(_gv.fromArray(h.offset.pos).applyQuaternion(palm.q)); return { p: _tp, q: _tq }; }
+  const hand = handOf(h.by, side); if (!hand) return null;
+  obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq);
+  return { p: _tp.copy(hand).sub(_held), q: null };
+}
 function drawHeld() {
+  const now = performance.now();
   for (const [id, h] of Object.entries(holds)) {
     if (pres?.bodies?.[id]) continue;              // thrown or dropped: the launch is folded, the flight draws it
     const obj = entities.get(id); if (!obj) continue;
-    const hand = handOf(h.by); if (!hand) continue;
-    obj.getWorldQuaternion(_hq);
-    _held.copy(localCentre(id, obj)).applyQuaternion(_hq);
-    setWorldPose(obj, _w.copy(hand).sub(_held), null);
+    const at = heldPose(id, h, obj); if (!at) continue;
+    const pull = pulls.get(id);
+    if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else { const e = 1 - (1 - k) ** 3; at.p.lerpVectors(pull.from, at.p, e); } }
+    setWorldPose(obj, at.p, at.q);
   }
+  poseHolders();
+}
+// What holding does to each holder's body (avatar.js setHoldPose): the grip's finger preset on each holding hand, and,
+// for a body without tracked hands, the arms' hold pose (grabbable.pose, else by size). Recomputed every frame from the
+// door's record; an avatar that stops holding lets go.
+const posed = new Set();
+function poseHolders() {
+  const want = new Map();
+  for (const [id, h] of Object.entries(holds)) {
+    const av = avatarOf(h.by); if (!av?.vrm) continue;
+    const g = grabOf(compsOf(id)); const side = h.hand ?? 'right';
+    let m = want.get(av); if (!m) want.set(av, (m = { bones: {}, fingers: {} }));
+    const grip = h.grip ? g?.grips?.[h.grip] : null;
+    Object.assign(m.bones, fingerPose(grip?.fingers ?? 'fist', side, grip?.hold ?? {})); m.fingers[side] = true;
+    if (h.second) { const sg = h.second.grip ? g?.grips?.[h.second.grip] : null; Object.assign(m.bones, fingerPose(sg?.fingers ?? 'fist', h.second.hand, sg?.hold ?? {})); m.fingers[h.second.hand] = true; }
+    if (!tracked(h.by) && g) { const preset = holdPoseOf(g, sizeOf(id, entities.get(id)));
+      Object.assign(m.bones, armPose(preset, side));
+      if (bothArms(preset)) { const o = side === 'right' ? 'left' : 'right'; Object.assign(m.bones, fingerPose('fist', o)); m.fingers[o] = true; } }
+  }
+  for (const av of posed) if (!want.has(av)) { av.setHoldPose?.(null); if (av.vrm?.userData) av.vrm.userData._holdFingers = null; posed.delete(av); }
+  for (const [av, m] of want) { av.setHoldPose?.(m.bones); (av.vrm.userData ||= {})._holdFingers = m.fingers; posed.add(av); }
 }
 /** Where a thing I hold is drawn (its origin, world): the release pose sent with throw/drop. */
 function heldPos(id) { const obj = entities.get(id); if (!obj) return null; obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()); }
@@ -249,6 +351,9 @@ function frame(wall) {
 // ---------------------------------------------------------------- acts (door requests)
 const say = (t) => logChat('*', t);
 const refused = (what, r) => { const x = r?.refused; say(`${what}: ${x?.reason ?? 'the door said no'}${x?.teach ? ` (${x.teach})` : ''}`); bus.emit('v4phys-refused', { tool: what, refused: x }); return r; };
+// what a hand may pick up: grabbable (shared/grab.js grabOf: the door's own reader, so a dynamic thing with no grabbable
+// counts, as at the door); what a foot may punt: physics {kind: 'dynamic'}
+const grabbableIds = () => { const es = v4.st?.entities ?? {}; return Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled); };
 const dynamicIds = () => { const es = v4.st?.entities ?? {}; return Object.keys(es).filter((id) => es[id].c.physics?.kind === 'dynamic'); };
 /** Where the thing is now, as the door sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
@@ -256,19 +361,23 @@ function whereIs(id) {
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
 }
-function nearest(ok) {
-  const f = feet(); if (!f) return null; let best = null, bd = Infinity;
-  for (const id of dynamicIds()) { if (holds[id]) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f); if (d !== null && d < bd) { bd = d; best = id; } }
+// the nearest a test accepts; for grabbing, the highest grabbable.priority first (the key, not the table: Resonite)
+function nearest(ok, ids = dynamicIds(), prio = () => 0) {
+  const f = feet(); if (!f) return null; let best = null, bd = Infinity, bp = -Infinity;
+  for (const id of ids) { if (holds[id]) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f, id); if (d === null) continue;
+    const pr = prio(id); if (pr > bp || (pr === bp && d < bd)) { bd = d; bp = pr; best = id; } }
   return best;
 }
-const inHand = (p, f) => { const d = Math.hypot(p[0] - f[0], p[1] - (f[1] + HAND_Y), p[2] - f[2]); return d <= REACH ? d : null; };
+const rangeOf = (id) => grabOf(compsOf(id))?.range ?? REACH;
+const prioOf = (id) => grabOf(compsOf(id))?.priority ?? 0;
+const inHand = (p, f, id) => { const d = Math.hypot(p[0] - f[0], p[1] - (f[1] + HAND_Y), p[2] - f[2]); return d <= (id ? rangeOf(id) : REACH) ? d : null; };
 const atFeet = (p, f) => { const dh = Math.hypot(p[0] - f[0], p[2] - f[2]), dy = p[1] - f[1]; return dh <= KICK.reach && dy >= KICK.below && dy <= KICK.above ? dh : null; };
 
 /** Pick something up: the named thing, or the nearest you can reach. */
 export async function grab(name) {
   if (!v4.active) return say('carrying works in v4 worlds');
-  const id = name || nearest(inHand);
-  if (!id) return say('nothing here you can pick up within reach (things with physics {kind: dynamic})');
+  const id = name || nearest(inHand, grabbableIds(), prioOf);
+  if (!id) return say('nothing here you can pick up within reach (things with a grabbable component)');
   await track(true);
   const r = await requestV4('grab', { id });
   if (!r?.ok) return refused('grab', r);
@@ -308,9 +417,9 @@ export async function throwHeld(arg) {
  *  that point and of the door's hand. The same door request the desktop key sends. */
 export async function grabNear(at, within = 0.6) {
   const f = feet(); if (!f) return null; let best = null, bd = within;
-  for (const id of dynamicIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
+  for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
     const c = obj.getWorldPosition(new THREE.Vector3()).add(localCentre(id, obj)); const d = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]);
-    if (d < bd && inHand(c.toArray(), f) !== null) { bd = d; best = id; } }
+    if (d < bd && inHand(c.toArray(), f, id) !== null) { bd = d; best = id; } }
   return best ? grab(best) : null;
 }
 /** A hand letting go with a velocity (VR: the controller's; [0,0,0] is a drop), from where the thing is drawn in it. */
@@ -351,6 +460,13 @@ bus.on('key', (e) => {
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same door requests the keys send. */
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, holds: holdsNow, mine: myHolds, shown: simShown,
+  /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
+  grabbable: (id) => grabOf(compsOf(id)),
+  /** probe surface: where a held thing should be drawn now (heldPose, fresh) beside where it is drawn */
+  heldAt: (id) => { const h = holds[id], obj = entities.get(id); if (!h || !obj) return null; obj.updateWorldMatrix(true, false);
+    const at = heldPose(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
+  /** probe surface: the palm frame a holder's hand gives ({p, q} world arrays), and the hold pose a body wears */
+  palm: (v4id, side = 'right') => { const o = palmOf(v4id ?? net.v4you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
   track: () => track(true), request: (tool, args) => requestV4(tool, args), frame: (wall) => frame(wall),
   /** the canonical fold's flights: id -> the launch seq it flies from */
   launched: () => Object.fromEntries(Object.entries(v4.sim?.launched ?? {}).map(([id, l]) => [id, l.seq])),

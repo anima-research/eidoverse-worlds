@@ -1657,6 +1657,26 @@ export class Avatar {
     for (const [node, q] of h.nodes) if (!mine.has(node) && !reach?.has(node)) this._writeBone(node, [q.x, q.y, q.z, q.w], h.w);
   }
 
+  /** What holding a thing does to this body (grabbable, client/lib/v4phys.js): sparse normalized-bone rotations, the
+   *  fingers of each holding hand (a grip's preset) and, for a body without tracked hands, the arms' hold pose. Every
+   *  client sets the same from the door's hold record and the thing's component: presence, never streamed. It applies
+   *  after a seat's hold (a held thing wins its hand) and yields to the person's own held pose and reach. Null lets go. */
+  setHoldPose(bones) {
+    const key = bones ? JSON.stringify(bones) : null;
+    if (!key || key === '{}') { if (this._holdPose) this._holdPose.want = 0; return; }
+    if (this._holdPose?.key === key) { this._holdPose.want = 1; return; }
+    const nodes = this._resolveBones(Object.keys(bones)).map(([n, node]) => [node, new THREE.Quaternion(...bones[n]).normalize()]);
+    this._holdPose = { key, nodes, w: this._holdPose?.w ?? 0, want: 1 };
+  }
+  _applyHoldPose(dt) {
+    const h = this._holdPose;
+    h.w += (h.want - h.w) * Math.min(1, 10 * dt);
+    if (h.want === 0 && h.w < 0.01) { for (const [node] of h.nodes) { const r = this._composed.get(node); if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; } } this._holdPose = null; return; }
+    const mine = new Set((this._override?.weight > 0.02 ? this._override.nodes : []).map(([, n]) => n));
+    const reach = this._reachOwned();
+    for (const [node, q] of h.nodes) if (!mine.has(node) && !reach?.has(node)) this._writeBone(node, [q.x, q.y, q.z, q.w], h.w);
+  }
+
   /** Turn the head toward a look direction, in the BODY's frame (yaw about its up, pitch about its right, radians,
    *  + = left / up), clamped to the socket's limits and shared between neck (40%) and head (60%) — the turn a seated
    *  person makes to look round. Null lets the head go back to the clip. */
@@ -2369,6 +2389,7 @@ export class Avatar {
     BC('av:override');
     if (this._override || this._anims?.length) this._applyOverride(dt, now);
     if (this._seatHold && !this._limp) this._applySeatHold(dt);
+    if (this._holdPose && !this._limp) this._applyHoldPose(dt);   // after the seat's hold: a held thing wins its hand
 
     // ---- reach: solved fresh every frame, so it TRACKS. After the held pose
     // (which yields any bone a reach owns) and before vrm.update, same as
