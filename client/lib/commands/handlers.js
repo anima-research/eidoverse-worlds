@@ -13,7 +13,7 @@ import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, worldHasOwner } from '../world.js';
 import {
-  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug, requestV4,
+  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, requestV4,
 } from '../net.js';
 import { remotes } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
@@ -350,6 +350,15 @@ register('fork', (arg) => {
   if (!to) return logChat('*', 'usage: /fork <new-name> — copies this world into a new one');
   if (!/^[a-z0-9_-]{1,64}$/i.test(to)) return logChat('*', `"${to}" won't do as a world name — letters, digits, - and _ only`);
   sendWorldFork(to);
+});
+
+register('newworld', (arg) => {
+  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in person; the server holds the caps:
+  // a few worlds per account, one every few minutes). The reply arrives as world-founded, with the link.
+  const [name, ...rest] = (arg || '').trim().split(/\s+/);
+  if (!name) return logChat('*', 'usage: /newworld <name> [title] — founds a new, empty world that you own');
+  if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(name)) return logChat('*', `"${name}" won't do as a world name — 3 to 32 lowercase letters, digits and -`);
+  sendWorldFound(name, rest.join(' ') || undefined);
 });
 
 register('reset', (arg) => {

@@ -4,6 +4,8 @@
 //       things and @world equal the source's; roles travel; chat does not; bad/taken names refused
 //   RS  reset: owner-only and name-confirmed; the old log is archived beside it; a fresh genesis whose founding act
 //       names the world it replaced; every owner is still an owner; the people present are told
+//   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the door's founding act;
+//       a taken or bad name, a guest, and an account past its cap or the server past its hourly limit are refused
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -19,10 +21,10 @@ const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
-async function start() {
+async function start(extra = {}) {
   let port = 9410; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
   const logf = path.join(root, `srv-${port}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   for (let i = 0; i < 80; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p }; } catch {} }
   throw new Error("server didn't start: " + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : ""));
 }
@@ -38,13 +40,13 @@ async function sock(port) {
     async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); for (let i = 0; i < ms / 50; i++) { const hit = msgs.slice(k).find((x) => x.type === wantType || x.type === "error"); if (hit) return hit; await sleep(50); } return null; },
     close: () => ws.close() };
 }
-const logOf = (name) => readLog(fs.readFileSync(path.join(W, name, "v4.jsonl")));
+const logOf = (name) => (fs.existsSync(path.join(W, name, "v4.jsonl")) ? readLog(fs.readFileSync(path.join(W, name, "v4.jsonl"))) : []);
 const founding = (name) => logOf(name).find((e) => e.kind === "act" && e.verb === "new");
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));   // key order is not content
 const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, e.c]));
 
 ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken", "--owner", "Ann"]).code === 0, "(setup) found src and taken, Ann owns both");
-const S = await start();
+const S = await start({ FOUND_PER_ACCOUNT: "2", FOUND_GAP_MS: "0", FOUND_PER_HOUR: "3" });
 const ann = await sock(S.port); await ann.join("src", "Ann");
 const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
 const bobId = jb.snapshot?.v4?.you;
@@ -125,6 +127,31 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   arriving.close();
   ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);
   watcher.close(); again.close(); }
+
+// ---- FD ----
+{ const r0 = await bob.raw({ type: "world-found", name: "src" }, "world-founded"); ok(r0?.type === "error" && /already a world called "src"/.test(r0.error), "FD1 an existing world's name is refused (and the world is untouched)", r0);
+  const r1 = await bob.raw({ type: "world-found", name: "No Good!" }, "world-founded"); ok(r1?.type === "error" && /can't be a world's name/.test(r1.error), "FD1 a bad name is refused", r1);
+  const r = await bob.raw({ type: "world-found", name: "bobs-place", title: "Bob's place" }, "world-founded", 8000);
+  ok(r?.type === "world-founded" && r.name === "bobs-place" && fs.existsSync(path.join(W, "bobs-place", "v4.jsonl")), "FD2 a signed-in person founds a world", r);
+  const f = founding("bobs-place");
+  ok(f?.actor === bobId && fold(logOf("bobs-place")).entities["@world"].c[`roles:${bobId}`]?.role === "owner", "FD2 its founding act is the door's `new` by them, and they own it", [f?.actor, bobId]);
+  const there = await sock(S.port); const jt = await there.join("bobs-place", "Bob");
+  ok(jt.snapshot?.yourRights?.role === "owner", "FD2 they can go there, as its owner", [jt.errors, jt.snapshot?.yourRights]);
+  const made = await there.req("create", { id: "first-thing", model: MODEL });
+  ok(made.ok, "FD2 …and build in it", made.refused); there.close();
+  const r2 = await bob.raw({ type: "world-found", name: "bobs-second" }, "world-founded", 8000);
+  const r3 = await bob.raw({ type: "world-found", name: "bobs-third" }, "world-founded");
+  ok(r2?.type === "world-founded" && r3?.type === "error" && /the most one account may \(2\)/.test(r3.error) && !fs.existsSync(path.join(W, "bobs-third")), "FD3 an account founds at most its cap (here 2)", [r2, r3]);
+  const cy = await sock(S.port); await cy.join("src", "Cy");   // another account
+  const r4 = await cy.raw({ type: "world-found", name: "cys-place" }, "world-founded", 8000);
+  const r5 = await cy.raw({ type: "world-found", name: "cys-second" }, "world-founded"); cy.close();
+  ok(r4?.type === "world-founded" && r5?.type === "error" && /limit/.test(r5.error), "FD4 the server founds at most its hourly limit (here 3), across every account", [r4, r5]);
+  // a guest: a server that trusts no typed name, so a join with no credential is anonymous
+  const G = await start({ TRUST_NAMES: "" });
+  const guest = await sock(G.port); const jg = await guest.join("src", "Gus");
+  const rg = await guest.raw({ type: "world-found", name: "gus-place" }, "world-founded");
+  ok(!!jg.snapshot && rg?.type === "error" && /signed-in account/.test(rg.error) && !fs.existsSync(path.join(W, "gus-place")), "FD5 a guest never founds", [jg.errors, rg]);
+  guest.close(); G.proc.kill(); }
 
 ann.close(); bob.close(); S.proc.kill();
 console.log(`[fork-reset-check] ${pass} passed, ${fail} failed`);

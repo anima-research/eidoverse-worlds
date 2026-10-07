@@ -7,10 +7,13 @@
 //           (L4), never read from the payload. Spectators may only read.
 //   world-fork, world-reset
 //           an owner copies the world to a new name, or erases it to zero (archived, founded again by its owners).
+//   world-found
+//           a signed-in person founds a new, empty world they own (server/v4/world.ts foundOwnedV4: caps and names).
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one.
-import { forkV4 } from "./world.ts";
+import { forkV4, foundOwnedV4 } from "./world.ts";
+import { worldExists } from "../world.ts";
 import type { Client, World } from "../world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "../moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
@@ -197,6 +200,20 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
+  },
+  // Found a new, empty world that you own (ship list 10-07). A signed-in person only: a guest has no account to hold it
+  // and an agent's account doesn't found here (an operator founds for an agent); caps and the name rule in foundOwnedV4.
+  "world-found": ({ c, ws }, msg) => {
+    const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e, about: "world-found" }));
+    if (!c.world) return err("join a world first");
+    if (c.spectator) return err("spectators can't found worlds — join embodied");
+    if (c.anonymous || !c.account) return err("founding a world needs a signed-in account (a guest's world would have no one to own it)");
+    if (/^(agent|aid1):/.test(c.account) || directoryFor(WORLDS_DIR).entry(actorOf(c))?.kind === "agent") return err("an agent's account doesn't found worlds here — the server's operator can found one for it");
+    const name = String(msg.name ?? "").trim().toLowerCase().slice(0, 64);
+    const r = foundOwnedV4(name, actorOf(c), c.account, typeof msg.title === "string" ? msg.title : undefined, worldExists);
+    if (!r.ok) return err(r.err);
+    console.log(`[world:${name}] founded by ${c.id} (${c.account}) from ${c.world.name}`);
+    ws.send(JSON.stringify({ type: "world-founded", name, worldId: r.worldId }));
   },
   // Erase the world you're standing in to zero. Owner-only, and the request must carry the world's own name (the
   // client makes you type it). History is archived beside it, never destroyed; the same owners hold the fresh world.
