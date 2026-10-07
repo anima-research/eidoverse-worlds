@@ -114,17 +114,20 @@ export function makeHost(x) {
   // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (a review
   // found 32 writes then a read cloned a big world 32 times, on the door's thread, past the deadline). The door's
   // admit still judges the real batch; this view is only what the script reads back.
-  const base = x.st.entities, ov = new Map(); let idsIdx = null, kidsIdx = null;
+  const base = x.st.entities, ov = new Map(); let idsIdx = null, kidsIdx = null, idsAll = null;
   const entOf = (id) => (ov.has(id) ? ov.get(id) : base[id] ?? null);
   const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };
   const apply = (o) => {
-    if (o.verb === "create") { if (!entOf(o.id)) ov.set(o.id, { born: -1, c: Object.create(null) }); return; }
-    if (o.verb === "delete" && o.comp === undefined) { ov.set(o.id, null); return; }
+    if (o.verb === "create") { if (!entOf(o.id)) { ov.set(o.id, { born: -1, c: Object.create(null) }); idsAll = null; } return; }
+    if (o.verb === "delete" && o.comp === undefined) { ov.set(o.id, null); idsAll = null; return; }
     const e = writable(o.id); if (!e) return;
     if (o.verb === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
   };
   const parentOf = (e) => (e?.c?.parent && typeof e.c.parent.to === "string" ? e.c.parent.to : null);
-  const allIds = () => { idsIdx ??= Object.keys(base).sort(); return [...new Set([...idsIdx, ...ov.keys()])].filter((k) => entOf(k)).sort(); };
+  // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 64 times on a
+  // big world must not cost the door 64 sorts)
+  const allIds = () => { if (idsAll) return idsAll; idsIdx ??= Object.keys(base).sort();
+    return (idsAll = ov.size ? [...new Set([...idsIdx, ...ov.keys()])].filter((k) => entOf(k)).sort() : idsIdx); };
   const kidsOf = (id) => { if (!kidsIdx) { kidsIdx = new Map(); for (const k of Object.keys(base)) { const p = parentOf(base[k]); if (p) { let a = kidsIdx.get(p); if (!a) kidsIdx.set(p, (a = [])); a.push(k); } } }
     const out = new Set((kidsIdx.get(id) ?? []).filter((k) => !ov.has(k)));
     for (const [k, e] of ov) if (e && parentOf(e) === id) out.add(k);
@@ -329,19 +332,28 @@ export function runIsolated(x) {
   if (!Q) return h.finish({ fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})` } });
   const c = takeReady(performance.now() + WARM_MS);
   if (!c) return h.finish({ fuel: 0, fail: { code: "unavailable", why: "no sandbox process is ready" } });
-  const sentAt = performance.now(), deadline = sentAt + L.wallMs + GRACE, cpu0 = cpuMs(c.proc.pid);
+  const sentAt = performance.now(), deadline = sentAt + L.wallMs + GRACE, cpu0 = cpuMs(c.proc.pid); let hostMs = 0;
   const stop = (fail) => { pool.splice(pool.indexOf(c), 1); closeChild(c, true); refill(); return h.finish(fail); };
   if (!send(c, JSON.stringify({ text: x.text, input: h.input, event: x.event, limits: L, max: MAX }), deadline)) return stop({ fuel: null, fail: { code: "sandbox", why: "couldn't hand the job to the sandbox process" } });
   for (;;) {
     const l = lineOf(c, deadline);
     if (l === null) { const died = dead(c); if (died) return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process died" } });
-      kills++; const cpu1 = cpuMs(c.proc.pid), wall = performance.now() - sentAt, used = cpu0 !== null && cpu1 !== null ? cpu1 - cpu0 : null;
-      if (used !== null && used < STARVED * wall) return stop({ fuel: null, fail: { code: "unavailable", why: `stopped at the ${L.wallMs + GRACE} ms deadline, but the host was too busy to run it (its process had ${used} ms of CPU in ${Math.round(wall)} ms): not the script's doing` } });
-      return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop or a native call that wouldn't yield${used !== null ? `; ${used} ms of CPU` : ""})` } }); }
+      return killAt(); }
     let m; try { m = JSON.parse(l); } catch { return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unreadable" } }); }
-    if (typeof m.h === "string") { if (!send(c, h.call(m.h), deadline)) return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline` } }); continue; }
+    if (typeof m.h === "string") {
+      if (performance.now() > deadline) return killAt(); // a stream of host calls never leaves the pipe empty: check here too
+      const t1 = performance.now(); const ans = h.call(m.h); const ok = send(c, ans, deadline); hostMs += performance.now() - t1;
+      if (!ok) return killAt(); continue; }
     if (m.done) return h.finish(m.done); // the process stays warm for the next job
     return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unexpected" } });
+  }
+  // at the deadline: killed either way. The script's failure (`time`) unless the process was starved: it had under
+  // STARVED of the time the DOOR wasn't busy answering it (answering is the script's doing: it asked), and that time
+  // was most of the run (a review found heavy reads could make a busy script look starved)
+  function killAt() {
+      kills++; const cpu1 = cpuMs(c.proc.pid), wall = performance.now() - sentAt, used = cpu0 !== null && cpu1 !== null ? cpu1 - cpu0 : null, own = wall - hostMs;
+      if (used !== null && own > 0.5 * wall && used < STARVED * own) return stop({ fuel: null, fail: { code: "unavailable", why: `stopped at the ${L.wallMs + GRACE} ms deadline, but the host was too busy to run it (its process had ${used} ms of CPU in ${Math.round(wall)} ms): not the script's doing` } });
+      return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop, a native call that wouldn't yield, or reads that kept the door busy${used !== null ? `; ${used} ms of CPU, ${Math.round(hostMs)} ms answering it` : ""})` } });
   }
 }
 // warm the sandbox once at load (the first QuickJS run in a process is several times slower than the rest)

@@ -95,6 +95,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["admit copies one entity per op, not the world", "door.js", "    applyCow(s, [op]); norm.push(op);", "    s = applyOps(s, [op]); norm.push(op);", ["I5"]],
   ["elision copies one entity per op, not the world", "scriptrules.js", "out.push(o); try { applyCow(s, [o]); }", "out.push(o); try { JSON.parse(JSON.stringify(s.entities)); applyCow(s, [o]); }", ["I5"]],
   ["read-your-writes without copying the world", "sandbox.js", "const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", "const writable = (id) => { const b = ov.has(id) ? ov.get(id) : base[id]; if (!b) return null; for (const k of Object.keys(base)) JSON.parse(JSON.stringify(base[k])); const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", ["I5"]],
+  // (not a mutation: the check between host answers is defence in depth. A process can't send its next call before its
+  // answer arrives, so the door always finds the pipe empty first and its ordinary deadline check fires: measured, I9)
+  ["time spent answering isn't the process's starvation", "sandbox.js", "if (used !== null && own > 0.5 * wall && used < STARVED * own)", "if (used !== null && used < STARVED * wall)", ["I9"]],
   ["a starved process isn't the script's failure", "sandbox.js", "export const STARVED = 0.3;", "export const STARVED = 0;", ["I8"]],
   ["end of file means the process died", "sandbox.js", "if ((n === 0 && c.opened) || c.proc.exitCode !== null", "if (c.proc.exitCode !== null", ["I6"]],
   ["the process's script duty", "door.js", "if (dutyLeft(w.worldId) <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2", "I4", "I7"]],
@@ -607,6 +610,16 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|calm"]?.fails ?? 0, next: st(s, next) }; },
     good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" },
+  { id: "I9", what: "re-review: reads that keep the DOOR busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
+    run(s) { cast(s);
+      if (!SB?.isolationStats) return { absent: true };
+      SB.warm(); Bun.sleepSync(800);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "box", "ask", onUse(`for (let i = 0; i < 64; i++) world.name("vic");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "ask" } } });
+      const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
+      return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|ask"]?.fails ?? 0 }; },
+    good: (o) => o.r === "failed time" && o.ms < 650 && o.fails === 1 },
   { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the door's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
     run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!D.setScriptDuty) return { absent: true };
