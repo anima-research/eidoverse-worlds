@@ -22,6 +22,7 @@ import * as TR from "./terrain.js";
 import * as SR from "./scriptrules.js";
 import * as R from "./roles.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
+import { collisionBoxes } from "../structure.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's door read its own table (./catalogue.js). The engine's models are library paths measured from their GLBs
@@ -43,6 +44,37 @@ let KNOWNID = (_id) => true;
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
+// A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the door
+// never read `structure`, so bodies walked through Commons walls and things were put inside them). Its geometry is the
+// structure's own collision boxes (shared/structure.js collisionBoxes: the same derivation the browser's colliders use),
+// in the thing's frame, as a measured model's `solids` are; its floors are surfaces (a body steps over a slab, a thing
+// rests on one), and a doorway is the absence of a box, so it stays walkable. The anchor's model is ignored, as the
+// browser hides it. Cached per structure VALUE (a write replaces a value, never changes it in place), so the spatial
+// index's identity checks still hold. Past STRUCT_MAX solid boxes the building's whole box stands (conservative, as
+// server/v4/solids.ts does past its limit).
+const STRUCT_MAX = 512; const STRUCTGEO = new WeakMap();
+function structGeom(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || v === PURGED) return undefined;
+  if (STRUCTGEO.has(v)) return STRUCTGEO.get(v);
+  let boxes = []; try { boxes = collisionBoxes(v); } catch { boxes = []; }
+  const ok = (b) => [b.x0, b.y0, b.z0, b.x1, b.y1, b.z1].every(Number.isFinite);
+  const lohi = (b) => [[Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)], [Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)]];
+  const walls = boxes.filter((b) => ok(b) && b.kind !== "floor").map(lohi);
+  // floors as surfaces, one per row run of tiles at one height (a 30 × 30 floor is 30 surfaces, not 900)
+  const rows = new Map(); for (const b of boxes) if (ok(b) && b.kind === "floor") { const [lo, hi] = lohi(b); const k = `${hi[1]}|${lo[2]}|${hi[2]}`; let a = rows.get(k); if (!a) rows.set(k, (a = [])); a.push([lo[0], hi[0], lo[1]]); }
+  const surfaces = [], floors = [];
+  for (const [k, a] of rows) { const [y, z0, z1] = k.split("|").map(Number); a.sort((p, q) => p[0] - q[0]);
+    for (let i = 0; i < a.length;) { let x0 = a[i][0], x1 = a[i][1], y0 = a[i][2]; i++; while (i < a.length && a[i][0] <= x1 + 1e-6) { x1 = Math.max(x1, a[i][1]); y0 = Math.min(y0, a[i][2]); i++; }
+      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push([[x0, y0, z0], [x1, y, z1]]); } }
+  const all = [...walls, ...floors];
+  let g;
+  if (!all.length) g = undefined;   // an empty plan (a building just started): nothing to stand on or bump into
+  else { const lo = [0, 1, 2].map((i) => Math.min(...all.map((b) => b[0][i]))), hi = [0, 1, 2].map((i) => Math.max(...all.map((b) => b[1][i])));
+    g = { label: "a building", structure: true, box: [lo, hi], size: hi.map((x, i) => x - lo[i]), surfaces, solids: walls.length > STRUCT_MAX ? [[lo, hi]] : walls }; }
+  STRUCTGEO.set(v, g); return g;
+}
+/** A thing's geometry: its building's (structure) if it has one, else its model's. */
+const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
 export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
@@ -230,7 +262,7 @@ function localFrom(st, parentId, wt) {
   return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qmul(qinv(pt.q), wt.q).map(r3), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
 }
 function aabb(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return null;
+  const e = st.entities[id]; const m = geomE(e); if (!m) return null;
   const t = worldT(st, id); const [lo0, hi0] = boxOfM(m);
   const corners = [];
   for (const x of [lo0[0], hi0[0]]) for (const y of [lo0[1], hi0[1]]) for (const z of [lo0[2], hi0[2]]) {
@@ -242,7 +274,7 @@ function aabb(st, id) {
   return { min, max };
 }
 function solids(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
+  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
   if (!m.solids) { const b = aabb(st, id); return b ? [b] : []; }
   const t = worldT(st, id);
   return m.solids.map(([lo, hi]) => { const cs = [];
@@ -251,7 +283,7 @@ function solids(st, id) {
 }
 // Oriented boxes + the separating-axis test (F21): world-AABBs of rotated solids fatten into false overlaps.
 function obbs(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
+  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
   const t = worldT(st, id); const boxes = m.solids ?? [boxOfM(m)];
   const ax = [qrot(t.q, [1, 0, 0]), qrot(t.q, [0, 1, 0]), qrot(t.q, [0, 0, 1])];
   return boxes.map(([lo, hi]) => { const lc = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 * t.scale[i]);
@@ -287,7 +319,7 @@ const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
 const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
 
 function surfacesOf(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); const b = aabb(st, id); if (!m || !b) return [];
+  const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
     if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
@@ -321,7 +353,7 @@ function geoOf(st, id) {
   const e = st.entities[id]; if (!e) return null;
   // what its world box reads: its model entry, and the transform and parent VALUES of it and each ancestor (a value is
   // replaced, never changed in place, so these identities say whether anything it depends on changed)
-  const m = geomOf(e.c.model); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
+  const m = geomE(e); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
   while (p && n++ <= 33 && st.entities[p]) { const x = st.entities[p]; chain.push(x, x.c.transform, x.c.parent); p = x.c.parent?.to; }
   const g = GEO.get(e);
   if (g && g.id === id && g.m === m && g.chain.length === chain.length && g.chain.every((x, i) => x === chain[i])) return g;
@@ -1459,7 +1491,7 @@ function buildTurn(ctx, a) {
 // Relational placement (A1): the door solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
-  const m = geomOf(e.c.model); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
   // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
   // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
   // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
@@ -1545,7 +1577,7 @@ function buildPlace(ctx, a) {
   } else if (a.beside) {
     const nb = aabb(st, a.beside); const nt = worldT(st, a.beside); if (!nb) refuse("not-found", `no solid '${a.beside}'`, "", { didYouMean: guess(a.beside, Object.keys(st.entities)) });
     yaw = qYaw(nt.q); const right = qrot(nt.q, [1, 0, 0]), fwd = qrot(nt.q, [0, 0, 1]); const dir = a.side === "left" ? -1 : 1;
-    const nm = geomOf(st.entities[a.beside].c.model);
+    const nm = geomE(st.entities[a.beside]);
     const nh = nm.size[0] * nt.scale[0] / 2, mh = m.size[0] * scale[0] / 2, gap = a.gap ?? 0.005;
     const flush = ((m.size[2] * scale[2]) - (nm.size[2] * nt.scale[2])) / 2; // backs line up, as furniture does against a wall
     let k = nh + mh + gap, p, blocker = null;
