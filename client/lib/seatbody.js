@@ -102,6 +102,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   const sig = JSON.stringify(sock);
   if (st.sig !== sig) { st.sig = sig; releaseLimbs(av, st); av.setSeatHold(body.hold); }
 
+  st.now = nowMs;   // the clock this frame's pose was read at (a probe compares the closed forms at exactly this time)
   const enterAction = body.enter ? av.ensureClip(body.enter) : null;
   const de = body.enter ? (enterAction ? enterAction.getClip().duration : 1.2) : EASE_ON;
   const t = st.instant ? Infinity : Math.max(0, (nowMs - st.t0) / 1000);
