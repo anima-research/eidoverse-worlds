@@ -552,7 +552,7 @@ function admit(w, st, who, ops) {
     s = applyOps(s, [op]); norm.push(op);
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
-  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:")) installCheck(w, st, s, who, op); // 41 §3.14: at install
+  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -1269,8 +1269,34 @@ const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...l
 // how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
 function bhvDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
   while (isE(e) && isBhv(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
-// §5 "Two views" (H3): the sponsor is whose rights admitted the LATEST write to the script: key in its current life
-const sponsorOf = (w, id, key) => { if (!creatorOf(w, id, key)) return null; const c = lastSetterOf(w, id, key); return c && !c.deleted ? { sponsor: c.rights, sponsorAt: c.seq } : null; };
+// The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
+function scriptWrites(w, id, key) {
+  const out = [];
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue; const ops = opsQuiet(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && o.comp === key) out.push({ e, value: o.value });
+      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
+  return out;
+}
+// `paused` is a switch, not the script: a write that changes only it (pause, resume) is a "pause write"
+export const unpaused = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
+const pauseOnly = (v, prev) => v !== undefined && prev !== undefined && jcs(unpaused(v)) === jcs(unpaused(prev));
+// §5 "Two views" (H3), with R's decision on lab 49 F4 (2026-10-06): the sponsor is whose rights admitted the latest write
+// to the script: key in its current life THAT CHANGED MORE THAN `paused`. Pausing or resuming adopts nothing: an owner
+// who pauses a builder's script stops it, and the builder still answers for it (an explicit adopt is how to take it on).
+function sponsorOf(w, id, key) {
+  if (!creatorOf(w, id, key)) return null;
+  const W = scriptWrites(w, id, key);
+  for (let k = 0; k < W.length; k++) if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return { sponsor: entryBy(w, W[k].e).rights, sponsorAt: W[k].e.seq };
+  return null;
+}
+// who paused it: the write that turned `paused` on, in the run of writes since (a view: never a name in the value)
+function pausedBy(w, id, key) {
+  const W = scriptWrites(w, id, key); let at = null;
+  for (const x of W) { if (x.value?.paused !== true) break; at = x; }
+  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "act" ? c.actor : at.e.actor;
+  return { by, at: at.e.seq, ts: at.e.ts };
+}
 // who is here: the door's own bodies plus whoever the host says is connected (a server's people), id → position | null
 function presentOf(w) { const out = new Map();
   for (const [id, b] of Object.entries(w.presence.bodies ?? {})) out.set(id, Array.isArray(b?.at) ? b.at : null);
@@ -1326,7 +1352,7 @@ function activate(w, id, name, ev) {
   const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}) }); rt.status = status; }
     return { script: key, id, status, ...extra }; };
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
-  if (v.paused === true) return out("paused", { why: "paused: true (set by its sponsor or an owner)" });
+  if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
   if (cfg.run === false) return out("stopped", { why: "@world.scripts.run is false (the owner's kill switch)" });
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
@@ -1447,7 +1473,9 @@ function scriptStatus(w, st, id, name, v) {
   const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
     ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
   if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
-  if (v.paused === true) return { ...base, status: "paused", why: "paused: true" };
+  if (v.paused === true) { const pb = pausedBy(w, id, key);
+    return { ...base, status: "paused", why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true", ...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),
+      resume: `set {id: '${id}', component: '${key}', value: {paused: false}, merge: true}` }; }
   if (cfg.run === false) return { ...base, status: "stopped", why: "@world.scripts.run is false" };
   if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };

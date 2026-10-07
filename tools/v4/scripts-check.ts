@@ -31,7 +31,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["install: scope within installer's rights", "door.js", "if (RANK[role] < RANK[need]) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
   ["sponsor's role NOW", "door.js", "const r = roleOf(st, cap.sponsor);\n  if (RANK[r] < RANK[need])", "const r = \"owner\";\n  if (RANK[r] < RANK[need])", ["B2", "B3", "B24"]],
   ["scope narrowing", "door.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
-  ["sponsor = latest write (not creator)", "door.js", "const c = lastSetterOf(w, id, key); return c && !c.deleted ? { sponsor: c.rights, sponsorAt: c.seq } : null; };", "const c = creatorOf(w, id, key); return c ? { sponsor: c.rights, sponsorAt: c.seq } : null; };", ["B18"]],
+  ["sponsor = latest write (not creator)", "door.js", "const W = scriptWrites(w, id, key);\n  for (let k = 0; k < W.length; k++)", "const W = scriptWrites(w, id, key).slice(-1);\n  for (let k = 0; k < W.length; k++)", ["B18"]],
   ["no-op elision", "door.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
   ["timers sleep with nobody present", "door.js", "if (!present && v.always !== true) { rt.sleepingSince ??= now;", "if (false) { rt.sleepingSince ??= now;", ["B5", "E4"]],
   ["world hourly budget", "door.js", ": B.all + cost > cfg.budget ?", ": false ?", ["B6"]],
@@ -50,7 +50,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["always needs an owner", "door.js", "if (v.always === true && prev?.always !== true && RANK[role] < RANK.owner)", "if (false)", ["B17"]],
   ["install rank", "door.js", "if (RANK[role] < RANK[cfg.install]) refuse(\"rights\", `installing a script", "if (false) refuse(\"rights\", `installing a script", ["B17"]],
   ["timer floor", "door.js", "if (v.every !== undefined && !(typeof v.every === \"number\" && v.every >= 5))", "if (false)", ["B17"]],
-  ["paused", "door.js", "if (v.paused === true) return out(\"paused\"", "if (false) return out(\"paused\"", ["B20"]],
+  ["paused", "door.js", "if (v.paused === true) { const pb = pausedBy(w, id, key); return out(\"paused\"", "if (false) { const pb = pausedBy(w, id, key); return out(\"paused\"", ["B20", "PA1"]],
   ["run: false", "door.js", "if (cfg.run === false) return out(\"stopped\"", "if (false) return out(\"stopped\"", ["B20"]],
   ["pause after repeated failures", "door.js", "if (!dry && (rt.fails ?? 0) >= cfg.fails) return out(\"paused\"", "if (false) return out(\"paused\"", ["B20"]],
   ["say needs scope.say", "door.js", "if (res.says.length && !v.scope?.say) return mark(\"scope\"", "if (false) return mark(\"scope\"", ["B21"]],
@@ -83,6 +83,12 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
   ["a door runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
   ["the kill at the deadline", "sandbox.js", "const deadline = performance.now() + L.wallMs + GRACE;", "const deadline = performance.now() + L.wallMs + GRACE + 60000;", ["I1"]],
+  ["a pause write adopts nothing (sponsor skips it)", "door.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return", "if (true) return", ["PA1"]],
+  ["the auditor's sponsor skips pause writes too", "scriptaudit.js", "|| jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);", "|| true) return by(L, W[k].seq);", ["PA1"]],
+  ["a pause write skips install checks", "door.js", "&& !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(", ") installCheck(", ["PA2"]],
+  ["the inspector's script switch", "../editschema.js", "ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));", "", ["PA3"]],
+  ["status says who paused it", "door.js", "...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),", "", ["PA1"]],
+  ["bounded wait for a warm process", "sandbox.js", "const WARM_MS = 300;", "const WARM_MS = 5000;", ["I3"]],
   ["the process's script duty", "door.js", "if (!dry && dutyLeft() <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2"]],
   ["CONTROL (no-op: must stay green)", "door.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
@@ -110,14 +116,19 @@ if (argv.includes("--mutants")) {
   console.log(`[scripts-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  // the base commit's shared/ (the door before scripts): every door case must FAIL there (none can pass by accident)
-  const d = scratch("ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared | tar -x -C ${d}`], { cwd: ENGINE });
-  if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
+  // the base commit's shared/ (default: the door before scripts, where every door case must FAIL). --control <commit>
+  // runs against a later base (a round's start) and lists what is red there, with --want <ids> naming what must be
+  const at = opt("control") && !opt("control")!.startsWith("--") ? opt("control")! : BASE; const want = opt("want")?.split(",") ?? null;
+  const d = scratch("ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${at} shared | tar -x -C ${d}`], { cwd: ENGINE });
+  if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${at}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  const red = lines.filter((l) => l.startsWith("FAIL")).map((l) => l.split(/\s+/)[1]);
+  if (want) { const bad = want.filter((x) => !red.includes(x)); console.log(`red at ${at}: ${red.join(",")}`);
+    console.log(`[scripts-check --control ${at}] ${bad.length ? `NOT red there: ${bad.join(",")}` : `every one of ${want.join(",")} is red there`}`); process.exit(bad.length ? 1 : 0); }
   const passing = lines.filter((l) => l.startsWith("ok "));
   console.log(lines.map((l) => (l.startsWith("ok ") ? "UNEXPECTED PASS AT BASE " : "red at base: ") + l.slice(0, 140)).join("\n"));
-  console.log(`[scripts-check --control] at ${BASE}: ${lines.length - passing.length} of ${lines.length} cases red, ${passing.length} passed`);
+  console.log(`[scripts-check --control] at ${at}: ${lines.length - passing.length} of ${lines.length} cases red, ${passing.length} passed`);
   process.exit(passing.length ? 1 : 0);
 }
 
@@ -129,6 +140,8 @@ const F = await import(TREE + "shared/v4/fold.js");
 const SB = await tryImport(TREE + "shared/v4/sandbox.js");
 const AU = await tryImport(TREE + "shared/v4/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
+// the edit UI's schema and the view record it reads (shared code: from the same tree as the door, so a mutant reaches it)
+const await_ES = await import(TREE + "shared/editschema.js"), await_RV = await import(TREE + "shared/v4/record.js");
 // the process-wide script duty (DUTY, door.js) is about real seconds; these cases fire hundreds of activations in a tight
 // loop on a simulated clock, so it's opened wide here, and I2 sets it on purpose
 const DUTY0 = D.setScriptDuty ? D.setScriptDuty({ maxMs: 1e9 }) : null;
@@ -223,9 +236,10 @@ const cases: Case[] = [
       install(s, "bob", "lamp", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5 });
       const always = install(s, "olive", "lamp2", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5, always: true }).r;
       const n0 = s.entries().length; let nothing = 0;
-      for (let i = 0; i < 2 * 720; i++) { s.advance(5000); nothing += (s.tick() ?? []).filter((x: any) => x.status === "nothing").length; }
+      const other: string[] = [];
+      for (let i = 0; i < 2 * 720; i++) { s.advance(5000); for (const x of s.tick() ?? []) { if (x.status === "nothing") nothing++; else other.push(`#${i} ${x.id} ${x.status} ${x.code ?? ""} ${x.why ?? ""}`.slice(0, 120)); } }
       const sv = s.call("olive", "scripts", {}).scripts;
-      return { always: show(always), entries2h: s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length, alwaysRanElided: nothing, status: sv.map((x: any) => `${x.id}:${x.status}`) }; },
+      return { always: show(always), entries2h: s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length, alwaysRanElided: nothing, other, status: sv.map((x: any) => `${x.id}:${x.status}`) }; },
     good: (o) => o.always === "ok" && o.entries2h === 0 && o.alwaysRanElided === 2 * 720 - 1 && o.status.includes("lamp:asleep") && o.status.includes("lamp2:active") },
   { id: "B6", what: "…the heart with a CHANGING value and `always`: the world's hourly budget (set to 60) caps what scripts write each hour", run(s) { cast(s);
       if (!D.tick) return { absent: true };
@@ -328,13 +342,50 @@ const cases: Case[] = [
       const raised = install(s, "bob", "box", "d", t, { scope: { ids: "self", comps: ["a"] }, on: ["use"] }).r;
       return { always, fast, vic, raised }; },
     good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "shape" && /floor is 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /needs owner/.test(o.raised.refused.reason) },
-  { id: "B18", what: "sponsor = the LATEST write (§5 Two views): an owner tidies bob's script (pauses, unpauses); bob is demoted; it runs on olive's rights", run(s) { cast(s);
+  { id: "B18", what: "sponsor = the latest write that changes more than `paused` (§5 Two views; R on F4): an owner who EDITS bob's script (its knobs) answers for it; bob is demoted; it runs on olive's rights", run(s) { cast(s);
       bell(s, "bob"); const v = comp(s, "bell1", "script:bell");
-      s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, paused: true } }); s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, paused: false } });
+      s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, knobs: { tone: "low" } } });
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
       const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { r: st(s, r), sponsor: sv?.sponsor, status: sv?.status }; },
     good: (o) => o.r === "ran" && o.sponsor === "olive" && o.status === "active" },
+  { id: "PA1", what: "R on F4: pausing adopts nothing. bob's script, bob demoted (dormant); an owner pauses and resumes it: the sponsor stays bob, it stays dormant, and the status says who paused it and when (from the log, never stored)", run(s) { cast(s);
+      bell(s, "bob"); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
+      const p = s.call("olive", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true });
+      const paused = s.call("olive", "scripts", {}).scripts?.[0]; const use1 = s.call("vic", "use", { id: "bell1", action: "ring" });
+      const value = comp(s, "bell1", "script:bell");
+      s.call("olive", "set", { id: "bell1", component: "script:bell", value: { paused: false }, merge: true });
+      const after = s.call("olive", "scripts", {}).scripts?.[0]; const use2 = s.call("vic", "use", { id: "bell1", action: "ring" });
+      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }); const use3 = s.call("vic", "use", { id: "bell1", action: "ring" });
+      const act3 = s.entries()[use3.script?.act];
+      const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
+      return { p: show(p), pausedStatus: paused?.status, pausedBy: paused?.pausedBy, pausedAt: Number.isInteger(paused?.pausedAt), why: paused?.why, use1: st(s, use1),
+        stored: Object.keys(value ?? {}).sort().join(","), sponsor: after?.sponsor, status: after?.status, use2: st(s, use2), use3: st(s, use3), act3Sponsor: act3?.body?.sponsor, auditFlags: A?.flags.map((f: any) => f.check) ?? null }; },
+    good: (o) => o.p === "ok" && o.pausedStatus === "paused" && o.pausedBy === "olive" && o.pausedAt && /paused by olive at seq \d+/.test(o.why) && o.use1 === "paused"
+      && o.stored === "on,paused,scope,src" && o.sponsor === "bob" && o.status === "dormant" && o.use2 === "refused rights" && o.use3 === "ran" && o.act3Sponsor === "bob" && JSON.stringify(o.auditFlags) === "[]" },
+  { id: "PA3", what: "the edit UI's switch: the inspector (shared/editschema.js, the same schema the VR quad and agents' edit use) shows each script as a card with a 'paused' check; flipping it plans one merged {paused} set, which the door takes from an owner, and the sponsor stays", run(s) { cast(s);
+      bell(s, "bob");
+      const ES = await_ES; const RV = await_RV;
+      const ent = () => RV.viewOf("bell1", s.w().state().entities.bell1.c);
+      const sch = ES.inspectSchema(ent(), "bell1"); const sec = sch.sections?.list?.find((x: any) => x.key === "script:bell");
+      const field = sch.groups.find((g: any) => g.group === "script")?.fields?.find((f: any) => f.k === "bell");
+      const plan = ES.editOps(ent(), "bell1", { "script.bell": true });
+      const r = plan.ops.length === 1 ? s.call("olive", plan.ops[0].tool, plan.ops[0].args) : null;
+      const sv = s.call("olive", "scripts", {}).scripts?.[0];
+      const after = ES.inspectSchema(ent(), "bell1").groups.find((g: any) => g.group === "script")?.fields?.[0]?.value;
+      const back = ES.editOps(ent(), "bell1", { "script.bell": false }); const r2 = s.call("olive", back.ops[0].tool, back.ops[0].args);
+      return { title: sec?.title, rows: sec?.fields, field: field ? `${field.t} ${field.label} ${field.value}` : null, op: plan.ops[0], errors: plan.errors, r: show(r), status: sv?.status, sponsor: sv?.sponsor, pausedBy: sv?.pausedBy, after, r2: show(r2),
+        resumed: s.call("olive", "scripts", {}).scripts?.[0]?.status }; },
+    good: (o) => o.title === "Script · bell" && o.rows?.[0] === "script.bell" && o.field === "check paused false" && JSON.stringify(o.op?.args) === '{"id":"bell1","component":"script:bell","value":{"paused":true},"merge":true}'
+      && o.r === "ok" && o.status === "paused" && o.sponsor === "bob" && o.pausedBy === "olive" && o.after === true && o.r2 === "ok" && o.resumed === "active" },
+  { id: "PA2", what: "pausing needs no knowledge of the script: {paused: true} with merge stops it even when its source is gone (no install checks for a pause); a non-creator builder still can't, an owner can", run(s) { cast(s);
+      bell(s, "bob"); const src = comp(s, "bell1", "script:bell").src;
+      fs.rmSync(path.join(root, "store", `${src.replace(/[^a-z0-9]/g, "-")}.json`)); // the source blob is gone
+      const ann = s.call("ann", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true });
+      const olive = s.call("olive", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true });
+      const knobs = s.call("olive", "set", { id: "bell1", component: "script:bell", value: { knobs: { x: 1 } }, merge: true }); // a real edit is an install: refused, the source is missing
+      return { ann: code(ann), olive: show(olive), knobs: code(knobs), status: s.call("olive", "scripts", {}).scripts?.[0]?.status }; },
+    good: (o) => o.ann === "rights" && o.olive === "ok" && o.knobs === "not-found" && o.status === "paused" },
   { id: "B19", what: "replay never runs code: the fold alone (no door, no sandbox, no blobs) gives the door's world after script activations", run(s) { cast(s);
       bell(s, "bob"); for (let i = 0; i < 3; i++) s.call("vic", "use", { id: "bell1", action: "ring" });
       const f = F.fold(F.readLog(fs.readFileSync(s.logPath))); const foldSrc = fs.readFileSync(TREE + "shared/v4/fold.js", "utf8");
@@ -418,9 +469,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
       const earWhy = last("ear")?.why;
       // phase 2: cpu (runs out of the way), a minute later. Measured: the mill's run ≈ 30–45 ms (30 fuel)
-      s.advance(61000); s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 600, cpu: 60 } });
+      s.advance(61000); s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 600, cpu: 30 } }); // an isolated mill run ≈ 13–16 ms
       const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
-      return { ear, earWhy, mill, why: last("mill")?.why }; },
+      return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
       && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the door's time/.test(o.why) },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
@@ -451,19 +502,32 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     run(s) { cast(s); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!SB?.isolationStats) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `3n ** 30000000n;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
+      const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `(7n ** 300000n).toString().length;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
       for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(Object.keys(HOSTILE).map((k) => [k, { kind: "script", script: k }])) });
       SB.warm(); Bun.sleepSync(800); // warm processes, as a door with scripts has at load
       const k0 = SB.isolationStats().kills; const runs: any[] = [];
-      for (const k of Object.keys(HOSTILE)) { const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
+      // spaced as the process's script duty spaces them in a door (I2 tests the duty): a killed process's spare is warm again
+      for (const k of Object.keys(HOSTILE)) { Bun.sleepSync(800); const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
         const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
         runs.push({ k, r: st(s, r), why: r.script?.why, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs) }); }
       const counted = (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "bob").map((x: any) => x.ms);
       const after = s.call("vic", "use", { id: "box", action: "idx" }); // the 4th failure in a row is still counted, never a hang
       return { runs, counted, kills: SB.isolationStats().kills - k0, fails: s.w().presence.scripts?.["box|idx"]?.fails }; },
-    good: (o) => o.runs.every((x: any) => x.r === "failed time" && /killed/.test(x.why) && x.ms < 500 && x.other && x.otherMs < 150)
+    good: (o) => o.runs.every((x: any) => x.r === "failed time" && /killed/.test(x.why) && x.ms < 700 && x.other && x.otherMs < 150)
       && o.kills >= 3 && o.counted.length >= 3 && o.counted.every((ms: number) => ms >= 250) && o.fails === 2 },
+  { id: "I3", what: "isolation, back to back (duty opened, no spacing): kills faster than spares can start; each activation still returns within the warm-process wait + the deadline (300 + 500 ms), as time or unavailable, never longer", run(s) { cast(s);
+      if (!SB?.isolationStats) return { absent: true };
+      SB.warm(); Bun.sleepSync(800);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { idx: { kind: "script", script: "idx" } } });
+      process.env.EIDO_SANDBOX_TEST_DELAY = "3000"; // the spares started from here on are slow to start (a loaded host)
+      const runs: string[] = []; let worst = 0;
+      for (let i = 0; i < 6; i++) { const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "idx" }, 11000); worst = Math.max(worst, performance.now() - t0); runs.push(st(s, r)); }
+      delete process.env.EIDO_SANDBOX_TEST_DELAY; Bun.sleepSync(3300); // let the slow spares finish starting before the next case
+      return { runs, worst: Math.round(worst) }; },
+    good: (o) => o.worst < 300 + 500 + 200 && o.runs.every((x: string) => ["failed time", "unavailable unavailable", "paused", "refused budget"].includes(x)) && o.runs.includes("failed time") && o.runs.includes("unavailable unavailable") },
   { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the door's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
     run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!D.setScriptDuty) return { absent: true };
@@ -476,7 +540,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const st0 = s.call("olive", "scripts", {}).scripts.map((x: any) => `${x.last.at(-1)?.status} ${x.last.at(-1)?.code}`);
       D.setScriptDuty({ maxMs: 1e9 });
       return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length }; },
-    good: (o) => o.said && o.ms < DUTY0.maxMs + 300 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 },
+    good: (o) => o.said && o.ms < DUTY0.maxMs + 500 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 },
   // ---------------- U: use → script ----------------
   { id: "U1", what: "use → script: the visitor's use is their act (with `runs`); the bhv act's cause is that use, its trigger the visitor, its sponsor bob; the batch's cause is the bhv act; the say too", run(s) { cast(s);
       bell(s, "bob"); const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const L = s.entries();
@@ -731,7 +795,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       ann.ws.close(); bea.ws.close();
       return { inst: show(inst), rounds, status: sv.scripts?.[0]?.status, last: sv.scripts?.[0]?.last?.at(-1)?.code };
     } finally { proc.kill(); }
-  }, good: (o) => o.inst === "ok" && o.rounds.length === 3 && o.rounds.every((r: any) => r.status === "failed" && r.code === "time" && r.ms < 800 && r.maxOther < 600) && o.last === "time" });
+  }, good: (o) => o.inst === "ok" && o.rounds.length === 3 && o.rounds.every((r: any) => r.status === "failed" && r.code === "time" && r.ms < 800 && r.maxOther < 800) && o.last === "time" });
 
 // ---------------- run ----------------
 let pass = 0, fail = 0;

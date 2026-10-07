@@ -19,8 +19,10 @@ export const LIMITS = Object.freeze({
                         // (2026-10-06, this host): 1e6 loop iterations of `x += i` = 201 calls ≈ 60 ms idle, about twice that
                         // under load, so 60 ≈ 18–40 ms of dense work. Fuel, not the wall clock, must be what stops runaway code
                         // (a reviewer saw 100 lose to the backstop under load): fuel is the same on every re-run
-  wallMs: 200,          // the wall-clock backstop per activation, host calls included (non-deterministic: a run that hits it
-                        // writes nothing). It can't interrupt a native builtin (String#indexOf, BigInt **): see sandbox.js
+  wallMs: 300,          // the wall-clock backstop per activation, host calls included (non-deterministic: a run that hits it
+                        // writes nothing). The door kills the activation's sandbox process at wallMs + GRACE (sandbox.js): a
+                        // native builtin can't outlast that. Generous on purpose: a loaded host can stall an innocent run
+                        // (measured: 1 in ~4,300 trivial runs passed 300 ms at load average ~35)
   memory: 24 << 20,     // bytes per activation's runtime (v1)
   stack: 256 << 10,     // bytes of native stack
   calls: 64,            // host calls (reads) per activation (Decentraland's 40 in flight; 41 §3.10)

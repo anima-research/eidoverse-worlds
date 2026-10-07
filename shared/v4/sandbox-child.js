@@ -20,6 +20,8 @@ function readLine() {
     if (n === 0) return null; pending += sd.write(buf.subarray(0, n)); }
 }
 function write(obj) { const b = Buffer.from(JSON.stringify(obj) + "\n"); let o = 0; while (o < b.length) o += fs.writeSync(out, b, o); }
+// tests only: start slowly (a loaded host), so a door's bounded wait for a warm process can be exercised
+const delay = Number(process.env.EIDO_SANDBOX_TEST_DELAY ?? 0); if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
 write({ ready: true });
 for (;;) {
   const line = readLine(); if (line === null) process.exit(0);

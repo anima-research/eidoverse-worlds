@@ -357,6 +357,13 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'sound', label: 'sound', types: ['sound'], fields });
   }
 
+  // scripts (v4, research 41): each script:<name> gets an on/off switch, `paused`, like Unity's `enabled`. Flipping it
+  // writes only {paused} (a merge), so it needs nothing of the script (its source, its scope) and adopts nothing: the
+  // script's sponsor stays who it was (R on lab 49 F4), and the door's `scripts` view says who paused it, from the log
+  const scriptKeys = Object.keys(c).filter((k) => k.startsWith('script:') && isBag(c[k]));
+  if (scriptKeys.length) groups.push({ group: 'script', label: 'scripts', types: scriptKeys,
+    fields: scriptKeys.map((k) => ({ t: 'check', k: k.slice(7), label: 'paused', value: c[k].paused === true,
+      hint: 'stop this script without changing it (its source, scope and sponsor stay as they are); History and the world\'s scripts list say who paused it' })) });
   // every typed group keeps an escape hatch: its component(s) as JSON, collapsed. Its fields
   // don't speak for every key (a path's points, a socket's part, a particle seed/texture), and
   // a key nobody can reach from the panel is a key only a model can edit.
@@ -367,7 +374,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'particles', 'picture', 'sound', ...mk,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'particles', 'picture', 'sound', ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -468,6 +475,9 @@ function componentSections(ent, groups, live = {}, id = '?') {
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
           sec.fields = refs('motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
           sec.removable = true;
+        } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
+          const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
+          sec.title = `Script · ${name}`; sec.fields = [`script.${name}`, `script.json|${inst.key}`]; sec.removable = true;
         } else {
           sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
           sec.removable = inst.type !== 'Captions';
@@ -876,6 +886,11 @@ export function editOps(ent, id, edits, live = {}) {
           else { next.target = String(raw); }
           comps.set('look', Object.keys(next).length ? next : null);
         }
+        break;
+      }
+      case 'script': {   // the switch: only {paused}, merged (needs no knowledge of the script; adopts nothing)
+        if (!isBag(c[`script:${k}`])) { errors.push(`${key}: no script:${k} on ${id}`); break; }
+        ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));
         break;
       }
       case 'comp': {

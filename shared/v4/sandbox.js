@@ -18,13 +18,11 @@
 // interrupted); a run that hits it writes nothing, so an auditor never sees a partial result. Memory and native stack
 // are capped per runtime.
 //
-// SYNCHRONOUS, on the caller's thread. Research 41 recommends running the sandbox OFF the sequencer's thread; this
-// slice doesn't (the door is synchronous end to end). The input is (source, head state, event, presence answers) and
-// the output is a proposed batch, so moving it to a worker is a change of transport, not of meaning. Until then fuel and
-// the wall clock bound BYTECODE only: both are checked by QuickJS's interrupt handler, which never runs inside a native
-// builtin. One slow builtin call (String#indexOf on crafted text, BigInt **, an out-of-memory inside Array#fill) holds
-// the thread until it returns: measured 1–13 s (review, 2026-10-06). An experiment: a Worker + Atomics.wait gives the
-// sequencer back at the deadline, but worker.terminate() can't stop the WASM thread until its call returns.
+// Where it runs: a door runs the VM side in a sandbox PROCESS (runIsolated, sandbox-child.js) that it SIGKILLs at the
+// deadline, because fuel and the wall clock bound BYTECODE only: QuickJS's interrupt handler never runs inside a native
+// builtin, and one such call (String#indexOf on crafted text, BigInt toString, an out-of-memory inside Array#fill) once
+// held the door's thread for 1–13 s (review, 2026-10-06). The host side stays on the door's thread, so an activation is
+// still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
 import { applyOps, jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamKey } from "./scriptrules.js";
 
@@ -229,9 +227,10 @@ export function checkSyntax(text) {
 // sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
 // Nothing a script does, a native builtin included, can hold the door's thread past that deadline.
 // (A Worker can't do this: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3; measured 2026-10-06.)
-export const GRACE = 100;        // ms over the script's own wall-clock backstop: the pipes, and the kill
+export const GRACE = 200;        // ms over the script's own wall-clock backstop: the pipes, a loaded host, and the kill
 const MAX = 2 << 20;             // bytes of one message (a job, a host call, an answer)
-const WARM_MS = 1000;            // at most this long an activation waits for a warm process (at start, or after kills)
+const WARM_MS = 300;             // at most this long an activation waits for a warm process (after kills): then it's
+                                 // refused "unavailable" (not the script's failure), so waiting can't hold the thread either
 const WANT = 2;                  // warm processes kept: one runs, one is ready the moment a kill takes the other
 const env = () => globalThis.process?.env ?? {};
 let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where isolation runs (never in a browser)
@@ -257,13 +256,15 @@ function closeChild(c, kill) {
 }
 // one line from the process, or null at the deadline (or if it died). Polls the non-blocking pipe, napping in between
 function lineOf(c, deadline) {
-  let naps = 0;
+  let naps = 0, last = false;
   for (;;) {
     const i = c.pend.indexOf("\n"); if (i >= 0) { const l = c.pend.slice(0, i); c.pend = c.pend.slice(i + 1); return l; }
     let n = 0; try { n = fsm.readSync(c.rfd, c.buf, 0, c.buf.length, null); } catch (e) { if (e?.code !== "EAGAIN") return null; }
     if (n > 0) { c.pend += c.dec.decode(c.buf.subarray(0, n), { stream: true }); naps = 0; continue; }
     if (c.proc.exitCode !== null || c.proc.signalCode) return null;
-    const left = deadline - performance.now(); if (left <= 0) return null;
+    // past the deadline, look once more: if THIS thread was the one held up (a GC, an oversleeping nap), the answer may
+    // already be waiting in the pipe, and killing a process that replied in time would fail an innocent script
+    const left = deadline - performance.now(); if (left <= 0) { if (last) return null; last = true; continue; }
     nap(Math.min(left, naps++ < 40 ? 0.05 : 0.5)); // fast while a reply is likely, gentle while the script computes
   }
 }
