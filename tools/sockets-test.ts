@@ -92,7 +92,8 @@ check('at most one drive per thing (passengers may walk)', twoDrivers?.code === 
 
 // reading: defaults by action
 const B = (body: any) => bodyOf({ pos: [0, 0, 0], body });
-check('defaults: a seat seats the hips in sitchair; a standing place puts the feet on it, idle', B({}).anchor === 'hips' && B({}).clip === 'sitchair' && B({ action: 'stand' }).anchor === 'feet' && B({ action: 'stand' }).clip === 'idle');
+check('defaults: a seat holds sitchair, a standing place idle, and both put the ROOT on the socket (where every seat put a body before anchors: no existing seat moves)',
+  B({}).anchor === 'root' && B({}).clip === 'sitchair' && B({ action: 'stand' }).anchor === 'root' && B({ action: 'stand' }).clip === 'idle' && B({ action: 'ride' }).anchor === 'root');
 check('defaults: leave any way, the input is yours, the horizon level', B({}).leaveBy === 'any' && B({}).input.move === 'none' && B({}).input.look === 'free' && B({}).look.up === 'world' && B({}).reach && !Object.keys(B({}).reach).length);
 check('a reach reads its vr policy as snap when unsaid', B({ reach: { leftHand: { at: [0, 1, 0] } } }).reach.leftHand.vr === 'snap');
 
@@ -181,7 +182,7 @@ const back = bodyOf(W.rec('car').comp.sockets.back);
 check('…the planner writes them and the door takes them', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && back.input.look === 'locked' && back.look.yaw[0] === -45 && back.look.up === 'socket' && back.reach.rightHand?.vr === 'track', [r.refused, W.rec('car').comp.sockets.back]);
 const planBad = cplan({ 'sockets.back|input|move': 'drive' });
 check('…and refuses what the door would, in its words (a second driver)', planBad.ops.length === 0 && planBad.errors.some((e: string) => /only one socket may drive/.test(e)), planBad.errors);
-r = W.sendAll(cplan({ 'sockets.back|anchor': 'hips', 'sockets.back|leaveBy': 'any' }).ops);
+r = W.sendAll(cplan({ 'sockets.back|anchor': 'root', 'sockets.back|leaveBy': 'any' }).ops);
 check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.back.body.anchor === undefined && W.rec('car').comp.sockets.back.body.leaveBy === undefined, W.rec('car').comp.sockets.back);
 
 console.log(`${pass} passed, ${fail} failed`);

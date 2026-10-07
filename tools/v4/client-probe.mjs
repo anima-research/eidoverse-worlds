@@ -174,7 +174,7 @@ try {
   // (b) a blended pose follows its signal: pose {by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']]}; Bob writes the
   //     thing's params component through the door, and the mixer's own weights follow
   {
-    const r = await thing('stool', -1.8, 0, { params: { lean: 0 }, sockets: { seat: { pos: [0, 2.6, 0], body: { pose: { by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
+    const r = await thing('stool', -1.8, 0, { params: { lean: 0 }, sockets: { seat: { pos: [0, 2.6, 0], body: { anchor: 'hips', pose: { by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
     if (!r.ok) stage('blend: setup', false, r.refused);
     await realized('stool');
     const sat = await sit('stool', 'stool/seat');
@@ -188,10 +188,10 @@ try {
     check('blend: lean 0 → all sitchair', !!sat && Math.abs(w0.sitchair - 1) < 0.03 && Math.abs(w0.sit) < 0.03, { sat, w0 });
     check('blend: lean 0.25 (written through the door) → three quarters sitchair, a quarter sit', Math.abs(w1.sitchair - 0.75) < 0.03 && Math.abs(w1.sit - 0.25) < 0.03, w1);
     check('blend: lean 1 → all sit', Math.abs(w2.sit - 1) < 0.03 && Math.abs(w2.sitchair) < 0.03, w2);
-    // (e2) anchor hips (a seat's default): the hips joint lands on the socket, wherever the clip puts them
+    // (e2) anchor hips: the hips joint lands on the socket, wherever the clip puts them
     const hips = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const s = EW.entities.get('stool'); s.updateWorldMatrix(true, false);
       return { hips: me.vrm.humanoid.getRawBoneNode('hips').getWorldPosition(new T.Vector3()).toArray(), sock: new T.Vector3(0, 2.6, 0).applyMatrix4(s.matrixWorld).toArray(), root: me.root.position.toArray() }; });
-    check('anchor: hips (a seat\'s default) puts the hips joint on the socket (within 2 cm), not the root', Math.hypot(...hips.hips.map((v, i) => v - hips.sock[i])) < 0.02 && Math.abs(hips.root[1] - hips.sock[1]) > 0.03, hips);
+    check('anchor: hips puts the hips joint on the socket (within 2 cm), not the root', Math.hypot(...hips.hips.map((v, i) => v - hips.sock[i])) < 0.02 && Math.abs(hips.root[1] - hips.sock[1]) > 0.03, hips);
     await stand();
   }
 
@@ -260,7 +260,7 @@ try {
     await sleep(800);
     const rest = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const h = me.vrm.humanoid;
       const y = (h.getRawBoneNode('leftFoot').getWorldPosition(new T.Vector3()).y + h.getRawBoneNode('rightFoot').getWorldPosition(new T.Vector3()).y) / 2; return y - me.root.position.y; });
-    const r = await thing('plinth', -1.8, 2.2, { sockets: { top: { pos: [0, 2.0, 0], body: { action: 'stand' } } } });
+    const r = await thing('plinth', -1.8, 2.2, { sockets: { top: { pos: [0, 2.0, 0], body: { action: 'stand', anchor: 'feet' } } } });
     if (!r.ok) stage('anchor: setup', false, r.refused);
     await realized('plinth');
     const sat = await sit('plinth', 'plinth/top');
@@ -269,7 +269,7 @@ try {
       const l = h.getRawBoneNode('leftFoot').getWorldPosition(new T.Vector3()), rr = h.getRawBoneNode('rightFoot').getWorldPosition(new T.Vector3());
       return { feet: [(l.x + rr.x) / 2, (l.y + rr.y) / 2, (l.z + rr.z) / 2], sock: new T.Vector3(0, 2.0, 0).applyMatrix4(s.matrixWorld).toArray(), clip: EW.myState.clip }; });
     const said = sat ? null : await ev(() => document.body.innerText.split('\n').filter((l) => /plinth|seat|refused|sit|stand/i.test(l)).slice(-5)).catch(() => null);
-    check('anchor: feet (a standing place) — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
+    check('anchor: feet — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
       !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.comps.get('plinth')?.sockets ?? null) });
     await shoot('stand-on-plinth');
     await stand();

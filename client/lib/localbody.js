@@ -121,6 +121,7 @@ export function dismountMe(kind = 'menu') {
     off.set(ex[0], ex[1], ex[2]).applyMatrix4(obj.matrixWorld);
     if (ex.length === 4) { const f = new THREE.Vector3(Math.sin(ex[3]), 0, Math.cos(ex[3])).transformDirection(obj.matrixWorld); exitYaw = Math.atan2(f.x, f.z); }
   } else { off.x += Math.sin(yaw) * 0.7; off.z += Math.cos(yaw) * 0.7; }
+  sitTicket++;                           // an answer still on its way for an earlier sit is stale now
   setBodySeat(CONFIG.name, null);        // presence: my next frame carries no seat, and everyone stands me up
   const from = me ? me.root.position.clone() : off.clone();
   const leaveClip = me ? body?.leave ?? null : null;
@@ -265,6 +266,7 @@ function nearestSeat(arg, reach) {
  *  In a v4 world the door is asked first (`use {id, action, args: {slot}}`):
  *  it checks who may and answers with what the body does; nothing is logged.
  *  Already seated, I may move straight to a socket that allows it (fromSeat). */
+let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes every earlier answer stale
 export function trySitOn(arg, slot = null) {
   const mine = avatarMounts.get(CONFIG.name);
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
@@ -275,8 +277,11 @@ export function trySitOn(arg, slot = null) {
     return false;
   }
   if (mine && !best.body.fromSeat) { logChat('*', `get up first — ${best.id} (${best.slot}) doesn't take you straight from another seat`); return true; }
+  const ticket = ++sitTicket;
   const take = () => {
-    if (mine && avatarMounts.get(CONFIG.name) !== mine) return;   // I got up (or moved) while the door answered
+    // only the latest ask may seat me, and only if I haven't sat, moved or stood since asking: a late answer (a slow
+    // door, X pressed twice) must never put me back on a seat I already left
+    if (ticket !== sitTicket || avatarMounts.get(CONFIG.name) !== mine) return;
     if (mine) releaseSeat(getMe());
     setBodySeat(CONFIG.name, { to: best.id, slot: best.slot });   // presence: my frames carry the seat (world.js)
     const lb = best.body.leaveBy;

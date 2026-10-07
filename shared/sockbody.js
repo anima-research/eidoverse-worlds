@@ -12,7 +12,8 @@
 //
 //   body: {
 //     action   'sit'            the verb `use` calls it AND the default posture (sit | lie | stand | ride | kneel | …)
-//     anchor   'hips'           which body point lands on the socket: hips | feet | head | root
+//     anchor   'hips'           which body point lands on the socket: hips | feet | head | root (the default: where
+//                               every seat put a body before anchors existed, so no existing seat moves)
 //     pose     'sitchair'       a clip; {clip, time?, offset?}; or a blend {by, clips, time?, offset?}
 //     poses    {lean: …}        a menu of named poses (pose is the default); the occupant picks one
 //     sync     'sofa'           sockets sharing a sync group switch same-named poses together (AVsitter SYNC)
@@ -59,10 +60,13 @@ const PARAM_RE = /^param\.[a-zA-Z][a-zA-Z0-9_]{0,31}$/;
 export const isSignal = (s) => typeof s === 'string' && (SIGNALS.includes(s) || PARAM_RE.test(s));
 const MAX_BLEND = 16, MAX_POSES = 16, LIM = 1e4;
 
-/** What an action means when the socket says nothing more: the pose it holds and the body point it seats. */
+/** What an action means when the socket says nothing more: the pose it holds. The anchor defaults to the ROOT for
+ *  every action — where every seat put a body before anchors existed (v1's legacy-root, the Commons' twelve seats),
+ *  so no existing seat moves; a socket names hips, feet or head to seat that body point instead. (For the house sit
+ *  clips the root IS about the seat surface: the clip lifts the hips a pelvis above it.) */
 export const ACTION_DEFAULTS = {
-  sit: { pose: 'sitchair', anchor: 'hips' }, ride: { pose: 'sitchair', anchor: 'hips' }, drive: { pose: 'sitchair', anchor: 'hips' },
-  lie: { pose: 'lie', anchor: 'hips' }, kneel: { pose: 'sit', anchor: 'hips' }, stand: { pose: 'idle', anchor: 'feet' },
+  sit: { pose: 'sitchair', anchor: 'root' }, ride: { pose: 'sitchair', anchor: 'root' }, drive: { pose: 'sitchair', anchor: 'root' },
+  lie: { pose: 'lie', anchor: 'root' }, kneel: { pose: 'sit', anchor: 'root' }, stand: { pose: 'idle', anchor: 'root' },
 };
 const defaultsFor = (action) => ACTION_DEFAULTS[action] ?? ACTION_DEFAULTS.sit;
 
