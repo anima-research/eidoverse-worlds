@@ -32,12 +32,12 @@ export class V4Scripts implements ScriptHost {
     const [ent, name] = String(id).split("/");
     const v = this.v4.scriptsView(ent);
     const s = (v.scripts as Any[]).find((x) => !name || x.script === `script:${name}`);
-    if (!s) { const b = (v.v1 as Any[] ?? []).find((x) => x.behavior === `behavior:${name ?? ent}` || x.behavior === `behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
+    if (!s) { const b = (v.imported as Any[] ?? []).find((x) => x.behavior === `behavior:${name ?? ent}` || x.behavior === `behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
     return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}` })) };
   }
   list() {
     const v = this.v4.scriptsView();
     return [...(v.scripts as Any[]).map((s) => ({ id: `${s.id}/${String(s.script).slice(7)}`, status: s.status, attach: s.id, src: s.src, timers: s.every ? 1 : 0, ...(s.why ? { why: s.why } : {}) })),
-      ...((v.v1 as Any[]) ?? []).map((b) => ({ id: b.behavior, status: b.status, attach: b.attach ?? undefined, src: b.src ?? "", timers: 0, why: b.why }))];
+      ...((v.imported as Any[]) ?? []).map((b) => ({ id: b.behavior, status: b.status, attach: b.attach ?? undefined, src: b.src ?? "", timers: 0, why: b.why }))];
   }
 }
