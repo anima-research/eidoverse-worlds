@@ -19,11 +19,10 @@ import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./v4/operators.ts";
 import { directoryFor } from "./v4/directory.ts";
-import { actorOf as v4ActorOf } from "./v4/messages.ts";
+import { actorOf as v4ActorOf, whois } from "./v4/messages.ts";
 // the door's role ladder (shared/v4/door.js RANK), for the presence gates that mirror a door rule
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
-import { simSnapshot } from "../shared/sim.js";
 import { worlds, type World, type Client } from "./world.ts";
 import { pendingSnaps } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
@@ -32,7 +31,9 @@ import { globalBans, saveGlobalBans } from "./moderation.ts";
 // join's held-whisper delivery imports these back — one-way, like
 // routes.ts's pendingSnaps.
 export const pendingWhispers = new Map<string, unknown[]>();
-export const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
+/** Held whispers are keyed by the recipient's IDENTITY (their v4 id), never a display name: anyone can join wearing an
+ *  absent person's name (security review 10-06 pass 2, H-B: a second "Riannon" received the first one's whisper). */
+export const whisperKey = (world: string, recipientId: string) => `${world}\u0000${recipientId}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 
 export type MsgCtx = {
@@ -62,14 +63,6 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
     const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
-    if (msg.sim) {
-      // the sim fold's cut, on request — the determinism proof's
-      // server leg (sim-smoke compares this against an independent
-      // recompute), and any client's "what does the sequencer think"
-      ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        sim: simSnapshot(c.world.sim) }));
-      return;
-    }
     if (msg.behavior != null) {
       // one script's own log ring + status — the author's console
       const b = c.world.bhv.inspect(String(msg.behavior));
@@ -113,17 +106,27 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const text = String(msg.text ?? "").slice(0, LIMITS.WHISPER_LEN);
     if (!to || !text) return;
     const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
-    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator);
-    for (const t of targets) t.ws.send(JSON.stringify(packet));
-    ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
-    if (!targets.length) {
-      const key = whisperKey(c.world.name, to);
-      const q = pendingWhispers.get(key) ?? [];
-      q.push(packet);
-      while (q.length > LIMITS.WHISPER_HOLD) q.shift();
-      pendingWhispers.set(key, q);
-      ws.send(JSON.stringify({ type: "error", error: `${to} isn't here — they'll get it when they arrive` }));
+    // present: names are unique among the people here, so the name finds them (their embodied leg, never an aux leg)
+    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world");
+    if (targets.length) {
+      for (const t of targets) t.ws.send(JSON.stringify(packet));
+      ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
+      return;
     }
+    // absent: held for the ONE identity this world knows by that name (whois), never for whoever next wears the name
+    const r: any = whois(c.world, { name: to });
+    const ids: string[] = r?.ok ? r.people.map((p: any) => p.id) : [];
+    if (ids.length !== 1) {
+      ws.send(JSON.stringify({ type: "error", error: ids.length ? `more than one person called ${to} has been here — whisper them when they're here` : `nobody called ${to} has been in this world` }));
+      return;
+    }
+    const key = whisperKey(c.world.name, ids[0]);
+    const q = pendingWhispers.get(key) ?? [];
+    q.push(packet);
+    while (q.length > LIMITS.WHISPER_HOLD) q.shift();
+    pendingWhispers.set(key, q);
+    ws.send(JSON.stringify({ ...packet, echo: true }));
+    ws.send(JSON.stringify({ type: "error", error: `${to} isn't here — they'll get it when they arrive` }));
   },
   "anim": ({ c, ws, now, expel }, msg) => {
     // A one-off animation: relayed once to everyone, never logged. It is
@@ -152,7 +155,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // outside. The target decides whether to honour it.
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
+    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world");
     if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
@@ -331,7 +334,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence stays presence.
     // mic = a live voice is coming from this body right now (R, 23:30)
     const st = typeof msg.state === "string" && ["ear", "think", "tool", "mic"].includes(msg.state) ? msg.state : null;
-    c.world.broadcast({ type: "typing", id: c.id, to: msg.to ?? null, ...(st ? { state: st } : {}) }, c);
+    // `to` names someone present (presence is about the people here), or nobody
+    const to = typeof msg.to === "string" && [...c.world.clients].some((o) => o.id === msg.to && !o.spectator) ? msg.to : null;
+    c.world.broadcast({ type: "typing", id: c.id, to, ...(st ? { state: st } : {}) }, c);
   },
   "drag": ({ c, ws, now, expel }, msg) => {
     // Transient build feedback. DESIGN.md is explicit that dragging is
@@ -341,7 +346,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
-    // (a v4 world: the door's role, protocol/v4 slice 3b — v1's stranger default is builder, the door's is visitor)
+    // (the door's role for the person's identity)
     if (ROLE_RANK[c.world.v4!.roleOf(v4ActorOf(c))] < 1) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
@@ -374,8 +379,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
-    // anyone present — bans are log entries and the log is public; a
-    // list nobody can read is not an audit trail.
+    // anyone present — the moderator's record is public in its outline (who,
+    // when, by whom); a list nobody can read is not an audit trail.
     if (!c.world) return;
     // the door's moderation record (ban/unban, latest wins), named through the directory
     const last = new Map<string, any>(); for (const m of c.world.v4!.live.mod) if (m.verb === "ban" || m.verb === "unban") last.set(m.who, m);

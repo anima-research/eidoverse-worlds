@@ -1,30 +1,20 @@
-// server/v4/world.ts — a v4 world inside today's server (slice 2).
+// server/v4/world.ts — a world's log as this server holds it: the door over the world's directory.
 //
-// world.ts's World facade holds a log object; for a world whose directory holds a v4 log (line 0 a v4 genesis,
-// isV4Dir) that object is a V4Log instead of a WorldLog. Old (v1) worlds never reach this file: World's constructor
-// asks isV4World(name) and builds the WorldLog exactly as before.
+// Every world this server serves is a v4 world (its directory holds v4.jsonl, line 0 a v4 genesis: isV4Dir); World
+// (server/world.ts) holds one V4Log. Writes: every write is a v4 REQUEST through the door (shared/v4/door.js: one
+// `admit`, act + state entries, the ts from this server's clock); request() is the only way in.
 //
-// Writes: every write is a v4 REQUEST through the door (shared/v4/door.js: one `admit`, act + state entries, the ts
-// from this server's clock). request() is the only way in. The v1 write path (append) refuses loudly: a v1 verb
-// reaching a v4 world is a routing bug (server/v4/messages.ts maps the old UI's verbs to requests), and writing it
-// would put a v1 entry into a v4 log, or show clients a change the log never got.
-//
-// What clients see (slice 3c): every client folds v4 itself. A joiner adopts the door's cut (clientCut) and folds the
-// raw entries it is sent as {type: "v4-log"}; a client that doesn't fold v4 is refused at join (server.ts). No v1
-// verbs are made for a v4 world. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
-// for this server's own readers (rights, bans, leases, /geom, model warm-up); it is rebuilt by its next reader after
-// a write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
-import { custodyAt, modLogAt } from "./custody.ts";
+// What clients see: every client folds v4 itself. A joiner adopts the door's cut (clientCut) and folds the raw entries
+// it is sent as {type: "v4-log"}. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
+// for this server's own readers (/geom, model warm-up, the chat window); it is rebuilt by its next reader after a
+// write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
-import { WORLDS_DIR, TRUST_NAMES } from "../config.ts";
-import { directoryFor, mintId, type Entry } from "./directory.ts";
-import { agentTokens } from "../auth.ts";
+import { WORLDS_DIR } from "../config.ts";
+import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "../fsutil.ts";
-import { emptySim } from "../../shared/sim.js";
-import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
+import { request as doorRequest, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
 import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { holdWire } from "../../shared/grab.js";
@@ -34,6 +24,11 @@ import { openLive, isV4Dir } from "./live.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./catalogue.ts";
 
 type Any = any;
+/** One chat line as this server's readers hold it (the chat window, history pages, the attest lookup): a v4 say entry
+ *  numbered v4seq × 1000, its actor a display name. */
+export type ChatLine = { seq: number; ts: number; actor: string; verb: "say"; args: { text: string; to?: string; spoken?: boolean; utt?: number; t0?: number } };
+/** The view of the fold (shared/v4/record.js viewState) plus the chat window. */
+export type WorldView = { entities: Record<string, Any>; terrain: Any; grass: Any; sky: Any; assets: Any[]; recentChat: Any[]; chatTotal: number; roles: Record<string, Any>; bans: Record<string, Any> };
 const idOut = (s: string) => dec(s) ?? s;
 
 /** An entry as clients are sent it: without the chain fields (world, head, sig) and an act/say body's salt. Clients
@@ -63,16 +58,13 @@ export class V4Log {
   readonly v4 = true;
   live: Any;
   /** The view of the fold + the chat window (the readers above). Rebuilt lazily by its next reader after a write. */
-  private _state!: WorldState;
-  get state(): WorldState { if (this.stale) this.freshen(); return this._state; }
-  set state(v: WorldState) { this._state = v; }
-  /** v1 entries never live here: a v4 world has no v1 tail (joinPayload sends none). */
-  entries: LogEntry[] = [];
-  sim = emptySim() as Any;           // the v1 sim: none (v4 physics lives in the fold, @world.sim)
-  recentSays: LogEntry[] = [];
+  private _state!: WorldView;
+  get state(): WorldView { if (this.stale) this.freshen(); return this._state; }
+  /** the last 256 says (the attest handler's lookup: a voice leg's receipt names one by seq) */
+  recentSays: ChatLine[] = [];
   poses: Record<string, unknown> = {};
   /** The chat lines, newest last (readHistory's source; the v4 log itself is the door's `history`). */
-  private hist: LogEntry[] = [];
+  private hist: ChatLine[] = [];
   private dir: string;
   private posesPath: string;
   private host: V4Host | null = null;
@@ -97,20 +89,20 @@ export class V4Log {
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
     const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
-    if (this._state) (this._state as Any).chatTotal = Math.max(0, says.length - 40);
+    if (this._state) this._state.chatTotal = Math.max(0, says.length - 40);
     for (const e of says.slice(-40)) this.hearSay(e);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the door
   }
   attach(host: V4Host) { this.host = host; }
 
-  private view(): WorldState {
-    return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldState;
+  private view(): WorldView {
+    return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;
   }
   /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
-  private sayLine(e: Any): LogEntry {
+  private sayLine(e: Any): ChatLine {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as LogEntry;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as ChatLine;
   }
   private hearSay(e: Any) {
     const line = this.sayLine(e);
@@ -119,6 +111,7 @@ export class V4Log {
   }
   /** The last v4 seq. */
   get head(): number { return this.live.entries.length - 1; }
+  /** The last chat number this world could have issued (v4seq × 1000 + 999): legs opened after it number above it. */
   get snapSeq(): number { return this.head * 1000 + 999; }
 
   /** One v4 request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
@@ -185,23 +178,18 @@ export class V4Log {
     const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
     if (fresh.some(roles)) this.host?.rightsChanged();
   }
-  private record(e: LogEntry) {
+  private record(e: ChatLine) {
     this.hist.push(e); if (this.hist.length > 512) this.hist.splice(0, this.hist.length - 512);
     if (e.verb === "say") { this.recentSays.push(e); if (this.recentSays.length > 256) this.recentSays.shift(); }
   }
 
-  // ---- the WorldLog surface the World facade and server.ts read ----
-  append(_actor: string, verb: string, _args: Record<string, unknown>): LogEntry {
-    throw new Error(`v4 world "${this.name}": a v1 '${verb}' write has no path here (writes are v4 requests; server/v4/messages.ts)`);
-  }
-  fold(_reason?: string) { /* the v4 log is the record; the view is rebuilt from it on load */ }
-  flushLog() { /* lines are appended synchronously by the door's writeLine */ }
-  reset(): string { throw new Error(`v4 world "${this.name}": reset isn't supported in a v4 world yet`); }
+  // ---- what the World and server.ts read ----
+  /** A page of chat history, newest first by `before` (the whole log is in memory: every line ever said here). */
   readHistory({ before = Infinity, after = -Infinity, limit = 50, verbs = null as Set<string> | null }) {
     // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since
     // load (Commons audit #2: scrollback stopped at 40 and told people it was "the beginning of this world")
     if (verbs && !verbs.has("say")) return { entries: [], oldestSeq: null, hasMore: false };
-    const out: LogEntry[] = []; let more = false; const E = this.live.entries;
+    const out: ChatLine[] = []; let more = false; const E = this.live.entries;
     for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
       const seq = e.seq * 1000; if (seq >= before) continue; if (seq <= after) break;
       if (out.length === limit) { more = true; break; } out.push(this.sayLine(e)); }
@@ -213,14 +201,13 @@ export class V4Log {
     this.stale = false;
     this._state = this.view();
   }
-  joinPayload() { if (this.stale) this.freshen(); return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
-  /** The role the DOOR gives this identity (the door is what admits writes; v1's own default for strangers is builder,
-   *  the door's is visitor, so a client must be told the door's). */
+  /** The role the door gives this identity (the door is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
-   *  names (a name lookup — messages.ts whois — is scoped to these, never the whole directory). */
+   *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
+   *  messages.ts whois, a whisper held for someone absent — is scoped to these, never the whole directory. */
   knownIds(): Set<string> {
-    const out = new Set<string>(this.actors);
+    const out = new Set<string>([...this.actors, ...Object.keys(this.poses)]);
     for (const k of Object.keys(this.live.state().entities?.["@world"]?.c ?? {})) if (k.startsWith("roles:")) out.add(k.slice(6));
     for (const m of this.live.mod ?? []) if (typeof m?.who === "string") out.add(m.who);
     for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the door's own (door, world, bhv:…) aren't people
@@ -245,10 +232,7 @@ export class V4Log {
 }
 
 // ---- founding and translating (tools/v4/world.ts is the command line) ----
-import { translate } from "../../shared/v4/translate-v1.js";
-import { v1FoldBuild } from "./build.ts";
-import { enc } from "../../shared/v4/names.js";
-import { readLog, fold, digest, opsOf } from "../../shared/v4/fold.js";
+import { opsOf } from "../../shared/v4/fold.js";
 
 /** Found a new v4 world in `dir` (which must not hold a world): genesis + the founding act, through the door. */
 export function foundV4(dir: string, name: string, owner: string, title?: string, now?: () => number) {
@@ -264,58 +248,7 @@ export function foundV4(dir: string, name: string, owner: string, title?: string
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
 
-/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. */
-export function translateV1World(srcDir: string, destDir: string) {
-  const src = path.join(srcDir, "log.jsonl");
-  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
-  if (fs.existsSync(path.join(destDir, "v4.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
-  const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  // the sequencer key is this door's (the custody file every world in this worlds dir shares, server/v4/custody.ts)
-  // identities (round-2 review R1): every v1 person becomes an opaque id in the door directory; an account seen in the
-  // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
-  // directory only after the log is: a failed translation leaves no identities behind.
-  const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
-  const agents = agentTokens().names;
-  const isAcct = (k: string) => /^(human|agent|aid1):/.test(k);
-  const who = (name: string, { sub }: { sub?: string } = {}) => {
-    // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
-    // local:<name>, as a join there is; anywhere else it's a legacy identity an operator binds (directory.bind)
-    const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
-    const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
-    const key = acct ?? `name:${name}`;
-    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this door
-    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "legacy", since: Date.now() }; }
-    if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
-    memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
-  // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
-  // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
-  // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
-  for (const e of old) { const a = e?.args ?? {};
-    if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
-    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
-  const cust = custodyAt(path.join(path.dirname(destDir), ".v4-custody.json"));
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who });
-  if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
-  // salted and signed like every line the door writes (§2.4; round-2 review R3): a translated world is a chained log
-  const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
-  // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
-  const back = fold(readLog(text));
-  const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
-  if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
-  fs.mkdirSync(destDir, { recursive: true });
-  const tmp = path.join(destDir, "v4.jsonl.tmp");
-  fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, path.join(destDir, "v4.jsonl"));
-  dir.put(planned);
-  // v1 bans are the moderator's record in v4 (the door reads bans only from v4.mod.jsonl): file each one there, or a
-  // translated world quietly unbans everyone (component review, world-settings #3)
-  const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("bans:"));
-  if (banned.length) { const m = modLogAt(path.join(destDir, "v4.mod.jsonl"));
-    for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "door", verb: "ban", who: k.slice(5), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
-  return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
-}
-
-// ---------- fork and reset (v1 parity, done the v4 way) ----------
+// ---------- fork and reset ----------
 const WORLD_NAME = /^[a-z0-9_-]{1,64}$/i;
 const headOf = (live: Any) => live.headAt(live.entries.length - 1);
 /** A thing's parents before it: a batch creates children after what they hang from. */
@@ -349,7 +282,7 @@ const canonOf = (st: Any, skipWorld: (k: string) => boolean) => JSON.stringify(O
 /** Fork: a NEW world (its own genesis, so its own identity) whose founding act names where it came from
  *  ({world, name, head}), holding a copy of the source's current state. Built in a hidden directory and renamed into
  *  place only once its state equals the source's, so a failed fork leaves nothing. Chat history isn't copied: the
- *  source's log stays the record, and the fork links to it (v1 copied the whole log file, every chat line included). */
+ *  source's log stays the record, and the fork links to it. */
 export function forkV4(src: V4Log, to: string, forker: string): { ok: true; worldId: string; things: number; acts: number } | { ok: false; err: string } {
   if (!WORLD_NAME.test(to)) return { ok: false, err: `bad world name "${to}" — letters, digits, - and _ only` };
   if (to === src.name) return { ok: false, err: "a world can't be copied onto itself" };

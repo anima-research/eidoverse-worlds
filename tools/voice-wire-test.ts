@@ -33,7 +33,7 @@ writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fi
 writeFileSync(join(lib, "fixtures/body.vrm"), fixture());
 const AVATAR = "fixtures/body.vrm", WORLD = "voice-wire", OWNER = "voice-owner";
 const preload = process.env.CONTACT_MUTATION ? join(import.meta.dir, "contact-mutation-preload.ts") : undefined;
-const h = await scratchSequencer("voice-wire", { preload, serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9590 });
+const h = await scratchSequencer("voice-wire", { worlds: [WORLD], preload, serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9590 });
 const WS = h.BASE.replace("http", "ws") + "/ws";
 
 type Sock = { ws: WebSocket; last: Record<string, any> | null; snapshot: any };
@@ -47,7 +47,7 @@ async function join_(id: string, extra: Record<string, unknown> = {}): Promise<S
       if (m.type === "snapshot") { s.snapshot = m; clearTimeout(t); res(); }
       if (m.type === "frame" && m.poses?.[OWNER]) s.last = m.poses[OWNER];
     };
-    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, ...extra }));
+    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, v4fold: true, ...extra }));
   });
   return s;
 }

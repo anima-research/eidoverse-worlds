@@ -1,22 +1,14 @@
-// fold — how a log entry changes the world's shape, as one pure module.
+// tools/v4/import-v1/fold.js — the OLD (v1) fold, kept only so an old world's log can be read once and translated
+// into a v4 world (translate-v1.js, translate-d3.js beside it). Nothing at runtime imports this directory
+// (tools/v4/nov1-check.ts enforces it): the server, the client and the agent run v4 only.
 //
-// This is the reference fold of the eidoverse-log protocol (spec/PROTOCOL.md
-// §2–§3): fold every entry from empty state and you have the world, on any
-// runtime, at any time. It lived inside server/server.ts as foldEntry; it
-// lives here so the sequencer, the browser client, and the mcpl agent can
-// stop mirroring it by hand — AGENTS.md house rule 1 ("the fold is sacred")
-// is true by construction only for code that lives in this directory.
-// Conformance: tools/foldfix-test.ts folds spec/fixtures/*/log.jsonl and
-// compares against each folded.json.
-//
-// Same constraints as everything in shared/ (README.md): pure, dependency-
-// free (the one import is a sibling), no Date.now() — every timestamp comes
-// off the entry, so a fold is a pure function of the log.
+// Every timestamp comes off the entry, so a fold is a pure function of the log. The old protocol's spec
+// (spec/PROTOCOL.md, spec/fixtures/*) is what it was written against.
 
-import { foldSkyEntry } from './forecast.js';
-import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions.js';
-import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from './rot.js';
-import { blueprintHash } from './blueprint.js';
+import { foldSkyEntry } from '../../../shared/forecast.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from '../../../shared/captions.js';
+import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from '../../../shared/rot.js';
+import { blueprintHash } from '../../../shared/blueprint.js';
 
 // Orientation (PROTOCOL §9 amendment): `q` is the whole truth when
 // present and `yaw` is always its heading, so yaw-only readers stay correct
@@ -169,7 +161,7 @@ function bornOf(prev, kind, a, e) {
 
 /** The rights ladder (PROTOCOL.md §7): visitor < builder < owner.
  *  @type {Record<string, number>} */
-export const ROLE_RANK = { visitor: 0, builder: 1, owner: 2 };
+const ROLE_RANK = { visitor: 0, builder: 1, owner: 2 };
 
 /** The placer principal a creation carries: {id, sub?}, server-stamped
  *  (verbs.ts / behaviors.ts). Folded as given, never derived here — the fold
@@ -182,8 +174,7 @@ function placerOf(a) {
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
-import { RECENT_CHAT, trimRecentChat } from "./chatwindow.js";
-export { RECENT_CHAT, trimRecentChat };
+import { trimRecentChat } from "../../../shared/chatwindow.js";
 
 /** @returns {WorldState} */
 export const emptyState = () => ({
@@ -577,125 +568,4 @@ export function foldEntry(st, e) {
     // are the reaction's own logged entries.
     default: return;   // unknown verbs shape nothing; the log still keeps them
   }
-}
-
-/** Turn a folded snapshot back into the verbs that would have produced it.
- *
- *  Deliberately NOT a second way of building a world: the state goes back
- *  through whatever consumes ordinary entries, so there is exactly one code
- *  path that gives a snapshot meaning. Order matters the way it does in a
- *  log: ground before the things standing on it; every spawn before
- *  anything lands on one. Synthetic entries carry negative seq (they are
- *  pre-history, not positions in it) — EXCEPT chat, which keeps its real
- *  seq because the scrollback cursor derives from it.
- *
- *  One implementation, every species: the browser client and the mcpl agent
- *  each carried a hand-mirrored copy of this ("must stay in step…" — the
- *  drift that crashed look() for every agent in a world is the incident in
- *  the comment both copies carried). The flags encode the agents' deliberate
- *  omissions EXPLICITLY, so an absence stays a decision instead of a drift:
- *  - roles/behaviors: the agent has no local reader for either;
- *  - collide: browser-only collider state riding the spawn verb;
- *  - bodyMountRel 'seat' + bodyMountActor 'rider': text-tier perception
- *    wants "who sits where", not offsets — and attributes the sitting to
- *    the sitter.
- *
- *  @param {WorldState} state
- *  @param {{ skipChatFromSeq?: number, roles?: boolean, behaviors?: boolean,
- *            collide?: boolean, bodyMountRel?: 'full'|'seat',
- *            bodyMountActor?: 'world'|'rider', now?: number }} [opts] */
-export function stateToEntries(state, {
-  skipChatFromSeq = Infinity, roles = true, behaviors = true, collide = true,
-  bodyMountRel = 'full', bodyMountActor = 'world', now = Date.now(),
-} = {}) {
-  if (!state) return [];
-  const out = [];
-  let seq = -1;
-  const add = (verb, args, actor = 'world', ts = now) =>
-    out.push({ seq: seq--, ts, actor, verb, args });
-
-  if (roles) {
-    for (const [id, r] of Object.entries(state.roles ?? {})) {
-      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}) });
-    }
-  }
-  if (state.epoch) add('epoch', { sim: state.epoch.sim, tickMs: state.epoch.tickMs },
-    'world', state.epoch.ts ?? now);
-  if (state.terrain) add('terrain', state.terrain);
-  if (state.grass) add('grass', state.grass);
-  if (state.sky) add('sky', state.sky, 'world', state.sky.ts ?? now);
-  for (const a of state.assets ?? []) add('asset', a);
-  // the blueprint store, oldest publish first, each under its first publisher
-  for (const [hash, b] of Object.entries(state.blueprints ?? {}).sort((x, y) => (x[1].ts ?? 0) - (y[1].ts ?? 0))) {
-    add('blueprint', { hash, record: b.record }, b.by ?? 'world', b.ts ?? now);
-  }
-  for (const [id, e] of Object.entries(state.entities ?? {})) {
-    if (e.kind === 'light') {
-      // folded lights have no lib — synthesizing one crashes every consumer
-      // that trusts `lib` on a spawn (Fable's porchlight vs look(), 07-30)
-      add('light', { id, pos: e.pos, color: e.color, intensity: e.intensity, range: e.range,
-        ...(e.keep ? { keep: true } : {}),
-        ...(e.day === false ? { day: false } : {}) },
-        e.actor ?? 'world', e.ts ?? now);
-      // the light verb carries no yaw/scale (PROTOCOL §3): a transform a
-      // `place` stamped onto the light re-enters the way it arrived — as a
-      // place — or the snapshot roundtrip silently drops what the light-on-
-      // light merge just learned to preserve. pos rides along (idempotent
-      // over the light entry) because a pos-less place is legal but at least
-      // one consumer (mcpl applyEntry) assigns args.pos unguarded.
-      if (e.yaw != null || e.q || e.scale != null) {
-        add('place', { id, pos: e.pos,
-          ...(e.yaw != null ? { yaw: e.yaw } : {}),
-          ...(e.q ? { q: e.q } : {}),
-          ...(e.scale != null ? { scale: e.scale } : {}),
-          ...(Array.isArray(e.scale3) ? { scale3: e.scale3 } : {}) },
-          e.actor ?? 'world', e.ts ?? now);
-      }
-    } else {
-      add('spawn', {
-        id, lib: e.lib, pos: e.pos, yaw: e.yaw,
-        ...(e.q ? { q: e.q } : {}),
-        ...(e.scale != null ? { scale: e.scale } : {}),
-        // a v4 world's per-axis scale rides beside it (shared/v4/record.js); dropping it here flattened every stretched
-        // thing an agent then edited (agent lab, 10-04: the agent's edit of a stretched bench wrote [0.2, 0.2, 0.2])
-        ...(Array.isArray(e.scale3) ? { scale3: e.scale3 } : {}),
-        // the spawn verb's collide override decides exact-vs-box; dropping
-        // it made the same object walkable or solid depending on when you
-        // arrived (the drift house rule 1 forbids)
-        ...(collide && e.collide != null ? { collide: e.collide } : {}),
-      }, e.actor ?? 'world', e.ts ?? now);
-    }
-  }
-  // components and attachments, after every spawn exists — without the comp
-  // entries a post-fold joiner can be REFUSED for a lock it was never shown,
-  // and every socket, reaction and emitter authored before the fold is
-  // missing until someone rewrites it (#71)
-  for (const [id, e] of Object.entries(state.entities ?? {})) {
-    for (const [type, data] of Object.entries(e.comp ?? {})) add('comp', { id, type, data });
-    if (e.parent) add('mount', { id, ...e.parent });
-  }
-  // body mounts: without these a rejoined body doesn't know it is sitting on
-  // anything — "standing up" never dismounts (#61, princess on the crate)
-  for (const [rid, m] of Object.entries(state.mounts ?? {})) {
-    const rel = bodyMountRel === 'seat'
-      ? { to: m.to, ...(m.slot ? { slot: m.slot } : {}) }
-      : m;
-    add('mount', { id: rid, ...rel }, bodyMountActor === 'rider' ? rid : 'world');
-  }
-  if (behaviors) {
-    for (const [id, b] of Object.entries(state.behaviors ?? {})) {
-      add('behavior', { id, src: b.src, ...(b.runtime ? { runtime: b.runtime } : {}),
-        ...(b.knobs ? { knobs: b.knobs } : {}), by: b.author }, b.author ?? 'world', b.ts ?? now);
-    }
-  }
-  // Anything the tail will replay must not also be rendered from the
-  // snapshot. Chat keeps its REAL seq, unlike the world-shaping entries
-  // above: it is the only part of a snapshot that is a position in history
-  // rather than a description of the present.
-  for (const m of state.recentChat ?? []) {
-    if ((m.seq ?? -1) >= skipChatFromSeq) continue;
-    out.push({ seq: typeof m.seq === 'number' ? m.seq : seq--, ts: m.ts, actor: m.actor,
-               verb: 'say', args: { text: m.text } });
-  }
-  return out;
 }

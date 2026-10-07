@@ -43,10 +43,26 @@ Rules of the road:
 - panels persist position by `id` — namespace yours (`myMod:fishlog`);
 - read tokens for any color; never hex;
 - the world state you can touch is the same lawful surface everyone has
-  (verbs over the socket, behaviors server-side — see AGENTS.md). The UI
-  registry grants no extra authority, only a place to stand.
+  (door requests over the socket, scripts server-side — see AGENTS.md). The
+  UI registry grants no extra authority, only a place to stand.
 
-## 3. The class contract — read and restyle the built-in chrome
+## 3. What a local mod is trusted with
+
+A mod lives in the visitor's own browser (IndexedDB, the 🧩 mods panel,
+`client/lib/mods.js`) and runs as an in-page ES module with the whole client
+surface: the scene, the wire, your body. It speaks AS you — loading one is a
+mod-install decision, like a browser extension. What it can do needs no new
+machinery: it animates your own body freely (it is you), other bodies only
+through their consent, and objects through the door exactly as you would
+(grab, put, throw, drop, punt); the engine can't tell its output from yours,
+which is the point. Its default export is called with `{name, world, EW, ui,
+onTick, onDispose}`; five consecutive tick throws pause it; disabling runs its
+`onDispose` handlers and removes its panels, but an imported module can't be
+unloaded until the page reloads. Untrusted code should instead join as **its
+own participant** (its own identity and rights), not run as a hand in your
+glove. A world can't offer mods to its visitors in v4 yet.
+
+## 4. The class contract — read and restyle the built-in chrome
 
 A local mod is a **trusted** mod (mods.js): an in-page ES module with the whole
 surface, handed `makeFrame` like any built-in. It can therefore read, restyle

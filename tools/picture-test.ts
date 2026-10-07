@@ -67,24 +67,26 @@ check("describe: malformed", describePicture(null) === "a picture (malformed dec
 check("describe never mentions pixels/colours (it carries the author's claim only)", !/pixel|colour|color/.test(describePicture({ src: GOOD, part: "p", look: "x" })));
 
 console.log("— 2. perception —");
-const T0 = 1_754_000_000_000;
+// the agent's v4 path: a scratch v4 door, its cut adopted, and the next view taken after every write (tools/agent-v4.ts)
+const { agentOnDoor } = await import("./agent-v4.ts");
 const ag = new WorldAgent({ name: "reader" });
-const A = ag as any;
-A.applyEntry({ verb: "spawn", args: { id: "console", lib: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] }, ts: T0, seq: 1, actor: "antra" }, false);
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: GOOD, part: "screenplane", look: "a print of the hearth at dusk" } }, ts: T0 + 1, seq: 2, actor: "antra" }, true);
+const { seed, act } = agentOnDoor(ag, "picture");
+await seed({ console: { lib: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] } });
+const r1 = await act("set", { id: "console", component: "picture", value: { src: GOOD, part: "screenplane", look: "a print of the hearth at dusk" } }, { who: "antra" });
 let out = ag.look();
+check("the door takes a well-formed picture", r1.ok, JSON.stringify(r1.refused));
 check("look() names the picture on the owning entity, by the author's line", /\[console\][^\n]*a picture on its screenplane: a print of the hearth at dusk/.test(out), out.split("\n").find((l) => l.includes("console")) ?? out);
 check("…and does not fall through to `components: picture`", !/components: picture/.test(out));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: GOOD, part: "screenplane", look: "the same print, re-hung" } }, ts: T0 + 2, seq: 3, actor: "antra" }, true);
+await act("set", { id: "console", component: "picture", value: { src: GOOD, part: "screenplane", look: "the same print, re-hung" } }, { who: "antra" });
 out = ag.look();
 check("a replace reads as the new line, not both", /re-hung/.test(out) && !/hearth at dusk/.test(out));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: "https://example.com/x.png", part: "screenplane", look: "smuggled" } }, ts: T0 + 3, seq: 4, actor: "antra" }, true);
+const bad = await act("set", { id: "console", component: "picture", value: { src: "https://example.com/x.png", part: "screenplane", look: "smuggled" } }, { who: "antra" });
 out = ag.look();
-check("an invalid source folds (blind fold) but reads as not shown", /smuggled/.test(out) && /not shown: invalid declaration/.test(out), out.split("\n").find((l) => l.includes("console")) ?? out);
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: null }, ts: T0 + 4, seq: 5, actor: "antra" }, true);
+check("an invalid source is written (the door doesn't judge picture sources) but reads as not shown", bad.ok && /smuggled/.test(out) && /not shown: invalid declaration/.test(out), JSON.stringify([bad.refused, out.split("\n").find((l) => l.includes("console"))]));
+await act("delete", { id: "console", component: "picture" }, { who: "antra" });
 check("a removed picture is gone from look()", !/a picture/.test(ag.look()));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "recipe", data: { x: 1 } }, ts: T0 + 5, seq: 6, actor: "antra" }, true);
-check("other component types still read as they did", /components: recipe/.test(ag.look()));
+await act("set", { id: "console", component: "recipe", value: { x: 1 } }, { who: "antra" });
+check("other component types still read as they did", /components: recipe/.test(ag.look()), ag.look().split("\n").find((l) => l.includes("console")));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

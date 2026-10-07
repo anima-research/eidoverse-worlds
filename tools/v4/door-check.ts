@@ -21,11 +21,11 @@ import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
 import { custodyAt } from "../../server/v4/custody.ts";
-import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
+import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openWorld } from "../../server/v4/disk.ts";
 import { openLive } from "../../server/v4/live.ts";
-import { v1FoldBuild, v1FoldFiles } from "../../server/v4/build.ts";
-import { emptyState as v1Empty, foldEntry as v1fold } from "../../shared/fold.js";
+import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
+import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
 
 const root = scratch("door");
@@ -62,7 +62,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c = r.final.v4[enc("lamp_1")];
   ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the door's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
-  ok(v1FoldFiles().includes("shared/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers shared/fold.js and its imports", v1FoldFiles()); }
+  ok(v1FoldFiles().includes("tools/v4/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
 // ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
 // v1: a lock refuses everything that would MOVE, REPLACE or REMOVE the thing, for everyone, its locker included;
@@ -469,23 +469,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- S3: a stretched v4 thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
 { const { viewOf } = await import("../../shared/v4/record.js");
-  const { foldEntry, emptyState } = await import("../../shared/fold.js");
   const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
   const rec = viewOf("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
   ok(typeof rec.scale === "number" && JSON.stringify(rec.scale3) === "[2,0.4,0.4]", "S3a a stretched thing's view has `scale` as ONE number (every older reader) and scale3 beside it", rec);
-  ok(viewOf("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3 (v1 worlds stay byte-identical)");
+  ok(viewOf("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3");
   const eff = effectiveWorldTransform("bench", { entity: (id: string) => (id === "bench" ? rec : undefined), mount: () => undefined } as any, 0);
   ok(eff.ok === true, "S3c the agent's pose reader (mcpl/effective) resolves it: no 'non-finite folded transform'", eff);
-  const st = emptyState();
-  foldEntry(st, { seq: 1, ts: 0, actor: "a", verb: "spawn", args: { id: "b", lib: "x.glb", pos: [0, 0, 0], scale: 0.4, scale3: [2, 0.4, 0.4] } });
-  foldEntry(st, { seq: 2, ts: 0, actor: "a", verb: "place", args: { id: "b", pos: [0, 0, 0], scale: 1 } });
-  ok(st.entities.b && st.entities.b.scale === 1 && st.entities.b.scale3 === undefined, "S3d the v1 fold carries scale3, and a plain scale makes it uniform again", st.entities.b);
-  const { rawShapeError } = await import("../../mcpl/shape.ts");
-  const { stateToEntries } = await import("../../shared/fold.js");
-  const rt = emptyState(); for (const e of stateToEntries({ entities: { b: { lib: "x.glb", pos: [0, 0, 0], yaw: 0, scale: 0.4, scale3: [2, 0.4, 0.4] } } }, { now: 0 })) foldEntry(rt, e);
-  ok(JSON.stringify(rt.entities.b?.scale3) === "[2,0.4,0.4]", "S3g a snapshot replayed as entries (how an agent joins) keeps scale3: an agent's edit of a stretched thing must not flatten it", rt.entities.b);
-  ok(rawShapeError("place", { id: "b", pos: [0, 0, 0], scale: [2, 0.4, 0.4] }) === null, "S3e the agent's raw place check takes a per-axis scale (Juniper: every rotate on a stretched thing was refused)");
-  ok(rawShapeError("place", { id: "b", scale: [2, NaN, 1] }) !== null && rawShapeError("place", { id: "b", scale: "big" }) !== null, "S3f …and still refuses a broken one"); }
+}
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
 { const { editOps, inspectSchema, addOps } = await import("../../shared/editschema.js");
@@ -628,7 +618,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   T += 100; const p4 = sw("bob", "use", { id: "seat2", action: "push" });
   const m4 = openWorld(root, "swingpush").state().entities.seat2.c.motion; const w4 = 2 * Math.PI / m4.period;
   ok(p4.ok && Math.abs(m4.amp - 0.35 / w4) < 2e-3, "SW4 an angular impulse adds exactly its turn rate (amp = angular / ω0)", { p4: p4.refused, amp: m4?.amp, want: 0.35 / w4 });
-  const tx = (await import("../../shared/v4/translate-v1.js")).translate(
+  const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
   ok(/"reactions":\{"push":\{"kind":"impulse","angular":0.35\}\}/.test(JSON.stringify(tx)), "SW4 v1's {impulse: x} translates to the angular impulse, exactly", JSON.stringify(tx).match(/"reactions":[^}]*\}/)?.[0]);
 }
@@ -831,5 +821,42 @@ const w0 = () => openWorld(root, "tier0");
   const k = makeV4Client(); k.adopt({ state: stateView(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
+// ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
+// the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
+{ const cw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "captions"), actor, tool, args); };
+  cw("ann", "new", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
+  const sess = "2026-10-07T00:00:00.000Z-abc123";
+  const line = (n, extra = {}) => ({ id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}`, ...extra });
+  const v1r = cw("vic", "caption", line(1));
+  ok(code(v1r) === "rights", "CA1 a visitor who isn't one of the screen's captioners can't caption it", v1r.refused);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CA2 whoever may edit the screen names its captioners");
+  const c1 = cw("vic", "caption", line(1, { title: "the talk" }));
+  const bag = () => openWorld(root, "captions").state().entities.screen.c.captions;
+  ok(c1.ok && bag()?.window?.[0]?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a visitor) writes a line", [c1.refused, bag()]);
+  const dup = cw("vic", "caption", line(1));
+  ok(code(dup) === "caption" && bag().n === 1, "CA4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
+  ok(cw("vic", "caption", line(2)).ok && bag().window.length === 2, "CA5 the next n appends");
+  ok(cw("vic", "caption", line(3, { gen: 5 })).ok, "CA6 (setup) a newer leg (the server stamps each connection's generation) writes");
+  const stale = cw("vic", "caption", line(4, { gen: 2 }));
+  ok(code(stale) === "caption" && /newer leg/.test(stale.refused?.reason), "CA6 a superseded leg (a lower generation) can't write over its successor", stale.refused);
+  const forged = cw("bob", "set", { id: "screen", component: "captions", value: { session: sess, n: 99, gen: 99, window: [{ t0: 0, t1: 1, text: "forged" }] } });
+  ok(code(forged) === "caption-tool" && bag().n === 3, "CA7 a builder can't forge the bag with a plain set (only the caption tool writes it)", forged.refused);
+  ok(code(cw("vic", "caption", { id: "screen", session: "nope", n: 1, t0: 0, t1: 1, text: "x" })) === "shape", "CA8 a malformed line is refused by shape (the session's form, shared/captions.js)");
+  const end = cw("vic", "caption", { id: "screen", session: sess, end: true, gen: 5 });
+  ok(end.ok && bag() === undefined, "CA9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
+
+// ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
+// bans:<id>, behavior:<name> or legacy:* and wake readers that no longer mean anything) ----
+{ const iw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "imported"), actor, tool, args); };
+  iw("ann", "new", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+  const tries = [["box", "guard", true], ["box", "legacy:kind", "light"], ["@world", "behavior:x", { src: "store/scripts/x.js" }], ["@world", "bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "epoch", { sim: "eidosim@0.5.0" }]];
+  const by = tries.map(([id, component, value]) => code(iw("bob", "set", { id, component, value })));
+  ok(by.every((c) => c === "imported"), "IM1 a builder can't write a guard, a legacy field, an old binding, a bans record or an epoch", by);
+  ok(iw("ann", "set", { id: "box", component: "legacy:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
+  { const d = iw("ann", "delete", { id: "box", component: "legacy:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

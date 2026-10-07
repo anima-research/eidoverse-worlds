@@ -13,7 +13,7 @@ for(const [kind,name] of Object.entries(names)){
  writeFileSync(join(lib,`fixtures/${kind}.vrma`),postureFixture(kind as any));
  writeFileSync(join(lib,`defs/animations/${name}.json`),JSON.stringify({vrma:`fixtures/${kind}.vrma`}));
 }
-const h=await scratchSequencer('live-contact',{portFrom:9450,serverEnv:{EIDOVERSE_DIR:lib,DEFS_DIR:join(lib,'defs'),SKIP_OPT_SWEEP:'1'}});
+const h=await scratchSequencer('live-contact',{worlds:['contact'],portFrom:9450,serverEnv:{EIDOVERSE_DIR:lib,DEFS_DIR:join(lib,'defs'),SKIP_OPT_SWEEP:'1'}});
 const make=(name:string)=>new WorldAgent({url:h.BASE.replace('http','ws')+'/ws',world:'contact',name,avatar:'fixtures/body.vrm'}) as any;
 const a=make('contact-a'),b=make('contact-b');
 const call=(ag:any,name:string,args:any={})=>handleTool({agent:ag,canPush:()=>false,heldActivity:[],cursor:{caughtUpTo:null}},name,args);

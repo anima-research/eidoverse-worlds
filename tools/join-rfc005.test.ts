@@ -16,6 +16,7 @@
 import { mkdtempSync, writeFileSync, existsSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 import { createServer } from "node:net";
 
 /** A port nothing is listening on RIGHT NOW: bind :0, read what the kernel
@@ -35,6 +36,8 @@ async function freePort(): Promise<number> {
 const WPORT = await freePort(), MPORT = await freePort();
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-join-"));
 const tokensPath = join(worldsDir, "tokens.json");
+// the worlds an agent may join exist before the run (joining never founds one; a v4 world is founded by its operator)
+foundWorlds(worldsDir, ["commons", "annex"]);
 // Bound to worldsDir, per the review: the door's durable state lives with the
 // rest of this run's scratch and dies with it.
 const statePath = join(worldsDir, "state.json");
@@ -75,7 +78,8 @@ function spawnChild(args: string[], env: Record<string, string>) {
   return child;
 }
 const world = spawnChild([process.execPath, "server/server.ts"], {
-  PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE,
+  PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
+  AGENT_TOKENS_PATH: tokensPath,   // the world honours the same enrolments the MCPL door does
 });
 // Seed a stale tmp as if a previous incarnation died mid-write (SIGKILL
 // between write and rename). The door must sweep it at boot — which makes the
@@ -328,7 +332,7 @@ async function watchWorld(w: string, id: string) {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
     ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); events.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm" }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm", v4fold: true }));
   });
   return { ws, events };
 }

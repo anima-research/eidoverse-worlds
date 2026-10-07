@@ -26,7 +26,7 @@
 //     within a per-(identity, act) refractory window.
 //
 // Mentions, whispers, and says are never gated here — being addressed is
-// always a knock. (The self-echo fix lives in agent.ts's applyEntry.)
+// always a knock. (The self-echo fix lives in agent.ts's hearSay.)
 
 export type GateEvent = { kind: "arrive" | "leave" | "act"; who: string; text?: string; ts: number };
 

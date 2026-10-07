@@ -35,7 +35,7 @@ mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, rep
 mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
 mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
 mock.module(base+'assets.js', () => ({ forgetBytes() {} }));
-mock.module(base+'state.js', () => ({ hydrate() {}, foldLive() {}, reset() {} }));
+mock.module(base+'state.js', () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
 mock.module(base+'scheduler.js', () => ({ pending:new Map(), P:{} }));
 mock.module(base+'remotes.js', () => ({ remotes:new Map(), ensureRemote:async()=>null, dropRemote:()=>null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
 mock.module(base+'reachnet.js', () => ({ myReachBag:()=>undefined }));

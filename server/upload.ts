@@ -17,8 +17,8 @@ import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 
-/** What the handler needs from Bun's server object, structurally (the
- *  VerbWorld precedent): the socket address behind the nginx front. */
+/** What the handler needs from Bun's server object, structurally: the
+ *  socket address behind the nginx front. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
 const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
@@ -404,7 +404,7 @@ setTimeout(sweepLibrary, 15_000).unref?.();
 
 /** POST /upload — live asset ingestion. Two destinations:
  *   - models (default): content-addressed into assets/opt/store/<hash>.glb —
- *     immutable by construction, so spawn verbs can reference the path
+ *     immutable by construction, so a thing's `model` can name the path
  *     forever and clients cache it forever. DESIGN.md's "content-addressed
  *     assets" plane, made real.
  *   - ?as=avatar&name=foo: named into the overlay vrms dir, because the
@@ -414,7 +414,7 @@ setTimeout(sweepLibrary, 15_000).unref?.();
  *  mcpl/tokens.json, OR an aid1 credential the home node vouches for
  *  (so Orrery and agents can push generated GLBs here directly — the
  *  store is content-addressed and inert; what enters a WORLD is still
- *  the `asset`/`spawn` verbs, which per-world roles gate), plus per-IP
+ *  a door request, which per-world roles gate), plus per-IP
  *  rate limiting — live generation is the feature, an upload flood is
  *  not. `?by=` is attribution for the console trail. */
 /** Which image container these bytes are, by magic — the three the picture
@@ -447,9 +447,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   const upTok = url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home
-  // carry no tokens.json entry, but the scripting tier's `behavior` verb
-  // is already reachable to them through world_verb — the bytes it binds
-  // must be landable by the same identity, or the tier is half-open.
+  // carry no tokens.json entry, but may build in a world that lets them —
+  // what they build with must be landable by the same identity.
   // Same audience/scope/slug derivation as the two doors, no jti burn
   // (an aid1 credential is reusable until expiry at every door).
   if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
@@ -466,25 +465,6 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
   const body = new Uint8Array(await req.arrayBuffer());
   if (body.length > UPLOAD_CAP) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
-  if (url.searchParams.get("as") === "script") {
-    // Runtime-script ingestion: plain UTF-8 JS, content-addressed like
-    // models, so a `behavior` entry pins exact bytes forever. The store
-    // is inert — what RUNS is still gated by the behavior verb + sandbox.
-    if (body.length > 64 * 1024) return new Response("script too large (64KB cap)", { status: 413 });
-    let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(body); } catch {
-      return new Response("script must be UTF-8 text", { status: 415 });
-    }
-    if (!text.trim()) return new Response("empty script", { status: 415 });
-    const shash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
-    const sdir = join(OPT_DIR, "store", "scripts");
-    mkdirSync(sdir, { recursive: true });
-    const srel = `store/scripts/${shash}.js`;
-    if (!existsSync(join(OPT_DIR, srel))) writeFileSync(join(OPT_DIR, srel), body);
-    console.log(`[upload] script ${srel} (${body.length}B) by ${upBy}`);
-    return new Response(JSON.stringify({ path: srel }),
-      { headers: { "content-type": "application/json" } });
-  }
   if (url.searchParams.get("as") === "image") {
     // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
     // store/images/<hash>.<ext> and served by the /library route like any
@@ -492,8 +472,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     // decoded by the client that hangs it, not re-encoded here). The kind is
     // read from the BYTES, never the name: the store's extension is what the
     // /library route and the picture allow-list key on, so it has to be true.
-    // What enters a WORLD is still the `picture` comp, gated by rank and by
-    // the entity's guard; the store itself stays inert.
+    // What enters a WORLD is still a `picture` component, admitted by the
+    // door; the store itself stays inert.
     if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     const kind = sniffImage(body);
     if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
@@ -527,7 +507,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     // upload (immutable address). No transcode: the client plays what was
     // given. Kind from the BYTES, never the name — the store's extension is
     // what the sound allow-list keys on. What plays in a WORLD is still the
-    // `sound` comp, gated by rank and the entity's guard; the store is inert.
+    // `sound` component, admitted by the door; the store is inert.
     const kind = sniffAudio(body);
     if (!kind) return new Response("not an MP3, Ogg, WAV, WebM or M4A audio file (judged by content, not by name)", { status: 415 });
     const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);

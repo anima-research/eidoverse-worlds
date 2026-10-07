@@ -68,9 +68,6 @@ function seatExtras(m, seat) {
   const i = seat.in;
   if (i && typeof i === 'object') { m.in = {}; for (const k of ['throttle', 'steer', 'aimYaw', 'aimPitch']) if (fin(i[k])) m.in[k] = i[k]; } else delete m.in;
 }
-/** id -> bound runtime scripts (server sandbox AND client-mod offers), from
- *  `behavior` entries. mods.js consumes the runtime:"client" ones. */
-export const behaviors = new Map();
 
 
 export const liveEntities = () => [...entities.values()].filter(Boolean);
@@ -289,39 +286,11 @@ export function applyAssetState(args) {
  *  Enforcement is the server's; narration is the LIVE driver's business
  *  (legacy case or causes.js), not this mirror's. */
 export function applyGrantState(id, rec) {
-  // default matches the FOLD's (shared/fold.js grant case): an unlisted id
-  // in an owned world is a builder, so `/grant bob +gen` doesn't silently
-  // demote bob to visitor. The old 'visitor' default here disagreed with
-  // what the server actually granted (review S6) — the HUD lied.
-  // a role taken away (v4 worlds can delete one): back to the world's default, as the fold reads it
-  if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: 'builder' }); return; }
-  const cur = worldRoles.get(id) ?? { role: 'builder' };
-  worldRoles.set(id, {
-    role: rec.role ?? cur.role,
-    gen: rec.gen != null ? Boolean(rec.gen) : cur.gen,
-    fly: rec.fly != null ? Boolean(rec.fly) : cur.fly,
-  });
+  // a role taken away: back to the world's default (the door reads @world default-role)
+  if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: null }); return; }
+  worldRoles.set(id, { role: rec.role ?? 'visitor', gen: Boolean(rec.gen), fly: Boolean(rec.fly) });
   bus.emit('roles', { id, ...worldRoles.get(id) });
-  // (What I MAY DO is recomputed from the fold in state.js refreshMyRights(),
-  // with the same rightsIn() the sequencer answers with. It was merged by hand
-  // here for two commits and never ran once: this function is exported and
-  // called by nothing, so the "live grant" fix was dead code that read like a
-  // fix. The mirror above is still the HUD's, which is all it ever was.)
-}
-
-/** Mirror one behavior binding (or its removal) into the roster mods.js
- *  watches. `live` rides the bus event exactly as legacy did. */
-export function applyBehaviorState(id, rec, live = false) {
-  if (!rec) behaviors.delete(id);
-  else if (id && rec.src) {
-    behaviors.set(id, {
-      src: rec.src,
-      ...(rec.runtime ? { runtime: rec.runtime } : {}),
-      ...(rec.knobs ? { knobs: rec.knobs } : {}),
-      author: rec.author ?? rec.by ?? 'world',
-    });
-  }
-  bus.emit('behavior-roster', { live });
+  // (What I MAY DO is the server's answer, `your-rights`, re-sent whenever a role changes; this mirror is the HUD's.)
 }
 
 // (The deferred shadow-in drain that lived here — markShadowless /
@@ -330,8 +299,8 @@ export function applyBehaviorState(id, rec, live = false) {
 // rig budgets the caster set live by camera distance, reversibly.
 // lightrig.js §12.5.)
 
-// Per-world roles as replayed from grant entries. A mirror for UI honesty —
-// the sequencer enforces; this only lets the client SAY what you are.
+// Per-world roles (@world roles:<id>), mirrored from the view. A mirror for UI honesty — the door enforces; this only
+// lets the client SAY what someone is.
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;
 export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
@@ -404,8 +373,8 @@ const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new TH
  *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
  *  a seat, feet for a standing place, head, or the root itself — measured from the rider's posed skeleton
  *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
- *  Until the body has been measured the root sits at the socket, declared approximate. (v1's seat-profile correction,
- *  #101, still applies to a v1 'surface' socket that has no body anchor.) */
+ *  Until the body has been measured the root sits at the socket, declared approximate. (The seat-profile correction,
+ *  #101, still applies to a 'surface' socket that has no body anchor.) */
 const _mtP = new THREE.Vector3(), _mtD = new THREE.Quaternion();
 export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   const m = avatarMounts.get(riderId);
@@ -448,7 +417,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
       else reason = rider?.av ? `measuring the ${body.anchor}` : 'body loading';
     }
   } else {
-    // v1's seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
+    // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
     const seat = upright ? seatCorrectionFor(rider, sock) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
     if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
     else reason = seat.reason;

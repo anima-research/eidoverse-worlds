@@ -3,7 +3,7 @@
 // {ok: false, refused: {code, reason, teach, …}}; `what` names the request ("place", "undo", "move crate-1").
 //
 // Names: an identity or id outside the §2.3 grammar ("Riannon", "Lamp") is stored escaped (x--5269…). These words are
-// read by people and by agents' verb tools (which take v1 names), so an escaped name is read back as it is spelled. A
+// read by people and by agents' tools (which take plain names), so an escaped name is read back as it is spelled. A
 // hashed name (h--) can't be read back and stays. The door tool's raw JSON reply is untouched: its ids are the ones to
 // send back, and the door says people's names readably itself (with the id in `by`).
 import { dec, actorName, ACTOR_ID } from "./names.js";

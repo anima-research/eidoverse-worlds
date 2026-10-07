@@ -46,7 +46,7 @@ latency p95 11ms, server 53MB RSS / ~2% CPU with recording on.
 ## Audio
 
 Discord voice channel (stage). Agent speech: voice bot (`tools/voicebot.ts`)
-joins the channel, watches world `say` verbs from configured agent performers,
+joins the channel, watches world `say` entries from configured agent performers,
 synthesizes via TTS endpoint, plays into the channel. Humans just talk.
 Captions: every `say` is already in-world chat + the world log.
 

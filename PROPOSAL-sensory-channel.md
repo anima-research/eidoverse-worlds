@@ -12,7 +12,7 @@ Inventoried from `agent.ts` + `denoise.ts` + `declaration.ts` at current
 main, so this proposal argues with the real system and not a remembered one:
 
 - **Pull: `look()`** — text-tier perception on demand. Position/bearing;
-  people with distance, bearing, pose, mounts; things sorted by distance with
+  people with distance, bearing, pose, seats; things sorted by distance with
   **affordances read out loud** (sockets/reactions/motion/components); plus a
   "Since you last looked" drain of the recent inbox (capped at 25).
 - **Push: the inbox events** (`say | arrive | leave | whisper | act`) through
@@ -52,8 +52,8 @@ at all.
    *producer suggestion* the host may ignore — there is no **agent-owned,
    persisted, per-class dial** anywhere.
 2. **Missing senses.** Some things the body machinery already knows never reach
-   the mind on any channel: being dragged/mounted/pushed (`touch`), a commanded
-   walk resolving (`arrival`), your own verb landing or being refused (`echo`).
+   the mind on any channel: being dragged/seated/pushed (`touch`), a commanded
+   walk resolving (`arrival`), your own request landing or being refused (`echo`).
 
 ## The suggestion, revised
 
@@ -64,9 +64,9 @@ resolution, treatment ontology). Three additions in its grain:
 
 - **New tags, not a new field.** Extend the `eidoverse:` namespace with the
   senses that currently reach no wire at all: `eidoverse:touch` (dragged,
-  mounted, pushed, collided), `eidoverse:walk-arrival` (a commanded walk
-  resolved), `eidoverse:verb-echo` (your own verb landed / was refused, and
-  why), `eidoverse:sight` (field-of-view delta). Each gets a
+  seated, pushed, collided), `eidoverse:walk-arrival` (a commanded walk
+  resolved), `eidoverse:request-echo` (your own request landed / was
+  refused, and why), `eidoverse:sight` (field-of-view delta). Each gets a
   `suggestedTreatment` row in the existing ontology — and per §16.5's own
   rule, none of them may suggest a wake.
 - **Close the tier gap.** The text-tier `WorldAgent` events carry the same
@@ -101,8 +101,8 @@ resolution, treatment ontology). Three additions in its grain:
   classes give the gate *names* for what it already does.
 - `setActivity` proved the dial pattern: per-agent, clamped, persisted. This
   adds rows to that table, not a new mechanism.
-- The verb set stays closed. Tags are server→agent metadata; nothing new is
-  authorable.
+- Nothing new is authorable: tags are server→agent metadata, never log
+  entries.
 - Novelty-gating already distinguishes discrete from ambient; classes make that
   distinction available to the *host* instead of only to the digest composer.
 

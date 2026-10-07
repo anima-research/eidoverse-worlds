@@ -1,5 +1,10 @@
 # TEL0S_NOTES — rebuild notes: loading · lighting · performance · separation
 
+*Historical working notes (2026-08 to 2026-09). Where they speak of the
+world protocol (verbs, `comp`, `mount`, dialect 3, the v1 fold) they mean
+the first protocol, since replaced by v4 (spec/PROTOCOL.md); the loading,
+lighting and performance work stands.*
+
 Status: working notes, 2026-08-08. Orientation + diagnosis by Fable (three
 deep read-throughs: loading pipeline, lighting system, module architecture),
 design directions proposed for discussion with tel0s. Nothing here is decided.

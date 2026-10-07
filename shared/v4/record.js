@@ -6,7 +6,7 @@
 //   - ids, roles and parent targets come back through names.dec (the translator's x-- escapes undone);
 //   - transform → pos / q (+ yaw = q's heading) / scale; a non-uniform scale also rides as scale3 [x,y,z] (R 10-04);
 //   - parent {to, order, slot?} (transform LOCAL to it) → parent {to, slot?, offset, q};
-//   - model → lib; every other component → comp.<name>; legacy:<field> (a v1 field the translator carried) → that field;
+//   - model → lib; every other component → comp.<name>; legacy:<field> (a field an imported world's translation carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], bans:<id> → bans, palette:<k> → assets,
 //     sky/terrain/grass → themselves, legacy:<k> → st[k]. Not shown: sim, epoch, about, bounds, spawn, behavior:<k>.
 import { dec } from "./names.js";

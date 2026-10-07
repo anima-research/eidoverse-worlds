@@ -81,7 +81,7 @@ export function sha256hexBytes(bytes) {
 // IS a set — a particle preset, a loop mode — not a type switch), list, json.
 // `default` is the value the engine's realizer applies when the key is absent;
 // where today's code applies two different defaults by scope, the record says
-// both (`partDefault`) rather than pretending there is one (docs/COMPONENTS-TODAY.md §3).
+// both (`partDefault`) rather than pretending there is one.
 const deg = { t: 'num', deg: true, step: 5 };
 const axis = (d) => ({ t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: d, custom: 'vec3' });
 const part = { t: 'text', default: null, hint: 'a named node of the model; empty = the whole thing' };
@@ -227,7 +227,7 @@ const MOTION_TYPE = Object.fromEntries(Object.entries(MOTION).map(([k, v]) => [v
 const MOTION_STAMPS = ['t0', 'cause', 'by'];
 // keys of the record that are not components: who/when the sequencer stamped
 const STAMPS = ['placer', 'born', 'actor', 'ts', 'box'];
-const FLAG = { lock: 'Lock' };   // v1's guard merged into lock (PROTOCOL-v4 §5): no v4 world carries one
+const FLAG = { lock: 'Lock' };   // the old `guard` merged into lock (PROTOCOL-v4 §5): no world carries one
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
@@ -264,7 +264,7 @@ function compBag(inst) {
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
   const out = [];
-  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale']);
+  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (record.js), kept through the round trip
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
   // client and replays; design §3) but belongs to the Transform: a valid one is
   // read here, and anything else under that key stays an Annotation below
@@ -499,5 +499,5 @@ export function compRefusal(type, data, ent = null) {
 export { bodyOf } from './sockbody.js';
 
 /** A socket's full rotation in its thing's frame (Unreal sockets: a transform, not a heading): a rocket's seat lies
- *  on its back, a bunk lies flat. v1 sockets carried a bare yaw; read the same way here. */
+ *  on its back, a bunk lies flat. A socket written with a bare yaw is read the same way. */
 export const socketQ = (sock) => qNorm(sock?.q) ?? qFromYaw(Number.isFinite(sock?.yaw) ? sock.yaw : 0);

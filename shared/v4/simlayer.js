@@ -40,15 +40,15 @@ export function worldPose(st, id, depth = 0) {
   const [a, b, c, d] = pt.q, [e2, f, g, h] = q;
   return { pos: pt.pos.map((n, i) => n + r[i]), q: [d*e2+a*h+b*g-c*f, d*f-a*g+b*h+c*e2, d*g+a*f-b*e2+c*h, d*h-a*e2-b*f-c*g], scale: sc.map((n, i) => n * pt.scale[i]) };
 }
-// The engine sees the world through a v1-shaped view: one entry per modelled thing (its "lib" is its model).
-function v1Entity(st, id, models = MODELS) {
+// The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
+function engineEntity(st, id, models = MODELS) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || e.c.physics?.shape) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   return { pos: t.pos, yaw: yawOf(t.q), lib: e.c.model, scale: t.scale[1] };
 }
-function v1ViewM(st, models = MODELS) {
+function engineViewM(st, models = MODELS) {
   const entities = {};
-  for (const id of Object.keys(st.entities)) { const v = v1Entity(st, id, models); if (v) entities[id] = v; }
+  for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
   return { entities, terrain: terr ?? { amplitude: 0 } }; // v4 worlds stand on y = 0 unless they declare terrain
 }
@@ -98,7 +98,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
-  const v1View = (s) => v1ViewM(s, models), boxesFor = (s) => boxesForM(s, models);
+  const engineView = (s) => engineViewM(s, models), boxesFor = (s) => boxesForM(s, models);
   const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
@@ -132,14 +132,14 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
-          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, v1View(st));
+          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
         }
         return;
       }
       if (!out.sim) return;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
-          if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, v1View(st)); out.launched = {}; }
+          if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
           continue; }
         const shape = st.entities[o.id]?.c.physics?.shape, model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
@@ -147,7 +147,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         if (!whole && !PHYSICAL.has(o.comp)) continue;
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
         for (const id of ids) {
-          const view = v1View(st); const gone = !view.entities[id];
+          const view = engineView(st); const gone = !view.entities[id];
           eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }
@@ -155,7 +155,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     } else if (e.kind === "sim" && out.sim) {
       const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
-        const view = v1View(st); const base = view.entities[a.id]; if (!base) return;
+        const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // her punt makes the body (order, statics, box); then the launch's stamped state is set EXACTLY — through
         // dir/power it would be renormalised, which can move it by an ulp, and dialect 3 has no zero-power "let go"

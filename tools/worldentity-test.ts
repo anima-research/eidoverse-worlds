@@ -26,9 +26,9 @@ import { terrainArgs, grassArgs, paletteDefaults } from '../shared/grounddefs.js
 import { WORLD_ID, worldComponents, worldOf, worldState, worldSchema, worldEditOps, worldPick, worldChoice, skyPresetOf, pickSky } from '../shared/worldentity.js';
 import { TABS, openingTab, useTab, TAB_V } from '../client/lib/edittabs.js';
 import { viewState, emptyView } from '../shared/v4/record.js';
-import { translate } from '../shared/v4/translate-v1.js';
+import { translate } from './v4/import-v1/translate-v1.js';
 import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/v4/fold.js';
-import { v1FoldBuild } from '../server/v4/build.ts';
+import { v1FoldBuild } from './v4/import-v1/build.ts';
 import { scratchWorld, flat } from './v4/scratchdoor.ts';
 
 let pass = 0, fail = 0;

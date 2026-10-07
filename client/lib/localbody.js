@@ -12,11 +12,10 @@ import { bodyOf } from '../../shared/components.js';
 import { mayLeave } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
-import { isV4, requestV4 } from './net.js';
+import { requestV4 } from './net.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
-import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
@@ -287,7 +286,6 @@ export function trySitOn(arg, slot = null) {
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
-  if (!isV4()) { take(); return true; }
   requestV4('use', { id: best.id, action: best.body.action, args: { slot: best.slot } }).then((r) => {
     if (r?.ok) take(); else logChat('*', refusalText(`${best.body.action} ${best.id}`, r));
   });
@@ -457,7 +455,7 @@ const _shove = new THREE.Vector3();
 function applyShove(lean, by) {
   const me = getMe();
   if (!me) return;
-  if (avatarMounts.has(CONFIG.name)) return;      // braced on a seat — v1 punts on knock-offs
+  if (avatarMounts.has(CONFIG.name)) return;      // braced on a seat: a seat holds you through a knock
   if (beingDragged()) return;                     // a held body answers to the hand, not the blast
   if (lean && lean.lengthSq() > MAX_PUSH * MAX_PUSH) lean.setLength(MAX_PUSH);
   if (downed) {
@@ -535,21 +533,4 @@ export function initLocalBody({ logChat: logChatFn }) {
     }
   });
 
-  // A force verb reaching us live: an instantaneous radial CAUSE (blast, gust).
-  // It folded to nothing — replays and late joiners never re-detonate — and its
-  // only effect on my body happens here, gated by the same consent as a push.
-  // Linear falloff to the rim; at ground zero direction is meaningless, so you
-  // topple the way you were already leaning.
-  bus.on('force', ({ actor, at, radius, power }) => {
-    if (!getMe() || !pushable()) return;
-    // §24l R1: the falloff arithmetic is shared/force.js — one truth with
-    // the agent's copy. Consent and the ground-zero direction stay here.
-    const f = radialForce(at, myState.pos.x, myState.pos.z, radius, power);
-    if (!f) return;
-    if (f.mag < FORCE_MIN && !ragdoll) return;     // a breeze, not a blow
-    const lean = f.nx != null
-      ? _shove.set(f.nx * f.mag, 0, f.nz * f.mag)
-      : toppleVelocity().setLength(Math.max(f.mag, 0.5));
-    applyShove(lean, actor);
-  });
 }

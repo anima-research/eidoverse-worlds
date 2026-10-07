@@ -73,7 +73,6 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
       ws.send(JSON.stringify({ type: "v4", id: rid, tool, args }));
       setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000);
     }),
-    verb: (verb: string, args: any) => ws.send(JSON.stringify({ type: "verb", verb, args })),
     send: (m: any) => ws.send(JSON.stringify(m)),
     of: (type: string) => msgs.filter((m) => m.type === type),
     close: () => ws.close(),

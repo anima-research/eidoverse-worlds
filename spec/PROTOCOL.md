@@ -1,293 +1,224 @@
-# The eidoverse world-log protocol, v1
+# The eidoverse world protocol, v4
 
-**License: CC0 1.0 (public domain).** This document and the fixtures beside
-it may be implemented, copied, and modified by anyone, from any codebase,
-under any license, without permission or attribution. The reference
-implementation in this repository is separately licensed (AGPL); *the
-contract is free*. SMTP being free is what made the mail ecosystem exist.
+**License: CC0 1.0 (public domain).** This document and the conformance
+suite beside it (`v4/conformance/`) may be implemented, copied, and modified
+by anyone, from any codebase, under any license, without permission or
+attribution. The reference implementation in this repository is separately
+licensed (AGPL); *the contract is free*. SMTP being free is what made the
+mail ecosystem exist.
 
-Status: v1, normative for logs whose `genesis` entry says `dialect:
-"eidoverse-log", v: 1`. The words MUST/SHOULD/MAY are used in the RFC-2119
-sense. Where this document and the reference implementation disagree, the
-implementation has a bug — file it.
+Status: v4.0, normative for logs whose genesis says `version: 4, minor: 0`.
+The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
+document and the reference implementation disagree, one of them has a bug —
+file it. The reference fold is `shared/v4/fold.js`; a second reader, written
+in Python from this document alone, is `v4/conformance/v4read.py`, and the
+two agree on every conformance log (§11).
 
 ## 0. The one idea
 
 **A world is its log.** There is no scene file. The log is an append-only,
-totally ordered sequence of *intent verbs*; folding it from the beginning
-yields the world, on every implementation, at any time, forever. Everything
-else — snapshots, clients, servers — is derived cache or transport.
+totally ordered list of entries; folding its `state` entries from the
+beginning yields the world, on every implementation, at any time, forever.
+Everything else — checkpoints, the scene a client draws, history panels,
+who made what — is a **view**: derived, disposable, rebuildable from the
+log.
+
+The rules below exist so that a reader written in any language, in any
+year, gets the same world from the same log:
+
+1. **Few operations, a strict and total reader.** A world is entities with
+   components, changed by four operations (§3). A reader that meets
+   anything malformed shapes nothing with it and says so; it never guesses.
+2. **Each fact once, as a plain value.** Values are JSON data independent
+   of any engine. Nothing derived is stored beside the fact it derives from.
+3. **Nothing changes without a cause on record, and one writer at a time.**
+   Every state entry names the entry that caused it; the world has one
+   sequencer, whose signed hash chain lets readers verify it (§12).
+4. **Requests are open; results are closed.** Anyone may invent a request
+   word; nobody invents a state word — a new feature is a new component
+   (§4, §10).
+5. **A name never changes meaning** (§4).
+6. **Presence is not the log** (§5).
+7. **One gate** checks every result before it is written (§7).
 
 ## 1. The log
 
-- Serialization: JSON Lines. One entry per line, UTF-8, no NUL bytes.
-- Entry shape: `{ "seq": int, "ts": int, "actor": string, "verb": string,
-  "args": object }`.
-  - `seq`: dense, starts at 0, never renumbered. `ts`: epoch milliseconds,
-    the sequencer's clock. `actor`: who spoke (§6). `args`: verb-specific.
-- A fresh log MUST open with `{verb: "genesis", args: {v: 1, dialect:
-  "eidoverse-log"}}` (actor `world`). Readers MUST treat an absent genesis
-  as v1 (logs predate the marker).
-- **Folding is total.** No entry may error a fold: malformed or unknown
-  entries shape nothing, and the log keeps them. A replay must never fail
-  and never kick anyone.
-- **Unknown verbs and unknown component types MUST be preserved**, not
-  dropped. This is the entire forward-compatibility story.
+**Framing.** A log is UTF-8 JSONL: every LF-terminated line is one entry,
+and its 0-based position is its `seq`. A blank or malformed line is still an
+entry: it takes its seq and shapes nothing. A CR before the LF is tolerated
+(JSON whitespace); a byte-order mark is malformed. Caps: 1 MiB per line,
+nesting depth 64.
+
+**Strict JSON.** Every line MUST be I-JSON (RFC 7493) in full — valid UTF-8,
+no duplicate keys, no lone surrogates or noncharacters in strings, finite
+binary64 numbers — plus two stricter rules: no `-0` (including a value that
+underflows to it), and no integer lexeme that is not exactly representable
+as a binary64 (`9007199254740993` is malformed; `100000000000000000000`,
+exactly 1e20, is fine). A reader MUST NOT key ids, names or value keys
+through a host language's object prototype (a JavaScript reader uses `Map`
+or null-prototype objects, and a tokenizer that sees duplicate keys, since
+`JSON.parse` hides them).
+
+**The envelope.** An entry is an object with exactly these fields:
+
+| field | |
+|---|---|
+| `world` | the world id (§2); required on every entry after genesis |
+| `kind` | `genesis` · `state` · `act` · `sim` · `say` · `purge` · `sequencer` |
+| `ts` | the door's admission time, integer milliseconds ≥ 0; required after genesis, never decreasing along the log |
+| `actor` | who: an identity, `door`, `world` or `bhv:<entity>` (§6) |
+| `cause` | the seq of the entry that caused this one, `0 ≤ cause < seq`; required on `state` |
+| `verb` | a string: for `state`, one of the four operations (§3) |
+| `body` | an object |
+| `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
+| `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed |
+
+An unknown field, a `seq` field, a missing or non-string `kind`/`actor`/
+`verb`, a non-object `body`, a bad `cause`, or a missing, fractional or
+decreasing `ts` makes the entry malformed: it shapes nothing and the reader
+reports it in diagnostics, never in the world. (The reference reader also
+tolerates a legacy `by` field, which nothing reads.)
+
+**The kinds.**
+
+- **`genesis`** — entry 0, and only entry 0 (§13).
+- **`state`** — the fold's only input (§3).
+- **`act`** — a request as it was sent, with its refusal if it was refused.
+  Acts are history: the fold never reads them. A state entry's `cause` is
+  usually the act that asked for it.
+- **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
+  digest); read only by readers that carry the world's engine
+  (`PROTOCOL_v2.md`).
+- **`say`** — chat: `body {text, to?}`. Never world state.
+- **`purge`** — the one rule that changes the record (§12).
+- **`sequencer`** — governance: handing the writer role on, or an owner
+  override (§13).
 
 ## 2. Folded state
 
-Folding produces, at minimum:
+The fold yields a **status** (`ok`, `no-world`, or `unknown-version`), a
+**world id**, a map of **entities**, and **diagnostics**.
 
-```jsonc
-{
-  "entities": { "<id>": { "pos": [x,y,z], "yaw": r, "lib": "path"?,  // things; no lib = an Empty (§3.1)
-                           "scale": s?, "actor": who, "ts": ms, "collide"?,
-                           "kind": "light"?, "color"?, "intensity"?, "range"?, "keep"?, "day"?,
-                           "comp": { "<type>": <opaque data> }?,      // §4
-                           "parent": { "to", "slot"?, "offset"?, "yaw"? }? } },
-  "mounts": { "<body-id>": { "to", "slot"?, "offset"?, "yaw"? } }?,   // §5
-  "roles":  { "<id>": { "role": "owner|builder|visitor", "gen"?: true,
-                         "sub"?: "durable id" } },                    // §7
-  "behaviors": { "<id>": { "src", "runtime"?: "client", "attach"?, "caps"?,
-                            "knobs"?, "author", "ts", "state"? } }?,  // §8
-  "blueprints": { "<hash>": { "record", "by", "ts" } }?               // §4.1
-}
-```
+- An entity is an id and a map of **components**: name → value. A value is
+  any JSON value (`null` included), or the defined marker *absent(purged)*
+  (§12).
+- `@world` is live from genesis and can never be deleted. Its components
+  are the world's own settings: sky, terrain, roles, bounds, spawn…
+- The **world id** is `sha256:` + hex(sha256(UTF-8(JCS(genesis entry)))),
+  JCS being RFC 8785. It never names a host. Every later entry carries it in
+  `world`; a mismatch is reported in diagnostics.
+- The **digest** of a folded world is the lowercase hex
+  sha256(UTF-8(JCS(view))), where `view` is `{<live id>: {<component>:
+  {"v": value} | {"purged": true}}}` over every live entity, empty ones and
+  `@world` included. Wrapping values in `{"v": …}` keeps `purged` out of the
+  value space. Two readers agree on a world exactly when they agree on its
+  digest.
 
-Implementations MAY fold more (chat windows, ban lists); conformance is
-measured on the fields above (see `fixtures/README.md`).
+Readers MAY start from a **checkpoint** — a folded view whose digest the
+log records — and verify it by folding forward; the digest is never itself
+folded.
 
-## 3. Verbs and their fold semantics (normative)
+## 3. State operations and their fold semantics (normative)
 
-| verb | args | fold effect |
+A `state` entry's `verb` and `body` are one of:
+
+| verb | body | fold |
 |---|---|---|
-| `genesis` | `{v, dialect}` | nothing (version marker) |
-| `spawn` | `{id, lib?, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1). An absent (or null) `lib` creates an **Empty**: an entity with only a transform; a present but empty `lib` (`""`) folds to nothing *(Empty: amendment 2026-10-01, §3.2)*. `q`: §9.1 *(amendment 2026-09-26)* |
-| `place` | `{id, pos?, yaw?, q?, scale?}` | update transform; re-stamps rest pose. Orientation per §9.1 *(`q`: amendment 2026-09-26)* |
-| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
-| `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + offset rotated by the parent's orientation, §9.1), then orphaned; body mounts onto it are cleared |
-| `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
-| `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
-| `mount` | `{id, to, slot?, offset?, yaw?, q?}` | if `id` is an entity: set its `parent`; else record in `mounts` (a body). No-op if `to` missing or `id == to`. The door refuses a mount that puts an entity under its own descendant (a loop); a fold meeting one in an old log keeps it, and readers treat both members as unparented |
-| `dismount` | `{id, pos?, yaw?, q?}` | clear parent/mount; if entity and pos given, **stamp** it (§9 invariant) |
-| `use` | `{id, action}` | **nothing** — a cause, kept as history; effects are separate entries |
-| `force` | `{at:[x,y,z], radius?, power?}` | **nothing** — a physical cause (blast/gust); LIVE clients apply it to bodies they own, under those bodies' consent; replay never re-detonates *(dialect v2)* |
-| `punt` | `{id, power?, dir?}` | **nothing** — a physical cause on an entity; a LIVE client volunteers to simulate the flight via an animation lease (§5), and the landing arrives as an ordinary `place` *(dialect v2)* |
-| `say` | `{text}` | chat (implementation-defined window; not conformance-scored) |
-| `grant` | `{id, role?, gen?, sub?}` | update `roles[id]`; missing role/gen inherit current; `sub`, when present, binds the grant to that durable identity (§7) |
-| `behavior` | `{id, src, runtime?, attach?, caps?, knobs?}` or `{id, remove: true}` | bind/unbind a runtime script (§8); author = entry actor. `runtime` folds only as `"client"` (a client mod offer, §8); absent = the server sandbox |
-| `bstate` | `{id, data}` | `behaviors[id].state = data` (script kv persistence) |
-| `terrain` / `grass` / `sky` / `weather` | opaque bags | world-scope singletons (grass `{clear: true}` deletes; weather merges into sky). Grass bags speak eidoverse-video's `createFlora` (species/height/density/color/rows); legacy makeGrass bags in old logs are mapped client-side, never rewritten |
-| `asset` | `{name, path}` | append to the world's asset palette (dedup by path) |
-| `blueprint` | `{hash, record}` or `{hash}` | file `record` in `blueprints[hash]` **iff** `hash` is the record's own content hash (recomputed, §4.1); first publisher and time kept, a re-publish replaces only the record (its prose may differ, its meaning cannot). `{hash}` alone folds nothing *(amendment 2026-10-02, §4.1)* |
-| anything else | — | **nothing, and the log keeps it** |
+| `create` | `{id}` | a new, empty entity; does nothing if `id` is live |
+| `set` | `{id, comp, value?, salt?}` | replace that one component's value; does nothing if the entity is missing, or if `value` is **absent** (`null` is a value) |
+| `delete` | `{id, comp?}` | with `comp`: remove that component (nothing if it isn't there); without: remove the entity (never `@world`) |
+| `batch` | `{ops: [{verb, id, comp?, value?, salt?}, …]}` | the ops above, applied in order |
 
-### 3.1 The id namespace is flat, and the newest word wins
+- A batch never contains a batch.
+- A shape or grammar error anywhere in an entry (an unknown field, a bad id
+  or component name, a nested batch) makes the **whole entry** malformed. A
+  semantic no-op (a missing entity, an absent component) skips only that
+  op, with a diagnostic.
+- The fold reads only the entry: never a blob's bytes, never anything
+  outside the log. Blobs appear only as values (a model's path, a script
+  source's hash). A blueprint copy is expanded by the door into an explicit
+  batch.
+- A deleted id may be created again by the fold, and starts empty. (The
+  reference door refuses to re-create an id that existed before, so a
+  reborn id can't inherit references or a sponsorship.)
+- "All or nothing" is the door's promise about what it writes; it is not a
+  fold rule.
 
-A `spawn` whose id already exists REPLACES the previous holder **wholesale**:
-transform, component bag, and parent attachment are those of the new entry
-alone (nothing is inherited — a bag you want to survive re-authoring is a
-bag you re-author). The same replacement applies across kinds: a `spawn`
-landing on a light id, or a `light` landing on a model id, replaces it, and
-an Empty (§3.2) is a kind like the others — a model spawned over it, or it
-spawned over a model, replaces wholesale. The
-one exception is `light`-on-`light`, which merges as a partial update (the
-table above) — brightening a lamp is not re-authoring it.
+### 3.1 Names and ids
 
-*Erratum (2026-08-09):* this section previously read "no-op if id exists"
-for `spawn`. Every reference fold since genesis has overwritten, so every
-persisted v1 log already means what this section now says — the text was
-wrong, not the worlds. Documented under §0's rule that the implementation
-wins the argument; no dialect bump.
+All ASCII.
 
-`keep` and `day` (lights) fold into the entity (§2) and carry client policy
-in world state, not rendering guarantees. `keep: true` gives the light
-**first claim on a casting slot** and exempts it from perf-governor
-shedding — top *priority*, not an unbounded promise: a client's slot pool
-is finite, and past it a kept light still glows without casting. `day:
-false` opts a light out of the time-of-day cycle: it burns at its authored
-intensity at noon (the deliberate porch light). Absent or true, a placed
-light dims toward midday the way lamps do. Both are stored only in their
-non-default state (`keep: true`, `day: false`); partial updates merge them
-like any other light field. Pinned by fixture `05-lightpolicy`.
-
-### 3.2 Empties *(amendment 2026-10-01)*
-
-A `spawn` with no `lib` folds to an **Empty**: `{pos, yaw, q?, scale?,
-collide?, actor, ts, …}` with neither `lib` nor `kind` on the record. It is
-an entity in every other respect — it can be placed, mounted and carried,
-removed, carry any component (§4), and other entities can mount onto it — so
-it serves as a pivot, a group parent, a spawn point or a target. Clients
-draw nothing for it (an editor MAY show a gizmo while editing). Re-spawning
-an Empty as an Empty keeps its identity for deeds (`born`); a model spawned
-on its id is a new thing, as across any kinds.
-
-*Versioning.* Before this amendment the reference fold dropped a lib-less
-spawn, and no persisted log carries one (the reference corpus was checked),
-so every old log folds byte-identically. A reader that predates it folds an
-Empty to nothing: it shows nothing (which is what an Empty looks like), its
-`comp`/`place` entries fold to nothing, and a `mount` *of* the Empty is filed
-under `mounts` as if the id were a body (§5) — inert, since no body by that
-name arrives. Same footing as `q` (§9.1): an optional-argument change, no
-`genesis` bump, flagged here for review. Pinned by fixture `06-components`.
+- **Entity ids**: `[a-z0-9-]{1,64}`, opaque and minted, plus the reserved
+  `@world`.
+- **Identities** (actors, and keys such as `roles:<identity>`):
+  `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
+  outside the log, so purging a person never needs the log's skeleton.
+- **Component names**: `[a-z][a-z0-9-]*`, optionally prefixed by a domain
+  (`example.org/`), optionally versioned `@<n>` (`light@2`), optionally
+  keyed `:<key>` with a key of `[a-z0-9-]{1,64}` (`roles:u-abc`,
+  `script:bell`).
+- `body:<identity>` names a body (§5). It may be the target of an act or a
+  say, but it is never an entity: a state op on it is malformed.
 
 ## 4. Components
 
-Entities carry a bag of `type → data`. The fold is blind: no taxonomy, no
-registry, no validation beyond size. Meaning lives in whichever evaluator
-consumes a type. Known types in v1, with their contracts:
+Components are how a world grows: **a new feature is a new component,
+never a new operation**. The fold applies every component blindly; meaning
+lives in whatever reads it — a renderer, the door's checks, a script.
 
-- **`sockets`** `{<slot>: {pos: [x,y,z], yaw?, pose?: "sit"|"sitchair"|"lie"}}`
-  — named attachment points in the ENTITY's local frame. A mount referencing
-  a slot seats the rider there; the rider composes with the entity's live
-  transform (a sitter rides a swinging swing for free).
-- **`motion`** (and **`motion:<part>`** for one named node of the model) —
-  *functions of time*, never frames. Types: `pendulum {axis, pivot, amp,
-  period, phase, damp, maxAmp, t0}`, `spin {axis, pivot, degPerSec|rpm,
-  phase, t0}`, `orbit {center, radius, degPerSec, phase, face, t0}`, `bob
-  {axis, amp, period, phase, t0}`, `path {points, speed|duration, loop:
-  loop|pingpong|once, face, t0}`. Every client evaluates the same closed
-  form at its own now. **Generous reading is normative**: `amplitude` is
-  `amp`; `axis` accepts `"x"|"y"|"z"|"-x"|…` as well as `[x,y,z]`; missing
-  `damp` is 0 (perpetual — friction is opt-in); missing `t0` is stamped at
-  fold. Unknown motion types render as stillness, never errors.
-- **`reactions`** `{<action>: {impulse: rad/s, …}}` — server-side: a `use`
-  with a matching action emits ordinary logged effect entries (e.g. a
-  velocity-matched pendulum impulse) with `{cause: seq, by: actor}`
-  provenance. Replay folds the effects; it never re-runs the reaction.
+- **Bare names are the protocol's registry.** The registered components,
+  their fields, defaults and meanings are in `shared/v4/catalogue.js`; a
+  door answers `schema {component?}` with the same. Among them: `transform
+  {pos, q, scale}`, `model` (a library path), `label`, `parent {to, slot?}`,
+  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
+  `door`, `physics`, `grabbable`, `particles`, `script:<name>`, and on
+  `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
+  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `sim`,
+  `scripts`, `library:<hash>`, `schemas:<name>`.
+- **Anyone else's components carry a domain prefix**, so two honest clients
+  can't both invent `light`. Unknown names are kept, replayed and shown
+  honestly; they wait for a reader that understands them.
+- **A changed meaning or default is a new name** (`light@2`). Old names are
+  read forever. No component may change how another is read.
+- **Absence means absent.** A reader that gives absence a meaning is naming
+  a default, and that default belongs in the component's definition.
+- **Meaning travels with the world.** A `schemas:<name>` component on
+  `@world` holds the content hash of that name's written definition (shape,
+  units, prose meaning, what absence means); once set it never changes.
+- **Keyed names are instance or partition keys.** For instance keys
+  (`script:`, `library:`, `roles:`), an existing key may be changed or
+  deleted only by its creator (whose rights admitted the first write in its
+  current life) or an owner. Partition keys (`terrain-tile:`) are pieces of
+  one shared surface and follow ordinary rank rules.
+- **Parameters, never code.** A component holds data. Code lives in a blob
+  that a `script:<name>` component names (§8). Nothing writes a component
+  per frame: motion is stored as a function of time (`motion`), evaluated by
+  every reader at its own clock.
 
-- **`light`** `{color?, intensity?, range?, keep?, day?}` *(amendment
-  2026-10-01)* — a point light at the entity's origin, on **any** entity: a
-  model and a light on one entity is a lamp; a light on an Empty is a bare
-  bulb. Fields and defaults are the `light` verb's (§3.1: color `0xffd9a0`,
-  intensity 16, range 10 m, `keep: true` = first claim on a casting slot,
-  `day: false` = burns at noon); a field of the wrong type reads as its
-  default. The light follows the entity's live transform (motion, mounts).
-  A part that needs its own position (a bulb at the top of a lamp) is a child
-  entity, not an offset. The legacy spelling — an entity created by the
-  `light` verb (`kind: "light"` + top-level fields) — stays valid forever and
-  means the same thing; if an entity carries both, `kind: "light"` wins.
-  Writers SHOULD NOT add a `light` component to a `kind: "light"` entity
-  (the reference door refuses it).
-- **`collider`** `{shape: "exact" | "box"}` *(amendment 2026-10-01)* — how
-  bodies collide with the entity: `exact` against its triangles, `box`
-  against its bounding box. Absent, a client decides by size. It overrides
-  the legacy `collide` argument of `spawn` (§3), which stays valid; a shape
-  other than `exact`/`box` is ignored (the legacy value, or size, decides).
-  Client-side meaning only; the fold is blind to it as to every type.
-- **`rotOrder`** `"XYZ" | "XZY" | "YXZ" | "YZX" | "ZXY" | "ZYX" | "quat"`
-  *(amendment 2026-10-01)* — how an editor reads the entity's orientation as
-  Euler channels (Maya's rotateOrder, Blender's rotation mode). Names list
-  the axes in the order they are APPLIED, about the parent's fixed axes:
-  `XYZ` is R = Rz·Ry·Rx (three.js spells it `ZYX`). `quat` = edit the
-  quaternion directly. Absent means `XYZ`; writers SHOULD remove it
-  (`data: null`) rather than write `XYZ`. It never changes the entity's
-  orientation (`q`/`yaw`, §9.1) — only how it reads. Part of the entity's
-  Transform, carried by `comp` so it folds blind on every client; the
-  reference door refuses any other value.
+### 4.1 Blueprints
 
-- **`blueprint`** `{hash, name}` *(amendment 2026-10-02)* — this entity is a
-  **copy** of the blueprint record `hash` (§4.1), whose name was `name` when
-  it was placed. A copy carries its **full expanded components** like any
-  entity, so a reader that knows nothing of blueprints renders it exactly;
-  the link is what lets an editor compute the copy's overrides and offer it a
-  newer version. Removing the link (`data: null`) unlinks the copy; it keeps
-  its components. Each **part** of a copy (a child entity placed from the
-  record's tree) carries `blueprint {part: "<child id>"}` instead — the record's
-  id for that part, so the copy can be read back as the record's tree whatever
-  ids its entities were given, and a newer version's part found again. A value
-  with a `hash` is a link; one with only `part` is a part marker.
-
-Everything else in a bag is somebody's annotation. Preserve it.
-
-### 4.1 Blueprints *(amendment 2026-10-02)*
-
-A **blueprint** is the master design of a thing: an entity's components and
-its children, saved as one immutable record, from which copies are placed.
-
-```jsonc
-{ "kind": "eido.blueprint", "v": 1, "name": "Lamp",       // 1–64 chars
-  "parent"?: "<hash>",            // the version this one was edited from
-  "note"?: "prose",               // ≤ 2000 chars; NOT hashed
-  "root": { "components": [ { "type", "key"?, "params", "wire"?, "extra"? } ],
-            "children": [ { "id": "bulb", "components": [...], "children": [...] } ] } }
-```
-
-- **Components** are instances in the reference component vocabulary
-  (`shared/components.js` `componentsOf`/`entityOf`: `type` names a record,
-  `key` the comp-bag key it is written under, `params` its parameters), so a
-  node expands to the same entity bytes on every implementation. The root
-  holds no placement — its Transform may carry `scale`/`rotOrder`, never
-  `pos`/`q`/`yaw` — and a child's Transform is local to its parent node. No
-  node holds an Attachment (nesting is the attachment), Captions (the
-  `caption` verb writes those), a world record (Sky, Weather, Ground, Grass)
-  or a `blueprint` annotation (nested copies are not v1). Each child has an
-  `id`, unique among its siblings: the handle by which a newer version's part
-  is matched to a copy's. A record has exactly these keys; `children` is
-  always present (empty when there are none), so one design has one encoding.
-- **Hash.** `hash` = lowercase hex SHA-256 of the RFC 8785 (JCS) canonical
-  JSON of the record without its `note` — the hash covers meaning, not prose,
-  as for component records. `name` and `parent` are meaning. A record cannot
-  name itself or an ancestor of itself as parent (that would need a hash
-  fixed point), so lineage has no cycles by construction.
-- **Lineage.** Editing a blueprint publishes a **new** record whose `parent`
-  is the old one's hash; nothing is edited in place.
-- **The store** is `blueprints`, folded from `blueprint` entries and never
-  shrunk: no verb unpublishes, so every record a copy names stays in the
-  world's own log and the world opens offline. The fold checks only the hash
-  (a hand-edited log cannot file a record under another's name).
-- **The door** (reference implementation, `server/verbs.ts`) additionally
-  refuses: a record that is not of the shape above, or larger than 64 KB
-  canonical (any one component over 8 KB, more than 256 parts, nesting deeper
-  than 8, more than 48 components on a part, two components with one
-  type+key on a part); a `hash` that is not the record's (the refusal names
-  the right one); and a version whose `parent` the store does not hold, so
-  every lineage a world keeps is complete. Re-publishing a record the store
-  holds byte for byte is accepted idempotently and logged as a thin
-  `{hash}`; one whose `note` alone differs is logged whole and the store
-  takes the new prose. Publishing is builder rank (§7).
-- **Placing a copy** writes ordinary entries only (the log records results):
-  each part a `spawn` (no `lib` for a part without a Model: an Empty, §3.2),
-  each child a `mount` under its parent's entity with the record's local pose
-  as `offset`/`q`/`yaw`, each other component a `comp`, the root's link and
-  each part's marker last but for `lock`/`guard` (a locked part refuses its own
-  mount). Every component goes out in its component spelling: a record part
-  holding a legacy light (`kind: "light"`, read as a Light with no key) is
-  placed as `comp light` on an Empty, never with the `light` verb, and a legacy
-  `collide` of `exact`/`box` as `comp collider`; reading the copy back compares
-  the two spellings as one component. The reference implementation is
-  `shared/blueprint.js` `placeVerbs` / `copyTree`.
-- **Copies** are entities carrying `comp.blueprint` (§4). A copy's
-  **overrides** are its components minus its version's, fact by fact (a
-  field, a component, a part); updating a copy to a newer version applies
-  *new version ⊕ its overrides* and is **offered, never applied**. An
-  override on a field the update also changed — or a part or component one
-  side removed while the other edited or added to it — is a conflict, and
-  that copy asks instead of guessing (`shared/blueprint.js` `rebase`).
-
-*Versioning.* `blueprint` is a new verb. §10 says a new verb is announced by
-a `genesis` dialect bump in logs that use it — but `genesis` is written once,
-at a world's creation, so no existing world could ever announce it. As with
-`q` (§9.1) this amendment takes no bump and flags it ⚑ for review: a reader
-that predates it keeps the entries (§1) and folds them to nothing, and loses
-nothing it could render, because every copy carries its full components; it
-only cannot list the store or follow updates. Pinned by
-`tools/blueprint-test.ts`; no conformance fixture yet.
+A **blueprint** is a saved entity with its children, published into the
+world's library (`@world.library:<hash>`) by a `publish` request; a
+**copy** is made by `create {from: <hash>}`, which the door expands into an
+explicit batch carrying every component (each part marked with
+`blueprint {from, key}`), so a copy folds with no resolver. An `update`
+request moves a copy to a newer version, keeping its own overrides.
 
 ## 5. Two planes
 
 - **Authored plane**: the log. Low frequency, high value, persisted forever.
-- **Presence plane**: avatar/body poses, emotes, transient gestures, reach
-  descriptors, ~15 Hz, interpolated, lossy, **never persisted**. Anything at
-  frame rate belongs here; writing per-frame transforms into the log is
-  non-conforming. A reach travels as a *declarative relation*
-  (`pose.reach`, shared/reachwire.js) — a target, not solved bones — and
-  every client re-solves it locally with the same closed-form IK; the
-  server relays the bag opaquely. Semantic rig state travels the same way:
-  `pose.wingsFolded` is a boolean intent, never implementation-specific wing
-  quaternions; each renderer applies it through the worn rig's own fold path.
-  The same packet carries a body's size and a person's voice state, each
-  optional, absence meaning the default (or, for voice, *unknown*):
+- **Presence plane**: bodies and whatever a hand is holding or dragging —
+  poses, emotes, transient gestures, reach descriptors — ~15 Hz,
+  interpolated, lossy, **never persisted**. Anything at frame rate belongs
+  here; writing per-frame values into the log is non-conforming. A reach
+  travels as a *declarative relation* (`pose.reach`, shared/reachwire.js) —
+  a target, not solved bones — and every client re-solves it locally with
+  the same closed-form IK; the server relays the bag opaquely. Semantic rig
+  state travels the same way: `pose.wingsFolded` is a boolean intent, never
+  implementation-specific wing quaternions; each renderer applies it
+  through the worn rig's own fold path. The same packet carries a body's
+  size and a person's voice state, each optional, absence meaning the
+  default (or, for voice, *unknown*):
   - `pose.scale` — the wearer's chosen size multiplier for the whole body
     (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
   - `pose.plateY` — metres the nameplate hangs above the body's measured
@@ -298,130 +229,226 @@ only cannot list the store or follow updates. Pinned by
 
   Receivers MUST clamp `scale`/`plateY` to their ranges and read a
   non-number as absent; a non-boolean `mic`/`hear` is absent
-  (shared/presencewire.js holds the clamps; the sequencer's pose fence
-  applies the same ones). `scale`/`plateY` are body state and ride the
-  settled pose a sequencer keeps for late joiners, as `wingsFolded` does;
-  `mic`/`hear` are a live reading re-sent with every packet and are never
-  part of it.
-- **The plane-transition invariant**: anything returning from live motion to
-  rest MUST stamp its absolute pose into the verb that ends the ride
-  (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never
-  depends on reconstructing where a ride was.
-- **Animation leases** extend the presence plane to entities (docs/leases.md):
-  one negotiated holder streams an object's transforms; the arbiter (the
-  body's owner, or the sequencer for entities) commits the resting `place`.
-  The plane-transition invariant is enforced BY the sequencer for entity
-  leases: release, disconnect, and staleness all commit the last transform.
+  (shared/presencewire.js holds the clamps; the server's pose fence applies
+  the same ones). `scale`/`plateY` are body state and ride the settled pose
+  a server keeps for late joiners, as `wingsFolded` does; `mic`/`hear` are
+  a live reading re-sent with every packet and are never part of it. The
+  pose packet's fields are `docs/pose-wire.md`.
+- **Presence touches the log only through checked acts.** Arriving,
+  teleporting, putting something down, letting it go and throwing it are
+  requests the door checks (against its own cheap track of each body: speed,
+  reach, solids) and records. A release with velocity is a launch. Continuous
+  contact from a body or a held thing gives no unlogged impulse. A disconnect
+  settles at the last accepted state.
+- **The plane-transition invariant**: anything returning from live motion
+  to rest stamps its absolute state into the log (a put's transform, a
+  rest caused by its launch). The log never depends on reconstructing where
+  a ride was.
+- **Body consent.** Every body has one table of act classes (near, follow,
+  social touch, intimate touch, pose, shove, move, voice), each set to
+  everyone, ask, or nobody, separately for strangers and friends — the same
+  table for humans and agents. Silence is no. The door refuses before
+  delivery, and the target's own client has the final word. Consent is
+  presence: it is never logged and is not a grant.
 
 ## 6. Actors
 
-- `actor` is the durable attribution ink of the permanent record.
-- Reserved: `world` (the sequencer's own acts), `bhv:<id>` (script effects),
-  `*` (wildcard subject, never an actor). Doors MUST refuse clients claiming
-  these. Control characters in ids are stripped; ids are ≤ 64 chars.
+- `actor` is the attribution ink of the permanent record, stamped by the
+  door from the authenticated connection, **never read from a request's
+  payload**.
+- An actor is an **identity** (§3.1); `door` (the door itself: genesis, its
+  own follow-ups such as sending a released thing home); `sim` (the physics
+  engine's digests); `world`; or `bhv:<entity>` (a script installed on that entity, acting with its
+  sponsor's rights, §8). Doors MUST refuse a client claiming a reserved
+  actor.
+- Display names are a view, kept outside the log. A stranger who takes your
+  old name inherits nothing.
 
-## 7. Authority
+## 7. Authority — the door
 
-Rights ladder per world: `visitor` (say, use, mount **yourself**) <
-`builder` (+ spawn/place/remove/light/comp/motion/behavior/blueprint/cargo-mount) <
-`owner` (+ terrain/grass/sky/weather/grant, and a `behavior` carrying
-`runtime: "client"`, §8). `gen` is an orthogonal spend
-capability (introducing new assets). A world with no owner is open
-(everyone builds); the first embodied joiner of a brand-new world becomes
-its owner. Grants are log entries like everything else. A grant carrying a
-`sub` is worn only by that durable identity; a display name is a nameplate,
-not a deed.
+Every write reaches the log through the world's **door**. A request
+`{tool, args}` — `create`, `set`, `delete`, `place`, `batch`, `use`, `say`,
+`undo`, `publish`, `update`, `grab`, `put`, `throw`, `drop`, `punt`… — is
+first turned into the state writes it would make, whatever word or path
+produced it (a tool, a `use` handler, an undo, a blueprint update, a script,
+a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 
-## 8. Runtime scripts
+- the stamped asker (and, later, the grant it cites);
+- the components the writes change, with old and new values (deleting a
+  component counts as changing it);
+- locks on the thing and its ancestors, and the target body's consent for
+  any act that names a body;
+- where the change lands (bounds, solids, reach);
+- sanity: finite, bounded values, checked against the component's schema
+  (an unknown field is refused with a "did you mean");
+- rate, per actor;
+- the asker's active sanctions (bans, from the moderator log).
 
-`behavior` binds a content-addressed script (`store/scripts/<sha256-16>.js`)
-into the world, in one of two runtimes.
+Tool-specific checks MAY add to `admit`, never replace it. Accepted, the
+door appends the request as an `act` and its result as one `state` entry
+caused by it; a refused write is appended as an act carrying its refusal
+(`{code, reason, teach}`) and nothing else is written (refusals that would
+only flood the log, such as rate limits, are answered without an entry). **Every appended entry passes the gate**,
+acts, says and sim entries included.
 
-- **Server (no `runtime`).** The script runs server-side, sandboxed,
-  budgeted; it affects the world ONLY by emitting ordinary logged verbs,
-  gated by its author's live rights. Script kv persists via `bstate`
-  entries.
-- **Client (`runtime: "client"`).** The binding is an OFFER to visitors'
-  clients, not a resident of the server: a sequencer MUST NOT execute it.
-  Each visitor's client runs it only on that visitor's consent (per script,
-  keyed to its content-addressed `src`, or per world), in that visitor's
-  own context; whatever it does reaches the world as the ordinary verbs and
-  presence that visitor's client sends. Offering one is an owner act (§7).
-  The reference client hosts these as in-page modules with the visitor's
-  full authority (docs/leases.md, "Self-animation"; client/lib/mods.js);
-  `attach`, `caps` and `knobs` have no meaning in this runtime there.
+**Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
+`default-role` for everyone without one (absent: visitor). The reference
+door's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
+between builder and owner where the roles ladder is enabled): changing any
+component of an entity needs builder; changing `@world` needs owner, except
+`library:*` (publishing a blueprint, builder). Removing the last owner is
+refused, and a world with no owner gives nobody more than visitor. **Two
+owner lists, never confused:** governance keys in genesis (§13) decide who
+may sign handoffs; roles decide rights inside the world.
 
-**Replay never re-executes scripts** in either runtime — it folds what they
-emitted (or, for client mods, what the consenting clients sent). (Sandbox
-limits, consent UI and in-page hosting are implementation policy; the log
-semantics above are the protocol.)
+**Locks.** `lock: true` on an entity binds everyone, its locker and owners
+included: no write may move, replace or delete it or anything attached to
+it (its `transform`, `parent` or `model`, or the entity itself). Edits that
+don't relocate it stay open. Anyone who may delete the `lock` component
+(builders and owners) may instead send a request with `through_lock: true`;
+the log records only the edit. A lock binds authoring, not motion.
+
+**Requests are open; results are closed.** Anyone may add a request word —
+a tool, a `use` action, a script command — and no request word grants a
+right. Unknown requests are refused at the door; nothing about them reaches
+the fold.
+
+**Moderation** (kicks, bans and their reasons) lives in a separate
+moderator log written by the same door, never in the world log; a world
+reader never folds it. Only its effects reach the world, through the gate.
+
+## 8. Scripts
+
+A script is a `script:<name>` component: `{src, scope, on, every?,
+always?, knobs?, paused?}`, where `src` names a source blob. It acts with
+its **sponsor's** rights — whoever's rights admitted the latest write to
+that key — re-checked at every activation and never wider than the `scope`
+it declares. The visitor whose `use` triggers it adds no rights. A demoted
+sponsor's scripts go dormant; a banned sponsor's are suspended.
+
+Each activation that changes something is one `act` (actor `bhv:<entity>`,
+naming the source hash, sponsor, trigger, clock and seed) plus one
+all-or-nothing batch through the same `admit`. Every cause chain ends at a
+person. **Replay never re-runs code**: the fold reads the batch. An auditor
+may re-run the source with the recorded event, clock, seed and presence
+reads and compare. The reference API, limits and determinism rules are
+`docs/SCRIPTS-v4.md`.
 
 ## 9. Conventions
 
-Metres. Y-up. Right-handed. `yaw` in radians about +Y, with forward = +Z and
-`yaw = atan2(x, z)` of the facing vector. Transforms position/yaw(+scale),
-quaternions where full rotation is needed — never Euler triples. Colors are
-integers (`0xffd9a0`). Times are epoch milliseconds on the sequencer's
-clock. Entity ids are opaque strings; asset paths are content-addressed
-under `store/` (`<sha256-prefix>.glb`) — a binding pins exact bytes.
+Metres. Y-up. Right-handed. Forward = +Z; a heading `yaw` is the angle about
++Y, `atan2(x, z)` of the facing vector. Colors are integers (`0xffd9a0`).
+Times are epoch milliseconds on the door's clock (`ts`). Entity ids are
+opaque; asset paths are content-addressed under `store/` (`<hash>.glb`) and
+blobs are named `sha256:<64 hex>` — a reference pins exact bytes.
 
-### 9.1 Orientation: `q`, with `yaw` as its friendly subset
+### 9.1 Orientation: `q`
 
-*Amendment (2026-09-26, Hesperus — draft on a workbench branch, not yet
-ratified; no dialect bump, see Versioning below).* An entity's orientation MAY be a full unit quaternion `q:
-[x, y, z, w]` (same layout as the pose wire), for things that are more than
-turned: a crate on its edge, a lamp knocked flat, anything a lease let
-tumble. `yaw` stays exactly what it was — and is the whole vocabulary a
-writer needs for anything upright.
-
-- **Folded state.** An entity folds `q` only when a verb gave it one. When it
-  has a `q`, that is the whole truth, and its `yaw` is always that `q`'s
-  *heading* (atan2 of the rotated +Z, as above; for a thing facing straight
-  up or down, the heading of its rotated +Y, negated when it faces up — the
-  continuous limit). So a yaw-only reader is always right about which way a
-  thing faces, and a log that never says `q` folds exactly as before.
-- **`spawn`** with a usable `q` folds that orientation (normalized); else
-  `yaw` as always.
-- **`place` / `dismount`**: a usable `q` replaces the orientation (and wins
-  over any `yaw` in the same args). A bare `yaw` means *turn it about +Y to
-  that heading*: an upright thing just turns, and a tilted thing turns where
-  it lies, keeping its tilt (`q' = R_y(yaw − heading(q)) ⊗ q`). Only an
-  explicit `q` stands a thing back up. Neither → orientation unchanged.
-- **`mount`**: `q` is the rider's orientation relative to its carrier, like
-  `yaw`. On `remove`, riders' offsets rotate by the carrier's full
-  orientation and their orientation composes (`q_carrier ⊗ q_rel`); a log
-  with no `q` anywhere takes the original yaw arithmetic unchanged.
-- **Usable** = an array of four finite numbers with a nonzero norm; anything
-  else shapes nothing (the §1 totality rule), and a spawn falls back to its
-  `yaw`.
-- **Numerics.** The fold computes headings and yaw-rotations with owned
-  trig (`shared/simmath.js`, PROTOCOL_v2 Covenant I's kernels) — never host
-  `sin/cos/atan2` — so every runtime folds the same bits.
-- **Readers that only speak yaw** (older clients, agent tools) keep working
-  and stay honest about facing; they will show a toppled thing upright.
-- **Versioning.** `q` is an optional argument on existing verbs, not a new
-  verb, so under §10 it takes **no `genesis` bump** — the same footing as
-  `collide` on `spawn` and `keep`/`day` on `light` (each also added without
-  one, and `collide` also made pre-amendment readers see an object
-  differently). Rows carrying `q` are tagged in the table instead. ⚑ for
-  review: a yaw-only reader silently shows a toppled thing standing, and
-  `genesis` alone could never announce this to a world that predates it (it
-  is written once, at creation) — if a marker is wanted, the precedent is
-  PROTOCOL_v2's mid-log `epoch` entry, not a number.
+An entity's orientation is `transform.q`, a unit quaternion `[x, y, z, w]`
+(the same layout as the pose wire), in its parent's frame when it has a
+`parent`. Readers normalize it; a `q` that is not four finite numbers with a
+nonzero norm is read as identity. A thing's **heading** is the yaw of its
+rotated +Z (for a thing facing straight up or down, of its rotated +Y,
+negated when it faces up — the continuous limit), so a reader that only
+speaks yaw is always right about which way a thing faces, though it will
+show a toppled thing upright. Euler channels are a view: an editor's
+rotation order (`XYZ` applies X first) changes how the channels read, never
+the stored `q`. Anything the fold or a physics engine computes from a
+heading uses owned trig (`shared/simmath.js`), never host `sin/cos/atan2`,
+so every runtime gets the same bits.
 
 ## 10. Extending the protocol
 
-The verb set is **closed on purpose**; three lanes are always open:
-state-shaped extensions via `comp` types, event-shaped via `use` actions,
-semantic via uploaded scripts. A new verb is an amendment: rare, deliberate,
-and announced by a `genesis` dialect/version bump in logs that use it.
-Component-type *meanings* (the §4 contracts) grow by documentation in this
-spec, so two implementations that both know `sockets` agree on what it does.
+- **A new feature is a new component** (§4). Register a bare name by
+  documenting it here and in the catalogue; otherwise use your domain
+  prefix.
+- **A new request** (a tool, a `use` action, a script command) is door
+  practice: it changes no old log, and it grants nothing — its writes pass
+  `admit` like everyone's.
+- **The four operations, the envelope, the kinds and the fold are fixed.**
+  Changing them is a new `minor` (or `version`) in genesis; a reader that
+  doesn't know a world's minor refuses the world rather than folding it to
+  a different digest.
 
 ## 11. Conformance
 
-Fold each `fixtures/*/log.jsonl` from empty state; compare your folded
-result with `folded.json` (fields of §2 only; see `fixtures/README.md` for
-the comparison rule). The fixtures are generated by the reference
-implementation — if you disagree with one, one of us has a bug, and the
+`v4/conformance/` holds the suite:
+
+- `EXAMPLE-01.jsonl` folds to status `ok` and digest
+  `80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581`.
+- `logs/` — hostile logs (duplicate keys, `-0`, big integers, surrogates,
+  nested batches, bad names, purges of purges, bad genesis shapes…), each
+  with the status, digest and diagnostic codes a conforming reader gives.
+- `v4read.py` — the reference reader, written from this document;
+  `test_v4read.py` its tests. `chain.py` and `test_chain.py` — the chain,
+  signatures and purge (§12). `ed25519/` — the key vectors (§13).
+
+`bun tools/v4/run.ts conformance` folds every log with the JavaScript fold
+and the Python reader and fails on any difference in status, digest or
+diagnostics. If you disagree with a result, one of us has a bug, and the
 argument will be short.
+
+## 12. The chain, signatures and purge
+
+- **The chain.** `head(-1)` = 32 zero bytes; `head(i)` = sha256(`head(i-1)`
+  ‖ sha256(UTF-8(JCS(skeleton(i))))). The **skeleton** is the entry without
+  `head`/`sig`, where each set op's `value` + `salt` becomes `commit` = hex
+  sha256(UTF-8(salt) ‖ UTF-8(JCS(value))), and an `act`/`say`/`sim` body
+  becomes `{commit}`, with commit = hex sha256(UTF-8(body.salt) ‖
+  UTF-8(JCS(body without salt))). In a chained log every `set` carries a
+  `salt` (base64url, ≥ 16 random bytes). The fold ignores `salt` and
+  `commit`.
+- **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
+  Ed25519 over UTF-8 `"eidoverse-v4-head:<world id>:<seq>:<head hex>"`, by
+  the sequencer key named in genesis (or the latest handoff). The door signs
+  at least every write it commits. A client SHOULD remember the last `(seq,
+  head)` it saw for each world and check that the log extends it on its next
+  visit: that is what catches a sequencer rewriting its own history. Two
+  signed heads for one seq are published evidence.
+- **Purge** (`kind: "purge"`, `body {values: [{seq, op?}, …]}`) is the one
+  rule that changes the record. Each target folds as *absent(purged)* at
+  every point in time — a defined value, distinct from deleted — and a
+  later `set` of the same component replaces it normally. Purgeable: a
+  `set`'s value (the id, component name and position never are, so the fold
+  can still say what was purged), and the whole body of an `act`, `say` or
+  `sim` entry. A purge rewrites the stored line, replacing `value` + `salt`
+  with `commit`; the skeleton is unchanged, so every head still verifies
+  and the bytes are gone. A purge of a purge, a target at or after the
+  purge's own seq, a target that isn't a value, and a `roles:` value
+  (governance is reversed by acts, never erased) are each diagnosed and
+  ignored. Blobs are purged by deleting their bytes; since the fold never
+  reads bytes, the world doesn't change.
+
+## 13. Genesis and governance
+
+- **Genesis** (seq 0, `kind: "genesis"`, actor `door`, verb `genesis`):
+  `body {version: 4, minor: 0, nonce, owners: [[<key>…], …], sequencer,
+  quorum?, rewind_window?, parent?}`. Exactly those fields within a known
+  minor. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
+  worlds founded with the same keys must not share an id). `owners` are rank
+  tiers of keys, tier 0 highest; `quorum` optionally gives each tier's
+  threshold; `parent {world, seq, head}` names the world a fork came from.
+  Genesis seeds no state: the founding act then writes `@world` through the
+  gate. A missing or malformed genesis means "no world"; a `version` or
+  `minor` the reader doesn't implement means "unknown version" and no world.
+- **Keys** are `ed25519:<base64url of 32 bytes>`. Registration refuses a key
+  that is small-order in any sign-bit encoding or has y ≥ p; verification
+  is cofactorless with canonical S and R (the `ed25519/` vectors).
+- **Governance** (`kind: "sequencer"`) moves the writer role, signed by the
+  outgoing sequencer or by a quorum of an owner tier. A higher tier may
+  **reclaim** a world from the head onward, or **rewind** a lower-ranked
+  branch (kept as a record, never folded) while that branch is shorter than
+  `rewind_window` state entries (default 1000); beyond that a rewind needs
+  every tier-0 key. An empty tier can never act. Moving a world and forking
+  it are different: a fork is a new genesis naming its parent. Nothing is
+  atomic across worlds.
+
+## 14. Worlds from the first protocol
+
+The first protocol (an untyped verb log) is retired. An old world's log can
+be translated once, one way, into a new v4 world
+(`bun tools/v4/world.ts translate <old> <new>`); the old log is read, never
+written. Each old entry appears in the new log as an `act` with verb
+`legacy` (`body {verb, args, from}`) or as a `say`, followed by the state it
+produced; fields with no v4 component ride along as `legacy:<name>`. A
+translated world is an ordinary v4 world from then on.

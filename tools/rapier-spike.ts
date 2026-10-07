@@ -1,4 +1,4 @@
-// Rapier spike — stage 0 of the real-solver body tier (docs/leases.md).
+// Rapier spike — stage 0 of the real-solver body tier.
 //
 // Question, falsifiable: does an articulated Rapier ragdoll built from OUR
 // fleet rig data beat the shipped Verlet on our own metrics? Same rig, same

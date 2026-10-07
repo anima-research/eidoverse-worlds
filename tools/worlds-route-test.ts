@@ -14,6 +14,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { foundWorlds } from "./harness.ts";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -40,11 +41,12 @@ async function freePort(): Promise<number> {
 
 const worldsDir = mkdtempSync(join(tmpdir(), "worlds-route-"));
 // on disk: two real worlds, one dir with no log (never a world), one junk name
-for (const n of ["commons", "annex"]) {
-  mkdirSync(join(worldsDir, n), { recursive: true });
-  writeFileSync(join(worldsDir, n, "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
-}
+foundWorlds(worldsDir, ["commons", "annex"]);   // two v4 worlds (a v4.jsonl whose line 0 is a v4 genesis)
 mkdirSync(join(worldsDir, "logless"), { recursive: true });
+// an OLD world: a v1 log and no v4 one. The server serves only v4, so it isn't listed (it's translated once by the
+// operator into a new v4 world: bun tools/v4/world.ts translate)
+mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
+writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
 mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });
 
 async function spawnServer(): Promise<{ port: number }> {
@@ -53,7 +55,7 @@ async function spawnServer(): Promise<{ port: number }> {
   const noncePath = join(REPO, "client", `${nonce}.txt`);
   writeFileSync(noncePath, nonce); nonces.push(noncePath);
   const child = spawn(process.execPath, [join(REPO, "server", "server.ts")], {
-    env: { HOME: process.env.HOME, PATH: process.env.PATH, PORT: String(port), WORLDS_DIR: worldsDir },
+    env: { HOME: process.env.HOME, PATH: process.env.PATH, PORT: String(port), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1" },
     stdio: "ignore",
   });
   children.push(child);
@@ -78,7 +80,7 @@ function joinBody(port: number, world: string, id: string, extra: Record<string,
   return new Promise((res, rej) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const t = setTimeout(() => rej(new Error(`join ${id}@${world} timed out`)), 8000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", ...extra }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true, ...extra }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") { clearTimeout(t); res(ws); }
@@ -96,6 +98,7 @@ console.log("\n— A. on-disk worlds —");
   check("content-type json, no-store", res.headers.get("content-type")?.includes("json") === true && res.headers.get("cache-control") === "no-store");
   check("both logged worlds listed", names.includes("commons") && names.includes("annex"), names.join(","));
   check("a dir with no log is not a world", !names.includes("logless"), names.join(","));
+  check("a dir with only an old v1 log is not a world here", !names.includes("oldv1"), names.join(","));
   check("dot-dirs are not worlds", !names.some((n) => n.startsWith(".")), names.join(","));
   check("sorted by name", JSON.stringify(names) === JSON.stringify([...names].sort()), names.join(","));
   check("unloaded on-disk world says so, empty", rows.every((r) => r.loaded === false && r.people.length === 0 && r.agents.length === 0), JSON.stringify(rows));
@@ -118,16 +121,15 @@ console.log("\n— B. presence —");
   check("leaving empties the row (still loaded)", after.annex?.loaded === true && after.annex?.people.length === 0 && after.annex?.agents.length === 0, JSON.stringify(after.annex));
 }
 
-console.log("\n— C. loaded-only worlds list; D. the map never founds —");
+console.log("\n— C. a join never founds; D. the map never founds —");
 {
-  // join founds "fresh" in memory; its log lands on first append/flush —
-  // the route must list it from the registry regardless
-  const w = await joinBody(port, "fresh", "founder");
+  // joining a world nobody founded is refused (security review 10-06 H3): nothing loads, nothing lands on disk
+  const before = readdirSync(worldsDir).sort();
+  const refused = await joinBody(port, "fresh", "founder").then(() => null, (e) => String(e.message));
   await new Promise((r) => setTimeout(r, 200));
   const m = byName((await fetchWorlds(port)).rows);
-  check("a world that exists only as loaded state is listed", m.fresh?.loaded === true, Object.keys(m).join(","));
-  w.close();
-  const before = readdirSync(worldsDir).sort();
+  check("a join to a world that doesn't exist is refused, and says so", /no world called "fresh"/.test(refused ?? ""), String(refused));
+  check("…and founds nothing: not listed, nothing on disk", !m.fresh && JSON.stringify(readdirSync(worldsDir).sort()) === JSON.stringify(before), Object.keys(m).join(","));
   await fetch(`http://127.0.0.1:${port}/worlds?world=never-made`);
   await fetch(`http://127.0.0.1:${port}/worlds`);
   const afterDirs = readdirSync(worldsDir).sort();

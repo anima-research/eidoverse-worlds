@@ -124,10 +124,10 @@ const levelP = listener.evaluate(async () => {
   }
   return level;
 });
-// the SAY goes through the production door: the world verb, not a test hook
+// the SAY goes through the production door: the client's own say (a door say request), not a test hook
 await speaker.evaluate(async () => {
   const net = await import('/lib/net.js');
-  net.sendVerb('say', { text: 'Acceptance: this voice is synthesized locally and carried on the human speech lane.' });
+  net.say('Acceptance: this voice is synthesized locally and carried on the human speech lane.');
 });
 await new Promise(r => setTimeout(r, 9000));   // synth (first utterance warms phonemizer) + travel
 const sTx = await speaker.evaluate(async () => {

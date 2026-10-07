@@ -61,7 +61,6 @@ export const heightAt = () => 0;
 // THE ONE THAT MATTERS: the gate reads net.myRights. Left undeclared, exactly
 // as the real net.js leaves it before a snapshot.
 export const net = {};
-export const sendVerb = () => {};
 export const sendDrag = () => {};
 
 export const myState = { pos: [0, 0, 0], yaw: 0 };

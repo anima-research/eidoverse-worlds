@@ -2,7 +2,7 @@ import {WorldAgent} from '../mcpl/agent.ts';
 import {handleTool} from '../mcpl/tools.ts';
 import {scratchSequencer,mkCheck} from './harness.ts';
 const {check,tally}=mkCheck();
-const h=await scratchSequencer('walk-precision',{portFrom:9380,serverEnv:{SKIP_OPT_SWEEP:'1'}});
+const h=await scratchSequencer('walk-precision',{worlds:['precision'],portFrom:9380,serverEnv:{SKIP_OPT_SWEEP:'1'}});
 const a=new WorldAgent({url:h.BASE.replace('http','ws')+'/ws',world:'precision',name:'precision-owner'});
 const b=new WorldAgent({url:h.BASE.replace('http','ws')+'/ws',world:'precision',name:'precision-observer'});
 const ctx={agent:a,canPush:()=>false,heldActivity:[],cursor:{caughtUpTo:null}};

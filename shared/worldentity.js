@@ -197,7 +197,7 @@ export function worldSchema(st, live = {}) {
     { t: 'enum', k: 'state', label: 'weather', value: eff?.weather ?? 'clear', def: 'clear', options: WEATHERS.map((v) => ({ v, label: v })), ...ro,
       ...(f && !ro.hint ? { hint: 'a forecast governs: a pick holds until the next segment boundary, then the forecast resumes' } : {}) },
     { t: 'info', label: 'now', value: eff ? `${eff.weather ?? 'clear'} — ${eff.source === 'forecast' ? 'the forecast\'s' : eff.source === 'manual' ? `set by ${eff.by ?? '?'} until the next segment` : 'authored'}` : 'clear — no sky authored yet' },
-    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the sky verb's forecast (world_verb sky)` }] : []),
+    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the door's sky tool (its forecast)` }] : []),
   ];
   groups.push({ group: 'weather', label: 'Weather', fields: wxFields });
 

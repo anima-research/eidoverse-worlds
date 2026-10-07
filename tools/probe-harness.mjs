@@ -18,7 +18,7 @@
 //    deployment stays possible but explicit: pass its origin, and identity
 //    checks are skipped because the deployment is not our child.
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -88,7 +88,10 @@ function armSignals() {
   process.once('uncaughtException', onThrow); process.once('unhandledRejection', onThrow);
 }
 
-export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {
+// `worlds`: the v4 worlds founded in the scratch WORLDS_DIR before boot. The server never founds a world on join (a
+// name with no world behind it is refused, security review 10-06 H3), so a probe's page reaching ?world=<name> needs
+// that world founded first; staging and commons (the client's default) always are. `owner` founds them.
+export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {}, worlds = [], owner = 'owner' } = {}) {
   if (live) return { origin: live, key, owned: false, close: async () => {} };
   // Wide range: with a narrow one, two concurrent runs collide ~1/15 and the
   // loser's readiness poll can reach the WINNER's just-started server, which
@@ -102,6 +105,10 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   // Windows PATH shims); BUN_PATH overrides for other layouts.
   const BUN = process.execPath.includes('bun') ? process.execPath
     : (process.env.BUN_PATH || '/home/claude/.bun/bin/bun');
+  for (const name of new Set(['staging', 'commons', ...worlds])) {
+    const r = spawnSync(BUN, ['tools/v4/world.ts', 'found', name, '--owner', owner], { env: { ...process.env, WORLDS_DIR: scratch, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8' });
+    if (r.status !== 0) { try { rmSync(scratch, { recursive: true, force: true }); } catch {} throw new Error(`ownedWorld: founding "${name}" failed: ${r.stdout}${r.stderr}`); }
+  }
   const srv = spawn(BUN, ['server/server.ts'], {
     // SKIP_OPT_SWEEP by default: a probe server shares the checkout's OPT_DIR (assets/opt) — its boot sweeps would
     // build variants INTO the directory a live world serves from, mid-session (09-24 22:40: a lowered LOD floor had

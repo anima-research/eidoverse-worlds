@@ -19,15 +19,16 @@
 //                 transform — the thing glues where it stands, never jumps
 //                 (the shared parenting edit: shared/hierarchy.js).
 //
-//   📜 scripts  the behavior runtime made visible: every bound script with
-//               its status (running / paused-with-reason), what it's attached
-//               to, its timers — and, selected, its live console (the ring
-//               world.log() writes to), polled while you watch. This is the
+//   📜 scripts  the world's scripts made visible (the door's status view):
+//               every script:<name> with its status (active / asleep /
+//               dormant / paused, and why), what it's on, its timers — and,
+//               selected, its last activations (what world.log() wrote),
+//               polled while you watch. This is the
 //               debug UI for the scripting tier; agents get the same data via
 //               world_debug, this is the human window onto it.
 //
-// Everything here READS client state and EMITS verbs — no private channel,
-// no authority. The server enforces rights; buttons just try.
+// Everything here READS client state and SENDS door requests — no private
+// channel, no authority. The door enforces rights; buttons just try.
 
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
@@ -342,10 +343,10 @@ async function refreshRoster() {
 async function paintScripts() {
   if (!scriptsBody) return;
   const rows = behaviorRows.map((b) => {
-    const ok = b.status === 'running';
+    const ok = b.status === 'active' || b.status === 'asleep';
     return `<div class="who-row sg-bhv" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
       <span class="n">${ok ? '▶' : '⏸'} <b>${esc(b.id)}</b>${b.attach ? ` <span style="color:var(--dim)">on ${esc(b.attach)}</span>` : ''}</span>
-      <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : 'paused'}</span></div>`;
+      <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : esc(b.status ?? 'paused')}</span></div>`;
   });
 
   let consoleHtml = '';
@@ -354,20 +355,21 @@ async function paintScripts() {
     const lines = (d.events ?? []).map((e) =>
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(watching)}</b> — <span style="color:${d.status === 'running' ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
+      <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
       <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — world.log() writes here)'}</pre>
       <div style="display:flex;gap:6px">
-        <button data-act="unbind">unbind</button>
+        <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts bound here — see AGENTS.md §runtime scripts</div>'}</div>${consoleHtml}
+  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-v4.md)</div>'}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
   for (const el of scriptsBody.querySelectorAll('.sg-bhv')) {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
-    sendOps([OP.unset('@world', `behavior:${watching}`)], { what: `unbind ${watching}`, expect: false });
+    const w = String(watching); const i = w.indexOf('/');
+    sendOps(w.startsWith('behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);
   });

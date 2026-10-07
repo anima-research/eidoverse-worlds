@@ -68,7 +68,8 @@ const store = new Map<string, string>();
 const stub: any = await import('./lod-client-stub.mjs');
 const M: any = await import('../client/lib/realize/models.js');
 const S: any = await import('../client/lib/state.js');
-const { emptyState } = await import('../shared/fold.js');
+const { scratchWorld } = await import('./v4/scratchdoor.ts');
+const { emptyView } = await import('../shared/v4/record.js');
 const { bus } = await import('../client/lib/base.js');
 const { makeModelQuality, askFor, tierOf } = await import('../client/lib/lod_policy.js');
 const { keyFromVersion, lodFromVersion, negotiate, withLod } = await import('../shared/ktx2.js');
@@ -96,14 +97,15 @@ const REC = stub.server.recipe as string;
 const enc = encodeURIComponent(REC);
 const lib = (id: string) => `eidoverse/assets/models/${id}.glb`;
 const GEOM = { bbox: { size: [1, 1, 1], center: [0, 0.5, 0] } };   // diag 1.73 → R ≈ 86.9m, auto edge ≈ 39m, halved ≈ 19.5m
-let seq = 1;
-const fold = (verb: string, args: any) => S.foldLive({ seq: seq++, ts: 1_000_000 + seq, actor: 't', verb, args });
+// the world: a scratch v4 door; the realizer is fed the views a v4 client's own fold reaches after each write
+const W = scratchWorld('lodclient');
+const door = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
 /** Place an entity on the z axis, `z` metres from the camera at the origin.
  *  Each id has its own lib, so loads and variants attribute per placement. */
 const spawnAt = (id: string, z: number, variant = true) => {
   if (variant) stub.server.variants.add(lib(id));
   bus.emit('lib-geom', { [lib(id)]: GEOM });   // the geom side-channel, landed
-  fold('spawn', { id, lib: lib(id), pos: [0, 0, z] });
+  door('create', { id, model: lib(id), components: { transform: { pos: [0, 0, z] } } });
 };
 const obj = (id: string) => stub.entities.get(id);
 const loadsOf = (id: string) => stub.loads.filter((l: any) => l.lib === lib(id));
@@ -111,7 +113,7 @@ const drain = () => { for (let i = 0; i < 50 && M.promoteTailPending() > 0; i++)
 const res = () => M.residencyDebug();
 
 M.initModelsRealizer();          // geom side-channel + fold wiring (+ a 2Hz beat we ignore: we beat by hand)
-S.hydrate(emptyState(), [], 0);
+S.hydrate(emptyView());
 stub.camera.position.set(0, 0, 0);
 
 // ---- 1. the join: tiers chosen before the fetch, from distance against the entity's own radius
@@ -201,7 +203,7 @@ async function heldSwap(id: string, dep: null | ((id: string) => void)) {
   const mark = stub.colliderLog.length;
   const refusedBefore = res().retiersRefused, retiersBefore = res().retiers;
   stub.setHold(true);
-  fold('place', { id, pos: [0, 0, 10] });   // walked toward: 10m < the inner edge (29m) → the sweep wants full
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true });   // walked toward: 10m < the inner edge (29m) → the sweep wants full
   M.residencySweep(); await settle();
   const h = stub.held.find((x: any) => x.lib === lib(id));
   // per-placement: other placements may legitimately re-tier in the same beat (a browser that
@@ -226,8 +228,8 @@ const sinceMark = (mark: number, id: string) => stub.colliderLog.slice(mark).fil
 }
 const deps: [string, (id: string) => void][] = [
   ['a body sits on it (avatarMounts)', (id) => stub.avatarMounts.set(`rider-of-${id}`, { to: id })],
-  ['cargo mounts on it (a `mount` verb folds parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); fold('mount', { id: `cargo-${id}`, to: id }); }],
-  ['a part motion arrives (comp.motion.part)', (id) => fold('motion', { id, type: 'swing', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 })],
+  ['cargo is parented to it (parent.to)', (id) => { spawnAt(`cargo-${id}`, 10); door('set', { id: `cargo-${id}`, component: 'parent', value: { to: id } }); }],
+  ['a part motion arrives (comp.motion.part)', (id) => door('set', { id, component: 'motion', value: { type: 'pendulum', part: 'Door', axis: [0, 1, 0], amp: 0.3, period: 2 } })],   // a swinging door is a pendulum on v4
   ['an edit hold begins (editHolds)', (id) => stub.editHolds.add(id)],
 ];
 let k = 0;

@@ -15,21 +15,15 @@ import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR,
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isOperator } from "./v4/operators.ts";
-import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal, bodyRefusal } from "./rights.ts";
 import { resolveLibFile } from "./libfile.ts";
-// The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
-// linters, reactions, and the behavior cap itself; server.ts keeps only what
-// the presence plane and HTTP surface still touch directly.
-import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
-// The world itself — WorldLog + WorldSession behind the unsplit facade, with
-// the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
-// worlds with the server is boot policy, not world mechanics.
+// The world itself (a v4 log + the embodied plane) and the registry. The boot
+// sweep below stays HERE: waking scripted worlds with the server is boot
+// policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireV4 } from "./world.ts";
 import { isV4World } from "./v4/world.ts";
 import { v4Handler, actorOf as v4ActorOf } from "./v4/messages.ts";
 import { directoryFor, foldName } from "./v4/directory.ts";
-import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingSnaps for the renderer's snap-result replies.
@@ -37,12 +31,7 @@ import { route, avatarRoster } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
-import { onEntryCommitted } from "./events.ts";
 import { defsFingerprint } from "./defs.ts";
-import { advanceSim, tickOf } from "../shared/sim.js";
-// The reference fold lives in shared/ (house rule 1 by construction; the
-// world folds with it in world.ts) — what remains here is the role ladder.
-import { ROLE_RANK } from "../shared/fold.js";
 // Seat profiles (#101, upstream; write-half ported §24r): the store, its
 // external-change poll, the verdict lane on /avatars and the POST
 // /seat-profile proposal door are all wired — routes.ts owns the HTTP half,
@@ -111,32 +100,6 @@ function retireRelayLeg(w: World, id: string) {
   }
 }
 
-// Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
-// rights (revoke the grant, the behavior loses its teeth) through the same
-// table as everyone else. The store path is where `?as=script` uploads land.
-// OPT_DIR, not ROOT/assets/opt: the two coincide by default, but a sequencer
-// launched with OPT_DIR elsewhere (the probe harness, a scratch box, a
-// production overlay) uploaded scripts into OPT_DIR/store/scripts and then
-// looked for them here — "script file missing" on every bind. (Same line as
-// #192; whichever lands second merges clean.)
-wireBehaviorStore(OPT_DIR);
-wireBehaviorGate((w, author, verb, args, authorSub) => {
-  const needs = VERB_NEEDS[verb];
-  if (!needs) return `verb not allowed: ${verb}`;
-  // a script seats or unseats only its author's own body, like a hand
-  const bodyWhy = bodyRefusal((w as unknown as World).state, { id: author }, verb, args);
-  if (bodyWhy) return bodyWhy;
-  const rights = rightsOf((w as unknown as World).state, author, authorSub);
-  if ((ROLE_RANK[rights.role] ?? -1) < needs.rank || (needs.gen && !rights.gen)) {   // an unknown role (`none`) is no rights
-    return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
-  }
-  // a guarded thing refuses scripts by their AUTHOR's standing, and a locked
-  // thing refuses them by the same rule as hands (a behavior nudging a
-  // nailed-down bench is still an accident vector)
-  const st = (w as unknown as World).state;
-  return guardRefusal(st, { id: author, ...(authorSub ? { sub: authorSub } : {}), role: rights.role }, verb, args) ?? lockRefusal(st, verb, args);
-});
-
 /** A pose as it should be handed to SOMEONE ELSE — the settled result rather
  *  than whatever frame the body happened to be in.
  *
@@ -164,20 +127,10 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // both planes. world.ts takes it by injection because the source-text gates
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
-// v4 worlds (server/v4/): a role change re-sends everyone's rights, as afterGrant does for v1.
+// A role change re-sends everyone's rights.
 wireV4(
-  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } } },
 );
-
-// The entry bus's boot-time subscribers (§24, events.ts): every committed
-// entry reaches these, uniformly, in this order — the wire's seq stream
-// first, then the scripts. Future systems (seats, recorders, the sim core)
-// subscribe here instead of teaching another append site to fan out.
-onEntryCommitted("client-fanout", (w, entry) => {
-  // a v4 world commits no v1 entries (its clients fold the `v4-log` stream); v1 worlds broadcast exactly as before
-  if (!w.v4) w.broadcast({ type: "log", entry });
-});
-onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
 
 // ------------------------------------------------------------------ presence
 
@@ -233,14 +186,14 @@ function expel(w: World, target: Client, why: string) {
   // handler's copy could never fire and the legs died silently
   retireAuxLeg(w, target);
   if (wasEmbodied) reapAuxLegs(w, target, "primary removed by moderation");
-  if (wasEmbodied && target.lastPose) w.rememberPose(target.id, target.lastPose); // they may be back
+  if (wasEmbodied && target.lastPose && target.v4id && !target.anonymous) w.rememberPose(target.v4id, target.lastPose); // they may be back (remembered by identity, never by name)
   target.superseded = true;   // the close path must not double-handle this body
   w.clients.delete(target);
   clients.delete(target.ws);
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
   if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id, target.v4id); }
-  if (wasEmbodied && target.v4id) w.v4?.departed(target.v4id); // what they held drops into the world (design 20, orphans)
+  if (wasEmbodied && target.v4id) w.v4.departed(target.v4id); // what they held drops into the world (design 20, orphans)
 }
 
 // Operator-log census: people are people, eyes are eyes.
@@ -274,18 +227,6 @@ registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   }
 } });
 
-// The sim heartbeat (PROTOCOL_v2 §5): advance every epoch world's sim fold
-// to the tick "now" quantizes to. Advancement is schedule-independent, so
-// this cadence is presentation-freshness policy, not physics — a slower
-// beat computes the same states later, never different ones.
-registerSystem({ name: "sim", everyMs: 250, fn: (now) => {
-  for (const w of worlds.values()) {
-    try {
-      if (w.sim.epoch && !w.sim.epoch.foreign) advanceSim(w.sim, tickOf(w.sim, now));
-    } catch (err) { console.error(`[world:${w.name}] sim advance`, err); }
-  }
-} });
-
 // Def hot-reload (charter §3): a def edited on disk reaches every LIVE
 // client — the watch fingerprints defs/ once a second and pushes one
 // `defs-updated` when it moves; clients re-fetch /defs and regrow what the
@@ -304,33 +245,19 @@ registerSystem({ name: "defs-watch", everyMs: 1000, fn: () => {
 
 // Boot sweep: worlds load lazily on first touch, but a world with scripts
 // must wake WITH the server, not with its first visitor — otherwise a
-// restart leaves every lighthouse dark until someone happens to sail past.
-// Cheap peek before paying for a real load: the snapshot names its
-// behaviors; a world with no snapshot yet gets a byte-scan of its log for
-// the verb. (A world whose behaviors were all since removed may load once
-// for nothing — harmless, and it folds a fresh snapshot on shutdown.)
+// restart leaves every timer dark until someone happens to sail past. Cheap
+// peek before paying for a real load: a byte-scan of the log for a script
+// component. (A world whose scripts were all since removed may load once for
+// nothing — harmless.)
 try {
   let woken = 0;
   for (const name of readdirSync(WORLDS_DIR)) {
     try {
-      if (!/^[a-z0-9_-]{1,64}$/i.test(name)) continue;
-      const dir = join(WORLDS_DIR, name);
-      if (!existsSync(join(dir, "log.jsonl"))) continue;
-      let hasScripts = false;
-      const snapPath = join(dir, "snapshot.json");
-      if (existsSync(snapPath)) {
-        try {
-          const snap = JSON.parse(readFileSync(snapPath, "utf8"));
-          hasScripts = Object.keys(snap?.state?.behaviors ?? {}).length > 0;
-        } catch { /* corrupt snapshot: fall through to the log scan */ }
-      }
-      if (!hasScripts && readFileSync(join(dir, "log.jsonl"), "utf8").includes('"verb":"behavior"')) {
-        hasScripts = true;
-      }
-      if (hasScripts) { getWorld(name); woken++; }
+      if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !isV4World(name)) continue;
+      if (readFileSync(join(WORLDS_DIR, name, "v4.jsonl"), "utf8").includes('"script:')) { getWorld(name); woken++; }
     } catch (err) { console.error(`[boot] world ${name} peek failed`, err); }
   }
-  if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their behaviors run without visitors`);
+  if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their scripts run without visitors`);
 } catch (err) { console.error("[boot] world sweep failed", err); }
 
 /** Whispers waiting for someone who wasn't here. Memory only, deliberately:
@@ -402,7 +329,12 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
     // world behind it is refused, and only a v4 world is served (the old protocol has no runtime here: an old log is
     // translated once, by the operator, into a new v4 world).
-    if (!worldExists(wname) || !isV4World(wname)) {
+    if (worldExists(wname) && !isV4World(wname)) {   // a world saved in the old format: it is translated once, by the operator
+      ws.send(JSON.stringify({ type: "error", error: `"${wname}" is saved in an old format this server no longer opens — its operator translates it once (bun tools/v4/world.ts translate)` }));
+      c.ws.close?.(4005, "old-format world");
+      return null;
+    }
+    if (!worldExists(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" here — check the link that brought you here` }));
       c.ws.close?.(4005, "no such world");
       return null;
@@ -645,11 +577,6 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
-    // eidosim@0.3.0: know the world's standing geometry before anyone spawns
-    // or epochs into it (boxes.ts — the sync validators read a warm cache).
-    // AFTER admission, never before: a rejected or invalid join must not
-    // trigger a whole-world GLB parse (PR #160 review, B1); bounded inside.
-    void warmBoxes(worldLibs(w.state));
     // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
     // the lab found a listener bound to a dead voice leg until page
     // reload. This event is the no-reload path: "retire the old peer,
@@ -668,23 +595,28 @@ function installJoin(c: Client, w: World) {
     // (a world's owner is named when it is FOUNDED — tools/v4/world.ts found, or the translator — never by being first in)
 }
 
-/** What a client is told it may do. A v4 world's role is the door's (slice 3b: v1's default for a stranger in an owned
- *  world is builder, the door's is visitor; telling a v4 visitor "builder" opened edit mode for writes the door refuses). */
+/** What a client is told it may do: the role the door gives it (the door admits every write), and the body and spend
+ *  switches its role record carries (@world roles:<id>, else the world's default-role; a guest never wears the
+ *  default). `open` = the world has no owner. */
 function rightsFor(w: World, c: Client) {
-  const r = rightsOf(w.state, c.id, c.sub);
-  return w.v4 ? { ...r, role: w.v4.roleOf(v4ActorOf(c)) } : r;
+  const me = c.v4id ?? null;
+  const role = me ? w.v4.roleOf(me) : "visitor";
+  const wc = (w.v4.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
+  const rec = (me ? wc[`roles:${me}`] : null) ?? (c.anonymous ? null : wc["default-role"]) ?? {};
+  const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && v?.role === "owner");
+  // an operator (WORLD_ADMIN, by account) flies and spends everywhere, as before; for everyone else flight is the role
+  // record's (the roles branch makes it a switch)
+  const op = isOperator(c.account);
+  return { role, gen: op || role === "owner" || rec.gen === true, fly: op || rec.fly === true, open };
 }
 
 function buildSnapshot(w: World, c: Client) {
-    // snapshot = full log replay (folding comes later) + who's present now
-    const jp = w.joinPayload();
+    // snapshot = the door's cut of the world (the joiner folds it, then the v4-log stream) + who's present now
     return {
       type: "snapshot",
       world: w.name,
       you: c.id,
-      // your durable subject, when the door vouched for one — the principal
-      // guarded things are matched against (rights.ts isPlacer), so the browser
-      // can grey out what it may not author without re-deriving it from names
+      // your durable subject, when the door vouched for one
       ...(c.sub ? { yourSub: c.sub } : {}),
       gen: c.gen,   // your surfaceSession — echo it in attestations
       // your OWN live aux legs — people[] excludes self, and a page that
@@ -694,27 +626,20 @@ function buildSnapshot(w: World, c: Client) {
         .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
         .map(x => ({ surface: x.surface, gen: x.gen })),
       recording: RECORD,
-      // a v4 world says so (agents route their tools through {type: "v4"} requests; slice 2)
-      ...(w.v4 ? { v4: { ...w.v4.info(), ...(c.v4fold ? w.v4.clientCut(v4ActorOf(c)) : {}) } } : {}),
-      // The world as it is, then only what has happened since. A joiner's
-      // cost is now the size of the WORLD, not the length of its history.
-      // a client that folds v4 draws the view of ITS OWN fold of the cut above, and reads only the chat window here
-      // (client/lib/net.js onSnapshot, mcpl/agent.ts): the whole v1-shaped view rode along unread, 47 of the Commons'
-      // 71 KB (Commons audit #8)
-      state: w.v4 && c.v4fold ? { recentChat: (jp.state as any).recentChat ?? [], chatTotal: (jp.state as any).chatTotal ?? 0 } : jp.state,
-      throughSeq: jp.throughSeq,
-      entries: jp.tail,
-      // dialect 3: the sim fold's cut, adopted by the joiner (absent
-      // pre-epoch — see joinPayload)
-      ...("sim" in jp ? { sim: (jp as { sim?: unknown }).sim } : {}),
+      // the world: the door's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
+      // advances with the `v4-log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
+      v4: { ...w.v4.info(), ...w.v4.clientCut(v4ActorOf(c)) },
+      // chat isn't world state: the window of recent lines, how many came before it, and the chat cursor (v4seq × 1000)
+      // a history page continues from
+      state: { recentChat: w.state.recentChat ?? [], chatTotal: w.state.chatTotal ?? 0 },
+      throughSeq: w.v4.snapSeq,
       // the body roster rides along — a joiner resolves names with no
       // extra round-trip (bbox geometry follows as its own message)
       avatars: avatarRoster(),
-      // what YOU may do here, as of now (live grants update it client-side).
-      // `open` = no owner exists, so rights are the everyone-builds default.
-      yourRights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) },
+      // what YOU may do here, as of now (a role change re-sends it: your-rights)
+      yourRights: rightsFor(w, c),
       // wake where you fell asleep — the world's memory of your body
-      restore: c.spectator ? null : (w.poses[c.id] ?? null),
+      restore: c.spectator || !c.v4id ? null : (w.poses[c.v4id] ?? null),   // by identity: a name is anyone's to wear
       present: [...w.clients].filter(o => o !== c && !o.spectator).map(o => ({
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
@@ -742,15 +667,16 @@ const server = Bun.serve({
     return route(req, srv);
   },
   websocket: {
+    maxPayloadLength: LIMITS.WS_MESSAGE_BYTES,
     // House rule 3 applies to EVERY ws callback, not just message: an
     // uncaught throw out of open/close exits the process the same way (the
-    // 4f82250 crash loop), and close reaches disk (settleLease → append,
+    // 4f82250 crash loop), and close reaches disk (a departure's drop → the door,
     // rememberPose → write+rename) — an EIO/ENOSPC there must be a log line,
     // never an exit.
     open(ws) {
       try {
         const c: Client = { id: `anon-${nextClientNum++}`, ws, world: null, avatar: "", lastPose: null, spectator: false,
-          msgWin: 0, msgCount: 0, verbWin: 0, verbCount: 0 };
+          msgWin: 0, msgCount: 0 };
         const data = (ws as unknown as { data?: { session?: HnSession | null; addr?: string } }).data;
         const sess = data?.session;
         if (sess && sess.exp > Date.now()) { c.auth = sess; c.sub = sess.sub; }
@@ -770,14 +696,6 @@ const server = Bun.serve({
         if (c.bcRing?.length) {
           console.log(`[bc] ${c.id} last breadcrumbs: ${c.bcRing.join(" | ")}`);
         }
-        // a vanished simulator's objects land exactly where its last frame put
-        // them — the lease's whole promise (docs/leases.md). Per-lease guard:
-        // a failed settle (disk) must not abandon the OTHER leases or the
-        // leave cleanup below — a ghost body standing forever (#56) is worse
-        // than one object hovering at its last streamed transform.
-        if (c.world) for (const [lid, L] of [...c.world.leases]) if (L.holder === c) {
-          try { c.world.settleLease(lid); } catch (err) { console.error(`[world:${c.world.name}] lease settle for ${lid} on close`, err); }
-        }
         if (c.world) {
           c.world.clients.delete(c);
           // AUX LEG DEATH IS AN EVENT (r-review): aux legs ride the spectator
@@ -793,12 +711,12 @@ const server = Bun.serve({
           if (!c.superseded) retireAuxLeg(c.world, c);
           if (!c.spectator) {
             if (!c.superseded) {
-              try { c.world.rememberPose(c.id, c.lastPose); } // sleep where you stood
+              try { if (c.v4id && !c.anonymous) c.world.rememberPose(c.v4id, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
             c.world.broadcast({ type: "leave", id: c.id });
             c.world.bhv.onPresence("leave", c.id, c.v4id);
-            if (!c.superseded && c.v4id) c.world.v4?.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
+            if (!c.superseded && c.v4id) c.world.v4.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
             // identity, and takeover means re-arrival, not departure).
@@ -868,7 +786,7 @@ const server = Bun.serve({
             if (!c.spectator) {
               c.world.broadcast({ type: "leave", id: c.id });
               c.world.bhv.onPresence("leave", c.id, c.v4id);
-              if (c.v4id) c.world.v4?.departed(c.v4id);
+              if (c.v4id) c.world.v4.departed(c.v4id);
               reapAuxLegs(c.world, c, "primary traveled");
             }
           }
@@ -892,10 +810,10 @@ const server = Bun.serve({
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator) {
-            const held = pendingWhispers.get(whisperKey(w.name, c.id));
+            const held = c.v4id ? pendingWhispers.get(whisperKey(w.name, c.v4id)) : undefined;
             if (held?.length) {
               for (const m of held) ws.send(JSON.stringify(m));
-              pendingWhispers.delete(whisperKey(w.name, c.id));
+              pendingWhispers.delete(whisperKey(w.name, c.v4id!));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }
           }
@@ -1085,8 +1003,7 @@ const server = Bun.serve({
           // EVERYONE, so it needs moderation rights, not a preference.
           if (!c.world || !relayEnabled()) return;
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          // the door's role for the person's directory identity (it read v1 rights by typed name, and a role the v1
-          // table didn't know, `none`, compared undefined < 2 → false and passed)
+          // the door's role for the person's directory identity, never their typed name
           if (c.world.v4?.roleOf(v4ActorOf(c)) !== "owner") {
             ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
             return;
@@ -1123,7 +1040,6 @@ const server = Bun.serve({
           // OWN keys only: a type such as "__proto__" or "constructor" must
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
-          // a v4 world answers some types itself (server/v4/messages.ts); v1 worlds never consult that table
           // every world is v4: the door's own types first (server/v4/messages.ts), then the room's (presence, voice, chat lanes)
           const h = v4Handler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
           if (h) h({ c, ws, now, expel }, msg);
@@ -1170,29 +1086,12 @@ registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
   }
 } });
 
-// Stale-lease sweep: a holder that stops streaming (hung tab, wedged plugin)
-// loses the object — committed at its last known transform, like a
-// disconnect. Nothing hovers forever; nothing stays possessed.
-registerSystem({ name: "lease-sweep", everyMs: 5_000, fn: (now) => {
-  for (const w of worlds.values()) {
-    // per-world guard (house rule 3): settleLease appends to disk
-    try {
-      for (const [id, L] of [...w.leases]) {
-        if (now - L.lastAt > LIMITS.LEASE_SWEEP_MS) {
-          w.debug("lease-swept", { id, holder: L.holder.id });
-          w.settleLease(id);
-        }
-      }
-    } catch (err) { console.error(`[world:${w.name}] lease sweep`, err); }
-  }
-} });
-
 // The heartbeat starts once every system is on it — the base is the finest
 // cadence in the registry (stage frames); everything coarser rides it.
 startTick(FRAME_MS);
 
-// Fold on the way out so a restart resumes from the snapshot rather than
-// re-reading a tail that was already folded in memory.
+// On the way out, everyone connected sleeps where they stand (every log line is already on disk: the door appends
+// and fsyncs each one before its request returns).
 let shuttingDown = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
@@ -1204,12 +1103,8 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
       // client that also vanished during the restart window woke at its
       // PREVIOUS remembered spot instead of where it stood.
       for (const c of w.clients) {
-        if (!c.spectator && !c.superseded && c.lastPose) w.rememberPose(c.id, c.lastPose);
+        if (!c.spectator && !c.superseded && c.lastPose && c.v4id && !c.anonymous) w.rememberPose(c.v4id, c.lastPose);
       }
-      if (w.entries.length) w.fold("shutdown");
-      // fold only runs on a non-empty tail — a world whose batch is armed
-      // but whose tail was just folded still owes the file its last lines
-      try { w.flushLog(); } catch (err) { console.error(`[world:${w.name}] shutdown flush failed`, err); }
     }
     process.exit(0);
   });

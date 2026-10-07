@@ -15,6 +15,7 @@ import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
 import { foldSkyEntry } from "../forecast.js";
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./terrain.js";
@@ -184,12 +185,13 @@ function versionSeq(w, v, what) {
 }
 const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-// PROTOCOL-v4 §5 (locks: decided): `lock` is v1's lock with v1's meaning, so an old log's locks carry over untranslated.
-// A lock is on when its value is truthy, exactly as v1 read it (`comp.lock`); the door itself only ever writes `true`.
+// PROTOCOL-v4 §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
+// untranslated. A lock is on when its value is truthy; the door itself only ever writes `true`.
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
+const IMPORTED_ONLY = (comp) => typeof comp === "string" && (comp === "guard" || comp === "epoch" || /^(legacy|behavior|bans):/.test(comp));
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
 const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
 const scratch = (st, ops) => applyOps(st, ops);
@@ -300,7 +302,7 @@ function supportUnder(st, b, ignore) {
 const RANK = { none: -1, visitor: 0, builder: 1, owner: 3 };
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && c[k]?.role === "owner"); };
 // §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
-// (`default-role`, what a v1 `roles['*']` becomes); absence means visitor.
+// (`default-role`, what an imported world's `roles['*']` becomes); absence means visitor.
 function roleOf(st, actor, anon = ISANON(actor)) {
   const c = st.entities?.["@world"]?.c; if (!c) return "none";
   // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
@@ -476,20 +478,20 @@ function guess(s, opts) {
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   door     — the door's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
 //   founding — the `new` act's first write to @world, by an owner named in genesis, once.
-// What a lock guards (§5, mirroring v1's matrix, tools/locktest.ts): nothing may MOVE, REPLACE or REMOVE a locked thing
-// or anything attached to it. Move = transform or parent (v1 place, mount, punt); replace = model (v1 spawn/light onto
-// its id); remove = deleting the thing. Everything that doesn't relocate it stays open, as in v1: labels, lights,
-// reactions, sockets, `use`, sitting on it, and motion (v1's matrix keeps motion open: "sit / use / motion / other comps
+// What a lock guards (§5, the first protocol's lock matrix): nothing may MOVE, REPLACE or REMOVE a locked thing
+// or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
+// Everything that doesn't relocate it stays open: labels, lights,
+// reactions, sockets, `use`, sitting on it, and motion (the old matrix keeps motion open: "sit / use / motion / other comps
 // all stay open while locked"; v4's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
 // physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
-// and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose v1's meaning.
+// and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
 const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
 // L7 rate (round-2 review R6): per actor, over a 10 s window by the door's clock. Counted in ENTRIES and in BYTES, with
 // talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
 // make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
 // An identity with no account (io.kindOf → "anon") gets less. A say's text is at most 8 KiB (the Commons' longest real
 // line is 4.5 KB). Refused requests are logged (R7) inside the same byte budget.
-// The spoken-say trio (v1 server/verbs.ts, kept for v4 by the Commons audit, agents #4): display metadata for a voice
+// The spoken-say trio (from the first protocol's say, kept by the Commons audit, agents #4): display metadata for a voice
 // that already performed as captions. Only inside the protocol (spoken: true and a non-negative safe-integer utt); t0 is
 // a reorder key on every client, so it's clamped to a bounded utterance window ending now. Anything else: all three
 // dropped, and the say is an ordinary say.
@@ -611,6 +613,18 @@ function shapeOneOrRefuse(verb, op, i) {
 const rankNeeded = (op) => (op.id !== "@world" ? "builder" : op.comp?.startsWith("library:") ? "builder" : "owner");
 function rights(w, st, s, who, role, op, at) {
   const { actor, cap } = who; const need = rankNeeded(op);
+  // a screen's captions are written by the caption tool only (its session, order and generation rules), never set by
+  // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
+  // delete them (CAPTIONS below)
+  // an imported world's records (its old bindings, unmapped fields, bans, sim epoch, the old guard) are carried, never
+  // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
+  // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
+  if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
+  if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-tool", `${at} is written by the caption tool, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
+  if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
+    const ids = st.entities[op.id]?.c.captioners?.ids;
+    if (!(Array.isArray(ids) && ids.includes(actor)) && RANK[role] < RANK[need]) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
+    return; }
   if (!cap) { if (RANK[role] < RANK[need]) refuse("rights", `changing ${at} needs ${need}; you are ${role}`, `ask the world's owner for ${need} rights (say {text, to: <owner>}); help shows your role`); return; }
   if (cap.kind === "script") return scriptRights(st, cap, op, at, need);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
@@ -784,7 +798,7 @@ function schemaCheck(at, comp, v) {
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
   unknownKeys(at, v, fields, name);
-  const kind = v.kind ?? def.defaultKind; // v1 terrain never named its kind: it is noise
+  const kind = v.kind ?? def.defaultKind; // an imported world's terrain never named its kind: it is noise
   if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
   for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
@@ -1240,7 +1254,7 @@ function buildUse(ctx, a) {
     const fwd = qrot(worldT(ctx.st, a.id).q, [0, 0, 1]); const along = raw[0] * fwd[0] + raw[1] * fwd[1] + raw[2] * fwd[2];
     const mag = Math.hypot(...raw);
     if (mag > 0 && Math.abs(along) < 0.3 * mag) refuse("sideways", `${a.id} swings front-to-back; that push is mostly sideways`, `push along its front ${JSON.stringify(fwd.map(r3))} (or the opposite)`);
-    // v1's pendulumImpulse (server/reactions.ts on main): read angle and velocity AT the push instant, add the push,
+    // the first protocol's pendulum impulse: read angle and velocity AT the push instant, add the push,
     // re-express as (amp, phase, t0). No snap at the push; with the motion builds, against it damps. The client's
     // pendulumTheta (client/lib/motioneval.js) evaluates the result: keep the two in sync (review 10-06 #5).
     const now = ctx.w.now(), w0 = (2 * Math.PI) / (mo.period ?? 3.5), damp = mo.damp ?? 0;
@@ -1643,15 +1657,15 @@ function scriptStatus(w, st, id, name, v) {
 }
 function scriptsOf(w, st, id) {
   return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v)),
-    ...(id && id !== "@world" ? {} : { v1: v1Behaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (w.scripts.available?.() === true ? SR.ENGINE : `unavailable: ${w.scripts.available?.()}`) : "none" };
+    ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (w.scripts.available?.() === true ? SR.ENGINE : `unavailable: ${w.scripts.available?.()}`) : "none" };
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
-export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], v1: [] }; return withDoor(w, () => scriptsOf(w, w.state(), id)); }
-// a translated v1 world carries its bindings as @world behavior:<name> (v1's shape, kept as a record). v4 never runs them.
-const V1_WHY = "a v1 behaviour, carried by translation. v4 doesn't run v1 source: it was written for v1's API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
-function v1Behaviours(w, st) {
+export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withDoor(w, () => scriptsOf(w, w.state(), id)); }
+// an imported world carries its old bindings as @world behavior:<name> (their old shape, kept as a record). The door never runs them.
+const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
+function importedBehaviours(w, st) {
   return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
-    attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: V1_WHY }));
+    attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: IMPORTED_WHY }));
 }
 
 // ---------- the act index (slice 3a): undo and wait without scanning the log ----------
@@ -1993,8 +2007,8 @@ function buildCreateFrom(ctx, a) {
 // Duplicate (slice 3b; PARITY (b)3): create {from: <a live thing's id>} copies it and everything attached to it, as one
 // explicit batch (L1: the fold sees plain creates). The copy keeps the source's parent (a sibling of it), so its
 // transform stays local to that parent; `at` replaces fields of the root's transform (local to that parent too), and
-// without it the copy sits 0.5 m along x from the source, as v1's duplicate did. `lock` isn't copied (v1 didn't
-// either: a copy is something you're about to move). Who made the copy is the create entry's actor (a view, L2).
+// without it the copy sits 0.5 m along x from the source. `lock` isn't copied: a copy is something you're about to
+// move. Who made the copy is the create entry's actor (a view, L2).
 function buildDuplicate(ctx, a) {
   const st = ctx.st, src = a.from;
   if (src === "@world" || !st.entities[src]) refuse("not-found", `no thing called '${src}' to copy`, "from takes a blueprint hash (sha256:…) or the id of a thing here", { didYouMean: guess(String(src), Object.keys(st.entities)) });
@@ -2280,7 +2294,7 @@ const PHYSICS_TOOLS = {
       return PHYSICS_TOOLS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
-  // the kick physobj offered (/punt, an agent's world_verb punt), as a sim intent (design 20, P4: "punt is a sim intent
+  // a kick (/punt, an agent's door punt), as a sim intent (design 20, P4: "punt is a sim intent
   // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
   // your feet through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's: dynamic,
   // physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
@@ -2679,8 +2693,8 @@ const TOOLS = {
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
     }
     // the whole world's log, a page at a time (Commons audit, agents #3: `verbs` and `before` reached nobody). verbs
-    // matches an entry's verb or kind, and a translated act's v1 verb (its body names it); before/after page by seq
-    if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — a translated v1 entry matches its v1 verb too ('comp', 'mount')");
+    // matches an entry's verb or kind, and an imported act's original verb (its body names it); before/after page by seq
+    if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — an imported entry matches its original verb too ('comp', 'mount')");
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
     const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
     const match = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
@@ -2721,12 +2735,12 @@ const TOOLS = {
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
       if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
-        // a translated v1 world: the reaction names a v1 binding (@world behavior:<name>), which v4 never runs
+        // an imported world: the reaction names an old binding (@world behavior:<name>), which the door never runs
         // (a binding there, or the handler itself written by the translation: its cause is a `legacy` act)
-        const v1 = Object.entries(wc).find(([k, b]) => k.startsWith("behavior:") && (k === `behavior:${probe.script}` || b?.attach === a.id));
+        const old = Object.entries(wc).find(([k, b]) => k.startsWith("behavior:") && (k === `behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
-        if (v1 || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
-          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the v1 behaviour '${v1 ? v1[0].slice(9) : probe.script}', carried by translation; v4 doesn't run v1 source`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists v1 behaviours as needs-reinstall`);
+        if (old || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
+          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice(9) : probe.script}', carried by translation; the door doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
@@ -2749,6 +2763,20 @@ const TOOLS = {
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
+  // ---- captions: one line of what a screen said (a captioner bot, live subtitles). Rights live on the SCREEN: its
+  // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by
+  // hand, writes `captions`. The rules are shared/captions.js's: a session, a strictly rising n within it, a leg
+  // generation (the server stamps `gen` from the connection: a superseded captioner can't write over its successor),
+  // and `end` to clear the screen. The bag keeps the newest lines (CAPTIONS_MAX_LINES). ----
+  caption: (w, actor, a) => commit(w, actor, "caption", a, (ctx) => {
+    const n = normalizeCaptionArgs(a); if (!n.ok) refuse("shape", n.why, "caption {id, session, n, t0, t1, text, speaker?, title?} | {id, session, end: true}");
+    const id = n.args.id; const e = ctx.st.entities[id]; if (!e) refuse("no-such", `nothing here called ${id}`, "look lists what's here");
+    const args = { ...n.args, gen: Number.isSafeInteger(a.gen) && a.gen >= 0 ? a.gen : 0 };
+    const why = captionRefusal(e.c.captions, args); if (why) refuse("caption", why, "a resend of a line already written is refused: read that as its receipt");
+    ctx.cap = { kind: "caption", ids: [id], comps: ["captions"] };
+    const next = foldCaption(e.c.captions, args);
+    return [next ? setOp(id, "captions", next) : delOp(id, "captions")];
+  }),
   // ---- scripts (research 41) ----
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
   // checked here (to teach early) and again at install (what binds).
@@ -2772,7 +2800,7 @@ const TOOLS = {
     if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${key} changed since version ${base}: ${said(lt.actor)} at ${lt.seq}`, "scripts shows who sponsors it now");
     const was = sponsorOf(w, a.id, key); ctx.actExtra = { adopts: { script: key, was: was?.sponsor ?? null, wasAt: was?.sponsorAt ?? null } }; ctx.refs.add(a.id);
     return [delOp(a.id, key), setOp(a.id, key, v)]; }),
-  // the status view (unlogged): every script here, its sponsor and why it does or doesn't run; translated v1 behaviours
+  // the status view (unlogged): every script here, its sponsor and why it does or doesn't run; imported behaviours
   // that need re-installing. With {id, script, test: {on, …}}: a dry run (41 §3.12): what it WOULD write, refused or not.
   scripts(w, actor, a) { const st = w.state();
     if (a.test !== undefined) {
@@ -2782,9 +2810,9 @@ const TOOLS = {
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
-  // the sky panel's two verbs, with v1's own meaning (shared/forecast.js foldSkyEntry, the same function v1's fold ran):
+  // the sky panel's two tools, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
   // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
-  // sky. v1 also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
+  // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
@@ -2792,7 +2820,7 @@ const TOOLS = {
     return commit(w, actor, "batch", a, (ctx) => {
       const all = []; let st = ctx.st;
       (a.ops ?? []).forEach((o, i) => {
-        // sky/weather are sets on @world.sky with v1's merge meaning, so they batch like any set (one act, one undo)
+        // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.tool];
         if (!B) refuse("shape", `batch op ${i}: '${o.tool}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
