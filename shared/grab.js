@@ -145,6 +145,15 @@ export function fitsSocket(g, sock) {
 }
 export const socketRadius = (sock) => (num(sock?.radius) ? sock.radius : SOCKET_RADIUS);
 
+/** What every client is told of a hold (the door's presence plane, sent whenever it changes and in every join cut):
+ *  who holds it, with which hand, by which grip or at which offset, and the second hand. Never logged. */
+export function holdWire(h) {
+  if (!isObj(h)) return null;
+  return { by: h.by, ...(h.hand ? { hand: h.hand } : {}), ...(h.grip ? { grip: h.grip } : {}), ...(h.offset ? { offset: h.offset } : {}), ...(h.second ? { second: h.second } : {}) };
+}
+/** An offset as a hand may send it: {pos: [x, y, z] (≤ 2 m), q: [x, y, z, w]}. */
+export const offsetOk = (o) => isObj(o) && nums(o.pos, 3, 2) && unitQ(o.q) && Object.keys(o).every((k) => k === 'pos' || k === 'q');
+
 // ---------------------------------------------------------------- finger presets (VRM normalized bones)
 // A curl per segment in radians, as each finger bends toward the palm: [proximal, intermediate, distal]; the thumb's are
 // [metacarpal, proximal, distal]. Normalized VRM bones rest in a T-pose (identity), the right hand's fingers along -X and
@@ -170,6 +179,47 @@ export function fingerPose(preset, side, hold = {}) {
   for (const [b, q] of Object.entries(hold)) if (b.startsWith(side)) out[b] = q;
   return out;
 }
+
+// ---------------------------------------------------------------- the body's hold pose (no tracked hands)
+// Where each arm points for a preset, in the body's frame (+Z forward, +Y up, the right arm's side is -X): the upper arm,
+// then the forearm. Every client turns these into normalized-bone rotations (shortest arc from the T-pose: a rest arm
+// lies along -X on the right, +X on the left), so a desktop or phone body visibly holds what it holds, the same for
+// everyone. Every direction is written for a RIGHT arm and mirrored for a left one; `other` is the other arm of a
+// two-armed preset (carry: both arms round it; two-hand: the support hand forward on it).
+const ARMS = {
+  hand:       { hold: [[-0.12, -0.95, 0.28], [-0.05, -0.3, 0.95]] },
+  torch:      { hold: [[-0.25, -0.55, 0.8], [-0.05, 0.55, 0.83]] },
+  pistol:     { hold: [[-0.08, -0.05, 1], [0, 0, 1]] },
+  shoulder:   { hold: [[-0.55, -0.7, 0.45], [0.35, 0.9, 0.25]] },
+  carry:      { hold: [[-0.15, -0.8, 0.58], [0.45, -0.05, 0.89]], other: [[-0.15, -0.8, 0.58], [0.45, -0.05, 0.89]] },
+  'two-hand': { hold: [[-0.12, -0.85, 0.5], [0.4, 0.1, 0.91]], other: [[-0.1, -0.6, 0.79], [0.3, 0.2, 0.93]] },
+};
+const vnorm = (v) => { const n = Math.hypot(...v) || 1; return v.map((x) => x / n); };
+const vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const qmulA = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+const qrotA = (q, v) => { const p = qmulA(qmulA(q, [v[0], v[1], v[2], 0]), [-q[0], -q[1], -q[2], q[3]]); return [p[0], p[1], p[2]]; };
+/** The shortest-arc rotation taking unit a onto unit b (three.js setFromUnitVectors). */
+export function arc(a, b) {
+  const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  if (d < -0.999999) { const ax = Math.abs(a[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0]; const c = vnorm(vcross(a, ax)); return [c[0], c[1], c[2], 0]; }
+  const c = vcross(a, b); const q = [c[0], c[1], c[2], 1 + d]; const n = Math.hypot(...q); return q.map((x) => x / n);
+}
+const r6 = (q) => q.map((x) => Math.round(x * 1e6) / 1e6);
+function armQ(side, upper, lower) {
+  const rest = side === 'left' ? [1, 0, 0] : [-1, 0, 0];
+  const mir = (v) => (side === 'left' ? [-v[0], v[1], v[2]] : v);
+  const u = vnorm(mir(upper)), l = vnorm(mir(lower));
+  const qu = arc(rest, u);
+  const inv = [-qu[0], -qu[1], -qu[2], qu[3]];
+  return { [`${side}UpperArm`]: r6(qu), [`${side}LowerArm`]: r6(arc(rest, vnorm(qrotA(inv, l)))) };
+}
+/** {<normalized bone>: [x, y, z, w]} for a body without tracked hands holding a thing in `hand` with `preset`. */
+export function armPose(preset, hand = 'right') {
+  const a = ARMS[preset] ?? ARMS.hand; const other = hand === 'left' ? 'right' : 'left';
+  return { ...armQ(hand, ...a.hold), ...(a.other ? armQ(other, ...a.other) : {}) };
+}
+/** Does this preset take both arms (the thing sits between the hands)? */
+export const bothArms = (preset) => !!ARMS[preset]?.other;
 
 // ---------------------------------------------------------------- the door's check
 

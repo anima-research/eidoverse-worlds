@@ -24,9 +24,10 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView } from "../../shared/v4/door.js";
+import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
 import { clientCutOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
+import { holdWire } from "../../shared/grab.js";
 import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
 import { openLive, isV4Dir } from "./live.ts";
@@ -78,6 +79,10 @@ export class V4Log {
     this.posesPath = path.join(this.dir, "poses.json");
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [] });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
+    // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
+    // logged, so a joiner's cut already has it back in the world (door.js settleOrphans)
+    try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
+    catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
     this._state = this.view();
@@ -125,7 +130,8 @@ export class V4Log {
    *  in its holder's hand, so it is sent whenever it changes, and in every join cut. */
   holds(): Record<string, { by: string }> {
     const out: Record<string, { by: string }> = {};
-    for (const [id, h] of Object.entries(this.live.presence.holds ?? {}) as [string, Any][]) out[id] = { by: h.by };
+    // the hold record (shared/grab.js holdWire): by, hand, grip or offset, second: every client draws it from these
+    for (const [id, h] of Object.entries(this.live.presence.holds ?? {}) as [string, Any][]) out[id] = holdWire(h) as { by: string };
     return out;
   }
   private holdsKey() { return JSON.stringify(this.holds()); }

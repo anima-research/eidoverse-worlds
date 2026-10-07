@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
-import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius } from "../grab.js";
+import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -1464,6 +1464,49 @@ export function tick(w) {
     return ran;
   });
 }
+/** A world opened after its host stopped without settling presence (a crash, a SIGKILL: no leave ran). Holds are
+ *  presence. A host that persists presence (server/v4/disk.ts) still has the hold, with no one connected to let go: it's
+ *  settled as `leave` settles it (a drop as the holder, which its grabbable may send home, into a socket or straight
+ *  down; a drop the door refuses becomes its return-held). A host that keeps presence in memory (server/v4/live.ts)
+ *  has lost the hold, but in a world that runs physics the grab's `lift` took the thing out of the engine and nothing
+ *  put it back: it would stay a ghost (no body, no collider) until someone moved it. That is settled by the door as
+ *  leave's refusal is: a return-held act (cause: the lift) writing where the log last had it, which seats it in the
+ *  engine again, or, for a grabbable that returns, a return-home. `present` = identities connected now (none, at
+ *  load). Returns what it settled. */
+export function settleOrphans(w, present = []) {
+  if (!w.exists || w.state().status !== "ok") return [];
+  const here = new Set(present); const out = [];
+  for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {
+    const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] }); }
+  withDoor(w, () => {
+    const st = w.state(); if (!st.entities["@world"]?.c.sim) return;
+    for (const [id, lift] of orphanLifts(w)) {
+      if (w.presence.holds[id] || !st.entities[id]) continue;
+      const g = grabOf(st.entities[id].c);
+      if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
+      const t = w.state().entities[id].c.transform; if (!t) continue;
+      let plan; try { plan = admit(w, w.state(), { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
+      stateEntry(w, plan, w.append({ kind: "act", actor: "door", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
+      out.push({ id, returned: "where the log had it" });
+    }
+  });
+  if (out.length) w.savePresence();
+  return out;
+}
+// Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
+// no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
+function orphanLifts(w) {
+  const lifted = new Map();
+  w.entries.forEach((e, seq) => {
+    if (!isE(e)) return;
+    if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
+    else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
+    else if (e.kind === "state") for (const o of opsQuiet(e)) {
+      if (o.id === "@world" && o.comp === "sim") { lifted.clear(); continue; }
+      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
+  });
+  return lifted;
+}
 /** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by`. The act's
  *  cause is the entry that made the script's sponsor (an arrival isn't logged on every path). */
 export function presenceEvent(w, kind, who) {
@@ -2017,7 +2060,9 @@ const PHYSICS_TOOLS = {
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     const held = w.presence.holds[a.id];
-    if (held?.by === actor) return { ok: true, recorded: false, holding: a.id, inHandAt: held.pose.pos.map(r3), note: "you're already holding it" };
+    if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
+    if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
+    if (held?.by === actor) return secondHand(w, actor, a, held, e);
     // grabOf (shared/grab.js) is the one reader: grabbable, or a dynamic thing's physics.who (the migration fallback)
     const g = grabOf(e.c);
     if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
@@ -2029,6 +2074,7 @@ const PHYSICS_TOOLS = {
     // range (grabbable): from the hand; past arm's reach the door grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
     const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
+    const how = holdHow(a, g); // which hand, by which grip or offset: refused before anything is written
     const prev = w.presence.holds[a.id]; const notes = [];
     if (d > REACH) notes.push({ id: a.id, pulled: r3(d), why: `it was ${r3(d)} m away; its grabbable.range lets it fly to your hand` });
     if (prev && prev.by !== actor) notes.push({ id: a.id, takenFrom: prev.by, why: "the latest grab wins; they were told" });
@@ -2065,9 +2111,9 @@ const PHYSICS_TOOLS = {
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
     const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
-    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled };
+    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };
     w.savePresence();
-    return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...(notes.length ? { notes } : {}) };
+    return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
   },
   // P3: putting something down is a settlement: a claim the door checks like any write, then logs as a plain result.
   // grabbable says where it goes (research §3): home (release: return), into a socket that accepts it (fits), where
@@ -2129,6 +2175,11 @@ const PHYSICS_TOOLS = {
     return launch(w, actor, a, "throw", g);
   },
   drop(w, actor, a, how = "drop") {
+    if (a.hand !== undefined) { const h = holdOf(w, actor, a.id); if (!["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
+      if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) { // one hand of two lets go: the other keeps it (presence, unlogged)
+        if (a.hand === h.hand) { h.hand = h.second.hand; if (h.second.grip) h.grip = h.second.grip; else delete h.grip; }
+        delete h.second; w.savePresence(); return { ok: true, recorded: false, holding: a.id, hand: h.hand, note: `your ${a.hand} hand let go; your ${h.hand} hand still holds it` }; }
+      if (a.hand !== h.hand) refuse("not-holding", `your ${a.hand} hand isn't holding ${a.id} (your ${h.hand} hand is)`, `drop {id: '${a.id}'} lets go`); }
     const st = w.state(); const g = grabOf(st.entities[a.id]?.c);
     // what doesn't fly is set down from where the hand let go; so is what goes home, into a socket, or stays
     const sets = !fliesIn(st, a.id) || g?.release === "return" || g?.release === "stay" || (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);
@@ -2208,6 +2259,37 @@ function recentRests(w, now) {
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 };
 const noNeg0 = (n) => (n === 0 ? 0 : n); // I-JSON has no -0; an engine can make one (the same number, written as 0)
+// The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
+// Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
+// by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
+// this record: nothing streams, nothing is logged.
+function holdHow(a, g) {
+  const names = Object.keys(g.grips);
+  if (a.grip !== undefined) {
+    if (!names.length) refuse("no-grip", `it has no grips (grabbable.grips); it's held where you take it`, "leave grip out");
+    if (!g.grips[a.grip]) refuse("no-grip", `it has no grip called '${a.grip}'`, `its grips: ${names.join(", ")}`, { didYouMean: guess(String(a.grip), names) });
+  }
+  const hand = a.hand ?? (a.grip !== undefined && g.grips[a.grip].hand !== "either" ? g.grips[a.grip].hand : "right");
+  if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse("wrong-hand", `the ${a.grip} grip is for a ${g.grips[a.grip].hand} hand, not your ${hand}`, `grab {id, grip: '${a.grip}', hand: '${g.grips[a.grip].hand}'}`);
+  const grip = a.grip ?? pickGrip(g, hand);
+  if (grip) return { hand, grip };
+  return { hand, ...(a.offset ? { offset: { pos: a.offset.pos.map(r3), q: a.offset.q.map((n) => Math.round(n * 1e6) / 1e6) } } : {}) };
+}
+// Grabbing what you already hold with your OTHER hand: a two-handed thing takes it in both (the second hand on a
+// secondary grip steers it: Godot SECOND, Unity Multiple); anything else swaps hands (Godot SWAP). The same hand, or no
+// hand named, is a no-op, as before.
+function secondHand(w, actor, a, h, e) {
+  const g = grabOf(e.c); const hand = a.hand;
+  if (!g || hand === undefined || hand === h.hand || hand === h.second?.hand) return { ok: true, recorded: false, holding: a.id, inHandAt: h.pose.pos.map(r3), hand: h.hand, note: "you're already holding it" };
+  if (g.twoHanded) {
+    if (a.grip !== undefined && !g.grips[a.grip]) refuse("no-grip", `it has no grip called '${a.grip}'`, `its grips: ${Object.keys(g.grips).join(", ") || "none"}`, { didYouMean: guess(String(a.grip), Object.keys(g.grips)) });
+    const grip = a.grip ?? pickGrip(g, hand, { role: "secondary" });
+    h.second = { hand, ...(grip ? { grip } : {}) }; w.savePresence();
+    return { ok: true, recorded: false, holding: a.id, hand: h.hand, second: h.second, note: "in both hands: the second steers it" };
+  }
+  const how = holdHow(a, g); delete h.grip; delete h.offset; delete h.second; Object.assign(h, how); w.savePresence();
+  return { ok: true, recorded: false, holding: a.id, ...how, note: `moved to your ${hand} hand` };
+}
 // a release flies (a sim launch) only for a dynamic thing in a world that runs physics; anything else is set down
 const fliesIn = (st, id) => !!st.entities["@world"]?.c.sim && st.entities[id]?.c.physics?.kind === "dynamic";
 // The socket a released thing snaps into (research §3, Resonite Snapper with XRI's radius): the nearest socket, on

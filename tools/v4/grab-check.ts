@@ -14,6 +14,8 @@
 //   M   migration: what a dynamic thing with no grabbable did before, unchanged
 //   R   release modes (slice 2): the throw multiplier, stay, return home (now, and after returnAfter), snapping into a
 //       socket that accepts it
+//   H   the hold record (slice 3): hand, grip or offset, a second hand; what every client is told
+//   O   a host that stopped while someone held a thing: settled at load as leave settles it
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -61,6 +63,21 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["snapping: a locked host is passed over", "v4/door.js", "if (lk) { out.notes.push({ passedOver: { to: hid, slot }, why: `${lk} is locked` }); continue; }", "", ["R6"]],
   ["snapping: a drop in a physics world snaps instead of flying", "v4/door.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
   ["sockets.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(sk, sat))) return r;", "", ["R8"]],
+  ["the hold record keeps hand and grip or offset", "v4/door.js", "pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };", "pose: { pos: hand, q: t.q, scale: t.scale }, handled };", ["H1", "H4"]],
+  ["a named grip must exist", "v4/door.js", "if (!g.grips[a.grip]) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", "if (false) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", ["H2"]],
+  ["a named grip must suit the hand", "v4/door.js", "if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse(\"wrong-hand\"", "if (false) refuse(\"wrong-hand\"", ["H2"]],
+  ["a hand takes a grip that suits it", "v4/door.js", "const grip = a.grip ?? pickGrip(g, hand);", "const grip = a.grip;", ["H2", "H3", "H4"]],
+  ["an offset is kept", "v4/door.js", "return { hand, ...(a.offset ? { offset:", "return { hand, ...(false ? { offset:", ["H3"]],
+  ["an offset is checked", "v4/door.js", "if (a.offset !== undefined && !offsetOk(a.offset)) refuse(", "if (false) refuse(", ["H3"]],
+  ["twoHanded takes a second hand", "v4/door.js", "if (g.twoHanded) {\n    if (a.grip", "if (false) {\n    if (a.grip", ["H4"]],
+  ["one hand of two lets go", "v4/door.js", "if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) {", "if (false) {", ["H4"]],
+  ["a second hand takes a secondary grip", "grab.js", "const exact = all.find(([, x]) => x.role === role && x.hand === hand) ?? all.find(([, x]) => x.role === role);", "const exact = null;", ["H4"]],
+  ["every client is told the hand", "grab.js", "...(h.hand ? { hand: h.hand } : {}),", "", ["H1", "H4"]],
+  ["orphans: a hold whose holder isn't here is settled", "v4/door.js", "for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {", "for (const who of []) if (!here.has(who)) {", ["O1"]],
+  ["orphans: the log's lift is settled", "v4/door.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2"]],
+  ["orphans: a lift is settled once", "v4/door.js", "if (o.verb === \"create\" || (o.verb === \"delete\" && o.comp === undefined) || [\"transform\", \"parent\", \"model\", \"physics\"].includes(o.comp)) lifted.delete(o.id); }", "}", ["O2"]],
+  ["orphans: a returning thing goes home", "v4/door.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2"]],
+  ["orphans: a holder who's here keeps it", "v4/door.js", "if (w.presence.holds[id] || !st.entities[id]) continue;", "if (!st.entities[id]) continue;", ["O2"]],
   ["CONTROL (no-op: must stay green)", "grab.js", "// ---------------------------------------------------------------- reading", "// ----------------------------------------------------------------  reading", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -119,6 +136,7 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/v4/door.js");
 const F = await import(TREE + "shared/v4/fold.js");
 const SL = await import(TREE + "shared/v4/simlayer.js");
+const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("grab");
 
@@ -130,7 +148,7 @@ function openWorld(name: string, o: any = {}) {
     getBlob: (h: string) => { const s = fs.readFileSync(blobPath(h), "utf8"); if (`sha256:${F.sha256(s)}` !== h) throw new Error("blob mismatch"); return JSON.parse(s); },
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => Number(process.env.V4_NOW), writeLine: (line: string) => appendDurable(logPath, line),
-    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts ?? null,
+    presence: o.presence ?? { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts ?? null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 let T = 1800000000000, N = 0;
@@ -142,7 +160,9 @@ function session(o: any = {}) {
   const walk = (actor: string, to: number[]) => { for (let i = 0; i < 40; i++) { const at = W().presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });
     const d = Math.hypot(to[0] - at[0], to[2] - at[2]); if (d < 1e-9) return { ok: true }; const k = Math.min(1, 3.5 / d);
     const r = call(actor, "move", { to: [at[0] + (to[0] - at[0]) * k, to[1], at[2] + (to[2] - at[2]) * k] }, 1000); if (!r.ok) return r; } };
-  return { name, call, walk, w: W, advance: (ms: number) => { T += ms; process.env.V4_NOW = String(T); }, entries: () => W().entries };
+  // a restart: the same log, a new door; presence as the host kept it (a copy: persisted, as server/v4/disk.ts; fresh: in memory, as live.ts)
+  const reopen = (presence: any) => { w = openWorld(name, { ...o, presence: JSON.parse(JSON.stringify(presence ?? { bodies: {}, holds: {} })) }); return w; };
+  return { name, call, walk, reopen, w: W, advance: (ms: number) => { T += ms; process.env.V4_NOW = String(T); }, entries: () => W().entries };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
@@ -334,6 +354,68 @@ const cases: Case[] = [
       const c = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: ["key"], radius: 0.2 } } });
       return { a: code(a), b: code(b), c: show(c) }; },
     good: (o) => o.a === "shape" && o.b === "shape" && o.c === "ok" },
+  // ---------------- H: the hold record (slice 3) ----------------
+  { id: "H1", what: "the hold record says which hand (default right; grab {hand: 'left'}); holdWire is what every client is told", run(s) { cast(s);
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] });
+      const a = s.call("vic", "grab", { id: "cup" }); const b = s.call("vic", "grab", { id: "mug", hand: "left" }); const bad = s.call("vic", "grab", { id: "cup", hand: "up" });
+      return { a: a.hand, b: b.hand, rec: G.holdWire?.(held(s, "mug")), bad: code(bad), logged: s.entries().filter((e: any) => e.kind === "act" && e.verb === "grab" && !e.body?.refused).length }; },
+    good: (o) => o.a === "right" && o.b === "left" && JSON.stringify(o.rec) === '{"by":"vic","hand":"left"}' && o.bad === "shape" && o.logged === 0 },
+  { id: "H2", what: "grips: a hand takes the first grip that suits it; a named grip must exist (did you mean) and suit the hand; a thing with none has no grip to name", run(s) { cast(s);
+      s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "visitor", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", fingers: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] });
+      const r = s.call("vic", "grab", { id: "sword" }); s.call("vic", "put", { id: "sword" });
+      const l = s.call("vic", "grab", { id: "sword", hand: "left" }); s.call("vic", "put", { id: "sword" });
+      const typo = s.call("vic", "grab", { id: "sword", grip: "hlt" }); const wrong = s.call("vic", "grab", { id: "sword", grip: "hilt", hand: "left" });
+      const named = s.call("vic", "grab", { id: "sword", grip: "offhand" }); s.call("vic", "put", { id: "sword" });
+      const none = s.call("vic", "grab", { id: "cup", grip: "hilt" });
+      return { r: [r.hand, r.grip], l: [l.hand, l.grip], typo: [code(typo), typo.refused?.didYouMean], wrong: code(wrong), named: [named.hand, named.grip], none: code(none) }; },
+    good: (o) => JSON.stringify(o.r) === '["right","hilt"]' && JSON.stringify(o.l) === '["left","offhand"]' && o.typo[0] === "no-grip" && o.typo[1]?.[0] === "hilt" && o.wrong === "wrong-hand" && JSON.stringify(o.named) === '["left","offhand"]' && o.none === "no-grip" },
+  { id: "H3", what: "offset: with no grips, a hand sends where it took hold and the record keeps it; with grips the grip wins; a malformed one is refused", run(s) { cast(s);
+      s.call("olive", "create", { id: "rock", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "axe", model: "book", components: { grabbable: { who: "visitor", grips: { haft: { pos: [0, 0.1, 0] } } } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] });
+      const OFF = { pos: [0.01, -0.02, 0.05], q: [0, 0, 0, 1] };
+      const bad = s.call("vic", "grab", { id: "rock", offset: { pos: [0, 0, 9], q: [0, 0, 0, 1] } });
+      const a = s.call("vic", "grab", { id: "rock", offset: OFF }); const b = s.call("vic", "grab", { id: "axe", hand: "left", offset: OFF });
+      return { bad: code(bad), a: a.offset, rec: held(s, "rock")?.offset, b: [b.grip, b.offset ?? null] }; },
+    good: (o) => o.bad === "shape" && JSON.stringify(o.a?.pos) === "[0.01,-0.02,0.05]" && JSON.stringify(o.rec?.q) === "[0,0,0,1]" && o.b[0] === "haft" && o.b[1] === null },
+  { id: "H4", what: "a second hand: twoHanded takes it in both (secondary grip); one hand letting go leaves it in the other; not twoHanded, the other hand swaps", run(s) { cast(s);
+      s.call("olive", "create", { id: "rifle", model: "book", components: { grabbable: { who: "visitor", twoHanded: true, grips: { stock: { pos: [0, 0, 0], hand: "right" }, fore: { pos: [0, 0.15, 0], role: "secondary" } } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const n0 = s.entries().length;
+      s.call("vic", "grab", { id: "rifle" }); const two = s.call("vic", "grab", { id: "rifle", hand: "left" }); const both = JSON.stringify(G.holdWire?.(held(s, "rifle")));
+      const one = s.call("vic", "drop", { id: "rifle", hand: "left" }); const after1 = JSON.stringify(G.holdWire?.(held(s, "rifle")));
+      s.call("vic", "grab", { id: "rifle", hand: "left" }); const prim = s.call("vic", "drop", { id: "rifle", hand: "right" }); const after2 = JSON.stringify(G.holdWire?.(held(s, "rifle")));
+      s.call("vic", "grab", { id: "cup" }); const sw = s.call("vic", "grab", { id: "cup", hand: "left" });
+      return { two: show(two), both, one: [show(one), one.recorded], after1, prim: show(prim), after2, sw: sw.hand, cup: held(s, "cup")?.hand, logged: since(s, n0) }; },
+    good: (o) => o.two === "ok" && o.both === '{"by":"vic","hand":"right","grip":"stock","second":{"hand":"left","grip":"fore"}}' && o.one[0] === "ok" && o.one[1] === false
+      && o.after1 === '{"by":"vic","hand":"right","grip":"stock"}' && o.prim === "ok" && o.after2 === '{"by":"vic","hand":"left","grip":"fore"}' && o.sw === "left" && o.cup === "left" && !o.logged.length },
+  // ---------------- O: orphaned holds after the host stopped (R 10-06: a server killed while someone holds a thing) ----------------
+  { id: "O1", what: "presence kept on disk: a hold whose holder isn't here at load is settled as leave settles it (a drop as the holder: set down; a stay stays; a return goes home)", run(s) { cast(s);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "visitor", release: "stay" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [-0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); for (const id of ["ball", "balloon", "torch"]) s.call("vic", "grab", { id }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
+      const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; T += 100; process.env.V4_NOW = String(T);
+      const r = D.settleOrphans?.(w2, []);
+      return { r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => e.actor),
+        ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
+    good: (o) => o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && JSON.stringify(o.torch) === "[-0.3,0,0]" },
+  { id: "O2", what: "presence kept in memory: in a physics world the log's lift is settled at load (door return-held, cause the lift; a return goes home), once, and a carrier agrees", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "kept", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [-0.3, 0, 0.5] });
+      s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("ann", "grab", { id: "kept" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
+      const annHold = s.w().presence.holds.kept;
+      const w2 = s.reopen({ bodies: {}, holds: { kept: annHold } }); const n0 = s.entries().length; T += 100; process.env.V4_NOW = String(T);
+      D.settleOrphans?.(w2, ["ann"]); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.actor}:${e.verb}:${e.body?.id}:${L[e.cause]?.verb ?? "-"}`);
+      const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
+      return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
+    good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["door:return-held:ball:lift", "door:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
 ];
 
 // ---------------- run ----------------
