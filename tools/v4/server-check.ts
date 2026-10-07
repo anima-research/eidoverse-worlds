@@ -7,6 +7,7 @@
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
 //   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
 //   S8  clients fold v4: the v4 cut and stream, no `log` entries; a client that doesn't read v4 is refused (3c)
+//   SP  physics: v4-holds to everyone, a joiner's cut carries holds and the sim, leaving while holding drops it
 //   S7  joining never founds a world (H3); [was: v1 worlds byte-compared against slice 1 — the server serves no v1 now]
 //      
 //       compared (logs, snapshots and every message each client received, with clock fields masked)
@@ -285,6 +286,26 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(r2.ok && a.of("log").length === 0, "S8 …and the world carries on, still sending no `log` entries", a.of("log").length);
   ok(a.snapshot.v4.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { v4fold: true })).snapshot.v4.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
+// ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
+// a person who leaves while holding something drops it into the world ----
+{ ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
+  const a = await client(srv.port, "pitch", "Ann", V4); await sleep(100);
+  ok((await a.req("set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } })).ok, "SP Ann turns physics on");
+  ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
+  const b = await client(srv.port, "pitch", "Bob", V4); await sleep(150); const B = b.snapshot?.v4?.you;
+  ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
+  await sleep(200);
+  ok(a.of("v4-holds").at(-1)?.holds?.ball?.by === B, "SP1 everyone is told who holds it (v4-holds: presence, never logged)", a.of("v4-holds"));
+  const c = await client(srv.port, "pitch", "Cy", V4);
+  ok(c.snapshot?.v4?.holds?.ball?.by === B, "SP2 a joiner's cut says who holds what", c.snapshot?.v4?.holds);
+  ok(c.snapshot?.v4?.sim?.spec?.engine === "eidosim@0.5.0" && c.snapshot.v4.sim.sim?.epoch, "SP2 …and carries the sim where the door's clock stands (a joiner folds later launches with it)", c.snapshot?.v4?.sim?.spec);
+  const n = a.of("v4-log").length; b.close(); await sleep(400);
+  const launched = a.of("v4-log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === "ball");
+  ok(launched.length === 1 && a.of("v4-holds").at(-1)?.holds?.ball === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("v4-holds").at(-1)]);
+  await sleep(1500); await a.req("wait", {}); await sleep(200);
+  const k = heldBy(c); const rest = fold(readLog(fs.readFileSync(path.join(W4, "pitch", "v4.jsonl")))).entities.ball.c.transform.pos;
+  ok(rest[1] === 0 && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the door's rest", [rest, k?.sim?.checks]);
+  a.close(); c.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
