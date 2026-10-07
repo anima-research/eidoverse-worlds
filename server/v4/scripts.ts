@@ -1,23 +1,20 @@
-// server/v4/scripts.ts — a v4 world's scripts inside today's server (research 41; shared/v4/door.js "behaviours").
+// server/v4/scripts.ts — a world's scripts inside this server (research 41; shared/v4/door.js "behaviours").
 //
-// A v1 world's runtime scripts live in server/behaviors.ts (BehaviorHost: v1 `behavior` bindings, v1 verbs committed
-// per emit). A v4 world never constructs one: its log refuses v1 entries, and its scripts are `script:<name>` components
-// the DOOR runs, each activation one act + one batch through admit. This class is what World.bhv is for a v4 world: the
-// same five calls server.ts already makes (onEntry, onPresence, tick, inspect, list), routed to the door:
+// Scripts are `script:<name>` components the DOOR runs, each activation one act + one batch through admit. This class
+// is World.bhv: the calls server.ts makes (onPresence, tick, inspect, list), routed to the door:
 //   tick        the door's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
 //               on the server's 1 s clock (server.ts system "behaviors");
 //   onPresence  enter / leave events, by the person's v4 identity;
-//   onEntry     nothing: the door drains changed:<comp> and say cascades inside the request that caused them;
-//   inspect/list the door's status view (suspended / paused / stopped / dormant + why / asleep / active), plus translated
-//               v1 behaviours, which say plainly that they need re-installing as script:<name>.
+//   inspect/list the door's status view (suspended / paused / stopped / dormant + why / asleep / active), plus the
+//               old behaviours an imported world still names, which say plainly that they need re-installing as
+//               script:<name>.
 import type { V4Log } from "./world.ts";
 
 type Any = any;
-/** What World.bhv is, for either kind of world (BehaviorHost fits it structurally). */
+/** What World.bhv is. */
 export interface ScriptHost {
   sync(): void;
   disposeAll(): void;
-  onEntry(entry: Any): void;
   onPresence(kind: "enter" | "leave", id: string, v4id?: string): void;
   tick(now: number): void;
   inspect(id: string): { status: string; ring: { ts: number; line: string }[] } | null;
@@ -28,7 +25,6 @@ export class V4Scripts implements ScriptHost {
   constructor(private v4: V4Log) {}
   sync() { /* the door reads script:<name> from the fold on every activation: nothing to load or reconcile */ }
   disposeAll() { /* each activation is its own sandbox, disposed when it ends */ }
-  onEntry(_entry: Any) { /* v4 worlds commit no v1 entries; the door drains its own cascades */ }
   onPresence(kind: "enter" | "leave", _id: string, v4id?: string) { if (v4id) this.v4.presenceScripts(kind, v4id); }
   tick(_now: number) { this.v4.tickScripts(); }
   /** One script's console ring + status: id is "<entity>/<name>" (or "<entity>" for its first script). */

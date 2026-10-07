@@ -23,7 +23,6 @@ import { actorOf as v4ActorOf } from "./v4/messages.ts";
 // the door's role ladder (shared/v4/door.js RANK), for the presence gates that mirror a door rule
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
-import { simSnapshot } from "../shared/sim.js";
 import { worlds, type World, type Client } from "./world.ts";
 import { pendingSnaps } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
@@ -62,14 +61,6 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
     const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
-    if (msg.sim) {
-      // the sim fold's cut, on request — the determinism proof's
-      // server leg (sim-smoke compares this against an independent
-      // recompute), and any client's "what does the sequencer think"
-      ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        sim: simSnapshot(c.world.sim) }));
-      return;
-    }
     if (msg.behavior != null) {
       // one script's own log ring + status — the author's console
       const b = c.world.bhv.inspect(String(msg.behavior));

@@ -7,7 +7,7 @@ import { avatarMounts } from './world.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, applyView } from './state.js';
+import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { pending, P } from './scheduler.js';
@@ -279,7 +279,7 @@ function onV4Log(msg) {
   if (!v4.active) return;
   const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
-  // a chat line: into the window (the shared rule, no v1 fold), then the live causes (bubbles, voice, chat log).
+  // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
   // Numbered v4seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
     // the spoken trio (validated at the door) rides along: chat merges a spoken utterance and places it by t0
@@ -625,19 +625,6 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-// shadow fold first, synchronously — seq-guarded, so the backlog flush after hydration can never double-fold what
-// landed here. When the realizers are active this IS the delivery: the fold event drives state realization, and
-// 'live-entry' carries the causes. (A v4 world's entries arrive here from this client's own fold, onV4Log.)
-function onLogEntry(entry) {
-  shadowFold(entry);
-  if (hydrating) pendingLive.push(entry);
-  else if ((entry.seq ?? -1) > lastSeq) {
-    lastSeq = entry.seq;
-    bus.emit('live-entry', entry);
-    if (entry.verb === 'say') noteSpeaking(entry.actor);
-  }
-}
-
 async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
@@ -789,10 +776,6 @@ async function handle(msg) {
       bus.emit('lib-geom', msg.geom ?? {});
       break;
 
-    case 'log':
-      onLogEntry(msg.entry);
-      break;
-
     case 'v4-log': onV4Log(msg); break;
     case 'v4-result': onV4Result(msg); break;
 
@@ -942,31 +925,15 @@ async function onSnapshot(msg) {
       .catch((e) => report(`present ${p.id}`, e));
   }
 
-  // Shadow state adopts the snapshot FIRST, synchronously — before the
-  // legacy replay's first await can let a live entry interleave. Today's
-  // server sends live-folded state (it already contains the tail's effects;
-  // the tail rides along for the chat overlap), so the shadow folds nothing
-  // twice: it marks the highest covered seq and lets foldLive take over.
-  // a v4 world: adopt the door's own cut, and draw the view of THIS client's fold of it (the snapshot's `state` is
-  // only read for its chat window)
-  if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {}); } else v4.reset();
-  shadowHydrate(msg.v4?.state ? v4.view(msg.state) : msg.state, [], Math.max(
-    typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
-    ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
-  ));
+  // State adopts the snapshot FIRST, synchronously: the door's own cut, drawn as the view of THIS client's fold of it
+  // (the snapshot's `state` is the chat window: chat isn't world state).
+  if (!msg.v4?.state) { v4.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
+  v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {});
+  shadowHydrate(v4.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
 
-
-  // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
-  // replay — join time becomes the slowest asset, not the sum of all of them.
   hydrating = true; pendingLive = [];
-  // Every tail seq counts as delivered whether or not legacy replays it —
-  // the realizer's entries are filtered out below, and an under-advanced
-  // lastSeq would let the backlog re-apply what state already holds.
-  for (const e of msg.entries) if ((e.seq ?? -1) > lastSeq) lastSeq = e.seq;
-  // flush the events that raced us, in order, once. Their folds already
-  // landed at arrival (seq-guarded); under the realizers this delivers
-  // their live causes, after the hydration window so a raced say lands
-  // below the arrival chat window, not above it.
+  // flush the chat lines that raced us, in order, once, after the hydration window so a raced say lands below the
+  // arrival chat window, not above it.
   const backlog = pendingLive.filter((e) => (e.seq ?? -1) > lastSeq).sort((a, b) => a.seq - b.seq);
   pendingLive = []; hydrating = false;
   for (const e of backlog) {

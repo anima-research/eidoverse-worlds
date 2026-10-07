@@ -1,21 +1,22 @@
-// tools/v4/world.ts — found a v4 world, or translate a v1 world once into a NEW v4 world (protocol/v4, slice 2).
+// tools/v4/world.ts — found a world, or translate an old (v1) world once into a NEW world.
 //
 //   WORLDS_DIR=<dir> bun tools/v4/world.ts found <name> --owner <your id> [--title "…"]
 //   WORLDS_DIR=<dir> bun tools/v4/world.ts translate <v1 world> <new name>
 //   WORLDS_DIR=<dir> bun tools/v4/world.ts info <name>
 //
-// Opt-in on purpose: the server never makes a v4 world by itself. A world is v4 because its directory holds v4.jsonl
+// The server never makes a world by itself (it serves only v4 worlds, and refuses a directory holding only an old log). A world is v4 because its directory holds v4.jsonl
 // whose line 0 is a v4 genesis, and only this tool writes one (shell access to the host, like every other operator
 // act on world files). `found` runs the door's own `new` request, so genesis names the owner and the founding act
 // writes @world (about, bounds, roles:<owner>) through admit. --owner is the name you join with; it is stamped through
 // names.js exactly as the live door stamps you, so you are the owner when you arrive.
-// `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs translate-v1 (0 divergences
-// required), re-reads the output with the strict reader, and only then writes <new name>/v4.jsonl. The v1 world keeps
-// working, unchanged; the v4 copy is a separate world you can visit side by side.
+// `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
+// (shared/v4/import-v1/: 0 divergences required), re-reads the output with the strict reader, and only then writes
+// <new name>/v4.jsonl. The old directory stays on disk as it was; the server doesn't serve it.
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
-import { foundV4, translateV1World, isV4World } from "../../server/v4/world.ts";
+import { foundV4, isV4World } from "../../server/v4/world.ts";
+import { translateV1World } from "../../shared/v4/import-v1/world.ts";
 import { openLive } from "../../server/v4/live.ts";
 import { digest } from "../../shared/v4/fold.js";
 

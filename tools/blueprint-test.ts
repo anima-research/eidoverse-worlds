@@ -37,7 +37,7 @@ const J = JSON.stringify;
 
 const { blueprintHash, blueprintRefusal, hashRefusal, expand, overridesOf, rebase, linkOf, lineageOf, BLUEPRINT_LIMITS } = await import('../shared/blueprint.js');
 const { componentsOf, entityOf, canon, sha256hex } = await import('../shared/components.js');
-const { emptyState, foldEntry, stateToEntries } = await import('../shared/fold.js');
+const { emptyState, foldEntry, stateToEntries } = await import('../shared/v4/import-v1/fold.js');
 
 const LAMP = 'eidoverse/assets/models/lamp.glb';
 // a lamp: a model with a light, and a bulb child (an Empty with its own light) 1.2 m up

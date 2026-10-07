@@ -27,7 +27,6 @@ import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
-import { entryBusStats } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
 // client console tee (see the /clientlog route): a per-world bucket for every world this server KNOWS (loaded in
 // memory, or with a data dir on disk) plus one shared bucket for any other label, plus one global bucket — so a
@@ -49,8 +48,8 @@ const knownWorld = (name: string) => {
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
   return worldDirs.has(name) && hasWorldLog(name);
 };
-/** A world's directory holds its log: log.jsonl (v1) or v4.jsonl (a v4 world, protocol/v4 slice 2). */
-const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "log.jsonl")) || existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
+/** A world's directory holds its log, v4.jsonl. */
+const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
@@ -568,25 +567,16 @@ const ROUTES: Route[] = [
         return j({ error: "no such world" }, 404);
       }
       const w = getWorld(wname);
-      // COMPOSE with the sim (PROTOCOL_v2 §5): a punted body's fold position
-      // is its last AUTHORED word, which under an epoch can be a spawn point
-      // a dozen flights ago — the sim's answer outranks it, exactly as the
-      // punt verb's own reach math already composes (verbs.ts). Without this
-      // an agent measuring a punted crate was told where it USED to be.
-      // A folded q (PROTOCOL §9.1) is the full orientation — yaw is then its
-      // heading. A sim-owned body speaks yaw only, so its live answer drops q.
-      const simAt = (eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) => {
-        const b = (w as any).sim?.bodies?.[eid];
-        return b ? { pos: b.p as number[], yaw: (typeof b.yaw === "number" ? b.yaw : e.yaw ?? 0) }
-          : { pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) };
-      };
+      // A folded q is the full orientation — yaw is then its heading.
+      const poseOf = (_eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) =>
+        ({ pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) });
       const id = url.searchParams.get("id");
       if (id) {
         const e = w.state.entities[id];
         if (!e) return j({ error: `no entity "${id}" in ${wname}` }, 404);
         const file = e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = simAt(id, e);
+        const at = poseOf(id, e);
         return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
@@ -597,13 +587,13 @@ const ROUTES: Route[] = [
       for (const [eid, e] of Object.entries(w.state.entities)) {
         const file = withBoxes && e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = simAt(eid, e);
-        out.push({ id: eid, lib: e.lib ?? null, kind: e.kind ?? "thing",
+        const at = poseOf(eid, e);
+        out.push({ id: eid, lib: e.lib ?? null, kind: e.comp?.light ? "light" : "thing",
           pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
-      return j({ world: wname, entities: out, mounts: w.state.mounts ?? {} });
+      return j({ world: wname, entities: out });
     },
   },
   {
@@ -700,7 +690,7 @@ const ROUTES: Route[] = [
     // errors. Public and cheap like /version — "is the tick healthy" must
     // be a lookup, not an inference from symptoms.
     match: (u) => u.pathname === "/tick",
-    handler: () => new Response(JSON.stringify({ ...tickStats(), entryBus: entryBusStats() }),
+    handler: () => new Response(JSON.stringify({ ...tickStats() }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

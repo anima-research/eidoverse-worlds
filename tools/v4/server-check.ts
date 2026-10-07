@@ -2,7 +2,7 @@
 // scratch WORLDS_DIR (never the repo's worlds, never ports 8968/8970). usage: bun tools/v4/server-check.ts
 //   S1  found a v4 world (tools/v4/world.ts), join it: the snapshot says v4, the founder is its owner
 //   S2  writes are door requests: create (a measured GLB), place ON it (the engine catalogue), every client sees it
-//   S3  refusals reach the asker: a locked edit (v4 message and old-UI verb; the old guard refused by name), a visitor's create, a spectator's write
+//   S3  refusals reach the asker: a locked edit, an old-style verb (writes nothing), a visitor's create, a spectator's write
 //   S4  undo through the door; the log on disk is v4, strictly readable, and every client's own v4 fold = the log
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
 //   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
@@ -57,7 +57,7 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
   throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
 }
 
-// ---- a client: joins, keeps every message, sends v4 requests and v1 verbs ----
+// ---- a client: joins, keeps every message, sends v4 requests ----
 async function client(port: number, world: string, id: string, extra: any = {}) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const msgs: any[] = []; const waiters = new Map(); let n = 0;
@@ -68,7 +68,6 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
   const c = {
     id, ws, msgs, snapshot: msgs.find((m) => m.type === "snapshot"),
     req: (tool: string, args: any = {}) => new Promise<any>((res) => { const rid = `${id}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "v4", id: rid, tool, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000); }),
-    verb: (verb: string, args: any) => ws.send(JSON.stringify({ type: "verb", verb, args })),
     send: (m: any) => ws.send(JSON.stringify(m)),
     of: (type: string) => msgs.filter((m) => m.type === type),
     close: () => ws.close(),
@@ -139,12 +138,11 @@ ok(vic.of("v4-log").length >= 2 && vic.of("log").length === 0, "S2 another clien
 ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
 ok(mv.ok === false && mv.refused?.code === "locked" && /through_lock/.test(mv.refused.teach), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
-const errsBefore = bob.of("error").length, headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length;
-bob.verb("remove", { id: "cup" }); await sleep(300);
-ok(bob.of("error").length === errsBefore + 1 && /takes door requests, not v1 verbs/.test(bob.of("error").at(-1)?.error) && readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length === headBefore,
-  "S3 a raw v1 verb sent to a v4 world is refused by name, and nothing is written (clients spell verbs as requests at their own edge, 3c)", bob.of("error").at(-1));
+const headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length;
+bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300);   // an old client's message: the server has no handler for it
 { const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "v4", id: rid, verb: "remove", args: { id: "cup" } }); });
-  ok(vr?.ok === false && vr.refused?.code === "v1-verb", "S3 …and a v1 verb inside a v4 request is refused the same way", vr); }
+  ok(vr?.ok === false && readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length === headBefore && bob.ws.readyState === 1,
+    "S3 an old-style verb (its own message, or a request with no tool) writes nothing: the door has no such tool, and the connection stays up", vr); }
 { const { editOps } = await import("../../shared/editschema.js");
   const r = editOps({ pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: 1, lib: "test/cup.glb", comp: {} }, "cup", { "flags.guard": true });
   ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
@@ -318,7 +316,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const first = Number(/#(\d+)/.exec(T(wh))?.[1]);
   const whb = await HANDLERS.world_history(oz, { limit: 2, before: first }, {} as any, "world_history");
   ok(T(whb).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => Number(/#(\d+)/.exec(l)[1]) < first) && /more before #/.test(T(whb)), "CM6 before pages back (it was ignored)", T(whb));
-  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "legacy", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (from the v1 log, #4)`, "CM6 a translated entry prints its v1 verb and args, not `legacy {}`");
+  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "legacy", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
   // CM7 look speaks door terms: no world_verb, no comp {…}, no dismount
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
   await wait(() => oz.entities.has("bell"));
@@ -365,7 +363,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
   // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the v4 copy
-  const { emptyState: v1Empty, foldEntry: v1Fold } = await import("../../shared/fold.js");
+  const { emptyState: v1Empty, foldEntry: v1Fold } = await import("../../shared/v4/import-v1/fold.js");
   const v1st = v1Empty(); for (const l of fs.readFileSync(v1log, "utf8").split("\n").filter(Boolean)) v1Fold(v1st, JSON.parse(l));
   const old = { snapshot: { state: v1st } }, neu = await client(srv.port, "oldtown-v4", "Ann", V4);
   const oldv1 = await client(srv.port, "oldtown", "Ann");

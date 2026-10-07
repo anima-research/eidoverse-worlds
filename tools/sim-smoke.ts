@@ -19,7 +19,7 @@
 
 import { join } from "node:path";
 import { emptySim, simEntry, advanceSim, SIM_ID } from "../shared/sim.js";
-import { foldEntry, emptyState, type LogEntry } from "../shared/fold.js";
+import { foldEntry, emptyState, type LogEntry } from "../shared/v4/import-v1/fold.js";
 import { scratchBench, mkCheck, bold, dim, sleep } from "./harness.ts";
 
 const HEADED = process.argv.includes("--headed");

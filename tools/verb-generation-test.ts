@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { scratchSequencer, sleep, mkCheck, ROOT } from './harness.ts';
 import { modelBytes } from './box-fixture.ts';
-import { emptyState, foldEntry } from '../shared/fold.js';
+import { emptyState, foldEntry } from '../shared/v4/import-v1/fold.js';
 
 const scenarios = ['takeover', 'disconnect', 'expel', 'rejoin'] as const;
 const lib = (scenario: string) => `eidoverse/assets/models/generation-${scenario}.glb`;

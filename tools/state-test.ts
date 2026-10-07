@@ -11,7 +11,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { foldEntry, emptyState } from "../shared/fold.js";
+import { foldEntry, emptyState } from "../shared/v4/import-v1/fold.js";
 import { state, hydrate, foldLive, reset, onWorldChange } from "../client/lib/state.js";
 
 const FIX = join(import.meta.dir, "..", "spec", "fixtures");

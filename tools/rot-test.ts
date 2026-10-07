@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
-import { emptyState, foldEntry, stateToEntries } from "../shared/fold.js";
+import { emptyState, foldEntry, stateToEntries } from "../shared/v4/import-v1/fold.js";
 import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from "../shared/rot.js";
 
 let pass = 0, fail = 0;

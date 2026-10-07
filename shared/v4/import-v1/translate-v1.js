@@ -8,12 +8,12 @@
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/v4/sweep.ts.
-import { emptyState as v1Empty, foldEntry } from "../fold.js";
-import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "./fold.js";
-import { enc, encName, dec } from "./names.js";
-import { qNorm } from "../rot.js";
-import { sha256 } from "./hash.js";
-import { COMPONENTS } from "./catalogue.js";
+import { emptyState as v1Empty, foldEntry } from "./fold.js";
+import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "../fold.js";
+import { enc, encName, dec } from "../names.js";
+import { qNorm } from "../../rot.js";
+import { sha256 } from "../hash.js";
+import { COMPONENTS } from "../catalogue.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name

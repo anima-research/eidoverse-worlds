@@ -16,7 +16,6 @@ import { isV4, requestV4 } from './net.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
-import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
@@ -535,21 +534,4 @@ export function initLocalBody({ logChat: logChatFn }) {
     }
   });
 
-  // A force verb reaching us live: an instantaneous radial CAUSE (blast, gust).
-  // It folded to nothing — replays and late joiners never re-detonate — and its
-  // only effect on my body happens here, gated by the same consent as a push.
-  // Linear falloff to the rim; at ground zero direction is meaningless, so you
-  // topple the way you were already leaning.
-  bus.on('force', ({ actor, at, radius, power }) => {
-    if (!getMe() || !pushable()) return;
-    // §24l R1: the falloff arithmetic is shared/force.js — one truth with
-    // the agent's copy. Consent and the ground-zero direction stay here.
-    const f = radialForce(at, myState.pos.x, myState.pos.z, radius, power);
-    if (!f) return;
-    if (f.mag < FORCE_MIN && !ragdoll) return;     // a breeze, not a blow
-    const lean = f.nx != null
-      ? _shove.set(f.nx * f.mag, 0, f.nz * f.mag)
-      : toppleVelocity().setLength(Math.max(f.mag, 0.5));
-    applyShove(lean, actor);
-  });
 }

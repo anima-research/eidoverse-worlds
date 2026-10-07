@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { scratchSequencer, sleep, mkCheck, ROOT } from './harness.ts';
-import { emptyState, foldEntry } from '../shared/fold.js';
+import { emptyState, foldEntry } from '../shared/v4/import-v1/fold.js';
 import { SIM_ID } from '../shared/sim.js';
 import { modelBytes } from './box-fixture.ts';
 

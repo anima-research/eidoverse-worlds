@@ -9,7 +9,7 @@
 // never recomputed.
 
 import { emptySim, simEntry, advanceSim, tickOf, simPose, simSnapshot, SIM_ID } from "../shared/sim.js";
-import { foldEntry, emptyState, type LogEntry } from "../shared/fold.js";
+import { foldEntry, emptyState, type LogEntry } from "../shared/v4/import-v1/fold.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {

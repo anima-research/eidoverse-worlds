@@ -1,15 +1,15 @@
-// server/v4/build.ts — the exact build of the engine's v1 fold, for the translator's stamp (research 35, slice-2 #1).
+// shared/v4/import-v1/build.ts — the exact build of the engine's v1 fold, for the translator's stamp (research 35, slice-2 #1).
 // A translated log is a regenerable cache of the v1 log (R9); it names the translator AND the v1 fold that read the
 // old log, so a later engine can tell whether re-translating would give the same bytes. The build is the sha256 of
 // shared/fold.js and every module it imports (followed through relative imports), in a fixed order, first 16 hex —
 // the same scheme as EIDOSIM_BUILD.
 import fs from "node:fs";
 import path from "node:path";
-import { sha256 } from "../../shared/v4/hash.js";
+import { sha256 } from "../hash.js";
 
-const ROOT = path.resolve(new URL("../../", import.meta.url).pathname);
+const ROOT = path.resolve(new URL("../../../", import.meta.url).pathname);
 /** shared/fold.js and its import closure, repo-relative, sorted. */
-export function v1FoldFiles(entry = "shared/fold.js"): string[] {
+export function v1FoldFiles(entry = "shared/v4/import-v1/fold.js"): string[] {
   const seen = new Set<string>(); const stack = [entry];
   while (stack.length) {
     const f = stack.pop()!; if (seen.has(f)) continue; seen.add(f);

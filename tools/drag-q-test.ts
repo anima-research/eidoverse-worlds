@@ -6,7 +6,7 @@
 process.env.WORLDS_DIR ??= require('node:fs').mkdtempSync(require('node:os').tmpdir() + '/drag-q-');
 process.env.JOIN_TOKEN ??= 'test-door';
 const { MESSAGES } = await import('../server/messages.ts');
-const { emptyState } = await import('../shared/fold.js');
+const { emptyState } = await import('../shared/v4/import-v1/fold.js');
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
 const out: any[] = [];

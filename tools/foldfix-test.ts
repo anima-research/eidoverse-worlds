@@ -17,7 +17,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { emptyState, foldEntry, stateToEntries } from "../shared/fold.js";
+import { emptyState, foldEntry, stateToEntries } from "../shared/v4/import-v1/fold.js";
 
 const FIX = join(import.meta.dir, "..", "spec", "fixtures");
 const FIELDS = ["entities", "mounts", "roles", "behaviors"] as const;

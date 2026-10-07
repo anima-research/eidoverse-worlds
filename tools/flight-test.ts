@@ -1210,7 +1210,7 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
 // LIVE RIGHTS: the sequencer sends personalized folded answers after grants.
 // This is the general path that makes wildcard and durable-sub precedence live.
 {
-  const { emptyState, foldEntry } = await import('../shared/fold.js');
+  const { emptyState, foldEntry } = await import('../shared/v4/import-v1/fold.js');
   const { runVerb } = await import('../server/verbs.ts');
   const st: any = emptyState();
   st.roles.owner = { role: 'owner' };

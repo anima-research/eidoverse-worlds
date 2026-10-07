@@ -125,7 +125,7 @@ export const TOOLS = [
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
   { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "door", description: "v4 worlds only: one request to the world's door, answered by the door itself — {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, teach}}. tool is one of: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the door solves where it goes) | batch {ops: [{tool, args}…]} | use {id, action?} | say {text} | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (kick a thing at your feet) | wait (your door-tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.sim runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | check | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {tool?}. Every write may add dry: true, expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and through_lock: true. undo {act: <your undo>} is redo. spawn/place/light/remove/edit also wait for the door and report refusals. whois {name} finds a person's identity (u-…) here, present or not.", inputSchema: { type: "object", properties: { tool: { type: "string" }, args: { type: "object" } }, required: ["tool"] } },
+  { name: "door", description: "One request to the world's door, answered by the door itself — {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, teach}}. tool is one of: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the door solves where it goes) | batch {ops: [{tool, args}…]} | use {id, action?} | say {text} | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (kick a thing at your feet) | wait (your door-tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.sim runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | check | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {tool?}. Every write may add dry: true, expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and through_lock: true. undo {act: <your undo>} is redo. spawn/place/light/remove/edit also wait for the door and report refusals. whois {name} finds a person's identity (u-…) here, present or not.", inputSchema: { type: "object", properties: { tool: { type: "string" }, args: { type: "object" } }, required: ["tool"] } },
   // Description narrowed to what the implementation actually does (antra
   // review, #3). It previously promised "held pose and posture survive", which
   // joinWorld does NOT transfer — and which contradicts the existing pose
@@ -141,7 +141,7 @@ export const TOOLS = [
   { name: "hierarchy", description: "The scene tree, as the browser's Hierarchy panel shows it: every placed thing, mounted things indented under their carrier, seated people as riders, with each thing's label, lib, components and lock state. filter narrows to ids/labels/libs/component types containing the text (matches keep their ancestors). Cheaper than look() when you want structure, not surroundings.", inputSchema: { type: "object", properties: { filter: { type: "string" } } } },
   { name: "blueprints", description: "This world's blueprint library: every published blueprint (a thing and everything under it, saved as one content-hashed record) with its short hash, name, part count and the copies placed from it. Pass hash for one. Publish with door {tool: \"publish\", args: {from, name}}; place a copy with blueprint_place.", inputSchema: { type: "object", properties: { hash: { type: "string" } } } },
   { name: "blueprint_place", description: "Place a COPY of a blueprint from this world's library (see blueprints): the door copies the whole tree in one act (create {from: <hash>, at}). Position defaults to 2m in front of you, facing the way you face; pass dry:true to have the door check it without writing.", inputSchema: { type: "object", properties: { hash: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, yaw: { type: "number" }, scale: { type: "number" }, id: { type: "string" }, dry: { type: "boolean" } }, required: ["hash"] } },
-  { name: "world_history", description: "Read the world log — the append-only record every world IS: who did what, newest page by default. Filter by verbs: the door's (create, set, delete, place, use, undo, say, batch…), or a translated v1 entry's own verb (comp, spawn, mount…). Page backwards with before, forwards with after (the reply says where to continue). A refused request is on the record as an attempt and reads REFUSED — it changed nothing. door {tool: 'history', args: {id}} reads one thing's own acts. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
+  { name: "world_history", description: "Read the world log — the append-only record every world IS: who did what, newest page by default. Filter by verbs: the door's (create, set, delete, place, use, undo, say, batch…); a world imported from an old log also holds its imported entries (verb 'legacy': filter by their original verb). Page backwards with before, forwards with after (the reply says where to continue). A refused request is on the record as an attempt and reads REFUSED — it changed nothing. door {tool: 'history', args: {id}} reads one thing's own acts. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
   { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — every request the door refused here (kind 'refused': who, the tool, the code, the door's reason and how to fix it — rights, locks, shapes, rate limits, bans), and script events ('script-error', 'script-pause'). Pass behavior: <id> to read ONE runtime script's own log ring; behaviors: true lists what scripts run here and whether they're alive. Components (motion, sockets, reactions) are data, not scripts: they never appear in the behaviors roster — world_history {verbs: ['set']} shows how one was written. In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, behavior: { type: "string" }, behaviors: { type: "boolean" } } } },
   { name: "kick", description: "MODERATION: remove a participant from this world right now. They may rejoin — a kick interrupts, a ban excludes. Needs owner rights here (same gate as grant); operators and fellow owners cannot be kicked.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" } }, required: ["id"] } },
   { name: "ban", description: "MODERATION: ban someone — disconnects them now if they're here and refuses their joins (including spectating) until unban. id is their name or identity (u-…): someone absent is found among the people this world has seen (whois). Default is THIS world only (needs owner rights here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the moderator's record; bystanders see only that they were banned.", inputSchema: { type: "object", properties: { id: { type: "string" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["id"] } },
@@ -245,16 +245,16 @@ export async function snapshotTool(ag: ToolAgent, view = "first", at?: string) {
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 /** A v4 door's refusal as a tool error: the code, why, and what to do instead. */
 // the same words a person in edit mode sees for the same refusal (shared/v4/refusal.js)
-/** One line of a v4 world's history, as an agent reads it: who did what, with what arguments. A translated v1 entry
- *  (an act `legacy`) shows its v1 verb and args, not `legacy {}`; a refused request says it was refused, and never
- *  reads as a thing that happened (Commons audit, agents #3). */
+/** One line of a world's history, as an agent reads it: who did what, with what arguments. An entry imported from an
+ *  old log (an act `legacy`) shows the verb and args it was written with, not `legacy {}`; a refused request says it
+ *  was refused, and never reads as a thing that happened (Commons audit, agents #3). */
 export function historyLine(e: any): string {
   const who = actorName(String(e.actor)); const when = e.ts ? `${new Date(e.ts).toISOString()} ` : "";
   const args = (v: any) => { const j = JSON.stringify(v ?? {}); return j.length > 300 ? `${j.slice(0, 300)}…` : j; };
   if (e.kind === "say") { const b = e.body ?? {}; if (b.text === undefined && b.commit !== undefined) return `#${e.seq} ${when}${who}: say (purged)`;
     return `#${e.seq} ${when}${who}: say ${JSON.stringify(b.text ?? "")}${b.to ? ` (to ${actorName(String(b.to))})` : ""}`; }
   const b = e.body ?? {};
-  if (e.verb === "legacy") return `#${e.seq} ${when}${who}: ${b.verb ?? "?"} ${args(b.args)} (from the v1 log${Number.isInteger(b.from) ? `, #${b.from}` : ""})`;
+  if (e.verb === "legacy") return `#${e.seq} ${when}${who}: ${b.verb ?? "?"} ${args(b.args)} (imported from the old log${Number.isInteger(b.from) ? `, #${b.from}` : ""})`;
   if (b.refused) return `#${e.seq} ${when}${who}: tried ${e.verb} ${args(b.request)} — REFUSED (${b.refused.code}); nothing changed`;
   return `#${e.seq} ${when}${who}: ${e.verb} ${args(b.request ?? Object.fromEntries(Object.entries(b).filter(([k]) => k !== "salt")))}`;
 }
@@ -301,8 +301,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   sit: async (ag, a) => {
       // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit.
-      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). In a v4 world the
-      // door is asked first (use {id, action, args: {slot}}): it checks who may. The seat's leaveBy decides how I get
+      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). The door is asked
+      // first (use {id, action, args: {slot}}): it checks who may. The seat's leaveBy decides how I get
       // off, and fromSeat whether I may move to it without standing.
       const on = String(a.on ?? "").trim();
       const mine = ag.mySeat;
@@ -326,10 +326,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (!body.fromSeat) return { content: [{ type: "text", text: `sit: you're on ${mine.to} (${mine.slot}); ${on} (${slot}) doesn't take you straight from another seat — sit {} to get up first` }], isError: true };
       }
       if (a.pose != null && body.poses[String(a.pose)] === undefined) return { content: [{ type: "text", text: `sit: ${on} (${slot}) has no pose "${a.pose}" (its poses: ${Object.keys(body.poses).join(", ") || "only its own"})` }], isError: true };
-      if (ag.v4) {
-        const r = await ag.door("use", { id: on, action: body.action, args: { slot } });
-        if (!r?.ok) return { content: [{ type: "text", text: `sit: the door refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.teach ? ` — ${r.refused.teach}` : ""}` }], isError: true };
-      }
+      { const r = await ag.door("use", { id: on, action: body.action, args: { slot } });
+        if (!r?.ok) return { content: [{ type: "text", text: `sit: the door refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.teach ? ` — ${r.refused.teach}` : ""}` }], isError: true }; }
       ag.setSeat({ to: on, slot, ...(a.pose != null ? { pose: String(a.pose), at: Date.now() } : {}) });
       return text(`you ${body.action} on ${on} — ${describeBody(slot, body)}`);
   },
@@ -465,7 +463,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const trioOk = a.spoken === true && uttOk && t0Ok;
       if (wantsSpoken && !trioOk) {
         // Machine-legible failure (r6 review): the same {content, isError:true}
-        // contract a malformed world_verb returns. A prose-only refusal let a
+        // contract every malformed tool call returns. A prose-only refusal let a
         // schema client that inspects result.isError read this as a successful
         // say — the door must mark the refusal as an error, not just describe
         // one in text.
@@ -788,7 +786,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const schema = worldSchema(ag.worldFold(), { now: Date.now() });
         if (a.json) return text(JSON.stringify(schema));
         return text(`[${WORLD_ID}] the world entity — ${describeWorld(ag.worldFold(), Date.now())}`
-          + `\ncomponents: ${schema.sections.list.map((c: any) => `${c.title}${c.present ? "" : " (default)"}`).join(", ")} — an alias of the world's sky, terrain and grass: edits go out as the sky, weather, terrain and grass verbs (owner rank)`
+          + `\ncomponents: ${schema.sections.list.map((c: any) => `${c.title}${c.present ? "" : " (default)"}`).join(", ")} — an alias of the world's sky, terrain and grass: edits go out as one door request setting @world's sky / terrain / grass (owner rank)`
           + `\n${describeSchema(schema, { verbsHint: false })}`
           + `\nedit {id: "${WORLD_ID}", set: {"sky.hours": 17.5, "sky.clouds": "cirrus", "weather.state": "rain", "ground.amplitude": "+=1", "grass.density": 1.4, "grass.mow": true}} — relative math works on every number.`);
       }
@@ -806,7 +804,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         + (() => { const h = String((rec as any)?.comp?.blueprint?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.v4Library()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
       // where each component's value came from (the door's touched; the Inspector's card tooltips say the same words)
       let prov = "";
-      if (ag.v4) { const r = await ag.door("inspect", { id }).catch(() => null);
+      { const r = await ag.door("inspect", { id }).catch(() => null);
         const t = r?.ok ? Object.entries(r.touched ?? {}) as [string, any][] : [];
         if (t.length) prov = `\nlast changed: ${t.map(([c, v]) => `${c} ${touchWords(v)}`).join("; ")}\n(older: door {tool: "history", args: {id: "${id}"}})`; }
       return text(`${head}\n${describeSchema(schema)}${prov}`);
@@ -907,31 +905,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(`${a.dry ? "would place" : "placed"} a copy of "${lib[h]?.name ?? h.slice(0, 12)}" (${h.slice(0, 12)})${r.refs?.[0]?.id ? ` as [${r.refs[0].id}]` : ""} — one act`);
   },
   world_history: async (ag, a, ctx, name) => {
-      // a v4 world's log is read through the door (its history request: verbs, before and after reach it now)
-      if (ag.v4) {
-        if (typeof a.before === "number" && typeof a.after === "number") return text("world_history pages one way: before or after, not both");
-        const h = await ag.door("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 30))),
-          ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
-          ...(typeof a.before === "number" ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
-        if (!h?.ok) return refusedBy(h, "world_history");
-        const rows = (h.entries ?? []).filter((e: any) => e.kind === "act" || e.kind === "say");
-        const more = h.next != null ? `\n… more ${typeof a.after === "number" ? `after #${h.next} (page with after)` : `before #${h.next} (page with before)`}` : "";
-        // a page can hold only state entries (an act's results), which this view leaves out: say so, and where to go on
-        if (!rows.length) return text(`${Array.isArray(a.verbs) && a.verbs.length ? `no acts or says with ${a.verbs.join(" / ")}` : "no acts or says"} in this page of the log${more || " — and nothing further that way"}`);
-        return text(rows.map(historyLine).join("\n") + more
-          + "\n(the door's log: acts and says; door history {id} reads one thing's own acts)");
-      }
-      const r = await ag.history({
-        verbs: Array.isArray(a.verbs) && a.verbs.length ? a.verbs.map(String) : undefined,
-        before: typeof a.before === "number" ? a.before : undefined,
-        after: typeof a.after === "number" ? a.after : undefined,
-        limit: Math.min(200, Math.max(1, Number(a.limit ?? 50))),
-      });
-      if (!r.entries.length) return text("no matching entries");
-      const lines = r.entries.map((e: any) =>
-        `#${e.seq} ${new Date(e.ts).toISOString()} ${e.actor}: ${e.verb} ${JSON.stringify(e.args)}`);
-      return text(`${lines.join("\n")}${r.hasMore ? `\n… more before seq ${r.oldestSeq} (page with before)` : ""}`);
-
+      // the world's log is read through the door (its history request: verbs, before and after reach it)
+      if (typeof a.before === "number" && typeof a.after === "number") return text("world_history pages one way: before or after, not both");
+      const h = await ag.door("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 30))),
+        ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
+        ...(typeof a.before === "number" ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
+      if (!h?.ok) return refusedBy(h, "world_history");
+      const rows = (h.entries ?? []).filter((e: any) => e.kind === "act" || e.kind === "say");
+      const more = h.next != null ? `\n… more ${typeof a.after === "number" ? `after #${h.next} (page with after)` : `before #${h.next} (page with before)`}` : "";
+      // a page can hold only state entries (an act's results), which this view leaves out: say so, and where to go on
+      if (!rows.length) return text(`${Array.isArray(a.verbs) && a.verbs.length ? `no acts or says with ${a.verbs.join(" / ")}` : "no acts or says"} in this page of the log${more || " — and nothing further that way"}`);
+      return text(rows.map(historyLine).join("\n") + more
+        + "\n(the door's log: acts and says; door history {id} reads one thing's own acts)");
   },
   world_debug: async (ag, a, ctx, name) => {
       const r = await ag.worldDebug({
@@ -980,7 +965,6 @@ export const HANDLERS: Record<string, ToolHandler> = {
   whois: async (ag, a, ctx, name) => {
       const q = String(a.name ?? "").trim();
       if (!q) return text("whois needs a name");
-      if (!ag.v4) return text("whois answers in v4 worlds");
       const w: any = await ag.door("whois", { name: q });
       if (!w?.ok) return refusedBy(w, "whois");
       if (!w.people?.length) return text(w.note ?? `nobody called "${q}" here`);

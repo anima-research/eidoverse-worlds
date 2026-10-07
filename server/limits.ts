@@ -35,12 +35,6 @@ export const LIMITS = {
   BC_RING: env("EW_BC_RING", 40),                  // crash breadcrumbs kept
   WHISPER_HOLD: env("EW_WHISPER_HOLD", 20),        // held whispers per absent recipient
 
-  // leases (docs/leases.md)
-  LEASES_PER_CLIENT: env("EW_LEASES_PER_CLIENT", 8),
-  LEASE_TAKE_M: env("EW_LEASE_TAKE_M", 3.5),       // proximity-take reach, metres
-  LEASE_STALE_MS: env("EW_LEASE_STALE_MS", 5000),  // holder silence before takeable
-  LEASE_SWEEP_MS: env("EW_LEASE_SWEEP_MS", 10_000),// holder silence before settled
-
   // receipts
   ATTEST_FRESH_MS: env("EW_ATTEST_FRESH_MS", 300_000),
 } as const;

@@ -43,7 +43,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 };
 const jeq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-const { emptyState, foldEntry, stateToEntries } = await import('../shared/fold.js');
+const { emptyState, foldEntry, stateToEntries } = await import('../shared/v4/import-v1/fold.js');
 const { canon } = await import('../shared/components.js');
 const LAMP = 'eidoverse/assets/models/lamp.glb';
 let ts = 1786320000000;
@@ -386,7 +386,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   // KNOWN BUG (reported 2026-10-06; door/translator, not the planner): …but the door's light schema is closed, so it
   // refuses that edit whole ("x.light: unknown key 'flicker'"): a translated lamp with an unknown light key can't be
   // edited at all in v4. Translation keeps such keys (shown first), so these lamps exist.
-  { const { translate } = await import('../shared/v4/translate-v1.js'); const { v1FoldBuild } = await import('../server/v4/build.ts');
+  { const { translate } = await import('../shared/v4/import-v1/translate-v1.js'); const { v1FoldBuild } = await import('../shared/v4/import-v1/build.ts');
     const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
     // the translator now carries a key the v4 component doesn't define BESIDE it (legacy:light {flicker}), so the lamp

@@ -5,11 +5,11 @@
 // v4 sim layer. The original log is never written; the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-d3.js @ 11db981). Engine changes: the v1 fold and the sim are the
 // engine's own ../fold.js and ../sim.js; the lab's CLI (her four goldens) is a check in tools/v4/run.ts.
-import { emptyState as v1Empty, foldEntry } from "../fold.js";
-import * as eidosim from "../sim.js";
-import { applyInPlace, opsOf, emptyState as v4Empty, worldIdOf, VERSION } from "./fold.js";
+import { emptyState as v1Empty, foldEntry } from "./fold.js";
+import * as eidosim from "../../sim.js";
+import { applyInPlace, opsOf, emptyState as v4Empty, worldIdOf, VERSION } from "../fold.js";
 import { project, enc, diff, stateBody, unNegZero, translatedGenesis } from "./translate-v1.js";
-import { simFold, digestOf, ENGINES } from "./simlayer.js";
+import { simFold, digestOf, ENGINES } from "../simlayer.js";
 
 export const TRANSLATOR = "translate-d3@0.2";
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));

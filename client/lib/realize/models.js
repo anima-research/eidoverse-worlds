@@ -39,10 +39,6 @@ import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf } from './models_field.js';
 
-/** The verbs this realizer owns — the whole flat entity-id namespace. */
-// IMPORT then re-export: a bare `export ... from` creates no local binding, and this
-// module uses PORTED itself further down. Same defect as avatar.js/EMOTES, same branch.
-import { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 
 // Orientation (PROTOCOL §9 amendment): the fold's q when the thing is more
@@ -56,7 +52,6 @@ const restOf = (obj, ent) => ({
   pos: obj.position.toArray(), yaw: ent?.yaw ?? obj.rotation.y,
   ...(Array.isArray(ent?.q) && ent.q.length === 4 ? { q: [...ent.q] } : {}),
 });
-export { PORTED };
 
 /** id → {kind:'model'|'light'|'empty', lib?, gen} — the realizer's own view of what
  *  it has handled. gen guards a load completion against acting for a

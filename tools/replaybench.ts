@@ -47,7 +47,7 @@ import { readFileSync, readdirSync, existsSync, statSync, writeFileSync } from "
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { WORLDS_DIR } from "../server/config.ts";
-import { foldEntry, emptyState, stateToEntries, type LogEntry, type WorldState } from "../shared/fold.js";
+import { foldEntry, emptyState, stateToEntries, type LogEntry, type WorldState } from "../shared/v4/import-v1/fold.js";
 import { emptySim, simEntry, advanceSim, simSnapshot } from "../shared/sim.js";
 
 const args = process.argv.slice(2);

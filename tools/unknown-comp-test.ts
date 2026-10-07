@@ -54,7 +54,7 @@ const jeq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 
-const { emptyState, foldEntry, stateToEntries } = await import('../shared/fold.js');
+const { emptyState, foldEntry, stateToEntries } = await import('../shared/v4/import-v1/fold.js');
 const { runVerb } = await import('../server/verbs.ts');
 const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
 

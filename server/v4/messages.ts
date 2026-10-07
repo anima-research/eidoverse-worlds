@@ -1,18 +1,15 @@
-// server/v4/messages.ts — the ws messages a v4 world answers differently (slice 2). server.ts consults this table
-// first, and ONLY when the client's world is a v4 world (World.v4); every v1 world dispatches exactly as before.
+// server/v4/messages.ts — the ws messages that reach a world's door. server.ts consults this table first.
 //
 //   v4      {type: "v4", id, tool, args} → {type: "v4-result", id, tool, ok, reply}, reply = the door's own answer
 //           (kept whole under `reply`: a door reply has fields of its own, such as inspect's `id`). Any door request
 //           (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/move/drop/wait, and the
 //           reads look/inspect/measure/find/check/history/schema/help). The asker is stamped from the connection
 //           (L4), never read from the payload. Spectators may only read.
-//   verb    refused (slice 3c): a v4 world takes door requests only. Every client spells its UI's verbs as requests at
-//           its own edge (shared/v4/fromv1.js: the page's net.js, the agent's sendVerb), so no v1 verb reaches here.
-//   lease, world-fork, world-reset
-//           refused: a lease's settlement skipped every gate in v1 (PARITY (c)2), and fork/reset act on v1 files.
+//   world-fork, world-reset
+//           an owner copies the world to a new name, or erases it to zero (archived, founded again by its owners).
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
-// earlier one (the same per-client queue the v1 verb path uses).
+// earlier one.
 import { forkV4 } from "./world.ts";
 import type { Client, World } from "../world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.ts";
@@ -23,7 +20,7 @@ import { isBanned } from "../../shared/v4/door.js";
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string) => void };
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois"]);
-const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "v1 name (no account bound yet)" };
+const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
  *  and every identity this world's log, roles or moderator log names. Never the whole directory (a name typed here
@@ -70,24 +67,20 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
-const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not v1 verbs", teach: "send {type: 'v4', id, tool, args}; help lists the tools" };
-
-
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "v4": ({ c, ws, expel }, msg) => {
-    // {tool, args}: a door request (a v1 `verb` in it is refused: clients spell at their own edge, 3c)
-    const w = c.world; if (!w?.v4) return;
+    // {tool, args}: a door request
+    const w = c.world; if (!w) return;
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     const tool = String(msg.tool ?? "");
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
-    if (typeof msg.verb === "string") { w.debug("v4-v1-verb", { who: c.id, verb: msg.verb }); reply({ ok: false, refused: V1_VERB }); return; }
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
-      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4!.live, String(args.who)) : false;
-      const r = await w.v4!.request(actorOf(c), tool, args);
+      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
+      const r = await w.v4.request(actorOf(c), tool, args);
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
@@ -97,11 +90,11 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         const id = typeof args.id === "string" ? cap(args.id, 64) : null;
         w.debug("refused", { who: c.id, tool: cap(tool, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
           line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
-      // bystanders see a removal as v1 showed it ("A removed B"), from the server (the moderator log is never a world entry)
+      // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
       if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = tool === "kick" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
+        const happened = tool === "kick" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
         if (happened) { const text = modLine(w, c.id, tool, who);
           for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
       }
@@ -120,16 +113,10 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       }
     });
   },
-  "verb": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
-    w.debug("v4-v1-verb", { who: c.id, verb: String(msg.verb ?? "") });
-    ws.send(JSON.stringify({ type: "error", error: `${V1_VERB.reason} (this '${String(msg.verb ?? "")}' wasn't written) — reload the page for the current client` }));
-  },
-  "lease": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "leases aren't part of v4 worlds: carrying is grab/put/throw through the door (L6)" })); },
   // Copy the world you're standing in to a new name: a new world (its own identity) whose founding act names this one,
   // holding a copy of its current state. Owner-only (it copies everything here; the owner's call).
   "world-fork": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
+    const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
@@ -142,7 +129,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   // Erase the world you're standing in to zero. Owner-only, and the request must carry the world's own name (the
   // client makes you type it). History is archived beside it, never destroyed; the same owners hold the fresh world.
   "world-reset": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
+    const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't erase worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);
