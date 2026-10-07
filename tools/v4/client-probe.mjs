@@ -29,7 +29,9 @@
 //             two-handed thing in both
 //   errors    no page error and no console.error from the v4 path
 // PROBE_ONLY=grab runs boot, see, live and the grab stages only (the rest is skipped, said so). PROBE_ONLY=xr the same
-// with the VR stages.
+// with the VR stages. PROBE_ONLY=roles: boot, see, live and the roles stages as the owner (research roles S6–S8: badges, the
+// person menu, the form, the Moderation and World Settings panels, the inline strip); PROBE_ONLY=roles-visitor the same
+// boot as Vic, a visitor (the menu, read-only settings, live grants adding the Moderation panel, an owner's ban).
 // The owned server runs with SKIP_OPT_SWEEP=1 and a scratch WORLDS_DIR; the world has no sky (the headless-sky
 // rule: no cloud bake in SwiftShader). Teardown (browser, server, scratch) is in finally.
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -77,6 +79,8 @@ try {
     const r1 = request(w, ANN, 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
     const r2 = request(w, ANN, 'set', { id: '@world', component: `roles:${BOB}`, value: { role: 'builder' } });
     const r3 = request(w, ANN, 'set', { id: '@world', component: 'sim', value: { engine: 'eidosim@0.5.0' } }); // the world runs physics
+    // roles stages: Zed, someone this world knows (a role on record) but who never comes in (an owner's ban on an absent person)
+    { const ZED = dir.resolve({ sub: 'local:zed', name: 'Zed' }); request(w, ANN, 'set', { id: '@world', component: `roles:${ZED}`, value: { role: 'visitor' } }); }
     if (!r1.ok || !r2.ok || !r3.ok) throw new Error(`setup: ${JSON.stringify([r1, r2, r3])}`); }
   world = await ownedWorld({ key: KEY, env: { WORLDS_DIR: worlds, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', TRUST_NAMES: '1' } });
   b = await launchBrowser();
@@ -102,7 +106,8 @@ try {
         const sRaf = s.requestAnimationFrame.bind(s); s.requestAnimationFrame = (cb) => sRaf((t, fr) => { window.__probe.sessionFrames++; return cb(t, fr); }); return s; };
     });
   }
-  await pg.goto(`${world.origin}/?world=garden&name=Ann&key=${KEY}${process.env.PROBE_AVATAR ? `&avatar=${process.env.PROBE_AVATAR}` : ''}${XR ? '&xr=1' : ''}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const AS = ONLY.includes('roles-visitor') ? 'Vic' : 'Ann';   // the roles-visitor part is Vic's page (a visitor)
+  await pg.goto(`${world.origin}/?world=garden&name=${AS}&key=${KEY}${process.env.PROBE_AVATAR ? `&avatar=${process.env.PROBE_AVATAR}` : ''}${XR ? '&xr=1' : ''}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const race = (p, ms = 20000) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error(`evaluate stalled ${ms} ms`)), ms))]);
   const ents = () => race(pg.evaluate(() => [...(globalThis.EW?.entities?.keys?.() ?? [])]));
   // boot: the client's own ready line, and the splash gone
@@ -111,7 +116,7 @@ try {
     const gone = await race(pg.evaluate(() => { const sp = document.getElementById('splash'); return !sp || sp.classList.contains('gone'); })).catch(() => false);
     if (ready && gone) break; await new Promise((r) => setTimeout(r, 250)); }
   const net = await race(pg.evaluate(() => ({ joined: !!globalThis.EW?.net?.joined, you: globalThis.EW?.net?.myId, role: globalThis.EW?.net?.myRights?.role })));
-  if (!check('boot: the client finishes booting into the v4 world, as its owner', !!ready && net.joined && net.role === 'owner', { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-5) })) throw new Error('boot gate failed');
+  if (!check(`boot: the client finishes booting into the v4 world, as its ${AS === 'Ann' ? 'owner' : 'visitor'}`, !!ready && net.joined && net.role === (AS === 'Ann' ? 'owner' : 'visitor'), { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-5) })) throw new Error('boot gate failed');
   // see
   let seen = false; for (let i = 0; i < 40 && !seen; i++) { seen = (await ents()).includes('crate-before'); if (!seen) await new Promise((r) => setTimeout(r, 250)); }
   check('see: the crate created through the door before the visit is realized', seen, await ents());
@@ -400,6 +405,156 @@ try {
     check('xr: a refusal shows on the VR quad (a toast is silent in a headset)', /refused/.test(refusedAsk?.title ?? '') && refusedAsk?.choices?.includes('ok'), refusedAsk);
     await xev(async () => (await import('./lib/xrask.js')).xrAnswer('ok'));
     await xev(() => window.__iwerDevice.activeSession?.end()).catch(() => {});
+  }
+
+  // ===================================================================== roles + moderation (research roles S6–S8)
+  // Two single-page parts (one 3D page at a time: two under SwiftShader starve each other past perf-guard's limit):
+  //   PROBE_ONLY=roles          this page is Ann (the owner); Bob (a builder) and Cal (a visitor) on their own sockets
+//   PROBE_ONLY=roles-settings this page is Ann: World Settings (the grid, access) and the inline strip (VR's surface)
+  //   PROBE_ONLY=roles-visitor  this page is Vic (a visitor); Ann acts over her own socket, as Bob does
+  // Everything on the page is clicked as a person clicks it (Playwright input; the long-press is CDP touch, real touch
+  // pointer events), and every write goes through the door. PROBE_SHOTS=<dir> saves screenshots, each over a plain light
+  // and a plain dark backdrop (the HUD has one theme; the panels are translucent, so what's behind them is the variable).
+  // BOOT_CHECK_VIEWPORT=390x844 BOOT_CHECK_TOUCH=1 runs the phone layout (the long-press, the bottom sheet).
+  if ((ONLY.includes('roles') || ONLY.includes('roles-settings') || ONLY.includes('roles-visitor')) && !XR) {
+    const rs = (ms) => new Promise((r) => setTimeout(r, ms));
+    const rwait = async (fn, arg, ms = 20000) => { const t = Date.now(); let v = null; while (Date.now() - t < ms) { v = await race(pg.evaluate(fn, arg), 20000).catch(() => null); if (v) return v; await rs(200); } return v; };
+    const SHOTS = process.env.PROBE_SHOTS; const W = (pg.viewportSize?.() ?? { width: 1280 }).width; const PHONE = W <= 600;
+    const shot = async (name) => { if (!SHOTS) return; await pg.mouse.move(W - 4, 4).catch(() => {});
+      for (const [tone, bg] of [['dark', 0x0d1416], ['light', 0xe9e6dd]]) {
+        await race(pg.evaluate((c) => { const EW = globalThis.EW; if (!EW?.scene) return; EW.__hid ??= EW.scene.children.filter((o) => o.visible && !o.isLight); for (const o of EW.__hid) o.visible = false;
+          EW.scene.background = new EW.THREE.Color(c); EW.scene.fog = null; }, bg), 60000).catch(() => {});
+        await rs(500); await pg.screenshot({ path: `${SHOTS}/roles-${W}-${tone}-${name}.png`, timeout: 60000 }); }
+      await race(pg.evaluate(() => { const EW = globalThis.EW; for (const o of EW.__hid ?? []) o.visible = true; EW.__hid = null; }), 60000).catch(() => {}); };
+    // the page is SETTLED before anything is clicked: every present body realized (an arrival compiles an avatar for
+    // seconds of main thread under SwiftShader, and an input dispatched then outwaits Playwright), then three frames in a
+    // row each under 1.5 s apart. Waits on the condition, bounded.
+    const settle = async () => { const t = Date.now(); let ok = false;
+      while (!ok && Date.now() - t < 120000) {
+        ok = await race(pg.evaluate(() => new Promise((res) => { const EW = globalThis.EW; if (![...EW.remotes.values()].every((r) => r.avatar)) return res(false);
+          let n = 0, last = performance.now(), worst = 0; const f = (ts) => { worst = Math.max(worst, ts - last); last = ts; if (++n >= 3) res(worst < 1500); else requestAnimationFrame(f); }; requestAnimationFrame(f); })), 15000).catch(() => false);
+        if (!ok) await rs(500); }
+      if (!ok) stage('roles: (harness) the page did not settle within 120 s', false); };
+    // another person over their own socket (the door's requests, as Bob's)
+    const sock = async (name) => { const s = new WebSocket(world.origin.replace('http', 'ws') + '/ws'); await new Promise((r, j) => { s.onopen = r; s.onerror = j; });
+      const box = []; s.onmessage = (ev) => box.push(JSON.parse(String(ev.data)));
+      s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, v4fold: true }));
+      for (let i = 0; i < 60 && !box.some((m) => m.type === 'snapshot'); i++) await rs(100);
+      let n = 0; const req = async (tool, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'v4', id, tool, args }));
+        for (let i = 0; i < 80; i++) { const m = box.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await rs(100); } return { ok: false, refused: { reason: 'no answer' } }; };
+      await settle();   // their body compiles on this page now: wait it out once, before anything is clicked
+      return { req, you: box.find((m) => m.type === 'snapshot')?.v4?.you, close: () => s.close() }; };
+    const openPeople = async () => { await rwait(() => !!document.querySelector('.chat-who'), null, 15000);
+      if (!(await race(pg.evaluate(() => !document.querySelector('.chat-side')?.classList.contains('closed'))).catch(() => false))) { await settle(); await pg.locator('.chat-who').first().click(); }
+      return rwait(() => document.querySelector('.who-row[data-name="Bob"]') && document.querySelectorAll('.chat-side-list .who-row').length >= 3, null, 20000); };
+    const rowsOf = () => race(pg.evaluate(() => [...document.querySelectorAll('.chat-side-list .who-row')].map((r) => ({ name: r.dataset.name, badge: r.querySelector('.who-badge')?.textContent ?? null, tone: r.querySelector('.who-badge')?.dataset.tone ?? null, muted: !!r.querySelector('.who-muted') }))));
+    const openMenu = async (name) => { await openPeople(); const row = pg.locator(`.who-row[data-name="${name}"]`).first();
+      if (PHONE) { const bx = await row.boundingBox(); const cdp = await pg.context().newCDPSession(pg);
+        // what the row heard during the press, printed if no sheet comes (the gesture is the browser's as much as ours)
+        await race(pg.evaluate(() => { const L = document.querySelector('.chat-side-list'); globalThis.__pe = []; if (L.__peOn) return; L.__peOn = true;
+          for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'contextmenu', 'click']) L.addEventListener(t, (e) => globalThis.__pe.push(`${t}:${e.pointerType ?? ''}@${Math.round(e.timeStamp)}`), { capture: true }); }));
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: bx.x + bx.width / 2, y: bx.y + bx.height / 2 }] }); await rs(700);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const got = await rwait(() => { const s = document.getElementById('person-sheet'); return s && !s.hidden ? [...s.querySelectorAll('.pm-body > *')].map((x) => x.dataset.act ?? x.textContent) : null; }, null, 8000);
+        if (!got) stage('roles: (diag) the long-press: what the row heard', true, await race(pg.evaluate(() => globalThis.__pe)).catch(() => null));
+        return got; }
+      await row.click({ button: 'right' });
+      return rwait(() => { const m = document.querySelector('.sp-ctx'); return m ? [...m.querySelectorAll('.sp-ctx-item')].map((x) => x.textContent) : null; }, null, 8000); };
+    const closeMenus = () => race(pg.evaluate(() => { document.querySelector('.sp-ctx')?.remove(); const s = document.getElementById('person-sheet'); if (s) { s.hidden = true; s.classList.remove('open'); } document.getElementById('person-form')?.remove(); }));
+    const click = async (sel, opts) => { await pg.locator(sel, opts).first().click(); };   // settled once per arrival, not per click
+    const dockHas = (id) => race(pg.evaluate((id) => { const b = document.querySelector(`button[data-toggles="${id}"]`); return !!b && !b.hidden; }, id));
+    const pageDoor = (tool, args) => race(pg.evaluate(({ tool, args }) => import('/lib/net.js').then((m) => m.requestV4(tool, args)), { tool, args }), 20000);
+
+    if (ONLY.includes('roles')) {   // ---------------- Ann's page (the owner)
+      const cal = await sock('Cal');
+      const col = await openPeople(); await settle();
+      const rows0 = await rowsOf();
+      check('roles: Chat › People shows a role badge (owner, builder), none for a visitor', col && rows0.find((r) => r.name === 'Bob')?.badge === 'builder' && rows0.find((r) => r.name === 'Ann')?.badge === 'owner' && rows0.find((r) => r.name === 'Cal')?.badge === null, rows0);
+      await shot('people');
+      const menu = await openMenu('Bob');
+      const want = PHONE ? ['message', 'warn', 'mute', 'kick', 'ghost', 'ban', 'role', 'history'] : ['Message', 'Warn…', 'Mute…', 'Kick…', 'Ghost…', 'Ban…', 'Role ▸', 'Moderation history'];
+      check(`roles: ${PHONE ? 'a long-press (500 ms, touch) opens the bottom sheet' : 'right-click opens the person menu'}: the owner gets every act on a builder`, JSON.stringify(menu) === JSON.stringify(want), menu);
+      await shot(PHONE ? 'sheet' : 'menu');
+      if (PHONE) await click('#person-sheet .pm-row[data-act="mute"]'); else await click('.sp-ctx .sp-ctx-item', { hasText: 'Mute…' });
+      const form = await rwait(() => { const f = document.querySelector('.pm-form[data-verb="mute"]'); return f ? { chips: [...f.querySelectorAll('.pm-chip')].map((c) => c.textContent), who: f.querySelector('.pm-who code')?.textContent } : null; }, null, 8000);
+      check('roles: Mute… opens one small form: who (with their identity), how long, channels, why', !!form && form.chips.includes('1 hour') && form.chips.includes('voice') && form.chips.includes('spam') && /^u-/.test(form.who ?? ''), form);
+      await click('.pm-form .pm-chip', { hasText: /^1 hour$/ }); await click('.pm-form .pm-chip', { hasText: /^chat$/ }); await click('.pm-form .pm-chip', { hasText: /^spam$/ });
+      await shot('mute-form');
+      await click('.pm-form .pm-go');
+      const muted = await rwait(() => !!document.querySelector('.who-row[data-name="Bob"] .who-muted'), null, 15000);
+      const rec = (await pageDoor('modlog', {}))?.records?.[0];
+      check('roles: the mute lands through the door (voice only, an hour, why) and Bob\'s row shows the muted mark', muted && rec?.verb === 'mute' && JSON.stringify(rec.channels) === '["voice"]' && rec.reason === 'spam', rec);
+      check('roles: the owner\'s dock has Moderation and World Settings', await dockHas('moderation') && await dockHas('world-settings'));
+      await click('button[data-toggles="moderation"]'); await click('#sec-mod-bans-tab');
+      const bans = await rwait(() => { const b = document.querySelector('#sec-mod-bans .body'); return b && b.textContent.includes('Muted now') ? [...b.querySelectorAll('.rp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()) : null; }, null, 10000);
+      check('roles: Moderation › Bans lists Bob muted, with Unmute', bans?.some((t) => /Bob/.test(t) && /voice/.test(t) && /Unmute/.test(t)), bans);
+      await shot('mod-bans');
+      await click('#sec-mod-log-tab');
+      const log = await rwait(() => { const b = document.querySelector('#sec-mod-log .rp-list'); return b && b.querySelector('.rp-verb') ? [...b.querySelectorAll('.rp-verb')].map((v) => v.dataset.verb) : null; }, null, 10000);
+      check('roles: Moderation › Log is newest first and merges role changes', log?.[0] === 'mute' && log.includes('role'), log);
+      await shot('mod-log');
+      cal.close();
+    }
+    if (ONLY.includes('roles-settings')) {   // ---------------- Ann's page: World Settings, and the inline strip
+      await settle();
+      await click('button[data-toggles="world-settings"]'); await click('#sec-ws-roles-tab');
+      const grid = await rwait(() => { const g = document.querySelector('#sec-ws-roles .rp-grid'); if (!g) return null;
+        const cb = (r, k) => g.querySelector(`input[data-r="${r}"][data-k="${k}"]`);
+        return { one: g.classList.contains('rp-one'), heads: [...g.querySelectorAll('thead .rp-rname')].map((x) => x.textContent), ownerLocked: !!cb('owner', 'ban')?.disabled, visEO: { dis: cb('visitor', 'editOthers')?.disabled, title: cb('visitor', 'editOthers')?.title } }; }, null, 10000);
+      check(PHONE ? 'roles: World Settings › Roles on a phone shows one role at a time' : 'roles: World Settings › Roles is a grid, owner first and locked; a dependent cell is greyed with its reason',
+        PHONE ? grid?.one === true : grid && JSON.stringify(grid.heads) === '["Owner","Moderator","Builder","Visitor"]' && grid.ownerLocked && grid.visEO.dis && /needs build/.test(grid.visEO.title), grid);
+      await shot('ws-roles');
+      if (!PHONE) {
+        await click('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]');
+        const defs = await rwait(() => import('/lib/net.js').then((m) => m.v4.st.entities['@world'].c['role-defs']?.builder?.can?.editOthers === false), null, 10000);
+        check('roles: ticking a cell writes role-defs through the door (builders\' editOthers off)', !!defs);
+        await rwait(() => !!document.querySelector('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]'), null, 5000);
+        await click('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]');
+      }
+      await click('#sec-ws-access-tab');
+      const acc = await rwait(() => { const b = document.querySelector('#sec-ws-access .body'); return b?.querySelector('select[data-k="join"]') ? [...b.querySelectorAll('select')].map((s) => s.value) : null; }, null, 8000);
+      check('roles: World Settings › Access shows who comes in, arrivals and guests', JSON.stringify(acc) === '["anyone","visitor","visitor"]', acc);
+      await shot('ws-access');
+      await click('button[data-toggles="world-settings"]');
+      // the inline strip (the VR surface): the same acts; kick confirms on a second press (nothing sent on the first)
+      const strip = await race(pg.evaluate(async () => { const P = await import('/lib/people.js'); const host = document.createElement('div'); document.body.append(host);
+        P.stripFor('Bob', host); const rows = [...host.querySelectorAll('.pm-row')].map((x) => x.dataset.act);
+        host.querySelector('.pm-row[data-act="kick"]').click(); const go = host.querySelector('.pm-go'); let sent = 0;
+        const N = await import('/lib/net.js'); const ws = N.net.ws; const real = ws.send.bind(ws); ws.send = (d) => { if (String(d).includes('"kick"')) sent++; return real(d); };
+        go.click(); const armed = go.textContent; const after1 = sent; ws.send = real; host.remove(); return { rows, armed, after1 }; }));
+      check('roles: the inline strip (the VR surface) lists the same acts, and a kick needs a second press on a confirm row (nothing sent on the first)', strip && strip.rows.includes('kick') && /confirm/.test(strip.armed) && strip.after1 === 0, strip);
+      stage('roles: VR in a headset was not run: the strip is DOM inside the chat quad; whether a laser trigger reaches it is the domquad pointer path', true);
+    }
+    if (ONLY.includes('roles-visitor')) {   // ---------------- Vic's page (a visitor); Ann over her own socket
+      const ann = await sock('Ann'); const VIC = await race(pg.evaluate(() => globalThis.EW.net.v4you));
+      const col = await openPeople(); await settle();
+      const menu = await openMenu('Bob');
+      check('roles: a visitor\'s menu on a builder is Message alone', col && JSON.stringify(menu) === JSON.stringify(PHONE ? ['message'] : ['Message']), menu);
+      await shot(PHONE ? 'visitor-sheet' : 'visitor-menu'); await closeMenus();
+      check('roles: a visitor has no Moderation entry; World Settings is everyone\'s', !(await dockHas('moderation')) && await dockHas('world-settings'), [await dockHas('moderation'), await dockHas('world-settings')]);
+      await click('button[data-toggles="world-settings"]'); await click('#sec-ws-roles-tab');
+      const vgrid = await rwait(() => { const b = document.querySelector('#sec-ws-roles .body'); return b?.querySelector('input[type=checkbox]') ? { all: [...b.querySelectorAll('input[type=checkbox]')].every((x) => x.disabled), ro: !!b.querySelector('.rp-ro') } : null; }, null, 10000);
+      check('roles: a visitor sees the grid with every control disabled, and that only the owner changes it', vgrid?.all && vgrid.ro, vgrid);
+      await shot('ws-roles-visitor');
+      await click('button[data-toggles="world-settings"]');
+      const g1 = await ann.req('set', { id: '@world', component: `roles:${VIC}`, value: { role: 'visitor', can: { mute: true } } });
+      const vtabs = await rwait(() => { const b = document.querySelector('button[data-toggles="moderation"]'); return b && !b.hidden ? ['bans', 'log', 'scripts'].filter((k) => document.getElementById(`sec-mod-${k}-tab`)) : null; }, null, 15000);
+      check('roles: granting mute (live, your-rights) adds the Moderation entry; a mute-only role sees the Log tab and no Bans', g1?.ok && JSON.stringify(vtabs) === '["log"]', [g1?.ok ?? g1, vtabs]);
+      const ZED = (await ann.req('whois', { name: 'Zed' }))?.people?.[0]?.id;
+      const zban = ZED ? await ann.req('ban', { who: ZED, reason: 'probe' }) : null;
+      await ann.req('set', { id: '@world', component: `roles:${VIC}`, value: { role: 'moderator' } });
+      await rwait(() => !!document.getElementById('sec-mod-bans-tab'), null, 15000);
+      await click('button[data-toggles="moderation"]'); await click('#sec-mod-bans-tab');
+      const vb = await rwait(() => { const b = document.querySelector('#sec-mod-bans .body'); return b && b.textContent.includes('Banned') ? [...b.querySelectorAll('.rp-row')].map((r) => ({ t: r.textContent.replace(/\s+/g, ' ').trim(), lift: !!r.querySelector('[data-lift="unban"]') })) : null; }, null, 10000);
+      check('roles: a moderator sees the owner\'s ban with no Unban (only its author, an owner, or someone above them lifts it)', !!zban?.ok && vb?.some((r) => /Zed/.test(r.t) && !r.lift), [zban?.ok ?? zban, vb]);
+      await shot('mod-bans-moderator');
+      await click('button[data-toggles="moderation"]');
+      await ann.req('set', { id: '@world', component: `roles:${BOB}`, value: { role: 'moderator' } }); await rs(1000);
+      const peer = await openMenu('Bob');
+      check('roles: a moderator acting on a moderator sees no acts and one line saying rank is why', Array.isArray(peer) && !peer.some((x) => /^(mute|Mute…)$/.test(x)) && peer.some((x) => /equal or higher/.test(x)), peer);
+      await shot(PHONE ? 'sheet-peer' : 'menu-peer'); await closeMenus();
+      ann.close();
+    }
   }
   const SKIP_REST = ONLY.length > 0 && !ONLY.includes('phys');
   if (SKIP_REST) stage('rest of the probe skipped (PROBE_ONLY)', true, ONLY);

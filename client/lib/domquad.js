@@ -14,7 +14,7 @@ import { quadMaterial } from './quadcolour.js';
 
 const PX_PER_M = 900;      // xrpanels' density — the number the tester's eyes accepted
 const W = 0.58;            // metres across, like the canvas quads
-const XR_FRAMES = ['world', 'emotes', 'settings', 'chat', 'debug', 'profile'];   // the frames that had canvas quads
+const XR_FRAMES = ['world', 'emotes', 'settings', 'chat', 'debug', 'profile', 'moderation', 'world-settings'];   // + the two roles panels (research roles S7, S8)   // the frames that had canvas quads
 const LIVE_MIN_MS = { debug: 250, chat: 250 };   // live panels re-rasterise at most 4 Hz; others at 16 ms
 
 let stage = null; let quads = null; let shown = false;

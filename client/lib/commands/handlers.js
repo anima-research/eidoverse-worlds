@@ -100,40 +100,58 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]
-  // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
-  // and default-off everywhere -- including open worlds, and including for
-  // owners. Somebody says so, in the log, or nobody flies.
+  // /grant <name> <role> [+gen|-gen] [+fly|-fly] — a role is any role this world has (visitor, builder, moderator, owner,
+  // or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly, research roles S5).
+  // The door decides: owners grant anything, a grantRoles holder only roles ranked below their own, with switches they hold.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.find((p) => ['owner', 'builder', 'visitor'].includes(p.toLowerCase()))?.toLowerCase();
-  const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
-  const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
-  if (!id || (!role && !genFlag && !flyFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor — or /grant * builder|visitor for everyone who signed in');
+  const role = parts.slice(1).find((p) => /^[a-z][a-z0-9-]{0,23}$/i.test(p))?.toLowerCase();
+  const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
+  const gen = flag('gen'), fly = flag('fly');
+  if (!id || (!role && gen === undefined && fly === undefined)) {
+    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] — roles: visitor, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
   }
-  // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
-  if (genFlag || flyFlag) return logChat('*', 'gen and fly aren\'t separate grants: a role is owner, builder or visitor');
-  if (!role) return logChat('*', 'usage: /grant <name> owner|builder|visitor');
+  const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
   // * = the world's default role for people who signed in (guests stay visitors unless the world opts in)
   if (id === '*') {
     if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
+    if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
     send({ tool: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}` });
     return;
   }
-  onePerson(id, 'grant').then((who) => { if (who) send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value: { role } } }, { what: `make ${id} ${role}` }); });
+  // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
+  onePerson(id, 'grant').then((who) => { if (!who) return;
+    const value = { ...(role ? { role } : {}), ...(can ? { can } : {}) };
+    send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value, ...(role ? {} : { merge: true }) } }, { what: `${role ? `make ${id} ${role}` : `change ${id}'s exceptions`}` }); });
 });
 
-// /kick /ban <name> [reason…] — owner-only, the door enforces; everyone else is told "A removed B" by the server.
-// A kick takes someone out now (they must be here); a ban also reaches someone who has left (the world's lookup).
+// /kick <name> [minutes] [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
+// /warn <name> <reason…>, /ghost <name> [minutes] [reason…]: the door enforces the switch and the rank (only below you);
+// everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here); the others also
+// reach someone who has left (the world's lookup).
 function moderate(cmd, arg) {
-  const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
-  if (!id) return logChat('*', `usage: /${cmd} <name> [reason] — ${cmd === 'kick' ? 'they can rejoin; /ban keeps them out' : 'a kick that sticks — /unban lifts it'}`);
-  const go = (who) => send({ tool: cmd, args: { who, ...(rest.length ? { reason: rest.join(' ') } : {}) } }, { what: `${cmd} ${id}` });
+  const [id, ...rest0] = (arg || '').trim().split(/\s+/).filter(Boolean);
+  const USAGE = { kick: '<name> [minutes, default 10] [reason]', ban: '<name> [days | forever] [reason]', mute: '<name> [minutes, default 60] [voice|chat] [reason]', warn: '<name> <reason>', ghost: '<name> [minutes, default 60] [reason] — or /ghost alone to become one yourself' };
+  if (!id) return logChat('*', `usage: /${cmd} ${USAGE[cmd]}`);
+  let rest = rest0.slice(); const args = {};
+  const num = () => (rest.length && /^\d+(\.\d+)?$/.test(rest[0]) ? Number(rest.shift()) : undefined);
+  if (cmd === 'kick') { const m = num(); if (m !== undefined) args.minutes = m; }
+  if (cmd === 'ban') { if (rest[0] === 'forever') rest.shift(); else { const d = num(); if (d !== undefined) args.days = d; } }
+  if (cmd === 'mute' || cmd === 'ghost') args.minutes = num() ?? 60;
+  if (cmd === 'mute' && (rest[0] === 'voice' || rest[0] === 'chat')) args.channels = [rest.shift()];
+  if (rest.length) args.reason = rest.join(' ');
+  if (cmd === 'warn' && !args.reason) return logChat('*', `usage: /warn ${USAGE.warn} — a warning says why`);
+  const go = (who) => send({ tool: cmd, args: { who, ...args } }, { what: `${cmd} ${id}` });
   if (cmd === 'kick') { const who = identityOf(id); return who ? go(who) : logChat('*', `${id} isn't here to remove — /ban keeps someone away`); }
   onePerson(id, cmd).then((who) => { if (who) go(who); });
 }
+register('mute', (arg) => moderate('mute', arg));
+register('warn', (arg) => moderate('warn', arg));
+register('ghost', (arg) => { if (!(arg || '').trim()) return send({ tool: 'ghost', args: { on: !net.myRights?.ghost } }, { what: net.myRights?.ghost ? 'stop being a ghost' : 'become a ghost' }); moderate('ghost', arg); });
+for (const verb of ['unmute', 'unghost']) register(verb, (arg) => { const id = (arg || '').trim();
+  if (!id) return logChat('*', `usage: /${verb} <name>`);
+  onePerson(id, verb).then((who) => { if (who) send({ tool: verb, args: { who } }, { what: `${verb} ${id}` }); }); });
 
 // /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
 // one-word-two-acts overload sent a typo'd object name into the moderation
@@ -443,10 +461,15 @@ export async function saveScreenshot() {
 /** The bus subscriptions — called once from main's boot sequence. The
  *  register() table above filled at import; this turns it on. */
 export function initCommands() {
+  let saidRights = null;
   bus.on('your-rights', (r) => {
-    // only worth a line when the world actually restricts — open worlds stay silent
+    // only worth a line when the world actually restricts — open worlds stay silent — and only when what you may do
+    // changed (a v4 server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
+    const key = JSON.stringify([r.role, r.roleName, r.switches ?? null, r.gen, r.fly, !!r.ghost, !!r.muted]);
+    if (key === saidRights) return; saidRights = key;
     if (!r.open && r.role !== 'owner') {
-      logChat('*', `this world has an owner — you are a ${r.role}${r.gen ? ' +gen' : ''} here`);
+      const extra = Array.isArray(r.switches) ? '' : r.gen ? ' +gen' : '';
+      logChat('*', `this world has an owner — you are ${/^[aeiou]/i.test(r.roleName ?? r.role) ? 'an' : 'a'} ${(r.roleName ?? r.role).toLowerCase()}${extra} here${r.ghost ? ' (a ghost: unseen)' : ''}`);
     }
   });
 

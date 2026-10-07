@@ -47,6 +47,8 @@ import {
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
+// may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
+const mayBuildStrict = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
 import { initPalette } from './lib/palette.js';
 import { initConjure } from './lib/conjure.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
@@ -56,6 +58,8 @@ import { initEditPanels } from './lib/editpanels.js';
 import { initEditLayout } from './lib/editlayout.js';
 import { initGizmo } from './lib/gizmo.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
+import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
+import { initRolesPanels, openModeration } from './lib/rolespanels.js';
 import { tickXRMirror } from './lib/xrmirror.js';
 import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xrbody.js';
 import { tickXRVignette } from './lib/xrvignette.js';
@@ -161,7 +165,11 @@ const chatApi = initChat({
   whisper: sendWhisper,
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
+  // the person menu and badges (research roles S6; client/lib/people.js)
+  person: { menuAt: personMenuAt, sheetFor: personSheet, stripFor: personStrip, badgeHtml: personBadge, muted: (n) => personOf(n).muted, presenting: () => isPresenting() },
 });
+initPeople({ openConvo, presenting: () => isPresenting(), toast, openModLog: (who) => openModeration({ tab: 'log', who }) });
+initRolesPanels();
 // the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
 initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
 initEmoteBar();
@@ -198,12 +206,12 @@ initDock([
     active: () => isEditing(),
     // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
     title: (on) => (on ? 'leave builder mode (B)' : null),
-    gate: () => editSurface() && ['builder', 'owner'].includes(net.myRights?.role),   // no edit mode on a phone (build.js editSurface)
+    gate: () => editSurface() && mayBuildStrict(),   // no edit mode on a phone (build.js editSurface)
     deadWhy: () => (editSurface() ? null : ' — builder mode is for a desktop or tablet'),
   },
 ]);
 // the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
-setMenuSources({ buildRights: () => editSurface() && ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
+setMenuSources({ buildRights: () => editSurface() && mayBuildStrict(), loginUrl: () => loginUrl() });
 paintPresence(presence());            // the dot needs the button: after initDock
 bus.on('presence:me', paintPresence);
 initDebug({
@@ -591,7 +599,7 @@ registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
 // the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
 initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
-  openConvo, colorFor });
+  openConvo, colorFor, personMenu: (n, x, y) => (isPhone() ? personSheet(n) : personMenuAt(n, x, y)), personStrip });
 registerSystem('plates', (dt, t, now) => updatePlates(now));
 registerSystem('build', () => updateBuild());
 registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: promote

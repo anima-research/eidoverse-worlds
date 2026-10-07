@@ -598,7 +598,20 @@ export class WorldAgent {
         // process-global physics state — a ghost floor by the moderation
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
-        if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
+        // …unless the removal said when they may come back (a kick's cooldown, research roles S4: "4006 = never
+        // reconnect" made every kicked agent a permanent one). Then the body still lets go of what it holds up now
+        // (its floors: the #83 reason close() is the path), and the host dials again once the cooldown has passed.
+        // Bans and anything longer than two hours stay what they were: the body stays down.
+        if ((ev as { code?: number } | undefined)?.code === 4006) {
+          const wait = (this.removedUntil ?? 0) - Date.now();
+          if (wait > 0 && wait <= 2 * 3600_000 && !this.closed) {
+            for (const id of [...this.supportIds.keys()]) this.dropSupport(id);
+            this.removedUntil = null;
+            setTimeout(() => { if (!this.closed) this.connect().catch(() => {}); }, wait + 1000);
+            return;
+          }
+          this.close(); return;
+        }
         // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
         // A refusal is an answer, not an outage — redialing it every 1.5s is
         // the polite-DoS the sequencer's own comments warn about (RFC-005
@@ -617,12 +630,13 @@ export class WorldAgent {
         const msg = JSON.parse(String(ev.data));
         switch (msg.type) {
           case "error":
+            if (typeof msg.until === "number") this.removedUntil = msg.until;   // when a kick lets us back (onclose 4006)
             // A pre-join refusal (reserved name, bad token) is final —
             // retrying the identical join every 1.5s can only produce the
             // same refusal. Surface the sequencer's reason instead of the
             // silent join-timeout loop this used to be.
             if (!this.joined) {
-              this.closed = true;
+              if (typeof msg.until !== "number") this.closed = true;   // a cooldown isn't final: onclose 4006 dials again after it
               clearTimeout(timeout);
               reject(new Error(String(msg.error ?? "join refused")));
             } else {
@@ -1530,7 +1544,8 @@ export class WorldAgent {
   // a data box carries floors, not architecture.
 
   private geomCache = new Map<string, Promise<any | null>>();
-  private supportIds = new Map<string, string[]>();   // entity id -> registered box ids
+  private supportIds = new Map<string, string[]>();
+  private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
    *  name: two agents can carry the same name across a reconnect, and a
    *  holder set that collapsed them would let the departing one release the

@@ -28,8 +28,8 @@ const BASE = "bbc9ac22";
 // replacement; a mutation whose text isn't found is itself a failure (the gate moved: update the list).
 const MUTANTS: [string, string, string, string[]][] = [
   // [name, file, find, replace, cases]
-  ["install: scope within installer's rights", "door.js", "if (RANK[role] < RANK[need]) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
-  ["sponsor's role NOW", "door.js", "const r = roleOf(st, cap.sponsor);\n  if (RANK[r] < RANK[need])", "const r = \"owner\";\n  if (RANK[r] < RANK[need])", ["B2", "B3", "B24"]],
+  ["install: scope within installer's rights", "door.js", "if (need) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
+  ["sponsor's role NOW", "door.js", "const need = lacks(w, st, cap.sponsor, op,", "const need = null && lacks(w, st, cap.sponsor, op,", ["B2", "B3", "B24"]],
   ["scope narrowing", "door.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
   ["sponsor = latest write (not creator)", "door.js", "const W = scriptWrites(w, id, key);\n  for (let k = 0; k < W.length; k++)", "const W = scriptWrites(w, id, key).slice(-1);\n  for (let k = 0; k < W.length; k++)", ["B18"]],
   ["no-op elision", "door.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
@@ -47,8 +47,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["syntax at install", "door.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
   ["banned → suspended", "door.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
   ["adopt base", "door.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
-  ["always needs an owner", "door.js", "if (v.always === true && prev?.always !== true && RANK[role] < RANK.owner)", "if (false)", ["B17"]],
-  ["install rank", "door.js", "if (RANK[role] < RANK[cfg.install]) refuse(\"rights\", `installing a script", "if (false) refuse(\"rights\", `installing a script", ["B17"]],
+  ["always needs an owner", "door.js", "if (v.always === true && prev?.always !== true && role !== \"owner\")", "if (false)", ["B17"]],
+  ["install rank", "door.js", "if (!may(st, installer, \"scripts\")) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["B17"]],
   ["timer floor", "door.js", "if (v.every !== undefined && !(typeof v.every === \"number\" && v.every >= 5))", "if (false)", ["B17"]],
   ["paused", "door.js", "if (v.paused === true) { const pb = pausedBy(w, id, key); return out(\"paused\"", "if (false) { const pb = pausedBy(w, id, key); return out(\"paused\"", ["B20", "PA1"]],
   ["run: false", "door.js", "if (cfg.run === false) return out(\"stopped\"", "if (false) return out(\"stopped\"", ["B20"]],
@@ -77,7 +77,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
   ["runs per script per minute", "door.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
   ["cpu per sponsor per minute", "door.js", "if (ms >= cfg.cpu) return", "if (false) return", ["B23"]],
-  ["a guest sponsor is a guest", "door.js", "const r = roleOf(st, cap.sponsor);\n  if (RANK[r] < RANK[need])", "const r = roleOf(st, cap.sponsor, false);\n  if (RANK[r] < RANK[need])", ["B24"]],
+  ["a guest sponsor is a guest", "door.js", "const n = needOf(op); const eff = effective(st, holder);", "const n = needOf(op); const eff = effective(st, holder, false);", ["B24"]],
   ["upload rate", "door.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
   ["acts point at a say's text, never copy it", "door.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],

@@ -35,7 +35,7 @@ import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
-import { requestDebug } from './net.js';
+import { requestDebug, v4 } from './net.js';
 import { sendOps, del, revertPose } from './v4edit.js';
 import * as OP from '../../shared/v4/ops.js';
 import { state } from './state.js';
@@ -384,6 +384,9 @@ export function initSceneGraph() {
     paintScene();
   }, { id: 'scene' });
 
+  // research roles §7: in a v4 world this tab is retired. v4 scripts live in Moderation › Scripts (and on the
+  // Inspector's script card); an imported world's old bindings, which v4 never runs, live in World Settings › Old world. One place each.
+  bus.on('hydrated', () => { if (v4.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
   scriptsApi = makeSection('📜 scripts', async (body) => {
     scriptsBody = body;
     await refreshRoster();

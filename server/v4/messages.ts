@@ -18,9 +18,10 @@ import { WORLDS_DIR } from "../config.ts";
 import { isBanned } from "../../shared/v4/door.js";
 import { readMeter, doorTime } from "./readmeter.ts";
 
-type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string) => void };
+type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
-const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois"]);
+const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
+const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
 const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
@@ -57,10 +58,20 @@ function recordRefusal(c: Client): boolean {
  *  reason (that went to the person, and stays in the moderator log), not an address, not an account. */
 function modLine(w: World, by: string, tool: string, who: string) {
   const name = directoryFor(WORLDS_DIR).nameOf(who) ?? "someone";
-  return tool === "ban" ? `${by} banned ${name} from this world` : tool === "kick" ? `${by} removed ${name} from this world` : `${by} lifted the ban on ${name}`;
+  return tool === "ban" ? `${by} banned ${name} from this world` : tool === "kick" ? `${by} removed ${name} from this world` : tool === "mute" ? `${by} muted ${name}`
+    : tool === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
 }
 /** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
+/** Presence messages a ghost or a role-less person doesn't send (they'd show them, or act on someone), and the one a
+ *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
+const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
+export function gagged(c: Client, type: string): boolean {
+  const w = c.world; if (!w?.v4 || !c.v4id || !QUIET.has(type)) return false;
+  // ghostHidden is the sweep's own flag (set at join and on every change): no moderator-log scan per typing packet
+  if (c.ghostHidden || w.v4.roleOf(c.v4id) === "none") return true;
+  return type === "caption" && !!w.v4.mutedHere(c.v4id);
+}
 export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };
 
 /** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. */
@@ -73,8 +84,10 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
+const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
+const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
-  "v4": ({ c, ws, expel }, msg) => {
+  "v4": ({ c, ws, expel, sweep }, msg) => {
     // {tool, args}: a door request
     const w = c.world; if (!w) return;
     const rid = msg.id ?? null;
@@ -111,23 +124,39 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
       // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
-      if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban") && typeof args.who === "string") {
+      // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a
+      // notice they dismiss, a mute or a ghost is told to its person; a ghost is never named to bystanders (unseen)
+      if (r?.ok && PERSON_ACTS.has(tool)) { sweep?.(w);
+        const who = String(args.who ?? ""); const notice = tool === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
+          : tool === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
+          : tool === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
+        if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
+      if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = tool === "kick" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
-        if (happened) { const text = modLine(w, c.id, tool, who);
+        const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
+        const ghostHere = [...w.clients].some((t) => t.v4id === who && w.isGhost(t));   // unseen: never named to bystanders
+        if (happened && !ghostHere) { const text = modLine(w, c.id, tool, who);
           for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
       }
+      // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
+      if (r?.ok && tool === "unban" && typeof args.who === "string") { let n = 0;
+        for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
+        if (n) saveGlobalBans(); }
       // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
       if (r?.ok && (tool === "ban" || tool === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.v4id === who) {
-          if (tool === "ban" && t.anonymous && t.addr) {
-            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until: Date.now() + ADDR_BAN_MS, world: w.name, ...(args.reason ? { reason: String(args.reason) } : {}) };
+          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
+          // also name its connection's address in this world, or reconnecting would shed them (review 10-07)
+          if (t.anonymous && t.addr) {
+            const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
+            globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
-          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}`);
+          const back = r.until ? ` — you may come back ${tool === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
+          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
     });
@@ -139,9 +168,15 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
+    // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
+    // most FORK_PER_HOUR per person, so no owner can stall every world on the door by forking in a loop
+    const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
+    if (now - last < FORK_GAP_MS) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — try again in a minute`);
+    if (mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (at most ${FORK_PER_HOUR})`);
     const to = String(msg.to ?? "").slice(0, 64);
     const r = forkV4(w.v4, to, actorOf(c));
     if (!r.ok) return err(r.err);
+    forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },
@@ -152,6 +187,9 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't erase worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);
+    // erasing is the most senior owner's act (the founder, unless they left ownership): a co-owner made later can't wipe
+    // the world from under the people who made it (review 10-06; research: delete/reset is never a switch)
+    if (w.v4.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetV4(); } catch (e: Any) { return err(`the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);

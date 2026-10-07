@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
-import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
+import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -20,6 +20,7 @@ import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./terrain.js";
 import * as SR from "./scriptrules.js";
+import * as R from "./roles.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
@@ -467,26 +468,80 @@ function supportUnder(st, b, ignore) {
 }
 
 // ---------- rights ----------
-const RANK = { none: -1, visitor: 0, builder: 1, owner: 3 };
+// The ladder, the closed switch list and the effective set live in shared/v4/roles.js (the Sanctioned Society: ranked
+// membership only; banned and ghost are states outside it). Every rank comparison in the door goes through rankOf /
+// whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
+const RANK = R.RANK;
+const wcOf = (st) => st.entities?.["@world"]?.c;
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && c[k]?.role === "owner"); };
 // §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
 // (`default-role`, what an imported world's `roles['*']` becomes); absence means visitor.
+// a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
+// may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
+// …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
 function roleOf(st, actor, anon = ISANON(actor)) {
-  const c = st.entities?.["@world"]?.c; if (!c) return "none";
-  // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
-  // may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
-  // …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
-  const dr = c["default-role"]; const guestRole = dr?.guests === "builder" && dr?.role === "builder" ? "builder" : "visitor";
-  let r = c[`roles:${actor}`]?.role ?? (anon ? guestRole : dr?.role ?? "visitor");
-  if (RANK[r] === undefined) r = "visitor";
-  return !ownersOf(st).length && RANK[r] > RANK.visitor ? "visitor" : r;
+  const c = wcOf(st); if (!c) return "none";
+  return R.roleIdOf(c, actor, { anon, owners: ownersOf(st).length > 0 });
 }
+/** Where a person stands on the ladder (a role the world doesn't define reads as visitor; legacy none as -1). */
+const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, anon));
+/** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
+ *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
+const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
+/** Effective rights {role, name, rank, can, switches} (roles.js effectiveOf). */
+const effective = (st, actor, anon = ISANON(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
+const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || effective(st, actor).can.fly) : effective(st, actor).can[sw] === true;
+/** Does this identity hold any power that acts on people (mute, kick, ban, pauseScripts)? Opens the moderation log. */
+const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
+export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 /** The role the door gives `actor` in a folded state (a view: what a client should be told it may do here). */
 export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
-export const isBanned = (w, who) => { let b = false; for (const m of w.mod) if (m.who === who && (m.verb === "ban" || m.verb === "unban")) b = m.verb === "ban"; return b; };
+// ---------- sanctions: views over the moderator log (research §5) ----------
+// Every sanction is a record with an optional `until` (the door's clock, ms). Expiry is computed, never written: a view
+// reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the door's clock). Records
+// name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted",
+// an old kick) is permanent for a ban and no cooldown for a kick.
+// Every record since the last LIFT of its kind (unban, unmute, unghost) that is still in force counts, and the STRONGEST
+// wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
+// owner's permanent one used to replace it, the newest record alone being read). Lifting goes through personLift.
+const latestOf = (w, who, verbs) => { let r = null; for (const m of w.mod) if (m.who === who && verbs.includes(m.verb)) r = m; return r; };
+const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());
+const sinceLift = (recs, verb, lifts) => { let out = []; for (const m of recs) { if (lifts.includes(m.verb)) out = []; else if (m.verb === verb) out.push(m); } return out; };
+const strongest = (a) => a.reduce((x, m) => (!x ? m : x.until === undefined ? x : m.until === undefined || m.until > x.until ? m : x), null);
+const recsOf = (w, who) => w.mod.filter((m) => m.who === who);
+/** The sanctions of one kind in force on `who` now, every one (a lift must be allowed over each). */
+export function inForceOf(w, who, kind, recs = recsOf(w, who)) {
+  const lifts = { ban: ["unban"], kick: ["unban"], mute: ["unmute"], ghost: ["unghost"] }[kind];
+  return sinceLift(recs, kind, lifts).filter((m) => inForce(w, m) && (kind !== "kick" || m.until !== undefined));
+}
+const banFrom = (w, who, recs) => strongest(inForceOf(w, who, "ban", recs));
+const kickFrom = (w, who, recs) => strongest(inForceOf(w, who, "kick", recs));
+const muteFrom = (w, who, channel, recs) => { const a = inForceOf(w, who, "mute", recs); if (!a.length) return null;
+  const channels = [...new Set(a.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
+  if (channel && !channels.includes(channel)) return null;
+  const top = strongest(a); return { ...top, channels, until: a.some((m) => m.until === undefined) ? undefined : Math.max(...a.map((m) => m.until)) }; };
+const ghostFrom = (w, who, recs) => strongest(inForceOf(w, who, "ghost", recs)) ?? (w.presence?.ghosts?.[who] ? { verb: "ghost", who, chosen: true, ts: w.presence.ghosts[who].ts } : null);
+/** The ban in force on `who` (the strongest record), or null. */
+export const banOf = (w, who) => banFrom(w, who, recsOf(w, who));
+export const isBanned = (w, who) => !!banOf(w, who);
+/** The kick whose cooldown still runs (they can't rejoin until m.until), or null. An unban ends it early. */
+export const kickOf = (w, who) => kickFrom(w, who, recsOf(w, who));
+/** The mute in force (channels: the union of every mute in force, until: the latest), or null; `channel` narrows it. */
+export const muteOf = (w, who, channel) => muteFrom(w, who, channel, recsOf(w, who));
+/** Ghost (PLAN 10-06: in the world, outside society): the sanction in force, else the mode its holder chose. */
+export const ghostOf = (w, who) => ghostFrom(w, who, recsOf(w, who));
+/** Everything in force now, per identity (the Moderation panel's Bans tab; the server's join, voice and ghost gates).
+ *  One pass over the moderator log, so the server's sweep stays linear in it. */
+export function sanctionsNow(w) {
+  const by = new Map(); for (const m of w.mod) if (typeof m.who === "string") { let a = by.get(m.who); if (!a) by.set(m.who, (a = [])); a.push(m); }
+  for (const k of Object.keys(w.presence?.ghosts ?? {})) if (!by.has(k)) by.set(k, []);
+  const out = {}; for (const [x, recs] of by) { const b = banFrom(w, x, recs), k = kickFrom(w, x, recs), m = muteFrom(w, x, undefined, recs), g = ghostFrom(w, x, recs);
+    if (b || k || m || g) out[x] = { ...(b ? { ban: b } : {}), ...(k ? { kick: k } : {}), ...(m ? { mute: m } : {}), ...(g ? { ghost: g } : {}) }; }
+  return out;
+}
 // Who a state entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
 // differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
@@ -535,7 +590,7 @@ const refuse = (code, reason, teach, extra) => { throw new Refusal(code, reason,
 let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
 // tools that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
-const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts"]);
+const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "modlog", "bans"]);
 const RESERVED = new Set(["door", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -575,7 +630,18 @@ export function request(w, actor, tool, args = {}) {
       refuse("custody", "this door doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
-    if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
+    // body and what it held were never released)
+    if (w.exists && tool !== "help" && tool !== "leave" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    if (w.exists && tool !== "help" && tool !== "leave" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
+    // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
+    // legacy role `none` (a demotion below visitor): outside membership, it holds no switch and no voice; it may look,
+    // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
+    if (w.exists && !GHOST_OK.has(tool) && tool !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
+      refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${tool}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
+    // ghost: only the chosen mode's own toggle (ghost {on}) passes; ghost {who} is a sanction, an act on someone
+    if (w.exists && (!GHOST_OK.has(tool) || (tool === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
+      refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
@@ -607,7 +673,10 @@ export function request(w, actor, tool, args = {}) {
 // byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the door's own state (rate,
 // identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the door counts
 // what it didn't write, and the next refusal it does write says how many (`unrecorded`).
-const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned"]);
+// "muted": its refusal would put the muted words in the public log (review 10-07)
+const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
+// what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
+const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
 function logRefusal(w, actor, tool, args, code) {
   try {
     // a tool the door doesn't have is recorded too (an agent's invented tool is part of what it tried), when it's a name
@@ -735,8 +804,9 @@ function admit(w, st, who, ops) {
     else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2.3: delete or change its components instead (owners only)");
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
-    rights(w, st, s, who, role, op, at);
-    keyRights(w, st, s, who, op, at, keysMade);
+    const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
+    rights(w, st, s, who, role, op, at, made, pause);
+    keyRights(w, st, s, who, op, at, keysMade, pause);
     seniority(w, st, who, op);
     // §3d H7: deleting an entity is admitted as deleting each of its components, so the creator rule applies per key
     if (op.verb === "delete" && op.comp === undefined && e) for (const c of Object.keys(e.c)) keyRights(w, st, s, who, { verb: "delete", id: op.id, comp: c }, `${op.id}.${c}`, keysMade);
@@ -763,6 +833,7 @@ function admit(w, st, who, ops) {
   });
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
+  rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
@@ -799,7 +870,7 @@ function capacityCheck(w, st, s, who, norm) {
 // all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the door's own follow-ups) never
 // acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
 function lockCheck(w, st, who, role, k, op, at) {
-  const mayUnlock = !who.cap && RANK[role] >= RANK[rankNeeded({ id: k, comp: "lock" })];
+  const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" });
   if (THROUGH && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
@@ -816,11 +887,41 @@ function shapeOneOrRefuse(verb, op, i) {
   const out = { id: op.id }; if (op.comp !== undefined) out.comp = op.comp; if (verb === "set" && "value" in op) out.value = op.value;
   return out;
 }
-// L7 keys rights on the component, not on the word that carried it. On @world, adding to the shared library is a
-// builder's act (publish); everything else there (roles, bounds, physics, the world's name) is the owner's.
-const rankNeeded = (op) => (op.id !== "@world" ? "builder" : op.comp?.startsWith("library:") ? "builder" : "owner");
-function rights(w, st, s, who, role, op, at) {
-  const { actor, cap } = who; const need = rankNeeded(op);
+// L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
+// needs is a SWITCH (roles.js), never a rank:
+//   a thing          build when you make it or made it; editOthers when someone else made it
+//   @world.library:*  build (publish);  @world.palette:*  generate (the v4 landing of the old `asset` spend gate)
+//   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, ground-paint:*,
+//                     bounds, spawn (EDIT_WORLD_SWITCH; off = owner)
+//   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only switches you hold
+//   the rest of @world (role-defs, default-role, access, sim, scripts, schemas, behaviours…): owner, never a switch
+const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "bounds", "spawn"]);
+const needOf = (op) => {
+  if (op.id !== "@world") return "thing";
+  const base = String(op.comp ?? "").split(":")[0];
+  if (base === "library") return "build";
+  if (base === "palette") return "generate";
+  if (R.EDIT_WORLD_SWITCH && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "ground-paint")) return "editWorld";
+  if (base === "roles") return "grant";
+  return "owner";
+};
+/** What `holder` lacks to make this op, or null if they may: "owner", or the switch name. `made` = ids this write
+ *  creates. A capability's holder (a handler's author, a script's sponsor) is judged by the same rule; for them a
+ *  roles:* write needs owner (a script never grants). */
+function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
+  if (roleOf(st, holder) === "owner") return null;
+  const n = needOf(op); const eff = effective(st, holder);
+  if (n === "owner" || (n === "grant" && viaCap)) return "owner";
+  if (n === "grant") return eff.can.grantRoles ? null : "grantRoles";
+  if (n !== "thing") return eff.can[n] ? null : n;
+  if (!eff.can.build) return "build";
+  if (eff.can.editOthers || op.verb === "create" || made?.has(op.id)) return null;
+  const c = creatorOf(w, op.id); return c && c.rights === holder ? null : "editOthers";
+}
+// the words a refusal uses for what was missing (kept "needs owner" / "needs builder" where those were the words)
+const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} switch`);
+function rights(w, st, s, who, role, op, at, made, pause) {
+  const { actor, cap } = who;
   // a screen's captions are written by the caption tool only (its session, order and generation rules), never set by
   // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
   // delete them (CAPTIONS below)
@@ -831,20 +932,25 @@ function rights(w, st, s, who, role, op, at) {
   if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-tool", `${at} is written by the caption tool, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
-    if (!(Array.isArray(ids) && ids.includes(actor)) && RANK[role] < RANK[need]) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
+    if (!(Array.isArray(ids) && ids.includes(actor)) && lacks(w, st, actor, op, made)) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
     return; }
-  if (!cap) { if (RANK[role] < RANK[need]) refuse("rights", `changing ${at} needs ${need}; you are ${role}`, `ask the world's owner for ${need} rights (say {text, to: <owner>}); help shows your role`); return; }
-  if (cap.kind === "script") return scriptRights(st, cap, op, at, need);
+  if (!cap) {
+    // a pause write (only `paused` changes) by a pauseScripts holder needs no edit rights on the thing: keyRights judges it
+    if (pause && may(st, actor, "pauseScripts")) return;
+    const n = lacks(w, st, actor, op, made); if (!n) { if (needOf(op) === "grant") grantCheck(w, st, s, actor, op, at); return; }
+    refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and switches" : `ask a moderator or an owner for ${n}; help shows your role and switches`, { needs: n });
+  }
+  if (cap.kind === "script") return scriptRights(w, st, cap, op, at, made);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
-  if (cap.kind === "reaction" && RANK[roleOf(st, cap.author)] < RANK[need]) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
+  if (cap.kind === "reaction" && lacks(w, st, cap.author, op, made, { viaCap: true })) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   // a hand's settlement: who may is grabbable.who (grabOf: the one reader, with the physics fallback); a punt is a kick,
   // not a hand, and keeps physics.who (research: "physics.who now means who may punt or push it")
-  if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
+  if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? DEFAULT_WHO;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can punt`, "");
-    if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
+    if (rankOf(st, actor) < whoRank(st, n)) refuse("rights", `only a ${n} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
   else if (cap.kind === "handle") { const g = grabOf(st.entities[op.id]?.c);
     if (!g) refuse("not-grabbable", `${op.id} isn't something you can carry`, "");
-    if (RANK[role] < RANK[g.who]) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
+    if (rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
   // founding: once, before any state, in a world whose genesis names this door's operator key (founded here)
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
@@ -863,16 +969,53 @@ export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.k
 // An owner can't change or remove the role of an owner who has been one longer (the founder, whose ownership is in
 // genesis or the founding grant, is the most senior and can't be demoted by anyone). Without it, a co-owner — or anyone
 // who got owner by mistake — could demote the founder and ban them, and only an operator editing the log could undo it.
-const ownerSince = (w, st, x) => (roleOf(st, x, false) === "owner" ? lastSetterOf(w, "@world", `roles:${x}`)?.seq ?? -1 : Infinity);
+// Seniority is the START of an owner's current unbroken run as owner: the earliest write to roles:<x> after which every
+// write kept it owner (the founding grant is the earliest of all). It read the LAST write, so a junior owner who
+// "re-affirmed" the founder ({role: owner}) reset the founder's seniority to now, then demoted and banned them
+// (top-down review 10-06, S0-1). Writes that keep someone owner never move their seniority.
+function ownerSince(w, st, x) {
+  if (roleOf(st, x, false) !== "owner") return Infinity;
+  const comp = `roles:${x}`; let since = -1;
+  for (const i of backward(w, "@world")) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+    const ops = opsQuiet(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== "@world" || (o.comp !== undefined && o.comp !== comp)) continue;
+      if (o.verb === "set" && o.comp === comp && o.value?.role === "owner") since = i; else return since; } }
+  return since;
+}
+/** The most senior owner here (the start of the longest unbroken run as owner; the founder unless they left it), or null. */
+export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = Infinity;
+  for (const k of ownersOf(st)) { const x = k.slice(6), t = ownerSince(w, st, x); if (t < at) { at = t; best = x; } } return best; }
 function seniority(w, st, who, op) {
-  if (op.id !== "@world" || !op.comp?.startsWith("roles:") || who.cap) return;
+  if (op.id !== "@world" || !op.comp?.startsWith("roles:")) return;
+  // a capability acts with its holder's rights, seniority included (review 10-07: a junior owner's reaction demoted the
+  // founder); the door's own scoped follow-ups (rest, door, handle, founding) never write a role
+  const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
+  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
   const target = op.comp.slice(6);
-  if (target === who.actor || roleOf(st, target, false) !== "owner") return;
-  if (op.verb === "set" && op.value?.role === "owner") return;   // re-affirming an owner takes nothing from them
-  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))
+  if (target === holder || roleOf(st, target, false) !== "owner") return;
+  // a write that keeps them owner is still a write to a more senior owner's entry: refused like any other (it used to
+  // pass as a "re-affirm", and reset their seniority: S0-1). Your own entry, and juniors', remain yours to write.
+  if (ownerSince(w, st, target) <= ownerSince(w, st, holder))
     refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
 }
-function keyRights(w, st, s, who, op, at, keysMade) {
+// The grant rule (research §3, server rule 5): a roles:<id> write by someone who isn't an owner needs grantRoles, and
+//   the person must rank below you, before AND after; the role you give must rank below yours; that role's switches,
+//   and any `can: true` (or legacy gen: true), must be switches you hold. Ownership stays an owner's (seniority).
+function grantCheck(w, st, s, actor, op, at) {
+  if (roleOf(st, actor) === "owner") return;
+  const me = effective(st, actor); const target = op.comp.slice(6); const anon = ISANON(target);
+  if (target === actor) refuse("rights", "you can't change your own role", "ask someone ranked above you");
+  const before = roleOf(st, target, anon);
+  if (rankOf(st, target, anon) >= me.rank) refuse("rank", `${said(target)} is ${R.roleDef(wcOf(st), before)?.name ?? before}, not ranked below you (${me.name}); you can only change the roles of people below you`, "ask someone ranked above them", { needs: "rank" });
+  const wc1 = { ...(wcOf(s) ?? {}) }; if (op.verb === "delete") delete wc1[op.comp]; else wc1[op.comp] = op.value;
+  const after = R.roleIdOf(wc1, target, { anon, owners: true }); const def = R.roleDef(wc1, after);
+  if ((def?.rank ?? RANK.none) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
+  const extra = op.verb === "set" ? Object.entries(op.value?.can ?? {}).filter(([, x]) => x === true).map(([k]) => k).concat(op.value?.gen === true ? ["generate"] : []) : [];
+  const give = [...R.SWITCH_NAMES.filter((k) => def?.can?.[k]), ...extra];
+  const missing = give.find((k) => !me.can[k]);
+  if (missing) refuse("rights", `giving ${missing} needs you to hold ${missing} yourself; you don't`, "you can only give switches you hold (ask an owner)", { needs: missing });
+}
+function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   if (!isKeyed(op.comp) || op.verb === "create") return;
   if (keyKind(op.comp) === "partition") return;
   const key = `${op.id}\u0000${op.comp}`;
@@ -881,11 +1024,34 @@ function keyRights(w, st, s, who, op, at, keysMade) {
   if (keysMade.has(key)) return; // made earlier in this same write
   const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
-  if (RANK[roleOf(st, holder)] >= RANK.owner) return;
+  // roles:<id> is changed under the grant rule (grantCheck: rank and switches), not its creator's: a moderator may
+  // change the role an owner gave a visitor. A capability never reaches here for roles (lacks: owner).
+  if (!cap && op.comp.startsWith("roles:")) return;
+  // research §6 (scripts): a pause made by someone who outranks you can be lifted only by them, or at their rank or above
+  if (pause && op.value?.paused !== true && s.entities[op.id]?.c[op.comp]?.paused === true) {
+    const pb = pausedBy(w, op.id, op.comp);
+    if (pb && pb.by !== holder && rankOf(st, holder) < rankOf(st, pb.by))
+      refuse("rank", `${op.id}.${op.comp} was paused by ${said(pb.by)} (${roleOf(st, pb.by)}), who ranks above you; only they, or someone at their rank or above, may resume it`, `ask ${said(pb.by)} or an owner`, { pausedBy: pb.by }); }
+  if (roleOf(st, holder) === "owner") return;
   const c = creatorOf(w, op.id, op.comp);
   if (c && c.rights === holder) return;
+  // pauseScripts: pause or resume a script whose SPONSOR ranks below you (the sponsor is unchanged: a pause adopts nothing)
+  if (pause && !cap && may(st, holder, "pauseScripts")) { const sp = sponsorOf(w, op.id, op.comp);
+    if (sp && rankOf(st, sp.sponsor) < rankOf(st, holder)) return;
+    refuse("rank", `${op.id}.${op.comp}'s sponsor ${sp ? said(sp.sponsor) : "(nobody)"} doesn't rank below you; pauseScripts reaches scripts whose sponsor ranks below you`, "ask someone ranked above them", { needs: "rank" }); }
   refuse("rights", `${at} is ${c ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
     op.comp.startsWith("library:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c ? said(c.rights) : "an owner"}`);
+}
+// @world.role-defs as a whole (research §component shapes): checked against the state the write leaves, so a batch
+// that moves people off a role and deletes it lands as one act; a custom role somebody still holds can't vanish.
+function rolesCheck(st, s, ops) {
+  if (!ops.some((o) => o.id === "@world" && o.comp === "role-defs")) return;
+  const wc0 = st.entities["@world"]?.c ?? {}, wc1 = s.entities["@world"]?.c ?? {};
+  const held = (rid) => Object.keys(wc1).filter((k) => k.startsWith("roles:") && wc1[k]?.role === rid).length + (wc1["default-role"]?.role === rid || wc1["default-role"]?.guests === rid ? 1 : 0);
+  const v = wc1["role-defs"] === undefined ? {} : wc1["role-defs"];
+  const bad = R.checkRoleDefs(v, R.defsOf(wc0), held);
+  if (bad) refuse(bad.code, `@world.role-defs: ${bad.reason}`, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+  // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
 // Sanity and shape of the values the door's own engine reads (what the change IS, not which word carried it).
 function valueCheck(s, { id, comp, value: v }) {
@@ -905,13 +1071,29 @@ function valueCheck(s, { id, comp, value: v }) {
       refuse("bounds", `${at}.area as [x, y, z] needs three numbers, each 0–8 (m)`, "or one number for a round area");
     if (v.area !== undefined && !Array.isArray(v.area) && typeof v.area !== "number") refuse("shape", `${at}.area is a number or [x, y, z]`, ""); }
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
-  // H5: everyone-is-owner would let any stranger remove the real owners; the default role tops out at builder
-  if (id === "@world" && comp === "default-role" && !["visitor", "builder", "none"].includes(v?.role))
-    refuse("shape", `${at}.role must be visitor, builder or none (got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
-  if (id === "@world" && comp === "default-role" && v?.guests !== undefined && !(v.guests === "visitor" || (v.guests === "builder" && v.role === "builder")))
-    refuse("shape", `${at}.guests must be visitor, or builder when role is builder (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
-  if (id === "@world" && comp.startsWith("roles:") && !["owner", "builder", "visitor", "none"].includes(v?.role))
-    refuse("shape", `${at}.role must be owner, builder, visitor or none (got ${JSON.stringify(v?.role)})`, "");
+  // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
+  // research §4); `none` (legacy: below visitor) is still read and written, as existing worlds carry it
+  const wcS = s.entities["@world"]?.c ?? {}; const roleIds = () => R.rolesOf(wcS).map((r) => r.id);
+  if (id === "@world" && comp === "default-role" && (v?.role === "owner" || (v?.role !== "none" && !R.roleDef(wcS, v?.role))))
+    refuse("shape", `${at}.role must be a role here other than owner (${roleIds().filter((x) => x !== "owner").join(", ")}; got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
+  if (id === "@world" && comp === "default-role" && v?.guests !== undefined && (v.guests === "owner" || !R.roleDef(wcS, v.guests) || (R.GUESTS_AT_MOST_DEFAULT && R.rankOfRole(wcS, v.guests) > R.rankOfRole(wcS, v.role))))
+    refuse("shape", `${at}.guests must be a role here at or below role (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
+  if (id === "@world" && comp.startsWith("roles:") && (!obj || (v.role !== "none" && !R.roleDef(wcS, v.role))))
+    refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
+  if (id === "@world" && comp.startsWith("roles:") && obj) {
+    for (const k of Object.keys(v)) if (!["role", "can", "note", "gen", "sub"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?}", { didYouMean: guessKey(k, ["role", "can", "note"]) });
+    if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
+    if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+      // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
+      if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...(v.gen === true ? { generate: true } : {}), ...v.can });
+        if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
+  if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
+  // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
+  const whoOk = (x, where) => { if (x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
+  if (comp === "physics" && obj) whoOk(v.who, at);
+  if (comp === "grabbable" && obj) whoOk(v.who, at);
+  if (comp === "reactions" && obj) for (const [act, h] of Object.entries(v)) if (h && typeof h === "object") whoOk(h.who, `${at}.${act}`);
+  if (comp === "sockets" && obj) for (const [slot, sk] of Object.entries(v)) if (sk?.body && typeof sk.body === "object") whoOk(sk.body.who, `${at}.${slot}.body`);
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); 
     // a rotation is a unit quaternion (the renderer normalizes; the door's own maths uses q as written), and a scale of
@@ -935,7 +1117,7 @@ function valueCheck(s, { id, comp, value: v }) {
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); } }
-  if (comp.startsWith("roles:") && (!obj || RANK[v.role] === undefined)) refuse("shape", `${at} must be {role: owner|builder|visitor|none}`, "");
+
   for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v);
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
@@ -1491,7 +1673,7 @@ function buildUse(ctx, a) {
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
-    const may = (x) => !x.body.who || RANK[roleOf(ctx.st, ctx.actor)] >= RANK[x.body.who];
+    const may = (x) => !x.body.who || rankOf(ctx.st, ctx.actor) >= whoRank(ctx.st, x.body.who);
     const slot = a.args?.slot;
     if (slot != null) { const named = socks.find((x) => x.slot === slot);
       if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${slot}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(slot), socks.map((x) => x.slot)) });
@@ -1505,7 +1687,7 @@ function buildUse(ctx, a) {
     return { presence: true, attach: { to: a.id, slot: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = e.c.reactions?.[action];
-  if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
+  if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // TOOLS.use logs the visitor's act, then activates it
   if (h?.kind === "impulse") {
     if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
@@ -1557,7 +1739,7 @@ function actionsOf(st, id) {
 function offersFor(st, id, actor) {
   const e = st.entities[id]; const can = [], notForYou = [];
   for (const act of actionsOf(st, id)) { const h = e.c.reactions?.[act];
-    if (h?.who && RANK[roleOf(st, actor)] < RANK[h.who]) notForYou.push({ action: act, why: `needs ${h.who}` });
+    if (h?.who && rankOf(st, actor) < whoRank(st, h.who)) notForYou.push({ action: act, why: `needs ${h.who}` });
     else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });
     else can.push(act); }
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
@@ -1580,13 +1762,13 @@ const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
-function scriptRights(st, cap, op, at, need) {
+function scriptRights(w, st, cap, op, at, made) {
   if (op.verb === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
   else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
     if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
       refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install (41 §3.5)"); }
-  const r = roleOf(st, cap.sponsor);
-  if (RANK[r] < RANK[need]) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${need})`, "dormant: a behaviour has its sponsor's rights now, never more (L4). An owner may adopt it: adopt {id, script}");
+  const r = roleOf(st, cap.sponsor); const need = lacks(w, st, cap.sponsor, op, new Set([...(made ?? []), ...(cap.made ?? [])]), { viaCap: true });
+  if (need) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${needWords(need)})`, "dormant: a behaviour has its sponsor's rights now, never more (L4). An owner may adopt it: adopt {id, script}");
 }
 // At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
 // rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
@@ -1594,7 +1776,9 @@ function scriptRights(st, cap, op, at, need) {
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
-  if (RANK[role] < RANK[cfg.install]) refuse("rights", `installing a script here needs ${cfg.install}; ${said(installer)} is ${role}`, "@world.scripts.install says who may (the owner sets it)");
+  // research S2: the `scripts` switch is the install gate; @world.scripts.install: 'owner' reads as the built-in roles'
+  // scripts switch off until an owner edits that role (roles.js roleDef)
+  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.scripts.install)" : "the scripts switch"}; ${said(installer)} is ${role}`, "@world.scripts.install and the role's scripts switch say who may (the owner sets them)", { needs: "scripts" });
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
@@ -1612,15 +1796,15 @@ function installCheck(w, st, s, who, op) {
   // a scope that names a typo of a registered component could never write it (admit refuses the name): say so now
   for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !COMPONENTS[n] && !n.includes("/") ? nearMiss(n) : [];
     if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${n}')`, { didYouMean: near }); }
-  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = rankNeeded({ id, comp: sampleOf(c) });
-    if (RANK[role] < RANK[need]) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${need}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly (41 §3.3): narrow the scope, or ask an owner to install or adopt it"); }
+  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { verb: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
+    if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly (41 §3.3): narrow the scope, or ask an owner to install or adopt it"); }
   const on = v.on ?? [];
   if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
     refuse("shape", `${at}.on lists ${SCRIPT_EVENTS.join(", ")} and changed:<comp>`, "timers come from every (they deliver tick, and wake after sleeping)");
   if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine (41 §3.8); motion is a function of time");
   if (v.knobs !== undefined && jcs(v.knobs).length > 4096) refuse("too-big", `${at}.knobs is ${jcs(v.knobs).length} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
-  if (v.always === true && prev?.always !== true && RANK[role] < RANK.owner) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits (41 §3.8)");
+  if (v.always === true && prev?.always !== true && role !== "owner") refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits (41 §3.8)");
   if (prev === undefined) { const n = allScripts(s).length;
     if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.scripts.max (owner)"); }
 }
@@ -1927,7 +2111,7 @@ function scriptStatus(w, st, id, name, v) {
   if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
   const role = roleOf(st, sp?.sponsor); const lost = [];
-  for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { const need = rankNeeded({ id: x, comp: sampleOf(c) }); if (RANK[role] < RANK[need]) lost.push(`${x}.${c}`); }
+  for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
   if (lost.length) { const since = lastSetterOf(w, "@world", `roles:${sp.sponsor}`);
     return { ...base, status: "dormant", why: `dormant: sponsor ${said(sp.sponsor)} (${role} now${since ? `, since seq ${since.seq}` : ""}) can no longer change ${lost.join(", ")}`, adopt: `an owner may: adopt {id: '${id}', script: '${name}'}` }; }
   return { ...base, status: rt?.status === "asleep" ? "asleep" : "active" };
@@ -2098,8 +2282,9 @@ function buildUndo(ctx, a, w) {
   // or a visitor's) or an owner (anyone's, owners included: round-2 R11, owners revert owners). Roles as they are NOW.
   const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "act")) return undefined;
     if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the door's own, not a person's`, "undo takes back people's acts");
-    const me = RANK[roleOf(ctx.st, ctx.actor)], them = RANK[roleOf(ctx.st, e.actor)];
-    if (me < RANK.builder || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${me < RANK.builder ? "undoing someone else's work needs builder" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
+    // research S2: undoing another person's act needs editOthers, and still goes only along rank (custom roles included)
+    const me = rankOf(ctx.st, ctx.actor), them = rankOf(ctx.st, e.actor), eo = may(ctx.st, ctx.actor, "editOthers");
+    if (!eo || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${!eo ? "undoing someone else's work needs builder (editOthers)" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
     return e; };
   const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : othersAct(a.act))
     : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
@@ -2119,7 +2304,7 @@ function buildUndo(ctx, a, w) {
   if (skipped.length) ctx.notes.push({ skipped });
   // round-2 R11: a brake on revert wars (Wikipedia's 3RR): reverting someone else's work on a thing that has already been
   // reverted across people twice within the hour is refused below owner rank: that's a dispute, and owners settle it
-  if (target.actor !== ctx.actor && RANK[roleOf(ctx.st, ctx.actor)] < RANK.owner) {
+  if (target.actor !== ctx.actor && roleOf(ctx.st, ctx.actor) !== "owner") {
     const mine2 = new Set(groups.flat().map((o) => o.id)); const t0 = w.now() - 3600000; let n = 0;
     for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && e.ts < t0) break;
       if (e.kind !== "act" || e.verb !== "undo" || !Number.isInteger(e.body?.undoes) || E[e.body.undoes]?.actor === e.actor) continue;
@@ -2419,7 +2604,7 @@ const PHYSICS_TOOLS = {
       if (mine.length) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
       const inSolid = solidAt(w, st, to); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
       const sp = st.entities["@world"]?.c.spawn;
-      if (sp && Array.isArray(sp.pos) && RANK[roleOf(st, actor)] < RANK.builder && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
+      if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
       rateCheck(w, actor);
       const act = w.append(actOf(w, actor, "move", a, { presence: { from: me?.at ?? null, to, arrival: !me } }));
@@ -2448,8 +2633,8 @@ const PHYSICS_TOOLS = {
     const g = grabOf(e.c);
     if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
     if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
-    const need = g.who; const role = roleOf(st, actor); if (RANK[role] < RANK[need]) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
-    if (held && !g.steal && RANK[role] < RANK.owner) refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
+    const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
+    if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
     // range (grabbable): from the hand; past arm's reach the door grants it as a pull (the thing flies to the hand: a
@@ -2466,7 +2651,7 @@ const PHYSICS_TOOLS = {
       return b && !st.entities[k].c.parent && supportUnder(st, b, familyOf(st, k)).id === a.id; });
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
-      if (RANK[role] < RANK.builder && !(gk && gk.enabled && RANK[role] >= RANK[gk.who])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
+      if (!may(st, actor, "editOthers") && !(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
     const spec = st.entities["@world"]?.c.sim;
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
@@ -2510,7 +2695,7 @@ const PHYSICS_TOOLS = {
     // snap are the holder's settlements too, as a plain put is)
     if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
       const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
-    { const role = roleOf(st, actor); if (g && RANK[role] < RANK[g.who]) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
+    { const role = roleOf(st, actor); if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
     // home: the holder's act, then the door's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
@@ -2587,7 +2772,7 @@ const PHYSICS_TOOLS = {
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
-    const need = ph.who ?? "builder"; if (RANK[roleOf(st, actor)] < RANK[need]) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
+    const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     shaped(e, a.id);
@@ -2893,6 +3078,44 @@ const BODY_TOOLS = {
     g.deliver(); return { ok: true, outcome: "allowed", touching: to, class: cls, recorded: false }; },
   inbox(w, actor) { const P = w.presence; expireAsks(w); const m = P.inbox?.[actor] ?? []; if (P.inbox) delete P.inbox[actor]; w.presenceDirty = true; return { ok: true, messages: m }; },
 };
+// ---------- acting on a person (research roles §6) ----------
+const WARN_OR_MOD = (st, who) => modHolder(st, who) || roleOf(st, who) === "owner";
+const reasonOf = (a) => (typeof a.reason === "string" && a.reason.trim() ? { reason: a.reason.slice(0, R.REASON_MAX) } : {});
+/** A duration in minutes → until (door ms). Capped below owner at `cap` (an owner may go past it only when ownerCap is false). */
+function minutesUntil(w, actor, minutes, { cap, what, required = false, ownerCap = false }) {
+  if (minutes === undefined) { if (required) refuse("shape", `${what} needs minutes (how long)`, `e.g. minutes: 5, 60 or 1440 (at most ${cap})`); return undefined; }
+  if (!(typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0)) refuse("shape", `${what}: minutes is a number above 0`, "");
+  if (minutes > cap && (ownerCap || roleOf(w.state(), actor) !== "owner")) refuse("bounds", `${what} lasts at most ${cap} minutes${ownerCap ? "" : " (owners may go longer)"}`, `minutes: ${cap} or less`);
+  return Math.floor(w.now() + minutes * 60000);
+}
+/** The rule every person-act shares: the switch (one of `powers`), an identity, someone ranked strictly below you.
+ *  Returns {target: {role, rank}} for the reply. `noOwner`: this act refuses owners outright, with today's words. */
+function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
+  const st = w.state();
+  if (!isIdentity(a.who)) refuse("shape", `${verb} {who}: an identity (u-…); whois {name} finds it`, "", {});
+  const me = effective(st, actor);
+  if (!powers.some((k) => me.can[k])) refuse("rights", `${verb === "ban" ? "banning" : verb === "kick" ? "kicking" : verb === "ghost" ? "ghosting someone" : verb === "warn" ? "warning someone" : "muting someone"} needs ${powers.length > 1 ? `one of ${powers.join(", ")}` : powers[0]}; you are ${me.role}`, "ask a moderator or an owner", { needs: powers.join("|") });
+  if (a.who === actor) refuse("rank", `you can't ${verb} yourself`, "");
+  const them = roleOf(st, a.who, ISANON(a.who));
+  if (noOwner && them === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be ${noOwner}`, "an owner made after them can be demoted first (roles:<them>); then act");
+  const tr = rankOf(st, a.who, ISANON(a.who));
+  if (tr >= me.rank) refuse("rank", `${said(a.who)} is ${R.roleDef(wcOf(st), them)?.name ?? them}; you (${me.name}) can't act on equal or higher ranks`, "ask someone ranked above them", { needs: "rank" });
+  if (a.reason !== undefined && (typeof a.reason !== "string" || a.reason.length > R.REASON_MAX)) refuse("shape", `reason is text, up to ${R.REASON_MAX} characters`, "");
+  return { target: { role: them, rank: tr } };
+}
+/** Lifting a sanction (unban, unmute, unghost): the switch, and the record's rule: an owner, its author, or someone
+ *  who outranks its author (strict: unban, unmute) or stands at their rank or above (ghost: "lifted only at that rank or higher"). */
+function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
+  const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
+  if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
+  if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");   // review 10-07
+  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07)
+  for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {
+  if (roleOf(st, actor) === "owner" || rec.actor === actor) continue;
+  const mine = rankOf(st, actor), theirs = rankOf(st, rec.actor);
+  if (strict ? mine <= theirs : mine < theirs) refuse("rank", `${said(rec.actor)} (${roleOf(st, rec.actor)}) made this ${verb}; only they, an owner${strict ? ", or someone who outranks them" : ", or someone at their rank or above"} may lift it`, `ask ${said(rec.actor)} or an owner`, { by: rec.actor });
+  }
+}
 const TOOLS = {
   ...PHYSICS_TOOLS,
   ...BODY_TOOLS,
@@ -2916,13 +3139,15 @@ const TOOLS = {
   },
   help(w, actor, a) {
     if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, teach: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
-    const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none";
-    return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role },
+    const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none"; const eff = st ? effective(st, actor) : null;
+    return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, switches: eff.switches } : {}) },
       tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
         world: ["new {title, text?} — found this world if it doesn't exist (you become its owner)"],
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
+        people: ["warn {who, reason}", "mute {who, minutes, channels?: ['voice','chat'], reason?} / unmute {who}", "kick {who, minutes?, reason?} (default 10, ≤ 60)", "ban {who, days?, reason?} (≤ 30 days below owner; owners: leave days out for until lifted) / unban {who}",
+          "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your switches (you.switches); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
         physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
@@ -2937,7 +3162,8 @@ const TOOLS = {
     const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };
     ids.forEach((id) => tree(id, 0));
     const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
-    const P = w.presence; const bodies = Object.entries(P.bodies).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
+    // a ghost's body is unseen by everyone else (review 10-07)
+    const P = w.presence; const bodies = Object.entries(P.bodies).filter(([id]) => id === actor || !ghostOf(w, id)).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
       ...(b.poseBy ? { posedBy: b.poseBy } : {}), ...(b.draggedBy ? { draggedBy: b.draggedBy } : {}), touchedBy: Object.entries(P.reaches ?? {}).filter(([, r]) => r.to === id).map(([k]) => k) }));
     return { ok: true, things: all.slice(0, lim), ...(total > lim ? { truncated: true, total } : {}), bodies };
   },
@@ -2983,7 +3209,9 @@ const TOOLS = {
     if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — an imported entry matches its original verb too ('comp', 'mount')");
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
     const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
-    const match = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
+    const ghost = !!ghostOf(w, actor); // a ghost can't read chat (PLAN 10-06): says leave the page
+    const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
+    const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === "say");
     const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;
     if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
@@ -3035,17 +3263,68 @@ const TOOLS = {
     }
     return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
   },
-  // moderation (§2.1): a separate log, enforced by the door; never a world entry
-  ban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "banning needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "ban {who}", "");
-    if (roleOf(w.state(), a.who, false) === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be banned`, "an owner made after them can be demoted first (roles:<them>); then ban");
-    w.appendMod({ actor, verb: "ban", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, banned: a.who, logged: "moderator log" }; },
-  // a kick removes a live session now (the door's server does the removing on this reply); they may come back
-  kick(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "kicking needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "kick {who}", "");
-    if (roleOf(w.state(), a.who, false) === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be kicked`, "");
-    w.appendMod({ actor, verb: "kick", who: a.who, ...(a.reason ? { reason: a.reason } : {}) }); return { ok: true, kicked: a.who, logged: "moderator log" }; },
-  unban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "unbanning needs owner", "");
+  // moderation (§2.1): a separate log, enforced by the door; never a world entry. Research roles §5–6: every act on a
+  // person needs its switch and a target ranked strictly below you (never yourself, never your equal, never an owner);
+  // its duration is capped below owner; its record names identities. Expiry is the door's clock (sanction views above).
+  warn: (w, actor, a) => { const t = personAct(w, actor, a, "warn", R.WARN_POWERS);
+    if (typeof a.reason !== "string" || !a.reason.trim()) refuse("shape", "warn {who, reason}: a warning says why", "e.g. warn {who, reason: 'please keep it friendly'}");
+    w.appendMod({ actor, verb: "warn", who: a.who, reason: a.reason.slice(0, R.REASON_MAX) }); return { ok: true, warned: a.who, ...t, logged: "moderator log" }; },
+  mute: (w, actor, a) => { const t = personAct(w, actor, a, "mute", ["mute"]);
+    const ch = a.channels ?? ["voice", "chat"];
+    if (!Array.isArray(ch) || !ch.length || ch.some((c) => c !== "voice" && c !== "chat") || new Set(ch).size !== ch.length) refuse("shape", "mute.channels is ['voice'], ['chat'] or both", "leave it out for both");
+    const until = minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a mute", required: true });
+    w.appendMod({ actor, verb: "mute", who: a.who, channels: ch, until, ...reasonOf(a) }); return { ok: true, muted: a.who, channels: ch, until, ...t, logged: "moderator log" }; },
+  unmute: (w, actor, a) => { personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true });
+    w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
+  // a kick removes a live session now (the door's server does the removing on this reply); they may come back after
+  // `minutes` (default 10, at most 60: VRChat's kick is a one-hour bar)
+  kick: (w, actor, a) => { const t = personAct(w, actor, a, "kick", ["kick"], { noOwner: "kicked" });
+    const until = minutesUntil(w, actor, a.minutes ?? R.KICK_DEFAULT_MIN, { cap: R.KICK_MAX_MIN, what: "a kick's cooldown", ownerCap: true });
+    w.appendMod({ actor, verb: "kick", who: a.who, until, ...reasonOf(a) }); return { ok: true, kicked: a.who, until, ...t, logged: "moderator log" }; },
+  ban: (w, actor, a) => { const t = personAct(w, actor, a, "ban", ["ban"], { noOwner: "banned" });
+    const owner = roleOf(w.state(), actor) === "owner";
+    if (a.days === undefined && !owner) refuse("rights", `a ban with no end needs an owner; you may ban for up to ${R.MOD_BAN_MAX_DAYS} days`, `ban {who, days: 1|7|${R.MOD_BAN_MAX_DAYS}, reason}`, { needs: "owner" });
+    if (a.days !== undefined && !(typeof a.days === "number" && a.days > 0 && a.days <= 3650)) refuse("shape", "ban.days is a number of days (more than 0)", "leave it out (owners) for a ban until lifted");
+    if (a.days !== undefined && a.days > R.MOD_BAN_MAX_DAYS && !owner) refuse("rights", `a ban longer than ${R.MOD_BAN_MAX_DAYS} days needs an owner`, `ban for ${R.MOD_BAN_MAX_DAYS} days or less, or ask an owner`, { needs: "owner" });
+    const until = a.days === undefined ? undefined : Math.floor(w.now() + a.days * 86400000);
+    w.appendMod({ actor, verb: "ban", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, banned: a.who, ...(until !== undefined ? { until } : { until: null }), ...t, logged: "moderator log" }; },
+  unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");
+    personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true });
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
+  // ghost (PLAN 10-06): `ghost {on}` with no who is the mode you choose (presence: never logged; spectate);
+  // `ghost {who, minutes?, reason}` is a sanction (kick holders, on a rank below; capped like a mute below owner)
+  ghost: (w, actor, a) => {
+    if (a.who === undefined || a.who === actor) { if (typeof a.on !== "boolean") refuse("shape", "ghost {on: true|false}: become a ghost here (unseen; you can't interact or talk), or come back", "or ghost {who, minutes, reason} to ghost someone (kick holders)");
+      if (!a.on && inForceOf(w, actor, "ghost").length) refuse("ghost", "you were made a ghost by a moderator; that isn't yours to end", "a moderator ranked at or above them can bring you back");
+      const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor]; w.presenceDirty = true;
+      return { ok: true, ghost: a.on, chosen: true, recorded: false }; }
+    const t = personAct(w, actor, a, "ghost", ["kick"], { noOwner: "made a ghost" });
+    const owner = roleOf(w.state(), actor) === "owner";
+    const until = a.minutes === undefined && owner ? undefined : minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a ghost sanction", required: true });
+    w.appendMod({ actor, verb: "ghost", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, ghosted: a.who, until: until ?? null, ...t, logged: "moderator log" }; },
+  unghost: (w, actor, a) => {
+    personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" });
+    w.appendMod({ actor, verb: "unghost", who: a.who }); return { ok: true, unghosted: a.who }; },
+  // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
+  // from the world log (roles:* writes, read-only) and the door's automatic cool-downs
+  modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
+    const lim = Math.max(1, Math.min(200, a.limit ?? 50)); const before = a.before ?? Infinity;
+    const rows = w.mod.map((m, i) => ({ ...m, at: i, src: "mod" }));
+    for (let i = 0; i < w.entries.length; i++) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+      for (const o of opsQuiet(e)) if (o.id === "@world" && String(o.comp ?? "").startsWith("roles:")) rows.push({ ts: e.ts, actor: entryBy(w, e).by, verb: "role", who: o.comp.slice(6), role: o.verb === "delete" ? null : o.value?.role ?? null, ...(o.value?.can ? { can: o.value.can } : {}), seq: i, src: "log" }); }
+    const out = rows.filter((r) => (a.who === undefined || r.who === a.who) && r.ts < before).sort((x, y) => y.ts - x.ts || (y.at ?? y.seq) - (x.at ?? x.seq)).slice(0, lim)
+      .map((r) => ({ ...r, by: said(r.actor), name: typeof r.who === "string" ? said(r.who) : undefined, ...(r.until !== undefined ? { inForce: r.until > w.now() } : {}) }));
+    return { ok: true, records: out, ...(out.length === lim ? { next: out.at(-1).ts, more: "send before: next for older" } : {}) }; },
+  bans: (w, actor) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the ban list is for people who hold a moderation power", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
+    const byName = (m) => (m && m.actor ? { ...m, by: said(m.actor) } : m);   // the author by name: the asker's page may not know an absent moderator
+    const now = Object.entries(sanctionsNow(w)).map(([who, x]) => ({ who, name: said(who), role: roleOf(st, who), ...Object.fromEntries(Object.entries(x).map(([k, m]) => [k, byName(m)])) }));
+    const ended = []; const seen = new Set(); for (let i = w.mod.length - 1; i >= 0; i--) { const m = w.mod[i]; if (m.verb !== "ban" || seen.has(m.who)) continue; seen.add(m.who); if (!banOf(w, m.who)) ended.push({ ...byName(m), name: said(m.who) }); }
+    return { ok: true, now, ended: ended.slice(0, 100) }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
+    // a chat mute refuses every say: a say with `to` is still a public line in the log (review 10-07). Asking a moderator
+    // why goes as a WHISPER (point-to-point, never logged; the server lets a muted person whisper moderators only)
+    { const m = muteOf(w, actor, "chat"); if (m)
+      refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "you may still whisper to a moderator (/w <name>)", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
@@ -3067,7 +3346,7 @@ const TOOLS = {
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
   // checked here (to teach early) and again at install (what binds).
   upload(w, actor, a) {
-    if (RANK[roleOf(w.state(), actor)] < RANK[scriptsCfg(w.state()).install]) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner");
+    if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts switch"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
     if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS-v4.md");
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
@@ -3090,7 +3369,7 @@ const TOOLS = {
   // that need re-installing. With {id, script, test: {on, …}}: a dry run (41 §3.12): what it WOULD write, refused or not.
   scripts(w, actor, a) { const st = w.state();
     if (a.test !== undefined) {
-      if (RANK[roleOf(st, actor)] < RANK.builder) refuse("rights", "a dry run needs builder (it spends the door's time)", "");
+      if (!may(st, actor, "build")) refuse("rights", "a dry run needs builder (it spends the door's time)", "");
       if (!a.test || typeof a.test !== "object" || typeof a.test.on !== "string") refuse("shape", "test is an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}", "e.g. scripts {id: 'bell1', script: 'bell', test: {on: 'use', action: 'ring'}}");
       if (!st.entities[a.id]?.c[`script:${a.script}`]) refuse("not-found", `${a.id} has no script:${a.script}`, "scripts lists them");
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
