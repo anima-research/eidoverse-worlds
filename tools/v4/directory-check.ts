@@ -36,7 +36,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- I: the door with directory ids (R2: a role is held by an id, never by a name) ----
 { let T = 1800000000000; const d = directoryAt(file);
-  const w: any = openLive(path.join(tmp, "worlds", "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const owner = d.resolve({ sub: "human:discord:111", name: "Annie" });
   ok(request(w, owner, "new", { title: "w" }).ok, "I1 the owner founds a world as their id");
   ok(request(w, owner, "set", { id: "@world", component: "default-role", value: { role: "visitor" } }).ok, "I1b …strangers are visitors");
@@ -55,13 +55,13 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- K: keys (round-2 R4, R5) ----
 { let T = 1800000000000; const d = directoryAt(file); const cust = path.join(tmp, "k-custody.json");
-  const w: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: cust, nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: cust, nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const me = d.resolve({ sub: "human:discord:555", name: "Kay" });
   ok(request(w, me, "new", { title: "k" }).ok, "K0 found a world");
   const g = w.entries[0].body;
   ok(JSON.stringify(g.owners[0]) === "[]" && g.owners[1]?.length === 1 && g.owners[1][0] !== g.sequencer,
     "K1 a founded world's genesis: tier 0 empty (custodial default, §2.4), the operator's governance key in tier 1, never the sequencer's key", g);
-  const other: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf });
+  const other: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 a door that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
@@ -116,7 +116,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- S: the schema gate (round-2 R8, R9) ----
 { let T = 1800000000000; const d = directoryAt(file);
-  const w: any = openLive(path.join(tmp, "worlds", "s"), "s", { now: () => (T += 100), custodyFile: path.join(tmp, "s-custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "s"), "s", { now: () => (T += 100), custodyFile: path.join(tmp, "s-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const me = d.resolve({ sub: "human:discord:888", name: "Sam" }); request(w, me, "new", { title: "s" });
   request(w, me, "create", { id: "cube", model: "crate", place: { at: [1, 1] } });
   const set = (component: string, value: unknown) => request(w, me, "set", { id: "cube", component, value }) as any;
@@ -134,7 +134,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- U: undo across people (F2 decided 10-05; round-2 R10, R11; round-1 F3) ----
 { let T = 1800000000000; const d = directoryAt(file);
-  const w: any = openLive(path.join(tmp, "worlds", "u"), "u", { now: () => (T += 1000), custodyFile: path.join(tmp, "u-custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "u"), "u", { now: () => (T += 1000), custodyFile: path.join(tmp, "u-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const P = (n: string) => d.resolve({ sub: `human:discord:u-${n}`, name: n });
   const ann = P("ann"), dee = P("dee"), bob = P("bob"), cy = P("cy"), vic = P("vic");
   const q = (who: string, tool: string, a: any = {}) => request(w, who, tool, a) as any;
@@ -167,7 +167,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- W: the sky panel in a v4 world (it couldn't write at all: fromv1 had no 'sky' / 'weather') ----
 { let T = 1800000000000; const d = directoryAt(file); const { worldEditOps } = await import("../../shared/worldentity.js");
-  const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:w1", name: "Wyn" }), vis = d.resolve({ sub: "human:discord:w2", name: "Val" });
   request(w, own, "new", { title: "wx" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
   const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", sun: 1.2, fill: 0.4, world: "earth", clock: "authored" };
@@ -182,7 +182,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- RB: an owner's rollback, undo {actor, since} (round-2 R11) ----
 { let T = 1800000000000; const d = directoryAt(file);
-  const w: any = openLive(path.join(tmp, "worlds", "rb"), "rb", { now: () => (T += 1000), custodyFile: path.join(tmp, "rb-custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "rb"), "rb", { now: () => (T += 1000), custodyFile: path.join(tmp, "rb-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const P = (n: string) => d.resolve({ sub: `human:discord:rb-${n}`, name: n });
   const own = P("ola"), mal = P("mal"), car = P("car");
   const q = (who: string, tool: string, a: any = {}) => request(w, who, tool, a) as any;
@@ -230,7 +230,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- V: a visitor undoes their own use, under the use's capability (round-2 R11) ----
 { let T = 1800000000000; const d = directoryAt(file);
-  const w: any = openLive(path.join(tmp, "worlds", "vu"), "vu", { now: () => (T += 1000), custodyFile: path.join(tmp, "vu-custody.json"), nameOf: d.nameOf });
+  const w: any = openLive(path.join(tmp, "worlds", "vu"), "vu", { now: () => (T += 1000), custodyFile: path.join(tmp, "vu-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:vu1", name: "Oda" }), vis = d.resolve({ sub: "human:discord:vu2", name: "Vee" });
   request(w, own, "new", { title: "vu" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
   request(w, own, "create", { id: "gate", model: "door", components: { door: { open: false }, reactions: { open: { kind: "toggle", component: "door", field: "open" } } }, place: { at: [0, 4] } });

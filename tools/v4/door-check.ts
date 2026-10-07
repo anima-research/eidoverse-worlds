@@ -29,6 +29,8 @@ import { emptyState as v1Empty, foldEntry as v1fold } from "../../shared/fold.js
 import { worldPose } from "../../shared/hierarchy.js";
 
 const root = scratch("door");
+// lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
+const LABKIND = (_id: string) => "human";
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 400)}` : ""}`); } };
 const code = (r: any) => r?.refused?.code;
@@ -235,7 +237,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- L: live world vs whole-log re-read ----
 { const dir = root + "live/"; T += 1000; let now = T;
-  const w = openLive(dir, "live", { now: () => now, simModels: MODELS });
+  const w = openLive(dir, "live", { kindOf: LABKIND, now: () => now, simModels: MODELS });
   const call = (actor, tool, args = {}, step = 100) => { now += step; return request(w, actor, tool, args); };
   const same = (what) => {
     const L = readLog(fs.readFileSync(dir + "v4.jsonl")); const whole = fold(L);
@@ -253,7 +255,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } }); same("built");
   call("rowan", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } });
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
-  ok(call("rowan", "throw", { id: "ball", v: [0, 2, 3] }).ok, "L throw accepted");
+  { const th = call("rowan", "throw", { id: "ball", v: [0, 2, 3] }); ok(th.ok, "L throw accepted", th.refused ?? th); }
   call("rowan", "look", {}, 300); same("mid-flight (a read advanced the sim first)");
   { const r = call("rowan", "wait", {}, 6000); same("after the rest");
     const want = restsOf(w.entries).map((x) => ({ ...x, when: w.entries[x.seq].ts })).filter((x) => now - x.when < 60000).slice(-8).map((x) => [x.id, x.at.map((n) => Math.round(n * 1000) / 1000)]);
@@ -264,7 +266,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- U: the act index (research 37, slice 3 #5): undo and wait without scanning the log ----
 { const dir = root + "undo/"; let now = T + 3000;
-  const w = openLive(dir, "undo", { now: () => now });
+  const w = openLive(dir, "undo", { kindOf: LABKIND, now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   const flat = (x) => JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => !["entries", "bad", "pt"].includes(k)).map(([k, v]) => [k, v instanceof Map ? [...v].sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : v instanceof Set ? [...v].sort() : v])));
   let steps = 0, firstBad = null;
@@ -311,7 +313,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- E: expect (§3a: a gesture settles as one act with expect on its starting values), duplicate, redo ----
 { const dir = root + "expect/"; let now = T + 6000;
-  const w = openLive(dir, "expect", { now: () => now });
+  const w = openLive(dir, "expect", { kindOf: LABKIND, now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   const n = () => w.entries.length;
   call("ann", "new", { title: "expect" }); call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -358,7 +360,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- K: the client's own fold (shared/v4/client.js): adopt a cut, ingest the door's entries; the v4 state equals the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
 { const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
-  let now = T + 12000; const w = openLive(root + "client/", "client", { now: () => now });
+  let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   call("ann", "new", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeV4Client();
@@ -398,7 +400,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };
-  let now = T + 5000; const w = openLive(root + "cat/", "cat", { now: () => now, catalogue: cat });
+  let now = T + 5000; const w = openLive(root + "cat/", "cat", { kindOf: LABKIND, now: () => now, catalogue: cat });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   call("ann", "new", { title: "cat" });
   ok(call("ann", "create", { id: "desk", model: "lib/desk.glb", place: { at: [0, 0] } }).ok, "C1 an off-centre model is placed");
@@ -419,7 +421,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       "lib/chair.glb": { label: "chair", box: [[-0.25, 0, -0.25], [0.25, 0.9, 0.25]], size: [0.5, 0.9, 0.5], surfaces: [] },
       "lib/gate.glb": { label: "frame", box: [[4, 0, -0.1], [6, 2.2, 0.1]], size: [2, 2.2, 0.2], solids: [[[4, 0, -0.1], [4.1, 2.2, 0.1]], [[5.9, 0, -0.1], [6, 2.2, 0.1]], [[4, 2.1, -0.1], [6, 2.2, 0.1]]], surfaces: [] },
       "lib/seat.glb": { label: "seat", box: [[-0.3, 0, -0.15], [0.3, 0.05, 0.15]], size: [0.6, 0.05, 0.3], surfaces: [] } } as any)[n], list: () => [] };
-  let now2 = T + 9000; const w2 = openLive(root + "cat2/", "cat2", { now: () => now2, catalogue: cat2 });
+  let now2 = T + 9000; const w2 = openLive(root + "cat2/", "cat2", { kindOf: LABKIND, now: () => now2, catalogue: cat2 });
   const c2 = (actor, tool, args = {}) => { now2 += 100; return request(w2, actor, tool, args); };
   c2("ann", "new", { title: "cat2" });
   c2("ann", "create", { id: "far", model: "lib/far.glb", place: { at: [0, 0] } });
@@ -439,7 +441,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- V: what changed, said in v4 terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
-  let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { now: () => now });
+  let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());
   const step = (actor, tool, args) => { now += 100; const r = request(w, actor, tool, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
     has: (id, what, comp) => d.things.some((c) => c.id === id && c.what === what && (comp === undefined || c.comp === comp)) }; };
@@ -689,7 +691,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(far.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS6 …and the deep search (history paging) still finds the transform change behind the horizon", far.length); }
 
 // ---- H7 (review F3, 2026-10-05): an id is never reused by a NEW thing, but undo brings back the same thing ----
-{ let now = T + 40000; const w = openLive(root + "h7/", "h7", { now: () => now });
+{ let now = T + 40000; const w = openLive(root + "h7/", "h7", { kindOf: LABKIND, now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   call("ann", "new", { title: "h7" }); call("ann", "create", { id: "desk", model: "table", place: { at: [0, 3] } });
   call("ann", "create", { id: "mug", model: "crate", place: { on: "desk" } });
@@ -750,5 +752,17 @@ const w0 = () => openWorld(root, "tier0");
   const nq = R("set", { id: "hearth", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0, 0.5], scale: [1, 1, 1] } });
   const q = w0().state().entities.hearth?.c.transform?.q;
   ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the door and the renderer then agree)", q); }
+// T1 (component review, tier 1): components say what they are, where they go, and nothing the renderer reads is refused
+{ T += 100; process.env.V4_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier1"), "ann", tool, args);
+  R("new", { title: "tier1" }); R("create", { id: "chair", model: "crate" });
+  const S = (id, comp, value) => R("set", { id, component: comp, value });
+  for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["library:foo", { name: "f" }], ["sky", { hours: 7 }]])
+    ok(S("chair", comp, value).refused?.code === "world-only", `T1a ${comp} belongs to the world: on a chair it's refused, and told where it goes`);
+  for (const [comp, value] of [["transform", { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }], ["model", "crate"], ["parent", { to: "chair" }]])
+    ok(S("@world", comp, value).refused?.code === "thing-only", `T1b ${comp} belongs to a thing: on @world it's refused (the door and renderer disagreed about where its children were)`);
+  ok(S("chair", "structure", { tile: 1, wallH: 2.6, wallT: 0.12, slabT: 0.15, levels: [], labels: {} }).ok, "T1d structure.slabT, which the renderer reads, is taken");
+  ok(S("chair", "particles", { preset: "fire", texture: "eidoverse/assets/particle_textures/flame.png" }).ok, "T1e particles.texture (in AGENTS.md's own example) is taken");
+  ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");
+  ok(S("chair", "particles", { preset: "fire", texture: "../../etc/x.png" }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

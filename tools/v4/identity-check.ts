@@ -142,6 +142,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     ok(jg2.snapshot?.yourRights?.role === "builder" && made.ok, "H4g …and a guest arriving now is a builder, and can build", [jg2.snapshot?.yourRights, made.refused]);
     g2.close(); }
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H4g teardown) back to guests-as-visitors");
+  { const rb = await own.req("set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+    ok(rb.refused?.code === "shape" && /identity/.test(rb.refused.reason ?? ""), "T1c roles:<key> must be someone the directory knows (roles:bob matched nobody, silently)", rb.refused);
+    ok((await own.req("set", { id: "@world", component: `roles:${jw.snapshot.v4.you}`, value: { role: "builder" } })).ok, "T1c …a known person's identity is taken"); }
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");

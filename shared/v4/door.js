@@ -34,6 +34,8 @@ let CAT = LAB_CATALOGUE;
 let THROUGH = false; // the request's through_lock flag, set by request() for one synchronous call (like CAT)
 // is this identity a guest (no account: the door directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
 let ISANON = () => false;
+// the directory knows this identity (a world opened without a directory, as in the lab, knows everyone)
+let KNOWNID = (_id) => true;
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
@@ -374,8 +376,8 @@ function wire(args) {
 }
 
 export function request(w, actor, tool, args = {}) {
-  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF, prevAnon = ISANON; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
-  ISANON = (id) => w.kindOf?.(id) === "anon";
+  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF, prevAnon = ISANON, prevKnown = KNOWNID; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
+  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => id === actor || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -407,7 +409,7 @@ export function request(w, actor, tool, args = {}) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; }
+  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; KNOWNID = prevKnown; }
 }
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
@@ -640,6 +642,20 @@ function keyRights(w, st, s, who, op, at, keysMade) {
 // Sanity and shape of the values the door's own engine reads (what the change IS, not which word carried it).
 function valueCheck(s, { id, comp, value: v }) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
+  // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
+  // meant different things to the door and the renderer (component review T1a/T1b)
+  const on = COMPONENTS[comp.split(":")[0]]?.on;
+  if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
+  if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
+  if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
+  if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
+    refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
+  if (comp === "particles" && obj) {
+    if (v.texture !== undefined && !(typeof v.texture === "string" && /^eidoverse\/assets\/particle_textures\/[\w.-]+\.png$/.test(v.texture)))
+      refuse("shape", `${at}.texture must be a .png in eidoverse/assets/particle_textures/`, "e.g. 'eidoverse/assets/particle_textures/flame.png'");
+    if (Array.isArray(v.area) && !(v.area.length === 3 && v.area.every((n) => typeof n === "number" && n >= 0 && n <= 8)))
+      refuse("bounds", `${at}.area as [x, y, z] needs three numbers, each 0–8 (m)`, "or one number for a round area");
+    if (v.area !== undefined && !Array.isArray(v.area) && typeof v.area !== "number") refuse("shape", `${at}.area is a number or [x, y, z]`, ""); }
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners; the default role tops out at builder
   if (id === "@world" && comp === "default-role" && !["visitor", "builder", "none"].includes(v?.role))
@@ -1371,9 +1387,9 @@ function activate(w, id, name, ev) {
   rt.fails = 0; return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...logs });
 }
 function withDoor(w, fn) {
-  const prevCat = CAT, prevName = NAMEOF, prevAnon = ISANON, prevThrough = THROUGH; CAT = w.catalogue ?? LAB_CATALOGUE; NAMEOF = w.nameOf ?? null; THROUGH = false;
-  ISANON = (id) => w.kindOf?.(id) === "anon";
-  try { return fn(); } finally { CAT = prevCat; NAMEOF = prevName; ISANON = prevAnon; THROUGH = prevThrough; if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
+  const prevCat = CAT, prevName = NAMEOF, prevAnon = ISANON, prevThrough = THROUGH, prevKnown = KNOWNID; CAT = w.catalogue ?? LAB_CATALOGUE; NAMEOF = w.nameOf ?? null; THROUGH = false;
+  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => !w.kindOf || w.kindOf(id) != null;
+  try { return fn(); } finally { CAT = prevCat; NAMEOF = prevName; ISANON = prevAnon; KNOWNID = prevKnown; THROUGH = prevThrough; if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
 }
 /**
  * Timers (door practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
