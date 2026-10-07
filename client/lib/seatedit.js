@@ -25,6 +25,9 @@ import { setEditMode, isEditing, deselect,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
 import { socketQ } from '../../shared/components.js';
+
+// how far the hips joint sits above the surface a person sits on (a sitting pelvis, measured on the house bodies: 8–10 cm)
+const HIPS_ABOVE_SEAT = 0.09;
 import { qMul, qFromYaw, qNorm } from '../../shared/rot.js';
 
 const raycaster = new THREE.Raycaster();
@@ -204,6 +207,11 @@ function placeSeatAt(e) {
   if (!hit) { flashHint('that missed the thing — click ON it, or <kbd>Esc</kbd>'); return; }
   seatArm = null;
   const { pos, part } = seatFromHit(id, root, hit);
+  // a seat seats the HIPS joint on its socket (shared/sockbody.js anchor 'hips'), and the pelvis joint rides a hand
+  // above the cushion you clicked: lift the socket that far along the thing's up (in its own, scaled frame)
+  root.updateWorldMatrix(true, false);
+  const sy = new THREE.Vector3().setFromMatrixScale(root.matrixWorld).y || 1;
+  pos[1] = +(pos[1] + HIPS_ABOVE_SEAT / sy).toFixed(3);
   // face the declarer: you are looking at the seat from where a sitter's
   // knees would point. Q/E refines from there.
   const yaw = +(Math.atan2(camera.position.x - hit.point.x, camera.position.z - hit.point.z) - worldYawOf(root)).toFixed(3);
