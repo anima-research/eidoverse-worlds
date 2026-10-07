@@ -302,9 +302,12 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const n = a.of("v4-log").length; b.close(); await sleep(400);
   const launched = a.of("v4-log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === "ball");
   ok(launched.length === 1 && a.of("v4-holds").at(-1)?.holds?.ball === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("v4-holds").at(-1)]);
-  await sleep(1500); await a.req("wait", {}); await sleep(200);
-  const k = heldBy(c); const rest = fold(readLog(fs.readFileSync(path.join(W4, "pitch", "v4.jsonl")))).entities.ball.c.transform.pos;
-  ok(rest[1] === 0 && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the door's rest", [rest, k?.sim?.checks]);
+  // wait until the door has it at rest: the door's clock is the wall clock made monotonic, and this host's wall clock
+  // has been seen to step BACK 1.4 s under load (WSL), which stalls physics time for as long (never reorders it)
+  let wr = null; for (let i = 0; i < 20; i++) { await sleep(500); wr = await a.req("wait", {}); if (!Object.keys(wr?.inFlight ?? {}).length) break; }
+  let k = null; for (let i = 0; i < 40; i++) { await sleep(100); k = heldBy(c); if (k?.sim?.checks?.agree >= 1) break; } // (the rest's v4-log reaching Cy)
+  const rest = fold(readLog(fs.readFileSync(path.join(W4, "pitch", "v4.jsonl")))).entities.ball.c.transform.pos;
+  ok(rest[1] === 0 && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the door's rest", [rest, k?.sim?.checks, wr]);
   a.close(); c.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
