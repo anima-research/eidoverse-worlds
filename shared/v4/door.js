@@ -502,7 +502,7 @@ const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
 // ---------- sanctions: views over the moderator log (research §5) ----------
 // Every sanction is a record with an optional `until` (the door's clock, ms). Expiry is computed, never written: a view
 // reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the door's clock). Records
-// name identities, never display names. A record without `until` (a translated v1 ban, an owner's ban "until lifted",
+// name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted",
 // an old kick) is permanent for a ban and no cooldown for a kick.
 // Every record since the last LIFT of its kind (unban, unmute, unghost) that is still in force counts, and the STRONGEST
 // wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
@@ -890,7 +890,7 @@ function shapeOneOrRefuse(verb, op, i) {
 // L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
 // needs is a SWITCH (roles.js), never a rank:
 //   a thing          build when you make it or made it; editOthers when someone else made it
-//   @world.library:*  build (publish);  @world.palette:*  generate (the v4 landing of v1's `asset` spend gate)
+//   @world.library:*  build (publish);  @world.palette:*  generate (the v4 landing of the old `asset` spend gate)
 //   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, ground-paint:*,
 //                     bounds, spawn (EDIT_WORLD_SWITCH; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only switches you hold

@@ -237,7 +237,7 @@ function paintOld(body) {
   const legacy = Object.keys(c).filter((k) => k.startsWith('legacy:') || k.startsWith('behavior:'));
   const things = Object.entries(st).filter(([id, e]) => id !== '@world' && Object.keys(e.c ?? {}).some((k) => k.startsWith('legacy:')));
   body.innerHTML = (!legacy.length && !things.length) ? '<p class="rp-note">nothing carried over from an older world</p>'
-    : `<p class="rp-dim">what translation from the old world carried, kept as it was; v1 behaviours don't run in v4 (re-install them as scripts)</p>`
+    : `<p class="rp-dim">what translation from the old world carried, kept as it was; the old behaviours don't run in v4 (re-install them as scripts)</p>`
     + legacy.map((k) => `<div class="rp-row"><div class="rp-main"><code>${esc(k)}</code> ${k.startsWith('behavior:') ? '<span class="rp-status" data-s="needs-reinstall">not running yet</span>' : ''}</div>${edit ? `<button type="button" class="rp-btn" data-rm="${esc(k)}">Remove</button>` : ''}</div>`).join('')
     + (things.length ? `<h4 class="rp-h">Things (${things.length})</h4>` + things.slice(0, 50).map(([id, e]) => `<div class="rp-row"><div class="rp-main"><b>${esc(id)}</b> ${Object.keys(e.c).filter((k) => k.startsWith('legacy:')).map((k) => `<code>${esc(k)}</code>`).join(' ')}</div></div>`).join('') : '')
     + (edit ? '' : ro());

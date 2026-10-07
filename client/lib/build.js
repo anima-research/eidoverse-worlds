@@ -79,7 +79,7 @@ export const mayEdit = () => {
   if (!editSurface()) return false;
   const r = net.myRights; const role = r?.role;
   // a v4 world says what you may do as switches (research roles S4): build, whatever the role is called (a moderator,
-  // a custom role); a v1 world and an older server still say only the role
+  // a custom role); an older server still says only the role
   if (Array.isArray(r?.switches)) return r.switches.includes('build');
   return role === undefined || ['builder', 'owner'].includes(role);
 };

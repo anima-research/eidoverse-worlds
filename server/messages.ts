@@ -358,7 +358,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
     // (the door's rights for the person's identity)
-    // the build switch (roles S2), never a v1 rank compare: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
+    // the build switch (roles S2), never the old protocol's rank table: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
     if (!c.world.v4!.rightsOf(v4ActorOf(c)).can.build) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen

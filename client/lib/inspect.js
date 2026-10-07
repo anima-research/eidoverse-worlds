@@ -80,7 +80,7 @@ export function liveFor(id) {
 // state.sky/terrain/grass, edited through the sky/weather/terrain/grass verbs.
 // Those are owner-rank: false = this viewer is known not to be the owner
 // (WORLD_ADMIN operators fold to owner), undefined = not known yet.
-// shaping the world's look is the editWorld switch in a v4 world (research roles S2); the owner's in v1
+// shaping the world's look is the editWorld switch (research roles S2); the owner's on an older server
 export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.switches)) return r.switches.includes('editWorld'); return r?.role === undefined ? undefined : r.role === 'owner'; };
 export const worldLive = () => ({ now: Date.now(), mayShape: mayShape() });
 export function schemaFor(id) {

@@ -9,13 +9,13 @@
 // Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
 // holds it: reason, by, until) and Ghost (in the world but outside society: unseen, can't interact, can't read or post
 // chat; a sanction from a rank above, or a mode someone chooses). A state is never compared as a rank, and a rank can't
-// express a state: that is why ghost is not "rank -5". The legacy role `none` (a v1/v4 demotion) reads as rank -1:
+// express a state: that is why ghost is not "rank -5". The legacy role `none` (an old demotion) reads as rank -1:
 // below every member, holding no switch, so no gate ever fails open on it.
 
 // ---------------- the five defaults R hasn't ruled on yet (one value each: flip it here) ----------------
 /** Q1: caption is a property of the SCREEN it captions, not a role switch (true = off the role list). */
 export const CAPTION_ON_SCREENS = true;
-/** Q2: owners fly by default (v1 had flight off even for owners). */
+/** Q2: owners fly by default (the old protocol had flight off even for owners). */
 export const OWNERS_FLY = true;
 /** Q3: people without an account (guests) can't be set above the world's default role. */
 export const GUESTS_AT_MOST_DEFAULT = true;
