@@ -271,7 +271,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!wi.isError && new RegExp(`${ZED}: person, visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
   const kk = await HANDLERS.kick(oz, { id: "Zed" }, {} as any, "kick");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
-  ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError && vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed"), "CM4 …and unban by name works, told to bystanders");
+  const ub = await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban");
+  ok(!ub.isError && await wait(() => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed")), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
   const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
   ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the door's reason
