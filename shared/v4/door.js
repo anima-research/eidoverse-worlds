@@ -377,9 +377,20 @@ function wire(args) {
   return out;
 }
 
+// The door's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID and the mint's world)
+// and the world's per-call queues and clock. ONE save/restore for every entry point (request, withDoor):
+// review 10-06 S3 found two hand-written copies that already disagreed, and a nested call (leave → request(drop), or a
+// host callback re-entering the door) reset the outer call's queues under it. enter() saves everything, sets this call's,
+// and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
+// the door's own work.
+function enter(w, actor) {
+  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now };
+  CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w;
+  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
+  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; };
+}
 export function request(w, actor, tool, args = {}) {
-  const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF, prevAnon = ISANON, prevKnown = KNOWNID; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
-  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => id === actor || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
+  const exit = enter(w, actor);
   // ONE clock per request (§2.1: ts is the door's admission time). A wall clock read twice in one request could put a
   // rest's digest (computed where the engine stood at the first read) under a later ts, across a tick boundary, and every
   // carrier re-folding the log would then call the door's own digest wrong (physlive Q1).
@@ -416,7 +427,7 @@ export function request(w, actor, tool, args = {}) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; KNOWNID = prevKnown; w.now = clock; }
+  } finally { exit(); }
 }
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
@@ -1500,9 +1511,8 @@ function activate(w, id, name, ev) {
   rt.fails = 0; return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...logs });
 }
 function withDoor(w, fn) {
-  const prevCat = CAT, prevName = NAMEOF, prevAnon = ISANON, prevThrough = THROUGH, prevKnown = KNOWNID; CAT = w.catalogue ?? LAB_CATALOGUE; NAMEOF = w.nameOf ?? null; THROUGH = false;
-  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => !w.kindOf || w.kindOf(id) != null;
-  try { return fn(); } finally { CAT = prevCat; NAMEOF = prevName; ISANON = prevAnon; KNOWNID = prevKnown; THROUGH = prevThrough; if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
+  const exit = enter(w, null);
+  try { return fn(); } finally { exit(); if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
 }
 /**
  * Timers (door practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
@@ -2317,7 +2327,7 @@ const PHYSICS_TOOLS = {
   // a holder who leaves: what they held is dropped (into the sim if there is one), attributed to them (orphans, 18a)
   leave(w, actor) {
     const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
-    w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = null; }
+    const wasLeaving = w.leaving; w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = wasLeaving ?? null; }   // a nested request (enter() keeps the outer call's state)
     // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
     // where the log last had it; if picking it up took it out of the engine, the door puts it back there, as its own act.
     for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
