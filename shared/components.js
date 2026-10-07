@@ -81,7 +81,7 @@ export function sha256hexBytes(bytes) {
 // IS a set — a particle preset, a loop mode — not a type switch), list, json.
 // `default` is the value the engine's realizer applies when the key is absent;
 // where today's code applies two different defaults by scope, the record says
-// both (`partDefault`) rather than pretending there is one (docs/COMPONENTS-TODAY.md §3).
+// both (`partDefault`) rather than pretending there is one.
 const deg = { t: 'num', deg: true, step: 5 };
 const axis = (d) => ({ t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: d, custom: 'vec3' });
 const part = { t: 'text', default: null, hint: 'a named node of the model; empty = the whole thing' };
