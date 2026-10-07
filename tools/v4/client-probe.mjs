@@ -158,6 +158,11 @@ try {
     // a normalized bone's local rotation against what the shared preset says (the angle between them)
     const boneVs = (who, bone, want) => gev(({ who, bone, want }) => { const EW = globalThis.EW; const av = who ? EW.remotes.get(who)?.avatar : EW.me(); const n = av?.vrm?.humanoid?.getNormalizedBoneNode(bone); if (!n) return null;
       const q = n.quaternion; const d = Math.abs(q.x * want[0] + q.y * want[1] + q.z * want[2] + q.w * want[3]); return { ang: +(2 * Math.acos(Math.min(1, d)) * 180 / Math.PI).toFixed(2), q: q.toArray().map((v) => +v.toFixed(3)) }; }, { who, bone, want });
+    // a measurement re-read every few rendered frames (v4phys's own frame count) until it passes or 40 frames went by: a
+    // slow headless page draws ~2 frames a second, and the eases (the pull, the hold pose) finish in frames, not seconds
+    const vFrames = () => gev(() => globalThis.EW.physics.body().stats.frames);
+    const untilFrames = async (measure, pass, max = 40) => { const f0 = await vFrames(); let v = null;
+      for (let i = 0; i < 400; i++) { v = await measure(); if (v && pass(v)) return v; const f = await vFrames().catch(() => f0); if (f - f0 >= max) return v; await gsleep(250); } return v; };
     const me = await gev(() => globalThis.EW.me().root.position.toArray());
     // each held thing goes down at a spot of its own in front of her (a put the door refuses is a harness defect: said)
     const gput = async (id, dx, dz) => { const at = await gev(() => globalThis.EW.me().root.position.toArray());
@@ -181,17 +186,16 @@ try {
     const gr = await race(pg.evaluate(() => globalThis.EW.physics.grab('sword')), 20000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
     const rec = await gwait(() => { const h = globalThis.EW.physics.holds().sword; return h?.grip ? h : null; });
     if (process.env.PROBE_DIAG) stage('grab: diag (comps)', true, await gev(() => ({ comps: Object.keys(globalThis.EW.comps.get('sword') ?? {}), keys: [...globalThis.EW.comps.keys()].slice(0, 8) })));
-    await gsleep(1500);   // the pull ease and the pose's own ease
-    const gp = await gripVsPalm('sword', 'hilt', ANNID, 'right');
+    const gp = await untilFrames(() => gripVsPalm('sword', 'hilt', ANNID, 'right'), (v) => v.d < 0.01 && v.ang < 2);
     check('grab: Ann\'s grab of a thing with a grip comes back as the hold record (right hand, its hilt)', gr?.ok && rec?.hand === 'right' && rec?.grip === 'hilt', { gr: gr?.ok ?? gr?.refused, mk: mk?.ok ?? mk?.refused, rec });
     check('grab: …and it is drawn with the hilt in her palm (the grip point on the palm\'s origin, its frame the palm\'s)', gp && gp.d < 0.01 && gp.ang < 2, gp);
     const fist = fingerPose('fist', 'right'); const f1 = await boneVs(null, 'rightIndexProximal', fist.rightIndexProximal), f2 = await boneVs(null, 'rightMiddleIntermediate', fist.rightMiddleIntermediate);
     if (!f1 && !f2) stage('grab: …her fingers: skipped, her body has no finger bones (claude.vrm; PROBE_AVATAR=aletheia checks them; Bob\'s below are checked)', true);
     else check('grab: …her fingers close round it (the grip\'s fist preset on the normalized fingers)', f1 && f2 && f1.ang < 1.5 && f2.ang < 1.5, { f1, f2 });
-    const arm = armPose('hand', 'right'); const a1 = await boneVs(null, 'rightUpperArm', arm.rightUpperArm), a2 = await boneVs(null, 'rightLowerArm', arm.rightLowerArm);
+    const arm = armPose('hand', 'right'); const a1 = await untilFrames(() => boneVs(null, 'rightUpperArm', arm.rightUpperArm), (v) => v.ang < 1.5), a2 = await boneVs(null, 'rightLowerArm', arm.rightLowerArm);
     check('grab: …and her desktop body holds it (the one-hand pose: no tracked hands, a thing under 0.5 m)', a1 && a2 && a1.ang < 1.5 && a2.ang < 1.5, { a1, a2 });
     await gshoot('grab-grip-ann', null, [0.9, 0.1, 1.2]);
-    await gput('sword', -0.7, 0.8);
+    await gput('sword', -0.5, 0.6);
     // (2) Bob holds a lantern by its handle in his LEFT hand: Ann's page draws it at his remote body's left palm
     const BP = [me[0] + 2.5, 0, me[2] + 1];
     await gdoor('move', { to: BP }); for (let i = 0; i < 6; i++) { ws.send(JSON.stringify({ type: 'pose', pose: { p: BP, yaw: 0, speed: 0, clip: 'idle' } })); await gsleep(100); }
@@ -199,10 +203,12 @@ try {
       grabbable: { who: 'visitor', grips: { handle: { pos: [0, 1.8, 0], q: [0, 0, Math.SQRT1_2, Math.SQRT1_2], fingers: 'pinch' } } } } });
     await gwait((i) => !!globalThis.EW.entities.get(i), 'lantern');
     const bg = await gdoor('grab', { id: 'lantern', hand: 'left' });
-    await gwait(() => globalThis.EW.physics.holds().lantern?.hand === 'left'); await gsleep(2000);
-    const lp = await gripVsPalm('lantern', 'handle', BOB, 'left');
+    await gwait(() => globalThis.EW.physics.holds().lantern?.hand === 'left');
+    if (process.env.PROBE_DIAG) stage('grab: diag (lantern)', true, await gev(async () => { const EW = globalThis.EW; const f0 = EW.physics.body().stats.frames; await new Promise((r) => setTimeout(r, 1500)); const f1 = EW.physics.body().stats.frames;
+      const o = EW.entities.get('lantern'); return { frames: f1 - f0, holds: EW.physics.holds(), parent: o?.parent?.type ?? null, parentName: o?.parent?.name ?? null, entityParent: o?.parent?.userData?.entityId ?? null, launched: EW.physics.launched(), shown: Object.keys(EW.simShown()?.bodies ?? {}) }; }));
+    const lp = await untilFrames(() => gripVsPalm('lantern', 'handle', BOB, 'left'), (v) => v.d < 0.01 && v.ang < 2);
     check('grab: a lantern Bob holds in his LEFT hand by its handle is drawn there on Ann\'s screen (his remote body\'s own bones)', bg?.ok && lp && lp.d < 0.01 && lp.ang < 2, { bg: bg?.ok ?? bg?.refused, mk2: mk2?.ok ?? mk2?.refused, lp });
-    const pinch = fingerPose('pinch', 'left'); const bf = await boneVs('Bob', 'leftIndexProximal', pinch.leftIndexProximal);
+    const pinch = fingerPose('pinch', 'left'); const bf = await untilFrames(() => boneVs('Bob', 'leftIndexProximal', pinch.leftIndexProximal), (v) => v.ang < 1.5);
     const barm = armPose('hand', 'left'); const ba = await boneVs('Bob', 'leftUpperArm', barm.leftUpperArm);
     check('grab: …his left fingers pinch it and his left arm holds it, on Ann\'s page (the same presets, from the hold record)', bf && ba && bf.ang < 1.5 && ba.ang < 1.5, { bf, ba });
     await gshoot('grab-remote-left', 'Bob', [-0.6, 0.1, 1.3]);
@@ -213,28 +219,30 @@ try {
     await gwait((i) => !!globalThis.EW.entities.get(i), 'rifle');
     const r1 = await race(pg.evaluate(() => globalThis.EW.physics.grab('rifle')), 20000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
     const r2 = await race(pg.evaluate(() => globalThis.EW.physics.request('grab', { id: 'rifle', hand: 'left' })), 20000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
-    await gwait(() => !!globalThis.EW.physics.holds().rifle?.second); await gsleep(1500);
-    const aim = await gev((who) => { const EW = globalThis.EW, T = EW.THREE; const o = EW.entities.get('rifle'); const G = EW.physics.grabbable('rifle').grips; o.updateWorldMatrix(true, false);
+    await gwait(() => !!globalThis.EW.physics.holds().rifle?.second);
+    const aim = await untilFrames(() => gev((who) => { const EW = globalThis.EW, T = EW.THREE; const o = EW.entities.get('rifle'); const G = EW.physics.grabbable('rifle').grips; o.updateWorldMatrix(true, false);
       const s = new T.Vector3(...G.stock.pos).applyMatrix4(o.matrixWorld), f = new T.Vector3(...G.fore.pos).applyMatrix4(o.matrixWorld);
       const R = EW.physics.palm(who, 'right'), L = EW.physics.palm(who, 'left'); if (!R || !L) return null;
       const a = f.clone().sub(s).normalize(), b = new T.Vector3(...L.p).sub(new T.Vector3(...R.p)).normalize();
-      return { ang: +(Math.acos(Math.min(1, a.dot(b))) * 180 / Math.PI).toFixed(2), stockToPalm: +s.distanceTo(new T.Vector3(...R.p)).toFixed(4) }; }, ANNID);
-    const two = armPose('two-hand', 'right'); const t1 = await boneVs(null, 'leftUpperArm', two.leftUpperArm);
+      return { ang: +(Math.acos(Math.min(1, a.dot(b))) * 180 / Math.PI).toFixed(2), stockToPalm: +s.distanceTo(new T.Vector3(...R.p)).toFixed(4) }; }, ANNID), (v) => v.ang < 2 && v.stockToPalm < 0.01);
+    const two = armPose('two-hand', 'right'); const t1 = await untilFrames(() => boneVs(null, 'leftUpperArm', two.leftUpperArm), (v) => v.ang < 1.5);
     check('grab: two hands: the stock in her right palm, the line to the fore grip points at her left hand, and both arms take the two-hand pose', r1?.ok && r2?.ok && aim && aim.stockToPalm < 0.01 && aim.ang < 2 && t1 && t1.ang < 1.5, { r1: r1?.ok || r1?.refused || r1, r2: r2?.ok || r2?.refused || r2, me3, body: await gev(() => globalThis.EW.physics.body()).catch(() => null), mk3: mk3?.ok ?? mk3?.refused, aim, t1 });
     await gshoot('grab-two-hands', null, [1.1, 0.2, 1.1]);
-    await gput('rifle', 0, 1);
+    await gput('rifle', 0, 0.85);
     // (4) a far grab (range 4) eases into the hand: sampled per frame right after the grab
     const me4 = await gev(() => globalThis.EW.me().root.position.toArray());
     const mk4 = await gdoor('create', { id: 'apple', model: MODEL, components: { transform: { pos: [me4[0] + 2.6, 0, me4[2]], scale: [0.05, 0.05, 0.05] }, grabbable: { who: 'visitor', range: 4 } } });
     await gwait((i) => !!globalThis.EW.entities.get(i), 'apple');
     const pull = await race(pg.evaluate(async () => { const EW = globalThis.EW, T = EW.THREE; const r = await EW.physics.grab('apple'); const out = [];
       const t0 = performance.now(); while (!EW.physics.holds().apple && performance.now() - t0 < 15000) await new Promise((f) => setTimeout(f, 30));
-      const t1 = performance.now(); for (let i = 0; i < 40; i++) { const o = EW.entities.get('apple'); const h = EW.me().vrm.humanoid.getRawBoneNode('rightHand').getWorldPosition(new T.Vector3());
-        out.push([Math.round(performance.now() - t1), +new T.Box3().setFromObject(o).getCenter(new T.Vector3()).distanceTo(h).toFixed(3)]); await new Promise((f) => requestAnimationFrame(f)); if (performance.now() - t1 > 1200) break; }
+      // one sample per rendered frame (a slow page draws ~2 a second: the frames are the clock), until two in a row are in the hand, 60 at most
+      const t1 = performance.now(); for (let i = 0; i < 60; i++) { const o = EW.entities.get('apple'); const h = EW.me().vrm.humanoid.getRawBoneNode('rightHand').getWorldPosition(new T.Vector3());
+        out.push([Math.round(performance.now() - t1), +new T.Box3().setFromObject(o).getCenter(new T.Vector3()).distanceTo(h).toFixed(3)]); await new Promise((f) => requestAnimationFrame(f));
+        if (out.length >= 3 && out.at(-1)[1] < 0.2 && out.at(-2)[1] < 0.2) break; }
       return { ok: r?.ok, pulled: r?.notes?.some((n) => n.pulled), out }; }), 40000).catch((e) => ({ err: String(e) }));
     const ds = pull?.out?.map((x) => x[1]) ?? [];
     check('grab: a far grab (range 4) flies to her hand: it starts where it stood and eases in (presence: every client draws the same ease)', pull?.ok && pull.pulled && ds.length >= 3 && ds[0] > 1 && ds.at(-1) < 0.2, { mk4: mk4?.ok ?? mk4?.refused, pull: { ...pull, out: pull?.out?.slice(0, 12) } });
-    await gput('apple', 0.7, 0.8);
+    await gput('apple', 0.5, 0.6);
     // (5) use while held: Ann's hose (use {down: spray, up: stop}) through the left mouse button on the canvas, the door
     //     changing its state on each press and release, and its fx (presence) drawn while she presses
     const FX = { particles: { preset: 'magic', count: 60, size: 4 }, at: [0, 2, 0] };   // (an emitter rides its thing's scale: 0.05 here)
@@ -253,7 +261,7 @@ try {
     const up = await gwait(() => (globalThis.EW.comps.get('hose')?.flowing === false && !globalThis.EW.physics.fx().includes('hose')) ? { flowing: false, fx: globalThis.EW.physics.fx(), use: globalThis.EW.myState.useHeld ?? null } : null, null, 20000);
     const acts5 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).filter((e) => e.kind === 'act' && e.verb === 'use' && e.body?.request?.id === 'hose').map((e) => `${e.body.held?.phase}:${e.body.action}`);
     check('grab: use while held: the left button on her hose is use.down (the door sets it flowing; its fx draws while pressed), letting go is use.up (one act each)', h5?.ok && down && up && JSON.stringify(acts5) === '["down:spray","up:stop"]', { mk5: mk5?.ok ?? mk5?.refused, h5: h5?.ok ?? h5?.refused, down, up, acts5 });
-    await gput('hose', 0.7, -0.8);
+    await gput('hose', 0.5, -0.6);
     // (6) the presence tier from someone else: Bob presses use on the nozzle he holds (his pose carries use; nothing is
     //     logged), and Ann's page draws its fx until his pose stops carrying it
     const BP6 = [me5[0] + 2.5, 0, me5[2] + 1];
@@ -265,8 +273,11 @@ try {
       on6 = await gev(() => globalThis.EW.physics.fx().includes('nozzle')).catch(() => false); }
     let off6 = null; for (let i = 0; i < 60 && !off6; i++) { ws.send(JSON.stringify({ type: 'pose', pose: { p: BP6, yaw: 0, speed: 0, clip: 'idle' } })); await gsleep(150);
       off6 = await gev(() => !globalThis.EW.physics.fx().includes('nozzle')).catch(() => false); }
-    const logged6 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).length - n6;
-    check('grab: …and Bob pressing use on the nozzle he holds draws its fx on Ann\'s page, from his presence alone (nothing logged), until he lets go', b6?.ok && on6 && off6 && logged6 === 0, { b6: b6?.ok ?? b6?.refused, on6, off6, logged6 });
+    // his pressing writes nothing: no act of his and no use in the window (others' entries, e.g. Ann's page's own track or a
+    // rest, may land meanwhile: listed, not counted)
+    const win6 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).slice(n6); const logged6 = win6.filter((e) => e.actor === BOB || e.verb === 'use').length;
+    const others6 = win6.map((e) => `${e.actor === ANNID ? 'Ann' : e.actor}:${e.kind}:${e.verb}`);
+    check('grab: …and Bob pressing use on the nozzle he holds draws its fx on Ann\'s page, from his presence alone (nothing logged), until he lets go', b6?.ok && on6 && off6 && logged6 === 0, { b6: b6?.ok ?? b6?.refused, on6, off6, logged6, others6 });
     await gdoor('put', { id: 'nozzle' });
   }
 
@@ -318,7 +329,7 @@ try {
     const held1 = await xwait(() => { const h = globalThis.EW.physics.holds().cup; return h ? h : null; });
     check('xr: the right grip near a cup takes it: the door\'s record says right hand, held where it was grabbed (an offset)', held1?.hand === 'right' && Array.isArray(held1?.offset?.pos), { e1, held1, c0 });
     const stay = await centre('cup'); await frames(3); const drift = await centre('cup');
-    check('xr: …and it stays where the hand took it (drawn at the offset: no jump into the palm)', stay && drift && Math.hypot(drift[0] - c0[0], drift[1] - c0[1], drift[2] - c0[2]) < 0.05, { c0, drift });
+    check('xr: …and it stays where the hand took it (drawn at the offset: no jump into the palm)', !!held1?.offset && stay && drift && Math.hypot(drift[0] - c0[0], drift[1] - c0[1], drift[2] - c0[2]) < 0.05, { c0, drift });
     const n2 = LOGX().length;
     await hand('right', [c0[0], c0[1] + 0.1, c0[2] + 0.5], { squeeze: 1 }); await frames(1);
     await hand('right', [c0[0], c0[1] + 0.2, c0[2] + 1.0], { squeeze: 0 }); await frames(2);

@@ -259,7 +259,8 @@ function poseHolders() {
     const grip = h.grip ? g?.grips?.[h.grip] : null;
     Object.assign(m.bones, fingerPose(grip?.fingers ?? 'fist', side, grip?.hold ?? {})); m.fingers[side] = true;
     if (h.second) { const sg = h.second.grip ? g?.grips?.[h.second.grip] : null; Object.assign(m.bones, fingerPose(sg?.fingers ?? 'fist', h.second.hand, sg?.hold ?? {})); m.fingers[h.second.hand] = true; }
-    if (!tracked(h.by) && g) { const preset = holdPoseOf(g, sizeOf(id, entities.get(id)));
+    // (a dynamic thing with no grabbable is held as before: in the hand where the arm already is, no hold pose)
+    if (!tracked(h.by) && g && g.source !== 'physics') { const preset = holdPoseOf(g, sizeOf(id, entities.get(id)));
       Object.assign(m.bones, armPose(preset, side));
       if (bothArms(preset)) { const o = side === 'right' ? 'left' : 'right'; Object.assign(m.bones, fingerPose('fist', o)); m.fingers[o] = true; } }
   }

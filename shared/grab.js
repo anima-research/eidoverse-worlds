@@ -123,6 +123,7 @@ export const wantsHome = (v) => isObj(v) && (v.release === 'return' || (num(v.re
  *  HAND_SIZE, both arms at or above it; a two-handed thing in both hands). size = [x, y, z] metres, or null. */
 export function holdPoseOf(g, size) {
   if (g?.pose) return g.pose;
+  if (g?.source === 'physics') return 'hand';   // migration: a dynamic thing with no grabbable is held as before, by its centre in one hand
   if (g?.twoHanded) return 'two-hand';
   return Array.isArray(size) && Math.max(...size) >= HAND_SIZE ? 'carry' : 'hand';
 }
