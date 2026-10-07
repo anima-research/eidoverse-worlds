@@ -10,7 +10,7 @@ amendment to the first protocol and is now the physics part of protocol v4
 the log was redone for v4: launches are `sim` entries, and the log records
 where things come to rest.*
 
-Status: normative for v4 worlds whose `@world.sim` names an engine, with a
+Status: normative for v4 worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` (eidosim), `shared/simmath.js`,
 `shared/terrainmath.js`, and the sim layer `shared/v4/simlayer.js`. MUST /
 SHOULD / MAY are RFC-2119.
@@ -33,7 +33,7 @@ the world depends on carrying the engine; only watching the flight does.
   never reads `sim` entries and never runs an engine.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
   change entries and its `sim` entries (launches, lifts, catches), run by
-  the engine `@world.sim` names. It owns what is in the air between a launch
+  the engine `@world.physics-engine` names. It owns what is in the air between a launch
   and its rest. It never writes the log; the door does, from its own copy.
 
 A change entry whose `cause` is a launch IS that body's rest, and its value
@@ -71,14 +71,14 @@ re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
-- `@world.sim` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
+- `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
   sets `engine`; the **door stamps `build`**, the hash of the exact files
   that implement it (determinism is per binary). The reference door carries
   `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
   `shared/v4/simlayer.js`; `bun run test:v4` recomputes it from the files
   and fails if they changed without a new name).
 - **Changing the engine is a cut**: the door refuses to change or delete
-  `@world.sim` while anything is in flight (an owner may force it, freezing
+  `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
 - **A reader that doesn't carry the named build MUST NOT recompute the
@@ -145,7 +145,7 @@ between several hands.
 ## 7. Other engines — moddable physics
 
 A physics mod is an engine: a named, versioned implementation a world
-selects in `@world.sim`. What it must be is exactly what §2–§5 say — owned
+selects in `@world.physics-engine`. What it must be is exactly what §2–§5 say — owned
 numerics, no clock, no randomness, ordered iteration; its constants are its
 version; it reads only what is stamped in entries; it advances by ticks. To
 be carried, it registers beside eidosim in the door's engine table

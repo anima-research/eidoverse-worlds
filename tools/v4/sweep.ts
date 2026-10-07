@@ -83,18 +83,23 @@ const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED
 // else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
 // parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").
 const POSE = new Set(["offset", "yaw", "q"]);
+// v1's parent.slot is v4's parent.socket: shared/hierarchy.js (the renderer's reading) speaks v4
+const asV4Parent = (e: any) => (e?.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e);
+const v1Shim = (ents: any) => (ents ? Object.fromEntries(Object.entries<any>(ents).map(([k, e]) => [k, asV4Parent(e)])) : ents);   // per call: the v1 fold mutates its state in place
 function oldNorm(st: any) {
-  const ents: any = {};
+  const ents: any = {}; let shim: any = null;
   for (const [id, e0] of Object.entries<any>(st.entities ?? {})) {
     const e: any = {};
     for (const [k, v] of Object.entries<any>(e0)) if (!DROP_ENTITY.includes(k)) e[k] = v;
-    const L = e0.parent ? localOf(e0, st.entities) : null;
+    const L = e0.parent ? localOf(asV4Parent(e0), (shim ??= v1Shim(st.entities))) : null;   // hierarchy.js reads v4's parent.socket
     if (L?.mounted) { e.pos = L.pos; e.q = L.q ?? yq(L.yaw); delete e.yaw; }
     if (e.parent && typeof e.parent.to === "string") e.parent = Object.fromEntries(Object.entries<any>(e.parent).filter(([k]) => !POSE.has(k)));
     if (e.comp && "guard" in e.comp) { const { guard, ...cc } = e.comp; e.comp = cc; if (guard && !cc.lock) e.comp.lock = true; }
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
+    // declared (translate-v1@7): v1's light keep is v4's light.important
+    if (n.comp?.light && typeof n.comp.light === "object" && "keep" in n.comp.light) { const { keep, ...l } = n.comp.light; n.comp.light = { ...l, important: keep }; }
     // declared: a socket's yaw is its rotation about up, written as q (a zero yaw is no rotation)
     if (n.comp?.sockets && typeof n.comp.sockets === "object") n.comp.sockets = Object.fromEntries(Object.entries<any>(n.comp.sockets).map(([k, s]) => {
       if (!s || typeof s !== "object" || !("yaw" in s)) return [k, s]; const { yaw, ...r } = s;
@@ -140,7 +145,7 @@ function unproject(v4: any) {
       for (const [k, v] of Object.entries<any>(comps)) {
         if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
         else if (k === "imported-epoch") world.epoch = v;
-        else if (k.startsWith("palette:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice(8)));
+        else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
         else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']
         else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = fromCan(v);
         else if (k.startsWith(BANS)) (world.bans ??= {})[dec(k.slice(BANS.length))] = v;
@@ -157,7 +162,7 @@ function unproject(v4: any) {
     for (const [k, v] of Object.entries<any>(comps)) {
       if (k === "transform") { e.pos = v.pos; e.q = v.q; e.scale = v.scale; }
       else if (k === "model") e.lib = v;
-      else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
+      else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, socket, ...p }) => ({ ...p, to: dec(v.to), ...(socket !== undefined ? { slot: socket } : {}) }))(v) : v; // order: v4's sibling order, no v1 field; v4's socket is v1's slot
       else if (k.startsWith(IMP) && comps[dec(k.slice(IMP.length))] !== undefined && dec(k.slice(IMP.length)) !== "parent") {}   // folded back below
       else if (k.startsWith(IMP)) e[dec(k.slice(IMP.length))] = v;
       else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): v4's openable is v1's door
@@ -215,7 +220,7 @@ for (const p of logs.sort()) {
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));
 }
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);
-console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, order, slot?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
+console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, order, socket?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
 console.log(`[sweep] DROPPED (by design): ${Object.keys(DROPPED).join("; ")}`);
 console.log(`[sweep] ${pass} passed, ${fail} failed`);
 process.exit(fail || !total ? 1 : 0);

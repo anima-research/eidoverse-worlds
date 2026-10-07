@@ -5,7 +5,7 @@
 //
 // 1. the alias both ways, on REAL v4 states (a synthetic world through the real
 //    door, then every spec fixture translated to v4): after every entry the
-//    world reads as Sky / Weather / Ground / Grass and writes back
+//    world reads as Sky / Weather / Terrain / Grass and writes back
 //    canon-identical; Sky and Weather partition state.sky; each component at most once
 // 2. picking a sky REPLACES the Sky (no leftovers from the old one) and keeps
 //    the Weather; a ground/grass pick changes only its own dial
@@ -46,7 +46,7 @@ function aliasBad(st: any): string | null {
   const view = worldComponents(st);
   if (canon(worldOf(view)) !== canon(worldState(st))) return `round trip: was ${canon(worldState(st)).slice(0, 200)} got ${canon(worldOf(view)).slice(0, 200)}`;
   const types = view.components.map((c: any) => c.type);
-  if (types.some((t: string) => !['Sky', 'Weather', 'Ground', 'Grass'].includes(t))) return `a non-world component: ${types}`;
+  if (types.some((t: string) => !['Sky', 'Weather', 'Terrain', 'Grass'].includes(t))) return `a non-world component: ${types}`;
   if (new Set(types).size !== types.length) return `a component twice: ${types}`;
   const sky = view.components.find((c: any) => c.type === 'Sky'); const wx = view.components.find((c: any) => c.type === 'Weather');
   if (sky?.params && wx?.params && Object.keys(wx.params).some((k) => k in sky.params)) return 'a key in both Sky and Weather';
@@ -88,7 +88,7 @@ console.log('1. the alias both ways, through the real door:');
   check('…and reads as Sky (the day, the clouds) + Weather (weather, forecast, override) — not one opaque bag (KNOWN BUG above: the override is refused)',
     canon(types) === canon(['Sky:clouds,hours,rate', 'Weather:forecast,override,weather']), `${types.join(' | ')} ${ov.ok ? '' : `(weather refused: ${ov.refused?.reason})`}`);
   check('the world records are components (one engine record each), never addable to a thing',
-    ['Sky', 'Weather', 'Ground', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
+    ['Sky', 'Weather', 'Terrain', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
     && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a: any) => (RECORDS as any)[a.name]?.world));
 
   // every spec fixture, translated to v4 (shared/v4/translate-v1.js, as a world is migrated), state by state
@@ -180,7 +180,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const sc = worldSchema(st(), { now: now() });
   const own = new Map<string, string>(); const bad: string[] = [];
   for (const sec of sc.sections.list) for (const a of sec.fields) { if (!fieldAt(sc, a)) bad.push(`${a} is no field`); if (own.has(a)) bad.push(`${a} twice`); own.set(a, sec.title); }
-  check('four cards (Sky, Weather, Ground, Grass), every field address resolves and is owned once', canon(sc.sections.list.map((s: any) => s.title)) === canon(['Sky', 'Weather', 'Ground', 'Grass']) && !bad.length && own.size > 12, bad.join(' · '));
+  check('four cards (Sky, Weather, Terrain, Grass), every field address resolves and is owned once', canon(sc.sections.list.map((s: any) => s.title)) === canon(['Sky', 'Weather', 'Terrain', 'Grass']) && !bad.length && own.size > 12, bad.join(' · '));
   // one edit is ONE request (inspect.js commitEdit / the agent's edit send OP.batch(ops)); `acts` counts what undo must take back
   const edit = (set: any) => {
     const r = worldEditOps(st(), set, { now: now() }); const was = JSON.parse(JSON.stringify(worldState(st())));
@@ -193,13 +193,13 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const e1 = edit({ 'sky.hours': 17, 'sky.clouds': 'cirrus', 'sky.exposure': '+=0.25' });
   check('three sky fields are ONE sky request, and the door takes it', e1.ops.length === 1 && e1.ops[0].tool === 'sky' && e1.one.ok, JSON.stringify([e1.ops, e1.one.refused]));
   check('…and read back as typed (hours 17 now, on a turning day)', Math.abs(readBack('sky.hours') - 17) < 0.05 && readBack('sky.clouds') === 'cirrus' && readBack('sky.exposure') === 1.25, `${readBack('sky.hours')} ${readBack('sky.clouds')} ${readBack('sky.exposure')}`);
-  const e2 = edit({ 'ground.amplitude': '*=2', 'ground.color': '#112233', 'grass.density': 1.4, 'weather.state': 'rain' });
+  const e2 = edit({ 'terrain.amplitude': '*=2', 'terrain.color': '#112233', 'grass.density': 1.4, 'weather.state': 'rain' });
   check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.tool === 'set' ? `set ${o.args.component}` : o.tool).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
   // KNOWN BUG (reported 2026-10-06, not fixed here): a multi-field world edit is ONE batch, and the door's batch takes
   // only create/set/delete/place — the `weather` (and `sky`) tool can't ride in it, so the whole edit is refused.
   // inspect.js commits one field per gesture (unaffected); the agent's `edit @world` with two groups is (section 5).
   check('…and the door takes the edit as ONE request (one act, one undo) (KNOWN BUG: weather can\'t go in a batch)', e2.one.ok, JSON.stringify(e2.one.refused));
-  check('…read back as typed', readBack('ground.amplitude') === PAL.shapes.hills * 2 && readBack('ground.color') === 0x112233 && readBack('grass.density') === 1.4 && readBack('weather.state') === 'rain'
+  check('…read back as typed', readBack('terrain.amplitude') === PAL.shapes.hills * 2 && readBack('terrain.color') === 0x112233 && readBack('grass.density') === 1.4 && readBack('weather.state') === 'rain'
     && st().terrain.size === 160 && st().terrain.layers[0].repeat === 16, canon(st().terrain));
   const undo = (e: any) => { let ok = true; for (let i = 0; i < e.acts; i++) ok = W.call('undo', {}).ok && ok; return ok; };
   const u2 = undo(e2);
@@ -212,7 +212,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const e5 = edit({ 'sky.clock': 'authored' });
   check('…and back to authored hands the parked rated clock back (rate 24)', st().sky.clock === undefined && st().sky.rate === 24 && e5.errors.length === 0 && e5.one.ok, canon(st().sky));
   check('a refused edit says why and sends nothing for it (unknown field, bad enum, bad colour); the good edit beside them still goes', (() => {
-    const r = worldEditOps(st(), { 'sky.nope': 1, 'sky.clouds': 'fluffy', 'ground.color': 'red', 'weather.state': 'rain' }, { now: now() });
+    const r = worldEditOps(st(), { 'sky.nope': 1, 'sky.clouds': 'fluffy', 'terrain.color': 'red', 'weather.state': 'rain' }, { now: now() });
     return r.errors.length === 3 && r.ops.length === 1 && r.ops[0].tool === 'weather';
   })());
   const ro = worldSchema(st(), { now: now(), mayShape: false });
@@ -224,10 +224,10 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   check('…and the door is the gate: a builder\'s sky request is refused (rights)', asBob.ok === false && asBob.refused?.code === 'rights', JSON.stringify(asBob));
   check('unknown rights disable nothing (the door decides, as for things)', worldSchema(st(), { now: now() }).groups.every((g: any) => g.fields.every((f: any) => !f.disabled || /clock is real/.test(f.hint ?? ''))));
   const txt = describeSchema(sc, { verbsHint: false });
-  check('describeSchema reads it (what an agent\'s inspect prints)', /sky\.hours = /.test(txt) && /weather\.state = /.test(txt) && /ground\.amplitude = /.test(txt) && /grass\.mow: action/.test(txt), txt.slice(0, 200));
+  check('describeSchema reads it (what an agent\'s inspect prints)', /sky\.hours = /.test(txt) && /weather\.state = /.test(txt) && /terrain\.amplitude = /.test(txt) && /grass\.mow: action/.test(txt), txt.slice(0, 200));
   const empty = worldSchema(emptyView(), {});
   check('an empty world still shows four cards, defaults marked, saying how to grow ground and grass', empty.sections.list.length === 4 && empty.sections.list.every((s: any) => s.present === false)
-    && /Build ▸ World/.test(empty.sections.list.find((s: any) => s.type === 'Ground').info[0][1]));
+    && /Build ▸ World/.test(empty.sections.list.find((s: any) => s.type === 'Terrain').info[0][1]));
 }
 
 // ------------------------------------------------------------ 4. the tab memory
@@ -259,16 +259,16 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   A.door = async (tool: string, args: any) => W.call(tool, args);
   const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
   const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
-  check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Ground, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /ground\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
+  check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
   const one = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6 }, dry: true }));
   check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"\}/.test(one) && !/refused/.test(one), one);
-  const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'ground.amplitude': '+=1' }, dry: true }));
+  const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'terrain.amplitude': '+=1' }, dry: true }));
   check('edit @world (dry), two groups: ONE request with the sky tool and set terrain (amplitude 3.6)', /would send batch .*"tool":"sky".*"hours":6.*"component":"terrain".*"amplitude":3\.6/.test(ed), ed);
   // KNOWN BUG (reported 2026-10-06): that batch carries the `sky` tool, which the door's batch refuses
   check('…and the door accepts that request (KNOWN BUG: refused, sky can\'t go in a batch)', !/refused|can't go in a batch/.test(ed), ed);
   const bad = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'pos.x': 1 }, dry: true }));
   check('…an address the world has not is refused by name', /refused: pos\.x: no such field on @world/.test(bad), bad);
-  const wet = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'ground.amplitude': '+=1' } }));
+  const wet = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'terrain.amplitude': '+=1' } }));
   sync();
   check('edit @world for real: the door accepts it and the world reads back the new amplitude', /the door accepted it/.test(wet) && A.st.terrain?.amplitude === 3.6, wet);
   const hier = out(await HANDLERS.hierarchy(ag as any, {}));

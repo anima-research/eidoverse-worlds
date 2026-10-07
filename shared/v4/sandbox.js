@@ -165,7 +165,7 @@ export function makeHost(x) {
         return id; }
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }
-        bodies.push({ act: a[0], to: String(a[1]).replace(/^body:/, ""), ...(a[2] ? { spec: a[2] } : {}) }); return null; }
+        bodies.push({ kind: a[0], to: String(a[1]).replace(/^body:/, ""), ...(a[2] ? { spec: a[2] } : {}) }); return null; }
       case "log": { if (logs.length < L.logLines) logs.push(String(a[0]).slice(0, 500)); return null; }
       default: throw new HostError(`no host call '${verb}'`);
     }

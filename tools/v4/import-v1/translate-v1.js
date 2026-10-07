@@ -20,7 +20,7 @@ import { COMPONENTS } from "../../../shared/v4/catalogue.js";
 // "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
 // (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
 // it when the caller knows it (translate(…, {foldBuild}); build.ts beside this file computes it from the files).
-// @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}),
+// @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
@@ -32,6 +32,7 @@ export const hexColor = (x) => { if (typeof x !== "string") return x; const m = 
   if (!m) return x; const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
 function splitUnknown(c) {
   if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
+  if (c.light && typeof c.light === "object" && !Array.isArray(c.light) && "keep" in c.light) { const { keep, ...l } = c.light; c.light = { ...l, important: keep }; } // @7: v1's keep is light.important
   for (const [k, v] of Object.entries(c)) {
     const name = k.split(":")[0], def = COMPONENTS[name];
     if (!def?.fields || name === "imported" || !v || typeof v !== "object" || Array.isArray(v)) continue;
@@ -90,7 +91,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@7";
 // whose actor was v1's "door". Everything carried only from translation is one `imported` family: the act verb `imported`
 // (was `legacy`), imported:<k> (was legacy:<k>), imported-behavior:<k> (was behavior:<k>), imported-bans:<id> (was
 // bans:<id>), imported-epoch (was @world epoch). A v1 `gen` grant is can.generate (roles:<id> and default-role alike; the
-// door no longer reads `gen`). Output differs from @6 on every log.
+// door no longer reads `gen`). A light's `keep` is `important`; a palette entry is assets:<k> (was palette:<k>); a dialect-3 epoch's engine is @world physics-engine (was sim). A mount's parent names its socket as `socket` (v1's `slot`). Output differs from @6 on every log.
 // @6 (2026-10-07): the two @5s merged (batch 2 and ship-list group A each bumped @4 → @5 in parallel branches).
 // @5 (2026-10-07, batch 2): `story` is a component now ({title, text, marks?}). A v1 story's `practice` (Mica's marker
 // tree: "One tree, renewing, not accumulating…") becomes a paragraph of its text, and `markedEntity` its marks: the
@@ -172,7 +173,7 @@ export function project(st, seen = null, who = null) {
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = v4Story(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
-      ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k))) }
+      ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is
     for (const [k, v] of Object.entries(e)) {
       if (["pos", "yaw", "q", "scale", "lib", "kind", "color", "intensity", "range", "keep", "day", "comp", "parent", "placer"].includes(k) || ENTITY_SKIP.has(k)) continue;
@@ -188,7 +189,7 @@ export function project(st, seen = null, who = null) {
   if (w.sky && typeof w.sky === "object") { const { seq, by, ...sky } = w.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     w.sky = sky; }
-  for (const a of st.assets ?? []) w[keyed("palette", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
+  for (const a of st.assets ?? []) w[keyed("assets", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
   // research roles §translation: v1's `fly` and `gen` grants are the fly and generate switches, can.fly / can.generate
   // (@7: gen had stayed as written, read by the door as generate); `caption` stays in imported until screens carry captioners
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;

@@ -154,16 +154,16 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("bob", "create", { id: "top", model: "table", components: { transform: T0([5, 0, 5]), label: "a table top" } });
       const l1 = s.call("bob", "create", { from: legHash, at: { pos: [4, 0, 4] } }), l2 = s.call("bob", "create", { from: legHash, at: { pos: [6, 0, 6] } });
       r.copies = [show(l1), show(l2)];
-      const ids = Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.blueprint?.from === legHash);
+      const ids = Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c["copy-of"]?.from === legHash);
       for (const [k, id] of ids.entries()) s.call("bob", "set", { id, component: "parent", value: { to: "top" } }), s.call("bob", "set", { id, component: "transform", value: T0([k ? 0.5 : -0.5, 0, 0]) });
       const tableRec = s.call("bob", "publish", { from: "top", name: "table" }); r.tableRec = show(tableRec);
       const h = tableRec.notes?.find((n: any) => n.record)?.record; const rec = h ? s.w().getBlob(h) : null;
       r.keys = rec?.parts.map((p: any) => p.key) ?? null;
       r.placed = []; r.parts = [];
       for (let k = 0; k < 3; k++) { const c = s.call("bob", "create", { from: h, at: { pos: [20 + 3 * k, 0, 20] } }); r.placed.push(show(c));
-        const st = s.w().state(); const mine = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+        const st = s.w().state(); const mine = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
         r.parts.push(mine.length); }
-      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
       const roots = copies.filter((x) => !st.entities[x].c.parent); const legsOf = (root: string) => copies.filter((x) => st.entities[x].c.parent?.to === root).length;
       r.legsPerRoot = roots.map(legsOf); r.unique = new Set(copies).size === copies.length;
       return r; },
@@ -173,7 +173,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("bob", "create", { id: "leg", model: "crate", components: { transform: T0([0, 0, 0]) } });
       const lh = s.call("bob", "publish", { from: "leg", name: "leg" }).notes?.find((n: any) => n.record)?.record;
       const a = s.call("bob", "create", { from: lh, at: { pos: [4, 0, 4] } }), b = s.call("bob", "create", { from: lh, at: { pos: [6, 0, 4] } });
-      const st0 = s.w().state(); const legs = Object.keys(st0.entities).filter((k) => st0.entities[k].c.blueprint?.from === lh);
+      const st0 = s.w().state(); const legs = Object.keys(st0.entities).filter((k) => st0.entities[k].c["copy-of"]?.from === lh);
       const g = s.call("bob", "publish", { from: legs, name: "pair" }); const gh = g.notes?.find((n: any) => n.record)?.record;
       const rec = gh ? s.w().getBlob(gh) : null;
       const p1 = s.call("bob", "create", { from: gh, at: { pos: [20, 0, 0] } }), p2 = s.call("bob", "create", { from: gh, at: { pos: [24, 0, 0] } });
@@ -184,9 +184,9 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const rec = { name: "table", root: "top", by: "bob", parts: [{ key: "top", components: { transform: t(0), model: "table" } },
         { key: "leg", components: { transform: t(-0.5), model: "crate", parent: { to: "top" } } }, { key: "leg", components: { transform: t(0.5), model: "crate", parent: { to: "top" } } }] };
       const h = s.w().putBlob(rec);
-      const lib = s.call("olive", "set", { id: "@world", component: `library:${String(h).replace(/^sha256:/, "")}`, value: { name: "table", parts: 3 } });
+      const lib = s.call("olive", "set", { id: "@world", component: `blueprints:${String(h).replace(/^sha256:/, "")}`, value: { name: "table", parts: 3 } });
       const p1 = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } }), p2 = s.call("bob", "create", { from: h, at: { pos: [24, 0, 0] } });
-      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
       return { lib: show(lib), p1: show(p1), p2: show(p2), n: copies.length, kids: copies.filter((x) => st.entities[x].c.parent).map((x) => st.entities[x].c.parent.to) }; },
     good: (o) => o.lib === "ok" && o.p1 === "ok" && o.p2 === "ok" && o.n === 6 && o.kids.length === 4 },
   { id: "N4", what: "a group holding a thing whose id is 'root' (the key a group's own root takes): every part keeps a key of its own, and it places", run(s) { cast(s);
@@ -195,7 +195,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const h = s.call("bob", "publish", { from: ["root", "stool"], name: "pair" }).notes?.find((n: any) => n.record)?.record;
       const keys = h ? s.w().getBlob(h).parts.map((p: any) => p.key) : null;
       const placed = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } });
-      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c["copy-of"]?.from === h);
       return { keys, placed: show(placed), n: copies.length, riders: copies.filter((x) => st.entities[x].c.parent).length }; },
     good: (o) => Array.isArray(o.keys) && o.keys.length === 3 && new Set(o.keys).size === 3 && o.placed === "ok" && o.n === 3 && o.riders === 2 },
 

@@ -59,7 +59,7 @@ const st0 = { actor: 'a', ts: 1, born: 1 };
 const cases: [string, any, string[]][] = [
   // [name, folded entity, expected "Type:key" list after Transform]
   ['a lamp: a Model and a comp.light on one entity', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, range: 8 } }, ...st0 }, ['Model:', 'Light:light']],
-  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, keep: true } }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, important: true } }, ...st0 }, ['Model:', 'Light:light']],
   ['comp.light with day:true kept verbatim', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: true } }, ...st0 }, ['Model:', 'Light:light']],
   ['comp.light with a key no record names (extra, not lost)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 1, flicker: 0.3, burnsAtNoon: 'x' } }, ...st0 }, ['Model:', 'Light:light']],
   ['an empty comp.light {} (all defaults)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: {} }, ...st0 }, ['Model:', 'Light:light']],
@@ -87,12 +87,12 @@ for (const [name, ent, want] of cases) {
     canon(back) === canon(ent) && canon(got) === canon(['Transform:', ...want]), `got ${got.join(' + ')} / ${canon(back)}`);
 }
 check('lightOf reads both spellings with the fold\'s defaults; the legacy one wins when both',
-  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true })
+  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true })
   && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, comp: { light: { color: 4 } } })?.color === 1
   && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false })?.day === false
   && lightOf({ lib: L, comp: { light: 'on' } }) === null && lightOf({ lib: L }) === null);
 check('lightOf never lets a bad field reach the rig (NaN, string, negative → default)',
-  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, keep: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true }));
+  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, important: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, important: false, day: true }));
 check('colliderOf: comp.collider wins, a bad shape falls back to legacy collide, absent = undefined',
   colliderOf({ collide: 'box', comp: { collider: { shape: 'exact' } } }) === 'exact'
   && colliderOf({ collide: 'box', comp: { collider: { shape: 'mesh' } } }) === 'box'

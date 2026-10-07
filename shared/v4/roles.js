@@ -35,10 +35,10 @@ export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "ow
 // ---------------- the closed switch list ----------------
 // [name, plain words (UI and help), needs]. The order is the order the grid shows.
 const LIST = [
-  ["build", "make things, and change or delete what you made; publish to the world's library", []],
+  ["build", "make things, and change or delete what you made; publish the world's blueprints", []],
   ["editOthers", "change or delete things other people made (undo still goes only along rank)", ["build"]],
   ...(EDIT_WORLD_SWITCH ? [["editWorld", "change the world's look and layout: sky, weather, ground, the card, spawn points, bounds", ["build"]]] : []),
-  ["generate", "add new models or pictures to the world's palette (the world's generation credit)", ["build"]],
+  ["generate", "add new models or pictures to the world's assets (the world's generation credit)", ["build"]],
   ["fly", "fly in this world", []],
   ["scripts", "install and edit scripts (they act with your rights)", ["build"]],
   ["pauseScripts", "pause or resume scripts whose sponsor ranks below you", []],
@@ -73,7 +73,7 @@ const RESERVED_IDS = new Set(["owner", "none", "guest", "everyone", "ghost", "ba
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
 
 /** A role by id in a world (its @world components `wc`): {id, name, rank, can, builtin, custom} or null if the world
- *  doesn't define it. `scriptsInstall` is @world.scripts.install ('builder' | 'owner'): until the owner edits a built-in
+ *  doesn't define it. `scriptsInstall` is @world.script-settings.install ('builder' | 'owner'): until the owner edits a built-in
  *  role, `install: 'owner'` reads as that role's `scripts` switch off (research §switch notes). */
 export function roleDef(wc, id) {
   if (id === "none") return { id, name: "No role", rank: RANK.none, can: on(), builtin: true, legacy: true };
@@ -81,7 +81,7 @@ export function roleDef(wc, id) {
   const defs = defsOf(wc); const d = Object.hasOwn(defs, id) && isObj(defs[id]) ? defs[id] : null;
   if (Object.hasOwn(BUILTIN, id)) {
     const b = BUILTIN[id]; const can = { ...b.can, ...(isObj(d?.can) ? pickSwitches(d.can) : {}) };
-    if (!d && wc?.scripts?.install === "owner") can.scripts = false;
+    if (!d && wc?.["script-settings"]?.install === "owner") can.scripts = false;
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
   }
   // a rank written around the door (a hand-edited log, an old translation) is range-checked here too: never above the owner
@@ -151,11 +151,11 @@ export function effectiveOf(wc, id, opts = {}) {
   return { role, name: def.name, rank: def.rank, can, switches: SWITCH_NAMES.filter((k) => can[k]) };
 }
 
-/** Why this role-defs value is refused, or null: {code, reason, teach, didYouMean?}. `held(id)` counts the people who
+/** Why this role-defs value is refused, or null: {code, reason, fix, didYouMean?}. `held(id)` counts the people who
  *  hold role `id` now (roles:* and the default role), so a custom role someone holds can't be deleted. `prev` is the
  *  current value (to see what was removed). */
 export function checkRoleDefs(v, prev, held = () => 0) {
-  const bad = (code, reason, teach = "role-defs is {<role id>: {name, rank, can: {<switch>: true|false}, note?}}", extra = {}) => ({ code, reason, teach, ...extra });
+  const bad = (code, reason, fix = "role-defs is {<role id>: {name, rank, can: {<switch>: true|false}, note?}}", extra = {}) => ({ code, reason, fix, ...extra });
   if (!isObj(v)) return bad("shape", "role-defs must be an object {<role id>: {name, rank, can}}");
   const ranks = new Map();
   for (const [id, d] of Object.entries(v)) {
@@ -189,10 +189,10 @@ export function checkRoleDefs(v, prev, held = () => 0) {
 }
 /** Why this per-person `can` is refused, or null. */
 export function checkCan(can, at) {
-  if (!isObj(can)) return { code: "shape", reason: `${at}.can must be {<switch>: true|false}`, teach: `the switches: ${SWITCH_NAMES.join(", ")}` };
+  if (!isObj(can)) return { code: "shape", reason: `${at}.can must be {<switch>: true|false}`, fix: `the switches: ${SWITCH_NAMES.join(", ")}` };
   for (const [k, x] of Object.entries(can)) {
-    if (!Object.hasOwn(SWITCHES, k)) { const dym = guessSwitch(k); return { code: "schema", reason: `${at}.can: there is no switch '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, teach: `the switches: ${SWITCH_NAMES.join(", ")}`, didYouMean: dym }; }
-    if (typeof x !== "boolean") return { code: "shape", reason: `${at}.can.${k} is true or false`, teach: "" };
+    if (!Object.hasOwn(SWITCHES, k)) { const dym = guessSwitch(k); return { code: "schema", reason: `${at}.can: there is no switch '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, fix: `the switches: ${SWITCH_NAMES.join(", ")}`, didYouMean: dym }; }
+    if (typeof x !== "boolean") return { code: "shape", reason: `${at}.can.${k} is true or false`, fix: "" };
   }
   return null;
 }

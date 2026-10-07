@@ -94,7 +94,7 @@ function presenceIdOf(v4id) {
 let arrived = false, moving = null, lastTrack = 0, doorAt = null, lastMove = null, lastTeleport = 0;
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
-const worldHasPhysics = () => { const es = v4.st?.entities; if (!es) return false; if (es['@world']?.c.sim) return true;
+const worldHasPhysics = () => { const es = v4.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('v4-joined', () => { arrived = false; doorAt = null; holds = {}; });
 /** Bring the door's track of my body to where I stand. Resolves true when it's there (or close enough to act). */

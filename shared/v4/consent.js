@@ -2,26 +2,26 @@
 // Body consent (PROTOCOL-v4 L6 as revised 21:45; research 42 §4). PRESENCE ONLY: nothing here is ever appended to a
 // log or written to world state. The door keeps one table per body in its presence plane, refuses before delivery,
 // and the target's client has the final word (the lab has no clients; `inbox` stands in for delivery).
-//   classes: near, follow, touch (social points), touchI (intimate points), pose, shove, move, voice
+//   classes: near, follow, touch (social points), intimate (intimate points), pose, shove, move, voice
 //   cells: everyone | ask | nobody, separately for strangers and friends (friends = mutual, between door-stamped ids)
 //   presets: the SAME for every body. Normal is the default for humans and agents alike; Performer is opt-in.
 //   silence is no: a body that never sent a table gets Normal; an ask nobody answers within 20 s is a no.
 //   anyone you trust (someone YOU named a friend) may close your shield; only you may open it.
-// The lab enforces touch/touchI, pose, shove and move (what the lab can model: reach, pose, ragdoll, drag/grab of a
+// The lab enforces touch/intimate, pose, shove and move (what the lab can model: reach, pose, ragdoll, drag/grab of a
 // body). near, follow and voice are in the table and shown, but the lab has no fade, follow track or SFU to enforce.
-export const CLASSES = ["near", "follow", "touch", "touchI", "pose", "shove", "move", "voice"];
-export const ENFORCED = ["touch", "touchI", "pose", "shove", "move"];
+export const CLASSES = ["near", "follow", "touch", "intimate", "pose", "shove", "move", "voice"];
+export const ENFORCED = ["touch", "intimate", "pose", "shove", "move"];
 const MODES = ["everyone", "ask", "nobody"];
-const NORMAL_FRIENDS = { near: "everyone", follow: "everyone", touch: "everyone", touchI: "ask", pose: "ask", shove: "everyone", move: "ask", voice: "everyone" };
+const NORMAL_FRIENDS = { near: "everyone", follow: "everyone", touch: "everyone", intimate: "ask", pose: "ask", shove: "everyone", move: "ask", voice: "everyone" };
 export const PRESETS = {
-  normal: { strangers: { near: "ask", follow: "ask", touch: "ask", touchI: "nobody", pose: "nobody", shove: "nobody", move: "nobody", voice: "ask" }, friends: NORMAL_FRIENDS },
-  open: { strangers: { near: "everyone", follow: "ask", touch: "everyone", touchI: "nobody", pose: "ask", shove: "ask", move: "ask", voice: "everyone" }, friends: NORMAL_FRIENDS },
+  normal: { strangers: { near: "ask", follow: "ask", touch: "ask", intimate: "nobody", pose: "nobody", shove: "nobody", move: "nobody", voice: "ask" }, friends: NORMAL_FRIENDS },
+  open: { strangers: { near: "everyone", follow: "ask", touch: "everyone", intimate: "nobody", pose: "ask", shove: "ask", move: "ask", voice: "everyone" }, friends: NORMAL_FRIENDS },
   "friends-only": { strangers: Object.fromEntries(CLASSES.map((c) => [c, "nobody"])), friends: NORMAL_FRIENDS },
-  performer: { strangers: { near: "everyone", follow: "ask", touch: "everyone", touchI: "nobody", pose: "everyone", shove: "everyone", move: "ask", voice: "everyone" }, friends: NORMAL_FRIENDS },
+  performer: { strangers: { near: "everyone", follow: "ask", touch: "everyone", intimate: "nobody", pose: "everyone", shove: "everyone", move: "ask", voice: "everyone" }, friends: NORMAL_FRIENDS },
 };
 export const DEFAULT_PRESET = "normal"; // for every new body: never a property of being an agent (42 §4.3)
 export const ASK_MS = 20000, COOL_MS = 600000, MAX_ALLOW_MS = 30 * 24 * 3600000;
-export const ACT_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", seat: "move", carry: "move", touch: "touch" };
+export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "move", seat: "move", carry: "move", touch: "touch" };
 // Touch is judged by where a hand is, not how it was aimed (42 P8): named points split social / intimate.
 export const INTIMATE_POINTS = new Set(["chest_front", "waist_l", "waist_r", "hip_l", "hip_r"]);
 export const SOCIAL_POINTS = new Set(["hand_l", "hand_r", "forearm_l", "forearm_r", "wrist_l", "wrist_r", "shoulder_l", "shoulder_r", "upper_back", "head_top", "arm_l", "arm_r", "back", "neck_back"]);
@@ -29,7 +29,7 @@ export const SOCIAL_POINTS = new Set(["hand_l", "hand_r", "forearm_l", "forearm_
 export function pointClass(bodyAt, p) {
   const h = Math.hypot(p[0] - bodyAt[0], p[2] - bodyAt[2]), y = p[1] - bodyAt[1];
   if (h > 0.25 + 0.05 || y < -0.05 || y > 1.85) return null; // TOUCH_GAP 5 cm (42 §4.5)
-  return h <= 0.2 && y >= 0.8 && y <= 1.5 ? "touchI" : "touch";
+  return h <= 0.2 && y >= 0.8 && y <= 1.5 ? "intimate" : "touch";
 }
 
 export function tableOf(P, who) { const t = P.consent?.[who]; const pre = PRESETS[t?.preset ?? DEFAULT_PRESET];
@@ -58,7 +58,7 @@ export function setConsent(P, actor, a, now) {
   const t = ((P.consent ??= bag())[target] ??= bag());
   const opening = a.preset !== undefined || (a.set && a.set.mode !== "nobody") || a.allow !== undefined || a.pause === false || a.friend !== undefined;
   if (!self && (opening || !(t.friends ?? []).includes(actor))) return { ok: false, code: "consent", reason: self ? "" : opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you someone they trust` };
-  if (a.preset !== undefined) { if (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset)) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, teach: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = bag(); }
+  if (a.preset !== undefined) { if (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset)) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = bag(); }
   if (a.set) { const { class: c, tier = "strangers", mode } = a.set;
     if (!CLASSES.includes(c) || !MODES.includes(mode) || !["strangers", "friends"].includes(tier)) return { ok: false, code: "shape", reason: "set {class, tier: strangers|friends, mode: everyone|ask|nobody}" };
     ((t.cells ??= bag())[tier] ??= bag())[c] = mode; }

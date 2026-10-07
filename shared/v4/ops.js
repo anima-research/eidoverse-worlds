@@ -47,16 +47,16 @@ export const pose = (ent, id, patch) => set(id, "transform", transformOf(ent, pa
 /** ride `to` (optionally on a named socket): parent + the local pose. With no pose given, the socket's pose, else the
  *  carrier's origin (shared/hierarchy.js localOf reads a parent the same way). Re-parenting to the parent it already
  *  has is just the pose. `world` is the view ({entities}). */
-export function parent(world, id, to, { slot = null, pos = null, q = null, yaw = null } = {}) {
+export function parent(world, id, to, { socket = null, pos = null, q = null, yaw = null } = {}) {
   const ent = world?.entities?.[id] ?? null;
-  const sock = slot ? world?.entities?.[to]?.comp?.sockets?.[slot] : null;
+  const sock = socket ? world?.entities?.[to]?.comp?.sockets?.[socket] : null;
   const local = {
     pos: finite3(pos) ? pos : finite3(sock?.pos) ? sock.pos : [0, 0, 0],
     q: qNorm(q) ?? (Number.isFinite(yaw) ? qFromYaw(yaw) : sock ? socketQ(sock) : [0, 0, 0, 1]),
   };
   const t = set(id, "transform", { ...local, scale: scale3(ent?.scale3) ?? scale3(ent?.scale) ?? [1, 1, 1] });
-  if (ent?.parent?.to === to && (ent.parent.slot ?? null) === (slot ?? null)) return t;
-  return batch([set(id, "parent", { to: E(to), ...(slot ? { slot } : {}) }), t]);
+  if (ent?.parent?.to === to && (ent.parent.socket ?? null) === (socket ?? null)) return t;
+  return batch([set(id, "parent", { to: E(to), ...(socket ? { socket } : {}) }), t]);
 }
 /** stop riding: drop the parent and stand at a world pose (the caller computes it: hierarchy.worldPose). */
 export const unparent = (ent, id, worldPatch) => batch([unset(id, "parent"), set(id, "transform", transformOf({ ...ent, parent: null }, worldPatch))]);

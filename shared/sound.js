@@ -89,7 +89,7 @@ export function normalizeSound(data) {
     return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}' };
   }
   const tier = mediaTier(data.src, 'audio');
-  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.teach}` };
+  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.fix}` };
   const notes = [];
   const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);

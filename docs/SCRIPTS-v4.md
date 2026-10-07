@@ -108,7 +108,7 @@ Events (`e`): every event has `on`.
 - `grab`: `by`, `id` (the thing), `hand`, `grip?`, `seq?` (the grab's act, when the sim had to be told). A grab is
   presence: like `enter`, its activation's cause is the entry that made the script's sponsor when the grab itself isn't
   logged;
-- `release`: `by`, `id`, `how` (`put`, `drop`, `throw`, `stay`, `return` or `snap`), `to?` and `slot?` (the socket it
+- `release`: `by`, `id`, `how` (`put`, `drop`, `throw`, `stay`, `return` or `snap`), `to?` and `socket?` (the socket it
   snapped into), `seq` (the settlement's act, which is the activation's cause). `grab` and `release` reach every
   script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
@@ -158,7 +158,7 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 - No timers (`setTimeout`), network, files or other clocks exist. Motion is a function of time (`motion`), never a
   per-tick write.
 
-## Limits (stated in `@world.scripts`, owner-settable where marked)
+## Limits (stated in `@world.script-settings`, owner-settable where marked)
 
 | | |
 |---|---|
@@ -187,7 +187,7 @@ world in the process is capped at 500 ms per second (refused as `busy` past it),
 scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
 
 A refused or failed activation writes nothing. Its reason goes to the script's console and the status view.
-`@world.scripts {run: false}` (owner) stops every script; `paused: true` stops one.
+`@world.script-settings {run: false}` (owner) stops every script; `paused: true` stops one.
 
 ## Translated v1 worlds
 

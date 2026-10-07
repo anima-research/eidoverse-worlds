@@ -78,7 +78,7 @@ export function normalizePicture(data) {
     return { ok: false, why: 'picture data must be an object {src, part?, width?, alt?, lit?, flip?}' };
   }
   const tier = mediaTier(data.src, 'image');
-  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.teach}` };
+  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.fix}` };
   if (data.part !== undefined && (typeof data.part !== 'string' || !data.part.trim() || data.part.length > 64)) {
     return { ok: false, why: 'part names the model node to texture (a non-empty string, ≤64 chars) — leave it out for a picture of its own' };
   }

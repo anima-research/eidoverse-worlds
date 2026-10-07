@@ -102,7 +102,7 @@ export function inspectSchema(ent, id, live = {}) {
   const mounted = !!ent.parent;
   const locked = !!c.lock;
   // a lock doesn't make the pose read-only here: the door refuses the move, and a person (or agent) who may lift the lock
-  // is asked "This is locked. Move anyway?" — or answers it with through_lock (PROTOCOL-v4 §5). Same for every surface.
+  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL-v4 §5). Same for every surface.
   // the pose the channel box shows and edits: a child's is LOCAL to its parent
   // (design §3) — the mount's offset and relative q, as the renderer realizes
   // it — never the fold's pre-mount pos, which nothing draws while it rides
@@ -224,7 +224,7 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'color', k: 'color', label: 'color', value: src.color ?? 0xffd9a0, def: 0xffd9a0 },
       { t: 'num', k: 'intensity', label: 'brightness', value: src.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, src.intensity ?? 16) },
       { t: 'num', k: 'range', label: 'range', value: src.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, src.range ?? 10), unit: 'm' },
-      { t: 'check', k: 'keep', label: 'keep lit', value: src.keep === true, hint: 'first claim on a light slot, never governor-shed' },
+      { t: 'check', k: 'important', label: 'important', value: src.important === true, hint: 'always casts: first claim on a light slot, never governor-shed' },
       { t: 'check', k: 'noon', label: 'burns at noon', value: src.day === false, hint: 'opts out of the day cycle' },
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
@@ -576,7 +576,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Parent': sec.info = ent.parent?.slot ? [['socket', String(ent.parent.slot)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
+      case 'Parent': sec.info = ent.parent?.socket ? [['socket', String(ent.parent.socket)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
@@ -935,12 +935,12 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'light': {
-        // the light component: merge into its bag, keep/day stored only in their non-default state, validated once at
+        // the light component: merge into its bag, important/day stored only in their non-default state, validated once at
         // the end like picture/sound
         const b = bag('light', () => ({}));
         if (f.t === 'num') { const n = num(f, raw); if (n == null) break; b[k] = n; }
         else if (k === 'color') b.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
-        else if (k === 'keep') { if (bool(raw)) b.keep = true; else delete b.keep; }
+        else if (k === 'important') { if (bool(raw)) b.important = true; else delete b.important; }
         else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
         break;
       }
@@ -999,7 +999,7 @@ export function editOps(ent, id, edits, live = {}) {
             put('look', lk, undefined); }
           else { const v = json(raw); if (v === null) break; put(what, v, undefined); }
           const bad = checkSockets(next);
-          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+          if (bad) { errors.push(`sockets.${slot}|${what}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
           comps.set('sockets', next); break;
         }
         const n = num(f ?? { value: what === 'rot' ? sockRot(cur)[+idx] : (cur.pos ?? [0, 0.5, 0])[+idx] ?? 0, deg: what === 'rot', k }, raw); if (n == null) break;
@@ -1033,7 +1033,7 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
         else next[k] = raw;
         const bad = checkGrabbable(next);
-        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.fix ? ` — ${bad.fix}` : ''}`); break; }
         comps.set('grabbable', next);
         break;
       }

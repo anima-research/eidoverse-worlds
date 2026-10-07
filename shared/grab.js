@@ -231,7 +231,7 @@ export const bothArms = (preset) => !!ARMS[preset]?.other;
 // ---------------------------------------------------------------- the door's check
 
 /** The whole `grabbable` component, checked (closed keys, ranges, enums, grips). Null when good, else
- *  {code: 'shape'|'schema'|'bounds', reason, teach, didYouMean?} — the door refuses with it verbatim, and the inspector's
+ *  {code: 'shape'|'schema'|'bounds', reason, fix, didYouMean?} — the door refuses with it verbatim, and the inspector's
  *  planner speaks the same words. */
 export function checkGrabbable(v, at = 'grabbable') {
   if (!isObj(v)) return bad('shape', `${at} must be an object {who?, grips?, release?, …} ({} takes every default)`);
@@ -263,8 +263,8 @@ export function checkGrabbable(v, at = 'grabbable') {
     }
   }
   if (v.home !== undefined) { const h = v.home;
-    if (!isObj(h) || !nums(h.pos, 3, 1e5) || (h.q !== undefined && !unitQ(h.q)) || Object.keys(h).some((k) => !['pos', 'q', 'parent'].includes(k))) return bad('shape', `${at}.home is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, slot?}} (where it goes home to; the door stamps it)`);
-    if (h.parent !== undefined && !(isObj(h.parent) && typeof h.parent.to === 'string' && (h.parent.slot === undefined || typeof h.parent.slot === 'string') && Object.keys(h.parent).every((k) => ['to', 'slot', 'order'].includes(k)))) return bad('shape', `${at}.home.parent is {to: <id>, slot?}`); }
+    if (!isObj(h) || !nums(h.pos, 3, 1e5) || (h.q !== undefined && !unitQ(h.q)) || Object.keys(h).some((k) => !['pos', 'q', 'parent'].includes(k))) return bad('shape', `${at}.home is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, socket?}} (where it goes home to; the door stamps it)`);
+    if (h.parent !== undefined && !(isObj(h.parent) && typeof h.parent.to === 'string' && (h.parent.socket === undefined || typeof h.parent.socket === 'string') && Object.keys(h.parent).every((k) => ['to', 'socket', 'order'].includes(k)))) return bad('shape', `${at}.home.parent is {to: <id>, socket?}`); }
   if (v.fits !== undefined && !(Array.isArray(v.fits) && v.fits.length <= MAX_FITS && v.fits.every((x) => typeof x === 'string' && WORD_RE.test(x)))) return bad('shape', `${at}.fits is up to ${MAX_FITS} keywords (letters, digits, - and _, up to 32 each): a socket whose accepts shares one takes it`);
   if (v.use !== undefined && v.use !== null && !useOf(v.use)) return bad('shape', `${at}.use names a reactions action ('light'), or {down: 'fire', up: 'cease'}`);
   if (isObj(v.use) && Object.keys(v.use).some((k) => !['down', 'up'].includes(k))) return bad('schema', `${at}.use takes down and up`);
@@ -287,7 +287,7 @@ function keys(at, v, allowed, what) {
     return bad('schema', `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ''}`, `${what} takes: ${allowed.join(', ')}`, dym); }
   return null;
 }
-const bad = (code, reason, teach = '', didYouMean = null) => ({ code, reason, teach, ...(didYouMean?.length ? { didYouMean } : {}) });
+const bad = (code, reason, fix = '', didYouMean = null) => ({ code, reason, fix, ...(didYouMean?.length ? { didYouMean } : {}) });
 function near(k, allowed) {
   const x = String(k).toLowerCase();
   const lev = (a, b) => { const d = Array.from({ length: b.length + 1 }, (_, j) => j);

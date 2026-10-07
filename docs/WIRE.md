@@ -110,7 +110,7 @@ Every message belongs to exactly one plane:
   fresh snapshot.
 - `v4-result` — `{id, tool, ok, reply}`: the door's own answer to your
   request, whole under `reply` (`{ok: false, refused: {code, reason,
-  teach}}` when refused).
+  fix}}` when refused).
 - `v4-holds` — `{world, holds: {id: {by, hand, grip?|offset?, second?}}}`:
   who holds what (presence), sent whenever it changes and in every cut.
 - `moderated` — `{verb, by, text}`: bystanders' line when the door removed
@@ -136,7 +136,7 @@ Every message belongs to exactly one plane:
 The wire carries requests; rights are the door's, keyed on the components a
 request would change, never on the request's name (PROTOCOL.md §7). In
 short: any component on an entity needs **builder**; anything on `@world`
-needs **owner**, except `library:*` (publishing a blueprint, builder);
+needs **owner**, except `blueprints:*` (publishing a blueprint, builder) and `assets:*` (generate);
 `use`, `say`, sitting and carrying what a thing's `grabbable.who` allows are
 open to **visitors**. Roles live on `@world` as `roles:<identity>`.
 `snapshot.yourRights` (and a fresh one whenever roles change) is the

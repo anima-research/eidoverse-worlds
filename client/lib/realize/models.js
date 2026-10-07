@@ -594,7 +594,7 @@ function syncCompLight(id) {
   if (!L) { dropCompLight(id); return; }
   const host = entities.get(id) ?? null;
   const spec = {
-    color: L.color, intensity: L.intensity, range: L.range, keep: L.keep, dayAware: L.day,
+    color: L.color, intensity: L.intensity, range: L.range, keep: L.important, dayAware: L.day,   // the rig's `keep` tier is light.important
     spot: L.kind === 'spot' ? { angle: L.angle, inner: L.inner } : null,
     obj: host, pos: host ? null : [...(ent.pos ?? [0, 0, 0])],
   };
@@ -797,7 +797,7 @@ function execMount(id) {
   const child = entities.get(id);
   const parent = entities.get(rel.to);
   if (!child || !parent) return;
-  const sock = rel.slot ? state.st.entities[rel.to]?.comp?.sockets?.[rel.slot] : null;
+  const sock = rel.socket ? state.st.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
   // the RESOLVED socket is part of the linkage's identity: a socket authored
   // after the mount must re-seat the rider, not be ignored (review S5)
   const relKey = JSON.stringify([rel, sock ?? null]);
@@ -821,7 +821,7 @@ function execMount(id) {
   indexSceneMount(id, rel.to);
   // the parent's collider is what the pair collides as while attached
   removeCollider(id);
-  bus.emit('mount', { id, to: rel.to, slot: rel.slot });
+  bus.emit('mount', { id, to: rel.to, socket: rel.socket });
 }
 
 function execDismount(id, ent) {
@@ -1127,7 +1127,7 @@ export function initModelsRealizer() {
     if (!ent || !obj) return;
     if (tracked.get(id)?.kind === 'light') { refreshLight(id, ent); return; }
     if (obj.userData.mountedTo && ent.parent) {
-      const sock = ent.parent.slot ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.slot] : null;
+      const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.socket] : null;
       obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
       if (Array.isArray(ent.parent.q) && ent.parent.q.length === 4) obj.quaternion.set(...ent.parent.q);
       if (ent.scale != null) applyScale(obj, entScale(ent));

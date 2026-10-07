@@ -78,7 +78,7 @@ try {
     const dir = directoryFor(worlds); ANN = dir.idOfSub('local:ann'); BOB = dir.resolve({ sub: 'local:bob', name: 'Bob' });
     const r1 = request(w, ANN, 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
     const r2 = request(w, ANN, 'set', { id: '@world', component: `roles:${BOB}`, value: { role: 'builder' } });
-    const r3 = request(w, ANN, 'set', { id: '@world', component: 'sim', value: { engine: 'eidosim@0.5.0' } }); // the world runs physics
+    const r3 = request(w, ANN, 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@0.5.0' } }); // the world runs physics
     // roles stages: Zed, someone this world knows (a role on record) but who never comes in (an owner's ban on an absent person)
     { const ZED = dir.resolve({ sub: 'local:zed', name: 'Zed' }); request(w, ANN, 'set', { id: '@world', component: `roles:${ZED}`, value: { role: 'visitor' } }); }
     if (!r1.ok || !r2.ok || !r3.ok) throw new Error(`setup: ${JSON.stringify([r1, r2, r3])}`); }
@@ -579,7 +579,7 @@ try {
   const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // -90° about X: local -Z → world -Y
   ws.send(JSON.stringify({ type: 'v4', id: 3, tool: 'batch', args: { ops: [
     { tool: 'set', args: { id: 'crate-before', component: 'transform', value: { pos: [0, 2, 3], q: down, scale: [1, 1, 1] } } },
-    { tool: 'set', args: { id: 'crate-before', component: 'light', value: { kind: 'spot', angle: 0.4, inner: 0.1, intensity: 30, range: 9, keep: true } } }] } }));
+    { tool: 'set', args: { id: 'crate-before', component: 'light', value: { kind: 'spot', angle: 0.4, inner: 0.1, intensity: 30, range: 9, important: true } } }] } }));
   let spot = null; for (let i = 0; i < 40; i++) { await new Promise((r) => setTimeout(r, 250));
     spot = await race(pg.evaluate(() => globalThis.EW.lightrig().spots.find((x) => x.intensity > 0) ?? null)).catch(() => null); if (spot) break; }
   if (!spot) stage('spot: debug', false, await race(pg.evaluate(() => { const d = globalThis.EW.lightrig(); const e = globalThis.EW.state?.st?.entities?.['crate-before'];

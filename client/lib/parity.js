@@ -57,7 +57,7 @@ export function foldParity() {
     const want = rel?.to ?? null;
     if (want !== got) { out.parentDiffs.push({ id, legacy: got, shadow: want }); continue; }
     if (rel && got) {
-      const sock = rel.slot ? shadow.entities[rel.to]?.comp?.sockets?.[rel.slot] : null;
+      const sock = rel.socket ? shadow.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
       if (!sock?.part) {
         const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
         const d = Math.hypot(obj.position.x - off[0], obj.position.y - off[1], obj.position.z - off[2]);

@@ -63,7 +63,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["help: physics.who's default", "shared/v4/catalogue.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
   ["help: punt's default", "shared/v4/toolspec.js", "who may is physics.who (default visitor)", "who may is physics.who (default builder)", ["H1"]],
   ["an open door is out of the way", "shared/v4/door.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
-  ["a person's refusal drops tool syntax", "shared/v4/refusal.js", "const teach = typeof r.teach === \"string\" && r.teach && !TOOLISH.test(r.teach) ? r.teach : \"\";", "const teach = r.teach ?? \"\";", ["P1"]],
+  ["a person's refusal drops tool syntax", "shared/v4/refusal.js", "const fix = typeof r.fix === \"string\" && r.fix && !TOOLISH.test(r.fix) ? r.fix : \"\";", "const fix = r.fix ?? \"\";", ["P1"]],
   ["a person's refusal names things", "shared/v4/refusal.js", "const n = nameOf(id); if (!n) return m;", "const n = null; if (!n) return m;", ["P1", "P2"]],
   ["CONTROL (no-op: must stay green)", "shared/v4/refusal.js", "// ---- for people (ship list 10-07", "// ----  for people (ship list 10-07", []],
 ];
@@ -232,7 +232,7 @@ await C("R3", "a toggle on a plain crate (no openable) is refused when it's writ
   const r = W.call("set", { id: "crate", component: "reactions", value: { open: { kind: "toggle" } } });
   W.call("use", { id: "crate" }, "vic");
   const c = W.state().entities.crate.c;
-  return [!r.ok && /openable/.test(r.refused.reason + r.refused.teach) && !c.door && !c.openable, { r: why(r), comps: Object.keys(c) }];
+  return [!r.ok && /openable/.test(r.refused.reason + r.refused.fix) && !c.door && !c.openable, { r: why(r), comps: Object.keys(c) }];
 });
 await C("R3b", "a toggle naming the openable without a field opens and closes it (the Commons' {component: 'openable'} form, merge 10-07)", () => {
   const W = world(); W.call("create", { id: "gate", model: "crate", components: { openable: { open: false } }, place: { at: [0, 0] } });
@@ -280,7 +280,7 @@ await C("M2", "…and refuses, saying how: rpm (degPerSec = rpm × 6), two speed
   const W = world(); W.call("create", { id: "m", model: "crate", place: { at: [0, 0] } });
   const rs = [{ c: "motion", v: { type: "spin", rpm: 3 } }, { c: "motion", v: { type: "orbit", radius: 1, period: 4, degPerSec: 90 } }, { c: "motion", v: { type: "path", points: [[0, 0, 0]] } },
     { c: "motion", v: { type: "path", points: [[0, 0, 0], [1, 0, 0]], loop: "bounce" } }, { c: "motion:arm", v: { type: "wobble" } }].map(({ c, v }) => W.call("set", { id: "m", component: c, value: v }));
-  return [rs.every((r) => !r.ok) && /18/.test(rs[0].refused?.teach ?? ""), rs.map(why)];
+  return [rs.every((r) => !r.ok) && /18/.test(rs[0].refused?.fix ?? ""), rs.map(why)];
 });
 await C("M3", "an orbit's period sets its speed (a 4 s lap turns 90° in 1 s), everywhere: the renderer's evaluator and the editor's rate", () => {
   const T0 = 1e12; const base = { pos: [0, 0, 0], yaw: 0 };
@@ -319,11 +319,11 @@ await C("H1", "what agents read says physics.who and grabbable.who default to vi
 // ---- P: people ----
 await C("P1", "a refusal for a person: what they tried and why, no refusal code, no tool syntax, things by their labels; the agents' words unchanged", () => {
   const nameOf = (id: string) => ({ "3485c78e0a1b": "“Front door”", lamp: "“Desk lamp”" })[id] ?? null;
-  const r = { refused: { code: "locked", reason: "3485c78e0a1b is locked by Ann (§5)", teach: "unlock it first: delete {id: '3485c78e0a1b', component: 'lock'}, or send through_lock: true" } };
+  const r = { refused: { code: "locked", reason: "3485c78e0a1b is locked by Ann (§5)", fix: "unlock it first: delete {id: '3485c78e0a1b', component: 'lock'}, or send throughLock: true" } };
   const p = RF.plainRefusal?.("move 3485c78e0a1b", r, nameOf) ?? "";
-  const plainTeach = RF.plainRefusal?.("use lamp", { refused: { code: "rights", reason: "only a builder may bolt lamp", teach: "ask someone who can" } }, nameOf) ?? "";
+  const plainTeach = RF.plainRefusal?.("use lamp", { refused: { code: "rights", reason: "only a builder may bolt lamp", fix: "ask someone who can" } }, nameOf) ?? "";
   const agent = RF.refusalText("move 3485c78e0a1b", r);
-  return [p.includes("“Front door”") && !/3485c78e|\(locked\)|\{|through_lock|§/.test(p) && /ask someone who can/i.test(plainTeach) && plainTeach.includes("“Desk lamp”") && agent.includes("(locked)") && agent.includes("through_lock"), { p, plainTeach, agent }];
+  return [p.includes("“Front door”") && !/3485c78e|\(locked\)|\{|throughLock|§/.test(p) && /ask someone who can/i.test(plainTeach) && plainTeach.includes("“Desk lamp”") && agent.includes("(locked)") && agent.includes("throughLock"), { p, plainTeach, agent }];
 });
 await C("P2", "a warning for a person names things by label (an agent's still by id)", () => {
   const nameOf = (id: string) => ({ "3485c78e0a1b": "“Front door”", lamp: "“Desk lamp”" })[id] ?? null;

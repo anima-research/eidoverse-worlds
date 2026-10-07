@@ -39,7 +39,7 @@ import { collisionBoxes } from "../structure.js";
 // own keys only: MODELS["constructor"] is Object (the lab door accepted model "constructor"; L1's no-prototype rule)
 export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
 let CAT = LAB_CATALOGUE;
-let THROUGH = false; // the request's through_lock flag, set by request() for one synchronous call (like CAT)
+let THROUGH = false; // the request's throughLock flag, set by request() for one synchronous call (like CAT)
 // is this identity a guest (no account: the door directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
 let ISANON = () => false;
 // the directory knows this identity (a world opened without a directory, as in the lab, knows everyone)
@@ -348,9 +348,9 @@ function surfacesOf(st, id) {
 export const WORK_BUDGET = { units: 350000, ms: 150 };
 const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
 let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
-const spend = (n, what = WORK.what ?? "this", teach = "ask about less at once: check {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
+const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: check {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
   if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
-    refuse("too-costly", `${what} would take more of the door's time than one request may have (it's shared by every world on this server)`, teach); } };
+    refuse("too-costly", `${what} would take more of the door's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
 function geoOf(st, id) {
   const e = st.entities[id]; if (!e) return null;
@@ -616,8 +616,8 @@ export function lastSetterOf(w, id, comp) {
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 
 // ---------- the door ----------
-class Refusal extends Error { constructor(code, reason, teach, extra = {}) { super(reason); Object.assign(this, { code, reason, teach, ...extra }); } }
-const refuse = (code, reason, teach, extra) => { throw new Refusal(code, reason, teach, extra); };
+class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }
+const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, fix, extra); };
 // A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the door's
 // directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CAT). An old
 // escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
@@ -683,23 +683,23 @@ export function request(w, actor, tool, args = {}) {
     // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
-    // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
+    // throughLock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
-    const { through_lock, expect, ...plain } = args;
-    if (through_lock !== undefined && typeof through_lock !== "boolean") refuse("shape", `through_lock is true or false, got ${JSON.stringify(through_lock)}`, "send through_lock: true to act through a lock you may remove");
-    THROUGH = through_lock === true;
-    const bad = validate(tool, plain); if (bad) { const { code, reason, teach, ...rest } = bad; refuse(code, reason, teach, rest); }
+    const { throughLock, expect, ...plain } = args;
+    if (throughLock !== undefined && typeof throughLock !== "boolean") refuse("shape", `throughLock is true or false, got ${JSON.stringify(throughLock)}`, "send throughLock: true to act through a lock you may remove");
+    THROUGH = throughLock === true;
+    const bad = validate(tool, plain); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); }
     if (expect !== undefined) expectCheck(w, expect);
-    if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
+    if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
     const r = h(w, actor, args);
     drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
-    if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
+    if (r && r.refused && !r.refused.fix) r.refused.fix = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
@@ -818,8 +818,8 @@ function admit(w, st, who, ops) {
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
   // L6 (33 F1): a launched thing belongs to the engine until it rests. No write may touch it in flight except its rest
-  // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.sim) may freeze it (P6, force).
-  const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "system"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
+  // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.physics-engine) may freeze it (P6, force).
+  const sf = st.entities["@world"]?.c["physics-engine"] && !(cap && ["rest", "system"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "physics-engine") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
   let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
   const prevOf = new Map(); // script: sets → the key's value just before that op, within this write
@@ -878,12 +878,12 @@ function admit(w, st, who, ops) {
 }
 // How much a world holds (review 10-06 S0-2, security pass 2): at most @world.capacity.things things (default 2 000: the
 // size tools/v4/scale-check.ts holds every request under 50 ms at, and already past what a standalone headset's browser
-// draws at frame rate; an owner may raise it to 5 000), and the world's guests TOGETHER at most capacity.guests standing
+// draws at frame rate; an owner may raise it to 5 000), and the world's guests TOGETHER at most capacity.guestThings standing
 // things they made (default 200): a guest is a fresh identity per connection, so no per-identity budget stopped one from
 // filling a world. Only a write that adds things is refused (full); deleting, and every other change, stay open at the cap.
-export const CAPACITY = { things: 2000, guests: 200 };
+export const CAPACITY = { things: 2000, guestThings: 200 };
 const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const ok = (x) => Number.isInteger(x) && x >= 0;
-  return { things: ok(v?.things) ? v.things : CAPACITY.things, guests: ok(v?.guests) ? v.guests : CAPACITY.guests }; };
+  return { things: ok(v?.things) ? v.things : CAPACITY.things, guestThings: ok(v?.guestThings) ? v.guestThings : CAPACITY.guestThings }; };
 // the things standing that a guest's rights made (a log view, kept incrementally like everIds)
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
@@ -898,9 +898,9 @@ function capacityCheck(w, st, s, who, norm) {
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
   if (!ISANON(holder)) return;
   const g = guestMade(w, st);
-  if (g + made > cap.guests) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guests} (@world.capacity.guests), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guests", { limit: cap.guests, things: g });
+  if (g + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g });
 }
-// A lock binds everyone, the locker and owners included (§5). `through_lock: true` on the request lets anyone who may
+// A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
 // all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the door's own follow-ups) never
 // acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
@@ -909,10 +909,10 @@ function lockCheck(w, st, who, role, k, op, at) {
   if (THROUGH && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
-  const teach = THROUGH && who.cap ? "through_lock covers your own edits, not a handler or a held thing; unlock it first"
-    : mayUnlock ? `send the same request with through_lock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift it, and history shows who did`
+  const fix = THROUGH && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
+    : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift it, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
-  refuse("locked", what, teach, { lock: k, ...(by && !by.deleted ? { by: by.by } : {}) });
+  refuse("locked", what, fix, { lock: k, ...(by && !by.deleted ? { by: by.by } : {}) });
 }
 const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
@@ -925,18 +925,18 @@ function shapeOneOrRefuse(verb, op, i) {
 // L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
 // needs is a SWITCH (roles.js), never a rank:
 //   a thing          build when you make it or made it; editOthers when someone else made it
-//   @world.library:*  build (publish);  @world.palette:*  generate (the v4 landing of the old `asset` spend gate)
-//   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, ground-paint:*,
+//   @world.blueprints:*  build (publish);  @world.assets:*  generate (the v4 landing of the old `asset` spend gate)
+//   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
 //                     bounds, spawn (EDIT_WORLD_SWITCH; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only switches you hold
-//   the rest of @world (role-defs, default-role, access, sim, scripts, schemas, behaviours…): owner, never a switch
+//   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a switch
 const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "bounds", "spawn"]);
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
   const base = String(op.comp ?? "").split(":")[0];
-  if (base === "library") return "build";
-  if (base === "palette") return "generate";
-  if (R.EDIT_WORLD_SWITCH && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "ground-paint")) return "editWorld";
+  if (base === "blueprints") return "build";
+  if (base === "assets") return "generate";
+  if (R.EDIT_WORLD_SWITCH && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "terrain-paint")) return "editWorld";
   if (base === "roles") return "grant";
   return "owner";
 };
@@ -990,14 +990,14 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
 }
-// §5 / L7: a KEYED component (`<name>:<key>`, an instance such as library:<hash> or roles:<id>) that exists may be
+// §5 / L7: a KEYED component (`<name>:<key>`, an instance such as blueprints:<hash> or roles:<id>) that exists may be
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
 // or by an owner. Making a new key needs only the component's ordinary rank. A capability changes it with the rights it
 // carries: a handler with its author's. The door's own scoped follow-ups (rest, door, handle, founding) touch no keys
 // that someone else made; founding makes roles:<founder>. A whole-entity delete is NOT gated here (see note 34).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
-// §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, library:, roles:) carry the creator
-// rule; PARTITION keys (terrain-tile:, ground-paint:) are pieces of one shared surface: ordinary rank rules only.
+// §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, blueprints:, roles:) carry the creator
+// rule; PARTITION keys (terrain-tile:, terrain-paint:) are pieces of one shared surface: ordinary rank rules only.
 // A keyed name with no schema here is an instance (note 49: the spec doesn't say; this is the safe side).
 export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
 // H5 (security review 10-06): owners are protected from each other by SENIORITY, as Matrix room v12 protects creators.
@@ -1075,7 +1075,7 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
     if (sp && rankOf(st, sp.sponsor) < rankOf(st, holder)) return;
     refuse("rank", `${op.id}.${op.comp}'s sponsor ${sp ? said(sp.sponsor) : "(nobody)"} doesn't rank below you; pauseScripts reaches scripts whose sponsor ranks below you`, "ask someone ranked above them", { needs: "rank" }); }
   refuse("rights", `${at} is ${c ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
-    op.comp.startsWith("library:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c ? said(c.rights) : "an owner"}`);
+    op.comp.startsWith("blueprints:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c ? said(c.rights) : "an owner"}`);
 }
 // @world.role-defs as a whole (research §component shapes): checked against the state the write leaves, so a batch
 // that moves people off a role and deletes it lands as one act; a custom role somebody still holds can't vanish.
@@ -1085,7 +1085,7 @@ function rolesCheck(st, s, ops) {
   const held = (rid) => Object.keys(wc1).filter((k) => k.startsWith("roles:") && wc1[k]?.role === rid).length + (wc1["default-role"]?.role === rid || wc1["default-role"]?.guests === rid ? 1 : 0);
   const v = wc1["role-defs"] === undefined ? {} : wc1["role-defs"];
   const bad = R.checkRoleDefs(v, R.defsOf(wc0), held);
-  if (bad) refuse(bad.code, `@world.role-defs: ${bad.reason}`, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+  if (bad) refuse(bad.code, `@world.role-defs: ${bad.reason}`, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
   // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
 // Sanity and shape of the values the door's own engine reads (what the change IS, not which word carried it).
@@ -1118,13 +1118,13 @@ function valueCheck(s, { id, comp, value: v }) {
   if (id === "@world" && comp.startsWith("roles:") && obj) {
     for (const k of Object.keys(v)) if (!["role", "can", "note", "sub"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?}", { didYouMean: guessKey(k, ["role", "can", "note"]) });
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
-    if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+    if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
       // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
       if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
         if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
   // default-role.can: switches on top of the default role for everyone who holds it that way (what an imported world's
   // grant to everyone, roles['*'].gen in its old log, becomes: can.generate). The same closed list and dependencies as roles:<id>.can
-  if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+  if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
     if (R.roleDef(wcS, v.role)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can }); if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
@@ -1187,7 +1187,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
   // where a picture's or a sound's bytes may come from (shared/mediasrc.js): this server's store, or an https link to a
   // public host. Who may FETCH a link is each viewer's browser's question (clientMayFetch); the door refuses what nobody may
   if ((comp === "picture" || comp === "sound") && obj && v.src !== undefined) { const t = mediaTier(v.src, comp === "picture" ? "image" : "audio");
-    if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.teach); }
+    if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }
   if (comp === "sound" && obj && isNum(v.near) && isNum(v.radius) && v.near > v.radius) refuse("bounds", `${at}.near (${v.near}) is past radius (${v.radius})`, "near is where it's at full volume; radius is where it goes silent");
   if (comp === "story" && obj && Array.isArray(v.marks)) { const seen = new Set();
     for (const m of v.marks) { if (typeof m !== "string") refuse("shape", `${at}.marks holds thing ids (strings)`, "");
@@ -1271,9 +1271,9 @@ function schemaCheck(at, comp, v) {
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
-  if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.teach || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
+  if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
-  if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.teach || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
+  if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? ""); }
   if (!def.fields) return;
   const fields = Object.keys(def.fields);
@@ -1295,7 +1295,7 @@ function schemaCheck(at, comp, v) {
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
-    if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.teach); }
+    if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.fix); }
 }
 // N5 (review 10-07): a handler is checked when it's WRITTEN, not when the first visitor uses it. What it would write is
 // checked now as the door would check that write (a light's intensity 'bright' was taken, and the visitor got "must be
@@ -1305,7 +1305,7 @@ function effectCheck(s, id, act, h) {
   const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== PURGED;
   const where = `reactions.${act}`;
   const would = (comp, value) => { try { valueCheck(s, { id, comp, value }); }
-    catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the door refuses: ${e.reason}`, e.teach, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
+    catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the door refuses: ${e.reason}`, e.fix, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
   if (h.kind === "impulse" && c.motion && c.motion.type !== "pendulum") refuse("shape", `${where} pushes a swing, and ${id} moves by '${c.motion.type}'`, "an impulse swings a pendulum (motion {type: 'pendulum'}); use set or toggle for anything else");
   if (h.kind !== "set" && h.kind !== "toggle") return;
   const { comp, field } = h.kind === "toggle" ? toggleOf(h) : { comp: h.component, field: h.field };
@@ -1371,11 +1371,11 @@ const r4 = (n) => Math.round(n * 1e4) / 1e4;
 const shapeFor = (model) => { const m = geomOf(model); return m ? boxOfM(m).map((c) => c.map(r4)) : null; };
 function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
-  const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c.sim;
+  const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
   for (const o of ops) if (o.verb === "set" && (o.comp === "physics" || o.comp === "model")) ids.add(o.id);
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
-  if (ops.some((o) => o.id === "@world" && o.comp === "sim" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
+  if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
   const out = ops.slice(); const stamped = [];
   for (const id of ids) {
@@ -1532,7 +1532,7 @@ function buildSet(ctx, a) {
     ctx.refs.add(a.id);
     return [setOp(a.id, "parent", resolve(ctx, a.id, "parent", v)), setOp(a.id, "transform", t)];
   }
-  if (a.id === "@world" && a.component === "sim") return buildEpoch(ctx, v, a);
+  if (a.id === "@world" && a.component === "physics-engine") return buildEpoch(ctx, v, a);
   v = resolve(ctx, a.id, a.component, v);
   ctx.refs.add(a.id);
   return [setOp(a.id, a.component, v)];
@@ -1540,7 +1540,7 @@ function buildSet(ctx, a) {
 
 function buildDelete(ctx, a) {
   const e = needThing(ctx, a.id);
-  if (a.id === "@world" && a.component === "sim") return buildEpoch(ctx, null, a);
+  if (a.id === "@world" && a.component === "physics-engine") return buildEpoch(ctx, null, a);
   if (a.component !== undefined) {
     if (a.component === "parent" && e.c.parent) {
       const wt = worldT(ctx.st, a.id); ctx.refs.add(a.id);
@@ -1811,17 +1811,17 @@ function buildUse(ctx, a) {
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
     const may = (x) => !x.body.who || rankOf(ctx.st, ctx.actor) >= whoRank(ctx.st, x.body.who);
-    const slot = a.args?.slot;
-    if (slot != null) { const named = socks.find((x) => x.slot === slot);
-      if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${slot}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(slot), socks.map((x) => x.slot)) });
-      if (!may(named)) refuse("rights", `only a ${named.body.who} may ${action} ${a.id} (${slot})`, "ask someone who can"); }
+    const socket = a.args?.socket;
+    if (socket != null) { const named = socks.find((x) => x.slot === socket);
+      if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${socket}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(socket), socks.map((x) => x.slot)) });
+      if (!may(named)) refuse("rights", `only a ${named.body.who} may ${action} ${a.id} (${socket})`, "ask someone who can"); }
     const ok = socks.filter(may);
     if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
-    const pick = slot != null ? ok.find((x) => x.slot === slot) : ok[0];
+    const pick = socket != null ? ok.find((x) => x.slot === socket) : ok[0];
     // attaching is presence (your frames say where you're attached; nothing is recorded), so the door only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
-    return { presence: true, attach: { to: a.id, slot: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
+    return { presence: true, attach: { to: a.id, socket: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = e.c.reactions?.[action];
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
@@ -1865,7 +1865,7 @@ function buildUse(ctx, a) {
     const { t0, ...rest } = cur; return [setOp(a.id, "sound", { ...rest, playing: true })]; }
   if (h?.kind === "toggle") {
     const { comp, field } = toggleOf(h); ctx.refs.add(a.id);
-    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.teach ?? `someone allowed to may 'use' it with another action first`);
+    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.fix ?? `someone allowed to may 'use' it with another action first`);
     reactionCap(ctx, a.id, comp, action);
     return [setOp(a.id, comp, field === undefined ? !e.c[comp] : { ...objOf(e.c[comp]), [field]: !objOf(e.c[comp])[field] })];
   }
@@ -1903,7 +1903,7 @@ function offersFor(st, id, actor) {
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
-const scriptsCfg = (st) => { const c = st.entities["@world"]?.c.scripts; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
+const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
 const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
@@ -1923,9 +1923,9 @@ function scriptRights(w, st, cap, op, at, made) {
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
-  // research S2: the `scripts` switch is the install gate; @world.scripts.install: 'owner' reads as the built-in roles'
+  // research S2: the `scripts` switch is the install gate; @world.script-settings.install: 'owner' reads as the built-in roles'
   // scripts switch off until an owner edits that role (roles.js roleDef)
-  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.scripts.install)" : "the scripts switch"}; ${said(installer)} is ${role}`, "@world.scripts.install and the role's scripts switch say who may (the owner sets them)", { needs: "scripts" });
+  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.script-settings.install)" : "the scripts switch"}; ${said(installer)} is ${role}`, "@world.script-settings.install and the role's scripts switch say who may (the owner sets them)", { needs: "scripts" });
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
@@ -1953,7 +1953,7 @@ function installCheck(w, st, s, who, op) {
   const prev = st.entities[op.id]?.c[op.comp];
   if (v.always === true && prev?.always !== true && role !== "owner") refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits (41 §3.8)");
   if (prev === undefined) { const n = allScripts(s).length;
-    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.scripts.max (owner)"); }
+    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.script-settings.max (owner)"); }
 }
 const rtKey = (id, name) => `${id}|${name}`;
 const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });
@@ -2003,7 +2003,7 @@ function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out
     if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
     for (const x of mine.list) out.push(x); }
   scriptMemo.set(st, out); return out; }
-// budgets (door practice, stated in @world.scripts; §3d M3): per script per minute; per world per hour; each sponsor a fair
+// budgets (door practice, stated in @world.script-settings; §3d M3): per script per minute; per world per hour; each sponsor a fair
 // share of the world's hour, so one builder's chatty scripts can't starve everyone else's (and spreading a script over
 // many things or hashes gains nothing: the share is keyed on the sponsor)
 function budgetOf(w, st, now, id, key, sponsor, cfg) {
@@ -2033,8 +2033,8 @@ const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per pe
 // door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
-  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.scripts.runs)`;
-  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the door's time in the last minute; at most ${cfg.cpu} (@world.scripts.cpu)`;
+  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.script-settings.runs)`;
+  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the door's time in the last minute; at most ${cfg.cpu} (@world.script-settings.cpu)`;
   const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the door's time in the last minute; at most ${cfg.cpu * 3}`;
   return null;
 }
@@ -2042,7 +2042,7 @@ function overCpu(w, now, id, key, sponsor, cfg) {
 // so purging that say or that request purges it everywhere (an auditor reads it from the trigger: scriptaudit.js)
 const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
-  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.scripts.budget)`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.script-settings.budget)`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
 // One activation. ev = {on, by?, seq?, cause?, dry?, …the event's own fields}. Returns what happened; a refused or failed
 // activation logs NOTHING (its reason goes to the script's console ring and the status view).
@@ -2054,7 +2054,7 @@ function activate(w, id, name, ev) {
     return { script: key, id, status, ...extra }; };
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
-  if (cfg.run === false) return out("stopped", { why: "@world.scripts.run is false (the owner's kill switch)" });
+  if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill switch)" });
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
   const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; } // a re-set (a fix) clears the failure count
@@ -2088,17 +2088,17 @@ function activate(w, id, name, ev) {
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
-  for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.act)) return mark("scope", `${key} doesn't declare bodies: ['${b.act}']`);
+  for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
   { const why = overBudget(B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
-  for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
+  for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
-      ...(gates.length ? { bodies: gates.map((g) => ({ act: g.act, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
+      ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
   const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
   w.pinTs = now;
@@ -2165,7 +2165,7 @@ export function settleOrphans(w, present = []) {
     // lifted is settled below by the door, as leave's own refusal is (review 10-06)
     if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
   withDoor(w, () => {
-    const st = w.state(); if (!st.entities["@world"]?.c.sim) return;
+    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
     let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
       if (w.presence.holds[id] || !st.entities[id]) continue;
@@ -2191,7 +2191,7 @@ function orphanLifts(w) {
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
     else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      if (o.id === "@world" && o.comp === "sim") { lifted.clear(); continue; }
+      if (o.id === "@world" && o.comp === "physics-engine") { lifted.clear(); continue; }
       if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
   });
   return lifted;
@@ -2212,7 +2212,7 @@ export function presenceEvent(w, kind, who) {
 // it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
 // when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
 // is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
-// snap), slot? and to? (release), seq (the act) when logged.
+// snap), socket? and to? (release), seq (the act) when logged.
 const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
 function drainHeld(w) {
   let guard = 0;
@@ -2253,7 +2253,7 @@ function scriptStatus(w, st, id, name, v) {
   if (v.paused === true) { const pb = pausedBy(w, id, key);
     return { ...base, status: "paused", why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true", ...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),
       resume: `set {id: '${id}', component: '${key}', value: {paused: false}, merge: true}` }; }
-  if (cfg.run === false) return { ...base, status: "stopped", why: "@world.scripts.run is false" };
+  if (cfg.run === false) return { ...base, status: "stopped", why: "@world.script-settings.run is false" };
   if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
@@ -2511,15 +2511,16 @@ function buildSculpt(ctx, a) {
   return [...writes].map(([c, mm]) => setOp(a.on, c, { mm }));
 }
 // ---------- blueprints ----------
-const libKey = (h) => `library:${String(h).replace(/^sha256:/, "")}`;
-const inLibrary = (st, h) => !!st.entities["@world"]?.c[libKey(h)];
+const BLUEPRINTS = "blueprints:";
+const blueprintKey = (h) => `${BLUEPRINTS}${String(h).replace(/^sha256:/, "")}`;
+const isPublished = (st, h) => !!st.entities["@world"]?.c[blueprintKey(h)];
 function buildPublish(ctx, a, w) {
   const roots = Array.isArray(a.from) ? a.from : [a.from];
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
   const ids = [a.from, ...descendants(ctx.st, a.from)];
-  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c.blueprint?.from);
-  const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
+  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c["copy-of"]?.from);
+  const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
     if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
     return { key: keyOf(id), components: c }; });
@@ -2527,23 +2528,23 @@ function buildPublish(ctx, a, w) {
   const hash = w.putBlob(record);
   ctx.notes.push({ record: hash, parts: parts.length });
   ctx.refs.add("@world");
-  return [setOp("@world", libKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
+  return [setOp("@world", blueprintKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
 }
 function publishGroup(ctx, a, w, roots) {
   // a group of siblings: the record gets a root part at their footprint centre on the ground; the world is untouched
   const all = [...new Set(roots.flatMap((r) => [r, ...descendants(ctx.st, r)]))];
   // re-publishing a group copy's members (siblings under one copy) keeps their keys, as a single publish does
-  const up = roots.map((r) => ctx.st.entities[r].c.parent?.to); const lineage = up[0] && up.every((p) => p === up[0]) ? ctx.st.entities[up[0]]?.c.blueprint?.from : undefined;
+  const up = roots.map((r) => ctx.st.entities[r].c.parent?.to); const lineage = up[0] && up.every((p) => p === up[0]) ? ctx.st.entities[up[0]]?.c["copy-of"]?.from : undefined;
   const keyOf = partKeys(ctx.st, all, lineage, ["root"]);
   const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
-    ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
+    ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
       if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
       else c.parent = { ...c.parent, to: keyOf(c.parent.to) };
       return { key: keyOf(id), components: c }; })];
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
   const hash = w.putBlob(record); ctx.notes.push({ record: hash, parts: parts.length, roots: roots.length }); ctx.refs.add("@world");
-  return [setOp("@world", libKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
+  return [setOp("@world", blueprintKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
 }
 // A record's part keys, unique within it (review 10-07 N1: a table holding two copies of a published leg got the keys
 // [top, leg, leg], and no copy of it could ever be placed). A part keeps the key it was copied as (blueprint.key) only
@@ -2553,7 +2554,7 @@ function publishGroup(ctx, a, w, roots) {
 // id with a number. Returns id → key.
 function partKeys(st, ids, lineage, reserved = []) {
   const taken = new Set(reserved); const out = new Map();
-  const own = (id) => { const b = st.entities[id].c.blueprint; return lineage !== undefined && b?.from === lineage && typeof b.key === "string" ? b.key : null; };
+  const own = (id) => { const b = st.entities[id].c["copy-of"]; return lineage !== undefined && b?.from === lineage && typeof b.key === "string" ? b.key : null; };
   for (const pass of [true, false]) for (const id of ids) { if (out.has(id) || !!own(id) !== pass) continue;
     const want = own(id) ?? id; const k = taken.has(want) ? null : want;
     let key = k ?? (taken.has(id) ? null : id); for (let n = 2; key === null; n++) if (!taken.has(`${id}-${n}`)) key = `${id}-${n}`;
@@ -2570,19 +2571,19 @@ function partIds(st, copy, rootKey, keys) {
 // Offer a newer record to a copy: per-part, per-component, per-FIELD three-way merge (R13). base = the copy's record,
 // mine = the copy now, theirs = the new record. Recorded as plain results; never re-derived on replay.
 function buildUpdate(ctx, a, w) {
-  const root = ctx.st.entities[a.copy]; if (!root?.c.blueprint) refuse("not-a-copy", `${a.copy} isn't a blueprint copy`, "");
-  let base, theirs; try { base = w.getBlob(root.c.blueprint.from); theirs = w.getBlob(a.to); } catch { refuse("not-found", "unknown record", "find {kind: 'blueprint'}"); }
-  if (!inLibrary(ctx.st, a.to)) refuse("not-in-library", `${a.to} isn't in this world's library`, "");
-  const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c.blueprint?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
+  const root = ctx.st.entities[a.copy]; if (!root?.c["copy-of"]) refuse("not-a-copy", `${a.copy} isn't a blueprint copy`, "");
+  let base, theirs; try { base = w.getBlob(root.c["copy-of"].from); theirs = w.getBlob(a.to); } catch { refuse("not-found", "unknown record", "find {kind: 'blueprint'}"); }
+  if (!isPublished(ctx.st, a.to)) refuse("not-published", `${a.to} isn't one of this world's blueprints`, "");
+  const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c["copy-of"]?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
   const fresh = partIds(ctx.st, a.copy, base.root, theirs.parts.map((p) => p.key).filter((k) => !have.has(k)));
   const idOf = (key) => (key === base.root ? a.copy : have.get(key) ?? fresh.get(key));
   const B = Object.fromEntries(base.parts.map((p) => [p.key, p.components])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, p.components]));
   const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
   const ops = [], conflicts = [], kept = [], orphaned = [];
-  const skipComp = new Set(["blueprint", "parent"]);
+  const skipComp = new Set(["copy-of", "parent"]);
   for (const key of new Set([...Object.keys(B), ...Object.keys(T)])) {
     const id = idOf(key), mineE = ctx.st.entities[id];
-    if (!B[key]) { const c = clone(T[key]); if (c.parent) c.parent = { ...c.parent, to: idOf(c.parent.to) }; c.blueprint = { from: a.to, key };
+    if (!B[key]) { const c = clone(T[key]); if (c.parent) c.parent = { ...c.parent, to: idOf(c.parent.to) }; c["copy-of"] = { from: a.to, key };
       ops.push(...createOps(id, c)); continue; }
     if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(B[key][k], mineE.c[k]))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
     if (!mineE) { kept.push({ id, why: "you deleted it in this copy" }); continue; }
@@ -2605,7 +2606,7 @@ function buildUpdate(ctx, a, w) {
   for (const c of conflicts) { const id = c.id; for (const f of c.fields ?? [null]) { const choice = a.resolve?.[f ? `${id}.${c.component}.${f}` : `${id}.${c.component}`] ?? "yours";
       if (choice === "theirs") { const cur = ops.findLast((o) => o.id === id && o.comp === c.component)?.value ?? clone(ctx.st.entities[id].c[c.component]);
         const v = f ? { ...cur, [f]: c.theirs[f] } : c.theirs; ops.push(setOp(id, c.component, v)); } } }
-  ops.push(setOp(a.copy, "blueprint", { ...root.c.blueprint, from: a.to }));
+  ops.push(setOp(a.copy, "copy-of", { ...root.c["copy-of"], from: a.to }));
   if (orphaned.length) ctx.notes.push({ orphaned, why: "gone upstream but you changed them here: kept, still yours" });
   if (kept.length) ctx.notes.push({ keptYours: kept });
   for (const o of ops) ctx.refs.add(o.id);
@@ -2615,8 +2616,8 @@ function buildUpdate(ctx, a, w) {
 function buildCreateFrom(ctx, a) {
   if (typeof a.from === "string" && !a.from.startsWith("sha256:")) return buildDuplicate(ctx, a);
   const w = ctx.w; let rec;
-  try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's library"); }
-  if (!inLibrary(ctx.st, a.from)) refuse("not-in-library", `${a.from} isn't in this world's library`, "publish it here first");
+  try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's blueprints"); }
+  if (!isPublished(ctx.st, a.from)) refuse("not-published", `${a.from} isn't one of this world's blueprints`, "publish it here first");
   const id = a.id ?? mint(ctx.st, rec.name);
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
@@ -2629,7 +2630,7 @@ function buildCreateFrom(ctx, a) {
   for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
     if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
-    c.blueprint = { from: a.from, key: p.key };
+    c["copy-of"] = { from: a.from, key: p.key };
     ops.push(...createOps(idAt[i], c)); ctx.refs.add(idAt[i]); }
   return ops;
 }
@@ -2684,7 +2685,7 @@ const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is meas
 // that left the world) is a SEPARATE entry caused by a door act, so a rest and a correction never look alike.
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
-  if (!w.state().entities["@world"]?.c.sim) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
+  if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
   for (let guard = 0; guard < 64; guard++) {
     const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
     const st = w.state(); const t = worldT(st, r.id);
@@ -2717,16 +2718,16 @@ function buildEpoch(ctx, v, a) {
   const ops = live.map((id) => setOp(id, "transform", { ...worldT(sf.st, id), pos: sf.sim.bodies[id].p.slice() }));
   for (const id of live) ctx.refs.add(id);
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
-  if (v === null) return [...ops, delOp("@world", "sim")];
+  if (v === null) return [...ops, delOp("@world", "physics-engine")];
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
-  unknownKeys("@world.sim", v, Object.keys(COMPONENTS.sim.fields), "sim"); // the door builds the value from these keys: a typo would vanish silently
+  unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the door builds the value from these keys: a typo would vanish silently
   const known = ENGINES[v.engine];
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
-  if (v.build === undefined) ctx.notes.push({ component: "sim", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
-  if (!carried(spec)) ctx.notes.push({ component: "sim", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
+  if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
+  if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
   ctx.refs.add("@world");
-  return [...ops, setOp("@world", "sim", spec)];
+  return [...ops, setOp("@world", "physics-engine", spec)];
 }
 function body(w, actor) {
   const b = w.presence.bodies[actor];
@@ -2756,7 +2757,7 @@ function solidAt(w, st, p, except = new Set(), cands = null) {
     if (hitsIx(st, box, id, 0.01)) return id; }
   return null;
 }
-// an open openable (a whole door, not a cabinet's part) is out of the way: the teach above says "through a door someone
+// an open openable (a whole door, not a cabinet's part) is out of the way: the fix above says "through a door someone
 // opens", and every browser's collider follows the drawn leaf (client/lib/openable.js reindexes it at rest)
 const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o && typeof o === "object" && o.open === true && !o.part; };
 function pathBlocked(w, st, from, to) {
@@ -2797,7 +2798,7 @@ const PHYSICS_TOOLS = {
     return { ok: true, recorded: false, at: to, ...(carrying.length ? { carrying } : {}) };
   },
   grab(w, actor, a) {
-    if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_TOOLS.body(w, actor, { to: a.id, act: "drag" }); // a body is presence, never an entity (§2.3)
+    if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_TOOLS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     const held = w.presence.holds[a.id];
@@ -2827,7 +2828,7 @@ const PHYSICS_TOOLS = {
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
       if (!may(st, actor, "editOthers") && !(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
-    const spec = st.entities["@world"]?.c.sim;
+    const spec = st.entities["@world"]?.c["physics-engine"];
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
     if (dependents.length && !(spec && carried(spec))) {
@@ -2882,11 +2883,11 @@ const PHYSICS_TOOLS = {
     const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
     if (snap.to) {
       const hs = worldT(st, snap.to.to).scale;
-      const ops = [setOp(a.id, "parent", { to: snap.to.to, slot: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
+      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-      const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", slot: { to: snap.to.to, slot: snap.to.slot } }));
-      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, slot: snap.to.slot, seq: act });
-      return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, slot: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, slot: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
+      const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: { to: snap.to.to, socket: snap.to.slot } }));
+      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, socket: snap.to.slot, seq: act });
+      return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, socket: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, socket: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
     }
     // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
     const stay = g?.release === "stay";
@@ -2915,7 +2916,7 @@ const PHYSICS_TOOLS = {
   throw(w, actor, a) {
     if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
     const g = grabOf(w.state().entities[a.id]?.c);
-    const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c.sim ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
+    const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c["physics-engine"] ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
       : g?.throw === 0 ? `${a.id} can't be thrown (its grabbable.throw is 0): it was let go` : g?.release === "return" ? null : undefined;
     if (why !== undefined) {
       const r = PHYSICS_TOOLS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
@@ -2978,7 +2979,7 @@ const PHYSICS_TOOLS = {
     // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
     // where the log last had it; if picking it up took it out of the engine, the door puts it back there, as its own act.
     for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
-      const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c.sim) { const t = st.entities[id].c.transform;
+      const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
     delete w.presence.bodies[actor]; w.savePresence();
@@ -3040,7 +3041,7 @@ function secondHand(w, actor, a, h, e) {
   return { ok: true, recorded: false, holding: a.id, ...how, note: `moved to your ${hand} hand` };
 }
 // a release flies (a sim launch) only for a dynamic thing in a world that runs physics; anything else is set down
-const fliesIn = (st, id) => !!st.entities["@world"]?.c.sim && st.entities[id]?.c.physics?.kind === "dynamic";
+const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.entities[id]?.c.physics?.kind === "dynamic";
 // The socket a released thing snaps into (research §3, Resonite Snapper with XRI's radius): the nearest socket, on
 // anything but itself or what it carries, whose `accepts` shares a keyword with its grabbable.fits and whose world point
 // is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
@@ -3056,8 +3057,8 @@ function snapTarget(st, id, g, p) {
       if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;
       const ht = worldT(st, hid); const off = qrot(ht.q, sk.pos.map((v, i) => v * ht.scale[i])); const sp = ht.pos.map((v, i) => v + off[i]);
       const d = dist(sp, p); if (d > socketRadius(sk)) continue;
-      if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.slot === slot)) { out.notes.push({ passedOver: { to: hid, slot }, why: "something already sits in that socket" }); continue; }
-      const lk = [hid, ...ancestors(st, hid)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: { to: hid, slot }, why: `${lk} is locked` }); continue; }
+      if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.socket === slot)) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: "something already sits in that socket" }); continue; }
+      const lk = [hid, ...ancestors(st, hid)].find((k) => lockedC(st.entities[k]?.c)); if (lk) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: `${lk} is locked` }); continue; }
       if (!out.to || d < out.to.d) out.to = { to: hid, slot, d, sock: sk };
     }
   }
@@ -3088,7 +3089,7 @@ function lastRelease(w, id) {
 }
 const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
   const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
-  return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null) && (e.c.parent?.slot ?? null) === (home.parent?.slot ?? null); };
+  return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null) && (e.c.parent?.socket ?? null) === (home.parent?.socket ?? null); };
 // returnAfter (research §3): at the first request after a thing has been unheld that long since a hand or physics last
 // moved it, the door sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
@@ -3097,7 +3098,7 @@ function returnDue(w) {
   for (const [id, e] of Object.entries(st.entities)) {
     const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
     const g = grabOf(e.c); if (!g?.home || w.presence.holds[id]) continue;
-    if (st.entities["@world"]?.c.sim) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
+    if (st.entities["@world"]?.c["physics-engine"]) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
     const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || sameHome(st, id, g.home)) continue;
     const { plan } = returnPlan(w, w.state(), id, g); if (plan) returnHome(w, id, plan, r.release);
   }
@@ -3106,7 +3107,7 @@ function returnDue(w) {
 // that moves a thing whose home was where it stood carries the home with it (a builder moving the key moves its hook…
 // home). A builder may set home outright; one that isn't where the thing stands is left alone.
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
-  return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.slot ? { slot: c.parent.slot } : {}) } } : {}) }; };
+  return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }; };
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
@@ -3126,7 +3127,7 @@ function stampHomes(ctx, ops) {
   return out;
 }
 function flyingWorld(st) {
-  const spec = st.entities["@world"]?.c.sim;
+  const spec = st.entities["@world"]?.c["physics-engine"];
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}}");
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
   return spec;
@@ -3176,34 +3177,34 @@ function noteRefusal(w, from, to, cls, now) { const P = w.presence; (P.refusals 
   if (mine.length >= 5 && new Set(mine.map((r) => r.to)).size >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
     (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "system", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
 // The gate for every act on another body. extra: { cls?, spec?, why?, script?, sponsor? }.
-function bodyGate(w, from, to, act, extra = {}) {
-  const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.ACT_CLASS[act];
-  if (!cls) return { ok: false, code: "shape", reason: `no body act '${act}'`, teach: Object.keys(C.ACT_CLASS).join(", ") };
+function bodyGate(w, from, to, kind, extra = {}) {
+  const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.KIND_CLASS[kind];
+  if (!cls) return { ok: false, code: "shape", reason: `no body kind '${kind}'`, fix: Object.keys(C.KIND_CLASS).join(", ") };
   if (!P.bodies[to]) return { ok: false, code: "not-here", reason: `${to} isn't here` };
-  if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, act, cls, extra, "self") };
+  if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, kind, cls, extra, "self") };
   const result = (verdict, r) => { ringPush(P, { ts: now, from, to, cls, verdict }); w.presenceDirty = true; return r; };
-  if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, teach: "ask people first; this lifts by itself" });
+  if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" });
   let d = C.decide(P, from, to, cls, now);
   if (isScriptActor(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);
-  if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); return result("refused", { ok: false, code: "consent", class: cls, reason: d.why, teach: `${to} isn't taking ${cls} from you; their shield says so (look)` }); }
+  if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); return result("refused", { ok: false, code: "consent", class: cls, reason: d.why, fix: `${to} isn't taking ${cls} from you; their shield says so (look)` }); }
   if (d.mode === "ask") {
-    if (isScriptActor(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, teach: `${to} may allow ${from} by name` });
-    const key = `${from}>${to}:${cls}`; if (P.cool?.[key]?.until > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${to} said no (or didn't answer); you may ask again in ${Math.ceil((P.cool[key].until - now) / 60000)} min`, teach: "the wait doubles each time" });
-    if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, teach: "one at a time" });
-    if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", teach: "" });
-    const id = `ask-${now}-${Object.keys(P.asks ?? {}).length}`; (P.asks ??= {})[id] = { id, from, to, act, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
+    if (isScriptActor(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, fix: `${to} may allow ${from} by name` });
+    const key = `${from}>${to}:${cls}`; if (P.cool?.[key]?.until > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${to} said no (or didn't answer); you may ask again in ${Math.ceil((P.cool[key].until - now) / 60000)} min`, fix: "the wait doubles each time" });
+    if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, fix: "one at a time" });
+    if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", fix: "" });
+    const id = `ask-${now}-${Object.keys(P.asks ?? {}).length}`; (P.asks ??= {})[id] = { id, from, to, kind, cls, spec: extra.spec ?? null, why: extra.why ?? null, expires: now + C.ASK_MS };
     (P.asked ??= {})[id] = { from, ts: now };
-    inboxPush(P, to, { type: "body-ask", ask: { id, from, act, summary: `${from} asks to ${act}${extra.spec?.point ? ` (${extra.spec.point})` : ""}`, why: extra.why ?? null, expires: now + C.ASK_MS } });
+    inboxPush(P, to, { type: "body-ask", ask: { id, from, kind, summary: `${from} asks to ${kind}${extra.spec?.point ? ` (${extra.spec.point})` : ""}`, why: extra.why ?? null, expires: now + C.ASK_MS } });
     return result("asked", { ok: true, asked: true, ask: id }); }
-  return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, act, cls, extra, "standing"); } };
+  return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra, "standing"); } };
 }
-function deliver(w, from, to, act, cls, extra, consent) {
+function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
   if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; }
   if (cls === "move") b.draggedBy = from;
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
-  if (cls === "touch" || cls === "touchI") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null };
-  inboxPush(P, to, { type: "body", from, act, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
+  if (cls === "touch" || cls === "intimate") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null };
+  inboxPush(P, to, { type: "body", from, kind, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
 // After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
 // actor hears body-revoked once (42 §4.6). An act granted by an ask outlives a later 'ask' cell; only 'nobody' ends it.
@@ -3220,21 +3221,21 @@ const BODY_TOOLS = {
     if (a.answer !== undefined) { const k = P.asks?.[a.answer]; if (!k || k.to !== actor) refuse("not-found", `no ask '${a.answer}' waiting for you`, "consent {} lists them");
       delete P.asks[a.answer];
       if (a.yes === true) { if (a.for) C.setConsent(P, actor, { allow: k.from, class: k.cls, for: a.for }, now);
-        deliver(w, k.from, actor, k.act, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
+        deliver(w, k.from, actor, k.kind, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: `${actor} said no` }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
     const changing = ["preset", "set", "allow", "deny", "pause", "friend"].some((k) => a[k] !== undefined);
-    if (changing) { const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.teach ?? "anyone you trust may close your shield; only you may open it (L6)");
+    if (changing) { const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "anyone you trust may close your shield; only you may open it (L6)");
       const ended = revokeAfter(w, r.target); w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
     const t = C.tableOf(P, actor);
     return { ok: true, table: { preset: t.preset, strangers: t.strangers, friends: t.friends, paused: t.paused, trusted: t.friendsList }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);
-    if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.act)) refuse("shape", `no body act '${a.act}'`, "pose, anim, shove, drag, seat, carry");
-    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.act) && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
-    const g = bodyGate(w, actor, to, a.act, { spec: a.spec, why: a.why });
-    if (!g.ok) refuse(g.code, g.reason, g.teach, { class: g.class });
+    if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|seat|carry}");
+    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
+    const g = bodyGate(w, actor, to, a.kind, { spec: a.spec, why: a.why });
+    if (!g.ok) refuse(g.code, g.reason, g.fix, { class: g.class });
     if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false, note: `${to} was asked; no answer in 20 s is no` };
     g.deliver(); return { ok: true, outcome: "allowed", delivered: true, consent: g.consent, recorded: false }; },
   // touch is judged by where the hand IS (42 P8): a named point, or a bare world point at someone's body
@@ -3244,11 +3245,11 @@ const BODY_TOOLS = {
       if (dist(handOf(me), a.at) > REACH) refuse("out-of-reach", `that point is ${r3(dist(handOf(me), a.at))} m from your hand`, "walk closer");
       if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
     else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
-      cls = C.INTIMATE_POINTS.has(point) ? "touchI" : C.SOCIAL_POINTS.has(point) ? "touch" : refuse("shape", `no point '${point}'`, [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
+      cls = C.INTIMATE_POINTS.has(point) ? "intimate" : C.SOCIAL_POINTS.has(point) ? "touch" : refuse("shape", `no point '${point}'`, [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
       const t = P.bodies[to]; if (t && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
     delete P.reaches?.[actor];
     const g = bodyGate(w, actor, to, "touch", { cls, spec: { point, ...(a.at ? { at: a.at } : {}) }, why: a.why });
-    if (!g.ok) { w.presenceDirty = true; refuse(g.code, g.reason, g.teach, { class: g.class, stripped: true }); }
+    if (!g.ok) { w.presenceDirty = true; refuse(g.code, g.reason, g.fix, { class: g.class, stripped: true }); }
     if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false };
     g.deliver(); return { ok: true, outcome: "allowed", touching: to, class: cls, recorded: false }; },
   inbox(w, actor) { const P = w.presence; expireAsks(w); const m = P.inbox?.[actor] ?? []; if (P.inbox) delete P.inbox[actor]; w.presenceDirty = true; return { ok: true, messages: m }; },
@@ -3313,7 +3314,7 @@ const TOOLS = {
     return { ok: true, world: w.name, you: "owner" };
   },
   help(w, actor, a) {
-    if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, teach: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
+    if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, fix: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
     const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none"; const eff = st ? effective(st, actor) : null;
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, switches: eff.switches } : {}) },
       tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
@@ -3325,7 +3326,7 @@ const TOOLS = {
           "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your switches (you.switches); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
@@ -3359,7 +3360,7 @@ const TOOLS = {
   find(w, actor, a) {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
-      return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith("library:")).map(([k, v]) => ({ hash: `sha256:${k.slice(8)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
+      return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
     return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
   check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },

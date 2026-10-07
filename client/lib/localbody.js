@@ -287,7 +287,7 @@ export function trySitOn(arg, slot = null) {
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
-  requestV4('use', { id: best.id, action: best.body.action, args: { slot: best.slot } }).then((r) => {
+  requestV4('use', { id: best.id, action: best.body.action, args: { socket: best.slot } }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
   });
   return true;

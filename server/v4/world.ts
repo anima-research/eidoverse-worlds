@@ -182,7 +182,7 @@ export class V4Log {
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
     // anything that can change what someone may do: a role, the definitions, the default role, the install setting
-    const roles = (e: Any) => { try { return e?.kind === "change" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "scripts", "access"].includes(o.comp))); } catch { return false; } };
+    const roles = (e: Any) => { try { return e?.kind === "change" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "script-settings", "access"].includes(o.comp))); } catch { return false; } };
     if (fresh.some(roles)) this.host?.rightsChanged();
   }
   private record(e: ChatLine) {
@@ -346,7 +346,7 @@ function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => bool
     if (lock !== undefined) late.push({ tool: "set", args: { id, component: "lock", value: lock } });
   }
   const all = [...reqs, ...late]; let batch: Any[] = [], size = 0, acts = 0;
-  const flush = () => { if (!batch.length) return; const r = doorRequest(w, actor, "batch", { ops: batch, through_lock: true });
+  const flush = () => { if (!batch.length) return; const r = doorRequest(w, actor, "batch", { ops: batch, throughLock: true });
     if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.op ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
   for (const q of all) { const n = JSON.stringify(q).length; if (size + n > 400_000) flush(); batch.push(q); size += n; }
   flush();

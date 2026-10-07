@@ -136,7 +136,7 @@ ok(vic.of("v4-log").length >= 2 && vic.of("log").length === 0, "S2 another clien
 
 ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
-ok(mv.ok === false && mv.refused?.code === "locked" && /through_lock/.test(mv.refused.teach), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
+ok(mv.ok === false && mv.refused?.code === "locked" && /throughLock/.test(mv.refused.fix), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
 const headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length;
 bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300);   // an old client's message: the server has no handler for it
 { const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "v4", id: rid, verb: "remove", args: { id: "cup" } }); });
@@ -320,7 +320,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
   await wait(() => oz.entities.has("bell"));
   const lk = oz.look();
-  ok(!/world_verb|comp \{|dismount|mount \{/.test(lk) && /door \{tool: "use"/.test(lk) && /sit \{on: id/.test(lk) && /through_lock/.test(lk), "CM7 look teaches the door's use, the sit tool and how a lock is lifted (it taught world_verb, which is gone)", lk.split("\n").filter((l) => /bell|use a thing|locked/.test(l)));
+  ok(!/world_verb|comp \{|dismount|mount \{/.test(lk) && /door \{tool: "use"/.test(lk) && /sit \{on: id/.test(lk) && /throughLock/.test(lk), "CM7 look teaches the door's use, the sit tool and how a lock is lifted (it taught world_verb, which is gone)", lk.split("\n").filter((l) => /bell|use a thing|locked/.test(l)));
   // CM8 the agent's say: a spoken say keeps its trio on disk; a refused say is an error, not "said"
   const sp = await HANDLERS.say(oz, { text: "spoken line", spoken: true, utt: 11 }, {} as any, "say");
   await sleep(200);
@@ -364,19 +364,21 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the v4 copy
   const { emptyState: v1Empty, foldEntry: v1Fold } = await import("./import-v1/fold.js");
   const v1st = v1Empty(); for (const l of fs.readFileSync(v1log, "utf8").split("\n").filter(Boolean)) v1Fold(v1st, JSON.parse(l));
-  const old = { snapshot: { state: v1st } }, neu = await client(srv.port, "oldtown-v4", "Ann", V4);
+  // v1's mount names its socket `slot`; v4's (and shared/hierarchy.js, the renderer's reading) `socket`
+  const v1asV4 = (st: any) => ({ ...st, entities: Object.fromEntries(Object.entries<any>(st.entities).map(([id, e]) => [id, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e])) });
+  const old = { snapshot: { state: v1asV4(v1st) } }, neu = await client(srv.port, "oldtown-v4", "Ann", V4);
   const oldv1 = await client(srv.port, "oldtown", "Ann");
   ok(!oldv1.snapshot && oldv1.of("error").some((m) => /"oldtown" is saved in an old format/.test(m.error)), "S6 the server doesn't serve the old world itself (it says the world is saved in the old format, to be translated once)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type)); oldv1.close();
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
   const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
-    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, slot: e.parent?.slot }]; }));
+    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));
   const neuView = viewState(stateFromView(neu.snapshot.v4.state));   // what the page draws: the view of its own fold of the cut
   ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neuView)), "S6 the v4 copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
   const v4c = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl")))).entities;
-  ok(JSON.stringify(v4c[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", slot: "seat" }) && JSON.stringify(v4c[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
-    "S6 a translated mount is in the door's shape: transform local to the parent (here the socket's pos), parent {to, order, slot}", [v4c[enc("mug_1")].c.parent, v4c[enc("mug_1")].c.transform]);
+  ok(JSON.stringify(v4c[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", socket: "seat" }) && JSON.stringify(v4c[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
+    "S6 a translated mount is in the door's shape: transform local to the parent (here the socket's pos), parent {to, order, socket}", [v4c[enc("mug_1")].c.parent, v4c[enc("mug_1")].c.transform]);
   ok(neu.snapshot.v4?.version === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.v4, "S6 v4 copy: v4, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.v4]);
   ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
@@ -413,7 +415,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 // a person who leaves while holding something drops it into the world ----
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", V4); await sleep(100);
-  ok((await a.req("set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } })).ok, "SP Ann turns physics on");
+  ok((await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } })).ok, "SP Ann turns physics on");
   ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
   const b = await client(srv.port, "pitch", "Bob", V4); await sleep(150); const B = b.snapshot?.v4?.you;
   ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
@@ -496,7 +498,7 @@ srv.proc.kill();
 { ok(tool(["found", "crash", "--owner", "Ann"]).code === 0, "SK found a physics world");
   const srvA = await startServer(ENGINE, W4, OPT, "v4-sk");
   const a = await client(srvA.port, "crash", "Ann", V4); await sleep(100);
-  await a.req("set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } });
+  await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
   await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } });
   await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.4, 1] } });
   const b = await client(srvA.port, "crash", "Bob", V4); await sleep(150);

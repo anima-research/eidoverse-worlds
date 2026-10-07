@@ -169,12 +169,12 @@ lives in whatever reads it — a renderer, the door's checks, a script.
 - **Bare names are the protocol's registry.** The registered components,
   their fields, defaults and meanings are in `shared/v4/catalogue.js`; a
   door answers `schema {component?}` with the same. Among them: `transform
-  {pos, q, scale}`, `model` (a library path), `label`, `parent {to, slot?}`,
+  {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
   `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
-  `door`, `physics`, `grabbable`, `particles`, `script:<name>`, and on
+  `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `sim`,
-  `scripts`, `library:<hash>`, `schemas:<name>`.
+  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`,
+  `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **Anyone else's components carry a domain prefix**, so two honest clients
   can't both invent `light`. Unknown names are kept, replayed and shown
   honestly; they wait for a reader that understands them.
@@ -186,7 +186,7 @@ lives in whatever reads it — a renderer, the door's checks, a script.
   `@world` holds the content hash of that name's written definition (shape,
   units, prose meaning, what absence means); once set it never changes.
 - **Keyed names are instance or partition keys.** For instance keys
-  (`script:`, `library:`, `roles:`), an existing key may be changed or
+  (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its
   current life) or an owner. Partition keys (`terrain-tile:`) are pieces of
   one shared surface and follow ordinary rank rules.
@@ -198,10 +198,10 @@ lives in whatever reads it — a renderer, the door's checks, a script.
 ### 4.1 Blueprints
 
 A **blueprint** is a saved entity with its children, published into the
-world's library (`@world.library:<hash>`) by a `publish` request; a
+world's blueprints (`@world.blueprints:<hash>`) by a `publish` request; a
 **copy** is made by `create {from: <hash>}`, which the door expands into an
 explicit batch carrying every component (each part marked with
-`blueprint {from, key}`), so a copy folds with no resolver. An `update`
+`copy-of {from, key}`), so a copy folds with no resolver. An `update`
 request moves a copy to a newer version, keeping its own overrides.
 
 ## 5. Two planes
@@ -287,7 +287,7 @@ a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 Tool-specific checks MAY add to `admit`, never replace it. Accepted, the
 door appends the request as an `act` and its result as one `change` entry
 caused by it; a refused write is appended as an act carrying its refusal
-(`{code, reason, teach}`) and nothing else is written (refusals that would
+(`{code, reason, fix}`) and nothing else is written (refusals that would
 only flood the log, such as rate limits, are answered without an entry). **Every appended entry passes the gate**,
 acts, says and sim entries included.
 
@@ -296,7 +296,7 @@ acts, says and sim entries included.
 door's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
 between builder and owner where the roles ladder is enabled): changing any
 component of an entity needs builder; changing `@world` needs owner, except
-`library:*` (publishing a blueprint, builder). Removing the last owner is
+`blueprints:*` (publishing a blueprint, builder). Removing the last owner is
 refused, and a world with no owner gives nobody more than visitor. **Two
 owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
@@ -305,7 +305,7 @@ may sign handoffs; roles decide rights inside the world.
 included: no write may move, replace or delete it or anything attached to
 it (its `transform`, `parent` or `model`, or the entity itself). Edits that
 don't relocate it stay open. Anyone who may delete the `lock` component
-(builders and owners) may instead send a request with `through_lock: true`;
+(builders and owners) may instead send a request with `throughLock: true`;
 the log records only the edit. A lock binds authoring, not motion.
 
 **Requests are open; results are closed.** Anyone may add a request word —

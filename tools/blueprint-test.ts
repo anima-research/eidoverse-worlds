@@ -194,7 +194,7 @@ const copyOf = (rec: any, at: number[]) => {
 }
 
 // ---- 6. v4: the door's publish and create {from} ------------------------------------------
-console.log('\n6. v4: publish → @world library:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
+console.log('\n6. v4: publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
 const { scratchWorld } = await import('./v4/scratchdoor.ts');
 const { worldPose } = await import('../shared/hierarchy.js');
 const { qFromYaw, qNorm } = await import('../shared/rot.js');
@@ -210,7 +210,7 @@ const lampWorld = () => {
   });
   return W;
 };
-const libOf = (W: any) => Object.fromEntries(Object.entries(W.state().entities['@world'].c).filter(([k]) => k.startsWith('library:')).map(([k, v]) => [k.slice(8), v]));
+const libOf = (W: any) => Object.fromEntries(Object.entries(W.state().entities['@world'].c).filter(([k]) => k.startsWith('blueprints:')).map(([k, v]) => [k.slice('blueprints:'.length), v]));
 let HV = '';   // the v4 record's hash, "sha256:<hex>"
 {
   const W = lampWorld();
@@ -219,7 +219,7 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   const r = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
   HV = r.notes?.find((n: any) => n.record)?.record ?? '';
   const hex = HV.replace(/^sha256:/, '');
-  check('publish {from, name}: one act, the record\'s hash in its notes, the library entry @world library:<hex> = {name, parts}', r.ok && /^sha256:[0-9a-f]{64}$/.test(HV) && J(libOf(W)[hex]) === J({ name: 'Lamp', parts: 2 }), J([r.refused, r.notes, libOf(W)]));
+  check('publish {from, name}: one act, the record\'s hash in its notes, the blueprints entry @world blueprints:<hex> = {name, parts}', r.ok && /^sha256:[0-9a-f]{64}$/.test(HV) && J(libOf(W)[hex]) === J({ name: 'Lamp', parts: 2 }), J([r.refused, r.notes, libOf(W)]));
   const rec = W.getBlob(HV);
   check('the record: the thing and what is attached, root at the origin (its place is the copy\'s), parts keyed, the publisher named',
     rec.name === 'Lamp' && rec.root === 'lamp' && rec.by === 'bld' && J(rec.parts.map((p: any) => p.key)) === J(['lamp', 'bulb'])
@@ -245,14 +245,14 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   check('…the bulb rides the copy\'s root at its LOCAL pose (as the record says)', bulb.parent?.to === 'lamp-1' && near(bulb.pos, [0, 1.2, 0], 0), J(bulb));
   const Wb = worldPose(E(), 'lamp-1-bulb')!;
   check('…so its world pose is the root\'s pose composed with it: [3, 1.2, 4]', near(Wb.pos, [3, 1.2, 4]), J(Wb));
-  check('…every part carries the link: blueprint {from: hash, key}', J(root.comp?.blueprint) === J({ from: HV, key: 'lamp' }) && J(bulb.comp?.blueprint) === J({ from: HV, key: 'bulb' }), J([root.comp?.blueprint, bulb.comp?.blueprint]));
+  check('…every part carries the link: copy-of {from: hash, key}', J(root.comp?.['copy-of']) === J({ from: HV, key: 'lamp' }) && J(bulb.comp?.['copy-of']) === J({ from: HV, key: 'bulb' }), J([root.comp?.['copy-of'], bulb.comp?.['copy-of']]));
   const c2 = W.call('create', { id: 'lamp-1', from: HV, at }, 'bld');
   check('an id in use is refused (`exists`), nothing written', c2.ok === false && c2.refused?.code === 'exists', J(c2));
   const c3 = W.call('create', { from: 'sha256:' + '0'.repeat(64) }, 'bld');
-  check('a hash with no record is refused', c3.ok === false && ['not-found', 'not-in-library'].includes(c3.refused?.code), J(c3));
+  check('a hash with no record is refused', c3.ok === false && ['not-found', 'not-published'].includes(c3.refused?.code), J(c3));
   const W2 = scratchWorld('blueprint');
   const c4 = W2.call('create', { from: HV });
-  check('a record that isn\'t in THIS world\'s library is refused (publish it here first)', c4.ok === false && ['not-in-library', 'not-found'].includes(c4.refused?.code), J(c4));
+  check('a record that isn\'t one of THIS world\'s blueprints is refused (publish it here first)', c4.ok === false && ['not-published', 'not-found'].includes(c4.refused?.code), J(c4));
   const u = W.call('undo', {}, 'bld');
   check('one undo (the door\'s, of the create) takes the whole copy away', u.ok && !E()['lamp-1'] && !E()['lamp-1-bulb'] && !!E().lamp, J([u.refused, Object.keys(E())]));
   // a copy edited for itself is just a thing (the link stays): editing it never touches the record or other copies
@@ -278,7 +278,7 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   const yaw90 = [0, 0.7071067811865476, 0, 0.7071067811865476];
   const c = W.call('create', { id: 'desk2', from: HD, at: { pos: [10, 0, -2], q: yaw90 } });
   const E = W.view().entities;
-  const id = (k: string) => Object.keys(E).find((x) => E[x].comp?.blueprint?.from === HD && E[x].comp.blueprint.key === k && x.startsWith('desk2'));
+  const id = (k: string) => Object.keys(E).find((x) => E[x].comp?.['copy-of']?.from === HD && E[x].comp['copy-of'].key === k && x.startsWith('desk2'));
   check('the copy lands as one act: four parts', c.ok && ['desk', 'arm', 'shade', 'glow'].every((k) => !!id(k)), J([c.refused, Object.keys(E)]));
   const arm = worldPose(E, id('arm')!)!;
   check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
@@ -287,11 +287,11 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.rotOrder === 'ZXY', J(shade.comp));
   check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.lib === undefined && glow.comp?.light?.day === false && glow.comp.light.color === 0xff8800 && E.desk2.comp?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
-  // unlocked first). The person is asked "Move anyway?" (v4edit: undo offers through, not unlock); through_lock takes it.
+  // unlocked first). The person is asked "Move anyway?" (v4edit: undo offers through, not unlock); throughLock takes it.
   const u0 = W.call('undo', {});
   check('a bare undo of the copy is refused `locked` (its shade is locked), and nothing is removed', u0.ok === false && u0.refused?.code === 'locked' && Object.keys(W.view().entities).filter((x) => x.startsWith('desk2')).length === 4, J(u0));
-  const u = W.call('undo', { through_lock: true });
-  check('…through_lock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.keys(W.view().entities).some((x) => x.startsWith('desk2')), J([u.refused, Object.keys(W.view().entities)]));
+  const u = W.call('undo', { throughLock: true });
+  check('…throughLock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.keys(W.view().entities).some((x) => x.startsWith('desk2')), J([u.refused, Object.keys(W.view().entities)]));
 }
 
 // ---- 7. v4: the agent's tools over the library ------------------------------------------------
@@ -311,9 +311,9 @@ console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcp
   const txt = (r: any) => r.content.map((c: any) => c.text).join('\n');
   const list = txt(await HANDLERS.blueprints(ag, {}));
   check('blueprints: the library by short hash, name and part count', list.includes(`[${hex.slice(0, 12)}] "Lamp" · 2 part(s)`), list);
-  // KNOWN BUG (reported 2026-10-06, mcpl/tools.ts blueprints): it counts copies by comp.blueprint.hash, but the door's
-  // link is blueprint {from: "sha256:…", key} — so every record reads "no copies placed"
-  check('…and says where its copies stand (KNOWN BUG: reads comp.blueprint.hash; the door writes {from, key})', /1 copy: lampa/.test(list), list);
+  // KNOWN BUG (reported 2026-10-06, mcpl/tools.ts blueprints): it counts copies by copy-of.hash, but the door's
+  // link is copy-of {from: "sha256:…", key} — so every record reads "no copies placed"
+  check('…and says where its copies stand (KNOWN BUG: reads copy-of.hash; the door writes {from, key})', /1 copy: lampa/.test(list), list);
   const one = txt(await HANDLERS.blueprints(ag, { hash: hex.slice(0, 10) }));
   check('blueprints {hash: a prefix}: that one record', one.startsWith(`[${hex.slice(0, 12)}] "Lamp"`) && one.split('\n').length === 2, one);
   check('…an unknown prefix says so', /none here starts "zz"/.test(txt(await HANDLERS.blueprints(ag, { hash: 'zz' }))));
@@ -323,13 +323,13 @@ console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcp
   // without "sha256:" — and the door reads a from without that prefix as a THING id to duplicate: "no thing called…"
   check('blueprint_place (dry): the door answers it would place a copy, and nothing is written (KNOWN BUG: from lacks "sha256:")', !(dry as any).isError && /would place a copy of "Lamp"/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
   const live = await HANDLERS.blueprint_place(ag, { hash: hex.slice(0, 10), x: 5, z: 5 });
-  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e.comp?.blueprint?.from === H && e.comp.blueprint.key === 'lamp').length === 2, txt(live));
+  check('blueprint_place: places a copy 5,5 as one act (KNOWN BUG above)', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e.comp?.['copy-of']?.from === H && e.comp['copy-of'].key === 'lamp').length === 2, txt(live));
   const r = await HANDLERS.blueprint_place(ag, { hash: 'ffff' });
   check('blueprint_place: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
   const look = ag.look();
   const line = (id: string) => look.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
   // KNOWN BUG (reported 2026-10-06, mcpl/agent.ts look → shared/blueprint.js copyLine): copyLine reads v1's link
-  // ({hash, name} / {part} and state.blueprints); the v4 link is blueprint {from, key}, so look() says nothing about a
+  // ({hash, name} / {part} and state.blueprints); the v4 link is copy-of {from, key}, so look() says nothing about a
   // copy and dumps "components: blueprint" instead
   check('look(): a placed copy says which blueprint it is (KNOWN BUG: v1 copyLine)', /a copy of "Lamp"/.test(line('lampa')) && !/components: .*blueprint/.test(line('lampa')), line('lampa'));
   check('look(): a part says whose part it is (KNOWN BUG: v1 copyLine)', /part "bulb" of lampa/.test(line('lampa-bulb')), line('lampa-bulb'));

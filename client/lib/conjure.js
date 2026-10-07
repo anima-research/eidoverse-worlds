@@ -316,7 +316,7 @@ async function paint(body) {
         toast(`avatar "${r.name}" is on the roster — pick it in the avatar panel`, 'info', 9000);
       } else {
         const label = j.prompt.slice(0, 40);
-        sendOps([OP.set('@world', `palette:${enc(r.path)}`, { name: label, path: r.path })], { what: `add ${label} to the palette`, expect: false });
+        sendOps([OP.set('@world', `assets:${enc(r.path)}`, { name: label, path: r.path })], { what: `add ${label} to this world's assets`, expect: false });
         await holdGhost(r.path, label);
         flashHint('on your cursor — click to set it down');
       }

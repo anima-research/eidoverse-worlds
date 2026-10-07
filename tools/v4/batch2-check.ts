@@ -30,7 +30,7 @@ const BASE = "7f1f1934";
 
 // [name, file (from the tree root), find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the door checks a picture's or sound's src", "shared/v4/door.js", 'if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.teach); }', "}", ["P2", "S1"]],
+  ["the door checks a picture's or sound's src", "shared/v4/door.js", 'if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }', "}", ["P2", "S1"]],
   ["a link must be https", "shared/mediasrc.js", "if (u.protocol !== 'https:') return", "if (false) return", ["P2", "M1"]],
   ["a link may not name an address or a local host", "shared/mediasrc.js", "if (/^\\[|^\\d+(\\.\\d+){3}$|^\\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host))", "if (false)", ["P2", "M1"]],
   ["an untrusted link is fetched only with the viewer's opt-in", "shared/mediasrc.js", "(t.tier === 'link' && allowUntrusted === true)", "(t.tier === 'link')", ["M2"]],
@@ -38,7 +38,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["text length caps count graphemes", "shared/v4/door.js", "const n = typeof x === \"string\" ? graphemes(x) : Array.isArray(x) ? x.length : 0;", "const n = typeof x === \"string\" ? x.length : Array.isArray(x) ? x.length : 0;", ["P3", "W5"]],
   ["text length caps", "shared/v4/door.js", "if (cap !== undefined && n > cap) refuse(", "if (false) refuse(", ["P3", "W5", "W1"]],
   ["required fields", "shared/v4/door.js", "for (const k of def.required ?? []) if (v[k] === undefined) refuse(", "for (const k of []) if (v[k] === undefined) refuse(", ["W1"]],
-  ["cleanText at the door", "shared/v4/door.js", "if (bad) refuse(\"shape\", `${at}.${k} ${bad.why}`, bad.teach); }", "}", ["W6"]],
+  ["cleanText at the door", "shared/v4/door.js", "if (bad) refuse(\"shape\", `${at}.${k} ${bad.why}`, bad.fix); }", "}", ["W6"]],
   ["cleanText refuses bidi overrides", "shared/text.js", "if (b) return { why:", "if (false) return { why:", ["W6"]],
   ["cleanText refuses zalgo", "shared/text.js", "if (n > MAX_MARKS) return", "if (false) return", ["W6"]],
   ["a sign holds 16 lines", "shared/v4/door.js", "v.text.split(\"\\n\").length > 16) refuse(", "false) refuse(", ["W5"]],

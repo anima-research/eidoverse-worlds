@@ -32,7 +32,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
   const W = {
     name, root, owner,
     call,
-    /** send one planned door request ({tool, args}); extra args (through_lock, dry, expect) ride along. */
+    /** send one planned door request ({tool, args}); extra args (throughLock, dry, expect) ride along. */
     send: (req, extra = {}, actor = owner) => (req ? call(req.tool, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
     /** several planned requests as ONE gesture (shared/v4/ops.js batch semantics: one act). */
     sendAll: (reqs, extra = {}, actor = owner) => {
@@ -46,7 +46,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
     view: () => viewState(w.state()),
     /** the view record of one thing (ids as the planners use them) */
     rec: (id) => viewState(w.state()).entities[id] ?? null,
-    /** seed things from VIEW-form records ({lib, pos, q|yaw, scale|scale3, parent:{to, slot?, offset?, q?|yaw?}, comp}).
+    /** seed things from VIEW-form records ({lib, pos, q|yaw, scale|scale3, parent:{to, socket?, offset?, q?|yaw?}, comp}).
      *  A child's transform is written LOCAL to its parent (localOf reads a v1-style mount the same way the planners do).
      *  Parents first; every create must be accepted or the seed throws. */
     seed: (recs) => {
@@ -61,7 +61,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
         const s = r.scale3 ?? (Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1]);
         const components = { transform: { pos, q, scale: s } };
         for (const [k, v] of Object.entries(r.comp ?? {})) if (v !== undefined) components[encName(k)] = v;
-        if (r.parent?.to) components.parent = { to: enc(r.parent.to), ...(r.parent.slot ? { slot: r.parent.slot } : {}) };
+        if (r.parent?.to) components.parent = { to: enc(r.parent.to), ...(r.parent.socket ? { socket: r.parent.socket } : {}) };
         const res = call("create", { id: enc(id), ...(r.lib ? { model: r.lib } : {}), components });
         if (!res.ok) throw new Error(`seed ${id}: ${JSON.stringify(res.refused)}`);
       }

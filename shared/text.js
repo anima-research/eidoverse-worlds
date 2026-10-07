@@ -26,18 +26,18 @@ const COMBINING = /\p{M}/gu;
 export const MAX_MARKS = 3;   // combining marks on one grapheme: Vietnamese stacks 2, Devanagari 2–3; zalgo stacks dozens
 const hex = (c) => 'U+' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
 
-/** null when s is clean; else {why, teach}. lines: true allows \n (a sign's, a story's), false a single line (a title). */
+/** null when s is clean; else {why, fix}. lines: true allows \n (a sign's, a story's), false a single line (a title). */
 export function cleanText(s, { lines = true } = {}) {
-  if (typeof s !== 'string') return { why: 'is not text', teach: 'a string' };
+  if (typeof s !== 'string') return { why: 'is not text', fix: 'a string' };
   const b = BIDI.exec(s);
-  if (b) return { why: `has a direction override (${hex(b[0])}), which can make text read differently than it's stored`, teach: 'remove it; the reader\'s browser already sets the direction of Arabic, Hebrew and the rest from the letters themselves' };
+  if (b) return { why: `has a direction override (${hex(b[0])}), which can make text read differently than it's stored`, fix: 'remove it; the reader\'s browser already sets the direction of Arabic, Hebrew and the rest from the letters themselves' };
   for (const ch of s) {
     const c = ch.codePointAt(0);
     if (ch === '\n' && lines) continue;
-    if (c < 0x20 || (c >= 0x7f && c < 0xa0)) return { why: `has a control character (${hex(ch)})${ch === '\n' ? ': this is one line' : ''}`, teach: ch === '\n' ? 'write it on one line' : 'remove it (only a line break is allowed, and only where there can be several lines)' };
+    if (c < 0x20 || (c >= 0x7f && c < 0xa0)) return { why: `has a control character (${hex(ch)})${ch === '\n' ? ': this is one line' : ''}`, fix: ch === '\n' ? 'write it on one line' : 'remove it (only a line break is allowed, and only where there can be several lines)' };
   }
   for (const g of graphemeList(s)) { const n = (g.match(COMBINING) ?? []).length;
-    if (n > MAX_MARKS) return { why: `has a character carrying ${n} accents (more than ${MAX_MARKS})`, teach: 'that piles marks over the text around it; write the letter with its usual accents' }; }
+    if (n > MAX_MARKS) return { why: `has a character carrying ${n} accents (more than ${MAX_MARKS})`, fix: 'that piles marks over the text around it; write the letter with its usual accents' }; }
   return null;
 }
 

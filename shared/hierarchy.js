@@ -5,7 +5,7 @@
 //
 // `world` is the fold's entities map ({ id: record }) — state.st.entities in
 // the browser, the agent's folded records in mcpl. A record's `parent`
-// ({ to, slot?, offset?, yaw?, q? }, written by `mount`) is the only edge.
+// ({ to, socket?, offset?, yaw?, q? }) is the only edge.
 //
 // A child's transform is LOCAL to its parent, exactly as the renderer
 // realizes it (client/lib/realize/models.js execMount): the child is added
@@ -30,8 +30,8 @@ const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
 /** The socket a mount names, resolved on its carrier — or null. */
 export function socketOf(world, rel) {
-  if (!rel?.slot) return null;
-  const s = world?.[rel.to]?.comp?.sockets?.[rel.slot];
+  if (!rel?.socket) return null;
+  const s = world?.[rel.to]?.comp?.sockets?.[rel.socket];
   return s && typeof s === 'object' ? s : null;
 }
 
@@ -53,7 +53,7 @@ export function localOf(ent, world = null) {
   const sock = socketOf(world, rel);
   const q = qNorm(rel.q) ?? (rel.yaw == null && sock ? socketQ(sock) : null);
   return {
-    mounted: true, to: rel.to, ...(rel.slot ? { slot: rel.slot } : {}),
+    mounted: true, to: rel.to, ...(rel.socket ? { socket: rel.socket } : {}),
     pos: [...(Array.isArray(rel.offset) ? rel.offset : sock?.pos ?? [0, 0, 0])].map((v) => Number(v) || 0),
     q, yaw: q ? qHeading(q) : (rel.yaw ?? 0), scale,
     part: sock?.part ? String(sock.part) : null,

@@ -196,7 +196,7 @@ export function reachWins(policy, hand, target) {
 // ---------------------------------------------------------------- the door's check
 
 /** The whole `sockets` component, checked (closed keys, ranges, enums, the one-driver rule). Null when good, else
- *  {code: 'shape'|'schema', reason, teach, didYouMean?} — the door refuses with it verbatim, and the inspector's planner
+ *  {code: 'shape'|'schema', reason, fix, didYouMean?} — the door refuses with it verbatim, and the inspector's planner
  *  speaks the same words. */
 export function checkSockets(v, at = 'sockets') {
   if (!isObj(v)) return bad('shape', `${at} must be {<name>: {pos, q?, part?, body?}}`);
@@ -301,7 +301,7 @@ function keys(at, v, allowed, what) {
     return bad('schema', `${at}: unknown key '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ''}`, `${what} takes: ${allowed.join(', ')}`, dym); }
   return null;
 }
-const bad = (code, reason, teach = '', didYouMean = null) => ({ code, reason, teach, ...(didYouMean?.length ? { didYouMean } : {}) });
+const bad = (code, reason, fix = '', didYouMean = null) => ({ code, reason, fix, ...(didYouMean?.length ? { didYouMean } : {}) });
 // a near miss: a prefix either way, or an edit distance of at most a third of the word
 function near(k, allowed) {
   const x = String(k).toLowerCase();

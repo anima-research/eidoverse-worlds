@@ -40,22 +40,22 @@ export const MAX_URL = 2048;
 const hostMatch = (host, pat) => (pat.startsWith('*.') ? host === pat.slice(2) || host.endsWith(pat.slice(1)) : host === pat);
 const LOCAL = /(^|\.)(localhost|local|localdomain|internal|intranet|lan|home|corp|home\.arpa|test|invalid|example|onion)$/i;
 
-/** Where src comes from: {tier: 'store'} | {tier: 'host'|'link', host, page?} | {tier: 'bad', why, teach}.
+/** Where src comes from: {tier: 'store'} | {tier: 'host'|'link', host, page?} | {tier: 'bad', why, fix}.
  *  kind: 'audio' (a sound) or 'image' (a picture). */
 export function mediaTier(src, kind) {
-  if (typeof src !== 'string' || !src) return { tier: 'bad', why: 'src is missing', teach: 'a file in the store (upload it) or an https link' };
+  if (typeof src !== 'string' || !src) return { tier: 'bad', why: 'src is missing', fix: 'a file in the store (upload it) or an https link' };
   if (!/^[a-z][a-z0-9+.-]*:/i.test(src)) {
     const ok = kind === 'image' ? allowedPictureSrc(src) : allowedSoundSrc(src);
-    return ok ? { tier: 'store' } : { tier: 'bad', why: `${JSON.stringify(src).slice(0, 80)} isn't a file here`, teach: kind === 'image' ? 'a .png/.jpg/.webp under store/images/ or eidoverse/assets/ (upload one), or an https link' : 'a .mp3/.ogg/.opus/.wav/.webm/.m4a under store/audio/ or eidoverse/assets/ (upload one), or an https link' };
+    return ok ? { tier: 'store' } : { tier: 'bad', why: `${JSON.stringify(src).slice(0, 80)} isn't a file here`, fix: kind === 'image' ? 'a .png/.jpg/.webp under store/images/ or eidoverse/assets/ (upload one), or an https link' : 'a .mp3/.ogg/.opus/.wav/.webm/.m4a under store/audio/ or eidoverse/assets/ (upload one), or an https link' };
   }
-  if (src.length > MAX_URL) return { tier: 'bad', why: `the link is ${src.length} characters (at most ${MAX_URL})`, teach: 'a shorter link' };
-  let u; try { u = new URL(src); } catch { return { tier: 'bad', why: 'that isn\'t a link a browser can read', teach: 'https://…' }; }
-  if (u.protocol !== 'https:') return { tier: 'bad', why: `${u.protocol}// links aren't played (only https)`, teach: 'an https:// link' };
-  if (u.username || u.password) return { tier: 'bad', why: 'the link carries a user name or password', teach: 'a link without user:password@' };
-  if (u.port) return { tier: 'bad', why: `the link names a port (:${u.port})`, teach: 'a link on the usual https port' };
+  if (src.length > MAX_URL) return { tier: 'bad', why: `the link is ${src.length} characters (at most ${MAX_URL})`, fix: 'a shorter link' };
+  let u; try { u = new URL(src); } catch { return { tier: 'bad', why: 'that isn\'t a link a browser can read', fix: 'https://…' }; }
+  if (u.protocol !== 'https:') return { tier: 'bad', why: `${u.protocol}// links aren't played (only https)`, fix: 'an https:// link' };
+  if (u.username || u.password) return { tier: 'bad', why: 'the link carries a user name or password', fix: 'a link without user:password@' };
+  if (u.port) return { tier: 'bad', why: `the link names a port (:${u.port})`, fix: 'a link on the usual https port' };
   const host = u.hostname.toLowerCase().replace(/\.$/, '');
   if (/^\[|^\d+(\.\d+){3}$|^\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host))
-    return { tier: 'bad', why: `${host} is an address or a local name, not a public host`, teach: 'a link to a public site by its name (a visitor\'s own network is never fetched)' };
+    return { tier: 'bad', why: `${host} is an address or a local name, not a public host`, fix: 'a link to a public site by its name (a visitor\'s own network is never fetched)' };
   const hosts = MEDIA_HOSTS[kind === 'image' ? 'image' : 'audio'];
   const page = PAGE_HOSTS.some((p) => hostMatch(host, `*.${p}`)) && !/\.(mp3|ogg|opus|wav|webm|m4a|mp4|aac|flac|m3u8|png|jpe?g|webp)$/i.test(u.pathname);
   return { tier: hosts.some((p) => hostMatch(host, p)) ? 'host' : 'link', host, ...(page ? { page: true } : {}) };

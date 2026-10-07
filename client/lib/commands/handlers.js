@@ -179,19 +179,19 @@ register('drop', (arg) => drop((arg || '').trim() || undefined));
 register('throw', (arg) => throwHeld(arg));
 register('ban', (arg) => moderate('ban', arg));
 
-// /epoch [tickMs] (/physics) — run physics in this world: set @world.sim (design 20 P4). Owner-ranked: the door
+// /epoch [tickMs] (/physics) — run physics in this world: set @world.physics-engine (design 20 P4). Owner-ranked: the door
 // refuses below owner and refuses an engine this server doesn't carry; it stamps the build and every thing's shape.
 register('epoch', (arg) => {
   const a = (arg || '').trim();
   // /epoch off — stop physics (explicit, never a toggle): the door refuses while anything is in flight (P6: a cut
   // waits for rests). Owners only; the world refuses or announces.
   if (/^(off|leave|exit|none)$/i.test(a)) {
-    send(OP.unset('@world', 'sim'), { what: 'leave the physics epoch' });
+    send(OP.unset('@world', 'physics-engine'), { what: 'leave the physics epoch' });
     logChat('*', 'asked the world to turn physics off — refused while anything is in flight (owners only; the world will refuse or announce)');
     return;
   }
   const tickMs = Math.round(Number(a)) || 66;
-  send(OP.set('@world', 'sim', { engine: SIM_ID, tickMs }), { what: 'enter the physics epoch' });
+  send(OP.set('@world', 'physics-engine', { engine: SIM_ID, tickMs }), { what: 'enter the physics epoch' });
   logChat('*', `asked the world to run ${SIM_ID} at a ${tickMs}ms tick — throws and punts fly, and the log records where they rest (owners only; the world will refuse or announce)`);
 });
 

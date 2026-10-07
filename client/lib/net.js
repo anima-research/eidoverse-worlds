@@ -127,7 +127,7 @@ export function sayRefusalWords(r, text) {
     case 'too-big': return `${q} is too long to send — ${x.reason ?? 'split it into shorter messages'}.`;
     case 'timeout': return `the world didn't confirm ${q} — it may still arrive; look before sending it again.`;
     case 'offline': return `${q} wasn't sent: not connected to the world.`;
-    default: return `${q} wasn't sent: ${x.reason ?? x.code ?? 'the world refused it'}${x.teach ? ` (${x.teach})` : ''}.`;
+    default: return `${q} wasn't sent: ${x.reason ?? x.code ?? 'the world refused it'}${x.fix ? ` (${x.fix})` : ''}.`;
   }
 }
 function sendSay(args) {
@@ -268,13 +268,13 @@ export function sendJoin() {
 // ---- v4 requests: {type: 'v4', id, tool, args} → {type: 'v4-result', id, ok, reply} (server/v4/messages.ts) ----
 let v4Seq = 0;
 const v4Pending = new Map();   // id → {resolve, timer}
-/** One door request; resolves with the door's own reply ({ok, …} or {ok: false, refused: {code, reason, teach}}).
+/** One door request; resolves with the door's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
  *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
 export function requestV4(tool, args = {}, { timeoutMs = 15000 } = {}) {
-  if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', teach: 'wait for the connection to come back, then try again' } });
+  if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', fix: 'wait for the connection to come back, then try again' } });
   const id = ++v4Seq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${tool}' in ${timeoutMs / 1000} s`, teach: 'it may still land: look before trying again' } }); }, timeoutMs);
+    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${tool}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
     v4Pending.set(id, { resolve, timer });
     net.ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
   });

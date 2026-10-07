@@ -17,12 +17,12 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 
 // What the old world MEANS in v4 terms: her projection, plus where her sim has put things to rest, plus the epoch
-// as @world.sim and each collider's stamped box as physics.shape.
+// as @world.physics-engine and each collider's stamped box as physics.shape.
 function composed(st, sim, recorded) {
   const out = project(st);
   const w = out["@world"] ?? (out["@world"] = {});
   delete w["imported-epoch"];
-  if (st.epoch) w.sim = { engine: st.epoch.sim, build: ENGINES[st.epoch.sim]?.build ?? null, tickMs: st.epoch.tickMs };
+  if (st.epoch) w["physics-engine"] = { engine: st.epoch.sim, build: ENGINES[st.epoch.sim]?.build ?? null, tickMs: st.epoch.tickMs };
   if (!Object.keys(w).length) delete out["@world"];
   // v4 holds the last LOGGED rest pose until her law releases the body (resting or flying again, it's the log's word)
   for (const [id, p] of recorded) if (sim.bodies[id] && out[enc(id)]) out[enc(id)].transform = { ...out[enc(id)].transform, pos: p.slice() };

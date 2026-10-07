@@ -2,7 +2,7 @@
 // server-check.ts). usage: bun tools/v4/door-check.ts
 //   N   names.js: one encoding for actors, ids and components; the lab's `0abc` / `n0abc` collision is gone
 //   T   the engine translator's own name, and the v1 fold build it stamps
-//   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, through_lock, the gameplay lock inside
+//   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, throughLock, the gameplay lock inside
 //       its own component, and v1 lock/guard through the translator
 //   U   the act index (undo, wait): equals a fresh build after every request; entityBefore equals the fold at every
 //       seq; a later write, a purge and a new act each change undo's answer the way a full scan would
@@ -67,7 +67,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
 // v1: a lock refuses everything that would MOVE, REPLACE or REMOVE the thing, for everyone, its locker included;
 // everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. v4 adds:
-// it binds what's attached to it too; through_lock: true lets whoever may remove it act through it.
+// it binds what's attached to it too; throughLock: true lets whoever may remove it act through it.
 { const name = "locks";
   const call = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, name), actor, tool, args); };
   const W = () => openWorld(root, name);
@@ -87,7 +87,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("olive", "delete", { id: "tbl", component: "transform" })) === "locked", "P6 …nor send it to the origin by deleting its transform (25d H1)");
   { const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] } });
     ok(code(r) === "locked" && /attached to tbl, which is locked/.test(r.refused.reason) && /locked by olive/.test(r.refused.reason), "P7 what's attached is bound too, and the refusal names the lock and who set it", r.refused);
-    ok(/through_lock: true/.test(r.refused.teach) && /delete \{id: 'tbl', component: 'lock'\}/.test(r.refused.teach), "P7 …and teaches both ways through: through_lock, or unlock", r.refused.teach); }
+    ok(/throughLock: true/.test(r.refused.fix) && /delete \{id: 'tbl', component: 'lock'\}/.test(r.refused.fix), "P7 …and teaches both ways through: throughLock, or unlock", r.refused.fix); }
   ok(code(call("bob", "delete", { id: "cup" })) === "locked" && code(call("bob", "place", { id: "cup", at: [4, 4] })) === "locked", "P8 …nor deleted or placed elsewhere");
   ok(code(call("bob", "delete", { id: "cup", component: "parent" })) === "locked", "P9 …nor lifted off (deleting its parent)");
   ok(code(call("bob", "set", { id: "bell", component: "transform", value: { pos: [0, 0.6, 0] } })) === "locked", "P10 a grandchild is bound too (the lock is two levels up)");
@@ -97,20 +97,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("olive", "set", { id: "tbl", component: "light", value: { range: 4 } }).ok && call("olive", "set", { id: "tbl", component: "physics", value: { kind: "static" } }).ok, "P13 a light and physics stay open (neither relocates it)");
   ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } } }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 reactions stay open, and a visitor may still `use` it");
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
-  // through_lock
-  { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, through_lock: true });
+  // throughLock
+  { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, throughLock: true });
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
-    ok(r.ok, "P16 through_lock: true lets a builder (who may remove the lock) act through it", r.refused);
+    ok(r.ok, "P16 throughLock: true lets a builder (who may remove the lock) act through it", r.refused);
     ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on", E.map((e) => [e.kind, e.verb, e.body?.comp]));
-    ok(E[0].kind === "act" && E[0].body.request.through_lock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
-  ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, through_lock: true }).ok, "P19 the locker herself acts through it the same way");
-  ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, through_lock: "yes" })) === "shape", "P20 through_lock is a boolean");
-  ok(call("bob", "set", { id: "cup2", component: "label", value: "x", through_lock: true }).ok, "P21 through_lock on an edit no lock guards is harmless");
+    ok(E[0].kind === "act" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
+  ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the locker herself acts through it the same way");
+  ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
+  ok(call("bob", "set", { id: "cup2", component: "label", value: "x", throughLock: true }).ok, "P21 throughLock on an edit no lock guards is harmless");
   { // a capability never acts through a lock: a visitor's use of a handler that would move it, flag or not
     call("bob", "set", { id: "cup2", component: "reactions", value: { nudge: { kind: "set", component: "transform", value: { pos: [0.2, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
-    const v = call("vic", "use", { id: "cup2", action: "nudge", through_lock: true }), b = call("bob", "use", { id: "cup2", action: "nudge", through_lock: true });
-    ok(code(v) === "locked" && /not a handler/.test(v.refused.teach), "P22 a visitor can't move it through a handler with through_lock (they may not remove the lock)", v.refused);
-    ok(code(b) === "locked", "P23 …nor can a builder through a handler (through_lock covers your own edits, not a capability)", b.refused); }
+    const v = call("vic", "use", { id: "cup2", action: "nudge", throughLock: true }), b = call("bob", "use", { id: "cup2", action: "nudge", throughLock: true });
+    ok(code(v) === "locked" && /not a handler/.test(v.refused.fix), "P22 a visitor can't move it through a handler with throughLock (they may not remove the lock)", v.refused);
+    ok(code(b) === "locked", "P23 …nor can a builder through a handler (throughLock covers your own edits, not a capability)", b.refused); }
   ok(code(call("vic", "delete", { id: "tbl", component: "lock" })) === "rights" && code(call("vic", "set", { id: "cup2", component: "lock", value: true })) === "rights", "P24 a visitor may neither unlock nor lock");
   ok(code(call("olive", "set", { id: "@world", component: "lock", value: true })) === "world", "P25 @world can't be locked (even by its owner)");
   ok(code(call("bob", "set", { id: "cup2", component: "lock", value: 1 })) === "shape", "P26 the door writes a lock only as true (to unlock, delete it)");
@@ -125,8 +125,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("bob", "create", { id: "box", model: "crate", place: { at: [6, 6] } }); call("bob", "set", { id: "box", component: "transform", value: { pos: [7, 0, 7] } });
     call("olive", "set", { id: "box", component: "lock", value: true });
     ok(code(call("bob", "undo", {})) === "locked", "P31 undo goes through admit: bob's undo of his move is refused while it's locked");
-    const u = call("bob", "undo", { through_lock: true });
-    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && W().state().entities.box.c.lock === true, "P32 …and undo {through_lock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
+    const u = call("bob", "undo", { throughLock: true });
+    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && W().state().entities.box.c.lock === true, "P32 …and undo {throughLock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
   { // the gameplay lock lives inside its own component: door {open, locked}
     call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
     ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
@@ -194,7 +194,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call(R, "set", { id: "cup", component: "transform", value: { ...cupT, pos: [7, 0, 7] } });
   const un = call("bob", "undo", { act: mv.act });
   ok(code(un) === "conflict" && /Riannon changed it since/.test(JSON.stringify(un.refused.skipped)) && un.refused.skipped?.[0]?.by === R, "NR5 an undo conflict names who changed it since (and by: the id)", un.refused);
-  ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", teach: "" } }) === "move Lamp refused by the door (locked): Lamp is locked (locked by Riannon at 9)",
+  ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", fix: "" } }) === "move Lamp refused by the door (locked): Lamp is locked (locked by Riannon at 9)",
     "NR6 the shared refusal text (what a person's toast and an agent's verb tools show) reads any escaped name back", refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)" } }));
   ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the door (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
   { const V = (req) => lockVerb(req); const set = (component) => ({ tool: "set", args: { id: "a", component, value: 1 } });
@@ -224,10 +224,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
   const tc = (tool, args) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", tool, args); };
   ok(!r.stats.divergences && r.final.v4.box.parent?.order === "a0" && !("offset" in r.final.v4.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.v4.box.parent);
-  ok(JSON.stringify(r.final.v4.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.v4.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.v4.bell.parent.slot === "perch",
-    "M2 its transform is local: the offset, or (no offset) its socket's pos, and the slot is kept", [r.final.v4.box.transform, r.final.v4.bell.transform, r.final.v4.bell.parent]);
+  ok(JSON.stringify(r.final.v4.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.v4.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.v4.bell.parent.socket === "perch",
+    "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.v4.box.transform, r.final.v4.bell.transform, r.final.v4.bell.parent]);
   const near = (a, b) => a && b && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
-  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1.entities, id);
+  // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks v4's `socket`
+  const v1asV4 = Object.fromEntries(Object.entries(v1.entities).map(([k, e]) => [k, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e]));
+  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1asV4, id);
     ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the door sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
   const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
   const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
@@ -253,7 +255,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } }); same("built");
-  call("rowan", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0" } });
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
   { const th = call("rowan", "throw", { id: "ball", v: [0, 2, 3] }); ok(th.ok, "L throw accepted", th.refused ?? th); }
   call("rowan", "look", {}, 300); same("mid-flight (a read advanced the sim first)");
@@ -376,10 +378,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   step("on", "ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
   step("lock", "ann", "set", { id: "tbl", component: "lock", value: true });
   const said = step("say", "ann", "say", { text: "hi" });
-  step("move", "ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] }, through_lock: true });
+  step("move", "ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] }, throughLock: true });
   step("dup", "ann", "create", { from: "tbl" });
   const sky = step("sky", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
-  step("del", "ann", "delete", { id: "tbl", through_lock: true });
+  step("del", "ann", "delete", { id: "tbl", throughLock: true });
   step("undo", "ann", "undo", {});
   step("publish", "ann", "publish", { from: "tbl", name: "table set" });
   ok(!bad, `K1 after each of ${steps} requests the client's v4 fold = the server's (digest), and its view = the server's`, bad);
@@ -709,13 +711,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
   const sit = R("bob", "use", { id: "chair1", action: "sit" });
-  ok(sit.ok && sit.recorded === false && sit.attach?.to === "chair1" && sit.attach.slot === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat, in its pose", sit);
+  ok(sit.ok && sit.recorded === false && sit.attach?.to === "chair1" && sit.attach.socket === "seat" && sit.attach.pose === "sitchair", "SK1 a chair's model socket: use {sit} attaches you (presence), at its seat, in its pose", sit);
   ok(R("ann", "create", { id: "horse", model: "crate", components: { sockets: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", pose: "sit", exit: [0.8, 0, 0] } }, pannier: { pos: [0.4, 0.8, 0] } } } }).ok, "SK2 sockets with and without a body are taken");
   const look = R("bob", "inspect", { id: "horse" });
   const offers = JSON.stringify(look);
   ok(JSON.stringify(look.actions) === '["ride"]', "SK2 …it offers 'ride' (its body socket's action), and the bare attach point offers nothing", look.actions);
   const ride = R("bob", "use", { id: "horse", action: "ride" });
-  ok(ride.ok && ride.attach?.slot === "saddle" && ride.attach.pose === "sit", "SK2 use {ride} attaches you at the saddle", ride);
+  ok(ride.ok && ride.attach?.socket === "saddle" && ride.attach.pose === "sit", "SK2 use {ride} attaches you at the saddle", ride);
   R("ann", "create", { id: "throne", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { who: "owner" } } } } });
   ok(R("bob", "use", { id: "throne", action: "sit" }).refused?.code === "rights" && R("ann", "use", { id: "throne", action: "sit" }).ok, "SK3 body.who: a builder may not sit on the owner's throne; the owner may");
   const bad = (v) => R("ann", "set", { id: "horse", component: "sockets", value: v }).refused?.code;
@@ -760,7 +762,7 @@ const w0 = () => openWorld(root, "tier0");
 { T += 100; process.env.V4_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier1"), "ann", tool, args);
   R("new", { title: "tier1" }); R("create", { id: "chair", model: "crate" });
   const S = (id, comp, value) => R("set", { id, component: comp, value });
-  for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["library:foo", { name: "f" }], ["sky", { hours: 7 }]])
+  for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["blueprints:foo", { name: "f" }], ["sky", { hours: 7 }]])
     ok(S("chair", comp, value).refused?.code === "world-only", `T1a ${comp} belongs to the world: on a chair it's refused, and told where it goes`);
   for (const [comp, value] of [["transform", { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }], ["model", "crate"], ["parent", { to: "chair" }]])
     ok(S("@world", comp, value).refused?.code === "thing-only", `T1b ${comp} belongs to a thing: on @world it's refused (the door and renderer disagreed about where its children were)`);
@@ -779,7 +781,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(u1.ok && openWorld(root, "cp").state().entities.gate.c.openable.open === true, "CP2 …on a thing with one action, it does that action", u1);
   R("ann", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle" }, knock: { kind: "set", component: "label", value: "knocked" } } });
   const u2 = R("ann", "use", { id: "gate" });
-  ok(u2.refused?.code === "no-action" && /open, knock/.test(u2.refused.teach) && !/undefined/.test(JSON.stringify(u2)), "CP3 …on a thing with several, it asks which, naming them", u2);
+  ok(u2.refused?.code === "no-action" && /open, knock/.test(u2.refused.fix) && !/undefined/.test(JSON.stringify(u2)), "CP3 …on a thing with several, it asks which, naming them", u2);
   R("ann", "create", { id: "hatch", model: "crate", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "owner" } } } });
   const u3 = R("vic", "use", { id: "hatch" });
   ok(u3.ok && openWorld(root, "cp").state().entities.hatch.c.openable.open === true, "CP3 …\"one action\" is one the asker may do: a visitor's bare use opens the hatch (its owner-only bolt isn't a choice for them)", u3);

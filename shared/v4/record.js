@@ -5,16 +5,16 @@
 // The record's field names are the ones every reader already uses (it began life as legacy.js's projection):
 //   - ids, roles and parent targets come back through names.dec (the translator's x-- escapes undone);
 //   - transform → pos / q (+ yaw = q's heading) / scale; a non-uniform scale also rides as scale3 [x,y,z] (R 10-04);
-//   - parent {to, order, slot?} (transform LOCAL to it) → parent {to, slot?, offset, q};
+//   - parent {to, order, socket?} (transform LOCAL to it) → parent {to, socket?, offset, q};
 //   - model → lib; every other component → comp.<name>; imported:<field> (a field an imported world's translation carried) → that field;
-//   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, palette:<k> → assets,
-//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: sim, imported-epoch, about, bounds, spawn, imported-behavior:<k>.
+//   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, assets:<k> → assets,
+//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: physics-engine, imported-epoch, about, bounds, spawn, imported-behavior:<k>.
 import { dec } from "./names.js";
 import { qNorm, qHeading } from "../rot.js";
 
 export const idOut = (id) => dec(id) ?? id;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const HIDDEN_WORLD = new Set(["sim", "imported-epoch", "about", "bounds", "spawn"]);
+const HIDDEN_WORLD = new Set(["physics-engine", "imported-epoch", "about", "bounds", "spawn"]);
 const IMP = "imported:", IMP_BANS = "imported-bans:";
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
@@ -30,7 +30,7 @@ export function viewOf(id, c) {
   rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s[1];
   if (!(s[0] === s[1] && s[1] === s[2])) rec.scale3 = s.slice();
   const p = c.parent;
-  if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.slot === "string" ? { slot: p.slot } : {}), offset: rec.pos.slice(), q: qn.slice() };
+  if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.socket === "string" ? { socket: p.socket } : {}), offset: rec.pos.slice(), q: qn.slice() };
   for (const [k, v] of Object.entries(c)) {
     if (k === "model" || k === "transform" || k === "parent") continue;
     if (k.startsWith(IMP)) { rec[idOut(k.slice(IMP.length))] = clone(v); continue; }
@@ -52,7 +52,7 @@ export function viewState(v4st, { recentChat = [], chatTotal = 0 } = {}) {
         else if (k === "default-role") st.roles["*"] = clone(v);
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
         else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);
-        else if (k.startsWith("palette:")) st.assets.push(v && typeof v === "object" && Object.keys(v).length ? clone(v) : idOut(k.slice(8)));
+        else if (k.startsWith("assets:")) st.assets.push(v && typeof v === "object" && Object.keys(v).length ? clone(v) : idOut(k.slice("assets:".length)));
         else if (k.startsWith(IMP)) st[idOut(k.slice(IMP.length))] = clone(v);
       }
       continue;

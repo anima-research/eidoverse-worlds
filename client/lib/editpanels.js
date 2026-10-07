@@ -216,7 +216,7 @@ function hierarchyFields() {
     const badges = badgesFor(id);
     if (!entities.get(id)) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
-    const bpLink = world[id]?.comp?.blueprint;
+    const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
       lockable: V4.mayLift(),   // §5: only builders and owners lock and unlock
@@ -324,7 +324,7 @@ function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
-  const nudge = n === 2 && !rec.comp?.blueprint ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
+  const nudge = n === 2 && !rec.comp?.['copy-of'] ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
   // the door copies it, and what's attached to it: create {from: id}, one act
   V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
     const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
@@ -446,7 +446,7 @@ function pushCards(f, schema, id, { locked = false } = {}) {
 }
 
 /** The world entity in the Inspector: a header, then its Sky / Weather /
- *  Ground / Grass cards from shared/worldentity.js — edited through the sky,
+ *  Terrain / Grass cards from shared/worldentity.js — edited through the sky,
  *  weather, terrain and grass verbs (inspect.js commitEdit routes @world). */
 function worldFields() {
   const schema = schemaFor(WORLD_ID);
@@ -764,7 +764,7 @@ function removeMany(ids) {
 //               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
 //               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
 //   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
-//               defs/sky/_presets.json, Ground and Grass from defs/ground/_palette.json (the same
+//               defs/sky/_presets.json, Terrain and Grass from defs/ground/_palette.json (the same
 //               args groundpanel writes, shared/grounddefs.js), Weather. A pick replaces the
 //               current choice through the existing sky / terrain / grass / weather verbs, as one
 //               Ctrl+Z step. "World" selects @world: its every field, in the Inspector.
@@ -810,14 +810,14 @@ const blueprintFields = (pics) => [
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  door's publish (a person here, or an agent). */
 function savedFields(pics) { return savedFieldsV4(); }
-/** v4: this world's library is @world library:<hash> (the door's publish writes it); a copy is the door's
+/** v4: this world's blueprints are @world blueprints:<hash> (the door's publish writes them); a copy is the door's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the door's publish {from, name} on the selection. */
 function savedFieldsV4() {
-  const lib = V4.library(); const sel = selection();
+  const lib = V4.blueprints(); const sel = selection();
   return [
     { t: 'info', label: 'saved here', value: lib.length ? `${lib.length} blueprint${lib.length === 1 ? '' : 's'} in this world` : 'none yet — select something and save it' },
     { t: 'btn', k: 'bpsave', label: 'save as blueprint', icon: 'boxes', disabled: !sel.length,
-      hint: sel.length ? `save ${sel.length === 1 ? sel[0] : `these ${sel.length} things`} (and what's attached) to this world's library — the door's publish, the same request an agent sends` : 'select something first' },
+      hint: sel.length ? `save ${sel.length === 1 ? sel[0] : `these ${sel.length} things`} (and what's attached) as one of this world's blueprints — the door's publish, the same request an agent sends` : 'select something first' },
     ...(lib.length ? [{ t: 'tiles', k: 'bp', value: null, options: lib.map((b) => ({ v: b.hash, label: String(b.name ?? b.hash.slice(7, 15)), icon: 'boxes',
       hint: `${b.parts ?? '?'} part${b.parts === 1 ? '' : 's'} · ${b.hash.slice(0, 15)} — places a copy 1.5 m ahead of you` })) }] : []),
   ];

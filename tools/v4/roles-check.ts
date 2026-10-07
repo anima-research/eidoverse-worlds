@@ -56,7 +56,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["who reads custom ranks", "v4/door.js", "const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;", "const whoRank = (st, name) => ({ visitor: 0, builder: 100, moderator: 200, owner: 255 })[name] ?? 0;", ["S4"]],
   ["a who names a role here", "v4/door.js", "if (comp === \"grabbable\" && obj) whoOk(v.who, at);", "", ["S4"]],
   ["undo along rank", "v4/door.js", "if (!eo || me < them) refuse(\"rank\"", "if (!eo) refuse(\"rank\"", ["S5"]],
-  ["generate gates the palette", "v4/door.js", "  if (base === \"palette\") return \"generate\";", "  if (base === \"palette\") return \"build\";", ["S6"]],
+  ["generate gates the world's assets", "v4/door.js", "  if (base === \"assets\") return \"generate\";", "  if (base === \"assets\") return \"build\";", ["S6"]],
   ["default-role can opens generate to strangers", "v4/roles.js", "if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickSwitches(dr.can));", "", ["S6"]],
   ["a lock is lifted only by who may edit it", "v4/door.js", "const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: \"delete\", id: k, comp: \"lock\" });", "const mayUnlock = !who.cap;", ["S7"]],
   // S3
@@ -287,18 +287,18 @@ const cases: Case[] = [
       const a = s.call("mo", "create", { id: "m1", model: "crate", place: { at: [0, 0] } }); const b = s.call("bob", "create", { id: "b1", model: "crate", place: { at: [3, 0] } });
       return { bob: code(s.call("bob", "undo", { act: a.act ?? a.seq })), mo: show(s.call("mo", "undo", { act: b.act ?? b.seq })) }; },
     good: (o) => o.bob === "rank" && o.mo === "ok" },
-  { id: "S6", what: "generate is checked: a builder can't add to the palette; with can.generate they can; default-role can.generate opens it to strangers, not guests", run(s) { cast(s);
-      const pal = (who: string, k: string) => set(s, who, `palette:${k}`, { name: k, path: `store/${k}.glb` });
+  { id: "S6", what: "generate is checked: a builder can't add to the world's assets; with can.generate they can; default-role can.generate opens it to strangers, not guests", run(s) { cast(s);
+      const pal = (who: string, k: string) => set(s, who, `assets:${k}`, { name: k, path: `store/${k}.glb` });
       const b0 = pal("bob", "a"); role(s, "bob", { role: "builder", can: { generate: true } }); const b1 = pal("bob", "b");
       set(s, "olive", "default-role", { role: "builder", can: { generate: true }, guests: "builder" });
       return { b0: code(b0), b1: show(b1), zed: show(pal("zed", "c")), guest: code(pal("guest-2", "d")) }; },
     good: (o) => o.b0 === "rights" && o.b1 === "ok" && o.zed === "ok" && o.guest === "rights" },
-  { id: "S7", what: "a lock: acting through it needs the rights to lift it; bob's own cup on bea's locked table moves through_lock only while bob holds editOthers", run(s) { cast(s);
+  { id: "S7", what: "a lock: acting through it needs the rights to lift it; bob's own cup on bea's locked table moves throughLock only while bob holds editOthers", run(s) { cast(s);
       s.call("bea", "create", { id: "table", model: "table", place: { at: [0, 0] } }); set(s, "bea", "lock", true, "table");
       s.call("bob", "create", { id: "cup", model: "book", place: { on: "table" } });
-      const a = s.call("bob", "place", { id: "cup", on: "table", offset: [0.2, 0], through_lock: true });
+      const a = s.call("bob", "place", { id: "cup", on: "table", offset: [0.2, 0], throughLock: true });
       role(s, "bob", { role: "builder", can: { editOthers: false } });
-      const b = s.call("bob", "place", { id: "cup", on: "table", offset: [-0.2, 0], through_lock: true });
+      const b = s.call("bob", "place", { id: "cup", on: "table", offset: [-0.2, 0], throughLock: true });
       return { a: show(a), b: code(b), parent: s.w().state().entities.cup?.c.parent?.to }; },
     good: (o) => o.parent === "table" && o.a === "ok" && o.b === "locked" },
 
@@ -449,8 +449,8 @@ const cases: Case[] = [
       role(s, "nn", { role: "none" });
       return { say: code(s.call("nn", "say", { text: "hi" })), use: code(s.call("nn", "use", { id: "lamp", action: "on" })), look: show(s.call("nn", "look")), vicSay: show(s.call("vic", "say", { text: "hi" })), vicUse: show(s.call("vic", "use", { id: "lamp", action: "on" })) }; },
     good: (o) => o.say === "rights" && o.use === "rights" && o.look === "ok" && o.vicSay === "ok" && o.vicUse === "ok" },
-  { id: "F4", what: "an owner in a fresh world generates (the palette) and flies; fly can be granted per person (review: gen/fly came from v1 by name)", run(s) { cast(s);
-      return { pal: show(set(s, "olive", "palette:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.switches.includes("fly"), give: show(role(s, "vic", { role: "visitor", can: { fly: true } })), vic: eff(s, "vic")?.switches }; },
+  { id: "F4", what: "an owner in a fresh world generates (the world's assets) and flies; fly can be granted per person (review: gen/fly came from v1 by name)", run(s) { cast(s);
+      return { pal: show(set(s, "olive", "assets:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.switches.includes("fly"), give: show(role(s, "vic", { role: "visitor", can: { fly: true } })), vic: eff(s, "vic")?.switches }; },
     good: (o) => o.pal === "ok" && o.fly === true && o.give === "ok" && o.vic?.includes("fly") },
   { id: "F5", what: "the founder editing their own entry (a note) doesn't make them junior: a co-owner still can't demote them", run(s) { cast(s);
       role(s, "jun", { role: "owner" }); const note = set(s, "olive", "roles:olive", { role: "owner", note: "founder" });

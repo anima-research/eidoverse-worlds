@@ -1,6 +1,6 @@
 // shared/v4/refusal.js — how a door refusal reads, in one place, so a person in edit mode and an agent calling a tool
 // see the same words for the same refusal (PARITY: "refusals show the same text the agents get"). The door's reply is
-// {ok: false, refused: {code, reason, teach, …}}; `what` names the request ("place", "undo", "move crate-1").
+// {ok: false, refused: {code, reason, fix, …}}; `what` names the request ("place", "undo", "move crate-1").
 //
 // Names: an identity or id outside the §2.3 grammar ("Riannon", "Lamp") is stored escaped (x--5269…). These words are
 // read by people and by agents' tools (which take plain names), so an escaped name is read back as it is spelled. A
@@ -14,15 +14,15 @@ const readable = readable0;
 
 export function refusalText(what, reply) {
   const r = reply?.refused ?? {};
-  return readable(`${what} refused by the door (${r.code ?? "refused"}): ${r.reason ?? ""}${r.teach ? ` — ${r.teach}` : ""}`);
+  return readable(`${what} refused by the door (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }
 
 // ---- for people (ship list 10-07: "refusals shown to humans use tool syntax and hex ids") ----
-// A person reads what they tried and why, in words: no refusal code, no tool syntax (the door's teach is for agents and
+// A person reads what they tried and why, in words: no refusal code, no tool syntax (the door's fix is for agents and
 // is kept only when it's already plain words), and things named by their labels. `nameOf(id)` → how a person knows that
 // thing (its label, or what it is), or null when the word isn't a thing's id. An agent's tools keep refusalText, and the
 // client logs that too (the console), so nothing is lost for whoever wants the door's whole answer.
-const TOOLISH = /[{}[\]`]|=>|\w\s*\(|\b\w+:\s*['"\d[{tf]|through_lock|merge: true/;
+const TOOLISH = /[{}[\]`]|=>|\w\s*\(|\b\w+:\s*['"\d[{tf]|throughLock|merge: true/;
 /** Ids in a sentence → names a person knows (a dotted path "lamp.light.intensity" → "Lamp's light intensity"). */
 export function namedFor(text, nameOf = () => null) {
   return readable(String(text)).replace(/(?<![\w@-])([a-z0-9][a-z0-9-]{0,63})((?:\.[a-zA-Z][\w-]*(?::[\w-]+)?)*)(?![\w-])/g, (m, id, path) => {
@@ -32,14 +32,14 @@ export function namedFor(text, nameOf = () => null) {
 /** "Couldn't move the crate: …" — a refusal as a person reads it. */
 export function plainRefusal(what, reply, nameOf = () => null) {
   const r = reply?.refused ?? {};
-  const teach = typeof r.teach === "string" && r.teach && !TOOLISH.test(r.teach) ? r.teach : "";
+  const fix = typeof r.fix === "string" && r.fix && !TOOLISH.test(r.fix) ? r.fix : "";
   const reason = String(r.reason ?? "it wasn't allowed").replace(/\s*\(§[^)]*\)/g, "");
-  return namedFor(`Couldn't ${what}: ${reason}${teach ? `. ${teach.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
+  return namedFor(`Couldn't ${what}: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
 }
 
 // ---- the lock question (PROTOCOL-v4 §5; R's dialog, research 44 #1) ----
 // A lock refusal asks a person who may lift locks "This is locked. Move anyway?" with three answers. An agent gets the
-// same refusal text and the same two ways through in the door's teach (through_lock, or unlock first).
+// same refusal text and the same two ways through in the door's fix (throughLock, or unlock first).
 
 /** The verb a lock refusal asks about: what the request would do to the locked thing. */
 export function lockVerb(req) {
@@ -60,7 +60,7 @@ export function lockBody(r, id) {
   const who = by ? ` by ${readable(by)}` : "";
   return k && id && k !== id ? `It rides ${readable(k)}, which is locked${who}.` : `Locked${who}.`;
 }
-/** The three answers, in R's order. `through` re-sends with through_lock (one act, the lock stays on); `cancel` writes
+/** The three answers, in R's order. `through` re-sends with throughLock (one act, the lock stays on); `cancel` writes
  *  nothing and puts the thing back; `unlock` removes the lock and then does it (two acts; Ctrl+Z undoes the edit first). */
 export const lockChoices = (verb) => [
   { v: "through", label: `✓ ${verb} anyway` },

@@ -10,7 +10,7 @@
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
 //   X   Esc mid-drag: the thing goes back, and nothing is written (0 acts)
 //   L   a lock refusal (the cup rides a table someone else locked): the dialog offers Move anyway; it re-sends the
-//       SAME request with through_lock: the log has one act, the lock is still on
+//       SAME request with throughLock: the log has one act, the lock is still on
 //   D   duplicate (Alt+D) is create {from: <thing>}: one act
 //   M   deleting two selected things is ONE batch act
 //   S   Save as blueprint is the door's publish; its tile places a copy (create {from: <hash>})
@@ -179,7 +179,7 @@ try {
   check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides tbl, which is locked by bob.", body);
   check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
-  check("L4 Move anyway: ONE act, the same request with through_lock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.through_lock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
+  check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
   check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock === true, [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
 
@@ -211,7 +211,7 @@ try {
   n0 = myActs().length;
   await evalJson(`[...${bf}.querySelectorAll('.sp-btn')].find((b) => /save as blueprint/.test(b.textContent)).click(), true`);
   check("S1 it is the door's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
-  const lib = Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("library:"));
+  const lib = Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));
   check("S2 …this world's library has it (2 parts: the table and its cup)", !!lib && disk().entities["@world"].c[lib].parts === 2, lib && disk().entities["@world"].c[lib]);
   check("S3 …and its tile shows in 'saved here'", await waitFor(`[...${bf}.querySelectorAll('.sp-tile')].some((t) => t.textContent.trim() === 'tbl')`));
   n0 = myActs().length;
@@ -247,9 +247,9 @@ try {
   await drag(1);
   await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`);
   await dlgClick("Unlock");
-  check("K5 🔓 Unlock: TWO acts, the unlock and then the move (no through_lock)", await waitDisk(() => myActs().length === n0 + 2), myActs().slice(n0).map((a) => a.e.body.request));
+  check("K5 🔓 Unlock: TWO acts, the unlock and then the move (no throughLock)", await waitDisk(() => myActs().length === n0 + 2), myActs().slice(n0).map((a) => a.e.body.request));
   const [ul, mv] = myActs().slice(n0);
-  check("K6 …the first deletes the lock, the second moves it; it's unlocked and 1 m along", ul?.e.verb === "delete" && ul?.e.body.request.component === "lock" && mv?.e.verb === "set" && mv?.e.body.request.through_lock === undefined
+  check("K6 …the first deletes the lock, the second moves it; it's unlocked and 1 m along", ul?.e.verb === "delete" && ul?.e.body.request.component === "lock" && mv?.e.verb === "set" && mv?.e.body.request.throughLock === undefined
     && !("lock" in disk().entities[crate].c) && Math.abs(disk().entities[crate].c.transform.pos[0] - (kStart.pos[0] + 1)) < 1e-3, [ul?.e.body.request, mv?.e.body.request]);
   await waitFor(`globalThis.__v4edit().undo.at(-1) === ${mv?.seq}`);
   await key("KeyZ", { ctrlKey: true });
@@ -264,7 +264,7 @@ try {
   check("K9 Delete on a locked thing asks 'This is locked. Delete anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Delete anyway?'`), await evalJson(dlgTitle));
   check("K10 …its first choice says so", (await evalJson(dlgBtns))?.[0] === "✓ Delete anyway", await evalJson(dlgBtns));
   await dlgClick("Delete anyway");
-  check("K11 ✓ Delete anyway: ONE act, the delete with through_lock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "delete" && myActs().at(-1).e.body.request.through_lock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
+  check("K11 ✓ Delete anyway: ONE act, the delete with throughLock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "delete" && myActs().at(-1).e.body.request.throughLock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
   await waitFor(`globalThis.__v4edit().undo.at(-1) === ${myActs().at(-1).seq}`);
   await key("KeyZ", { ctrlKey: true });
   check("K12 Ctrl+Z brings it back, still locked", await waitDisk(() => !!disk().entities[crate] && disk().entities[crate].c.lock === true) && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`, 12000));
@@ -290,7 +290,7 @@ try {
   // on the plinth's top. The old code added a world point to a local offset and set it as the local position (so the
   // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
   { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
-    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ tool: "delete", args: { id } })), through_lock: true })).ok, roots);
+    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ tool: "delete", args: { id } })), throughLock: true })).ok, roots);
     // the view must hold still while the test aims (the body may still be settling, and the camera chases it)
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };

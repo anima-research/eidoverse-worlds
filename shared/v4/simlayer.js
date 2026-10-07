@@ -1,5 +1,5 @@
 // The sim layer (design 20, P4–P7): a second fold beside the blind one. It reads the log's change entries (through
-// fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.sim names.
+// fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.physics-engine names.
 // It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
 //
 // PROTOCOL-v4 L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
@@ -108,7 +108,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       const ops = opsSafe(e);
       const causeE = entries[e.cause];
       const isRest = isEntry(causeE) && causeE.kind === "sim";
-      const wasSpec = JSON.stringify(st.entities["@world"]?.c.sim ?? null);
+      const wasSpec = JSON.stringify(st.entities["@world"]?.c["physics-engine"] ?? null);
       if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
         const ids = [...new Set(ops.map((o) => o.id))];
         const after = applyOps(st, ops);
@@ -121,13 +121,13 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
           else { const mine = worldPose(after, id)?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p)) disagree({ seq, id, logged: mine, engine: b.p }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
         }
       } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)
-        const cut = ops.some((o) => o.id === "@world" && o.comp === "sim"); // an epoch cut may freeze it (P6, force)
+        const cut = ops.some((o) => o.id === "@world" && o.comp === "physics-engine"); // an epoch cut may freeze it (P6, force)
         for (const o of ops) { const l = out.launched[o.id]; if (!l) continue; const b = out.sim.bodies[o.id];
           if (b && !b.resting && !cut) disagree({ seq, id: o.id, why: `touches a body in flight (launch ${l.seq}); only its rest may (L6, 33 F1)` });
           else if (PHYSICAL.has(o.comp) && !(e.cause > l.seq)) disagree({ seq, id: o.id, why: `changes a body in flight, but its cause (${e.cause}) is not after the launch (${l.seq})` }); }
       }
       applyInPlace(st, ops, seq);
-      const spec = st.entities["@world"]?.c.sim ?? null;
+      const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The door makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {

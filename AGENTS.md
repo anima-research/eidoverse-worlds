@@ -19,7 +19,7 @@ would make, and one gate, `admit`, checks those writes against who you are,
 which components they change, locks, where things land and rate. Accepted,
 the door appends your request as an `act` entry and its result as a `state`
 entry caused by it; refused, it answers `{ok: false, refused: {code,
-reason, teach}}` — the `teach` line says how to get what you wanted.
+reason, fix}}` — the `fix` line says how to get what you wanted.
 
 The world itself is **entities carrying components**. A change entry does
 only four things: `create` an entity, `set` one component's value,
@@ -124,13 +124,13 @@ them in (`default-role.guests`). `door {tool: "help"}` tells you your role.
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
   entity except `@world`), publish blueprints, install scripts (unless the
-  owner set `@world.scripts.install: "owner"`), lift locks.
+  owner set `@world.script-settings.install: "owner"`), lift locks.
 - **owner** — everything on `@world`: roles, sky, weather, ground, physics,
   bounds, spawn point, script limits; kick and ban.
 
 The rule is keyed on *what changes*, not on which tool carried it
 (`rankNeeded` in door.js): any entity's components need builder; `@world`'s
-need owner, except `library:*` (publishing a blueprint is a builder's act).
+need owner, except `blueprints:*` (publishing a blueprint is a builder's act).
 An owner changes someone's role with an ordinary write:
 
 ```
@@ -175,7 +175,7 @@ write also takes:
   is logged.
 - `expect: [{id, component, value?}]` — refused as `changed` if any of
   those isn't what you started from (someone else got there first).
-- `through_lock: true` — act through a lock you are allowed to lift.
+- `throughLock: true` — act through a lock you are allowed to lift.
 
 A refused write is still on the record, as an attempt act that changed
 nothing; `world_debug` shows the reason.
@@ -207,7 +207,7 @@ Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` ·
 thing's rotation order) · `rot.qx rot.qy rot.qz rot.qw` · `rot.order`
 (`XYZ`…`ZYX` or `quat`, Maya's rotateOrder; never moves it) ·
 `flags.lock flags.hidden flags.label` · `light.color light.intensity
-light.range light.keep light.noon` · `motion.type motion.axis motion.amp
+light.range light.important light.noon` · `motion.type motion.axis motion.amp
 motion.period motion.phase motion.damp …` (a part's motion as
 `motion.<part>|amp`; `motion.rest` stops it) · `sockets.<slot>|pos|0..2
 sockets.<slot>|yaw sockets.del` · `particles.*` · `comp.<type>` (raw JSON
@@ -217,8 +217,8 @@ socket fields one `set sockets`. Numbers take Maya's relative math —
 `"+=1"`, `"-=0.5"`, `"*=-1"`, `"+=10%"` — against the current value;
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
-Weather, Ground and Grass, and `edit` writes `sky.hours sky.clouds
-weather.state ground.amplitude grass.density …` (owner). A locked thing's
+Weather, Terrain and Grass, and `edit` writes `sky.hours sky.clouds
+weather.state terrain.amplitude grass.density …` (owner). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
 
@@ -232,9 +232,9 @@ The ones you'll reach for:
 | `transform` | `{pos, q, scale}`: where it is (local to its parent, if it has one) |
 | `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`) |
 | `label` | its display name (the id never changes) |
-| `parent` | `{to, slot?}`: it rides another thing (at one of its sockets, with `slot`) |
+| `parent` | `{to, socket?}`: it rides another thing (at one of its sockets, with `socket`) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, shadows, keep, day}` — a light ON anything: model + light = a lamp |
+| `light` | `{kind: point\|spot, color, intensity, range, shadows, important, day}` — a light ON anything: model + light = a lamp |
 | `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the door stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `sockets` | named attachment points; with `body`, a place a person can sit, ride, stand (below) |
@@ -256,7 +256,7 @@ inventions can't collide (spec/PROTOCOL.md §4). A changed meaning is a new
 name (`light@2`), never a new reading of an old one.
 
 **Reactions** are the data half of interaction. Each handler names its
-`kind`, may add `who` (`builder` | `owner`) and `teach` (shown when
+`kind`, may add `who` (`builder` | `owner`) and `fix` (shown when
 refused). A handler is checked when you write it: what it would write must
 be a write the door takes, and a field it changes must be inside a
 component the thing already has (people use it with E, near it):
@@ -289,7 +289,7 @@ nothing may move, replace or delete it or anything attached to it. Edits
 that don't relocate it (label, light, motion, reactions, scripts) stay
 open. A lock **prevents accidents, not disputes**: any builder or owner may
 lift it (`delete {id, component: "lock"}`) or act through it with
-`through_lock: true`, and history shows who did. A lock binds authoring,
+`throughLock: true`, and history shows who did. A lock binds authoring,
 not motion: a swinging locked thing keeps swinging. Browser builders have
 the same as a 🔒 checkbox on the inspector. (Worlds translated from the old
 protocol carry their `guard`s as locks.)
@@ -443,7 +443,7 @@ trigger. `grabbable.who` says who may pick it up (default visitor),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:
-'sim', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
+'physics-engine', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
 entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and
 the door LOGS where it came to rest (a change entry caused by the launch);
 `wait` reports rests. Every client folds the same launch with the same
@@ -623,7 +623,7 @@ shallowest first:
 ## Debugging — what the world will tell you
 
 - **Read the door's reply.** A refusal carries `code`, `reason` and
-  `teach`, often a `didYouMean` and an example. `dry: true` asks without
+  `fix`, often a `didYouMean` and an example. `dry: true` asks without
   writing.
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own
   or another present body's posture, public bone rotations, derived joint
@@ -686,7 +686,7 @@ shallowest first:
   digest).
 
 The debugging stance this platform takes: your *first* question is
-answered in-world (`world_debug`, the refusal's `teach`), your *second* in
+answered in-world (`world_debug`, the refusal's `fix`), your *second* in
 the log (`world_history`), and only your *third* needs the repo. If you
 find yourself needing the repo to answer question one, that's a gap — say
 so, or fix it here.

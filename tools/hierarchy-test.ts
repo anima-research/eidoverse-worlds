@@ -95,15 +95,15 @@ console.log('cycle refusal');
   check('the door refuses a looped parent (`loop`) and the table stays a root', r.ok === false && r.refused?.code === 'loop' && !D.rec('table').parent, JSON.stringify(r));
   const ok = D.send(parentOps(W, 'bulb', 'table').ops[0]);
   check('…and takes an honest one (bulb onto table, through parentOps)', ok.ok && D.rec('bulb').parent?.to === 'table', JSON.stringify(ok.refused));
-  // a lock: the planner lets the door ask (no planner error); the door refuses the move, and through_lock answers it
+  // a lock: the planner lets the door ask (no planner error); the door refuses the move, and throughLock answers it
   D.call('set', { id: 'lamp', component: 'lock', value: true });
   const LW = D.view().entities;
   const lp = parentOps(LW, 'lamp', null);
   check('a locked thing: parentOps plans the unparent (the door is the one to ask)', lp.errors.length === 0 && lp.ops.length === 1, JSON.stringify(lp));
   const lr = D.send(lp.ops[0]);
   check('…and the door refuses it `locked`; lamp still under table', lr.ok === false && lr.refused?.code === 'locked' && D.rec('lamp').parent?.to === 'table', JSON.stringify(lr));
-  const lt = D.send(lp.ops[0], { through_lock: true });
-  check('…through_lock unparents it, in place', lt.ok && !D.rec('lamp').parent && near(D.rec('lamp').pos, [0, 1, 0], 1e-3), JSON.stringify([lt.refused, D.rec('lamp')]));
+  const lt = D.send(lp.ops[0], { throughLock: true });
+  check('…throughLock unparents it, in place', lt.ok && !D.rec('lamp').parent && near(D.rec('lamp').pos, [0, 1, 0], 1e-3), JSON.stringify([lt.refused, D.rec('lamp')]));
 }
 
 // ---------------------------------------------------------------- 3. local ⇄ world
@@ -193,7 +193,7 @@ function threeWorld(W: any, id: string) {
   check('an id that needs escaping is encoded once in the parent target', flat(parentOps({ Box: W.box, ball: W.ball }, 'ball', 'Box').ops)[0].args.value.to === enc('Box'));
   const L = localOf({ ...W.ball, parent: { to: 'box', yaw: 0.5 } }, W);
   check('localOf a yaw-only mount: q null, yaw the relative turn', L.q === null && L.yaw === 0.5 && L.mounted);
-  const S = localOf({ ...W.ball, parent: { to: 'chair', slot: 'seat' } }, { ...W, chair: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } } });
+  const S = localOf({ ...W.ball, parent: { to: 'chair', socket: 'seat' } }, { ...W, chair: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, 0.5, 0], yaw: 3 } } } } });
   check('localOf a socket mount: the socket\'s pos and yaw', near(S.pos, [0, 0.5, 0], 0) && S.yaw === 3);
 }
 
@@ -235,7 +235,7 @@ console.log("a child's channel box: local, and an edit writes one local transfor
   const e5 = editOps(W.lamp, 'lamp', { 'pos.x': 11 }, { world: W });
   check('a root writes its world transform', flat(e5.ops).length === 1 && tfOf(e5).pos[0] === 11 && tfOf(e5).pos[2] === 10);
   // a part-socket rider: read-only, says why
-  const ride: any = { cart: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } }, box: { lib: LIB, pos: [0, 0, 0], parent: { to: 'cart', slot: 'deck' } } };
+  const ride: any = { cart: { lib: LIB, pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } }, box: { lib: LIB, pos: [0, 0, 0], parent: { to: 'cart', socket: 'deck' } } };
   const e6 = editOps(ride.box, 'box', { 'pos.x': 1 }, { world: ride });
   check('a rider of a moving part: translate refused with the reason', e6.ops.length === 0 && /moving part plank/.test(e6.errors.join()));
 }

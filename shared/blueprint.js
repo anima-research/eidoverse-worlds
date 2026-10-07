@@ -540,7 +540,7 @@ export function localComponents(world, ent) {
     if (c.type !== 'Transform') return c;
     const { pos: _p, q: _q, yaw: _y, ...rest } = c.params;
     const tf = { ...rest };
-    const sock = !Array.isArray(rel.offset) && rel.slot ? socketOf(world, rel) : null;
+    const sock = !Array.isArray(rel.offset) && rel.socket ? socketOf(world, rel) : null;
     if (Array.isArray(rel.offset)) tf.pos = rel.offset;
     else if (Array.isArray(sock?.pos)) tf.pos = sock.pos;
     if (rel.q !== undefined) tf.q = rel.q;

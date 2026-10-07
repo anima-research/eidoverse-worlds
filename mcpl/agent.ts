@@ -1224,7 +1224,7 @@ export class WorldAgent {
    *  this.entities/this.mounts outside the sim stamp. Fresh objects each
    *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
   /** The FOLDED record for a placed thing — every field the fold keeps
-   *  (a light's colour/intensity/range/keep/day, a model's collide), which
+   *  (a light's colour/intensity/range/important/day, a model's collide), which
    *  the perception view above deliberately thins. The inspector tools read
    *  this; `parent` is attached from the mount view so the shape matches
    *  what shared/editschema.js expects. */
@@ -1241,19 +1241,19 @@ export class WorldAgent {
   blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
     return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
-  /** This world's blueprint library from the v4 fold: @world library:<hash> → {name, parts?} (the door's publish). */
-  /** a placed copy (or one of its parts) says which blueprint it is: the door stamps blueprint {from, key} on every
+  /** This world's blueprints from the v4 fold: @world blueprints:<hash> → {name, parts?} (the door's publish). */
+  /** a placed copy (or one of its parts) says which blueprint it is: the door stamps copy-of {from, key} on every
    *  part; the copy is the part whose parent isn't of the same copy */
   copyLineV4(id: string): string | null {
-    const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.blueprint?.from; if (typeof f !== "string") return null;
-    const name = this.v4Library()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
-    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.comp?.blueprint?.from !== f) break; root = p; }
-    return root === id ? `a copy of "${name}"` : `part "${E[id].comp.blueprint.key}" of ${root} (a copy of "${name}")`;
+    const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.["copy-of"]?.from; if (typeof f !== "string") return null;
+    const name = this.worldBlueprints()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
+    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.comp?.["copy-of"]?.from !== f) break; root = p; }
+    return root === id ? `a copy of "${name}"` : `part "${E[id].comp["copy-of"].key}" of ${root} (a copy of "${name}")`;
   }
-  v4Library(): Record<string, { name?: string }> {
+  worldBlueprints(): Record<string, { name?: string }> {
     const w = this.v4c?.st?.entities?.["@world"]?.c ?? {};
     const out: Record<string, { name?: string }> = {};
-    for (const [k, v] of Object.entries(w)) if (k.startsWith("library:")) out[k.slice(8)] = (v ?? {}) as { name?: string };
+    for (const [k, v] of Object.entries(w)) if (k.startsWith("blueprints:")) out[k.slice("blueprints:".length)] = (v ?? {}) as { name?: string };
     return out;
   }
   foldRecord(id: string): Record<string, unknown> | null {
@@ -1285,7 +1285,7 @@ export class WorldAgent {
     this.mounts.clear();
     for (const [id, e] of Object.entries(this.st.entities)) {
       const p = (e as any).parent;
-      if (p) this.mounts.set(id, { to: p.to, slot: p.slot,
+      if (p) this.mounts.set(id, { to: p.to, slot: p.socket,   // the mount view keeps presence's word (a seat's slot)
         ...(p.offset != null ? { offset: p.offset } : {}),
         ...(p.yaw != null ? { yaw: p.yaw } : {}),
         ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
@@ -1711,7 +1711,7 @@ export class WorldAgent {
   private tick() {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
-    // The world's physics (@world.sim): stamp where each flying thing IS into the entity view — the same engine state
+    // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
     // every renderer draws (shared/v4/client.js simAt, advanced to the door's clock) — so look() sees a punted crate
     // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
     const sim = this.v4c?.simAt?.(this.serverNow());
@@ -2516,7 +2516,7 @@ export class WorldAgent {
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
   /** One request to the world's door, answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
-   *  teach}}. */
+   *  fix}}. */
   door(tool: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     const id = `v${++this.histId}`;
@@ -2530,7 +2530,7 @@ export class WorldAgent {
   v4ids = new Map<string, string>();
   /** A gesture's door ops (shared/v4/ops.js) as ONE request — one act, the door's answer — sent after the previous one
    *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
-   *  (dry, expect, through_lock). The same requests a person's edit sends: one vocabulary, both audiences. */
+   *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
     const req: any = OP.batch(ops);
     if (!req) return { ok: true, noop: true };
@@ -3141,7 +3141,7 @@ export class WorldAgent {
       // brightness, reach — read off the FOLDED record (the perception view
       // above thins a light's fields away) through the one shared reading.
       const lit = lightOf((this.st.entities as Record<string, any>)[e.id]);
-      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.keep ? ", kept lit" : ""}${lit.day ? "" : ", burns at noon"}`);
+      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.day ? "" : ", burns at noon"}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
@@ -3178,11 +3178,11 @@ export class WorldAgent {
       // on the same entity say the words.
       // locked = nailed down: the door refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
-      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with through_lock: true)`);
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with throughLock: true)`);
       if (c.hidden === true) aff.push(`hidden (not drawn; door {tool: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
-      const copy = c.blueprint ? this.copyLineV4(e.id) : null;
+      const copy = c["copy-of"] ? this.copyLineV4(e.id) : null;
       if (copy) aff.push(copy);
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the

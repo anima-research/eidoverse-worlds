@@ -104,9 +104,9 @@ const DEFS = [
     fallback: { text: '(none)' }, note: 'wire: comp.collider {shape} (written by comp), or the spawn verb\'s legacy `collide`; comp.collider wins when both are present. Absent = the browser decides by size' },
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: { color: { t: 'color', default: 0xffd9a0 }, intensity: { t: 'num', default: 16, min: 0, softMax: 64, step: 1 }, range: { t: 'num', unit: 'm', default: 10, min: 1, softMax: 40, step: 1 },
-      keep: { t: 'bool', default: false, hint: 'first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
+      important: { t: 'bool', default: false, hint: 'always casts: first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, keep, day} on any entity (a lamp is a Model and a Light), or the light verb\'s legacy kind:"light" entity; the legacy spelling wins when both are present' },
+    note: 'wire: comp.light {color, intensity, range, important, day} on any entity (a lamp is a Model and a Light), or the light verb\'s legacy kind:"light" entity; the legacy spelling wins when both are present' },
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
     params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 3.5, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 1.1, hint: 'cap on a push (server reaction only), radians' } },
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
@@ -201,7 +201,7 @@ const DEFS = [
     params: { weather: { t: 'choice', options: [...WEATHERS], default: null },
       weatherK: { t: 'num', default: 1 }, weatherSeconds: { t: 'num', unit: 's', default: null }, forecast: { t: 'json', default: null }, override: { t: 'json', default: null, hint: 'a manual weather inside a forecast segment (stamped by the fold)' } },
     fallback: { text: 'weather <state>' }, note: 'wire: the weather verb (merges onto state.sky), and the sky verb\'s forecast policy' },
-  { name: 'Ground', category: 'World', world: true, summary: 'the terrain: its shape, size and colour',
+  { name: 'Terrain', category: 'World', world: true, summary: 'the terrain: its shape, size and colour',
     params: { seed: { t: 'num', default: 7 }, size: { t: 'num', unit: 'm', default: 160 }, segments: { t: 'num', default: 200 }, amplitude: { t: 'num', unit: 'm', default: 0 },
       flatRadius: { t: 'num', unit: 'm', default: 16 }, layers: { t: 'json', default: [] } },
     fallback: { text: 'the ground' }, note: 'wire: the terrain verb, folded wholesale into state.terrain' },
@@ -258,7 +258,7 @@ const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // wire names (Light's `day: false` is the record's burnsAtNoon, as on the legacy
 // spelling); a `day` other than false is kept verbatim in `wire`, and keys the
 // record has no param for ride `extra.unknown`, so the bytes always come back.
-const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', keep: 'keep' }, Collider: { shape: 'shape' } };
+const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', important: 'important' }, Collider: { shape: 'shape' } };
 function compInstance(type, key, data) {
   const params = {}; const extra = {}; let wire;
   for (const [k, v] of Object.entries(data)) {
@@ -295,7 +295,7 @@ export function componentsOf(ent) {
   out.push({ type: 'Transform', params: tf });
   if (ent.kind === 'light') {
     const p = pick(ent, ['color', 'intensity', 'range']);
-    if (ent.keep !== undefined) p.keep = ent.keep;
+    if (ent.keep !== undefined) p.important = ent.keep;   // the legacy kind:"light" entity's own spelling
     if (ent.day === false) p.burnsAtNoon = true;
     // the fold stores `day` only as false; any other stored value is kept as-is
     out.push({ type: 'Light', params: p, ...(ent.day !== undefined && ent.day !== false ? { wire: { day: ent.day } } : {}) });
@@ -375,7 +375,7 @@ export function entityOf({ components, stamps = {} }) {
         if (inst.key != null) { comp[inst.key] = compBag(inst); break; }
         ent.kind = 'light';
         Object.assign(ent, pick(p, ['color', 'intensity', 'range']));
-        if (p.keep !== undefined) ent.keep = p.keep;
+        if (p.important !== undefined) ent.keep = p.important;   // the legacy entity's spelling
         if (p.burnsAtNoon === true) ent.day = false;
         else if (inst.wire?.day !== undefined) ent.day = inst.wire.day;
         break;
@@ -470,7 +470,7 @@ export function lightOf(ent) {
     color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
     intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : LIGHT_DEFAULTS.intensity,
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
-    keep: src.keep === true,
+    important: (legacy ? src.keep : src.important) === true,
     day: src.day !== false,
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
     // a point light is the default and says nothing more; a spot adds its kind and cone
@@ -501,11 +501,11 @@ export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
   if (type === 'light') {
     if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
-    if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, keep?, day?}';
+    if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';
     if (data.range !== undefined && !(finite(data.range) && data.range > 0)) return 'light range is a number of metres > 0';
-    if (data.keep !== undefined && typeof data.keep !== 'boolean') return 'light keep is true or false';
+    if (data.important !== undefined && typeof data.important !== 'boolean') return 'light important is true or false';
     if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon)';
     return null;
   }

@@ -58,7 +58,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   // client's own fold reaches (hydrate the cut's view, then applyView after every door write)
   const W = scratchWorld('compwire3');
   W.seed({
-    pivot: { pos: [1, 2, 3], yaw: 0.5, comp: { light: { keep: true, intensity: 30 } } },
+    pivot: { pos: [1, 2, 3], yaw: 0.5, comp: { light: { important: true, intensity: 30 } } },
     lamp: { lib: LAMP, pos: [2, 0, 0], comp: { light: { color: 0xff8800, range: 7, day: false }, collider: { shape: 'box' } } },
     crate: { lib: 'eidoverse/assets/models/crate.glb', pos: [4, 0, 0], comp: { collider: { shape: 'box' } } },
     plain: { lib: 'eidoverse/assets/models/plain.glb', pos: [6, 0, 0] },
@@ -106,7 +106,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
 
   // live
   live('set', { id: 'pivot', component: 'light', value: { intensity: 2, color: 0x00ff00 } });
-  check('live: a changed light component updates the request in place (keep cleared, colour, intensity)', rq('pivot')?.intensity === 2 && rq('pivot').keep === false && rq('pivot').color === 0x00ff00 && rq('pivot').obj === piv, JSON.stringify({ ...rq('pivot'), obj: !!rq('pivot')?.obj }));
+  check('live: a changed light component updates the request in place (important cleared, colour, intensity)', rq('pivot')?.intensity === 2 && rq('pivot').keep === false && rq('pivot').color === 0x00ff00 && rq('pivot').obj === piv, JSON.stringify({ ...rq('pivot'), obj: !!rq('pivot')?.obj }));
   live('set', at('pivot', [5, 5, 5]));
   check('live: moving the Empty moves its Group (and the request rides it)', jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [5, 5, 5]) && rq('pivot')?.obj === piv, JSON.stringify(piv.position));
   live('set', at('farlamp', [700, 0, 0]));
@@ -168,14 +168,14 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
     return bad; };
   const card = (ent: any, type: string, key: string | null = null) => inspectSchema(ent, 'x').sections.list.find((c: any) => c.type === type && c.key === key);
 
-  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, keep: true } }, actor: 'a', ts: 1 };
+  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, important: true } }, actor: 'a', ts: 1 };
   const lsch = inspectSchema(lamp, 'x');
   check('a light component shows in the light group (light.* addresses), valued from its bag',
-    fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.keep')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
-  const le = door(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' });
-  check('…editing it writes ONE set light, merged into the bag, keep/day stored only when not default',
+    fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.important')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
+  const le = door(lamp, { 'light.intensity': 24, 'light.important': false, 'light.noon': true, 'light.color': '#00ff00' });
+  check('…editing it writes ONE set light, merged into the bag, important/day stored only when not default',
     opsOf(le.r) === JSON.stringify([{ tool: 'set', args: { id: 'x', component: 'light', value: { color: 0x00ff00, intensity: 24, day: false } } }]), opsOf(le.r));
-  check('…and through the door the lamp is lit that way (keep cleared, burns at noon)', le.res.ok && le.after.comp.light.color === 0x00ff00 && le.after.comp.light.intensity === 24 && le.after.comp.light.day === false && !le.after.comp.light.keep, JSON.stringify([le.res.refused, le.after.comp]));
+  check('…and through the door the lamp is lit that way (important cleared, burns at noon)', le.res.ok && le.after.comp.light.color === 0x00ff00 && le.after.comp.light.intensity === 24 && le.after.comp.light.day === false && !le.after.comp.light.important, JSON.stringify([le.res.refused, le.after.comp]));
   // a lamp translated from v1 can carry a key the v4 door's light schema doesn't know (v1 accepted unknown keys; the
   // translator keeps them). The planner keeps it in the bag (it never drops what it doesn't understand)…
   const odd = { ...lamp, comp: { light: { ...lamp.comp.light, flicker: 1 } } };
@@ -187,10 +187,10 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   { const { translate } = await import('./v4/import-v1/translate-v1.js'); const { v1FoldBuild } = await import('./v4/import-v1/build.ts');
     const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
-    // the translator now carries a key the v4 component doesn't define BESIDE it (legacy:light {flicker}), so the lamp
+    // the translator now carries a key the v4 component doesn't define BESIDE it (imported:light {flicker}), so the lamp
     // itself is an ordinary v4 lamp: the planner's edit of it goes through the closed door
     const tx = tr.final.v4.x;
-    check('…(a v1 lamp with flicker translates with flicker carried as legacy:light {flicker}, not inside light)', tx?.['legacy:light']?.flicker === 1 && !('flicker' in (tx?.light ?? {})), JSON.stringify(tx));
+    check('…(a v1 lamp with flicker translates with flicker carried as imported:light {flicker}, not inside light)', tx?.['imported:light']?.flicker === 1 && !('flicker' in (tx?.light ?? {})), JSON.stringify(tx));
     const tlamp = { ...lamp, comp: { ...lamp.comp, light: tx.light } };
     const W = scratchWorld('compwire').seed({ x: tlamp });
     const sent = W.sendAll(ed(tlamp, { 'light.intensity': 24 }).ops);

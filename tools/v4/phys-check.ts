@@ -26,7 +26,7 @@ const ENG = { engine: "eidosim@0.5.0" };
 function playground(name) {
   fresh(name);
   call(name, "rowan", "new", { title: name });
-  call(name, "rowan", "set", { id: "@world", component: "sim", value: ENG });
+  call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call(name, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "builder" } }, place: { at: [2, 0] } });
@@ -98,16 +98,16 @@ function playground(name) {
 {
   const W = playground("pc-d");
   call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 6, 0] });
-  const busy = call(W, "rowan", "delete", { id: "@world", component: "sim" }, 200);
+  const busy = call(W, "rowan", "delete", { id: "@world", component: "physics-engine" }, 200);
   ok(!busy.ok && busy.refused.code === "busy" && /about [\d.]+ s/.test(busy.refused.reason), "D cut refused while in flight, with an ETA", busy.refused);
-  const forced = call(W, "rowan", "delete", { id: "@world", component: "sim", force: true }, 50);
+  const forced = call(W, "rowan", "delete", { id: "@world", component: "physics-engine", force: true }, 50);
   ok(forced.ok && forced.warnings?.some((x) => x.kind === "floating" && x.id === "ball"), "D forced cut freezes it mid-air, and says it floats", forced);
   const v = view(W); ok(!v.sim, "D no epoch after the cut");
   const after = call(W, "rowan", "look", {}, 3000).things.find((x) => x.id === "ball");
   ok(!after.moving && after.at[1] > 0.5, "D frozen where it was: logged as a plain result", after);
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
-  const calm = call(W2, "rowan", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);
+  const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);
   ok(calm.ok && !calm.notes?.some((n) => n.frozen), "D at rest, the cut is free (nothing to freeze)", calm);
 }
 
@@ -190,7 +190,7 @@ function playground(name) {
 // K — a foreign engine: this server can't run it, so nothing flies; the world is still fully readable.
 {
   const W = fresh("pc-k"); call(W, "rowan", "new", { title: W });
-  const s = call(W, "rowan", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.5.0", build: "deadbeefdeadbeef" } });
+  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", build: "deadbeefdeadbeef" } });
   ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a foreign build is accepted with a note", s);
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, 0.5] }); call(W, "rowan", "grab", { id: "ball" });
@@ -203,7 +203,7 @@ function playground(name) {
 {
   const ghost = fresh("pc-l-none");
   const said = call(ghost, "sage", "say", { text: "hello?" });
-  ok(!said.ok && said.refused.code === "no-world" && /new \{title/.test(said.refused.teach), "L a world that doesn't exist refuses everything but new/help, and teaches new", said.refused);
+  ok(!said.ok && said.refused.code === "no-world" && /new \{title/.test(said.refused.fix), "L a world that doesn't exist refuses everything but new/help, and teaches new", said.refused);
   ok(!fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L …and nothing was written");
   const dry = call(ghost, "sage", "new", { title: "x", dry: true }); ok(dry.ok && dry.dry && !fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L new honours dry", dry);
   const W = playground("pc-l");

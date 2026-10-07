@@ -4,7 +4,7 @@
 // the door's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/v4/refusal.js).
 //
 //   send(req, opts)        one request; on a `locked` refusal by someone who may lift the lock, a centre dialog offers
-//                          "Move anyway", which re-sends the SAME request with through_lock: true (§5: the log records
+//                          "Move anyway", which re-sends the SAME request with throughLock: true (§5: the log records
 //                          only the edit; the lock stays on). A refusal reverts the local preview.
 //   sendOps(ops, opts)     an edit's door ops (shared/v4/ops.js, planned by editschema.js, build.js…) as ONE request (a
 //                          single tool, or a batch): one edit is one act, so one Ctrl+Z.
@@ -101,19 +101,19 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
   bus.emit('v4-sending', { req, what });
   let r = await requestV4(req.tool, req.args);
   // A lock (§5, R's dialog): someone who may lift it is asked "This is locked. Move anyway?" —
-  //   ✓ through: the SAME request with through_lock: one act, the lock stays on;
+  //   ✓ through: the SAME request with throughLock: one act, the lock stays on;
   //   ✕ cancel:  nothing is written, and the thing goes back (revert);
   //   🔓 unlock: delete the lock, then the request as it was: two acts on my stack, so Ctrl+Z undoes the edit first.
   //     Undo and redo aren't offered it: their act isn't mine to stack under an unlock (Ctrl+Z would then undo the unlock).
   // A visitor (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
   let cancelled = false;
-  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && req.args?.through_lock !== true && mayLift(); round++) {
+  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && req.args?.throughLock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
     console.info('[v4edit] lock:', refusalText(what, r));
     const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });   // a DOM card isn't drawn in a headset (xrask.js)
     bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
-    if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, through_lock: true }); break; }
+    if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, throughLock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }
     const k = r.refused.lock;
     const u = await requestV4('delete', { id: k, component: 'lock' });
@@ -193,14 +193,14 @@ export function publish(ids, name) {
   const from = ids.length === 1 ? idIn(ids[0]) : ids.map(idIn);
   return send({ tool: 'publish', args: { from, ...(name ? { name } : {}) } }, { what: `save ${ids.length === 1 ? ids[0] : `${ids.length} things`} as a blueprint` });
 }
-/** Place a copy of a blueprint in this world's library: create {from: hash, at}. */
+/** Place a copy of one of this world's blueprints: create {from: hash, at}. */
 export function copyBlueprint(hash, at) {
   return send({ tool: 'create', args: { from: hash, ...(at ? { at } : {}) } }, { what: 'place a copy' });
 }
-/** This world's library, read from the v4 fold (@world library:<hash> → {name, parts}). */
-export function library() {
+/** This world's blueprints, read from the v4 fold (@world blueprints:<hash> → {name, parts}). */
+export function blueprints() {
   const c = v4.st?.entities?.['@world']?.c ?? {};
-  return Object.keys(c).filter((k) => k.startsWith('library:')).map((k) => ({ hash: `sha256:${k.slice(8)}`, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) }));
+  return Object.keys(c).filter((k) => k.startsWith('blueprints:')).map((k) => ({ hash: `sha256:${k.slice('blueprints:'.length)}`, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) }));
 }
 /** Is this thing (or anything it rides) locked, as the door reads it (truthy, a purged value isn't)? */
 export function lockedBy(id) {

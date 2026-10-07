@@ -42,7 +42,7 @@ const near = (a, b, e = 1e-9) => Array.isArray(a) && Array.isArray(b) && a.every
 function playground(clock = "pinned") {
   const x = live(clock); const { call } = x;
   call("rowan", "new", { title: "pg" });
-  call("rowan", "set", { id: "@world", component: "sim", value: ENG });
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call("rowan", "move", { to: [0, 0, -0.5] });
@@ -81,7 +81,7 @@ function playground(clock = "pinned") {
   y.call("rowan", "create", { id: "crate-1", model: "crate", place: { at: [3, 3] } });
   y.call("rowan", "create", { id: "wall-1", model: "wall", place: { at: [0, 2] } });
   y.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
-  y.call("rowan", "set", { id: "@world", component: "sim", value: ENG });
+  y.call("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const st = y.w.state().entities;
   ok(st["crate-1"].c.physics?.kind === "static" && st["crate-1"].c.physics.shape && st.ball.c.physics.shape, "S10 turning physics on stamps every standing thing (statics static)", [st["crate-1"].c.physics, st.ball.c.physics]);
   // a static is a collider: thrown at the wall, the ball bounces back (doesn't pass through to the far side)

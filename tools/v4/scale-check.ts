@@ -16,7 +16,7 @@
 //   Q   the gates in front of the work: a visitor's place on a 1000× table is refused at once; a search that can't end
 //       inside the work budget is refused (too-costly); check {} on a heap likewise, while a write into it still lands;
 //       reads per connection (server/v4/readmeter.ts); settling orphaned holds at load is bounded
-//   C   capacity: @world.capacity.things (and its default), and guests together (capacity.guests)
+//   C   capacity: @world.capacity.things (and its default), and guests together (capacity.guestThings)
 //   I   indoors: a refused move is never logged; a house measured from its triangles can be walked into through its door
 //       (not through a wall) and things put down inside; a closed box stays solid; real library GLBs
 //   R   re-entrancy: a request nested in another (leave → drop, or a host's callback) leaves the outer call's state alone
@@ -61,7 +61,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["a write's warnings never refuse it", "shared/v4/door.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
   ["look walks the children map", "shared/v4/door.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
   ["capacity.things", "shared/v4/door.js", "if (after > before && after > cap.things) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
-  ["capacity.guests, all guests together", "shared/v4/door.js", "if (g + made > cap.guests) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
+  ["capacity.guestThings, all guests together", "shared/v4/door.js", "if (g + made > cap.guestThings) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
   ["a refused move is never logged", "shared/v4/door.js", "    if (tool === \"move\") return;", "    if (tool === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
   ["solids: an enclosed cell is solid", "server/v4/solids.ts", "const solid = (c: number) => occ[c] === 1 || out[c] === 0;", "const solid = (c: number) => occ[c] === 1;", ["I3"]],
   ["solids: cells merge only where their bounds line up", "server/v4/solids.ts", "while (i1 + 1 < nx && free(i1 + 1, j, k) && same(idx(i1 + 1, j, k), s0, 1) && same(idx(i1 + 1, j, k), s0, 2)) i1++;", "while (i1 + 1 < nx && free(i1 + 1, j, k)) i1++;", ["I2"]],
@@ -284,11 +284,11 @@ const cases: Case[] = [
       const builder = s.call("bob", "set", { id: "@world", component: "capacity", value: { things: 3000 } }, 20000);
       return { fill: show(f), over: code(over), raise: code(raise), now: code(now), tooHigh: code(tooHigh), builder: code(builder) }; },
     good: (o) => o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
-  { id: "C3", what: "guests together have at most capacity.guests things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
+  { id: "C3", what: "guests together have at most capacity.guestThings things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
       s.call("olive", "new", { title: "guests" });
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
-      s.call("olive", "set", { id: "@world", component: "capacity", value: { guests: 5 } });
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { guestThings: 5 } });
       const r = [];
       for (const [who, n] of [["g1", 3], ["g2", 2]]) for (let i = 0; i < n; i++) r.push(code(s.call(who, "create", { id: `${who}-${i}`, model: "crate", components: { transform: T0([i, 0, who === "g1" ? 0 : 2]) } }, 2000)));
       const g3 = s.call("g3", "create", { id: "g3-0", model: "crate" }, 2000);
@@ -470,12 +470,17 @@ async function realGlbs() {
   return { solids: te.solids?.length ?? 0, inTower, outWall, container };
 }
 
+// reply keys the names pass renamed (PROPOSAL-conventional-names-2026-10-07): base spelling → today's
+const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate" };
 async function sameAsBase() {
   const d = scratch("sbase"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server package.json | tar -x -C ${d}`], { cwd: ENGINE });
   if (r0.exitCode !== 0) return { error: String(r0.stderr) }; fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const run = (tree: string) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/v4/scale-check.ts"), "--tree", tree, "--scenario"], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };
-  const a = run(TREE), b = run(d); if (!Array.isArray(a) || !Array.isArray(b)) return { a: a?.bad ?? "ok", b: b?.bad ?? "ok" };
+  const a = run(TREE), b0 = run(d); if (!Array.isArray(a) || !Array.isArray(b0)) return { a: a?.bad ?? "ok", b: b0?.bad ?? "ok" };
+  // the base speaks the names before the 10-07 conventional-names pass: its replies' keys are read in today's names
+  const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+    return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
   const diff = a.findIndex((x: any, i: number) => JSON.stringify(x) !== JSON.stringify(b[i]));
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }

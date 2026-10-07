@@ -35,12 +35,12 @@ const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", ano
  *  agent had no way to find the id a ban needs.) */
 export function whois(w: World, args: Any) {
   const q = typeof args?.name === "string" ? args.name.trim() : typeof args?.id === "string" ? args.id.trim() : "";
-  if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", teach: "the name someone goes by here, as their nameplate shows it" } };
+  if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", fix: "the name someone goes by here, as their nameplate shows it" } };
   const v4 = w.v4!; const dir = directoryFor(WORLDS_DIR);
   const here = new Map<string, string>(); for (const c of w.clients) if (c.v4id && !c.spectator) here.set(c.v4id, c.id);
   const known = new Set<string>([...here.keys(), ...v4.knownIds()]);
   const want = foldName(q);
-  if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, teach: "the name someone goes by here, as their nameplate shows it" } };
+  if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
   const people = [...known].filter((id) => id === q || (dir.nameOf(id) != null && foldName(dir.nameOf(id)!) === want) || (here.has(id) && foldName(here.get(id)!) === want))
     .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: v4.roleOf(id), here: here.has(id), banned: isBanned(v4.live, id) }));
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
@@ -112,7 +112,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     const tool = String(msg.tool ?? "");
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
-    if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
+    if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", fix: "join embodied" } }); return; }
     const metered = READS.has(tool) || args.dry === true;
     // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
     // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
@@ -139,7 +139,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r && !r.ok && r.refused && recordRefusal(c)) { const cap = (x: unknown, n: number) => { const t = String(x ?? ""); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
         const id = typeof args.id === "string" ? cap(args.id, 64) : null;
         w.debug("refused", { who: c.id, tool: cap(tool, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
-          line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
+          line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.fix ? ` — ${r.refused.fix}` : ""}`, 300) }); }
       // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
       // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a

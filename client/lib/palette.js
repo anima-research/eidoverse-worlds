@@ -308,7 +308,7 @@ addEventListener('drop', async (e) => {
       toast(`avatar "${name}" is on the roster — pick it in the avatar panel`, 'info', 9000);
     } else {
       const label = file.name.replace(/\.glb$/i, '');
-      sendOps([OP.set('@world', `palette:${enc(path)}`, { name: label, path })], { what: `add ${label} to the palette`, expect: false });  // world vocabulary grows for everyone
+      sendOps([OP.set('@world', `assets:${enc(path)}`, { name: label, path })], { what: `add ${label} to this world's assets`, expect: false });  // world vocabulary grows for everyone
       await holdGhost(path, label);
     }
   } catch (err) { report(`upload ${file.name}`, err); }
