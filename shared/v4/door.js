@@ -1478,7 +1478,10 @@ export function settleOrphans(w, present = []) {
   if (!w.exists || w.state().status !== "ok") return [];
   const here = new Set(present); const out = [];
   for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {
-    const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] }); }
+    const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
+    // a holder the door won't take requests from now (banned since): the hold just ends (presence), and what the log
+    // lifted is settled below by the door, as leave's own refusal is (review 10-06)
+    if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
   withDoor(w, () => {
     const st = w.state(); if (!st.entities["@world"]?.c.sim) return;
     for (const [id, lift] of orphanLifts(w)) {
@@ -2101,7 +2104,7 @@ const PHYSICS_TOOLS = {
       return b && !st.entities[k].c.parent && supportUnder(st, b, new Set([k, ...descendants(st, k)])).id === a.id; });
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
-      if (RANK[role] < RANK.builder && !(gk && RANK[role] >= RANK[gk.who])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
+      if (RANK[role] < RANK.builder && !(gk && gk.enabled && RANK[role] >= RANK[gk.who])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
     const spec = st.entities["@world"]?.c.sim;
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
@@ -2140,6 +2143,12 @@ const PHYSICS_TOOLS = {
     const me = body(w, actor); const h = holdOf(w, actor, a.id);
     const st = w.state(); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
     const facts = () => ({ handled: h.handled, presence: { ...presenceFacts(me), held: h.pose.pos.map(r3) } });
+    // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
+    // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
+    // snap are the holder's settlements too, as a plain put is)
+    if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
+      const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
+    { const role = roleOf(st, actor); if (g && RANK[role] < RANK[g.who]) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
     // home: the holder's act, then the door's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
@@ -2195,7 +2204,7 @@ const PHYSICS_TOOLS = {
   drop(w, actor, a, how = "drop") {
     if (a.hand !== undefined) { const h = holdOf(w, actor, a.id); if (!["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
       if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) { // one hand of two lets go: the other keeps it (presence, unlogged)
-        if (a.hand === h.hand) { h.hand = h.second.hand; if (h.second.grip) h.grip = h.second.grip; else delete h.grip; }
+        if (a.hand === h.hand) { h.hand = h.second.hand; delete h.offset; if (h.second.grip) h.grip = h.second.grip; else delete h.grip; }
         delete h.second; w.savePresence(); return { ok: true, recorded: false, holding: a.id, hand: h.hand, note: `your ${a.hand} hand let go; your ${h.hand} hand still holds it` }; }
       if (a.hand !== h.hand) refuse("not-holding", `your ${a.hand} hand isn't holding ${a.id} (your ${h.hand} hand is)`, `drop {id: '${a.id}'} lets go`); }
     const st = w.state(); const g = grabOf(st.entities[a.id]?.c);
@@ -2316,7 +2325,7 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c.sim && st.entities[id]?.c
 // passed over (and said so). Its transform becomes the socket's pose in the host's frame (a v4 child's transform is
 // local to its parent; the slot names which socket it's in).
 function snapTarget(st, id, g, p) {
-  const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p)) return out;
+  const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
   for (const [hid, he] of Object.entries(st.entities)) {
     if (hid === "@world" || fam.has(hid)) continue;
@@ -2384,7 +2393,8 @@ function stampHomes(ctx, ops) {
     const v = after.entities[id]?.c.grabbable; if (!wantsHome(v)) continue;
     const setsG = ops.some((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id);
     let home = null;
-    if (v.home === undefined) home = homeHere(after, id);
+    const born = ops.some((o) => o.verb === "create" && o.id === id);   // a copy or an instance goes home to where it was made, not to its source's home (review 10-06)
+    if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);
     else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);
     if (!home) continue;
     const k = out.findIndex((o) => o.verb === "set" && o.comp === "grabbable" && o.id === id); const val = { ...v, home };
@@ -2616,11 +2626,16 @@ const TOOLS = {
     // or its up with args.phase 'up' (a hose turns on, then off: each one act). The request is logged as sent; the act
     // and the script's event say it was held, in which hand, and which phase. Rapid or continuous effects while pressed
     // (a muzzle flash, a spray) are presence, never a stream of acts: grabbable.fx, drawn by every client.
-    const hold = w.presence.holds[a.id]; const holding = hold?.by === actor; let held = null; const sent = a;
+    const hold = w.presence.holds[a.id]; let held = null; const sent = a;
+    // review 10-06: the up of a press is taken from whoever pressed down, even when the thing has left their hand since
+    // (taken by someone, dropped with the button still down): a hose that was turned on gets turned off. Once.
+    const P = (w.presence.pressed ??= {}); const lateUp = a.args?.phase === "up" && P[a.id]?.by === actor && hold?.by !== actor;
+    const holding = hold?.by === actor || lateUp;
     if (a.args?.held === true && !holding) refuse("not-holding", `you aren't holding ${a.id}`, `grab {id: '${a.id}'} first, or leave held out`);
     if (holding) {
       const g = grabOf(w.state().entities[a.id]?.c); const phase = a.args?.phase === "up" ? "up" : "down";
-      held = { held: true, hand: hold.hand ?? "right", phase };
+      held = { held: true, hand: (lateUp ? P[a.id].hand : hold.hand) ?? "right", phase };
+      if (phase === "down") P[a.id] = { by: actor, hand: held.hand }; else delete P[a.id]; w.presenceDirty = true;
       if (a.action === undefined && g?.use) { const action = phase === "up" ? g.use.up : g.use.down;
         if (!action) return { ok: true, recorded: false, held, note: `${a.id} does nothing on use ${phase} (its grabbable.use names no ${phase})` };
         a = { ...a, action }; }

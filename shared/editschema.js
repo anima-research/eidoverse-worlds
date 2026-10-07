@@ -978,6 +978,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { errors.push(`comp.${k}: not valid JSON (${e.message})`); break; } }
         // the JSON door is not a way around the evaluators' rules — nor the door's
         if ((k === 'light' || k === 'collider') && compRefusal(k, data, ent)) { errors.push(`comp.${k}: ${compRefusal(k, data, ent)}`); break; }
+        if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data); if (bad) { errors.push(`comp.grabbable: ${bad.reason}`); break; } }
         if ((k === 'picture' || k === 'sound') && data != null) {
           const n = k === 'picture' ? normalizePicture(data) : normalizeSound(data);
           if (!n.ok) { errors.push(`${k}: ${n.why}`); break; }

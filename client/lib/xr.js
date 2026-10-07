@@ -1196,7 +1196,7 @@ export function updateXR(dtSec = 1 / 72) {
       // the world: grip takes a grabbable thing (near, else along the laser), letting go releases it, the trigger uses it
       // (v4phys.js xrHand). A hand holding a thing is busy: no panel chord, no select. Aiming at a panel, the panel wins.
       { const aimPanel = panelNow != null;
-        const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip: grip && !aimPanel && !held, trig, pick: () => rayHitEntity(hand.ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
+        const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: !aimPanel && !held, trig, pick: () => rayHitEntity(hand.ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
         if (gh.holding || gh.took) { triggerWas[side] = trig; continue; } }
       if (grip && trig && !held) tryGrab(side);   // panels only
       if (!grip && held?.hand === side) releaseGrab();

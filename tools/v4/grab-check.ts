@@ -19,6 +19,7 @@
 //   U   use while held (down/up, each one act), the grab and release script events, the presence tier (pose.use)
 //   I   the inspector's Grabbable card: Add Component writes the defaults out of the data; the card's edits are checked
 //   A   what an agent reads: look, inspect and help
+//   F   the independent review's findings (10-06), each red before its fix
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -53,7 +54,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["release: return goes home at once", "v4/door.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
   ["a returning drop doesn't fly", "v4/door.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
   ["a returning throw doesn't fly", "v4/door.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
-  ["home is stamped", "v4/door.js", "if (v.home === undefined) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
+  ["home is stamped", "v4/door.js", "if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
   ["home follows an edit that moves it from home", "v4/door.js", "else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);", "", ["R4"]],
   ["returnAfter runs at each request", "v4/door.js", "settleSim(w); returnDue(w); expireAsks(w);", "settleSim(w); expireAsks(w);", ["R4"]],
   ["returnAfter: not while held", "v4/door.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
@@ -93,6 +94,14 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the inspector adds grabbable with its defaults spelled out", "editschema.js", "const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", "const spec = {} ?? Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", ["I1"]],
   ["the card's edits are checked as the door checks them", "editschema.js", "const bad = checkGrabbable(next);\n        if (bad)", "const bad = null;\n        if (bad)", ["I2"]],
   ["look says what a hand may do with it", "v4/door.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
+  ["review: a put's pos is reach-checked before it snaps", "v4/door.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
+  ["review: a refused orphan's hold still ends", "v4/door.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2"]],
+  ["review: the up from whoever pressed down", "v4/door.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
+  ["review: a copy goes home where it was made", "v4/door.js", "(born && !sameHome(after, id, v.home))", "false", ["F4"]],
+  ["review: the holder's rank before a return", "v4/door.js", "if (g && RANK[role] < RANK[g.who]) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["F5"]],
+  ["review: a handover drops the old hand's offset", "v4/door.js", "h.hand = h.second.hand; delete h.offset;", "h.hand = h.second.hand;", ["F6"]],
+  ["review: what rests on it must be enabled", "v4/door.js", "!(gk && gk.enabled && RANK[role] >= RANK[gk.who])", "!(gk && RANK[role] >= RANK[gk.who])", ["F6"]],
+  ["the inspector's JSON hatch is checked too", "editschema.js", "if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data);", "if (false) { const bad = checkGrabbable(data);", ["I3"]],
   ["CONTROL (no-op: must stay green)", "grab.js", "// ---------------------------------------------------------------- reading", "// ----------------------------------------------------------------  reading", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -507,6 +516,13 @@ const cases: Case[] = [
       return { card: card?.fields ?? null, value: ok1.ops.find((o: any) => o.args?.component === "grabbable")?.args?.value ?? ok1.ops, errors: ok1.errors, bad: bad.errors }; },
     good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
       && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, pose: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
+  { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the door, when a grip has no pos)", run(s) {
+      const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
+      const hatch = ES.inspectSchema(ent, "b1").groups.find((g: any) => g.group === "grabbable")?.fields.find((f: any) => f.t === "json")?.commit;
+      const good = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ who: "visitor", grips: { h: { pos: [0, 0.1, 0] } } }) });
+      const bad = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ grips: { h: {} } }) });
+      return { hatch, good: good.ops[0]?.args?.value?.grips, bad: bad.errors }; },
+    good: (o) => o.hatch === "comp.grabbable" && JSON.stringify(o.good) === '{"h":{"pos":[0,0.1,0]}}' && /grips\.h\.pos/.test(o.bad.join(" ")) },
   // ---------------- A: what an agent reads ----------------
   { id: "A1", what: "look and inspect say what a hand may do with a thing (and in which hand it's held); help names the hand and grip arguments", run(s) { cast(s);
       s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } }, place: { at: [0, 0] } });
@@ -515,6 +531,51 @@ const cases: Case[] = [
       const lk = s.call("vic", "look", {}).things ?? []; const ins = s.call("vic", "inspect", { id: "lantern" }); const help = s.call("vic", "help", { tool: "grab" });
       return { lantern: lk.find((t: any) => t.id === "lantern")?.grab ?? null, ball: lk.find((t: any) => t.id === "ball")?.grab ?? null, heldIn: ins.heldIn, args: Object.keys(help.args ?? {}) }; },
     good: (o) => /^Take the lantern \(anyone may pick it up;.*use while held: light;.*goes home when let go\)$/.test(o.lantern ?? "") && /^pick up .*anyone may pick it up/.test(o.ball ?? "") && o.heldIn === "left" && ["hand", "grip", "offset"].every((k) => o.args.includes(k)) },
+  // ---------------- F: the independent review's findings (each red before its fix) ----------------
+  { id: "F1", what: "a put's pos is checked (shape, reach) before snapping: a far or malformed pos never snaps into a socket across the world", run(s) { cast(s);
+      s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [20, 20] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "key" });
+      const far = s.call("vic", "put", { id: "key", pos: [20, 0.8, 20] }); const bad = s.call("vic", "put", { id: "key", pos: ["x"] });
+      return { far: code(far), bad: code(bad), parent: comp(s, "key", "parent") ?? null }; },
+    good: (o) => o.far === "out-of-reach" && o.bad === "shape" && o.parent === null },
+  { id: "F2", what: "an orphaned hold of a holder banned since is still settled at load (the hold ends; in a physics world the lift is settled too)", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "ban", { who: "vic" });
+      const w2 = s.reopen(s.w().presence); T += 100; process.env.V4_NOW = String(T); D.settleOrphans?.(w2, []);
+      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "door").map((e: any) => e.verb);
+      return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
+    good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
+  { id: "F3", what: "use.up from whoever pressed down is taken after the thing left their hand (taken by someone else): the hose turns off", run(s) { cast(s);
+      s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },
+        reactions: { on: { kind: "set", component: "burning", value: true }, off: { kind: "set", component: "burning", value: false } } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.3, 0, 0.5] });
+      s.call("vic", "grab", { id: "hose" }); s.call("vic", "use", { id: "hose", args: { held: true, phase: "down" } }); const on = comp(s, "hose", "burning");
+      s.call("ann", "grab", { id: "hose" }); const up = s.call("vic", "use", { id: "hose", args: { held: true, phase: "up" } });
+      const again = s.call("vic", "use", { id: "hose", args: { held: true, phase: "up" } });
+      return { on, up: show(up), off: comp(s, "hose", "burning"), again: code(again) }; },
+    good: (o) => o.on === true && o.up === "ok" && o.off === false && o.again === "not-holding" },
+  { id: "F4", what: "a copy of a returning thing goes home to where the copy stands, not to the original's home", run(s) { cast(s);
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
+      const c = s.call("olive", "create", { from: "torch", id: "torch-2", at: { pos: [5, 0, 5] } });
+      return { c: show(c), home: comp(s, "torch-2", "grabbable")?.home?.pos, at: tf(s, "torch-2")?.pos }; },
+    good: (o) => o.c === "ok" && JSON.stringify(o.home) === JSON.stringify(o.at) },
+  { id: "F5", what: "a returning put is the holder's act under their rank NOW (demoted below grabbable.who: refused, like any put)", run(s) { cast(s);
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" });
+      s.call("olive", "set", { id: "torch", component: "grabbable", value: { ...comp(s, "torch", "grabbable"), who: "owner" } });
+      return { put: code(s.call("vic", "put", { id: "torch" })) }; },
+    good: (o) => o.put === "rights" },
+  { id: "F6", what: "one hand of two letting go hands it to the other without the first hand's offset; picking a thing up off what rests on it respects that thing's enabled", run(s) { cast(s);
+      s.call("olive", "create", { id: "log", model: "book", components: { grabbable: { who: "visitor", twoHanded: true } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "tray", model: "crate", components: { grabbable: { who: "visitor" } }, place: { at: [2, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { transform: { pos: [2, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor", enabled: false } } });   // resting on it, not its child
+      s.call("vic", "move", { to: [0, 0, 0.5] });
+      s.call("vic", "grab", { id: "log", hand: "right", offset: { pos: [0.1, 0, 0], q: [0, 0, 0, 1] } }); s.call("vic", "grab", { id: "log", hand: "left" });
+      s.call("vic", "drop", { id: "log", hand: "right" }); const rec = G.holdWire?.(held(s, "log"));
+      s.call("vic", "move", { to: [1.5, 0, 0.5] }, 1000); const tray = s.call("vic", "grab", { id: "tray" });
+      return { rec, tray: code(tray) }; },
+    good: (o) => o.rec?.hand === "left" && !o.rec?.offset && o.tray === "rights" },
 ];
 
 // ---------------- run ----------------

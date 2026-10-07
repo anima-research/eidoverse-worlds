@@ -261,7 +261,14 @@ try {
     const up = await gwait(() => (globalThis.EW.comps.get('hose')?.flowing === false && !globalThis.EW.physics.fx().includes('hose')) ? { flowing: false, fx: globalThis.EW.physics.fx(), use: globalThis.EW.myState.useHeld ?? null } : null, null, 20000);
     const acts5 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).filter((e) => e.kind === 'act' && e.verb === 'use' && e.body?.request?.id === 'hose').map((e) => `${e.body.held?.phase}:${e.body.action}`);
     check('grab: use while held: the left button on her hose is use.down (the door sets it flowing; its fx draws while pressed), letting go is use.up (one act each)', h5?.ok && down && up && JSON.stringify(acts5) === '["down:spray","up:stop"]', { mk5: mk5?.ok ?? mk5?.refused, h5: h5?.ok ?? h5?.refused, down, up, acts5 });
+    // (5b) review 10-06: put down with the button still pressed: the up goes anyway (the door takes it from whoever
+    //      pressed down) and the press stops riding her presence
+    await race(pg.evaluate(() => globalThis.EW.physics.grab('hose')), 20000).catch(() => null); await gwait(() => !!globalThis.EW.physics.holds().hose);
+    await press('mousedown'); await gwait(() => globalThis.EW.comps.get('hose')?.flowing === true, null, 20000);
     await gput('hose', 0.5, -0.6);
+    const late = await gwait(() => (globalThis.EW.comps.get('hose')?.flowing === false && !globalThis.EW.myState.useHeld && !globalThis.EW.physics.fx().includes('hose')) ? true : null, null, 20000);
+    await press('mouseup');
+    check('grab: …and put down with the button still pressed, the up goes anyway: it stops flowing, its fx and her presence let go', late === true, { late, flowing: await gev(() => globalThis.EW.comps.get('hose')?.flowing).catch(() => null) });
     // (6) the presence tier from someone else: Bob presses use on the nozzle he holds (his pose carries use; nothing is
     //     logged), and Ann's page draws its fx until his pose stops carrying it
     const BP6 = [me5[0] + 2.5, 0, me5[2] + 1];

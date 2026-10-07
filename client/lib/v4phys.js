@@ -56,6 +56,9 @@ bus.on('v4-holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
   for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
+  // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the door
+  // takes it from whoever pressed down), and the press stops riding my presence (review 10-06)
+  if (pressing && holds[pressing]?.by !== net.v4you) void useHeld('up', pressing);
 });
 // the hand reaches out and the thing comes to it (Unity Attach Ease In, Godot LERP, Meta pull): presence only, every
 // client the same; a far grab (grabbable.range past arm's reach) flies a little longer
@@ -257,6 +260,7 @@ function poseHolders() {
     const g = grabOf(compsOf(id)); const side = h.hand ?? 'right';
     let m = want.get(av); if (!m) want.set(av, (m = { bones: {}, fingers: {} }));
     const grip = h.grip ? g?.grips?.[h.grip] : null;
+    if (g?.source === 'physics') continue;   // a dynamic thing with no grabbable: held as before (and VR fingers keep the controller's curl)
     Object.assign(m.bones, fingerPose(grip?.fingers ?? 'fist', side, grip?.hold ?? {})); m.fingers[side] = true;
     if (h.second) { const sg = h.second.grip ? g?.grips?.[h.second.grip] : null; Object.assign(m.bones, fingerPose(sg?.fingers ?? 'fist', h.second.hand, sg?.hold ?? {})); m.fingers[h.second.hand] = true; }
     // (a dynamic thing with no grabbable is held as before: in the hand where the arm already is, no hold pose)
@@ -356,7 +360,8 @@ const say = (t) => logChat('*', t);
 const refused = (what, r) => { const x = r?.refused; say(`${what}: ${x?.reason ?? 'the door said no'}${x?.teach ? ` (${x.teach})` : ''}`); bus.emit('v4phys-refused', { tool: what, refused: x }); return r; };
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the door's own reader, so a dynamic thing with no grabbable
 // counts, as at the door); what a foot may punt: physics {kind: 'dynamic'}
-const grabbableIds = () => { const es = v4.st?.entities ?? {}; return Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled); };
+let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
+const grabbableIds = () => { const st = v4.st; if (gIds.st !== st || gIds.head !== v4.head) { const es = st?.entities ?? {}; gIds = { st, head: v4.head, ids: Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled) }; } return gIds.ids; };
 const dynamicIds = () => { const es = v4.st?.entities ?? {}; return Object.keys(es).filter((id) => es[id].c.physics?.kind === 'dynamic'); };
 /** Where the thing is now, as the door sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
@@ -524,7 +529,7 @@ function nearest4(side, at, scale) {
 /** One hand, one frame. pos: the hand's world position (the controller grip); grip/trig: buttons; pick(): the laser's
  *  first entity {id, dist} or null; scale: the avatar's; haptic(v, ms). Returns {holding, took} so xr.js knows the hand
  *  is busy (no panel chord or select with it). */
-export function xrHand(side, { pos, grip, trig, pick, scale = 1, haptic = () => {}, now = performance.now() }) {
+export function xrHand(side, { pos, grip, mayTake = true, trig, pick, scale = 1, haptic = () => {}, now = performance.now() }) {
   const H = vrHands[side]; if (!H || !pos || !v4.active) return { holding: null };
   H.hist.push({ t: now, p: [pos.x, pos.y, pos.z] }); while (H.hist.length > 2 && now - H.hist[0].t > AVG_MS) H.hist.shift();
   const mine = heldIn(side); const g = mine ? grabOf(compsOf(mine)) : null;
@@ -533,7 +538,7 @@ export function xrHand(side, { pos, grip, trig, pick, scale = 1, haptic = () => 
   let took = false;
   if (grip && !H.grip && !H.busy) {
     if (mine && g?.hold === 'toggle') void vrLetGo(side, mine);
-    else if (!mine) { let id = near;
+    else if (!mine && mayTake) { let id = near;
       if (!id) { const hit = pick?.(); const hg = hit ? grabOf(compsOf(hit.id)) : null; const obj = hit ? entities.get(hit.id) : null;
         if (hg?.enabled && obj && obj.getWorldPosition(_hv).distanceTo(pos) <= hg.range) id = hit.id; }
       if (id) { took = true; void vrTake(side, id, !near, haptic); } }
@@ -559,6 +564,9 @@ async function vrTake(side, id, far, haptic) {
     await track(true);
     const r = await requestV4('grab', { id, hand: side, ...(off ? { offset: off } : {}) });
     if (r?.ok) haptic(0.4, 30); else refused('grab', r);
+    H.busy = false;
+    // a quick tap: the grip let go before the door answered. Press-to-hold means it lets go now (it never stays stuck)
+    if (r?.ok && !H.grip && grabOf(compsOf(id))?.hold !== 'toggle') await vrLetGo(side, id);
     return r;
   } finally { H.busy = false; }
 }
