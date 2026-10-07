@@ -1,5 +1,5 @@
 // text — words a builder writes into the world (a sign's text, a story, a picture's alt), read by every visitor and every
-// agent. Pure: the authority (shared/v4/authority.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
+// agent. Pure: the authority (shared/protocol/authority.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
 // the agent describers all use these, so they can't disagree about what a string is, how long it is, or how it wraps.
 //
 //   graphemes(s)            how long a string is, the way a reader counts it: a ZWJ family emoji is 1, a CJK character

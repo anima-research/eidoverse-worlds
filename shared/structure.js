@@ -579,7 +579,7 @@ export function derivePortals(level, rooms) {
 
 /** One level's COLLISION boxes, grid-local: the floor tiles, the solid wall
  *  runs, what's left of an apertured segment, the corner fills and a diagonal's
- *  stair steps. planStructure's `boxes`, and the door's solids (shared/v4/authority.js
+ *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority.js
  *  reads collisionBoxes) — one derivation, so the browser's colliders and the
  *  door's walls can't disagree about where a wall is. */
 function levelBoxes(level, g) {

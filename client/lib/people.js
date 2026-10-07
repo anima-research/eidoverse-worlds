@@ -1,6 +1,6 @@
 // people.js — who someone is here and what you may do to them (research roles 10-06, S6; PLAN decisions 10-06).
 //
-// ONE function decides the menu: personActions(me, them) in shared/v4/roles.js (pure, tested in tools/v4/roles-check.ts
+// ONE function decides the menu: personActions(me, them) in shared/protocol/roles.js (pure, tested in tools/protocol/roles-check.ts
 // P1–P3). It shows only what you may do to that one person, so a visitor sees "Message" and nothing else, and when rank
 // is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the authority
 // decides every act again (the menu is a courtesy, never the gate):
@@ -13,19 +13,19 @@
 // The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only permissions you hold).
 // The badge: none for a visitor, "guest" for someone without an account, else the role's name (badgeOf).
 import { CONFIG, bus, report } from './base.js';
-import { net, identities, guests, requestV4, v4 } from './net.js';
+import { net, identities, guests, sendRequest, replica } from './net.js';
 import { contextMenu, closeContextMenu } from './panels.js';
-import * as R from '../../shared/v4/roles.js';
+import * as R from '../../shared/protocol/roles.js';
 
 let deps = { openConvo: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
 export function initPeople(d) { deps = { ...deps, ...d }; }
 
-const wc = () => v4.st?.entities?.['@world']?.c ?? {};
+const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 /** The person behind a display name here: {display, id, anon, role, name, rank, permissions, muted, me}. */
 export function personOf(display) {
   const me = display === CONFIG.name;
   if (me) { const r = net.myRights ?? {};
-    return { display, me, id: net.v4you ?? null, anon: !!r.guest, role: r.role ?? 'visitor', name: r.roleName ?? r.role, rank: r.rank ?? 0, permissions: r.permissions ?? [], muted: !!r.muted }; }
+    return { display, me, id: net.you ?? null, anon: !!r.guest, role: r.role ?? 'visitor', name: r.roleName ?? r.role, rank: r.rank ?? 0, permissions: r.permissions ?? [], muted: !!r.muted }; }
   const id = identities.get(display) ?? null, anon = guests.has(display);
   const e = id ? R.effectiveOf(wc(), id, { anon }) : { role: 'visitor', name: 'Visitor', rank: 0, permissions: [] };
   return { display, me: false, id, anon, ...e, muted: !!(id && net.modMuted?.[id]) };
@@ -53,7 +53,7 @@ const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears 
   kick: "They're removed now and can't come back until it ends.", ghost: "They stay, unseen: they can look and walk, but not act or talk.", ban: "They're removed and kept out until it ends." };
 
 async function run(verb, args, what) {
-  const r = await requestV4(verb, args);
+  const r = await sendRequest(verb, args);
   if (r?.ok) deps.toast(`${what}: done`, 'info'); else deps.toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   return r;
 }

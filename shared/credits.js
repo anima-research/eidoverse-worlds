@@ -9,7 +9,7 @@
 // can't count. Play isn't authorship: a `use` (opening a door 40 times), a grab, a throw, the sim's rests and the
 // authority's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
 // not "moved it ×591": the Commons has people with hundreds of imported nudges).
-import { opsOf } from './v4/fold.js';
+import { opsOf } from './protocol/fold.js';
 
 export const SESSION_MS = 5 * 60 * 1000;
 const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'sculpt', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);

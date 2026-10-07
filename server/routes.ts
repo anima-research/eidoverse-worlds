@@ -14,7 +14,7 @@ import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
-import { libraryCredits } from "./v4/modelcatalogue.ts";
+import { libraryCredits } from "./modelcatalogue.ts";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
@@ -62,8 +62,8 @@ function mayRead(req: Request): boolean {
 }
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
-/** A world's directory holds its log, v4.jsonl. */
-const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
+/** A world's directory holds its log, world.jsonl. */
+const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "world.jsonl"));
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";

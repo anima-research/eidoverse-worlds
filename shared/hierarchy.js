@@ -16,8 +16,8 @@
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
-import * as OP from './v4/requests.js';
-import { enc } from './v4/names.js';
+import * as OP from './protocol/requests.js';
+import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 import { socketQ } from './components.js';
@@ -170,7 +170,7 @@ export function treeRows(world, { collapsed = new Set(), matches = null, extra =
   return rows;
 }
 
-/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the authority requests (shared/v4/requests.js)
+/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the authority requests (shared/protocol/requests.js)
  *  for the Hierarchy's drag, the Parent card and the agent's edit. Its world pose is kept: under a parent the transform
  *  becomes local to it (pos, q and scale: the renderer composes a child's scale with its carrier's); as a root it is the
  *  world pose. One gesture, one batch, one act — the authority's undo is the way back. Locks are the authority's to ask about. */

@@ -485,7 +485,7 @@ export function removeCollider(id) {
   }
   colliders.delete(id);
 }
-/** A thing in a hand or in the air (v4phys.js) isn't where its collider was: take it out of the walking world's grid
+/** A thing in a hand or in the air (thingphysics.js) isn't where its collider was: take it out of the walking world's grid
  *  while it is (on = true), and put it back where it is now (on = false). The entry itself is kept. */
 const suspended = new Set();
 export function suspendCollider(id, on) {

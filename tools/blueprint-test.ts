@@ -7,7 +7,7 @@
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
 // 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch v4 world
-//    (tools/v4/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
+//    (tools/protocol/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
 // 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
 //
 // Sections 1–3 are pure functions of shared/blueprint.js and stay as they were (NOTE: expand/overridesOf/rebase have
@@ -195,7 +195,7 @@ const copyOf = (rec: any, at: number[]) => {
 
 // ---- 6. v4: the door's publish and create {from} ------------------------------------------
 console.log('\n6. v4: publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
-const { scratchWorld } = await import('./v4/scratchworld.ts');
+const { scratchWorld } = await import('./protocol/scratchworld.ts');
 const { worldPose } = await import('../shared/hierarchy.js');
 const { qFromYaw, qNorm } = await import('../shared/rot.js');
 const near = (a: number[], b: number[], e = 2e-3) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= e);
@@ -287,7 +287,7 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   check('the shade is locked, spins, and keeps its rotation order', shade.comp?.lock === true && shade.comp?.motion?.type === 'spin' && shade.comp?.rotOrder === 'ZXY', J(shade.comp));
   check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.lib === undefined && glow.comp?.light?.day === false && glow.comp.light.color === 0xff8800 && E.desk2.comp?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
-  // unlocked first). The person is asked "Move anyway?" (v4edit: undo offers through, not unlock); throughLock takes it.
+  // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
   const u0 = W.call('undo', {});
   check('a bare undo of the copy is refused `locked` (its shade is locked), and nothing is removed', u0.ok === false && u0.refused?.code === 'locked' && Object.keys(W.view().entities).filter((x) => x.startsWith('desk2')).length === 4, J(u0));
   const u = W.call('undo', { throughLock: true });
@@ -304,7 +304,7 @@ console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcp
   const H = pub.notes.find((n: any) => n.record).record as string, hex = H.slice(7);
   W.call('create', { id: 'lampa', from: H, at: { pos: [2, 0, 2] } });
   const ag: any = new WorldAgent({ name: 'eye' });
-  const sync = () => { ag.st = W.view(); ag.v4c = { st: W.state(), active: true }; ag.reconcileFromFold(); };
+  const sync = () => { ag.st = W.view(); ag.replica = { st: W.state(), active: true }; ag.reconcileFromFold(); };
   sync();
   ag.door = async (tool: string, args: any) => { const r = W.call(tool, args); sync(); return r; };
   ag.pos = { x: 0, y: 0, z: 0 }; ag.yaw = 0; ag.heightAt = () => 0;

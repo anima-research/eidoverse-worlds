@@ -17,10 +17,10 @@ import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
-import { isOperator } from "./v4/operators.ts";
-import { directoryFor } from "./v4/directory.ts";
-import { actorOf as v4ActorOf, whois } from "./v4/requestwire.ts";
-// the authority's role ladder (shared/v4/authority.js RANK), for the presence gates that mirror a door rule
+import { isOperator } from "./operators.ts";
+import { directoryFor } from "./directory.ts";
+import { actorOf as actorIdOf, whois } from "./requestwire.ts";
+// the authority's role ladder (shared/protocol/authority.js RANK), for the presence gates that mirror a door rule
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { worlds, type World, type Client } from "./world.ts";
@@ -49,7 +49,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // reading back what was said before you arrived is the same act.
     if (!c.world) return;
     // a ghost can't read chat (PLAN 10-06): its scrollback is empty, as its log stream's says are (review 10-07)
-    if (c.world.v4 && c.world.isGhost(c)) { ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, entries: [], oldestSeq: null, hasMore: false })); return; }
+    if (c.world.log && c.world.isGhost(c)) { ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, entries: [], oldestSeq: null, hasMore: false })); return; }
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
       after: typeof msg.after === "number" ? msg.after : -Infinity,
@@ -109,16 +109,16 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!to || !text) return;
     // a v4 world's sanctions reach whispers too (research roles §5): a ghost or a role-less person doesn't talk, and a
     // chat mute leaves only whispers to someone holding a moderation power (so they can ask why); a ghost isn't sent any
-    const v4 = c.world.v4;
-    if (v4 && c.v4id) {
-      if (v4.ghostHere(c.v4id) || v4.rightsOf(c.v4id).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
-      const m = v4.mutedHere(c.v4id, "chat");
-      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.v4id && (() => { const e = v4.rightsOf(o.v4id); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
+    const log = c.world.log;
+    if (log && c.v4id) {
+      if (log.ghostHere(c.v4id) || log.rightsOf(c.v4id).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
+      const m = log.mutedHere(c.v4id, "chat");
+      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.v4id && (() => { const e = log.rightsOf(o.v4id); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
         if (!mod) { ws.send(JSON.stringify({ type: "error", error: `you're muted in this world's chat until ${new Date(m.until).toISOString().slice(11, 16)} UTC — you may whisper to a moderator` })); return; } }
     }
     const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
     // present: names are unique among the people here, so the name finds them (their embodied leg, never an aux leg)
-    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world" && !(v4 && c.world.isGhost(o)));   // never to a ghost (review 10-07)
+    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world" && !(log && c.world.isGhost(o)));   // never to a ghost (review 10-07)
     if (targets.length) {
       for (const t of targets) t.ws.send(JSON.stringify(packet));
       ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
@@ -359,7 +359,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // must agree with it or visitors can slide props they can't commit
     // (the authority's rights for the person's identity)
     // the build switch (roles S2), never the old protocol's rank table: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
-    if (!c.world.v4!.rightsOf(v4ActorOf(c)).can.build) return;   // the person's directory identity, never their name
+    if (!c.world.log!.rightsOf(actorIdOf(c)).can.build) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
@@ -396,9 +396,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world) return;
     // v4: the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
-    if (c.world.v4) { const e = c.v4id ? c.world.v4.rightsOf(c.v4id) : null;
+    if (c.world.log) { const e = c.v4id ? c.world.log.rightsOf(c.v4id) : null;
       if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
-    const S = c.world.v4!.sanctions();
+    const S = c.world.log!.sanctions();
     const dir = directoryFor(WORLDS_DIR);
     const list = Object.entries(S).filter(([, x]) => (x as any).ban).map(([, x]) => (x as any).ban).map((m) =>
       `${dir.entry(m.who)?.name ?? m.who} — ${new Date(m.ts).toISOString().slice(0, 10)}${m.reason ? `: ${m.reason}` : ""}`);

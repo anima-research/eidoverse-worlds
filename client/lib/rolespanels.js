@@ -15,22 +15,22 @@
 // Rows here are DOM like every panel; in a headset they are the same frame as a quad (domquad.js XR_FRAMES), rows stay
 // rows, and every control is a button or a select (no hover, no long-press).
 import { bus, report } from './base.js';
-import { net, requestV4, v4, identities } from './net.js';
+import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
-import * as R from '../../shared/v4/roles.js';
+import * as R from '../../shared/protocol/roles.js';
 
-const wc = () => v4.st?.entities?.['@world']?.c ?? {};
+const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const me = () => { const r = net.myRights ?? {}; return { id: net.v4you, role: r.role ?? 'visitor', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
+const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'visitor', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const has = (k) => me().role === 'owner' || me().permissions.includes(k);
 const isOwner = () => me().role === 'owner';
-const nameOf = (id) => { for (const [n, v] of identities) if (v === id) return n; return net.names?.[id] ?? v4.nameOf?.(id) ?? id; };
+const nameOf = (id) => { for (const [n, v] of identities) if (v === id) return n; return net.names?.[id] ?? replica.nameOf?.(id) ?? id; };
 const rankOfId = (id) => R.effectiveOf(wc(), id).rank;
 const ago = (ts) => { const s = Math.round((Date.now() - ts) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 const ends = (until) => { if (until == null) return 'never'; const s = Math.round((until - Date.now()) / 1000); return s <= 0 ? 'ended' : s < 3600 ? `in ${Math.ceil(s / 60)} min` : s < 86400 ? `in ${Math.round(s / 3600)} h` : `in ${Math.round(s / 86400)} d`; };
 const badge = (id) => { const e = R.effectiveOf(wc(), id); const b = R.badgeOf(e); return b ? ` <span class="who-badge" data-tone="${b.tone}">${esc(b.text)}</span>` : ''; };
 async function act(verb, args, what, refresh) {
-  const r = await requestV4(verb, args);
+  const r = await sendRequest(verb, args);
   if (r?.ok) toast(`${what}: done`, 'info'); else toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   await refresh?.(); return r;
 }
@@ -43,7 +43,7 @@ let modWho = null, modVerbs = new Set(), modBefore = null;
 export function openModeration({ tab = 'log', who = null } = {}) { modWho = who; const s = sections[tab]; if (s) s.toggle(true).catch((e) => report('moderation', e)); }
 
 async function paintBans(body) {
-  const r = await requestV4('bans', {});
+  const r = await sendRequest('bans', {});
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the ban list")}</p>`; return; }
   const now = r.now ?? [];
   // names from the authority's reply (its directory knows absent people; this page knows only who is here)
@@ -63,7 +63,7 @@ async function paintBans(body) {
 const VERB_CHIPS = [['ban', 'bans'], ['mute', 'mutes'], ['kick', 'kicks'], ['warn', 'warns'], ['ghost', 'ghosts'], ['role', 'roles'], ['auto-cooldown', 'automatic']];
 async function paintLog(body, { more = false } = {}) {
   if (!more) modBefore = null;
-  const r = await requestV4('modlog', { ...(modWho ? { who: modWho } : {}), ...(modBefore ? { before: modBefore } : {}), limit: 50 });
+  const r = await sendRequest('modlog', { ...(modWho ? { who: modWho } : {}), ...(modBefore ? { before: modBefore } : {}), limit: 50 });
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the log")}</p>`; return; }
   const recs = (r.records ?? []).filter((x) => !modVerbs.size || modVerbs.has(x.verb) || (modVerbs.has('ban') && x.verb === 'unban') || (modVerbs.has('mute') && x.verb === 'unmute') || (modVerbs.has('ghost') && x.verb === 'unghost'));
   const line = (x) => `<div class="rp-row"><div class="rp-main"><span class="rp-dim">${new Date(x.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span> `
@@ -80,11 +80,11 @@ async function paintLog(body, { more = false } = {}) {
     body.querySelectorAll('.pm-chip').forEach((b) => { b.onclick = () => { const v = b.dataset.v; if (modVerbs.has(v)) modVerbs.delete(v); else modVerbs.add(v); paintLog(body); }; });
     const s = body.querySelector('.rp-search'); s.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key !== 'Enter') return;
       const q = s.value.trim(); modWho = !q ? null : /^u-/.test(q) ? q : (identities.get(q) ?? null);
-      if (q && !modWho) requestV4('whois', { name: q }).then((w) => { modWho = w?.people?.[0]?.id ?? '∅'; paintLog(body); }); else paintLog(body); });
+      if (q && !modWho) sendRequest('whois', { name: q }).then((w) => { modWho = w?.people?.[0]?.id ?? '∅'; paintLog(body); }); else paintLog(body); });
   }
 }
 async function paintScripts(body) {
-  const r = await requestV4('scripts', {});
+  const r = await sendRequest('scripts', {});
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the scripts")}</p>`; return; }
   const rows = (r.scripts ?? []).map((x) => {
     const paused = x.status === 'paused' && x.pausedBy; const mine = x.sponsor === me().id;
@@ -238,7 +238,7 @@ function paintPlaces(body) {
 // what translation carried from an older world: imported:<k>, imported-behavior:<k>, imported-bans:<id>, imported-epoch
 const IMPORTED = /^imported(?:-[a-z]+)?(?::|$)/;
 function paintOld(body) {
-  const st = v4.st?.entities ?? {}; const c = wc(); const edit = isOwner();
+  const st = replica.st?.entities ?? {}; const c = wc(); const edit = isOwner();
   const legacy = Object.keys(c).filter((k) => IMPORTED.test(k));
   const things = Object.entries(st).filter(([id, e]) => id !== '@world' && Object.keys(e.c ?? {}).some((k) => IMPORTED.test(k)));
   body.innerHTML = (!legacy.length && !things.length) ? '<p class="rp-note">nothing carried over from an older world</p>'

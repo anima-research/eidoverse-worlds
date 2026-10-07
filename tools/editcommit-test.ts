@@ -8,18 +8,18 @@
 // form of the "a scrub's before leaked into the next selection" bug the first
 // review round found (v1 computed an undo inverse from it; v4 sends it as
 // expect, and the door refuses `changed` if someone wrote it since).
-// tools/v4/inspectharness.ts stubs the page (the realized world, the wire to the
-// scratch door, the dialogs); inspect.js, v4edit.js, the schema and the door are real.
+// tools/protocol/inspectharness.ts stubs the page (the realized world, the wire to the
+// scratch door, the dialogs); inspect.js, editwrites.js, the schema and the door are real.
 //
 // v4 port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
 // by act; a lamp is a light COMPONENT edited with set). Each old inverse check became either the expect the request
 // carries (what it started from) or the door's undo of the act, read back.
-import { inspectHarness } from "./v4/inspectharness.ts";
+import { inspectHarness } from "./protocol/inspectharness.ts";
 import { qFromEuler, sameRotation } from "../shared/euler.js";
 import { qFromYaw } from "../shared/rot.js";
 const H = inspectHarness("editcommit");
 const { commitEdit, registerHandler, endGesture, schemaFor } = await import("../client/lib/inspect.js");
-const V4 = await import("../client/lib/v4edit.js");
+const V4 = await import("../client/lib/editwrites.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {

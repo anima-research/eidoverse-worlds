@@ -12,7 +12,7 @@ import { bodyOf } from '../../shared/components.js';
 import { mayLeave } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
-import { requestV4 } from './net.js';
+import { sendRequest } from './net.js';
 import { plain } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
 import { THREE } from './core.js';
@@ -287,7 +287,7 @@ export function trySitOn(arg, slot = null) {
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
-  requestV4('use', { id: best.id, action: best.body.action, args: { socket: best.slot } }).then((r) => {
+  sendRequest('use', { id: best.id, action: best.body.action, args: { socket: best.slot } }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
   });
   return true;

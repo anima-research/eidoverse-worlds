@@ -2,16 +2,16 @@
 // `/use <hex id>`). The conventional affordance: Roblox's ProximityPrompt (E, within a few metres, the action's words on
 // screen), Unity/Unreal interact-on-E. The nearest thing within reach that offers an action (its reactions), preferring
 // what you face, shows on the hint bar beside the seat hint (localbody.js updateSeatHint asks usePromptHint when there's
-// no seat to offer); E uses it through the door, and a refusal reads in a person's words (v4edit showRefusal). Not in
+// no seat to offer); E uses it through the door, and a refusal reads in a person's words (editwrites showRefusal). Not in
 // edit mode (E rotates there), not while typing (controller.js filters), not in a headset (no hint bar there).
 import { THREE } from './core.js';
 import { comps, entities } from './world.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
-import { send } from './v4edit.js';
+import { send } from './editwrites.js';
 import { xrActive } from './xrask.js';
 import { nameOf } from './plainwords.js';
-import * as OP from '../../shared/v4/requests.js';
+import * as OP from '../../shared/protocol/requests.js';
 
 export const USE_REACH = 2.5;   // m, feet to the thing (Roblox's prompt reaches ~10 studs ≈ 2.8 m)
 let hooks = null;               // { myPos(): {x,y,z}, camera, editing(): bool, busy(): bool (photo mode, limp) }

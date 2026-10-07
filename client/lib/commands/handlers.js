@@ -13,11 +13,11 @@ import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, worldHasOwner } from '../world.js';
 import {
-  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, requestV4,
+  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
 import { remotes } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
-import { punt as puntThing, grab, put, drop, throwHeld } from '../v4phys.js';
+import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
@@ -27,8 +27,8 @@ import { trySitOn, chooseSeatPose } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
-import { send } from '../v4edit.js';
-import * as OP from '../../../shared/v4/requests.js';
+import { send } from '../editwrites.js';
+import * as OP from '../../../shared/protocol/requests.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
@@ -68,7 +68,7 @@ register('eyes', (arg) => {
  *  has seen): {id, name, kind, role, here, banned}[]. Someone present answers from the roster without asking. */
 export async function lookupPerson(name) {
   const id = identityOf(name);
-  const r = await requestV4('whois', { name: id ?? name });
+  const r = await sendRequest('whois', { name: id ?? name });
   return r?.ok ? r.people ?? [] : null;
 }
 const personLine = (p) => `${p.name}: ${p.role}${p.kind === 'guest' ? ' (a guest)' : p.kind === 'agent' ? ' (an agent)' : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;

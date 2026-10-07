@@ -1,7 +1,7 @@
 // component-needs-test — Add Component with needs, and Remove with dependants
 // (design §3, step 3): shared/editschema.js addOps / removeOps / editOps
 // and the Add Component list, through the real door (a scratch v4 world,
-// tools/v4/scratchworld.ts).
+// tools/protocol/scratchworld.ts).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/component-needs-test.ts
 //
@@ -14,7 +14,7 @@
 // server/reactions.ts pendulumImpulse is replaced by the door's own `use {action: 'push'}`. Light-verb lights are gone.
 import { inspectSchema, editOps, addOps, removeOps, needMet } from '../shared/editschema.js';
 import { RECORDS, addable, componentsOf } from '../shared/components.js';
-import { scratchWorld, flat } from './v4/scratchworld.ts';
+import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };

@@ -1,7 +1,7 @@
 // channelbox-test — the inspector's channel box (design §5, step 3): Translate,
 // Rotate (Euler read from q in the entity's rotation order), Scale, the order,
 // and the Quaternion row — schema → editOps → the REAL door (a scratch v4
-// world, tools/v4/scratchworld.ts) → the view → schema again.
+// world, tools/protocol/scratchworld.ts) → the view → schema again.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/channelbox-test.ts
 //
@@ -16,8 +16,8 @@ import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { inspectSchema, editOps, fieldAt, describeSchema, poseEdits } from '../shared/editschema.js';
 import { qFromEuler, eulerFromQ, ROT_ORDERS, sameRotation } from '../shared/euler.js';
 import { qHeading, qRotate, qFromYaw } from '../shared/rot.js';
-import { scratchWorld, flat } from './v4/scratchworld.ts';
-import { encName } from '../shared/v4/names.js';
+import { scratchWorld, flat } from './protocol/scratchworld.ts';
+import { encName } from '../shared/protocol/names.js';
 const ROT_ORDER = encName('rotOrder');   // camelCase isn't a v4 component name: requests.js escapes it once, the view decodes it
 
 let pass = 0, fail = 0;

@@ -136,7 +136,7 @@ async function rig(args: any, who = "antra") {
   const live = await rig({ hours: 12, rate: 0, forecast: policyArgs });
   const ag = new WorldAgent({ name: "late" }) as any; const events: any[] = [];
   ag.onEvent = (ev: any) => { if (ev.kind === "weather") events.push(ev); };
-  ag.v4c = live.ag.v4c; await ag.applyView(false, null, T0);   // the same cut, adopted at join
+  ag.replica = live.ag.replica; await ag.applyView(false, null, T0);   // the same cut, adopted at join
   check("a late joiner's sky is the live agent's", JSON.stringify(ag.skyState) === JSON.stringify(live.ag.skyState), JSON.stringify([ag.skyState, live.ag.skyState]));
   ag.checkSky(T0 + 5 * MIN);
   check("late join initializes the watch silently", events.length === 0);

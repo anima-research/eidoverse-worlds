@@ -3,8 +3,8 @@
 A script is JavaScript that lives in the world and runs on the server, with nobody connected if it must. It is a
 component on a thing, `script:<name>`, and every change it makes is an ordinary result that the authority's one gate
 (`admit`) checks, exactly as it checks yours. Design: research note 41 (scripts and behaviours); law: PROTOCOL-v4 L4
-and L7. Code: `shared/v4/authority.js` (the "behaviours" section), `shared/v4/sandbox.js` (the sandbox),
-`shared/v4/scriptrules.js` (limits and rules shared with auditors), `shared/v4/scriptaudit.js` (a reader's re-run).
+and L7. Code: `shared/protocol/authority.js` (the "behaviours" section), `shared/protocol/sandbox.js` (the sandbox),
+`shared/protocol/scriptrules.js` (limits and rules shared with auditors), `shared/protocol/scriptaudit.js` (a reader's re-run).
 
 ## The loop
 
@@ -35,7 +35,7 @@ In the editor (desktop), the same loop is **Inspector › Scripts › new script
 starts it (someone using it, or every N seconds), what it may change, whether it may speak, and the source (a template
 that runs as it stands). Create sends `upload`, then ONE batch: `script:<name>` and, for a use script, its reaction
 (`use`, or the script's own name when the thing's `use` already does something else). One act, so Ctrl+Z takes it off.
-Refusals show on the card in these same words. (shared/v4/newscript.js plans it; client/lib/scriptnew.js is the card.)
+Refusals show on the card in these same words. (shared/protocol/newscript.js plans it; client/lib/scriptnew.js is the card.)
 
 ## The component
 
@@ -141,7 +141,7 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
 815 say    actor=script:bell1  cause=813
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
-reads 814. An auditor may: `shared/v4/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
+reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
 clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 
 ## Determinism (why some JavaScript behaves differently here)

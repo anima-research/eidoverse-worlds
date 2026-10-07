@@ -23,16 +23,16 @@
 
 import { bodyOf } from "../shared/components.js";
 import { describeBody } from "../shared/sockbody.js";
-import { dec as decName } from "../shared/v4/names.js";
-import { actorName } from "../shared/v4/names.js";
-import { refusalText, warningText, touchWords } from "../shared/v4/refusal.js";
+import { dec as decName } from "../shared/protocol/names.js";
+import { actorName } from "../shared/protocol/names.js";
+import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
-import * as OP from "../shared/v4/requests.js";
+import * as OP from "../shared/protocol/requests.js";
 import { childrenOf } from "../shared/hierarchy.js";
 import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";
 /** Every folded record by id — what the hierarchy maths reads (a child's
@@ -245,7 +245,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string)
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 /** The authority's refusal as a tool error: the code, why, and what to do instead. */
-// the same words a person in edit mode sees for the same refusal (shared/v4/refusal.js)
+// the same words a person in edit mode sees for the same refusal (shared/protocol/refusal.js)
 /** One line of a world's history, as an agent reads it: who did what, with what arguments. An entry imported from an
  *  old log (an act `legacy`) shows the verb and args it was written with, not `legacy {}`; a refused request says it
  *  was refused, and never reads as a thing that happened (Commons audit, agents #3). */
@@ -835,7 +835,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const req: any = OP.batch(ops);
       const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.throughLock ? { throughLock: true } : {}) });
       L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
-      if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/v4/refusal.js)
+      if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/protocol/refusal.js)
       else if (r) {
         // the authority's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account
         for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
@@ -957,7 +957,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       // this world: the authority's moderation, by IDENTITY (u-…). A present person's comes from their arrival; anyone else
       // the world has seen is found by name through the directory (whois), so an absent person can be banned or unbanned
-      let who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.v4ids.get(id) ?? null;
+      let who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.actorIds.get(id) ?? null;
       if (!who) {
         const w: any = await ag.request("whois", { name: id });
         const ppl: any[] = w?.ok ? w.people ?? [] : [];

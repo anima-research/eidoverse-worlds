@@ -5,7 +5,7 @@
 // One door request builds a whole building: a `create` of the anchor thing carrying a `structure` component with
 // the grid. That is the entire wire cost of a three-room house — which is the argument for the component lane in one
 // line. (The anchor's model is the placeholder this slice rides; the realizer hides it.) The world must exist (an
-// operator founds it: bun tools/v4/world.ts found) and ID must be a builder there; the door's answer is printed.
+// operator founds it: bun tools/protocol/world.ts found) and ID must be a builder there; the door's answer is printed.
 
 const URL_ = process.env.WORLD_URL ?? 'ws://localhost:8961/ws';
 const TOKEN = process.env.JOIN_TOKEN ?? 'test-door';

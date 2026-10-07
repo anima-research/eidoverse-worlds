@@ -10,7 +10,7 @@ mail ecosystem exist.
 Status: v4.0, normative for logs whose genesis says `version: 4, minor: 0`.
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
-file it. The reference fold is `shared/v4/fold.js`; a second reader, written
+file it. The reference fold is `shared/protocol/fold.js`; a second reader, written
 in Python from this document alone, is `v4/conformance/v4read.py`, and the
 two agree on every conformance log (§11).
 
@@ -139,7 +139,7 @@ A `change` entry's `verb` and `body` are one of:
   source's hash). A blueprint copy is expanded by the authority into an explicit
   batch.
 - A deleted id may be created again by the fold, and starts empty. (The
-  reference door refuses to re-create an id that existed before, so a
+  reference authority refuses to re-create an id that existed before, so a
   reborn id can't inherit references or a sponsorship.)
 - "All or nothing" is the authority's promise about what it writes; it is not a
   fold rule.
@@ -167,8 +167,8 @@ never a new operation**. The fold applies every component blindly; meaning
 lives in whatever reads it — a renderer, the authority's checks, a script.
 
 - **Bare names are the protocol's registry.** The registered components,
-  their fields, defaults and meanings are in `shared/v4/componentspec.js`; a
-  door answers `schema {component?}` with the same. Among them: `transform
+  their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
+  authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
   `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, and on
@@ -254,7 +254,7 @@ request moves a copy to a newer version, keeping its own overrides.
 ## 6. Actors
 
 - `actor` is the attribution ink of the permanent record, stamped by the
-  door from the authenticated connection, **never read from a request's
+  authority from the authenticated connection, **never read from a request's
   payload**.
 - An actor is an **identity** (§3.1); `system` (the authority itself: genesis, its
   own follow-ups such as sending a released thing home); `sim` (the physics
@@ -264,13 +264,13 @@ request moves a copy to a newer version, keeping its own overrides.
 - Display names are a view, kept outside the log. A stranger who takes your
   old name inherits nothing.
 
-## 7. Authority — the authority
+## 7. The authority
 
-Every write reaches the log through the world's **door**. A request
-`{tool, args}` — `create`, `set`, `delete`, `place`, `batch`, `use`, `say`,
+Every write reaches the log through the world's **authority**. A request
+`{verb, args}` — `create`, `set`, `delete`, `place`, `batch`, `use`, `say`,
 `undo`, `publish`, `update`, `grab`, `put`, `throw`, `drop`, `punt`… — is
 first turned into the state writes it would make, whatever word or path
-produced it (a tool, a `use` handler, an undo, a blueprint update, a script,
+produced it (a request verb, a `use` handler, an undo, a blueprint update, a script,
 a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 
 - the stamped asker (and, later, the grant it cites);
@@ -284,8 +284,8 @@ a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 - rate, per actor;
 - the asker's active sanctions (bans, from the moderator log).
 
-Tool-specific checks MAY add to `admit`, never replace it. Accepted, the
-door appends the request as an `act` and its result as one `change` entry
+Verb-specific checks MAY add to `admit`, never replace it. Accepted, the
+authority appends the request as an `act` and its result as one `change` entry
 caused by it; a refused write is appended as an act carrying its refusal
 (`{code, reason, fix}`) and nothing else is written (refusals that would
 only flood the log, such as rate limits, are answered without an entry). **Every appended entry passes the gate**,
@@ -293,7 +293,7 @@ acts, says and sim entries included.
 
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
 `default-role` for everyone without one (absent: visitor). The reference
-door's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
+authority's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
 between builder and owner where the roles ladder is enabled): changing any
 component of an entity needs builder; changing `@world` needs owner, except
 `blueprints:*` (publishing a blueprint, builder). Removing the last owner is
@@ -309,12 +309,12 @@ don't relocate it stay open. Anyone who may delete the `lock` component
 the log records only the edit. A lock binds authoring, not motion.
 
 **Requests are open; results are closed.** Anyone may add a request word —
-a tool, a `use` action, a script command — and no request word grants a
+a verb, a `use` action, a script command — and no request word grants a
 right. Unknown requests are refused at the authority; nothing about them reaches
 the fold.
 
 **Moderation** (kicks, bans and their reasons) lives in a separate
-moderator log written by the same door, never in the world log; a world
+moderator log written by the same authority, never in the world log; a world
 reader never folds it. Only its effects reach the world, through the gate.
 
 ## 8. Scripts
@@ -362,8 +362,8 @@ so every runtime gets the same bits.
 - **A new feature is a new component** (§4). Register a bare name by
   documenting it here and in the catalogue; otherwise use your domain
   prefix.
-- **A new request** (a tool, a `use` action, a script command) is door
-  practice: it changes no old log, and it grants nothing — its writes pass
+- **A new request** (a verb, a `use` action, a script command) is the
+  authority's practice: it changes no old log, and it grants nothing — its writes pass
   `admit` like everyone's.
 - **The four operations, the envelope, the kinds and the fold are fixed.**
   Changing them is a new `minor` (or `version`) in genesis; a reader that
@@ -383,7 +383,7 @@ so every runtime gets the same bits.
   `test_v4read.py` its tests. `chain.py` and `test_chain.py` — the chain,
   signatures and purge (§12). `ed25519/` — the key vectors (§13).
 
-`bun tools/v4/run.ts conformance` folds every log with the JavaScript fold
+`bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
 and the Python reader and fails on any difference in status, digest or
 diagnostics. If you disagree with a result, one of us has a bug, and the
 argument will be short.
@@ -447,7 +447,7 @@ argument will be short.
 
 The first protocol (an untyped verb log) is retired. An old world's log can
 be translated once, one way, into a new v4 world
-(`bun tools/v4/world.ts translate <old> <new>`); the old log is read, never
+(`bun tools/protocol/world.ts translate <old> <new>`); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no v4 component ride along as `imported:<name>`. A

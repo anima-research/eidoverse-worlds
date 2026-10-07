@@ -6,7 +6,7 @@
 //
 // (Protocol v1 removed, 2026-10-07: the v1 rights ladder that was most of this file went with it — the first
 // embodied joiner auto-granted owner, builder/visitor ranks over v1 verbs, grants, the ownerless legacy world. v4
-// roles are the door's @world roles:<id> records: tools/v4/server-check.ts S1/S3, identity-check H4/H5,
+// roles are the door's @world roles:<id> records: tools/protocol/server-check.ts S1/S3, identity-check H4/H5,
 // security-check.)
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

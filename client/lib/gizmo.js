@@ -19,13 +19,13 @@ import { sendDrag } from './net.js';
 import { registerSystem } from './frameloop.js';
 import { sceneSelected } from './scenegraph.js';
 import { getTool, getSpace, isEditing, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
-import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
+import * as V4 from './editwrites.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
 import { foldRecord } from './inspect.js';
 import { editOps, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
-import * as OP from '../../shared/v4/requests.js';
+import * as OP from '../../shared/protocol/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const R2D = 180 / Math.PI;

@@ -10,7 +10,7 @@ it. Promotion into `spec/` (and its CC0 grant) is a maintainer decision, not
 taken here.
 
 Source of truth: `server/server.ts` (WS switch + stage tick),
-`server/v4/requestwire.ts` + `server/v4/worldlog.ts` + `shared/v4/authority.js` (the
+`server/requestwire.ts` + `server/worldlog.ts` + `shared/protocol/authority.js` (the
 authored plane), `server/messages.ts` (presence lanes), `server/routes.ts`
 (HTTP). Where this doc and the code disagree, the code is right and this doc
 has a bug — fix the doc, or flag the code change as a **wire change** in
@@ -35,7 +35,7 @@ review.
 - Rate caps: **60 msgs/s** per client (`MSG_RATE`, excess silently
   dropped); the authority's own rate per identity over everything it makes the
   log hold (acts and says: entries and bytes per 10 s, `RATE` in
-  `shared/v4/authority.js`), refused with code `rate`.
+  `shared/protocol/authority.js`), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.
 
@@ -59,7 +59,7 @@ Every message belongs to exactly one plane:
   only the `request` message (one request to the world's authority) writes here. The requester gets
   `reply`; every client gets the raw entries the authority appended as
   `{type:"log", from, entries}` and folds them itself with
-  `shared/v4/fold.js`. The stream is authoritative; clients must not
+  `shared/protocol/fold.js`. The stream is authoritative; clients must not
   self-apply optimistically without reconciling against it.
 - **Presence** — relayed or batched, never persisted, gone when it's gone:
   `pose`/`frame`, `typing`, `caption`, `drag`, `anim`, `puppet`,
@@ -73,7 +73,7 @@ Every message belongs to exactly one plane:
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
 | `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, v4fold}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `v4fold: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
-| `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY door to the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `v4-result`. There is no other write path. |
+| `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `v4-result`. There is no other write path. |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |

@@ -45,11 +45,11 @@ import { isFiniteVec3 } from "./shape.ts";
 // weather every renderer shows (issue #29's shared-fact boundary).
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
-import { makeV4Client } from "../shared/v4/replica.js";
-import { diffView } from "../shared/v4/viewdiff.js";
-import { emptyView, idOut } from "../shared/v4/view.js";
+import { makeReplica } from "../shared/protocol/replica.js";
+import { diffView } from "../shared/protocol/viewdiff.js";
+import { emptyView, idOut } from "../shared/protocol/view.js";
 import { hear } from "../shared/chatwindow.js";
-import * as OP from "../shared/v4/requests.js";
+import * as OP from "../shared/protocol/requests.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -203,7 +203,7 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
-  /** The VIEW of this body's own fold of the world (shared/v4/view.js viewState over shared/v4/replica.js), plus the
+  /** The VIEW of this body's own fold of the world (shared/protocol/view.js viewState over shared/protocol/replica.js), plus the
    *  chat window. The maps below are DERIVED VIEWS reconciled from it after every change; side effects (percepts,
    *  supports, pings) run in a separate pass that never touches it. */
   private st: any = emptyView();
@@ -420,10 +420,10 @@ export class WorldAgent {
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
   /** The world's protocol facts, from the snapshot (version 4, its head and world id). Building tools route through
-   *  request()/verbV4() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
+   *  request()/sendOps() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
   v4: { version: number; head: number; worldId: string } | null = null;
-  /** The world's own fold, from the join cut and the authority's `log` stream (shared/v4/replica.js). */
-  private v4c: any = null;
+  /** The world's own fold, from the join cut and the authority's `log` stream (shared/protocol/replica.js). */
+  private replica: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
   private spelling: Promise<unknown> = Promise.resolve();
   /** v4fold: this body folds the world's v4 stream itself (the server refuses a client that doesn't). */
@@ -431,7 +431,7 @@ export class WorldAgent {
     return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, v4fold: true,
       token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
   }
-  private pendingV4 = new Map<string, (m: any) => void>();
+  private pendingRequests = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
@@ -728,11 +728,11 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
-            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.v4ids.set(p.id, p.v4id); }
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.actorIds.set(p.id, p.v4id); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).v4?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
-            this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
+            this.replica = makeReplica(); this.replica.adopt((msg as any).v4);
             this.st.recentChat = structuredClone(msg.state?.recentChat ?? []);
             this.st.chatTotal = msg.state?.chatTotal ?? 0;
             for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
@@ -843,8 +843,8 @@ export class WorldAgent {
             }
             break;
           case "log": {
-            if (!this.v4c?.active) break;
-            const r = this.v4c.ingest((msg as any).entries ?? [], (msg as any).from ?? -1, (msg as any).names);
+            if (!this.replica?.active) break;
+            const r = this.replica.ingest((msg as any).entries ?? [], (msg as any).from ?? -1, (msg as any).names);
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
             if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
             for (const x of r.says) {
@@ -858,8 +858,8 @@ export class WorldAgent {
             break;
           }
           case "reply": {
-            const p = this.pendingV4.get(String(msg.id));
-            if (p) { this.pendingV4.delete(String(msg.id)); p(msg); }
+            const p = this.pendingRequests.get(String(msg.id));
+            if (p) { this.pendingRequests.delete(String(msg.id)); p(msg); }
             break;
           }
           case "history": {
@@ -887,7 +887,7 @@ export class WorldAgent {
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
             this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
-            if (typeof msg.v4id === "string") this.v4ids.set(msg.id, msg.v4id);
+            if (typeof msg.v4id === "string") this.actorIds.set(msg.id, msg.v4id);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
@@ -1244,14 +1244,14 @@ export class WorldAgent {
   /** This world's blueprints from the v4 fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
   /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every
    *  part; the copy is the part whose parent isn't of the same copy */
-  copyLineV4(id: string): string | null {
+  copyLine(id: string): string | null {
     const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.["copy-of"]?.from; if (typeof f !== "string") return null;
     const name = this.worldBlueprints()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
     let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.comp?.["copy-of"]?.from !== f) break; root = p; }
     return root === id ? `a copy of "${name}"` : `part "${E[id].comp["copy-of"].key}" of ${root} (a copy of "${name}")`;
   }
   worldBlueprints(): Record<string, { name?: string }> {
-    const w = this.v4c?.st?.entities?.["@world"]?.c ?? {};
+    const w = this.replica?.st?.entities?.["@world"]?.c ?? {};
     const out: Record<string, { name?: string }> = {};
     for (const [k, v] of Object.entries(w)) if (k.startsWith("blueprints:")) out[k.slice("blueprints:".length)] = (v ?? {}) as { name?: string };
     return out;
@@ -1305,10 +1305,10 @@ export class WorldAgent {
   }
 
   /** A v4 world: take the next view of this body's own v4 fold, and act on what changed (said in v4 terms,
-   *  shared/v4/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
+   *  shared/protocol/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
   private async applyView(live: boolean, actor: string | null, ts: number | null) {
     const prev = this.st as any;
-    const next = this.v4c.view(prev);   // carries the chat window this body already holds
+    const next = this.replica.view(prev);   // carries the chat window this body already holds
     const d = diffView(live ? prev : emptyView(), next);
     const was = new Map<string, any>();
     for (const c of d.things) if (!was.has(c.id)) was.set(c.id, this.entities.get(c.id));
@@ -1712,9 +1712,9 @@ export class WorldAgent {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
     // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
-    // every renderer draws (shared/v4/replica.js simAt, advanced to the authority's clock) — so look() sees a punted crate
+    // every renderer draws (shared/protocol/replica.js simAt, advanced to the authority's clock) — so look() sees a punted crate
     // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
-    const sim = this.v4c?.simAt?.(this.serverNow());
+    const sim = this.replica?.simAt?.(this.serverNow());
     if (sim?.bodies) {
       for (const sid in sim.bodies) {
         const b = sim.bodies[sid]; const id = idOut(sid);
@@ -2521,14 +2521,14 @@ export class WorldAgent {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
-      this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
+      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
+      this.pendingRequests.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
   /** present people's v4 identities, by display name (their arrival carries it) */
-  v4ids = new Map<string, string>();
-  /** A gesture's ops (shared/v4/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
+  actorIds = new Map<string, string>();
+  /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
    *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
@@ -3182,7 +3182,7 @@ export class WorldAgent {
       if (c.hidden === true) aff.push(`hidden (not drawn; act {verb: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
-      const copy = c["copy-of"] ? this.copyLineV4(e.id) : null;
+      const copy = c["copy-of"] ? this.copyLine(e.id) : null;
       if (copy) aff.push(copy);
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the

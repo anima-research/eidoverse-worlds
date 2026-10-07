@@ -19,9 +19,9 @@
 // ?orrery=<url> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
-import { enc } from '../../shared/v4/names.js';
-import * as OP from '../../shared/v4/requests.js';
-import { sendOps } from './v4edit.js';
+import { enc } from '../../shared/protocol/names.js';
+import * as OP from '../../shared/protocol/requests.js';
+import { sendOps } from './editwrites.js';
 import { CONFIG, bus, report } from './base.js';
 import { fsvg } from './icons.js';
 import { makeSection, toast, flashHint } from './ui.js';

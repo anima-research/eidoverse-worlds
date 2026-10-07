@@ -1,22 +1,22 @@
 // hierarchy-commit — a drag in the Hierarchy is ONE undo step (design §5),
 // through the client's real commit path (client/lib/inspect.js commitEdit →
-// client/lib/v4edit.js sendOps → the door), headless. The Hierarchy's drop and
+// client/lib/editwrites.js sendOps → the door), headless. The Hierarchy's drop and
 // the inspector's Parent field both call commitEdit(id, 'parent.to', onto);
 // this checks what that sends, what the door makes of it, and that the
-// client's own Ctrl+Z (v4edit.undo: the door's undo of my last act) takes it back.
+// client's own Ctrl+Z (editwrites.undo: the door's undo of my last act) takes it back.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-commit-test.ts
 //
-// v4 port (2026-10-06): the wire is the real v4 door on a scratch world (tools/v4/inspectharness.ts stubs the page
-// around inspect.js/v4edit.js). One drag = one request (a batch: set parent + the LOCAL transform, scale included), so
+// v4 port (2026-10-06): the wire is the real v4 door on a scratch world (tools/protocol/inspectharness.ts stubs the page
+// around inspect.js/editwrites.js). One drag = one request (a batch: set parent + the LOCAL transform, scale included), so
 // "a mount and a scale place" and the client-side inverse list are gone: undo is the door's, by act. A lock is the
 // door's to refuse, and the client asks "Move anyway?" (v4 §5).
-import { inspectHarness } from "./v4/inspectharness.ts";
+import { inspectHarness } from "./protocol/inspectharness.ts";
 import { worldPose } from "../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
 const H = inspectHarness("hiercommit");
 const { commitEdit } = await import("../client/lib/inspect.js");
-const V4 = await import("../client/lib/v4edit.js");
+const V4 = await import("../client/lib/editwrites.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {

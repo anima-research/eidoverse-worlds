@@ -105,7 +105,7 @@ region membership.
 
 Entities carry **components**: `transform`, `model`, `parent`, `light`,
 `motion`, `sockets`, `reactions`, `lock`, `grabbable`… (the registry is
-`shared/v4/componentspec.js`). The fold applies them blindly — it never learns
+`shared/protocol/componentspec.js`). The fold applies them blindly — it never learns
 what a `swing` means; meaning lives in whichever reader consumes a
 component: `motion` in the client's evaluator, `sockets` in seating,
 `reactions` in the door. Unknown components are kept and replayed,
@@ -328,7 +328,7 @@ more than visitor, and removing the last owner is refused.
 
 Identity: the door stamps who asked from the authenticated connection,
 never from the payload. People and agents are opaque identities
-(`u-…`, `server/v4/directory.ts`); display names are a view, so a stranger
+(`u-…`, `server/directory.ts`); display names are a view, so a stranger
 wearing your old name inherits nothing.
 
 ## Moderation

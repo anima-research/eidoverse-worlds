@@ -41,10 +41,10 @@ async function freePort(): Promise<number> {
 
 const worldsDir = mkdtempSync(join(tmpdir(), "worlds-route-"));
 // on disk: two real worlds, one dir with no log (never a world), one junk name
-foundWorlds(worldsDir, ["commons", "annex"]);   // two v4 worlds (a v4.jsonl whose line 0 is a v4 genesis)
+foundWorlds(worldsDir, ["commons", "annex"]);   // two v4 worlds (a world.jsonl whose line 0 is a v4 genesis)
 mkdirSync(join(worldsDir, "logless"), { recursive: true });
 // an OLD world: a v1 log and no v4 one. The server serves only v4, so it isn't listed (it's translated once by the
-// operator into a new v4 world: bun tools/v4/world.ts translate)
+// operator into a new v4 world: bun tools/protocol/world.ts translate)
 mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
 writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
 mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });

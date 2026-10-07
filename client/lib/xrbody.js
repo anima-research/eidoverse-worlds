@@ -290,7 +290,7 @@ function fingerTick(vrm, curls) {
   const ud = vrm.userData = vrm.userData || {};
   const base = ud._fingerBase || (ud._fingerBase = new Map());
   for (const side of ['left', 'right']) {
-    if (ud._holdFingers?.[side]) continue;   // a hand holding a thing wears the grip's finger preset (v4phys.js)
+    if (ud._holdFingers?.[side]) continue;   // a hand holding a thing wears the grip's finger preset (thingphysics.js)
     const sgn = side === 'left' ? -1 : 1;
     const cur = curls[side] || {};
     for (const [finger, key] of [['Index', 'index'], ['Middle', 'grip'], ['Ring', 'grip'], ['Little', 'grip']]) {

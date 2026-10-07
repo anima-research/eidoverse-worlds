@@ -16,8 +16,8 @@
 //    whatever was used last
 // 5. the text tier: inspect / edit / hierarchy speak @world (the agent's edit sent to a real door)
 //
-// v4 port (2026-10-06): the world is read from the v4 view (shared/v4/view.js viewState); every result is the
-// door's (tools/v4/scratchworld.ts). worldInverse is gone: undo is the door's `undo`, checked as such.
+// v4 port (2026-10-06): the world is read from the v4 view (shared/protocol/view.js viewState); every result is the
+// door's (tools/protocol/scratchworld.ts). worldInverse is gone: undo is the door's `undo`, checked as such.
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { canon, RECORDS, addable, componentsOf } from '../shared/components.js';
@@ -25,15 +25,15 @@ import { fieldAt, describeSchema } from '../shared/editschema.js';
 import { terrainArgs, grassArgs, paletteDefaults } from '../shared/grounddefs.js';
 import { WORLD_ID, worldComponents, worldOf, worldState, worldSchema, worldEditOps, worldPick, worldChoice, skyPresetOf, pickSky } from '../shared/worldentity.js';
 import { TABS, openingTab, useTab, TAB_V } from '../client/lib/edittabs.js';
-import { viewState, emptyView } from '../shared/v4/view.js';
-import { translate } from './v4/import-v1/translate-v1.js';
-import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/v4/fold.js';
-import { v1FoldBuild } from './v4/import-v1/build.ts';
-import { scratchWorld, flat } from './v4/scratchworld.ts';
+import { viewState, emptyView } from '../shared/protocol/view.js';
+import { translate } from './protocol/import-v1/translate-v1.js';
+import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/protocol/fold.js';
+import { v1FoldBuild } from './protocol/import-v1/build.ts';
+import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
-const now = () => Number(process.env.V4_NOW ?? Date.now()) + 500;   // the door's clock (scratchdoor steps it per request)
+const now = () => Number(process.env.PROTOCOL_NOW ?? Date.now()) + 500;   // the door's clock (scratchdoor steps it per request)
 const ROOT = join(import.meta.dir, '..');
 const PRESETS = JSON.parse(readFileSync(join(ROOT, 'defs/sky/_presets.json'), 'utf8'));
 const PAL = JSON.parse(readFileSync(join(ROOT, 'defs/ground/_palette.json'), 'utf8'));
@@ -77,7 +77,7 @@ console.log('1. the alias both ways, through the real door:');
   step('sky', {});
   // KNOWN BUG (reported 2026-10-06, a door/catalogue mismatch, not fixed here): a weather pick under a forecast is a
   // manual override; the door's own skyValue (shared/forecast.js foldSkyEntry) writes sky.override, and the door's sky
-  // schema (shared/v4/componentspec.js) has no `override` key, so the door refuses its own value: "unknown key 'override'".
+  // schema (shared/protocol/componentspec.js) has no `override` key, so the door refuses its own value: "unknown key 'override'".
   // The Build tab's weather tile and weather.state are refused in any v4 world with a forecast.
   check('the door takes every request of the synthetic world (KNOWN BUG: a weather under a forecast is refused)', refusals.length === 0, refusals.join(' | '));
   check(`the alias round-trips exactly after every request of a synthetic world (${n} states)`, bad.length === 0, bad.join(' | '));
@@ -91,7 +91,7 @@ console.log('1. the alias both ways, through the real door:');
     ['Sky', 'Weather', 'Terrain', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
     && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a: any) => (RECORDS as any)[a.name]?.world));
 
-  // every spec fixture, translated to v4 (shared/v4/translate-v1.js, as a world is migrated), state by state
+  // every spec fixture, translated to v4 (shared/protocol/translate-v1.js, as a world is migrated), state by state
   const logs: string[] = [];
   const walk = (d: string) => { if (!existsSync(d)) return; for (const x of readdirSync(d)) { const p = join(d, x); if (statSync(p).isDirectory()) walk(p); else if (x === 'log.jsonl') logs.push(p); } };
   walk(join(ROOT, 'spec/fixtures'));

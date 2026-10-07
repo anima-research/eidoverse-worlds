@@ -10,7 +10,7 @@
 //
 // Exit 0 = all gates pass. Gates are printed at the end.
 //
-// The world must exist (a v4 world is founded by its operator: bun tools/v4/world.ts found loadtest --owner <you>;
+// The world must exist (a v4 world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
 // joining never founds one). Every connection joins with v4fold (the world speaks protocol v4): chat is read from
 // the snapshot's chat window (state.recentChat) and the v4-log stream's `say` entries, and a say is a door request.
 

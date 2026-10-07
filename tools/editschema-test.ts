@@ -9,7 +9,7 @@
 // socket fields = one merged `set sockets`), honours relative math on the face
 // scale (degrees), hard limits, read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
-// ops go through the real door on a scratch world (tools/v4/scratchworld.ts)
+// ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
 // and the v4 state is read back as the view.
 //
 // v4 port (2026-10-06): light-verb lights (kind:'light') and guard/placer are gone from v4 — a lamp is a thing
@@ -17,7 +17,7 @@
 // door refuses the move (code `locked`), so that is now checked at the door.
 
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
-import { scratchWorld, flat } from "./v4/scratchworld.ts";
+import { scratchWorld, flat } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
 
 let pass = 0, fail = 0;

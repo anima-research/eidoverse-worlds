@@ -10,13 +10,13 @@
 // ONE request with `expect` on the building as this viewer saw it: if
 // someone else changed it since, the authority refuses (`changed`) rather than one
 // edit silently eating the other. Undo is the editor's one undo (Ctrl+Z: the
-// door's undo of MY act, v4edit.js), so it always lands on the building that
+// door's undo of MY act, editwrites.js), so it always lands on the building that
 // act changed, and keeps theirs where someone changed it since. (Review 10-07:
 // this file used to keep its own stack and write the popped plan into whatever
 // building was current, with expect: false.)
 
-import * as OP from '../../shared/v4/requests.js';
-import { sendOps } from './v4edit.js';
+import * as OP from '../../shared/protocol/requests.js';
+import { sendOps } from './editwrites.js';
 import { flashHint } from './ui.js';
 import { THREE, canvas, camera, scene } from './core.js';
 import { bus, report } from './base.js';

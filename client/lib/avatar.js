@@ -1657,7 +1657,7 @@ export class Avatar {
     for (const [node, q] of h.nodes) if (!mine.has(node) && !reach?.has(node)) this._writeBone(node, [q.x, q.y, q.z, q.w], h.w);
   }
 
-  /** What holding a thing does to this body (grabbable, client/lib/v4phys.js): sparse normalized-bone rotations, the
+  /** What holding a thing does to this body (grabbable, client/lib/thingphysics.js): sparse normalized-bone rotations, the
    *  fingers of each holding hand (a grip's preset) and, for a body without tracked hands, the arms' hold pose. Every
    *  client sets the same from the door's hold record and the thing's component: presence, never streamed. It applies
    *  after a seat's hold (a held thing wins its hand) and yields to the person's own held pose and reach. Null lets go. */

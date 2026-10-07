@@ -19,7 +19,7 @@
 // (pickSky); the Weather component is a different component and is carried
 // across the sky verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
 
-import * as OP from './v4/requests.js';
+import * as OP from './protocol/requests.js';
 import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';

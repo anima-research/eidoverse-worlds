@@ -46,7 +46,7 @@ import * as participants from './lib/remotes.js';
 import { capture } from './lib/net_capture.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  net, connect, initIdentity, loginUrl, wireNet, requestV4, sendPose, sendWhisper, sendTyping,
+  net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
@@ -87,7 +87,7 @@ import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
 import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
-import { initV4Phys, physicsApi, simShown } from './lib/v4phys.js';
+import { initThingPhysics, physicsApi, simShown } from './lib/thingphysics.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
@@ -436,7 +436,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 // FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
-// Wired here for the same reason initV4Phys and wireNet are: net.js must not
+// Wired here for the same reason initThingPhysics and wireNet are: net.js must not
 // import the controller, so main.js is where the two meet. Live, not captured
 // -- a role change (your-rights) takes effect on the next resolve, and losing
 // fly grounds a body that is already in the air the next time it acts.
@@ -444,7 +444,7 @@ setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
-initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
@@ -853,7 +853,7 @@ globalThis.whyIsItSilent = () => {
 };
 
 const EW = globalThis.EW = {
-  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, requestV4,
+  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, sendRequest,
   avatarMounts, serverNow, comps,   // who sits where (presence), the sequencer's clock the seats' signals read, the component bags
   skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have. A value
@@ -1018,7 +1018,7 @@ const EW = globalThis.EW = {
   },
   clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
-  physics: physicsApi, // grab/put/throw/drop/punt as door requests (v4phys.js): what runtime mods script against
+  physics: physicsApi, // grab/put/throw/drop/punt as door requests (thingphysics.js): what runtime mods script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
   foldParity,        // shadow-mode drift probe (TEL0S_NOTES §11.6)

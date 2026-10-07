@@ -5,7 +5,7 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/unknown-comp-test.ts
 //
 // Four tiers, each the REAL module, no server process, no browser:
-//   1. the door      shared/v4/authority.js on a scratch v4 world (tools/v4/scratchworld.ts): a set of an unknown type is
+//   1. the door      shared/protocol/authority.js on a scratch v4 world (tools/protocol/scratchworld.ts): a set of an unknown type is
 //                    accepted, with a note that the door knows no evaluator for it
 //   2. the fold      the door's state as the view a client reads (view.js viewState): kept verbatim, replaced
 //                    wholesale, removed by delete {id, component}
@@ -53,7 +53,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 
 const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
-const { scratchWorld } = await import('./v4/scratchworld.ts');
+const { scratchWorld } = await import('./protocol/scratchworld.ts');
 
 const TYPE = 'weathervane';                 // a type no evaluator in this tree knows
 const D1 = { points: 'north', vanes: [1, 2, { deep: true }], note: 'a cockerel' };
@@ -61,7 +61,7 @@ const D2 = { points: 'south' };
 const LIB = 'eidoverse/assets/models/crate_large_red.glb';
 
 // ---- 1. the door -------------------------------------------------------------
-console.log('\n1. the door (shared/v4/authority.js, a scratch v4 world)');
+console.log('\n1. the door (shared/protocol/authority.js, a scratch v4 world)');
 const W = scratchWorld('unknowncomp').seed({ crate: { lib: LIB, pos: [1, 0, 1] } });
 const r0 = W.call('set', { id: 'crate', component: TYPE, value: D1 });
 check('an unknown type is accepted: the set is not refused', r0.ok === true, JSON.stringify(r0.refused));

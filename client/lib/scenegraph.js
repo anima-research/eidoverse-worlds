@@ -35,9 +35,9 @@ import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
-import { requestDebug, v4 } from './net.js';
-import { sendOps, del, revertPose } from './v4edit.js';
-import * as OP from '../../shared/v4/requests.js';
+import { requestDebug, replica } from './net.js';
+import { sendOps, del, revertPose } from './editwrites.js';
+import * as OP from '../../shared/protocol/requests.js';
 import { state } from './state.js';
 import { makeSection, flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -361,7 +361,7 @@ async function paintScripts() {
         <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-v4.md)</div>'}</div>${consoleHtml}
+  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-replica.md)</div>'}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
   for (const el of scriptsBody.querySelectorAll('.sg-script')) {
@@ -386,7 +386,7 @@ export function initSceneGraph() {
 
   // research roles §7: in a v4 world this tab is retired. v4 scripts live in Moderation › Scripts (and on the
   // Inspector's script card); an imported world's old bindings, which v4 never runs, live in World Settings › Old world. One place each.
-  bus.on('hydrated', () => { if (v4.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
+  bus.on('hydrated', () => { if (replica.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
   scriptsApi = makeSection('📜 scripts', async (body) => {
     scriptsBody = body;
     await refreshRoster();

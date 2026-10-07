@@ -2,17 +2,17 @@
 //
 // A small centre card on the selected thing: a name, what starts it (someone using it, or a timer), what it may change,
 // whether it may speak, and the source (a template that runs as it stands). Create plans the requests an agent sends
-// (shared/v4/newscript.js) and sends them through the editor's one write path (v4edit.js):
+// (shared/protocol/newscript.js) and sends them through the editor's one write path (editwrites.js):
 //   upload {text} → {src}, then ONE batch: script:<name> {src, scope, on, every?} + (on use) its reaction. One act, so
 //   one Ctrl+Z takes it off again.
 // A refusal (the scripts permission, a syntax error, a scope beyond your rights) is shown on the card in the authority's words,
 // and the card stays open with what you typed. Esc or Cancel closes it; nothing is written until Create.
 //
 //   openNewScript(id) → Promise<{ok, id, name} | {ok: false}>
-import * as V4 from './v4edit.js';
+import * as V4 from './editwrites.js';
 import { net } from './net.js';
-import { refusalText } from '../../shared/v4/refusal.js';
-import { planNewScript, TEMPLATES, TEMPLATE_SCOPE } from '../../shared/v4/newscript.js';
+import { refusalText } from '../../shared/protocol/refusal.js';
+import { planNewScript, TEMPLATES, TEMPLATE_SCOPE } from '../../shared/protocol/newscript.js';
 
 /** May I install a script here (the scripts permission; the authority decides either way)? */
 export const mayScript = () => { const r = net.myRights; if (!r) return false;

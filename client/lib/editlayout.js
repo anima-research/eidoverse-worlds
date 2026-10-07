@@ -23,7 +23,7 @@ import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPA
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
-import * as V4 from './v4edit.js';
+import * as V4 from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 

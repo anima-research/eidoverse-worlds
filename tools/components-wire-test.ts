@@ -6,7 +6,7 @@
 //
 // Each tier is the REAL module; no server process, no browser:
 //   3. the browser   client/lib/realize/models.js over tools/lod-client-stub.mjs, fed the views a v4 client folds
-//                    from a scratch v4 world behind the real door (tools/v4/scratchworld.ts)
+//                    from a scratch v4 world behind the real door (tools/protocol/scratchworld.ts)
 //   5. inspector     shared/editschema.js — reads either spelling, writes new on edit, through the v4 door
 // (Protocol v1 removed, 2026-10-07: tiers 1 (the v1 fold), 2 (server/verbs.ts) and 4 (the agent's v1 applyEntry
 //  reader) went with it; tier 3 was ported to the v4 feed. Its v1-only checks were dropped: the spawn verb's legacy
@@ -44,7 +44,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 const jeq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const LAMP = 'eidoverse/assets/models/lamp.glb';
-const { scratchWorld } = await import('./v4/scratchworld.ts');
+const { scratchWorld } = await import('./protocol/scratchworld.ts');
 
 // ---- 3. the browser realizer --------------------------------------------------
 console.log('\n3. the browser (client/lib/realize/models.js, real bus + state, stubbed renderer)');
@@ -151,12 +151,12 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
 
 // ---- 5. the inspector ----------------------------------------------------------
 // v4 port (2026-10-06): editOps plans door requests; what an edit DOES is checked through the real v4 door on a
-// scratch world (tools/v4/scratchworld.ts). Light-verb lights are gone from the planner (a v4 lamp is a thing with a
+// scratch world (tools/protocol/scratchworld.ts). Light-verb lights are gone from the planner (a v4 lamp is a thing with a
 // light component), so the "old light-verb light keeps the light verb" checks are dropped.
 console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit, through the v4 door)');
 {
   const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
-  const { scratchWorld } = await import('./v4/scratchworld.ts');
+  const { scratchWorld } = await import('./protocol/scratchworld.ts');
   const ed = (ent: any, set: Record<string, unknown>) => editOps(ent, 'x', set);
   const opsOf = (r: any) => JSON.stringify(r.ops);
   // the edit through the door: `x` seeded as `ent`, the ops sent as one request, the view read back
@@ -184,7 +184,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   // KNOWN BUG (reported 2026-10-06; door/translator, not the planner): …but the door's light schema is closed, so it
   // refuses that edit whole ("x.light: unknown key 'flicker'"): a translated lamp with an unknown light key can't be
   // edited at all in v4. Translation keeps such keys (shown first), so these lamps exist.
-  { const { translate } = await import('./v4/import-v1/translate-v1.js'); const { v1FoldBuild } = await import('./v4/import-v1/build.ts');
+  { const { translate } = await import('./protocol/import-v1/translate-v1.js'); const { v1FoldBuild } = await import('./protocol/import-v1/build.ts');
     const tr = translate([{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log' } }, { seq: 1, ts: 2, actor: 'r', verb: 'spawn', args: { id: 'x', lib: LAMP } },
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
     // the translator now carries a key the v4 component doesn't define BESIDE it (imported:light {flicker}), so the lamp

@@ -13,7 +13,7 @@
 // the server-side convenience tier.
 
 import { statSync } from "node:fs";
-import { solidsFromTriangles } from "./v4/solids.ts";
+import { solidsFromTriangles } from "./solids.ts";
 // the one classifier both runtimes share (#84) — grid math and constants
 // live there; this file only supplies vertices from gltf-transform accessors
 import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID,
@@ -101,7 +101,7 @@ export type GeomSummary = {
   /** mesh nodes present in the FILE but attached to no scene — broken
    *  exports. No renderer draws them; never aim a motion at one. */
   orphans?: string[];
-  /** solid parts as boxes [[lo], [hi]] in the model frame (server/v4/solids.ts): walls, floors and roofs of a building
+  /** solid parts as boxes [[lo], [hi]] in the model frame (server/solids.ts): walls, floors and roofs of a building
    *  with its rooms left open; absent for a small model or one too big to measure (its bbox stands) */
   solids?: number[][][];
 };
@@ -112,7 +112,7 @@ const SAMPLE_ABOVE_TRIS = 500_000;
 const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
 /** Summarize one GLB file. Returns null when parsing is unavailable/fails. `solids`: also measure its solid parts
- *  (server/v4/solids.ts; only the door's catalogue asks: it costs the thread, so no other caller pays for it). */
+ *  (server/solids.ts; only the door's catalogue asks: it costs the thread, so no other caller pays for it). */
 export async function summarizeGlb(absPath: string, opts: { solids?: boolean } = {}): Promise<GeomSummary | null> {
   let mtime = 0;
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
@@ -161,7 +161,7 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   }
   const stride = tris > SAMPLE_ABOVE_TRIS ? Math.ceil(tris / SAMPLE_ABOVE_TRIS) : 1;
 
-  // the triangles in the model frame, for its solid parts (server/v4/solids.ts), when the mesh is walked whole
+  // the triangles in the model frame, for its solid parts (server/solids.ts), when the mesh is walked whole
   const soup = opts.solids && tris <= SOLIDS_MAX_TRIS ? new Float32Array(tris * 9) : null; let soupN = 0;
   // Flat zones bucketed by height (2.5cm) — up-facing triangles only.
   const buckets = new Map<number, { area: number; x: [number, number]; z: [number, number]; ySum: number; n: number }>();

@@ -12,7 +12,7 @@ where things come to rest.*
 
 Status: normative for v4 worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` (eidosim), `shared/simmath.js`,
-`shared/terrainmath.js`, and the sim layer `shared/v4/simlayer.js`. MUST /
+`shared/terrainmath.js`, and the sim layer `shared/protocol/simlayer.js`. MUST /
 SHOULD / MAY are RFC-2119.
 
 ## 0. The idea
@@ -72,10 +72,10 @@ A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
 - `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
-  sets `engine`; the **door stamps `build`**, the hash of the exact files
-  that implement it (determinism is per binary). The reference door carries
+  sets `engine`; the **authority stamps `build`**, the hash of the exact files
+  that implement it (determinism is per binary). The reference authority carries
   `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
-  `shared/v4/simlayer.js`; `bun run test:v4` recomputes it from the files
+  `shared/protocol/simlayer.js`; `bun run test:v4` recomputes it from the files
   and fails if they changed without a new name).
 - **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
@@ -149,7 +149,7 @@ selects in `@world.physics-engine`. What it must be is exactly what §2–§5 sa
 numerics, no clock, no randomness, ordered iteration; its constants are its
 version; it reads only what is stamped in entries; it advances by ticks. To
 be carried, it registers beside eidosim in the authority's engine table
-(`ENGINES` in `shared/v4/simlayer.js`) with its build hash, and passes the
+(`ENGINES` in `shared/protocol/simlayer.js`) with its build hash, and passes the
 same conformance (§8). An engine only the server carries would need the
 server to stream its state to clients as presence — never folded — while
 the log stays exact for everyone.
@@ -163,5 +163,5 @@ the log stays exact for everyone.
 - **Cross-engine**: results MUST be bit-identical across JavaScript
   engines (tools/simmath-test.ts for the kernel; the `browser` suite runs
   the shared core in headless Chromium byte for byte against bun).
-- `bun tools/v4/run.ts phys physlive` runs the physics suites: launches,
+- `bun tools/protocol/run.ts phys physlive` runs the physics suites: launches,
   rests by cause, carriers, the running server and a client's fold.

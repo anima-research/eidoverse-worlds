@@ -16,13 +16,13 @@
 // A number a motion comp drives shows its REST pose, tinted: `place` moves
 // the base the motion composes onto, which is the honest thing to edit.
 
-import * as OP from '../../shared/v4/requests.js';
+import * as OP from '../../shared/protocol/requests.js';
 import { worldHistoryRows, historyView, HISTORY_MODES } from './historyrows.js';
 import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { requestDebug, requestV4, v4 } from './net.js';
+import { requestDebug, sendRequest, replica } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -45,9 +45,9 @@ import { channels, fieldAt } from '../../shared/editschema.js';
 import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { reindexCollider } from './colliders.js';
-import * as V4 from './v4edit.js';
+import * as V4 from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
-import { agoWords, touchWords } from '../../shared/v4/refusal.js';
+import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are requests
 
 const _wp = new THREE.Vector3();
@@ -110,7 +110,7 @@ function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
 // the world's display name: @world's about.name, else the name in its address
-const worldName = () => v4.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
+const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
@@ -470,7 +470,7 @@ function authorityInspect(id) {
   const c = inspectCache.get(id);
   if (c?.key === key) return c.reply;
   inspectCache.set(id, { key, reply: c?.reply ?? null });   // keep showing the last answer while the new one comes
-  requestV4('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
+  sendRequest('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
   return c?.reply ?? null;
 }
 function placedBy(id, meta) {
@@ -717,7 +717,7 @@ async function refreshWatch() {
   } catch { /* a poll that fails keeps the last good tail */ }
 }
 function consoleFields() {
-  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-v4.md)',
+  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-replica.md)',
     rows: behaviors.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`,
       sub: [b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers}⏲` : null, !running(b) ? (b.status ?? 'paused') : null].filter(Boolean).join(' · '),
       active: b.id === watching,
@@ -809,10 +809,10 @@ const blueprintFields = (pics) => [
  *  as the ghost (build.js holdBlueprint) on desktop, or places one 1.5 m ahead in VR. Save as
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  door's publish (a person here, or an agent). */
-function savedFields(pics) { return savedFieldsV4(); }
+function savedFields(pics) { return savedFieldsHere(); }
 /** v4: this world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the authority's publish {from, name} on the selection. */
-function savedFieldsV4() {
+function savedFieldsHere() {
   const lib = V4.blueprints(); const sel = selection();
   return [
     { t: 'info', label: 'saved here', value: lib.length ? `${lib.length} blueprint${lib.length === 1 ? '' : 's'} in this world` : 'none yet — select something and save it' },
@@ -928,7 +928,7 @@ const hist = { key: null, entries: [], next: null, loading: false, id: null, mod
 function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
   hist.loading = true;
-  requestV4('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
+  sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id) return;
     const rows = id ? r.entries : worldHistoryRows(r.entries, V4.nameOf);
     hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; hist.loading = false; repaintAll();

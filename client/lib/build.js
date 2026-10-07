@@ -16,7 +16,7 @@
 // seat-anchor grammar in seatedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
-import * as OP from '../../shared/v4/requests.js';
+import * as OP from '../../shared/protocol/requests.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
@@ -34,7 +34,7 @@ import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
-import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world every write here is a request
+import * as V4 from './editwrites.js';   // protocol/v4 slice 3b: in a v4 world every write here is a request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -439,7 +439,7 @@ export function updateBuild() {
 }
 
 const _w = new THREE.Vector3();
-globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool } : null);   // harness window (tools/v4/client-check.ts F)
+globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool } : null);   // harness window (tools/protocol/client-check.ts F)
 /** Put an object at a WORLD position, whatever frame it is drawn in (a mounted child sits in its parent's). */
 function setWorldPosition(obj, w) {
   const p = obj.parent;

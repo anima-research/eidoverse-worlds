@@ -7,7 +7,7 @@ import { join } from "node:path";
 const wd = mkdtempSync(join(tmpdir(), "clientlog-worlds-")); const ld = join(wd, ".clientlogs");
 process.env.WORLDS_DIR = wd; process.env.CLIENTLOG_DIR = ld; process.env.JOIN_TOKEN = "test-door";
 const { foundWorlds } = await import("./harness.ts");
-foundWorlds(wd, ["known"]);   // a world with a log (v4.jsonl) = known
+foundWorlds(wd, ["known"]);   // a world with a log (world.jsonl) = known
 const { route } = await import("../server/routes.ts");
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
 const srv: any = { requestIP: () => ({ address: "127.0.0.1" }), upgrade: () => false };

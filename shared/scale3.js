@@ -7,5 +7,5 @@ export function applyScale(obj, s) { const [x, y, z] = scale3(s); obj.scale.set(
 /** An object's scale as the wire carries it. */
 export const scaleOf = (obj) => scaleWire([obj.scale.x, obj.scale.y, obj.scale.z].map((n) => +n.toFixed(4)));
 /** A record's scale as this code understands it: the per-axis `scale3` beside the one-number `scale` every older
- *  reader keeps (shared/v4/view.js). */
+ *  reader keeps (shared/protocol/view.js). */
 export const entScale = (e) => e?.scale3 ?? e?.scale;

@@ -13,7 +13,7 @@
 // Self-booting suites (smoke, authtest, support-lifecycle) just run. (Protocol v1
 // removed 2026-10-07: the v1 wire matrices — comptest, modtest, locktest, leasetest,
 // worldops, compfold, behaviortest, collide-fold — went with it; their v4 successors
-// are in tools/v4/ (bun run test:v4).) Baseline this GREEN before touching server.ts; run it after
+// are in tools/protocol/ (bun run test:v4).) Baseline this GREEN before touching server.ts; run it after
 // every slice.
 
 import { mkdtempSync, rmSync } from "node:fs";

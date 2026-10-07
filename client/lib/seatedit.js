@@ -12,8 +12,8 @@
 // bar) are build.js exports — the modules call across the seam at gesture
 // time only, so the import cycle is eval-safe by construction.
 
-import * as OP from '../../shared/v4/requests.js';
-import { sendOps } from './v4edit.js';
+import * as OP from '../../shared/protocol/requests.js';
+import { sendOps } from './editwrites.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { libLabels } from './assets.js';

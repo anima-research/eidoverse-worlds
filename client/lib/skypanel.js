@@ -8,7 +8,7 @@
 // one world's log, every one of which replays for every future joiner. The
 // log is history; trying things out is not.
 
-import { sendOps } from './v4edit.js';
+import { sendOps } from './editwrites.js';
 import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
 import { flashHint } from './ui.js';

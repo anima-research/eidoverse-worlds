@@ -1120,7 +1120,7 @@ export function initModelsRealizer() {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });
-  // a gesture the authority refused, or one cancelled with Esc (v4 worlds, v4edit.js): the preview snaps back to the fold.
+  // a gesture the authority refused, or one cancelled with Esc (v4 worlds, editwrites.js): the preview snaps back to the fold.
   // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
   bus.on('pose-revert', ({ id }) => {
     const ent = state.st.entities[id]; const obj = entities.get(id);

@@ -1,5 +1,5 @@
 // xrask — the centre card's questions, inside a headset. confirmcenter.js is a DOM card, and a DOM card isn't drawn in
-// an immersive session: an edit to a locked thing waited on a question nobody could see, and v4edit's settled() then
+// an immersive session: an edit to a locked thing waited on a question nobody could see, and editwrites's settled() then
 // made every later undo wait behind it (top-down review 10-06, S1-3). In VR the same question rides a quad: by default
 // a hidden xr-flagged DOM frame that domquad.js mirrors (as the VR keyboard does), or on the canvas path (?domquads=0) a
 // schema panel in xrpanels.js; showXRPanel picks whichever is live, and either's buttons answer it. Refusals, which are toasts

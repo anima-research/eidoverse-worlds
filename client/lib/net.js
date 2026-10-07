@@ -9,7 +9,7 @@ import { avatarMounts } from './world.js';
 // EW.foldParity() measures fold-vs-scene drift on demand.
 import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
-import { refusalText } from '../../shared/v4/refusal.js';
+import { refusalText } from '../../shared/protocol/refusal.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -22,13 +22,13 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
-// this client folds the authority's own stream (shared/v4/replica.js) and derives the view the realizers draw from it,
-// locally; edit mode sends requests (v4edit.js) and waits for the authority.
-import { makeV4Client } from '../../shared/v4/replica.js';
-import { actorName } from '../../shared/v4/names.js';
-export const v4 = makeV4Client();
+// this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
+// locally; edit mode sends requests (editwrites.js) and waits for the authority.
+import { makeReplica } from '../../shared/protocol/replica.js';
+import { actorName } from '../../shared/protocol/names.js';
+export const replica = makeReplica();
 /** Is this client in a world (it has adopted the authority's cut)? */
-export const isV4 = () => v4.active;
+export const replicaActive = () => replica.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
 // notifier instead of importing a whole UI. Default logs: a dropped connection notice
@@ -102,7 +102,7 @@ export function wireNet(h) {
 
 // ---------------------------------------------------------------- sending
 
-// Every write is a request (requestV4 below; edits go through v4edit.js sendOps). No verb crosses the wire.
+// Every write is a request (sendRequest below; edits go through editwrites.js sendOps). No verb crosses the wire.
 
 /** People present, by the name they show → the identity the world knows them by (u-…, from the authority's directory;
  *  the server sends it on arrive and in the join roster). A role, a ban or a rollback goes to THIS, never to a typed
@@ -112,7 +112,7 @@ export const identities = new Map();
 export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
 net.modMuted = {};
-export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
+export const identityOf = (name) => (name === CONFIG.name ? net.you ?? null : identities.get(name) ?? null);
 /** Say something in the world (the authority's `say`). Resolves with the authority's reply. Never silent (Commons audit #6): a
  *  line typed while the connection is down is QUEUED and sent when the world is back, and a refused say (the rate
  *  limit, a ban, too long) is shown to the person in plain words. */
@@ -131,7 +131,7 @@ export function sayRefusalWords(r, text) {
   }
 }
 function sendSay(args) {
-  return requestV4('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
+  return sendRequest('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
 }
 export function say(text, extra = {}) {
   const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
@@ -265,33 +265,33 @@ export function sendJoin() {
   }));
 }
 
-// ---- requests: {type: 'request', id, verb, args} → {type: 'reply', id, ok, reply} (server/v4/requestwire.ts) ----
-let v4Seq = 0;
-const v4Pending = new Map();   // id → {resolve, timer}
+// ---- requests: {type: 'request', id, verb, args} → {type: 'reply', id, ok, reply} (server/requestwire.ts) ----
+let requestSeq = 0;
+const pendingRequests = new Map();   // id → {resolve, timer}
 /** One request; resolves with the authority's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
  *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
-export function requestV4(verb, args = {}, { timeoutMs = 15000 } = {}) {
+export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
   if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', fix: 'wait for the connection to come back, then try again' } });
-  const id = ++v4Seq;
+  const id = ++requestSeq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
-    v4Pending.set(id, { resolve, timer });
+    const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
+    pendingRequests.set(id, { resolve, timer });
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
 }
-function onV4Result(msg) {
-  const p = v4Pending.get(msg.id); if (!p) return;
-  v4Pending.delete(msg.id); clearTimeout(p.timer);
+function onReply(msg) {
+  const p = pendingRequests.get(msg.id); if (!p) return;
+  pendingRequests.delete(msg.id); clearTimeout(p.timer);
   p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the authority sent no reply body' } });
 }
-/** The authority's fresh entries: fold them (v4.ingest), then hand state.js the new view of that fold (it tells the
+/** The authority's fresh entries: fold them (replica.ingest), then hand state.js the new view of that fold (it tells the
  *  realizers what changed, in v4 terms). Chat lines take the chat path (they aren't world state). */
-function onV4Log(msg) {
-  if (!v4.active) return;
-  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
+function onLog(msg) {
+  if (!replica.active) return;
+  const r = replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
   // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
-  // Numbered v4seq × 1000, as the server numbers it in its window and history.
+  // Numbered seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
     // the spoken trio (validated at the authority) rides along: chat merges a spoken utterance and places it by t0
     const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
@@ -299,7 +299,7 @@ function onV4Log(msg) {
     if (hydrating) pendingLive.push(e);
     else if (e.seq > lastSeq) { lastSeq = e.seq; bus.emit('live-entry', e); noteSpeaking(e.actor); }
   }
-  if (r.changed) narrate(applyView(v4.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
+  if (r.changed) narrate(applyView(replica.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
   bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
 /** Say in chat who changed someone's role here, as the world's own narration (a ban or a kick arrives as `moderated`). */
@@ -773,7 +773,7 @@ async function handle(msg) {
       break;
 
     case 'holds':
-      // who holds what (the authority's presence plane, design 20 P2): v4phys.js draws each held thing in its holder's hand
+      // who holds what (the authority's presence plane, design 20 P2): thingphysics.js draws each held thing in its holder's hand
       bus.emit('holds', msg.holds ?? {});
       break;
 
@@ -784,8 +784,8 @@ async function handle(msg) {
       bus.emit('lib-geom', msg.geom ?? {});
       break;
 
-    case 'log': onV4Log(msg); break;
-    case 'reply': onV4Result(msg); break;
+    case 'log': onLog(msg); break;
+    case 'reply': onReply(msg); break;
 
     case 'capture':
       // The reply is the snapshot's to produce and the wire's to send, so a client
@@ -946,7 +946,7 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
-  identities.clear(); guests.clear(); if (msg.v4?.you) net.v4you = msg.v4.you;
+  identities.clear(); guests.clear(); if (msg.v4?.you) net.you = msg.v4.you;
   for (const p of msg.present) {
     if (p.v4id) identities.set(p.id, p.v4id);
     if (p.guest) guests.add(p.id);
@@ -957,9 +957,9 @@ async function onSnapshot(msg) {
 
   // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
-  if (!msg.v4?.state) { v4.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
-  v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('holds', msg.v4.holds ?? {});
-  shadowHydrate(v4.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
+  if (!msg.v4?.state) { replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
+  replica.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('holds', msg.v4.holds ?? {});
+  shadowHydrate(replica.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
 
   hydrating = true; pendingLive = [];
   // flush the chat lines that raced us, in order, once, after the hydration window so a raced say lands below the
