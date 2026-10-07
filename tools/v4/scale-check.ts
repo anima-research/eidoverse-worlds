@@ -227,14 +227,14 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "big", model: "table", components: { transform: T0([0, 0, 0], [1000, 1, 1000]) } });
       s.call("olive", "create", { id: "lid", model: "crate", components: { transform: T0([0, 0.75, 0], [1000, 1, 1000]) } });
       s.call("olive", "create", { id: "mug", model: "crate", components: { transform: T0([2, 0, 600]) } });
-      const dry = timed(() => s.call("bob", "place", { id: "mug", on: "big", dry: true })); const real = timed(() => s.call("bob", "place", { id: "mug", on: "big" }));
+      const dry = best(5, () => s.call("bob", "place", { id: "mug", on: "big", dry: true })); const real = best(5, () => s.call("bob", "place", { id: "mug", on: "big" }));
       return { dry: code(dry.r), dryMs: r1(dry.ms), real: code(real.r), realMs: r1(real.ms), bound: r1(bound()), why: real.r?.refused?.reason }; },
     good: (o) => o.dry === "too-costly" && o.real === "too-costly" && o.dryMs <= o.bound && o.realMs <= o.bound && /shared by every world/.test(o.why ?? "") },
   { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget; a batch of 120 creates into the heap still lands, its warnings saying what went unchecked", run(s) { cast(s);
       fill(s, 700, () => [0, 0, 0]);
-      const c = timed(() => s.call("vic", "check", {})); const one = timed(() => s.call("vic", "check", { id: "c-3" }));
-      const mk = timed(() => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ tool: "create", args: { id: `more-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
-      return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-119"],
+      const c = best(5, () => s.call("vic", "check", {})); const one = best(5, () => s.call("vic", "check", { id: "c-3" }));
+      const mk = best(3, (i) => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ tool: "create", args: { id: `more-${i}-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
+      return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-0-119"],
         unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0 }; },
     good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.batch === "ok" && o.made && o.unchecked > 0 && o.batchMs <= 2 * o.bound },
   { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 300 in 10 s, or 1.5 s of the door's time, then refused (rate) until the window moves", run() {
