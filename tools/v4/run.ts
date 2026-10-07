@@ -33,6 +33,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["scale", "scale-check.ts", 1],       // the door at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
   ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, switches, the grant rule, sanctions, ghost
   ["shiplist", "shiplist-check.ts", 1], // ship list group A (audit 10-07): openable, reactions checked at write, motion fields, help text, people's words
+  ["shiplist-probe", "shiplist-probe.ts", 1], // …in headless Chromium: E opens a door and it swings; a person's refusal and warning; a moderator's warning in VR
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
@@ -44,7 +45,7 @@ for (const [name, file, tail] of SUITES) {
   // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
   // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
   let cmd = ["bun", ENGINE + "tools/v4/" + file]; let senv: Record<string, string | undefined> = env;
-  if (name === "client") {
+  if (name === "client" || name === "shiplist-probe") {   // the browser suites
     const home = process.env.HOME ?? "";
     const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
     if (!chrome) { console.log(`\n== client (client-check.ts) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
