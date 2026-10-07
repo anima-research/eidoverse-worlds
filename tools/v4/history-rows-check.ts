@@ -1,5 +1,5 @@
 // The editor's whole-world History must never show a refused attempt as something that happened (Commons parity audit:
-// "refused acts print as done"); the door records a refused write as an act whose body carries refused {code}.
+// "refused acts print as done"); the authority records a refused write as an act whose body carries refused {code}.
 import { worldHistoryRows } from "../../client/lib/historyrows.js";
 let fails = 0; const ok = (c: boolean, n: string, d: any = "") => { console.log((c ? "ok   " : "FAIL ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) fails++; };
 const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;

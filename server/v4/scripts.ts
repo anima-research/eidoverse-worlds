@@ -1,14 +1,14 @@
-// server/v4/scripts.ts — a world's scripts inside this server (research 41; shared/v4/door.js "behaviours").
+// server/v4/scripts.ts — a world's scripts inside this server (research 41; shared/v4/authority.js "behaviours").
 //
-// Scripts are `script:<name>` components the DOOR runs, each activation one act + one batch through admit. This class
-// is World.scripts: the calls server.ts makes (onPresence, tick, inspect, list), routed to the door:
-//   tick        the door's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
+// Scripts are `script:<name>` components the AUTHORITY runs, each activation one act + one batch through admit. This class
+// is World.scripts: the calls server.ts makes (onPresence, tick, inspect, list), routed to the authority:
+//   tick        the authority's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
 //               on the server's 1 s clock (server.ts system "behaviors");
 //   onPresence  enter / leave events, by the person's v4 identity;
-//   inspect/list the door's status view (suspended / paused / stopped / dormant + why / asleep / active), plus the
+//   inspect/list the authority's status view (suspended / paused / stopped / dormant + why / asleep / active), plus the
 //               old behaviours an imported world still names, which say plainly that they need re-installing as
 //               script:<name>.
-import type { V4Log } from "./world.ts";
+import type { V4Log } from "./worldlog.ts";
 
 type Any = any;
 /** What World.scripts is. */
@@ -23,7 +23,7 @@ export interface ScriptHost {
 
 export class V4Scripts implements ScriptHost {
   constructor(private v4: V4Log) {}
-  sync() { /* the door reads script:<name> from the fold on every activation: nothing to load or reconcile */ }
+  sync() { /* the authority reads script:<name> from the fold on every activation: nothing to load or reconcile */ }
   disposeAll() { /* each activation is its own sandbox, disposed when it ends */ }
   onPresence(kind: "enter" | "leave", _id: string, v4id?: string) { if (v4id) this.v4.presenceScripts(kind, v4id); }
   tick(_now: number) { this.v4.tickScripts(); }

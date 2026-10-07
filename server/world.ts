@@ -1,6 +1,6 @@
 // eidoverse-worlds sequencer — the world itself.
 //
-// A World is one v4 world as this server holds it: its log (server/v4/world.ts V4Log: the door over the world's
+// A World is one v4 world as this server holds it: its log (server/v4/worldlog.ts V4Log: the authority over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
 // persisted). Every world this server serves is a v4 world: a directory that holds only an old log (the first
 // protocol's log.jsonl) is refused at open, with the command that translates it (tools/v4/import-v1/, run once by the
@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
-import { V4Log, isV4World, resetV4 } from "./v4/world.ts";
+import { V4Log, isV4World, resetV4 } from "./v4/worldlog.ts";
 import { V4Scripts, type ScriptHost } from "./v4/scripts.ts";
 import type { HnSession } from "./auth.ts";
 
@@ -32,12 +32,12 @@ export function wireV4(rights: typeof v4Rights) { v4Rights = rights; }
 // ------------------------------------------------------------------- clients
 
 export type Client = {
-  id: string;          // participant's display name in this world (their identity is v4id, from the door directory)
+  id: string;          // participant's display name in this world (their identity is v4id, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;
   /** latest pose, forwarded to late joiners so they see everyone immediately.
    *  Minimal structure over an open record: the presence checks (scripts'
-   *  world.near, the door's held-thing reach) dereference `.p`, everything
+   *  world.near, the authority's held-thing reach) dereference `.p`, everything
    *  else rides opaque. */
   lastPose: ({ p?: [number, number, number] } & Record<string, unknown>) | null | undefined;
   avatar: string;      // VRM library path chosen at join
@@ -64,12 +64,12 @@ export type Client = {
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
   anonymous?: boolean; // no account: a guest (capped at visitor; named as one)
-  v4id?: string;      // a v4 world's actor: this connection's opaque id from the door directory (server/v4/directory.ts)
+  v4id?: string;      // a v4 world's actor: this connection's opaque id from the authority directory (server/v4/directory.ts)
   v4fold?: boolean;    // the client said it folds the v4 stream itself (every current client does; one that doesn't is refused at join)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
-  /** this connection's door requests, one at a time in the order sent (server/v4/messages.ts) */
+  /** this connection's requests, one at a time in the order sent (server/v4/requestwire.ts) */
   verbQueue?: Promise<void>;
 };
 
@@ -81,7 +81,7 @@ export class World {
   /** The runtime's flight recorder — the "why didn't it work" surface.
    *
    *  The world log holds what HAPPENED; this ring holds what DIDN'T and why:
-   *  requests the door refused, rate limits, script events. In-memory only,
+   *  requests the authority refused, rate limits, script events. In-memory only,
    *  capped, never persisted — it is diagnosis, not history. Readable by
    *  anyone in the world (ws `debug`, `/debug` in the client, `world_debug`
    *  over MCPL): the log is public, so the reasons things bounced off it are
@@ -91,9 +91,9 @@ export class World {
     this.debugLog.push({ ts: Date.now(), kind, ...detail });
     if (this.debugLog.length > 300) this.debugLog.splice(0, this.debugLog.length - 300);
   }
-  /** Runtime scripts: the door runs script:<name> components (server/v4/scripts.ts). */
+  /** Runtime scripts: the authority runs script:<name> components (server/v4/scripts.ts). */
   scripts!: ScriptHost;
-  /** The world's log: the door over its directory (server/v4/world.ts). Replaced in place by resetV4. */
+  /** The world's log: the authority over its directory (server/v4/worldlog.ts). Replaced in place by resetV4. */
   v4: V4Log;
   /** The embodied plane: who is connected, poses received since the last stage-frame tick (latest wins; one frame per
    *  world per tick, fanned out once), and the frame bookkeeping server.ts's stage-frame tick writes. Never persisted. */
@@ -154,7 +154,7 @@ export class World {
     return v4;
   }
 
-  /** The view of the world's fold (shared/v4/record.js) plus the chat window, for this server's own readers. */
+  /** The view of the world's fold (shared/v4/view.js) plus the chat window, for this server's own readers. */
   get state() { return this.v4.state; }
   get recentSays() { return this.v4.recentSays; }
   get poses() { return this.v4.poses; }
@@ -168,7 +168,7 @@ export class World {
   }
   rememberPose(id: string, pose: unknown) { this.v4.rememberPose(id, pose, settle); }
 
-  /** Erase the world back to zero (server/v4/world.ts resetV4: archived beside it, founded again by the same owners);
+  /** Erase the world back to zero (server/v4/worldlog.ts resetV4: archived beside it, founded again by the same owners);
    *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. Returns
    *  the archive directory. */
   resetV4(): string {

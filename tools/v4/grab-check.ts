@@ -36,71 +36,71 @@ const BASE = "7a3d8435";
 // whose text isn't found exactly once is itself a failure (the gate moved: update the list).
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["the physics fallback (migration)", "grab.js", "if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return", "if (false) return", ["M1", "M2", "M3"]],
-  ["grab reads grabOf (a static grabbable is carried)", "v4/door.js", "const g = grabOf(e.c);\n    if (!g) refuse(\"not-grabbable\"", "const g = e.c.physics?.kind === \"dynamic\" ? grabOf(e.c) : null;\n    if (!g) refuse(\"not-grabbable\"", ["G2", "G3"]],
-  ["the hand's settlement reads grabOf", "v4/door.js", "else if (cap.kind === \"handle\") { const g = grabOf(st.entities[op.id]?.c);", "else if (cap.kind === \"handle\") { const g = st.entities[op.id]?.c.physics?.kind === \"dynamic\" ? grabOf(st.entities[op.id]?.c) : null;", ["G2", "G3"]],
-  ["enabled", "v4/door.js", "if (!g.enabled) refuse(\"not-grabbable\"", "if (false) refuse(\"not-grabbable\"", ["G5"]],
-  ["who", "v4/door.js", "const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need))", "const need = g.who; const role = roleOf(st, actor); if (false)", ["G6", "M2"]],
-  ["punt keeps physics.who (a kick-only ball is still punted)", "v4/door.js", "if (cap.kind === \"handle\" && cap.via === \"punt\") {", "if (false) {", ["G5"]],
-  ["steal", "v4/door.js", "if (held && !g.steal && role !== \"owner\")", "if (false)", ["G7"]],
-  ["steal: owners may", "v4/door.js", "if (held && !g.steal && role !== \"owner\")", "if (held && !g.steal)", ["G7"]],
-  ["range", "v4/door.js", "if (d > g.range) refuse(\"out-of-reach\"", "if (d > REACH) refuse(\"out-of-reach\"", ["G8"]],
-  ["a throw with no sim is a drop", "v4/door.js", "const why = !fliesIn(w.state(), a.id) ?", "const why = false ?", ["G4"]],
-  ["only a dynamic thing in a sim world flies", "v4/door.js", "const fliesIn = (st, id) => !!st.entities[\"@world\"]?.c[\"physics-engine\"] && st.entities[id]?.c.physics?.kind === \"dynamic\";", "const fliesIn = (st, id) => !!st.entities[\"@world\"]?.c[\"physics-engine\"];", ["G3"]],
-  ["the shape check", "v4/door.js", "if (name === \"grabbable\") { const bad = checkGrabbable(v, at);", "if (false) { const bad = checkGrabbable(v, at);", ["G9"]],
-  ["the throw multiplier", "v4/door.js", "if (g && g.throw !== 1 && tool === \"throw\") {", "if (false) {", ["R1"]],
-  ["throw: 0 only drops", "v4/door.js", ": g?.throw === 0 ? `${a.id} can't be thrown", ": false ? `${a.id} can't be thrown", ["R1"]],
-  ["stay: a put with no pos stays at the hand", "v4/door.js", "if (pos === undefined && stay) pos = h.pose.pos.map(r3);", "", ["R2"]],
-  ["stay: never called floating", "v4/door.js", ".filter((x) => !(stay && (x.kind === \"floating\" || x.kind === \"sunk\")))", ".filter(() => true)", ["R2"]],
-  ["release: return goes home at once", "v4/door.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
-  ["a returning drop doesn't fly", "v4/door.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
-  ["a returning throw doesn't fly", "v4/door.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
-  ["home is stamped", "v4/door.js", "if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
-  ["home follows an edit that moves it from home", "v4/door.js", "else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);", "", ["R4"]],
-  ["returnAfter runs at each request", "v4/door.js", "settleSim(w); returnDue(w); expireAsks(w);", "settleSim(w); expireAsks(w);", ["R4"]],
-  ["returnAfter: not while held", "v4/door.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
-  ["returnAfter: only a hand or physics moving it counts", "v4/door.js", "const byHand = (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", "const byHand = true || (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", ["R4"]],
-  ["returnAfter: the time", "v4/door.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],
-  ["snapping", "v4/door.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);", "const snap = { to: null, notes: [] };", ["R5", "R6", "R7", "R9"]],
-  ["snapping: within the radius", "v4/door.js", "if (d > socketRadius(sk)) continue;", "", ["R5"]],
-  ["snapping: fits meets accepts", "v4/door.js", "if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;", "if (!Array.isArray(sk.pos)) continue;", ["R6"]],
-  ["snapping: an occupied socket is passed over", "v4/door.js", "if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.socket === slot)) {", "if (false) {", ["R6"]],
-  ["snapping: a locked host is passed over", "v4/door.js", "if (lk) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: `${lk} is locked` }); continue; }", "", ["R6"]],
-  ["snapping: a drop in a physics world snaps instead of flying", "v4/door.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
+  ["grab reads grabOf (a static grabbable is carried)", "v4/authority.js", "const g = grabOf(e.c);\n    if (!g) refuse(\"not-grabbable\"", "const g = e.c.physics?.kind === \"dynamic\" ? grabOf(e.c) : null;\n    if (!g) refuse(\"not-grabbable\"", ["G2", "G3"]],
+  ["the hand's settlement reads grabOf", "v4/authority.js", "else if (cap.kind === \"handle\") { const g = grabOf(st.entities[op.id]?.c);", "else if (cap.kind === \"handle\") { const g = st.entities[op.id]?.c.physics?.kind === \"dynamic\" ? grabOf(st.entities[op.id]?.c) : null;", ["G2", "G3"]],
+  ["enabled", "v4/authority.js", "if (!g.enabled) refuse(\"not-grabbable\"", "if (false) refuse(\"not-grabbable\"", ["G5"]],
+  ["who", "v4/authority.js", "const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need))", "const need = g.who; const role = roleOf(st, actor); if (false)", ["G6", "M2"]],
+  ["punt keeps physics.who (a kick-only ball is still punted)", "v4/authority.js", "if (cap.kind === \"handle\" && cap.via === \"punt\") {", "if (false) {", ["G5"]],
+  ["steal", "v4/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (false)", ["G7"]],
+  ["steal: owners may", "v4/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (held && !g.steal)", ["G7"]],
+  ["range", "v4/authority.js", "if (d > g.range) refuse(\"out-of-reach\"", "if (d > REACH) refuse(\"out-of-reach\"", ["G8"]],
+  ["a throw with no sim is a drop", "v4/authority.js", "const why = !fliesIn(w.state(), a.id) ?", "const why = false ?", ["G4"]],
+  ["only a dynamic thing in a sim world flies", "v4/authority.js", "const fliesIn = (st, id) => !!st.entities[\"@world\"]?.c[\"physics-engine\"] && st.entities[id]?.c.physics?.kind === \"dynamic\";", "const fliesIn = (st, id) => !!st.entities[\"@world\"]?.c[\"physics-engine\"];", ["G3"]],
+  ["the shape check", "v4/authority.js", "if (name === \"grabbable\") { const bad = checkGrabbable(v, at);", "if (false) { const bad = checkGrabbable(v, at);", ["G9"]],
+  ["the throw multiplier", "v4/authority.js", "if (g && g.throw !== 1 && tool === \"throw\") {", "if (false) {", ["R1"]],
+  ["throw: 0 only drops", "v4/authority.js", ": g?.throw === 0 ? `${a.id} can't be thrown", ": false ? `${a.id} can't be thrown", ["R1"]],
+  ["stay: a put with no pos stays at the hand", "v4/authority.js", "if (pos === undefined && stay) pos = h.pose.pos.map(r3);", "", ["R2"]],
+  ["stay: never called floating", "v4/authority.js", ".filter((x) => !(stay && (x.kind === \"floating\" || x.kind === \"sunk\")))", ".filter(() => true)", ["R2"]],
+  ["release: return goes home at once", "v4/authority.js", "if (g?.release === \"return\" && g.home) {\n      const ret = returnPlan(w, st, a.id, g);", "if (false) {\n      const ret = returnPlan(w, st, a.id, g);", ["R3"]],
+  ["a returning drop doesn't fly", "v4/authority.js", "const sets = !fliesIn(st, a.id) || g?.release === \"return\" ||", "const sets = !fliesIn(st, a.id) ||", ["R3"]],
+  ["a returning throw doesn't fly", "v4/authority.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
+  ["home is stamped", "v4/authority.js", "if (v.home === undefined || (born && !sameHome(after, id, v.home))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
+  ["home follows an edit that moves it from home", "v4/authority.js", "else if (!setsG && ctx.st.entities[id] && sameHome(ctx.st, id, v.home) && !sameHome(after, id, v.home)) home = homeHere(after, id);", "", ["R4"]],
+  ["returnAfter runs at each request", "v4/authority.js", "settleSim(w); returnDue(w); expireAsks(w);", "settleSim(w); expireAsks(w);", ["R4"]],
+  ["returnAfter: not while held", "v4/authority.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
+  ["returnAfter: only a hand or physics moving it counts", "v4/authority.js", "const byHand = (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", "const byHand = true || (c.kind === \"act\" && (HAND_VERBS.has(c.verb)", ["R4"]],
+  ["returnAfter: the time", "v4/authority.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],
+  ["snapping", "v4/authority.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);", "const snap = { to: null, notes: [] };", ["R5", "R6", "R7", "R9"]],
+  ["snapping: within the radius", "v4/authority.js", "if (d > socketRadius(sk)) continue;", "", ["R5"]],
+  ["snapping: fits meets accepts", "v4/authority.js", "if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;", "if (!Array.isArray(sk.pos)) continue;", ["R6"]],
+  ["snapping: an occupied socket is passed over", "v4/authority.js", "if (Object.entries(st.entities).some(([k, x]) => k !== id && x.c.parent?.to === hid && x.c.parent?.socket === slot)) {", "if (false) {", ["R6"]],
+  ["snapping: a locked host is passed over", "v4/authority.js", "if (lk) { out.notes.push({ passedOver: { to: hid, socket: slot }, why: `${lk} is locked` }); continue; }", "", ["R6"]],
+  ["snapping: a drop in a physics world snaps instead of flying", "v4/authority.js", "|| (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);", ";", ["R9"]],
   ["sockets.accepts/radius are checked", "sockbody.js", "if ((r = checkAccepts(sk, sat))) return r;", "", ["R8"]],
-  ["the hold record keeps hand and grip or offset", "v4/door.js", "pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };", "pose: { pos: hand, q: t.q, scale: t.scale }, handled };", ["H1", "H4"]],
-  ["a named grip must exist", "v4/door.js", "if (!g.grips[a.grip]) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", "if (false) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", ["H2"]],
-  ["a named grip must suit the hand", "v4/door.js", "if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse(\"wrong-hand\"", "if (false) refuse(\"wrong-hand\"", ["H2"]],
-  ["a hand takes a grip that suits it", "v4/door.js", "const grip = a.grip ?? pickGrip(g, hand);", "const grip = a.grip;", ["H2", "H3", "H4"]],
-  ["an offset is kept", "v4/door.js", "return { hand, ...(a.offset ? { offset:", "return { hand, ...(false ? { offset:", ["H3"]],
-  ["an offset is checked", "v4/door.js", "if (a.offset !== undefined && !offsetOk(a.offset)) refuse(", "if (false) refuse(", ["H3"]],
-  ["twoHanded takes a second hand", "v4/door.js", "if (g.twoHanded) {\n    if (a.grip", "if (false) {\n    if (a.grip", ["H4"]],
-  ["one hand of two lets go", "v4/door.js", "if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) {", "if (false) {", ["H4"]],
+  ["the hold record keeps hand and grip or offset", "v4/authority.js", "pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };", "pose: { pos: hand, q: t.q, scale: t.scale }, handled };", ["H1", "H4"]],
+  ["a named grip must exist", "v4/authority.js", "if (!g.grips[a.grip]) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", "if (false) refuse(\"no-grip\", `it has no grip called '${a.grip}'`, `its grips: ${names.join(\", \")}`", ["H2"]],
+  ["a named grip must suit the hand", "v4/authority.js", "if (a.grip !== undefined && !pickGrip(g, hand, { named: a.grip })) refuse(\"wrong-hand\"", "if (false) refuse(\"wrong-hand\"", ["H2"]],
+  ["a hand takes a grip that suits it", "v4/authority.js", "const grip = a.grip ?? pickGrip(g, hand);", "const grip = a.grip;", ["H2", "H3", "H4"]],
+  ["an offset is kept", "v4/authority.js", "return { hand, ...(a.offset ? { offset:", "return { hand, ...(false ? { offset:", ["H3"]],
+  ["an offset is checked", "v4/authority.js", "if (a.offset !== undefined && !offsetOk(a.offset)) refuse(", "if (false) refuse(", ["H3"]],
+  ["twoHanded takes a second hand", "v4/authority.js", "if (g.twoHanded) {\n    if (a.grip", "if (false) {\n    if (a.grip", ["H4"]],
+  ["one hand of two lets go", "v4/authority.js", "if (h.second && (a.hand === h.second.hand || a.hand === h.hand)) {", "if (false) {", ["H4"]],
   ["a second hand takes a secondary grip", "grab.js", "const exact = all.find(([, x]) => x.role === role && x.hand === hand) ?? all.find(([, x]) => x.role === role);", "const exact = null;", ["H4"]],
   ["every client is told the hand", "grab.js", "...(h.hand ? { hand: h.hand } : {}),", "", ["H1", "H4"]],
-  ["orphans: a hold whose holder isn't here is settled", "v4/door.js", "for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {", "for (const who of []) if (!here.has(who)) {", ["O1"]],
-  ["orphans: the log's lift is settled", "v4/door.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2"]],
-  ["orphans: a lift is settled once", "v4/door.js", "if (o.verb === \"create\" || (o.verb === \"delete\" && o.comp === undefined) || [\"transform\", \"parent\", \"model\", \"physics\"].includes(o.comp)) lifted.delete(o.id); }", "}", ["O2"]],
-  ["orphans: a returning thing goes home", "v4/door.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2"]],
-  ["orphans: a holder who's here keeps it", "v4/door.js", "if (w.presence.holds[id] || !st.entities[id]) continue;", "if (!st.entities[id]) continue;", ["O2"]],
-  ["use while held fires grabbable.use", "v4/door.js", "if (a.action === undefined && g?.use) { const action", "if (false) { const action", ["U1"]],
-  ["use while held: up fires the up", "v4/door.js", "const action = phase === \"up\" ? g.use.up : g.use.down;", "const action = g.use.down;", ["U1"]],
-  ["held: true needs a hold", "v4/door.js", "if (a.args?.held === true && !holding) refuse(", "if (false) refuse(", ["U1"]],
-  ["a held use's script event says held, hand, phase", "v4/door.js", ", ...(held ?? {}) };", " };", ["U2"]],
-  ["grab and release are script events", "v4/door.js", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\", \"grab\", \"release\"];", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\"];", ["U3", "U4"]],
-  ["grab and release reach scripts", "v4/door.js", "    drainHeld(w);    // grab / release", "    // grab / release", ["U3", "U4"]],
-  ["only scripts whose scope covers the thing", "v4/door.js", "if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;", "if (!(Array.isArray(v.on) && v.on.includes(kind))) continue;", ["U3"]],
-  ["a release says how", "v4/door.js", "heldEvent(w, \"release\", a.id, { by: actor, how: stay ? \"stay\" : how, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"put\", seq: act });", ["U3"]],
-  ["a throw's release says throw", "v4/door.js", "heldEvent(w, \"release\", a.id, { by: actor, how: tool, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"drop\", seq: act });", ["U4"]],
+  ["orphans: a hold whose holder isn't here is settled", "v4/authority.js", "for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {", "for (const who of []) if (!here.has(who)) {", ["O1"]],
+  ["orphans: the log's lift is settled", "v4/authority.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2"]],
+  ["orphans: a lift is settled once", "v4/authority.js", "if (o.verb === \"create\" || (o.verb === \"delete\" && o.comp === undefined) || [\"transform\", \"parent\", \"model\", \"physics\"].includes(o.comp)) lifted.delete(o.id); }", "}", ["O2"]],
+  ["orphans: a returning thing goes home", "v4/authority.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2"]],
+  ["orphans: a holder who's here keeps it", "v4/authority.js", "if (w.presence.holds[id] || !st.entities[id]) continue;", "if (!st.entities[id]) continue;", ["O2"]],
+  ["use while held fires grabbable.use", "v4/authority.js", "if (a.action === undefined && g?.use) { const action", "if (false) { const action", ["U1"]],
+  ["use while held: up fires the up", "v4/authority.js", "const action = phase === \"up\" ? g.use.up : g.use.down;", "const action = g.use.down;", ["U1"]],
+  ["held: true needs a hold", "v4/authority.js", "if (a.args?.held === true && !holding) refuse(", "if (false) refuse(", ["U1"]],
+  ["a held use's script event says held, hand, phase", "v4/authority.js", ", ...(held ?? {}) };", " };", ["U2"]],
+  ["grab and release are script events", "v4/authority.js", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\", \"grab\", \"release\"];", "const SCRIPT_EVENTS = [\"use\", \"say\", \"enter\", \"leave\"];", ["U3", "U4"]],
+  ["grab and release reach scripts", "v4/authority.js", "    drainHeld(w);    // grab / release", "    // grab / release", ["U3", "U4"]],
+  ["only scripts whose scope covers the thing", "v4/authority.js", "if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;", "if (!(Array.isArray(v.on) && v.on.includes(kind))) continue;", ["U3"]],
+  ["a release says how", "v4/authority.js", "heldEvent(w, \"release\", a.id, { by: actor, how: stay ? \"stay\" : how, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"put\", seq: act });", ["U3"]],
+  ["a throw's release says throw", "v4/authority.js", "heldEvent(w, \"release\", a.id, { by: actor, how: tool, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"drop\", seq: act });", ["U4"]],
   ["the inspector adds grabbable with its defaults spelled out", "editschema.js", "const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", "const spec = {} ?? Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", ["I1"]],
-  ["the card's edits are checked as the door checks them", "editschema.js", "const bad = checkGrabbable(next);\n        if (bad)", "const bad = null;\n        if (bad)", ["I2"]],
-  ["look says what a hand may do with it", "v4/door.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
-  ["review: a put's pos is reach-checked before it snaps", "v4/door.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
-  ["review: a refused orphan's hold still ends", "v4/door.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2"]],
-  ["review: the up from whoever pressed down", "v4/door.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
-  ["review: a copy goes home where it was made", "v4/door.js", "(born && !sameHome(after, id, v.home))", "false", ["F4"]],
-  ["review: the holder's rank before a return", "v4/door.js", "if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["F5"]],
-  ["review: a handover drops the old hand's offset", "v4/door.js", "h.hand = h.second.hand; delete h.offset;", "h.hand = h.second.hand;", ["F6"]],
-  ["review: what rests on it must be enabled", "v4/door.js", "!(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))", "!(gk && rankOf(st, actor) >= whoRank(st, gk.who))", ["F6"]],
+  ["the card's edits are checked as the authority checks them", "editschema.js", "const bad = checkGrabbable(next);\n        if (bad)", "const bad = null;\n        if (bad)", ["I2"]],
+  ["look says what a hand may do with it", "v4/authority.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
+  ["review: a put's pos is reach-checked before it snaps", "v4/authority.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
+  ["review: a refused orphan's hold still ends", "v4/authority.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2"]],
+  ["review: the up from whoever pressed down", "v4/authority.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
+  ["review: a copy goes home where it was made", "v4/authority.js", "(born && !sameHome(after, id, v.home))", "false", ["F4"]],
+  ["review: the holder's rank before a return", "v4/authority.js", "if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["F5"]],
+  ["review: a handover drops the old hand's offset", "v4/authority.js", "h.hand = h.second.hand; delete h.offset;", "h.hand = h.second.hand;", ["F6"]],
+  ["review: what rests on it must be enabled", "v4/authority.js", "!(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))", "!(gk && rankOf(st, actor) >= whoRank(st, gk.who))", ["F6"]],
   ["the inspector's JSON hatch is checked too", "editschema.js", "if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data);", "if (false) { const bad = checkGrabbable(data);", ["I3"]],
   ["CONTROL (no-op: must stay green)", "grab.js", "// ---------------------------------------------------------------- reading", "// ----------------------------------------------------------------  reading", []],
 ];
@@ -143,7 +143,7 @@ if (argv.includes("--mutants")) {
   console.log(`[grab-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  // the base commit's shared/ (the door before grabbable): every NEW case must be red there, every M case green
+  // the base commit's shared/ (the authority before grabbable): every NEW case must be red there, every M case green
   const d = scratch("gctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server/posecheck.ts | tar -x -C ${d}`], { cwd: ENGINE });
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
@@ -155,9 +155,9 @@ if (argv.includes("--control")) {
   process.exit(wrong.length ? 1 : 0);
 }
 
-// ---------------- the door, from a tree (this checkout unless --tree) ----------------
+// ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
-const D = await import(TREE + "shared/v4/door.js");
+const D = await import(TREE + "shared/v4/authority.js");
 const F = await import(TREE + "shared/v4/fold.js");
 const SL = await import(TREE + "shared/v4/simlayer.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
@@ -186,11 +186,11 @@ function session(o: any = {}) {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name, o));
   const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.V4_NOW = String(T);
     try { return D.request(W(), actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
-  // walk the door's track there: steps of at most 3.5 m, a second apart (a first move is an arrival)
+  // walk the authority's track there: steps of at most 3.5 m, a second apart (a first move is an arrival)
   const walk = (actor: string, to: number[]) => { for (let i = 0; i < 40; i++) { const at = W().presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });
     const d = Math.hypot(to[0] - at[0], to[2] - at[2]); if (d < 1e-9) return { ok: true }; const k = Math.min(1, 3.5 / d);
     const r = call(actor, "move", { to: [at[0] + (to[0] - at[0]) * k, to[1], at[2] + (to[2] - at[2]) * k] }, 1000); if (!r.ok) return r; } };
-  // a restart: the same log, a new door; presence as the host kept it (a copy: persisted, as server/v4/disk.ts; fresh: in memory, as live.ts)
+  // a restart: the same log, a new door; presence as the host kept it (a copy: persisted, as server/v4/filehost.ts; fresh: in memory, as livehost.ts)
   const reopen = (presence: any) => { w = openWorld(name, { ...o, presence: JSON.parse(JSON.stringify(presence ?? { bodies: {}, holds: {} })) }); return w; };
   return { name, call, walk, reopen, w: W, advance: (ms: number) => { T += ms; process.env.V4_NOW = String(T); }, entries: () => W().entries };
 }
@@ -208,7 +208,7 @@ function cast(s: any, sim = false) {
 }
 const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.kind}:${e.verb}`);
 const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}`);
-const carrier = (s: any) => { const v = SL.simFold(s.entries(), T + 1e9); /* the door here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
+const carrier = (s: any) => { const v = SL.simFold(s.entries(), T + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
@@ -234,7 +234,7 @@ const cases: Case[] = [
     good: (o) => o.a === "ok" && o.by === "ann" && o.taken },
 
   // ---------------- G: the gate ----------------
-  { id: "G1", what: "grabbable is a component the door knows: its own entry in schema, its shape checked", run(s) { cast(s);
+  { id: "G1", what: "grabbable is a component the authority knows: its own entry in schema, its shape checked", run(s) { cast(s);
       const sch = s.call("olive", "schema", { component: "grabbable" }).components?.grabbable;
       return { help: sch?.help ?? null, on: sch?.on }; },
     good: (o) => /carryable/.test(o.help ?? "") && o.on === "thing" },
@@ -313,7 +313,7 @@ const cases: Case[] = [
       s.call("vic", "grab", { id: "rock" }); const r = s.call("vic", "put", { id: "rock", pos: [0.4, 0.8, 1] });
       return { p: show(p), at1, p2: show(p2), at2: tf(s, "balloon").pos, rock: code(r) }; },
     good: (o) => o.p === "ok" && o.at1[1] === 1.1 && o.p2 === "ok" && o.at2[1] === 0.8 && o.rock === "implausible" },
-  { id: "R3", what: "release: return: let go, it goes home at once (the holder's act, then the door's return-home caused by it); its home was stamped at create", run(s) { cast(s, true);
+  { id: "R3", what: "release: return: let go, it goes home at once (the holder's act, then the authority's return-home caused by it); its home was stamped at create", run(s) { cast(s, true);
       const c = s.call("olive", "create", { id: "torch", model: "table-lamp", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
       const home = comp(s, "torch", "grabbable")?.home;
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
@@ -500,7 +500,7 @@ const cases: Case[] = [
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },
     good: (o) => JSON.stringify(o.a) === '{"id":"hose","hand":"left"}' && o.b === "dropped" && o.c === "dropped" },
   // ---------------- I: the inspector's Grabbable card (shared/editschema.js, shared/components.js) ----------------
-  { id: "I1", what: "Add Component › Grabbable writes the component with its defaults spelled out from shared/grab.js (the data), and the door takes that value as it is", run(s) { cast(s);
+  { id: "I1", what: "Add Component › Grabbable writes the component with its defaults spelled out from shared/grab.js (the data), and the authority takes that value as it is", run(s) { cast(s);
       const ent = { lib: "book", pos: [0, 0, 0], comp: {} };
       const add = ES.inspectSchema(ent, "b1").sections.add.find((a: any) => a.name === "Grabbable");
       const r = ES.addOps(ent, "b1", "Grabbable");
@@ -508,7 +508,7 @@ const cases: Case[] = [
       const put = r.ops[0] ? s.call("olive", r.ops[0].verb, r.ops[0].args) : null;   // the op as the panel sends it
       return { offered: !!add && !add.blocked, ops: r.ops, errors: r.errors, put: show(put), stored: comp(s, "b1", "grabbable") }; },
     good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "visitor" },
-  { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the door would (a malformed use)", run(s) {
+  { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the authority would (a malformed use)", run(s) {
       const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
       const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");
       const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.pose": "torch" });
@@ -516,7 +516,7 @@ const cases: Case[] = [
       return { card: card?.fields ?? null, value: ok1.ops.find((o: any) => o.args?.component === "grabbable")?.args?.value ?? ok1.ops, errors: ok1.errors, bad: bad.errors }; },
     good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
       && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, pose: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
-  { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the door, when a grip has no pos)", run(s) {
+  { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the authority, when a grip has no pos)", run(s) {
       const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
       const hatch = ES.inspectSchema(ent, "b1").groups.find((g: any) => g.group === "grabbable")?.fields.find((f: any) => f.t === "json")?.commit;
       const good = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ who: "visitor", grips: { h: { pos: [0, 0.1, 0] } } }) });

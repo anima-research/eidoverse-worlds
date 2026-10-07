@@ -25,7 +25,7 @@ import { installDualWarm } from './xrwarm.js';   // content warms build both var
 import { makeEntryEffects, handleEntryFailure } from './xr_entry_effects.js';
 import { installEntryClock } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
-import { frameDebug } from './frame.js';
+import { frameDebug } from './frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
@@ -694,7 +694,7 @@ async function enterVR({ retryOf = null } = {}) {
     try { renderer.xr.setFramebufferScaleFactor(xrResScale()); } catch (e) { report('xr res scale', e); }   // also BEFORE setSession: the layer is sized as the session starts
     floorSpace = floor;
     scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale();
-    bus.emit('xr:loop');   // frame.js hands the loop to three BEFORE setSession saves+wraps it (see frame.js)
+    bus.emit('xr:loop');   // frameloop.js hands the loop to three BEFORE setSession saves+wraps it (see frameloop.js)
     const tReq = performance.now();
     // BEFORE setSession, so it runs BEFORE three's own 'end' listener (registered inside setSession), which restarts
     // the desktop loop through window.requestAnimationFrame: with the in-session shim still installed that restart

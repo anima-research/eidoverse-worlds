@@ -1,29 +1,29 @@
-// tools/v4/door-check.ts — slice 2's in-process checks (the server-level ones over a real WebSocket are
-// server-check.ts). usage: bun tools/v4/door-check.ts
+// tools/v4/authority-check.ts — slice 2's in-process checks (the server-level ones over a real WebSocket are
+// server-check.ts). usage: bun tools/v4/authority-check.ts
 //   N   names.js: one encoding for actors, ids and components; the lab's `0abc` / `n0abc` collision is gone
 //   T   the engine translator's own name, and the v1 fold build it stamps
 //   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, throughLock, the gameplay lock inside
 //       its own component, and v1 lock/guard through the translator
 //   U   the act index (undo, wait): equals a fresh build after every request; entityBefore equals the fold at every
 //       seq; a later write, a purge and a new act each change undo's answer the way a full scan would
-//   M   translated mounts in the door's shape: where the door sees a riding thing, place-on and overlap warnings
-//   L   the live world (server/v4/live.ts) equals a whole-log re-read after every request: state, sim, the id index
+//   M   translated mounts in the authority's shape: where the authority sees a riding thing, place-on and overlap warnings
+//   L   the live world (server/v4/livehost.ts) equals a whole-log re-read after every request: state, sim, the id index
 //   C   the engine catalogue's shape (an off-centre GLB box, measured surfaces) places things where they rest
 //   X   the compatibility projection: the v1 verbs it sends, folded by the client's own fold, reproduce it
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/v4/door.js";
+import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/v4/authority.js";
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/v4/fold.js";
-import { makeV4Client, stateView, stateFromView } from "../../shared/v4/client.js";
+import { makeV4Client, stateView, stateFromView } from "../../shared/v4/replica.js";
 import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
-import { MODELS } from "../../shared/v4/catalogue.js";
+import { MODELS } from "../../shared/v4/labmodels.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
 import { custodyAt } from "../../server/v4/custody.ts";
 import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
-import { openWorld } from "../../server/v4/disk.ts";
-import { openLive } from "../../server/v4/live.ts";
+import { openWorld } from "../../server/v4/filehost.ts";
+import { openLive } from "../../server/v4/livehost.ts";
 import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
 import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
@@ -36,8 +36,8 @@ const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else {
 const code = (r: any) => r?.refused?.code;
 let T = 1800000000000;
 
-// a translation written into this door's worlds carries THIS door's keys: the door refuses to sign for a world whose
-// genesis names another sequencer (round-2 R5); disk.ts keeps custody at <root>/keys/custody.json
+// a translation written into this server's worlds carries THIS door's keys: the authority refuses to sign for a world whose
+// genesis names another sequencer (round-2 R5); filehost.ts keeps custody at <root>/keys/custody.json
 const DOORKEYS = () => { const cu = custodyAt(root + "keys/custody.json"); return { key: cu.sequencer(), operator: cu.operator() }; };
 
 // ---- N: names ----
@@ -61,7 +61,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 0, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
   const c = r.final.v4[enc("lamp_1")];
   ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
-  ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the door's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
+  ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("tools/v4/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
 // ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
@@ -113,7 +113,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(code(b) === "locked", "P23 …nor can a builder through a handler (throughLock covers your own edits, not a capability)", b.refused); }
   ok(code(call("vic", "delete", { id: "tbl", component: "lock" })) === "rights" && code(call("vic", "set", { id: "cup2", component: "lock", value: true })) === "rights", "P24 a visitor may neither unlock nor lock");
   ok(code(call("olive", "set", { id: "@world", component: "lock", value: true })) === "world", "P25 @world can't be locked (even by its owner)");
-  ok(code(call("bob", "set", { id: "cup2", component: "lock", value: 1 })) === "shape", "P26 the door writes a lock only as true (to unlock, delete it)");
+  ok(code(call("bob", "set", { id: "cup2", component: "lock", value: 1 })) === "shape", "P26 the authority writes a lock only as true (to unlock, delete it)");
   { call("bob", "set", { id: "cup2", component: "lock", value: true });
     ok(code(call("bob", "set", { id: "cup2", component: "transform", value: { pos: [0.3, 0.75, 0] } })) === "locked", "P27 a builder's own lock binds that builder (the locker, not an owner)"); }
   ok(call("bob", "delete", { id: "tbl", component: "lock" }).ok, "P28 any builder may unlock someone else's lock (olive's)");
@@ -133,9 +133,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && JSON.stringify(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
     const r = call("vic", "use", { id: "gate", action: "open" });
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
-    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the door's state", i.notForYou);
+    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the authority's state", i.notForYou);
     call("olive", "set", { id: "gate", component: "lock", value: true });
-    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the door (v1: use stays open)"); }
+    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the authority (v1: use stays open)"); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "held"), actor, tool, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -194,9 +194,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call(R, "set", { id: "cup", component: "transform", value: { ...cupT, pos: [7, 0, 7] } });
   const un = call("bob", "undo", { act: mv.act });
   ok(code(un) === "conflict" && /Riannon changed it since/.test(JSON.stringify(un.refused.skipped)) && un.refused.skipped?.[0]?.by === R, "NR5 an undo conflict names who changed it since (and by: the id)", un.refused);
-  ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", fix: "" } }) === "move Lamp refused by the door (locked): Lamp is locked (locked by Riannon at 9)",
+  ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", fix: "" } }) === "move Lamp refused by the authority (locked): Lamp is locked (locked by Riannon at 9)",
     "NR6 the shared refusal text (what a person's toast and an agent's verb tools show) reads any escaped name back", refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)" } }));
-  ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the door (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
+  ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the authority (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
   { const V = (req) => lockVerb(req); const set = (component) => ({ verb: "set", args: { id: "a", component, value: 1 } });
     const got = [V(set("transform")), V(set("parent")), V({ verb: "place", args: { id: "a", at: [0, 0] } }), V({ verb: "delete", args: { id: "a" } }), V(set("model")),
       V({ verb: "batch", args: { ops: [set("transform"), { verb: "delete", args: { id: "b" } }] } }), V({ verb: "undo", args: { act: 3 } }), V(set("label")), V({ verb: "delete", args: { id: "a", component: "parent" } })];
@@ -204,9 +204,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       && lockChoices("Move").map((c) => c.v).join() === "through,cancel,unlock", "NR8 the lock question names what the request would do: Move / Delete / Replace anyway? (R's three answers)", got); }
 }
 
-// ---- M: translated mounts in the door's shape (research 37, slice 3 #3) ----
-// translate-v1@1 carried v1's parent record and v1's own pos; the door reads transform as LOCAL to parent, so it saw a
-// riding crate wherever its unused pre-mount pos pointed. Now the door must see it where v1 draws it.
+// ---- M: translated mounts in the authority's shape (research 37, slice 3 #3) ----
+// translate-v1@1 carried v1's parent record and v1's own pos; the authority reads transform as LOCAL to parent, so it saw a
+// riding crate wherever its unused pre-mount pos pointed. Now the authority must see it where v1 draws it.
 { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
@@ -230,10 +230,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks v4's `socket`
   const v1asV4 = Object.fromEntries(Object.entries(v1.entities).map(([k, e]) => [k, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e]));
   for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1asV4, id);
-    ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the door sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
+    ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the authority sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
   const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
   const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
-  ok(p.ok && loc && Math.max(Math.abs(loc[0]), Math.abs(loc[2])) > 0.4, "M4 place on the table avoids the riding crate at its centre (with @1's shape the door saw the crate 9 m away and the centre free)", [at, loc]);
+  ok(p.ok && loc && Math.max(Math.abs(loc[0]), Math.abs(loc[2])) > 0.4, "M4 place on the table avoids the riding crate at its centre (with @1's shape the authority saw the crate 9 m away and the centre free)", [at, loc]);
   const chk = tc("lint", {}).warnings ?? []; ok(!chk.some((x) => x.kind === "overlap" && [x.id, x.with].includes("box") && [x.id, x.with].includes("ball2")), "M5 …and check sees no overlap between them", chk);
   ok(chk.filter((x) => x.kind === "floating" && ["box", "bell", "jar"].includes(x.id)).length === 0, "M6 …nor calls a riding thing floating", chk); }
 
@@ -359,9 +359,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r2 = call("bob", "undo", { act: u2.act });
   ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
 
-// ---- K: the client's own fold (shared/v4/client.js): adopt a cut, ingest the door's entries; the v4 state equals the
+// ---- K: the client's own fold (shared/v4/replica.js): adopt a cut, ingest the authority's entries; the v4 state equals the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
-{ const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
+{ const { viewState } = await import("../../shared/v4/view.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
   let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
   const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
@@ -442,7 +442,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(sw.ok && swp && Math.abs(swp[0] - (gt[0] + 5)) < 0.05, "C12 hang from an off-origin frame: the seat hangs under the beam's middle, not the frame's origin", { swp, beamMid: gt[0] + 5, r: sw.refused }); }
 
 // ---- V: what changed, said in v4 terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
-{ const { viewState } = await import("../../shared/v4/record.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
+{ const { viewState } = await import("../../shared/v4/view.js"); const { diffView } = await import("../../shared/v4/viewdiff.js");
   let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());
   const step = (actor, tool, args) => { now += 100; const r = request(w, actor, tool, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
@@ -470,7 +470,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(diffView(held, viewState(w.state())).things.length === 0 && !diffView(held, viewState(w.state())).world.length, "V10 nothing changed says nothing"); }
 
 // ---- S3: a stretched v4 thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
-{ const { viewOf } = await import("../../shared/v4/record.js");
+{ const { viewOf } = await import("../../shared/v4/view.js");
   const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
   const rec = viewOf("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
   ok(typeof rec.scale === "number" && JSON.stringify(rec.scale3) === "[2,0.4,0.4]", "S3a a stretched thing's view has `scale` as ONE number (every older reader) and scale3 beside it", rec);
@@ -481,13 +481,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
 { const { editOps, inspectSchema, addOps } = await import("../../shared/editschema.js");
-  // the planner's door ops: a set's value / a delete of the component
+  // the planner's ops: a set's value / a delete of the component
   const val = (r) => r.ops[0]?.verb === "set" ? r.ops[0].args.value : r.ops[0]?.verb === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
   const pw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "pivots"), actor, tool, args); };
   pw("ann", "create-world", { title: "pivots" });
   pw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the door takes a pivot {pos: [x,y,z]}");
+  ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the authority takes a pivot {pos: [x,y,z]}");
   ok(code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [1, 2] } })) === "shape" && code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } })) === "shape", "P2 …and refuses a bad one (two numbers; an extra field), saying the shape");
   const tr = openWorld(root, "pivots").state().entities.gate.c.transform;
   ok(JSON.stringify(tr.pos) === "[0,0,0]", "P3 setting a pivot never moved the thing", tr);
@@ -650,7 +650,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const ww = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "warnwords"), actor, tool, args); };
   ww("ann", "create-world", { title: "warnwords" });
   const far = ww("ann", "create", { id: "far", model: "crate", components: { transform: { pos: [500, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  ok((far.warnings ?? []).some((w) => w.kind === "out-of-bounds" && w.bounds?.max), "WT3 the door's out-of-bounds warning carries the bounds", far.warnings);
+  ok((far.warnings ?? []).some((w) => w.kind === "out-of-bounds" && w.bounds?.max), "WT3 the authority's out-of-bounds warning carries the bounds", far.warnings);
   const { enc } = await import("../../shared/v4/names.js");
   ww("ann", "set", { id: "@world", component: "roles:" + enc("Hazel"), value: { role: "builder" } });
   ww(enc("Hazel"), "create", { id: "hz", model: "crate", components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -674,7 +674,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(p1.entries?.length === 3 && p1.entries[0].seq > p1.entries[1].seq && p1.entries.every((x) => x.changed.includes("label")) && typeof p1.next === "number", "HS3 history {id} is that thing's acts, newest first, a page at a time, with next", p1);
   const all = []; let page = p1; all.push(...page.entries); while (page.next !== undefined) { page = hw("ann", "history", { id: "box", limit: 3, before: page.next }); all.push(...page.entries); }
   ok(all.length === 8 && all.at(-1).changed.includes("(created)") && all.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS4 …paging back reaches its creation, every act once", all.map((x) => [x.seq, x.changed.join()]));
-  const { TOUCH_HORIZON } = await import("../../shared/v4/door.js");
+  const { TOUCH_HORIZON } = await import("../../shared/v4/authority.js");
   let landed = 0; for (let k = 0; k < TOUCH_HORIZON + 2; k++) { T += 5000; if (hw("ann", "set", { id: "box", component: "label", value: `n${k}` }).ok) landed++; }   // spaced past the rate limit
   ok(landed === TOUCH_HORIZON + 2, "HS5a (setup) every edit past the horizon landed", landed);
   const deep = hw("ann", "inspect", { id: "box" });
@@ -696,7 +696,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "delete", { id: "desk" });
   ok(call("bob", "create", { id: "mug", model: "crate", place: { at: [6, 3] } }).refused?.code === "reused", "H7d …and after a second delete a stranger's create of a child's id is still refused"); }
 
-// LT: the light every engine shares — a spot's cone (half-angles, rad), and bounds the door holds for any component
+// LT: the light every engine shares — a spot's cone (half-angles, rad), and bounds the authority holds for any component
 { T += 100; process.env.V4_NOW = String(T); const L = (a) => request(openWorld(root, "lights"), "ann", "set", { id: "lamp", component: "light", value: a });
   request(openWorld(root, "lights"), "ann", "create-world", { title: "lights" });
   request(openWorld(root, "lights"), "ann", "create", { id: "lamp", model: "table-lamp" });
@@ -725,7 +725,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
   ok(bad({ s: { body: {} } }) === "shape", "SK4 a socket needs its pos");
   ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner");
-  // SK5-8: the whole body block (shared/sockbody.js), through the door's own request path
+  // SK5-8: the whole body block (shared/sockbody.js), through the authority's own request path
   ok(R("ann", "set", { id: "horse", component: "sockets", value: { saddle: { pos: [0, 1.2, 0], body: { action: "ride", anchor: "hips", pose: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] },
     reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, leaveBy: "jump", fromSeat: true } } } }).ok, "SK5 a saddle with a blend by speed, reins, look limits, a driver's input and leaveBy is taken");
   ok(bad({ s: { pos: [0, 1, 0], body: { anchr: "hips" } } }) === "schema" && bad({ s: { pos: [0, 1, 0], body: { reach: { leftHand: { at: [0, 1, 0], grip: 1 } } } } }) === "schema"
@@ -734,10 +734,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     && bad({ s: { pos: [0, 1, 0], body: { pose: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } } } }) === "shape" && bad({ s: { pos: [0, 1, 0], body: { enter: 42 } } }) === "shape", "SK7 enums, ranges, signals and clip names");
   ok(bad({ a: { pos: [0, 1, 0], body: { input: { move: "drive" } } }, b: { pos: [1, 1, 0], body: { input: { move: "drive" } } } }) === "shape", "SK8 at most one drive per thing");
   const att = R("bob", "use", { id: "horse", action: "ride" }).attach;
-  // SK9: a part's motion runs on the door's clock too (a seat locked to its phase needs every client to agree on it)
+  // SK9: a part's motion runs on the authority's clock too (a seat locked to its phase needs every client to agree on it)
   const pm = R("ann", "create", { id: "swingset", model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 }, motion: { type: "pendulum", amp: 0.1, period: 2 } } });
   const pmc = R("ann", "inspect", { id: "swingset" });
-  ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SK9 the door stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
+  ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SK9 the authority stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
   ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.input?.move === "drive" && att.reach?.leftHand?.vr === "near" && att.fromSeat === true && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the body does there", att); }
 const w0 = () => openWorld(root, "tier0");
 // T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
@@ -746,7 +746,7 @@ const w0 = () => openWorld(root, "tier0");
   const S = (id, comp, value) => R("set", { id, component: comp, value }).refused?.code;
   ok(S("@world", "terrain", { kind: "noise", segments: 100000 }) === "bounds", "T0a terrain segments past 512 (10^10 vertices on every client) is refused");
   ok(S("@world", "terrain", { kind: "noise", size: 0 }) === "bounds", "T0a a terrain of size 0 is refused");
-  ok(S("@world", "terrain", { kind: "noise", octaves: 0 }) === "bounds", "T0a terrain octaves outside 1–8 is refused (the engine clamps; the door agrees)");
+  ok(S("@world", "terrain", { kind: "noise", octaves: 0 }) === "bounds", "T0a terrain octaves outside 1–8 is refused (the engine clamps; the authority agrees)");
   ok(S("@world", "grass", { width: 1e9, depth: 10 }) === "bounds", "T0b a grass field a million km wide is refused");
   ok(S("hearth", "particles", { preset: "fire", count: 1e9 }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");
   ok(S("hearth", "particles", { preset: "fire", size: -3 }) === "bounds" && S("hearth", "particles", { preset: "fire", opacity: 7 }) === "bounds", "T0c negative size, opacity past 1: refused");
@@ -757,7 +757,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [0, 1, 1] }) === "shape", "T0e a zero scale is refused (its children's transforms divide by it)");
   const nq = R("set", { id: "hearth", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0, 0.5], scale: [1, 1, 1] } });
   const q = w0().state().entities.hearth?.c.transform?.q;
-  ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the door and the renderer then agree)", q); }
+  ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the authority and the renderer then agree)", q); }
 // T1 (component review, tier 1): components say what they are, where they go, and nothing the renderer reads is refused
 { T += 100; process.env.V4_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier1"), "ann", tool, args);
   R("create-world", { title: "tier1" }); R("create", { id: "chair", model: "crate" });
@@ -765,7 +765,7 @@ const w0 = () => openWorld(root, "tier0");
   for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["blueprints:foo", { name: "f" }], ["sky", { hours: 7 }]])
     ok(S("chair", comp, value).refused?.code === "world-only", `T1a ${comp} belongs to the world: on a chair it's refused, and told where it goes`);
   for (const [comp, value] of [["transform", { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }], ["model", "crate"], ["parent", { to: "chair" }]])
-    ok(S("@world", comp, value).refused?.code === "thing-only", `T1b ${comp} belongs to a thing: on @world it's refused (the door and renderer disagreed about where its children were)`);
+    ok(S("@world", comp, value).refused?.code === "thing-only", `T1b ${comp} belongs to a thing: on @world it's refused (the authority and renderer disagreed about where its children were)`);
   ok(S("chair", "structure", { tile: 1, wallH: 2.6, wallT: 0.12, slabT: 0.15, levels: [], labels: {} }).ok, "T1d structure.slabT, which the renderer reads, is taken");
   ok(S("chair", "particles", { preset: "fire", texture: "eidoverse/assets/particle_textures/flame.png" }).ok, "T1e particles.texture (in AGENTS.md's own example) is taken");
   ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");

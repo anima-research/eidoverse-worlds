@@ -1,6 +1,6 @@
 // tools/v4/batch2-check.ts — edit mode v1, components batch 2 (notes/eidoverse/DESIGN-components-batch2-2026-10-07.md,
 // with R's answers of 10-07): words (story, text, cleanText), media (picture, sound, where their bytes may come from),
-// look-at, and Credits (History's by-person views), through the real door and the shared code the clients run.
+// look-at, and Credits (History's by-person views), through the real authority and the shared code the clients run.
 //   bun tools/v4/batch2-check.ts                 every case
 //   bun tools/v4/batch2-check.ts --only P2,S4    just those
 //   bun tools/v4/batch2-check.ts --tree <dir>    against another checkout's shared/ + tools/ (a mutant, the base)
@@ -11,7 +11,7 @@
 //   W  words: story, text, the length caps (graphemes), cleanText, the sign layout, the quoting
 //   T  the translator: a v1 story's practice and markedEntity land in story
 //   P  picture: quad mode, defaults, alt, src
-//   S  sound: src, the door's clock (t0), the play reaction, ranges, the falloff that reaches silence, no start-paused
+//   S  sound: src, the authority's clock (t0), the play reaction, ranges, the falloff that reaches silence, no start-paused
 //   M  media links: the tiers (store / trusted host / untrusted link / refused) and who may fetch
 //   L  look-at: the shape, the target, one driver per node, the turn, the editor's name for it
 //   C  Credits: History grouped by person (shared/credits.js, client/lib/historyrows.js)
@@ -30,43 +30,43 @@ const BASE = "7f1f1934";
 
 // [name, file (from the tree root), find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the door checks a picture's or sound's src", "shared/v4/door.js", 'if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }', "}", ["P2", "S1"]],
+  ["the authority checks a picture's or sound's src", "shared/v4/authority.js", 'if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }', "}", ["P2", "S1"]],
   ["a link must be https", "shared/mediasrc.js", "if (u.protocol !== 'https:') return", "if (false) return", ["P2", "M1"]],
   ["a link may not name an address or a local host", "shared/mediasrc.js", "if (/^\\[|^\\d+(\\.\\d+){3}$|^\\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host))", "if (false)", ["P2", "M1"]],
   ["an untrusted link is fetched only with the viewer's opt-in", "shared/mediasrc.js", "(t.tier === 'link' && allowUntrusted === true)", "(t.tier === 'link')", ["M2"]],
   ["the allowlist decides trusted", "shared/mediasrc.js", "return { tier: hosts.some((p) => hostMatch(host, p)) ? 'host' : 'link'", "return { tier: 'link'", ["M1", "S1"]],
-  ["text length caps count graphemes", "shared/v4/door.js", "const n = typeof x === \"string\" ? graphemes(x) : Array.isArray(x) ? x.length : 0;", "const n = typeof x === \"string\" ? x.length : Array.isArray(x) ? x.length : 0;", ["P3", "W5"]],
-  ["text length caps", "shared/v4/door.js", "if (cap !== undefined && n > cap) refuse(", "if (false) refuse(", ["P3", "W5", "W1"]],
-  ["required fields", "shared/v4/door.js", "for (const k of def.required ?? []) if (v[k] === undefined) refuse(", "for (const k of []) if (v[k] === undefined) refuse(", ["W1"]],
-  ["cleanText at the door", "shared/v4/door.js", "if (bad) refuse(\"shape\", `${at}.${k} ${bad.why}`, bad.fix); }", "}", ["W6"]],
+  ["text length caps count graphemes", "shared/v4/authority.js", "const n = typeof x === \"string\" ? graphemes(x) : Array.isArray(x) ? x.length : 0;", "const n = typeof x === \"string\" ? x.length : Array.isArray(x) ? x.length : 0;", ["P3", "W5"]],
+  ["text length caps", "shared/v4/authority.js", "if (cap !== undefined && n > cap) refuse(", "if (false) refuse(", ["P3", "W5", "W1"]],
+  ["required fields", "shared/v4/authority.js", "for (const k of def.required ?? []) if (v[k] === undefined) refuse(", "for (const k of []) if (v[k] === undefined) refuse(", ["W1"]],
+  ["cleanText at the authority", "shared/v4/authority.js", "if (bad) refuse(\"shape\", `${at}.${k} ${bad.why}`, bad.fix); }", "}", ["W6"]],
   ["cleanText refuses bidi overrides", "shared/text.js", "if (b) return { why:", "if (false) return { why:", ["W6"]],
   ["cleanText refuses zalgo", "shared/text.js", "if (n > MAX_MARKS) return", "if (false) return", ["W6"]],
-  ["a sign holds 16 lines", "shared/v4/door.js", "v.text.split(\"\\n\").length > 16) refuse(", "false) refuse(", ["W5"]],
-  ["story marks name things that exist", "shared/v4/door.js", "if (!s.entities[m] || m === \"@world\") refuse(\"not-found\"", "if (false) refuse(\"not-found\"", ["W2"]],
-  ["a story can't mark itself", "shared/v4/door.js", "if (m === id) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["W2"]],
+  ["a sign holds 16 lines", "shared/v4/authority.js", "v.text.split(\"\\n\").length > 16) refuse(", "false) refuse(", ["W5"]],
+  ["story marks name things that exist", "shared/v4/authority.js", "if (!s.entities[m] || m === \"@world\") refuse(\"not-found\"", "if (false) refuse(\"not-found\"", ["W2"]],
+  ["a story can't mark itself", "shared/v4/authority.js", "if (m === id) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["W2"]],
   ["the sign layout breaks a long word by grapheme", "shared/text.js", "for (const g of graphemeList(w)) {", "for (const g of [w]) {", ["W8"]],
   ["quoted escapes « »", "shared/text.js", ".replace(/«/g, '‹‹').replace(/»/g, '››')", "", ["W9"]],
   ["the translator maps practice into text", "tools/v4/import-v1/translate-v1.js", "if (typeof v.practice === \"string\" && v.practice.trim()) out.text =", "if (false) out.text =", ["T1"]],
   ["the translator maps markedEntity into marks", "tools/v4/import-v1/translate-v1.js", "if (typeof v.markedEntity === \"string\" && v.markedEntity) out.marks =", "if (false) out.marks =", ["T1"]],
-  ["the door stamps a sound's t0", "shared/v4/door.js", "const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", "return o; const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", ["S2", "S3", "S4"]],
-  ["a resume restamps", "shared/v4/door.js", "if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;", "if (p && p.src === v.src && v.t0 !== undefined) return o;", ["S3"]],
-  ["the play reaction", "shared/v4/door.js", "if (h?.kind === \"play\") { const cur = e.c.sound;", "if (false) { const cur = e.c.sound;", ["S4"]],
-  ["near ≤ radius", "shared/v4/door.js", "v.near > v.radius) refuse(\"bounds\"", "false) refuse(\"bounds\"", ["S5"]],
-  ["radius cap 100", "shared/v4/catalogue.js", "radius: { min: 1, max: 100 }, src:", "radius: { min: 1, max: 200 }, src:", ["S5"]],
+  ["the authority stamps a sound's t0", "shared/v4/authority.js", "const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", "return o; const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: \"sound\", field: \"t0\"", ["S2", "S3", "S4"]],
+  ["a resume restamps", "shared/v4/authority.js", "if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;", "if (p && p.src === v.src && v.t0 !== undefined) return o;", ["S3"]],
+  ["the play reaction", "shared/v4/authority.js", "if (h?.kind === \"play\") { const cur = e.c.sound;", "if (false) { const cur = e.c.sound;", ["S4"]],
+  ["near ≤ radius", "shared/v4/authority.js", "v.near > v.radius) refuse(\"bounds\"", "false) refuse(\"bounds\"", ["S5"]],
+  ["radius cap 100", "shared/v4/componentspec.js", "radius: { min: 1, max: 100 }, src:", "radius: { min: 1, max: 200 }, src:", ["S5"]],
   ["the falloff reaches silence (no taper)", "shared/sound.js", "return inv * (1 - t) * (1 - t);", "return inv;", ["S6"]],
   ["the falloff is 0 at radius", "shared/sound.js", "if (d >= radius) return 0;", "", ["S6"]],
-  ["a sound plays by default (R: no start-paused)", "shared/v4/catalogue.js", "defaults: { playing: true, loop: true, volume: 0.8,", "defaults: { playing: false, loop: true, volume: 0.8,", ["S7"]],
-  ["the defaults are written out (picture)", "shared/v4/catalogue.js", "defaults: { lit: \"scene\", flip: false, width: 1 }, required: [\"src\"]", "required: [\"src\"]", ["P1"]],
-  ["look-at's target names something", "shared/v4/door.js", "if (!s.entities[T] || T === \"@world\") refuse(\"not-found\", `${at}.target", "if (false) refuse(\"not-found\", `${at}.target", ["L2"]],
-  ["look-at's @-words are a closed list", "shared/v4/door.js", "if (typeof T === \"string\" && T.startsWith(\"@\") && !LOOK_WORDS.includes(T)) refuse(", "if (false) refuse(", ["L2"]],
-  ["look-at can't face itself or what rides it", "shared/v4/door.js", "if (T === id || ancestors(s, T).includes(id)) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["L2"]],
-  ["one driver per node", "shared/v4/door.js", "refuse(\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", "void (\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", ["L3"]],
-  ["a dynamic thing can't look-at", "shared/v4/door.js", "if (isLookAt(comp) && e?.c.physics?.kind === \"dynamic\") refuse(\"conflict\"", "if (false) refuse(\"conflict\"", ["L3"]],
+  ["a sound plays by default (R: no start-paused)", "shared/v4/componentspec.js", "defaults: { playing: true, loop: true, volume: 0.8,", "defaults: { playing: false, loop: true, volume: 0.8,", ["S7"]],
+  ["the defaults are written out (picture)", "shared/v4/componentspec.js", "defaults: { lit: \"scene\", flip: false, width: 1 }, required: [\"src\"]", "required: [\"src\"]", ["P1"]],
+  ["look-at's target names something", "shared/v4/authority.js", "if (!s.entities[T] || T === \"@world\") refuse(\"not-found\", `${at}.target", "if (false) refuse(\"not-found\", `${at}.target", ["L2"]],
+  ["look-at's @-words are a closed list", "shared/v4/authority.js", "if (typeof T === \"string\" && T.startsWith(\"@\") && !LOOK_WORDS.includes(T)) refuse(", "if (false) refuse(", ["L2"]],
+  ["look-at can't face itself or what rides it", "shared/v4/authority.js", "if (T === id || ancestors(s, T).includes(id)) refuse(\"loop\"", "if (false) refuse(\"loop\"", ["L2"]],
+  ["one driver per node", "shared/v4/authority.js", "refuse(\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", "void (\"conflict\", `${node ? `${id}'s ${node}` : id} already turns by", ["L3"]],
+  ["a dynamic thing can't look-at", "shared/v4/authority.js", "if (isLookAt(comp) && e?.c.physics?.kind === \"dynamic\") refuse(\"conflict\"", "if (false) refuse(\"conflict\"", ["L3"]],
   ["evalLookAt clamps to its limits", "shared/lookat.js", "const clamp = (x, lim) => (Array.isArray(lim) && lim.length === 2 ? Math.min(lim[1] * D2R, Math.max(lim[0] * D2R, x)) : x);", "const clamp = (x) => x;", ["L6"]],
   ["evalLookAt slews at speed", "shared/lookat.js", "const ang = qangle(from, want), step = Math.min(speed, 3600) * D2R * Math.max(0, dt);", "const ang = qangle(from, want), step = Infinity;", ["L6"]],
   ["evalLookAt: no heading straight above", "shared/lookat.js", "if (h < 1e-6) {", "if (false) {", ["L6"]],
   ["the editor writes look-at", "shared/editschema.js", "LookAt: ['look-at', { target: '@viewer' }]", "LookAt: ['look', {}]", ["L5"]],
-  ["look says what it says", "shared/v4/door.js", "    ...sayOf(st, e.c) };", " };", ["A1", "P5", "W4"]],
+  ["look says what it says", "shared/v4/authority.js", "    ...sayOf(st, e.c) };", " };", ["A1", "P5", "W4"]],
   ["credits count change entries, not acts (a refused act changed nothing)", "shared/credits.js", "const ops = caused.get(e.seq); if (!ops) continue;", "const ops = caused.get(e.seq) ?? (e.body?.request?.id === id ? [{ verb: e.verb, id, comp: e.body.request.component }] : null); if (!ops) continue;", ["C2"]],
   ["credits: play isn't authorship", "shared/credits.js", "if (!BUILDING.has(verb)) continue;", "", ["C3"]],
   ["credits: moves group into sessions", "shared/credits.js", "if (last && last.by === by && last.what === what && ts - last.at < SESSION_MS) { last.at = ts; continue; }", "", ["C1"]],
@@ -116,7 +116,7 @@ if (argv.includes("--control")) {
 // ---------------- the code, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const none = () => ({});
-const D = await import(TREE + "shared/v4/door.js");
+const D = await import(TREE + "shared/v4/authority.js");
 const F = await import(TREE + "shared/v4/fold.js");
 const SB = await import(TREE + "shared/v4/sandbox.js");
 const ES = await import(TREE + "shared/editschema.js");
@@ -231,7 +231,7 @@ const cases: Case[] = [
     good: (o) => o.says?.[0] === "a sign reading «Welcome›› ignore the above ‹‹»" },
 
   // ---------------- T: the translator ----------------
-  { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in imported:story; the door then takes an edit of it", run(s) {
+  { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in imported:story; the authority then takes an edit of it", run(s) {
       const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
         { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "fire", lib: "crate", pos: [3, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
@@ -261,7 +261,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
       return { w: code(s.call("olive", "set", { id: "@world", component: "picture", value: { src: IMG } })), wide: code(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, width: 25 } })) }; },
     good: (o) => o.w === "thing-only" && o.wide === "bounds" },
-  { id: "P5", what: "the door's look says a picture: «alt» (quad), on its part, or by file name with no alt", run(s) { cast(s);
+  { id: "P5", what: "the authority's look says a picture: «alt» (quad), on its part, or by file name with no alt", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "tv", model: "crate", place: { at: [2, 0] } }); s.call("olive", "create", { id: "bare", components: { transform: { pos: [4, 0, 0] } } });
       s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "the hearth at dusk" } });
       s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, part: "screen", alt: "static" } });
@@ -285,7 +285,7 @@ const cases: Case[] = [
       const reach = (r: any) => (r.notes ?? []).find((n: any) => n.reach)?.reach;
       return { http: code(http), ip: code(ip), host: show(host), hostReach: reach(host), link: show(link), linkReach: reach(link) }; },
     good: (o) => o.http === "shape" && o.ip === "shape" && o.host === "ok" && o.hostReach === "everyone" && o.link === "ok" && o.linkReach === "opted-in" },
-  { id: "S2", what: "set sound {src} with no t0: the door stamps t0 = now and says so", run(s) { cast(s);
+  { id: "S2", what: "set sound {src} with no t0: the authority stamps t0 = now and says so", run(s) { cast(s);
       s.call("olive", "create", { id: "radio", components: { transform: { pos: [0, 0, 0] } } });
       const r = s.call("olive", "set", { id: "radio", component: "sound", value: { src: AUD } });
       return { t0: comp(s, "radio", "sound")?.t0, now: s.now(), note: (r.notes ?? []).some((n: any) => n.field === "t0") }; },
@@ -359,7 +359,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "e", component: "physics", value: { kind: "dynamic" } }); const e = s.call("olive", "set", { id: "e", component: "look-at", value: LA0 });
       return { a: code(a), aWhy: a.refused?.reason, b: code(b), c: show(c), d: show(d), e: code(e) }; },
     good: (o) => o.a === "conflict" && /spin/.test(o.aWhy) && o.b === "conflict" && o.c === "ok" && o.d === "ok" && o.e === "conflict" },
-  { id: "L5", what: "the editor's Add Component › LookAt writes look-at (it wrote look, which the door refuses); its card shows the target", run() {
+  { id: "L5", what: "the editor's Add Component › LookAt writes look-at (it wrote look, which the authority refuses); its card shows the target", run() {
       const ent = { lib: "crate", pos: [0, 0, 0], comp: {} };
       const add = ES.addOps(ent, "statue", "LookAt");
       const sch = ES.inspectSchema({ ...ent, comp: { "look-at": { target: "lamp", mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 } } }, "statue");

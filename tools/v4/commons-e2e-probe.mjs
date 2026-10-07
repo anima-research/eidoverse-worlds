@@ -5,10 +5,10 @@
 // with the world's sky deleted first (the headless-sky rule: no cloud bake in SwiftShader; it also sets
 // ew-cloud-quality off). Stages, each printed green or red:
 //   boot    the page boots into the world (its own ready line, the splash gone), joined, with a role
-//   see     every placed thing in the door's cut is realized as an entity (the translated world, drawn)
+//   see     every placed thing in the authority's cut is realized as an entity (the translated world, drawn)
 //   chat    the arrival chat window shows the world's old lines (chat came across the translation)
-//   say     a line typed here goes through the door and comes back as a chat line
-//   live    a thing an agent creates through the door while the page watches is realized; removed, it goes
+//   say     a line typed here goes through the authority and comes back as a chat line
+//   live    a thing an agent creates through the authority while the page watches is realized; removed, it goes
 //   errors  no page error and no console.error
 import { launchBrowser } from '../probe-harness.mjs';
 const ORIGIN = process.env.E2E_ORIGIN ?? 'http://127.0.0.1:9471', WORLD = process.env.E2E_WORLD ?? 'commons';
@@ -35,7 +35,7 @@ try {
   const net = await race(pg.evaluate(() => ({ joined: !!globalThis.EW?.net?.joined, you: globalThis.EW?.net?.myId, role: globalThis.EW?.net?.myRights?.role, v4: !!globalThis.EW?.net?.v4you })));
   if (!check('boot: the page boots into the translated world and joins it', !!ready && net.joined && !!net.role, { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-6) })) throw new Error('boot gate failed');
   // see: every thing in this client's own fold of the cut is an entity on screen
-  const want = (await (await fetch(`${ORIGIN}/geom?world=${WORLD}&boxes=0`)).json()).entities?.length ?? 0;   // the server's view of the door's state
+  const want = (await (await fetch(`${ORIGIN}/geom?world=${WORLD}&boxes=0`)).json()).entities?.length ?? 0;   // the server's view of the authority's state
   const counts = async () => ({ view: want, drawn: await race(pg.evaluate(() => globalThis.EW?.entities?.size ?? 0)) });
   let c = await counts(); for (let i = 0; i < 80 && !(c.view > 0 && c.drawn >= c.view); i++) { await sleep(250); c = await counts(); }
   check('see: every placed thing in the translated world is realized', c.view > 50 && c.drawn >= c.view, c);
@@ -46,14 +46,14 @@ try {
   // say
   const sr = await race(pg.evaluate(() => globalThis.EW.requestV4('say', { text: 'hello from the nov1 browser probe' })));
   let heard = false; for (let i = 0; i < 40 && !heard; i++) { heard = (await lines()).some((t) => t.includes('hello from the nov1 browser probe')); if (!heard) await sleep(200); }
-  check('say: a line said through the door comes back as a chat line on screen', sr?.ok && heard, { sr: sr?.ok ?? sr?.refused });
-  // live: an agent-like socket creates and removes a thing through the door
+  check('say: a line said through the authority comes back as a chat line on screen', sr?.ok && heard, { sr: sr?.ok ?? sr?.refused });
+  // live: an agent-like socket creates and removes a thing through the authority
   ws = new WebSocket(ORIGIN.replace('http', 'ws') + '/ws'); const inbox = [];
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; }); ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
   ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', v4fold: true }));
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'snapshot' || m.type === 'error'); i++) await sleep(100);
   const req = (id, verb, args) => { ws.send(JSON.stringify({ type: 'request', id, verb, args })); };
-  const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the door never reuses an id: a fresh one each run
+  const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the authority never reuses an id: a fresh one each run
   req('c1', 'create', { id: LIVE, model: 'eidoverse/assets/models/crate_large_red.glb', place: { at: [2, 2] } });
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'reply' && m.id === 'c1'); i++) await sleep(100);
   const made = inbox.find((m) => m.type === 'reply' && m.id === 'c1');
@@ -61,7 +61,7 @@ try {
   let live = false; for (let i = 0; i < 60 && !live; i++) { live = await has(); if (!live) await sleep(250); }
   req('c2', 'delete', { id: LIVE });
   let gone = false; for (let i = 0; i < 60 && !gone; i++) { gone = !(await has()); if (!gone) await sleep(250); }
-  check('live: a thing created through the door while the page watches is realized, and goes when it is removed', made?.ok && live && gone, { made: made?.reply?.ok ?? made?.reply?.refused, live, gone });
+  check('live: a thing created through the authority while the page watches is realized, and goes when it is removed', made?.ok && live && gone, { made: made?.reply?.ok ?? made?.reply?.refused, live, gone });
   // a signed-out visitor's /whoami is a 401 by design (net.js asks whether a home-node session exists); Chrome logs the
   // status as a console error. Anything else counts.
   const real = errors.filter((e) => !/^HTTP 401 \/whoami$/.test(e) && !(/status of 401/.test(e) && errors.includes('HTTP 401 /whoami')));

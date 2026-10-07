@@ -1,13 +1,13 @@
 // shared/v4/scriptaudit.js — a READER's view of behaviour results (research 41 §3.6, §3.7, §7 #14, #15; ported from the
-// lab's audit.js). It needs only the log, the fold, the source blobs and the sandbox: never the door. For every
+// lab's audit.js). It needs only the log, the fold, the source blobs and the sandbox: never the authority. For every
 // `script:<id>` act (verb `script`) it checks
 //   sponsor — the act's `sponsor` / `sponsorAt` equal the sponsor view of `script:<name>` at that point (§5 "Two views":
-//             whose rights admitted the LATEST write to the key in its current life). A door that names someone else is caught.
+//             whose rights admitted the LATEST write to the key in its current life). An authority that names someone else is caught.
 //   depth   — the number of behaviour acts in its cause chain (41 §3.9), recomputed here, and the limit (8 by default).
 //   seed    — seed = H(world ‖ act seq ‖ entity/script key).
 //   re-run  — fold to `head`, load `src`, re-run with the recorded event, ts (the frozen clock), seed and presence reads,
-//             drop no-ops (scriptrules.elide, the door's own rule), and compare with the change entry the act caused and
-//             with its says. A door that altered one op, or a script whose result depended on anything else, is caught.
+//             drop no-ops (scriptrules.elide, the authority's own rule), and compare with the change entry the act caused and
+//             with its says. An authority that altered one op, or a script whose result depended on anything else, is caught.
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
 import { fold, opsOf, jcs } from "./fold.js";
 import { elide, seedOf } from "./scriptrules.js";
@@ -28,7 +28,7 @@ export function creatorAt(L, id, comp, upto) {
   return found === null ? null : by(L, found);
 }
 /** sponsor of script key (id, comp) as of seq `upto`: the latest write to it in its current life that changed more than
- *  `paused` (§5 "Two views"; R on lab 49 F4: pausing adopts nothing). The door's own rule (door.js sponsorOf). */
+ *  `paused` (§5 "Two views"; R on lab 49 F4: pausing adopts nothing). The authority's own rule (authority.js sponsorOf). */
 export function sponsorAt(L, id, comp, upto) {
   if (!creatorAt(L, id, comp, upto)) return null;
   const W = []; // newest first, current life only
@@ -68,7 +68,7 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     if (b.on === "say") { if (!isE(trig) || typeof trig.body?.text !== "string") { flags.push({ seq, check: "input", why: "the say it heard is gone (purged?): it can't be re-run" }); return; }
       event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
     if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
-    // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the door's
+    // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the authority's
     const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, st, reads: b.reads ?? { near: [], count: [], names: [] }, limits: { wallMs: 10000 } });
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
     reran++;

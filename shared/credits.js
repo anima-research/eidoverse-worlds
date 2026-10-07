@@ -7,14 +7,14 @@
 // What counts: a CHANGE entry that touches the thing, caused by a building act (create, set, place, turn, delete, batch,
 // undo, …; an imported act by its original verb). A refused act changes nothing and never reaches a change entry, so it
 // can't count. Play isn't authorship: a `use` (opening a door 40 times), a grab, a throw, the sim's rests and the
-// door's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
+// authority's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
 // not "moved it ×591": the Commons has people with hundreds of imported nudges).
 import { opsOf } from './v4/fold.js';
 
 export const SESSION_MS = 5 * 60 * 1000;
 const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'sculpt', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
 const SYSTEM = new Set(['sim', 'system', 'world']);
-/** The phrase for one change, from one table (the client and the door read the same words). */
+/** The phrase for one change, from one table (the client and the authority read the same words). */
 export function phraseOf(op) {
   if (op.verb === 'create') return 'made it';
   if (op.verb === 'delete' && op.comp === undefined) return 'took it away';

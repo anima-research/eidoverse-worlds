@@ -1,4 +1,4 @@
-// causes — the live chat lines (the `say` entries the door writes): a live say is a spoken moment (chat line +
+// causes — the live chat lines (the `say` entries the authority writes): a live say is a spoken moment (chat line +
 // speech event) whose RECORD stays in the chat window for the next arrival. It isn't world state, so no view diff
 // can carry it: net.js dispatches each live line here over the bus ('live-entry', {seq, ts, actor, verb: 'say',
 // args: {text, to?, spoken?, utt?, t0?}}).

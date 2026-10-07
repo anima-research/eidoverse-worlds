@@ -1,8 +1,8 @@
-// Four gaps 26 left open (research note 34), as the SAME requests through the door before this work (c9b4a67,
+// Four gaps 26 left open (research note 34), as the SAME requests through the authority before this work (c9b4a67,
 // extracted by git into .baseline-gaps/) and through today's. An attack must be accepted there and refused now; a
 // guard (co-building, owner flows) must work in both. usage: bun gaps-check.js
 //   G1  creator rights on keyed components (PROTOCOL §5): "the creator of this key, or an owner", a view over the log
-//   G2  presence plausibility (L6, 25d M3): the door's own track of each body; settlements check against it
+//   G2  presence plausibility (L6, 25d M3): the authority's own track of each body; settlements check against it
 //   G3  rate per actor (L7): every logged word, not only state writes
 //   G4  two hands, one crate (25c L6 falsifier)
 // Ported from code/v4-lab/gaps-check.js @ 11db981; the "before" door (lab c9b4a67) is the control arm and runs only
@@ -10,20 +10,20 @@
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
 import { scratch, labAt, controlNote } from "./common.ts";
-import * as doorNow from "../../shared/v4/door.js";
+import * as doorNow from "../../shared/v4/authority.js";
 import * as simNow from "../../shared/v4/simlayer.js";
-import { openWorld as openNow } from "../../server/v4/disk.ts";
+import { openWorld as openNow } from "../../server/v4/filehost.ts";
 import { fold as foldNow, readLog as readNow } from "../../shared/v4/fold.js";
 
 const root = scratch("gaps");
 const BASE = "c9b4a67";
 const B = labAt(BASE, ["door.js", "fold.js", "simlayer.js", "catalogue.js", "toolspec.js", "legacy"], "gaps");
-const doors = { baseline: B ? { ...(await import(B + "door.js")), root: B } : null, now: { ...doorNow, openWorld: openNow, root, sim: simNow } };
+const doors = { baseline: B ? { ...(await import(B + "authority.js")), root: B } : null, now: { ...doorNow, openWorld: openNow, root, sim: simNow } };
 const nowFold = (buf) => foldNow(readNow(buf));
 let T = 1800000000000;
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
-  // every call advances the door's clock by `step` ms (default 100: a fast client)
+  // every call advances the authority's clock by `step` ms (default 100: a fast client)
   const call = (actor, tool, args = {}, step = 100) => { T += step; process.env.V4_NOW = String(T);
     try { return d.request(d.openWorld(d.root, name), actor, tool, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } };
   return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
@@ -154,7 +154,7 @@ const cases = [
       return { accepted: uses.filter(ok).length, last: uses.at(-1), bob: s.call("bob", "set", { id: "door", component: "label", value: "front" }, 50) }; },
     nowGood: (o) => o.accepted === 60 && code(o.last) === "rate" && ok(o.bob) },
 
-  { id: "G3e", guard: true, what: "a holder at the rate limit still settles on leaving (a disconnect is the door's duty, not a request)", run(s) { cast(s);
+  { id: "G3e", guard: true, what: "a holder at the rate limit still settles on leaving (a disconnect is the authority's duty, not a request)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.3] }); s.call("vic", "grab", { id: "ball" });
@@ -240,7 +240,7 @@ const cases = [
       const w = s.world(); const ret = w.entries.filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").length;
       return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now()).checks.disagree.length }; },
     nowGood: (o) => o.left === "ok" && !o.stillHeld && o.returnActs === 1 && o.ball === "[0,0,0]" && o.carriers === 0 },
-  { id: "R4", what: "33 F4: the door's clock steps back (NTP slew, VM restore): it writes a decreasing ts", run(s) { cast(s);
+  { id: "R4", what: "33 F4: the authority's clock steps back (NTP slew, VM restore): it writes a decreasing ts", run(s) { cast(s);
       const keep = T; T = 1000000; s.call("olive", "create", { id: "c", model: "crate", place: { at: [0, 0] } }); T = keep;
       const L = s.world().entries; const dec = L.findIndex((e, i) => i > 1 && e.ts < L[i - 1].ts);
       const f = nowFold(fs.readFileSync(`${s.root}worlds/${s.name}.jsonl`)); return { decreasingAt: dec, malformed: f.diagnostics.filter(([, c]) => c.startsWith("malformed")).length, c: !!f.entities?.c }; },
@@ -262,7 +262,7 @@ const cases = [
     // never an act that claims success with no result (33 C2); since round-2 R7 the refusal itself IS recorded, as an act
     // that says it was refused (its request cut to 2 KiB), with no state
     baseBad: (o) => o.newActs === 1 && o.newChanges === 0, nowGood: (o) => /refused too-big/.test(o.r) && o.newActs === 1 && o.refusedAct === 1 && o.newChanges === 0 },
-  { id: "R6b", what: "33 C2: say with 1.1 MB of text throws inside the door instead of refusing", run(s) { cast(s);
+  { id: "R6b", what: "33 C2: say with 1.1 MB of text throws inside the authority instead of refusing", run(s) { cast(s);
       const r = s.call("vic", "say", { text: "y".repeat(1100000) }); return { r: show(r) }; },
     baseBad: (o) => /CRASH/.test(o.r), nowGood: (o) => /refused too-big/.test(o.r) },
 ];

@@ -1,22 +1,22 @@
 // v4edit — edit mode's writes.
 //
-// Every edit is a door REQUEST, the same request an agent sends ({type: 'request', verb: tool, args}), and the person waits for
-// the door's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/v4/refusal.js).
+// Every edit is a REQUEST, the same request an agent sends ({type: 'request', verb: tool, args}), and the person waits for
+// the authority's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/v4/refusal.js).
 //
 //   send(req, opts)        one request; on a `locked` refusal by someone who may lift the lock, a centre dialog offers
 //                          "Move anyway", which re-sends the SAME request with throughLock: true (§5: the log records
 //                          only the edit; the lock stays on). A refusal reverts the local preview.
-//   sendOps(ops, opts)     an edit's door ops (shared/v4/ops.js, planned by editschema.js, build.js…) as ONE request (a
+//   sendOps(ops, opts)     an edit's ops (shared/v4/requests.js, planned by editschema.js, build.js…) as ONE request (a
 //                          single tool, or a batch): one edit is one act, so one Ctrl+Z.
 //   expectOf(ids, comps)   §3a: the values a gesture started from, as `expect`. A drag is presence until release; the
 //                          release is one request with expect, refused `changed` if anyone wrote those since.
-//   undo() / redo()        Ctrl+Z is the door's `undo {act}` of MY last act; redo is `undo {act: <my undo>}`, which the
-//                          door refuses when someone changed it since (Figma's rule: never back over later work).
+//   undo() / redo()        Ctrl+Z is the authority's `undo {act}` of MY last act; redo is `undo {act: <my undo>}`, which the
+//                          authority refuses when someone changed it since (Figma's rule: never back over later work).
 //   del(ids), duplicate(ids), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
 import { bus } from './base.js';
 import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/v4/requests.js';
 import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { plain, warnPlain } from './plainwords.js';
@@ -28,7 +28,7 @@ export { isV4 };
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const idIn = (id) => enc(String(id));
 export const idOut = (id) => dec(id) ?? id;
-/** a person's display name for an actor id (the door directory's, via names.js; never the log's) */
+/** a person's display name for an actor id (the authority directory's, via names.js; never the log's) */
 export const nameOf = (id) => actorName(id);
 
 // ---- my acts: what Ctrl+Z and redo walk (seeded at join from the server's act index, so it survives a reload) ----
@@ -56,7 +56,7 @@ export function writesOf(req) {
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
 // may I lift a lock (so the page offers "move anyway")? A visitor or a role-less person never does (decided by the role:
 // client-check's visitor case drives a visitor by the role alone); any other role by its build switch (a moderator, a custom role).
-// The door decides either way; this only chooses between the dialog and the refusal.
+// The authority decides either way; this only chooses between the dialog and the refusal.
 export const mayLift = () => { const r = net.myRights; if (!r || r.role === 'visitor' || r.role === 'none') return false;
   return Array.isArray(r.permissions) ? r.permissions.includes('build') : ['builder', 'owner'].includes(r.role); };
 
@@ -68,7 +68,7 @@ export function revertPose(id) {
   sendDrag(id, [o.position.x, o.position.y, o.position.z], yaw, [q.x, q.y, q.z, q.w]);
 }
 
-/** Show a refusal in a person's words (plainwords.js: no code, no tool syntax, things by their labels). The door's whole
+/** Show a refusal in a person's words (plainwords.js: no code, no tool syntax, things by their labels). The authority's whole
  *  answer, as an agent's tool returns it, goes to the console and rides the event as agentText. */
 export function showRefusal(what, r) {
   const text = plain(what, r), agentText = refusalText(what, r);
@@ -77,7 +77,7 @@ export function showRefusal(what, r) {
   bus.emit('v4-refused', { what, refused: r.refused, text, agentText });
   return text;
 }
-/** Show the door's warnings on a write that went through (it overlaps, it floats…): they were only ever shown to agents. */
+/** Show the authority's warnings on a write that went through (it overlaps, it floats…): they were only ever shown to agents. */
 export function showWarnings(what, r) {
   const ws = Array.isArray(r?.warnings) ? r.warnings.filter((w) => w && w.kind !== 'unchecked') : [];
   if (!ws.length) return null;
@@ -87,11 +87,11 @@ export function showWarnings(what, r) {
   return text;
 }
 
-// writes still waiting for the door: Ctrl+Z waits for them, or a quick Ctrl+Z after a release would undo the act BEFORE
+// writes still waiting for the authority: Ctrl+Z waits for them, or a quick Ctrl+Z after a release would undo the act BEFORE
 // it (the release's act isn't on the stack until its reply arrives)
 const inflight = new Set();
 const settled = () => Promise.allSettled([...inflight]);
-/** One request, waiting for the door. opts: {what, revert(), record = true}. Returns the final reply. */
+/** One request, waiting for the authority. opts: {what, revert(), record = true}. Returns the final reply. */
 export function send(req, opts = {}) {
   const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
   return p;
@@ -133,7 +133,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   }
   return r;
 }
-/** A gesture's door ops (shared/v4/ops.js) as ONE request — one act, one Ctrl+Z — sent and waited for; `expect` covers
+/** A gesture's ops (shared/v4/requests.js) as ONE request — one act, one Ctrl+Z — sent and waited for; `expect` covers
  *  what it sets, as this viewer saw it at `base` (a gesture's start: id → components) or now. */
 export async function sendOps(ops, { what, base = null, expect = true, revert = null } = {}) {
   const req = OP.batch(Array.isArray(ops) ? ops : [ops]);
@@ -146,7 +146,7 @@ export async function sendOps(ops, { what, base = null, expect = true, revert = 
   return send(req, { what, revert });
 }
 
-// ---- undo / redo: the door's undo-by-act, of my own acts only ----
+// ---- undo / redo: the authority's undo-by-act, of my own acts only ----
 export async function undo() {
   await settled();
   const act = undoStack.at(-1);
@@ -170,7 +170,7 @@ export async function redo() {
 
 // ---- the whole-thing edits ----
 /** Delete things: one id is `delete`, several are one `batch` (one act, one undo). A thing whose ancestor is also
- *  going is left out: the door takes children with their parent. */
+ *  going is left out: the authority takes children with their parent. */
 export function del(ids) {
   const st = v4.st; const set = new Set(ids.map(idIn));
   const under = (x) => { let p = st.entities[x]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (set.has(p)) return true; p = st.entities[p]?.c.parent?.to; } return false; };
@@ -179,7 +179,7 @@ export function del(ids) {
   const req = go.length === 1 ? { verb: 'delete', args: { id: go[0] } } : { verb: 'batch', args: { ops: go.map((id) => ({ verb: 'delete', args: { id } })) } };
   return send(req, { what: go.length === 1 ? `delete ${idOut(go[0])}` : `delete ${go.length} things` });
 }
-/** Duplicate: create {from: <the thing>} (the door copies it and what's attached to it; 0.5 m along x). */
+/** Duplicate: create {from: <the thing>} (the authority copies it and what's attached to it; 0.5 m along x). */
 export function duplicate(id, at = undefined) {
   return send({ verb: 'create', args: { from: idIn(id), ...(at ? { at } : {}) } }, { what: `duplicate ${id}` });
 }
@@ -188,7 +188,7 @@ export function lock(id, on) {
   return send(on ? { verb: 'set', args: { id: idIn(id), component: 'lock', value: true } } : { verb: 'delete', args: { id: idIn(id), component: 'lock' } },
     { what: on ? `lock ${id}` : `unlock ${id}` });
 }
-/** Save as blueprint: the door's `publish {from, name}` (one root, or several siblings as a group). */
+/** Save as blueprint: the authority's `publish {from, name}` (one root, or several siblings as a group). */
 export function publish(ids, name) {
   const from = ids.length === 1 ? idIn(ids[0]) : ids.map(idIn);
   return send({ verb: 'publish', args: { from, ...(name ? { name } : {}) } }, { what: `save ${ids.length === 1 ? ids[0] : `${ids.length} things`} as a blueprint` });
@@ -202,7 +202,7 @@ export function blueprints() {
   const c = v4.st?.entities?.['@world']?.c ?? {};
   return Object.keys(c).filter((k) => k.startsWith('blueprints:')).map((k) => ({ hash: `sha256:${k.slice('blueprints:'.length)}`, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) }));
 }
-/** Is this thing (or anything it rides) locked, as the door reads it (truthy, a purged value isn't)? */
+/** Is this thing (or anything it rides) locked, as the authority reads it (truthy, a purged value isn't)? */
 export function lockedBy(id) {
   const st = v4.st; let x = idIn(id), n = 0;
   while (x && n++ < 33) { const v = st?.entities?.[x]?.c.lock; if (v !== undefined && !(v && v.purged === true) && !!v) return idOut(x); x = st?.entities?.[x]?.c.parent?.to; }

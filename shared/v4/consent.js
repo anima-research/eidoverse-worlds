@@ -1,9 +1,9 @@
 // Ported from the v4 lab (code/v4-lab, 2026-10-05) unchanged.
 // Body consent (PROTOCOL-v4 L6 as revised 21:45; research 42 §4). PRESENCE ONLY: nothing here is ever appended to a
-// log or written to world state. The door keeps one table per body in its presence plane, refuses before delivery,
+// log or written to world state. The authority keeps one table per body in its presence plane, refuses before delivery,
 // and the target's client has the final word (the lab has no clients; `inbox` stands in for delivery).
 //   classes: near, follow, touch (social points), intimate (intimate points), pose, shove, move, voice
-//   cells: everyone | ask | nobody, separately for strangers and friends (friends = mutual, between door-stamped ids)
+//   cells: everyone | ask | nobody, separately for strangers and friends (friends = mutual, between authority-stamped ids)
 //   presets: the SAME for every body. Normal is the default for humans and agents alike; Performer is opt-in.
 //   silence is no: a body that never sent a table gets Normal; an ask nobody answers within 20 s is a no.
 //   anyone you trust (someone YOU named a friend) may close your shield; only you may open it.

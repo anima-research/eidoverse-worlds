@@ -19,16 +19,16 @@
 //                 transform — the thing glues where it stands, never jumps
 //                 (the shared parenting edit: shared/hierarchy.js).
 //
-//   📜 scripts  the world's scripts made visible (the door's status view):
+//   📜 scripts  the world's scripts made visible (the authority's status view):
 //               every script:<name> with its status (active / asleep /
 //               dormant / paused, and why), what it's on, its timers — and,
-//               selected, its last activations (what world.log() wrote),
+//               selected, its last activations (what console.log() wrote),
 //               polled while you watch. This is the
 //               debug UI for the scripting tier; agents get the same data via
 //               world_debug, this is the human window onto it.
 //
-// Everything here READS client state and SENDS door requests — no private
-// channel, no authority. The door enforces rights; buttons just try.
+// Everything here READS client state and SENDS requests — no private
+// channel, no authority. The authority enforces rights; buttons just try.
 
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
@@ -37,7 +37,7 @@ import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { requestDebug, v4 } from './net.js';
 import { sendOps, del, revertPose } from './v4edit.js';
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/v4/requests.js';
 import { state } from './state.js';
 import { makeSection, flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -134,7 +134,7 @@ function paintScene(force = false) {
     let transform = '';
     if (obj) {
       const n2 = (v) => Number(v.toFixed(2));
-      // a locked thing: the door asks before it moves ("This is locked. Move anyway?")
+      // a locked thing: the authority asks before it moves ("This is locked. Move anyway?")
       const locked = !!bag?.lock;
       const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em">`;
       transform = `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0">
@@ -224,7 +224,7 @@ function paintScene(force = false) {
       if (tf('scale')) patch.scale = Number(tf('scale').value);
       if (patch.pos.some(Number.isNaN) || Number.isNaN(patch.yaw ?? 0) || Number.isNaN(patch.scale ?? 1)) return;
       const id = selected;
-      sendOps([OP.pose(state.st.entities?.[id] ?? {}, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
+      sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
     });
   }
 
@@ -356,7 +356,7 @@ async function paintScripts() {
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
-      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — world.log() writes here)'}</pre>
+      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — console.log() writes here)'}</pre>
       <div style="display:flex;gap:6px">
         <button data-act="unbind">remove</button>
       </div></div>`;
@@ -393,7 +393,7 @@ export function initSceneGraph() {
     await paintScripts();
     clearInterval(pollTimer);
     // live console: poll while the section is open — a script author sits
-    // here watching their world.log() arrive, which is the whole point
+    // here watching their console.log() arrive, which is the whole point
     pollTimer = setInterval(async () => {
       if (!scriptsApi?.isOpen) { clearInterval(pollTimer); pollTimer = null; return; }
       await refreshRoster();

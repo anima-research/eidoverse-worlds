@@ -1,16 +1,16 @@
 // mcpl/tools.ts — the agent tool surface, ONE table and ONE dispatcher
-// (survey §B3/§C, ruled §24r: "unify stdio door").
+// (survey §B3/§C, ruled §24r: "unify stdio door", the stdio MCP server).
 //
-// Two doors front the same embodied agent: the MCPL/WS door (net-server.ts,
-// sessions + channels + capabilities) and the plain-MCP stdio door
-// (server.ts). The stdio door used to carry a hand-copied 16-tool subset of
+// Two MCP servers front the same embodied agent: the MCPL server (net-server.ts,
+// sessions + channels + capabilities) and the plain-MCP stdio server
+// (server.ts). The stdio server used to carry a hand-copied 16-tool subset of
 // this table — drifted descriptions, a stale searchLibrary with the
 // hardcoded-Mac-path bug R0 fixed on only one side, and a "shared schema"
-// comment that had stopped being true. Now both doors register from TOOLS
+// comment that had stopped being true. Now both servers register from TOOLS
 // and dispatch through handleTool; what differs between hosts rides ToolCtx:
 //
 //   - rememberAvatar / rememberActivity — per-identity persistence (the WS
-//     door writes state.json; the stdio door, one agent per process, may
+//     server writes state.json; the stdio server, one agent per process, may
 //     no-op);
 //   - canPush + heldActivity — whether ambient activity digests can be
 //     DELIVERED (a channel host) or must be HELD for the next poll;
@@ -32,7 +32,7 @@ import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, m
 import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
-import * as OP from "../shared/v4/ops.js";
+import * as OP from "../shared/v4/requests.js";
 import { childrenOf } from "../shared/hierarchy.js";
 import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";
 /** Every folded record by id — what the hierarchy maths reads (a child's
@@ -61,12 +61,12 @@ export type ToolCtx = {
   rememberAvatar?: (path: string) => void;
   /** persist the applied activity dial for this identity */
   rememberActivity?: (cfg: { pulseSec?: number; radiusM?: number }) => void;
-  /** session-machinery travel; absent = the door does not offer it */
+  /** session-machinery travel; absent = the authority does not offer it */
   travel?: (world: string) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
-  /** the door's RFC-005 join policy for THIS credential, so `worlds` can say
+  /** the authority's RFC-005 join policy for THIS credential, so `worlds` can say
    *  which of the listed worlds the agent may actually travel to — the same
    *  gate travel itself applies, asked before the move instead of after.
-   *  Absent = the door has no policy vocabulary (stdio fronts one world). */
+   *  Absent = the authority has no policy vocabulary (stdio fronts one world). */
   worldPolicy?: { canJoin: (world: string) => boolean; canFound: boolean };
 };
 
@@ -143,7 +143,7 @@ export const TOOLS = [
   { name: "blueprints", description: "This world's blueprints: every published blueprint (a thing and everything under it, saved as one content-hashed record) with its short hash, name, part count and the copies placed from it. Pass hash for one. Publish with act {verb: \"publish\", args: {from, name}}; place a copy with blueprint_place.", inputSchema: { type: "object", properties: { hash: { type: "string" } } } },
   { name: "blueprint_place", description: "Place a COPY of one of this world's blueprints (see blueprints): the authority copies the whole tree in one act (create {from: <hash>, at}). Position defaults to 2m in front of you, facing the way you face; pass dry:true to have the authority check it without writing.", inputSchema: { type: "object", properties: { hash: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, yaw: { type: "number" }, scale: { type: "number" }, id: { type: "string" }, dry: { type: "boolean" } }, required: ["hash"] } },
   { name: "world_history", description: "Read the world log — the append-only record every world IS: who did what, newest page by default. Filter by verbs: the authority's (create, set, delete, place, use, undo, say, batch…); a world imported from an old log also holds its imported entries (verb 'legacy': filter by their original verb). Page backwards with before, forwards with after (the reply says where to continue). A refused request is on the record as an attempt and reads REFUSED — it changed nothing. act {verb: 'history', args: {id}} reads one thing's own acts. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
-  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — every request the authority refused here (kind 'refused': who, the verb, the code, the authority's reason and how to fix it — rights, locks, shapes, rate limits, bans). Pass script: <thing>/<name> to read ONE script's last activations (what world.log wrote, how each ended); scripts: true lists what scripts run here and why each is active, asleep, dormant or paused. Components (motion, sockets, reactions) are data, not scripts: they never appear in the scripts roster — world_history {verbs: ['set']} shows how one was written. In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, script: { type: "string" }, scripts: { type: "boolean" } } } },
+  { name: "world_debug", description: "The world's flight recorder: why things BOUNCED. The log answers 'what happened'; this answers 'why didn't it' — every request the authority refused here (kind 'refused': who, the verb, the code, the authority's reason and how to fix it — rights, locks, shapes, rate limits, bans). Pass script: <thing>/<name> to read ONE script's last activations (what console.log wrote, how each ended); scripts: true lists what scripts run here and why each is active, asleep, dormant or paused. Components (motion, sockets, reactions) are data, not scripts: they never appear in the scripts roster — world_history {verbs: ['set']} shows how one was written. In-memory, recent events only. Check here first when something doesn't do what you expected.", inputSchema: { type: "object", properties: { limit: { type: "number" }, kinds: { type: "array", items: { type: "string" } }, script: { type: "string" }, scripts: { type: "boolean" } } } },
   { name: "kick", description: "MODERATION: remove someone from this world right now: the authority's kick {who, minutes?, reason?}. who is their name or identity (u-…). They may come back after minutes (default 10, at most 60) — a kick interrupts, a ban excludes. Needs the kick permission and a rank above theirs; an owner can't be kicked.", inputSchema: { type: "object", properties: { who: { type: "string" }, minutes: { type: "number" }, reason: { type: "string" } }, required: ["who"] } },
   { name: "ban", description: "MODERATION: ban someone — the authority's ban {who, days?, reason?}: disconnects them now if they're here and refuses their joins (including spectating) until unban or for days. who is their name or identity (u-…): someone absent is found among the people this world has seen (whois). Default is THIS world only (needs the ban permission here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the moderator's record; bystanders see only that they were banned.", inputSchema: { type: "object", properties: { who: { type: "string" }, days: { type: "number" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["who"] } },
   { name: "unban", description: "MODERATION: lift a ban — the authority's unban {who}: this world's by default (who: their name or identity; they needn't be here), the server-wide list with global:true.", inputSchema: { type: "object", properties: { who: { type: "string" }, global: { type: "boolean" } }, required: ["who"] } },
@@ -218,7 +218,7 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
 }
 
 
-/** The tool list a door should advertise: whispers ride an env kill-switch,
+/** The tool list an MCP server should advertise: whispers ride an env kill-switch,
  *  travel only exists where the host wired the session machinery for it. */
 export function toolList({ travel = false }: { travel?: boolean } = {}) {
   return TOOLS.filter((t) => (WHISPERS_ENABLED || t.name !== "whisper") && (travel || t.name !== "travel")
@@ -240,7 +240,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string)
 // One handler per tool, keyed to TOOLS by NAME — the verbs.ts/messages.ts
 // treatment (survey §B3, deferred until the table had one home): bodies moved
 // VERBATIM from the 26-case switch. The load-time assertion below makes
-// advertise/handle drift a boot failure on BOTH doors instead of an
+// advertise/handle drift a boot failure on BOTH servers instead of an
 // "Unknown tool" a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
@@ -302,7 +302,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   attach: async (ag, a) => {
       // a body on a seat is PRESENCE (v4: bodies aren't entities; nothing is logged): my frames carry it while I sit.
-      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). The door is asked
+      // The thing must declare the seat (a sockets component with a body block, shared/sockbody.js). The authority is asked
       // first (use {id, action, args: {socket}}): it checks who may. The seat's leaveBy decides how I get
       // off, and fromSeat whether I may move to it without standing.
       const on = String(a.to ?? "").trim();
@@ -430,7 +430,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   say: async (ag, a, ctx, name) => {
       // Spoken-say protocol keys ride through; anything else stays at the
       // door. The server validates these (bounded utt window, clamped t0)
-      // and strips them from ordinary says — the door's job is to forward
+      // and strips them from ordinary says — the authority's job is to forward
       // the protocol, not arbitrary metadata.
       // THE TRIO IS A UNIT (r3 review). The world server deletes all three
       // keys unless spoken===true AND utt is a safe non-negative integer —
@@ -439,7 +439,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // voice agent none the wiser. Validate the same unit here and refuse
       // LOUDLY: a door that must drop the protocol should say so, not shrug
       // the say into text. (r5 tightened this to TYPE-EXACT rather than the
-      // server's Number() coercion — see the next block: the door refuses
+      // server's Number() coercion — see the next block: the authority refuses
       // null/bool/"5" outright so a coerced value can never be laundered into
       // a fabricated utterance.)
       // text is REQUIRED and must be a real string (Opus-5 review): the schema
@@ -458,11 +458,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const wantsSpoken = a.spoken === true || a.utt !== undefined || a.t0 !== undefined;
       // TYPE-EXACT, not coerced (adversarial review): Number(null)===0 and
       // Number(true)===1 let a null/boolean utt or a null t0 pass the old
-      // guard and forward a FABRICATED value — violating this door's own
+      // guard and forward a FABRICATED value — violating this server's own
       // "malformed refuses, never silently drops" invariant. The schema
       // declares utt:integer>=0 and t0:number; require exactly those raw
       // JSON types. (The world server tolerates numeric strings elsewhere;
-      // the door does not launder them into the protocol.)
+      // the authority does not launder them into the protocol.)
       const uttOk = typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0;
       const t0Ok = a.t0 === undefined || (typeof a.t0 === "number" && Number.isFinite(a.t0));
       const trioOk = a.spoken === true && uttOk && t0Ok;
@@ -470,14 +470,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // Machine-legible failure (r6 review): the same {content, isError:true}
         // contract every malformed tool call returns. A prose-only refusal let a
         // schema client that inspects result.isError read this as a successful
-        // say — the door must mark the refusal as an error, not just describe
+        // say — the authority must mark the refusal as an error, not just describe
         // one in text.
         return { content: [{ type: "text", text: "spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend." }], isError: true };
       }
       const extra = trioOk
         ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
         : undefined;
-      // the door answers a say: a refused one (the rate limit, a ban) comes back as an error in its own words, not "said"
+      // the authority answers a say: a refused one (the rate limit, a ban) comes back as an error in its own words, not "said"
       const r: any = await ag.say(String(a.text).slice(0, 4000), extra);
       // no answer isn't a refusal: it may have landed. Say so, so a retry doesn't say it twice
       if (r && r.ok === false && r.refused?.code === "timeout") return { content: [{ type: "text", text: "say: the world didn't confirm it in time — it may still have landed; look (or catch_up) before saying it again" }], isError: true };
@@ -690,7 +690,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (Object.keys(patch).length) ops.push(OP.set(a.id, "light", patch, { merge: true }));
         if (a.x != null || a.y != null || a.z != null) {
           const prev = (ag.entities.get(a.id) as any)?.pos ?? [0, 1, 0];
-          ops.push(OP.pose(ag.foldRecord(a.id) ?? {}, a.id, { pos: [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]] }));
+          ops.push(OP.setTransform(ag.foldRecord(a.id) ?? {}, a.id, { pos: [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]] }));
         }
         const r = await ag.sendOps(ops);
         if (r && !r.ok) return refusedBy(r, "light");
@@ -714,7 +714,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   travel: async (ag, a, ctx, name) => {
       // Travel is SESSION machinery — channel epochs, join gates, the
       // fatal-join teardown — so the shared table hands it to the host
-      // through the ctx hook. A door with no hook (stdio fronts exactly one
+      // through the ctx hook. A server with no hook (stdio fronts exactly one
       // WORLD_URL) does not list the tool; answering anyway teaches.
       if (!ctx.travel) return { content: [{ type: "text", text: "travel is not available on this server — it fronts a single world; reconnect with a different WORLD_NAME instead" }], isError: true };
       return await ctx.travel(String(a.world ?? "").trim());
@@ -722,7 +722,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   worlds: async (ag, a, ctx, name) => {
       // Discovery only — this reads the sequencer's /worlds and never moves
-      // the body. The policy column is the door's own joinAllowed, asked
+      // the body. The policy column is the authority's own joinAllowed, asked
       // here so an agent learns "may I?" from the map rather than from a
       // refused travel.
       let r: Response;
@@ -755,7 +755,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // fixed in one place and left standing in the other, which is what a
       // duplicated derivation always eventually does.
       //
-      // It also ignored the door's actual connection: WORLD_URL is the boot
+      // It also ignored the authority's actual connection: WORLD_URL is the boot
       // env, but `connect()` re-reads its target on every dial, so after a
       // travel this could point at the world we LEFT and measure a different
       // world's geometry than the one the agent is standing in.
@@ -837,7 +837,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
       if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/v4/refusal.js)
       else if (r) {
-        // the door's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account
+        // the authority's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account
         for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
         for (const nt of (r.notes ?? []) as any[]) if (!nt.placed) L.push(`  note: ${nt.why ?? JSON.stringify(nt)}`);
         if (!a.dry) L.push(`the authority accepted it${r.act != null ? ` (act ${r.act}; undo {act: ${r.act}} takes it back)` : ""}`);
@@ -877,11 +877,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return text(L.join("\n"));
   },
   blueprints: async (ag, a) => {
-      // the world's blueprints (v4): @world blueprints:<hash> → {name, parts}, written by the door's publish; a placed copy
+      // the world's blueprints (v4): @world blueprints:<hash> → {name, parts}, written by the authority's publish; a placed copy
       // carries a `copy-of` component naming the hash it came from
       const lib = ag.worldBlueprints();
       const copies: Record<string, string[]> = {};
-      // the door stamps every part of a copy copy-of {from: sha256:<hash>, key}; the copy itself is the part whose parent
+      // the authority stamps every part of a copy copy-of {from: sha256:<hash>, key}; the copy itself is the part whose parent
       // isn't a part of the same copy
       const W = foldWorld(ag) as Record<string, any>;
       for (const [id, e] of Object.entries(W)) { const f = e?.comp?.["copy-of"]?.from; if (typeof f !== "string") continue;
@@ -906,14 +906,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const yaw = Number(a.yaw ?? ag.yaw);
-      // the door copies the whole tree: create {from: <hash>, at} — one act, one undo
+      // the authority copies the whole tree: create {from: <hash>, at} — one act, one undo
       const at = { pos: [x, a.y ?? ag.heightAt(x, z), z], q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)] };
       const r: any = await ag.request("create", { from: `sha256:${h}`, at, ...(a.dry ? { dry: true } : {}) });   // a bare hex would name a thing to duplicate
       if (!r?.ok) return refusedBy(r, "blueprint_place");
       return text(`${a.dry ? "would place" : "placed"} a copy of "${lib[h]?.name ?? h.slice(0, 12)}" (${h.slice(0, 12)})${r.refs?.[0]?.id ? ` as [${r.refs[0].id}]` : ""} — one act`);
   },
   world_history: async (ag, a, ctx, name) => {
-      // the world's log is read through the door (its history request: verbs, before and after reach it)
+      // the world's log is read through the authority (its history request: verbs, before and after reach it)
       if (typeof a.before === "number" && typeof a.after === "number") return text("world_history pages one way: before or after, not both");
       const h = await ag.request("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 30))),
         ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
@@ -955,7 +955,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const answer = await ag.modOutcome(t0);
         return text(answer ?? `sent ${name} ${id} (global) — no echo yet; check look()`);
       }
-      // this world: the door's moderation, by IDENTITY (u-…). A present person's comes from their arrival; anyone else
+      // this world: the authority's moderation, by IDENTITY (u-…). A present person's comes from their arrival; anyone else
       // the world has seen is found by name through the directory (whois), so an absent person can be banned or unbanned
       let who = /^u-[a-z2-7]{20}$/.test(id) ? id : ag.v4ids.get(id) ?? null;
       if (!who) {
@@ -989,7 +989,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
 };
 
-// advertised ⇔ handled, asserted the moment either door imports this table
+// advertised ⇔ handled, asserted the moment either server imports this table
 {
   const declared = new Set(TOOLS.map((t) => t.name));
   for (const n of declared) if (!HANDLERS[n]) throw new Error(`[tools] "${n}" is advertised but has no handler`);

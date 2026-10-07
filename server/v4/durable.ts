@@ -1,7 +1,7 @@
 // server/v4/durable.ts — the disk practice a sequencer owes its readers (platforms review 10-06, #5):
 //  - a line is on disk (fsync) BEFORE anyone is told about it: otherwise a crash after a broadcast loses the tail, the
-//    restarted door re-issues the same seq with a different head, and every client holding (seq, head) holds "proof"
-//    the door equivocated;
+//    restarted server re-issues the same seq with a different head, and every client holding (seq, head) holds "proof"
+//    the authority equivocated;
 //  - a torn last line (a crash mid-write) is cut off at open, not kept as a permanent malformed entry;
 //  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten, never kept.
 import fs from "node:fs";

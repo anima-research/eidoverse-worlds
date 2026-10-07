@@ -1,6 +1,6 @@
-// tools/v4/scale-check.ts — the door at scale, and what the 10-06 reviews found there (REVIEW-2026-10-06-v4-top-down
+// tools/v4/scale-check.ts — the authority at scale, and what the 10-06 reviews found there (REVIEW-2026-10-06-v4-top-down
 // S0-2, S0-3 and S3's request globals; REVIEW-2026-10-06-security-v4-pass2 H-A and M-C). Every world on a server shares
-// ONE thread, and every request goes through shared/v4/door.js on it: no request may hold it for long.
+// ONE thread, and every request goes through shared/v4/authority.js on it: no request may hold it for long.
 //   bun tools/v4/scale-check.ts                 every case
 //   bun tools/v4/scale-check.ts --only S2,I1    just those
 //   bun tools/v4/scale-check.ts --tree <dir>    run the cases against another checkout (a mutant, a base)
@@ -9,7 +9,7 @@
 //                                               can't finish in it is red
 //   bun tools/v4/scale-check.ts --mutants       remove each new gate in turn (a copy of the tree): its cases must go red;
 //                                               a no-op control mutation must stay green
-// Cases (worlds open as the server opens them: server/v4/live.ts):
+// Cases (worlds open as the server opens them: server/v4/livehost.ts):
 //   S   scale: every request under BOUND_MS at 72 (the Commons' size), 500 and 2 000 things: delete (with what rested on
 //       it set down), a 3.5 m step of a tracked body, check {}, place on a table scaled 20× (a builder; a visitor is
 //       refused), look, create, set, a batch of 50 creates, grab (with what rests on it set down)
@@ -30,8 +30,8 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "d374d2ef";
 // The bound: 50 ms per request on this laptop at rest (the review's target). A host busy with other work runs everything
-// slower, the door included, so the bound is scaled by how much slower a fixed piece of door-shaped work runs right now
-// than at rest (CAL_REF_MS, its median at rest here), at most 4×: a door that grows with the world's size misses it by
+// slower, the authority included, so the bound is scaled by how much slower a fixed piece of door-shaped work runs right now
+// than at rest (CAL_REF_MS, its median at rest here), at most 4×: an authority that grows with the world's size misses it by
 // ten to a thousand times (--control). Each op is timed best of 5. The factor is printed with each timing case.
 const BOUND_MS = 50, CAL_REF_MS = 5;
 function calibrate() { const one = () => { const t0 = performance.now(); const m = new Map(); let acc = 0;
@@ -47,32 +47,32 @@ let LOAD = 1; const bound = () => BOUND_MS * LOAD;
 // visits are defences (the first proven to give satDepth's own answer, the second a bound the exact ring stop already
 // keeps); G3 and the reviewers' differential runs check they change no answer.
 const MUTANTS: [string, string, string | [string, string][], string, string[]][] = [
-  ["supportBelow asks the index", "shared/v4/door.js", "  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {\n    if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) {\n    if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
-  ["supportUnder asks the index", "shared/v4/door.js", "  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
-  ["warnings: each thing against what its box meets", "shared/v4/door.js", "for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);", "for (const o of Object.keys(st.entities)) { if (fam.has(o) || !ix.rec.has(o)) continue; const go = ix.rec.get(o);", ["S3", "S5"]],
-  ["a step asks the index (the old per-sub-step scan of every thing back)", "shared/v4/door.js", "function solidAt(w, st, p, except = new Set(), cands = null) {\n  const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);\n  if (cands) spend(1 + (cands.length >> 3));   // a sub-step filters the step's candidates by box first\n  for (const id of cands ?? near(st, box.min, box.max)) { if (id === \"@world\" || Object.hasOwn(held, id) || except.has(id)) continue;\n    if (cands) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; }\n    if (hitsIx(st, box, id, 0.01)) return id; }\n  return null;\n}\nfunction pathBlocked(w, st, from, to) {\n  const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it\n  for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);\n  const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));\n  const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));\n  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }\n  return null;\n}\n", "function solidAt(w, st, p, except = new Set()) {\n  const box = bodyBox(p); const held = new Set(Object.keys(w.presence.holds));\n  for (const id of Object.keys(st.entities)) { if (id === \"@world\" || held.has(id) || except.has(id) || !geomOf(st.entities[id].c.model)) continue; if (hits(box, st, id, 0.01)) return id; }\n  return null;\n}\nfunction pathBlocked(w, st, from, to) {\n  const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it\n  for (const id of Object.keys(st.entities)) if (geomOf(st.entities[id].c.model) && hits(b0, st, id, 0.01)) already.add(id);\n  const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));\n  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already); if (hit) return hit; }\n  return null;\n}\n", ["S3", "S6"]],
-  ["delete asks the index (the old set-down scan back: every thing, every support)", "shared/v4/door.js", [["for (const id of Object.keys(after.entities)) { if (!over.has(id)) continue; const b = aabb(after, id);", "for (const id of Object.keys(after.entities)) { const b = aabb(after, id);"], ["function supportBelow(st, x, z, y, ignore = new Set()) {\n  let best = { y: 0, id: \"ground\" };\n  const ix = spatial(st);\n  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {\n    if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)\n      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };\n  }\n  return best;\n}\n\n", "function supportBelow(st, x, z, y, ignore = new Set()) {\n  let best = { y: 0, id: \"ground\" };\n  for (const id of Object.keys(st.entities)) {\n    if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))\n      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };\n  }\n  return best;\n}\n\n"]], "", ["S2", "S3"]],
-  ["grab asks the index (the old scan for what rests on it back)", "shared/v4/door.js", [["if (fam.has(k) || !over.has(k)) return false;", "if (fam.has(k)) return false;"], ["function supportUnder(st, b, ignore) {\n  let best = { y: 0, id: \"ground\" };\n  const ix = spatial(st);\n  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }\n  return best;\n}\n\n", "function supportUnder(st, b, ignore) {\n  let best = { y: 0, id: \"ground\" };\n  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id)) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }\n  return best;\n}\n\n"]], "", ["S2", "S3"]],
-  ["place: nearest first, stopping when no ring can be nearer", "shared/v4/door.js", "            if (lb > best.d) break; }", "            }", ["S1", "S2", "S3", "Q6"]],
-  ["place: the one gate before solving", "shared/v4/door.js", "if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, \"transform\", COMPONENTS.transform.defaults)]);", "", ["Q1"]],
-  ["previews and batches copy only what they touch (the deep copy per preview back)", "shared/v4/door.js", [["const scratch = (st, ops) => { const s = applyCow(cowState(st), ops);", "const scratch = (st, ops) => { const s = applyOps(st, ops);"], ["all.push(...ops); st = applyCow(work, ops); forget(st);", "all.push(...ops); st = scratch(st, ops);"]], "", ["S3"]],
-  ["place: a ring's sides bound its distance", "shared/v4/door.js", "if (lb > best.d) break; }", "if (lb > best.d + 1e9) break; }", ["Q6"]],
-  ["the work budget", "shared/v4/door.js", "if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) {", "if (false) {", ["Q2", "Q3"]],
-  ["a write's warnings never refuse it", "shared/v4/door.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
-  ["look walks the children map", "shared/v4/door.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
-  ["capacity.things", "shared/v4/door.js", "if (after > before && after > cap.things) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
-  ["capacity.guestThings, all guests together", "shared/v4/door.js", "if (g + made > cap.guestThings) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
-  ["a refused move is never logged", "shared/v4/door.js", "    if (tool === \"move\") return;", "    if (tool === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
+  ["supportBelow asks the index", "shared/v4/authority.js", "  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {\n    if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) {\n    if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
+  ["supportUnder asks the index", "shared/v4/authority.js", "  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
+  ["warnings: each thing against what its box meets", "shared/v4/authority.js", "for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);", "for (const o of Object.keys(st.entities)) { if (fam.has(o) || !ix.rec.has(o)) continue; const go = ix.rec.get(o);", ["S3", "S5"]],
+  ["a step asks the index (the old per-sub-step scan of every thing back)", "shared/v4/authority.js", "function solidAt(w, st, p, except = new Set(), cands = null) {\n  const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);\n  if (cands) spend(1 + (cands.length >> 3));   // a sub-step filters the step's candidates by box first\n  for (const id of cands ?? near(st, box.min, box.max)) { if (id === \"@world\" || Object.hasOwn(held, id) || except.has(id)) continue;\n    if (cands) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; }\n    if (hitsIx(st, box, id, 0.01)) return id; }\n  return null;\n}\nfunction pathBlocked(w, st, from, to) {\n  const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it\n  for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);\n  const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));\n  const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));\n  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }\n  return null;\n}\n", "function solidAt(w, st, p, except = new Set()) {\n  const box = bodyBox(p); const held = new Set(Object.keys(w.presence.holds));\n  for (const id of Object.keys(st.entities)) { if (id === \"@world\" || held.has(id) || except.has(id) || !geomOf(st.entities[id].c.model)) continue; if (hits(box, st, id, 0.01)) return id; }\n  return null;\n}\nfunction pathBlocked(w, st, from, to) {\n  const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it\n  for (const id of Object.keys(st.entities)) if (geomOf(st.entities[id].c.model) && hits(b0, st, id, 0.01)) already.add(id);\n  const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));\n  for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already); if (hit) return hit; }\n  return null;\n}\n", ["S3", "S6"]],
+  ["delete asks the index (the old set-down scan back: every thing, every support)", "shared/v4/authority.js", [["for (const id of Object.keys(after.entities)) { if (!over.has(id)) continue; const b = aabb(after, id);", "for (const id of Object.keys(after.entities)) { const b = aabb(after, id);"], ["function supportBelow(st, x, z, y, ignore = new Set()) {\n  let best = { y: 0, id: \"ground\" };\n  const ix = spatial(st);\n  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {\n    if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)\n      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };\n  }\n  return best;\n}\n\n", "function supportBelow(st, x, z, y, ignore = new Set()) {\n  let best = { y: 0, id: \"ground\" };\n  for (const id of Object.keys(st.entities)) {\n    if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))\n      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };\n  }\n  return best;\n}\n\n"]], "", ["S2", "S3"]],
+  ["grab asks the index (the old scan for what rests on it back)", "shared/v4/authority.js", [["if (fam.has(k) || !over.has(k)) return false;", "if (fam.has(k)) return false;"], ["function supportUnder(st, b, ignore) {\n  let best = { y: 0, id: \"ground\" };\n  const ix = spatial(st);\n  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }\n  return best;\n}\n\n", "function supportUnder(st, b, ignore) {\n  let best = { y: 0, id: \"ground\" };\n  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id)) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }\n  return best;\n}\n\n"]], "", ["S2", "S3"]],
+  ["place: nearest first, stopping when no ring can be nearer", "shared/v4/authority.js", "            if (lb > best.d) break; }", "            }", ["S1", "S2", "S3", "Q6"]],
+  ["place: the one gate before solving", "shared/v4/authority.js", "if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, \"transform\", COMPONENTS.transform.defaults)]);", "", ["Q1"]],
+  ["previews and batches copy only what they touch (the deep copy per preview back)", "shared/v4/authority.js", [["const scratch = (st, ops) => { const s = applyCow(cowState(st), ops);", "const scratch = (st, ops) => { const s = applyOps(st, ops);"], ["all.push(...ops); st = applyCow(work, ops); forget(st);", "all.push(...ops); st = scratch(st, ops);"]], "", ["S3"]],
+  ["place: a ring's sides bound its distance", "shared/v4/authority.js", "if (lb > best.d) break; }", "if (lb > best.d + 1e9) break; }", ["Q6"]],
+  ["the work budget", "shared/v4/authority.js", "if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) {", "if (false) {", ["Q2", "Q3"]],
+  ["a write's warnings never refuse it", "shared/v4/authority.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
+  ["look walks the children map", "shared/v4/authority.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
+  ["capacity.things", "shared/v4/authority.js", "if (after > before && after > cap.things) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
+  ["capacity.guestThings, all guests together", "shared/v4/authority.js", "if (g + made > cap.guestThings) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
+  ["a refused move is never logged", "shared/v4/authority.js", "    if (tool === \"move\") return;", "    if (tool === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
   ["solids: an enclosed cell is solid", "server/v4/solids.ts", "const solid = (c: number) => occ[c] === 1 || out[c] === 0;", "const solid = (c: number) => occ[c] === 1;", ["I3"]],
   ["solids: cells merge only where their bounds line up", "server/v4/solids.ts", "while (i1 + 1 < nx && free(i1 + 1, j, k) && same(idx(i1 + 1, j, k), s0, 1) && same(idx(i1 + 1, j, k), s0, 2)) i1++;", "while (i1 + 1 < nx && free(i1 + 1, j, k)) i1++;", ["I2"]],
-  ["the catalogue measures solids", "server/v4/catalogue.ts", "...(sum!.solids ? { solids: sum!.solids } : {})", "", ["I4"]],
-  ["a nested request keeps the outer call's queues", "shared/v4/door.js", "w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ;", "", ["R1"]],
-  ["a nested leave keeps the outer leave's flag", "shared/v4/door.js", "w.leaving = wasLeaving ?? null; }", "w.leaving = null; }", ["R2"]],
-  ["settling orphans: at most ORPHANS.holders", "shared/v4/door.js", "if (holders.length > ORPHANS.holders) {", "if (false) {", ["Q5"]],
+  ["the catalogue measures solids", "server/v4/modelcatalogue.ts", "...(sum!.solids ? { solids: sum!.solids } : {})", "", ["I4"]],
+  ["a nested request keeps the outer call's queues", "shared/v4/authority.js", "w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ;", "", ["R1"]],
+  ["a nested leave keeps the outer leave's flag", "shared/v4/authority.js", "w.leaving = wasLeaving ?? null; }", "w.leaving = null; }", ["R2"]],
+  ["settling orphans: at most ORPHANS.holders", "shared/v4/authority.js", "if (holders.length > ORPHANS.holders) {", "if (false) {", ["Q5"]],
   ["reads per connection: how many", "server/v4/readmeter.ts", "if (!timeOnly && a.length >= limits.n) return", "if (false) return", ["Q4"]],
   ["reads per connection: how long", "server/v4/readmeter.ts", "if (ms >= limits.ms) return", "if (false) return", ["Q4"]],
-  ["a derived index re-files what rides on a change", "shared/v4/door.js", "for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k);", "", ["G2"]],
-  ["CONTROL (no-op: must stay green)", "shared/v4/door.js", "// ---------- the spatial index", "// ----------  the spatial index", []],
+  ["a derived index re-files what rides on a change", "shared/v4/authority.js", "for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k);", "", ["G2"]],
+  ["CONTROL (no-op: must stay green)", "shared/v4/authority.js", "// ---------- the spatial index", "// ----------  the spatial index", []],
 ];
 async function runSelf(tree: string, only: string[] | null, timeoutMs = 0) {
   const args = ["bun", path.join(ENGINE, "tools/v4/scale-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])];
@@ -111,10 +111,12 @@ if (argv.includes("--mutants")) {
   }
   console.log(`[scale-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
-// ---------------- the door, from a tree (this checkout unless --tree) ----------------
+// ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
-const D = await import(TREE + "shared/v4/door.js");
-const L = await import(TREE + "server/v4/live.ts");
+// the first path that loads: today's name, then the base commit's (before the 10-07 names pass)
+const imp1 = async (...ps: string[]) => { let err: unknown; for (const p of ps) { try { return await import(TREE + p); } catch (e) { err = e; } } throw err; };
+const D = await imp1("shared/v4/authority.js", "shared/v4/door.js");
+const L = await imp1("server/v4/livehost.ts", "server/v4/live.ts");
 const SB = await import(TREE + "shared/v4/sandbox.js");
 const SOL = await import(TREE + "server/v4/solids.ts").catch(() => null);         // absent at the base commit
 const RM = await import(TREE + "server/v4/readmeter.ts").catch(() => null);       // absent at the base commit
@@ -153,7 +155,7 @@ function cast(s: any) {
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-500, 0, -500], max: [500, 50, 500] } });
   for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
-// n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: the door's rate window)
+// n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: the authority's rate window)
 function fill(s: any, n: number, at = (i: number, side: number) => [(i % side) * 2 - side, 0, Math.floor(i / side) * 2 - side]) {
   const side = Math.ceil(Math.sqrt(n));
   for (let made = 0; made < n;) { const ops = []; for (let k = 0; k < 50 && made < n; k++, made++) ops.push({ verb: "create", args: { id: `c-${made}`, model: "crate", components: { transform: { pos: at(made, side), q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
@@ -242,7 +244,7 @@ const cases: Case[] = [
       return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-0-119"],
         unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0 }; },
     good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.batch === "ok" && o.made && o.unchecked > 0 && o.batchMs <= 2 * o.bound },
-  { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 300 in 10 s, or 1.5 s of the door's time, then refused (rate) until the window moves", run() {
+  { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 300 in 10 s, or 1.5 s of the authority's time, then refused (rate) until the window moves", run() {
       if (!RM) return { missing: true };
       const m = RM.readMeter(); const a = {}, b = {}; let t = 1000; const out: any = {};
       for (let i = 0; i < RM.READ.n; i++) { if (m.check(a, t)) return { refusedEarly: i }; m.record(a, t); }
@@ -336,7 +338,7 @@ const cases: Case[] = [
   { id: "I4", what: "real library GLBs through the engine's catalogue: the watchtower's open interior can be arrived in but not walked out of through its wall; the shipping container is solid", async: true, run: null as any, good: (o) => (o.skipped === true && !argv.includes("--tree")) || (o.inTower === "ok" && o.outWall === "solid" && o.container === "solid" && o.solids > 1) },
 
   // ---------------- R: re-entrancy ----------------
-  { id: "R1", what: "a request nested in another (a host callback re-entering the door with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it, and its release event too", run(s) { cast(s);
+  { id: "R1", what: "a request nested in another (a host callback re-entering the authority with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it, and its release event too", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([0, 0, 0]), grabbable: { who: "visitor" } } });
       s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "visitor" } } });
@@ -459,7 +461,7 @@ function scenario() {
   return out;
 }
 async function realGlbs() {
-  const C = await import(TREE + "server/v4/catalogue.ts"); const { LIBRARY_DIR } = await import(TREE + "server/config.ts");
+  const C = await import(TREE + "server/v4/modelcatalogue.ts"); const { LIBRARY_DIR } = await import(TREE + "server/config.ts");
   const tower = "eidoverse/assets/models/scifi_perimeter_watchtower_standalone_or_with_wall_middle_four_way.glb", box = "eidoverse/assets/models/scifi_cyberpunk_intermodal_shipping_container_crate_blue.glb";
   if (!fs.existsSync(path.join(LIBRARY_DIR, tower)) || !fs.existsSync(path.join(LIBRARY_DIR, box))) return { skipped: true, why: `the library isn't on this host (${LIBRARY_DIR})` };
   await C.warm([tower, box]);

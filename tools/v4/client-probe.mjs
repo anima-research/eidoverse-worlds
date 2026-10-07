@@ -2,18 +2,18 @@
 // usage (one Chrome, under the guard):  perf-guard.sh -t 240 -- bun tools/v4/client-probe.mjs
 // What it shows, each as a stage line printed green or red:
 //   boot      the client boots into a v4 world (founded by tools/v4/world.ts in a scratch WORLDS_DIR) and finishes
-//   see       a thing created through the door BEFORE the visit is realized (the snapshot's projection)
-//   live      a thing another person creates through the door WHILE it watches is realized (projected v1 verbs)
-//   spot      a spot light set through the door lights a spot slot with its cone, shining down the thing's -Z
+//   see       a thing created through the authority BEFORE the visit is realized (the snapshot's projection)
+//   live      a thing another person creates through the authority WHILE it watches is realized (projected v1 verbs)
+//   spot      a spot light set through the authority lights a spot slot with its cone, shining down the thing's -Z
 //   rocket    a socket's whole rotation: sitting in a seat lying on its back lays the body down; standing rights it
-//   throw     a thing Bob throws through the door FLIES on Ann's screen (its position changes frame to frame) and comes
-//             to rest bit for bit where the door logs the rest (her client folds the launch with the door's engine)
-//   carry     Ann picks a thing up (her page's own grab: the door tracks her body), it follows her hand as she walks,
-//             and her throw flies and rests where the door says
-//   punt      Ann punts a ball at her feet (the C key's act): it flies, and rests where the door logs it
+//   throw     a thing Bob throws through the authority FLIES on Ann's screen (its position changes frame to frame) and comes
+//             to rest bit for bit where the authority logs the rest (her client folds the launch with the authority's engine)
+//   carry     Ann picks a thing up (her page's own grab: the authority tracks her body), it follows her hand as she walks,
+//             and her throw flies and rests where the authority says
+//   punt      Ann punts a ball at her feet (the C key's act): it flies, and rests where the authority logs it
 //   remote    a thing Bob holds is drawn in Bob's hand on Ann's screen, and follows him when he moves
 //   reach     a hand target on a moving part moves the hand with the part
-//   blend     a pose blended by a signal (param.lean, written through the door) follows it, in the mixer's own weights
+//   blend     a pose blended by a signal (param.lean, written through the authority) follows it, in the mixer's own weights
 //   anchor    hips (a seat) lands the hips joint on the socket; feet (a standing place) lands the soles on it
 //   swing     a phase-locked pose: the clip's time follows the pendulum's phase; the sitter tilts with the plank
 //   leaveBy   script: W and X don't get you off, the world does (the socket taken away); without it, W does
@@ -38,12 +38,12 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
-import { foundV4 } from '../../server/v4/world.ts';
-import { openLive } from '../../server/v4/live.ts';
-import { request } from '../../shared/v4/door.js';
+import { foundV4 } from '../../server/v4/worldlog.ts';
+import { openLive } from '../../server/v4/livehost.ts';
+import { request } from '../../shared/v4/authority.js';
 import { readLog } from '../../shared/v4/fold.js';
 import { enc } from '../../shared/v4/names.js';
-import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
+import { ENGINE_CATALOGUE, warm } from '../../server/v4/modelcatalogue.ts';
 import { directoryFor } from '../../server/v4/directory.ts';
 import { restsOf } from '../../shared/v4/simlayer.js';
 import { cycleOf } from '../../client/lib/socksignals.js';
@@ -73,7 +73,7 @@ try {
   mkdirSync(join(SWING_FILE, '..'), { recursive: true }); writeFileSync(SWING_FILE, swingGlb());
   await warm([MODEL, SWING]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
-    // actors are the door directory's opaque ids (one per account, R 10-06): Ann founded it as local:ann; Bob will join
+    // actors are the authority directory's opaque ids (one per account, R 10-06): Ann founded it as local:ann; Bob will join
     // this local door by name, so his account is local:bob
     const dir = directoryFor(worlds); ANN = dir.idOfSub('local:ann'); BOB = dir.resolve({ sub: 'local:bob', name: 'Bob' });
     const r1 = request(w, ANN, 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
@@ -119,8 +119,8 @@ try {
   if (!check(`boot: the client finishes booting into the v4 world, as its ${AS === 'Ann' ? 'owner' : 'visitor'}`, !!ready && net.joined && net.role === (AS === 'Ann' ? 'owner' : 'visitor'), { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-5) })) throw new Error('boot gate failed');
   // see
   let seen = false; for (let i = 0; i < 40 && !seen; i++) { seen = (await ents()).includes('crate-before'); if (!seen) await new Promise((r) => setTimeout(r, 250)); }
-  check('see: the crate created through the door before the visit is realized', seen, await ents());
-  // live: Bob, through the door, over his own socket
+  check('see: the crate created through the authority before the visit is realized', seen, await ents());
+  // live: Bob, through the authority, over his own socket
   const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws');
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const inbox = []; ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
@@ -132,10 +132,10 @@ try {
   const res = inbox.find((m) => m.type === 'reply');
   let live = false; for (let i = 0; i < 40 && !live; i++) { live = (await ents()).includes('crate-live'); if (!live) await new Promise((r) => setTimeout(r, 250)); }
   if (!res?.ok) stage('live: Bob\'s replies', false, inbox.filter((m) => m.type !== 'presence').slice(0, 4).map((m) => [m.type, m.you ?? m.reply ?? m.error]));
-  check('live: a crate Bob creates through the door while Ann watches is realized in her client', res?.ok && live, { reply: res?.reply?.ok ?? res?.reply?.refused, ents: await ents() });
+  check('live: a crate Bob creates through the authority while Ann watches is realized in her client', res?.ok && live, { reply: res?.reply?.ok ?? res?.reply?.refused, ents: await ents() });
 
   // ===================================================================== grabbable (shared/grab.js; v4phys drawHeld)
-  // Bob builds through the door; Ann grabs with her own page (the T key's act). What's drawn is read off the live scene:
+  // Bob builds through the authority; Ann grabs with her own page (the T key's act). What's drawn is read off the live scene:
   // the thing's grip point in the world against the palm frame v4phys computes from the hand's own raw bones, the
   // fingers and arms on the normalized rig. Angles in degrees, distances in metres.
   if (XR) stage('grab: (the desktop grab stages are skipped in an XR boot)', true);
@@ -169,7 +169,7 @@ try {
     const untilFrames = async (measure, pass, max = 40) => { const f0 = await vFrames(); let v = null;
       for (let i = 0; i < 400; i++) { v = await measure(); if (v && pass(v)) return v; const f = await vFrames().catch(() => f0); if (f - f0 >= max) return v; await gsleep(250); } return v; };
     const me = await gev(() => globalThis.EW.me().root.position.toArray());
-    // each held thing goes down at a spot of its own in front of her (a put the door refuses is a harness defect: said)
+    // each held thing goes down at a spot of its own in front of her (a put the authority refuses is a harness defect: said)
     const gput = async (id, dx, dz) => { const at = await gev(() => globalThis.EW.me().root.position.toArray());
       const r = await race(pg.evaluate(({ id, pos }) => globalThis.EW.physics.request('put', { id, pos }), { id, pos: [+(at[0] + dx).toFixed(3), 0, +(at[2] + dz).toFixed(3)] }), 20000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
       if (!r?.ok) stage(`grab: cleanup put of ${id}`, false, r?.refused); };
@@ -248,7 +248,7 @@ try {
     const ds = pull?.out?.map((x) => x[1]) ?? [];
     check('grab: a far grab (range 4) flies to her hand: it starts where it stood and eases in (presence: every client draws the same ease)', pull?.ok && pull.pulled && ds.length >= 3 && ds[0] > 1 && ds.at(-1) < 0.2, { mk4: mk4?.ok ?? mk4?.refused, pull: { ...pull, out: pull?.out?.slice(0, 12) } });
     await gput('apple', 0.5, 0.6);
-    // (5) use while held: Ann's hose (use {down: spray, up: stop}) through the left mouse button on the canvas, the door
+    // (5) use while held: Ann's hose (use {down: spray, up: stop}) through the left mouse button on the canvas, the authority
     //     changing its state on each press and release, and its fx (presence) drawn while she presses
     const FX = { particles: { preset: 'magic', count: 60, size: 4 }, at: [0, 2, 0] };   // (an emitter rides its thing's scale: 0.05 here)
     const me5 = await gev(() => globalThis.EW.me().root.position.toArray());
@@ -265,8 +265,8 @@ try {
     await press('mouseup');
     const up = await gwait(() => (globalThis.EW.comps.get('hose')?.flowing === false && !globalThis.EW.physics.fx().includes('hose')) ? { flowing: false, fx: globalThis.EW.physics.fx(), use: globalThis.EW.myState.useHeld ?? null } : null, null, 20000);
     const acts5 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).filter((e) => e.kind === 'act' && e.verb === 'use' && e.body?.request?.id === 'hose').map((e) => `${e.body.held?.phase}:${e.body.action}`);
-    check('grab: use while held: the left button on her hose is use.down (the door sets it flowing; its fx draws while pressed), letting go is use.up (one act each)', h5?.ok && down && up && JSON.stringify(acts5) === '["down:spray","up:stop"]', { mk5: mk5?.ok ?? mk5?.refused, h5: h5?.ok ?? h5?.refused, down, up, acts5 });
-    // (5b) review 10-06: put down with the button still pressed: the up goes anyway (the door takes it from whoever
+    check('grab: use while held: the left button on her hose is use.down (the authority sets it flowing; its fx draws while pressed), letting go is use.up (one act each)', h5?.ok && down && up && JSON.stringify(acts5) === '["down:spray","up:stop"]', { mk5: mk5?.ok ?? mk5?.refused, h5: h5?.ok ?? h5?.refused, down, up, acts5 });
+    // (5b) review 10-06: put down with the button still pressed: the up goes anyway (the authority takes it from whoever
     //      pressed down) and the press stops riding her presence
     await race(pg.evaluate(() => globalThis.EW.physics.grab('hose')), 20000).catch(() => null); await gwait(() => !!globalThis.EW.physics.holds().hose);
     await press('mousedown'); await gwait(() => globalThis.EW.comps.get('hose')?.flowing === true, null, 20000);
@@ -339,7 +339,7 @@ try {
     const e1 = await settle('right', c0, { squeeze: 0 });
     await hand('right', c0, { squeeze: 1 }); await frames(2);
     const held1 = await xwait(() => { const h = globalThis.EW.physics.holds().cup; return h ? h : null; });
-    check('xr: the right grip near a cup takes it: the door\'s record says right hand, held where it was grabbed (an offset)', held1?.hand === 'right' && Array.isArray(held1?.offset?.pos), { e1, held1, c0 });
+    check('xr: the right grip near a cup takes it: the authority\'s record says right hand, held where it was grabbed (an offset)', held1?.hand === 'right' && Array.isArray(held1?.offset?.pos), { e1, held1, c0 });
     const stay = await centre('cup'); await frames(3); const drift = await centre('cup');
     check('xr: …and it stays where the hand took it (drawn at the offset: no jump into the palm)', !!held1?.offset && stay && drift && Math.hypot(drift[0] - c0[0], drift[1] - c0[1], drift[2] - c0[2]) < 0.05, { c0, drift });
     const n2 = LOGX().length;
@@ -348,7 +348,7 @@ try {
     const thrown = await xwait(() => !globalThis.EW.physics.holds().cup);
     const L2 = LOGX().slice(n2); const tact = L2.find((e) => e.kind === 'act' && (e.verb === 'throw' || e.verb === 'drop') && e.body?.request?.id === 'cup'); const tl = L2.find((e) => e.kind === 'sim' && e.verb === 'launch' && e.body?.id === 'cup');
     const sent = tact?.body?.request?.v ?? null; const flew = tl?.body?.v ?? null;
-    check('xr: letting the grip go mid-flick throws it with the hand\'s velocity (forward, up), and the door scales it by its grabbable.throw (×2)', thrown && tact?.verb === 'throw' && sent && sent[2] > 0.05 && flew && flew.every((x, i) => Math.abs(x - 2 * sent[i]) < 1e-6), { verb: tact?.verb, sent, flew });
+    check('xr: letting the grip go mid-flick throws it with the hand\'s velocity (forward, up), and the authority scales it by its grabbable.throw (×2)', thrown && tact?.verb === 'throw' && sent && sent[2] > 0.05 && flew && flew.every((x, i) => Math.abs(x - 2 * sent[i]) < 1e-6), { verb: tact?.verb, sent, flew });
     // (X3) the trigger while holding is use: the left hand takes a lamp, the trigger lights it, letting go of the trigger darkens it
     const me3 = await xev(() => globalThis.EW.me().root.position.toArray());
     await xdoor('create', { id: 'lamp', model: MODEL, components: { transform: { pos: [me3[0] - 0.35, 0.9, me3[2] + 0.4], scale: [0.04, 0.04, 0.04] }, grabbable: { who: 'visitor', use: { down: 'on', up: 'off' } },
@@ -393,14 +393,14 @@ try {
     const meL = await xev(() => globalThis.EW.me().root.position.toArray());
     await xdoor('create', { id: 'lockbox', model: MODEL, components: { transform: { pos: [meL[0] + 1.2, 0, meL[2] + 1.2], scale: [0.2, 0.2, 0.2] }, lock: true } });
     await xwait((i) => !!globalThis.EW.entities.get(i), 'lockbox');
-    await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/ops.js');
+    await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/requests.js');
       window.__lockEdit = E.sendOps([O.set('lockbox', 'transform', { pos: [0.5, 0, 0.5], scale: [0.2, 0.2, 0.2] })], { what: 'move lockbox' }); });   // a lock refuses a move (not a label)
     const asked = await xwait(async () => { const A = await import('./lib/xrask.js'); const P = await import('./lib/xrpanels.js'); const st = A.xrAskState();
       return st ? { ...st, open: P.xrPanelOpen('ask') } : null; });
     await xev(async () => (await import('./lib/xrask.js')).xrAnswer('through'));
     const landed = await xev(async () => { const r = await window.__lockEdit; return { ok: r?.ok, through: r?.ok === true }; });
     check('xr: an edit to a locked thing asks on the VR quad (not the invisible centre card), and its answer goes through', asked?.open && asked.choices?.includes('through') && landed?.ok, { asked, landed });
-    const refusedAsk = await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/ops.js');
+    const refusedAsk = await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/requests.js');
       await E.sendOps([O.remove('no-such-thing-xr')], { what: 'delete no-such-thing-xr' }); return (await import('./lib/xrask.js')).xrAskState(); });
     check('xr: a refusal shows on the VR quad (a toast is silent in a headset)', /refused/.test(refusedAsk?.title ?? '') && refusedAsk?.choices?.includes('ok'), refusedAsk);
     await xev(async () => (await import('./lib/xrask.js')).xrAnswer('ok'));
@@ -413,7 +413,7 @@ try {
 //   PROBE_ONLY=roles-settings this page is Ann: World Settings (the grid, access) and the inline strip (VR's surface)
   //   PROBE_ONLY=roles-visitor  this page is Vic (a visitor); Ann acts over her own socket, as Bob does
   // Everything on the page is clicked as a person clicks it (Playwright input; the long-press is CDP touch, real touch
-  // pointer events), and every write goes through the door. PROBE_SHOTS=<dir> saves screenshots, each over a plain light
+  // pointer events), and every write goes through the authority. PROBE_SHOTS=<dir> saves screenshots, each over a plain light
   // and a plain dark backdrop (the HUD has one theme; the panels are translucent, so what's behind them is the variable).
   // BOOT_CHECK_VIEWPORT=390x844 BOOT_CHECK_TOUCH=1 runs the phone layout (the long-press, the bottom sheet).
   if ((ONLY.includes('roles') || ONLY.includes('roles-settings') || ONLY.includes('roles-visitor')) && !XR) {
@@ -435,7 +435,7 @@ try {
           let n = 0, last = performance.now(), worst = 0; const f = (ts) => { worst = Math.max(worst, ts - last); last = ts; if (++n >= 3) res(worst < 1500); else requestAnimationFrame(f); }; requestAnimationFrame(f); })), 15000).catch(() => false);
         if (!ok) await rs(500); }
       if (!ok) stage('roles: (harness) the page did not settle within 120 s', false); };
-    // another person over their own socket (the door's requests, as Bob's)
+    // another person over their own socket (the authority's requests, as Bob's)
     const sock = async (name) => { const s = new WebSocket(world.origin.replace('http', 'ws') + '/ws'); await new Promise((r, j) => { s.onopen = r; s.onerror = j; });
       const box = []; s.onmessage = (ev) => box.push(JSON.parse(String(ev.data)));
       s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, v4fold: true }));
@@ -483,7 +483,7 @@ try {
       await click('.pm-form .pm-go');
       const muted = await rwait(() => !!document.querySelector('.who-row[data-name="Bob"] .who-muted'), null, 15000);
       const rec = (await pageDoor('modlog', {}))?.records?.[0];
-      check('roles: the mute lands through the door (voice only, an hour, why) and Bob\'s row shows the muted mark', muted && rec?.verb === 'mute' && JSON.stringify(rec.channels) === '["voice"]' && rec.reason === 'spam', rec);
+      check('roles: the mute lands through the authority (voice only, an hour, why) and Bob\'s row shows the muted mark', muted && rec?.verb === 'mute' && JSON.stringify(rec.channels) === '["voice"]' && rec.reason === 'spam', rec);
       check('roles: the owner\'s dock has Moderation and World Settings', await dockHas('moderation') && await dockHas('world-settings'));
       await click('button[data-toggles="moderation"]'); await click('#sec-mod-bans-tab');
       const bans = await rwait(() => { const b = document.querySelector('#sec-mod-bans .body'); return b && b.textContent.includes('Muted now') ? [...b.querySelectorAll('.rp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()) : null; }, null, 10000);
@@ -507,7 +507,7 @@ try {
       if (!PHONE) {
         await click('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]');
         const defs = await rwait(() => import('/lib/net.js').then((m) => m.v4.st.entities['@world'].c['role-defs']?.builder?.can?.editOthers === false), null, 10000);
-        check('roles: ticking a cell writes role-defs through the door (builders\' editOthers off)', !!defs);
+        check('roles: ticking a cell writes role-defs through the authority (builders\' editOthers off)', !!defs);
         await rwait(() => !!document.querySelector('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]'), null, 5000);
         await click('#sec-ws-roles input[data-r="builder"][data-k="editOthers"]');
       }
@@ -560,8 +560,8 @@ try {
   if (SKIP_REST) stage('rest of the probe skipped (PROBE_ONLY)', true, ONLY);
   if (!SKIP_REST) {
   // history: a refused attempt reads as an attempt in the editor's whole-world History, never as a deed (Commons parity
-  // audit 10-06: "refused acts print as done"). Ann asks for something the door refuses, then the page builds History
-  // rows from the live door's answer with the module the browser actually serves (client/lib/historyrows.js).
+  // audit 10-06: "refused acts print as done"). Ann asks for something the authority refuses, then the page builds History
+  // rows from the live authority's answer with the module the browser actually serves (client/lib/historyrows.js).
   {
     const rows = await race(pg.evaluate(async () => {
       const EW = globalThis.EW; const r0 = await EW.requestV4('delete', { id: 'no-such-thing-probe' });
@@ -574,7 +574,7 @@ try {
   }
   // (the old 'edit'/'refuse' stages sent v1 verbs from the page; v4 refuses those by design. The page's door-request
   //  path is covered headlessly by editcommit/hierarchy-commit.)
-  // spot: a spot light set through the door (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in
+  // spot: a spot light set through the authority (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in
   // Ann's client with that cone, pointing where the thing's -Z points (here: pitched to face straight down)
   const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // -90° about X: local -Z → world -Y
   ws.send(JSON.stringify({ type: 'request', id: 3, verb: 'batch', args: { ops: [
@@ -584,7 +584,7 @@ try {
     spot = await race(pg.evaluate(() => globalThis.EW.lightrig().spots.find((x) => x.intensity > 0) ?? null)).catch(() => null); if (spot) break; }
   if (!spot) stage('spot: debug', false, await race(pg.evaluate(() => { const d = globalThis.EW.lightrig(); const e = globalThis.EW.state?.st?.entities?.['crate-before'];
     return { spots: d.spots, reqs: (d.requests ?? []).filter((r) => /crate/.test(r.key)), comp: e?.comp, kind: e?.kind }; })).catch((x) => String(x)));
-  check('spot: a spot light set through the door lights a spot slot with its cone (angle 0.4, penumbra (0.4-0.1)/0.4)',
+  check('spot: a spot light set through the authority lights a spot slot with its cone (angle 0.4, penumbra (0.4-0.1)/0.4)',
     !!spot && Math.abs(spot.angle - 0.4) < 1e-3 && Math.abs(spot.penumbra - 0.75) < 1e-3, { spot, reply: inbox.find((m) => m.type === 'reply' && m.id === 3)?.reply });
   check('spot: …shining down the thing\'s -Z (here straight down)', !!spot && spot.dir[1] < -0.99, spot);
   // rocket: a socket's WHOLE rotation (not just yaw). Bob builds a seat lying on its back beside Ann; Ann sits (the
@@ -614,7 +614,7 @@ try {
     // A flight is sampled at exact display times: the page's own per-frame applier (v4phys frame) is run at the launch's
     // ts + k·33 ms and the drawn position read back after each. (A headless page on a loaded host draws under a frame a
     // second and its timers starve; sampling by the clock the applier is given is simworld's bench rule.) The launch's
-    // ts is the door's, read from the log; the page samples once its own fold has the launch.
+    // ts is the authority's, read from the log; the page samples once its own fold has the launch.
     const LAUNCH = (id) => { const L = readLog(readFileSync(LOGF)); for (let i = L.length - 1; i >= 0; i--) if (L[i]?.kind === 'sim' && L[i].verb === 'launch' && L[i].body?.id === id) return L[i].ts; return null; };
     let recOut = null;
     const record = (id) => { recOut = null; return true; };
@@ -632,13 +632,13 @@ try {
     const realized = async (id, ms = 40000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await race(pg.evaluate((id) => !!globalThis.EW.entities.get(id), id)).catch(() => false)) return true; await sleep(300); } return false; };
     const worldPos = (id) => race(pg.evaluate((id) => { const o = globalThis.EW.entities.get(id); return o ? o.getWorldPosition(new globalThis.EW.THREE.Vector3()).toArray() : null; }, id));
     const restCheck = (name, rec, id) => { const r = rests().filter((x) => x.id === id).at(-1); const shown = [...rec].reverse().find((x) => x[4] === true)?.[5] ?? null;
-      check(`${name}: …and it rests on her screen bit for bit where the door logs the rest`, !!r && shown === JSON.stringify(r.at), { shown, logged: r?.at }); return r; };
+      check(`${name}: …and it rests on her screen bit for bit where the authority logs the rest`, !!r && shown === JSON.stringify(r.at), { shown, logged: r?.at }); return r; };
     const ann = await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray().map((v) => +v.toFixed(3))));
     // pull the camera back (the wheel zooms out to 16 m) so a screenshot shows the play, not a close-up of Ann
     if (shots) await race(pg.evaluate(() => { globalThis.EW.renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: 1200, bubbles: true, cancelable: true })); return true; })).catch(() => null);
     const fps = await race(pg.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(f); else res(+(n / ((performance.now() - t0) / 1000)).toFixed(1)); }; requestAnimationFrame(f); })), 15000).catch(() => null);
     stage('physics: the page\'s frame rate here (reported)', true, { fps, body: await race(pg.evaluate(() => globalThis.EW.physics.body())).catch(() => null) });
-    // throw: Bob, beside Ann, throws a crate through the door
+    // throw: Bob, beside Ann, throws a crate through the authority
     const P = [ann[0] + 2.5, 0, ann[2]];
     const arrive = await bobReq('move', { to: P }); ws.send(JSON.stringify({ type: 'pose', pose: { p: P, yaw: 0 } }));
     const mk = await bobReq('create', { id: 'toy', model: MODEL, components: { physics: { kind: 'dynamic', who: 'visitor' } }, place: { at: [P[0], P[2] + 0.6] } });
@@ -647,16 +647,16 @@ try {
     await sleep(600);
     await record('toy', 7000);
     const th = await bobReq('throw', { id: 'toy', v: [0, 7, 2.5] });   // ~1.5 s in the air
-    await sample('toy');   // at once: any later request (Ann's own body track included) lets the door log the rest
+    await sample('toy');   // at once: any later request (Ann's own body track included) lets the authority log the rest
     const rec = await recd(); const fw = flew(rec);
     if (!th?.ok) stage('throw: Bob\'s replies', false, { arrive, mk: mk?.ok ?? mk?.refused, g: g?.ok ?? g?.refused, th: th?.refused });
-    check('throw: a crate Bob throws through the door flies on Ann\'s screen (its position changes frame to frame, it rises)', th?.ok && fw.distinct >= 8 && fw.rise > 0.8, fw);
-    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the door's flight end)
+    check('throw: a crate Bob throws through the authority flies on Ann\'s screen (its position changes frame to frame, it rises)', th?.ok && fw.distinct >= 8 && fw.rise > 0.8, fw);
+    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the authority's flight end)
     const r1 = restCheck('throw', rec, 'toy');
     const drawn = await worldPos('toy');
     check('throw: …and once the rest is logged it stands exactly there (the fold\'s word)', r1 && drawn && drawn.every((v, i) => Math.abs(v - r1.at[i]) < 1e-6), { drawn, logged: r1?.at });
     if (shots) await pg.screenshot({ path: `${shots}/phys-throw-rest.png` });
-    // carry: Ann picks a crate up with her own page (the door tracks her body), walks, and it follows her hand
+    // carry: Ann picks a crate up with her own page (the authority tracks her body), walks, and it follows her hand
     const ann2 = await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray().map((v) => +v.toFixed(3))));
     const mk2 = await bobReq('create', { id: 'toy2', model: MODEL, components: { transform: { scale: SMALL }, physics: { kind: 'dynamic', who: 'visitor' } }, place: { at: [ann2[0] + 0.7, ann2[2]] } });
     const seen2 = await realized('toy2');
@@ -669,7 +669,7 @@ try {
     const d3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
     if (!mk2?.ok || !seen2) stage('carry: Bob\'s create of the ball', false, { mk2: mk2?.refused ?? mk2?.ok, seen2 });
     const h0 = await hand(), c0 = await centre('toy2');
-    check('carry: Ann\'s own grab goes through the door (her body arrives, then grab)', ag?.ok, mk2?.ok ? { ag, body: await race(pg.evaluate(() => globalThis.EW.physics.body())).catch(() => null), ann: await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray())).catch(() => null) } : mk2);
+    check('carry: Ann\'s own grab goes through the authority (her body arrives, then grab)', ag?.ok, mk2?.ok ? { ag, body: await race(pg.evaluate(() => globalThis.EW.physics.body())).catch(() => null), ann: await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray())).catch(() => null) } : mk2);
     check('carry: …and the box is drawn in her hand', ag?.ok && c0 && from2 && d3(h0, c0) < 0.25 && d3(c0, from2) > 0.3, { hand: h0, centre: c0, logged: from2 });
     if (shots) await pg.screenshot({ path: `${shots}/phys-held.png` });
     // walk 2 m along +x the way the controller does (its own state moves the body)
@@ -678,15 +678,15 @@ try {
     const h1 = await hand(), c1 = await centre('toy2');
     const insp = await bobReq('inspect', { id: 'toy2' });
     check('carry: …it follows her hand as she walks (2 m)', c1 && c0 && d3(h1, c1) < 0.25 && c1[0] - c0[0] > 1.6, { hand: h1, centre: c1, moved: +(c1[0] - c0[0]).toFixed(3) });
-    check('carry: …and the door\'s own track carried it with her (inspect: heldAt moved too)', insp?.heldAt && insp.heldAt[0] - ann2[0] > 1.6, { heldBy: insp?.heldBy, heldAt: insp?.heldAt });
+    check('carry: …and the authority\'s own track carried it with her (inspect: heldAt moved too)', insp?.heldAt && insp.heldAt[0] - ann2[0] > 1.6, { heldBy: insp?.heldBy, heldAt: insp?.heldAt });
     await record('toy2', 7000);
     const at2 = await race(pg.evaluate(() => globalThis.EW.physics.throw()), 15000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
     if (at2?.ok) await sample('toy2');
     const rec2 = await recd(); const fw2 = flew(rec2);
     check('carry: her throw flies on her screen', at2?.ok && fw2.distinct >= 8 && fw2.rise > 0.2, { reply: at2?.ok ?? at2?.refused, ...fw2 });
-    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the door's flight end)
+    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the authority's flight end)
     restCheck('carry', rec2, 'toy2');
-    // punt: Ann kicks a ball at her feet (the C key's act, /punt): it flies on her screen and rests where the door says
+    // punt: Ann kicks a ball at her feet (the C key's act, /punt): it flies on her screen and rests where the authority says
     const ann3 = await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray().map((v) => +v.toFixed(3))));
     const mk4 = await bobReq('create', { id: 'toy4', model: MODEL, components: { transform: { scale: SMALL }, physics: { kind: 'dynamic', who: 'visitor' } }, place: { at: [ann3[0] + 0.6, ann3[2]] } });
     const seen4 = await realized('toy4');
@@ -694,8 +694,8 @@ try {
     const ap = await race(pg.evaluate(() => globalThis.EW.physics.punt('toy4 7')), 15000).catch((e) => ({ ok: false, refused: { reason: String(e) } }));
     if (ap?.ok) await sample('toy4');
     const rec4 = await recd(); const fw4 = flew(rec4);
-    check('punt: Ann punts the box at her feet through the door, and it flies on her screen', ap?.ok && fw4.distinct >= 8 && fw4.rise > 0.2, { reply: ap?.ok ?? ap?.refused, mk4: mk4?.ok ?? mk4?.refused, seen4, ...fw4 });
-    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the door's flight end)
+    check('punt: Ann punts the box at her feet through the authority, and it flies on her screen', ap?.ok && fw4.distinct >= 8 && fw4.rise > 0.2, { reply: ap?.ok ?? ap?.refused, mk4: mk4?.ok ?? mk4?.refused, seen4, ...fw4 });
+    await sleep(4000); await bobReq('wait', {}); await sleep(800);   // (sampling ran ahead of the clock: let the authority's flight end)
     restCheck('punt', rec4, 'toy4');
     // remote: Bob holds a crate; Ann sees it in Bob's hand, following him
     const mk3 = await bobReq('create', { id: 'toy3', model: MODEL, components: { transform: { scale: SMALL }, physics: { kind: 'dynamic', who: 'visitor' } }, place: { at: [P[0] + 0.6, P[2]] } });
@@ -722,7 +722,7 @@ try {
   }
 
   // ===================================================================== the body at a socket (shared/sockbody.js)
-  // Each stage: Bob builds a small thing through the door (a crate at a fifth of its size, so the body isn't hidden
+  // Each stage: Bob builds a small thing through the authority (a crate at a fifth of its size, so the body isn't hidden
   // inside it), Ann sits on it with her own /sit, and what her body does is read off the live skeleton and mixer.
   const SHOTS = process.env.PROBE_SHOTS;
   let rid = 10;
@@ -786,7 +786,7 @@ try {
   }
 
   // (b) a blended pose follows its signal: pose {by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']]}; Bob writes the
-  //     thing's params component through the door, and the mixer's own weights follow
+  //     thing's params component through the authority, and the mixer's own weights follow
   {
     const r = await thing('stool', -1.8, 0, { params: { lean: 0 }, sockets: { seat: { pos: [0, 2.6, 0], body: { anchor: 'hips', pose: { by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
     if (!r.ok) stage('blend: setup', false, r.refused);
@@ -800,7 +800,7 @@ try {
     await door('set', { id: 'stool', component: 'params', value: { lean: 1 } });
     const w2 = await settle(1);
     check('blend: lean 0 → all sitchair', !!sat && Math.abs(w0.sitchair - 1) < 0.03 && Math.abs(w0.sit) < 0.03, { sat, w0 });
-    check('blend: lean 0.25 (written through the door) → three quarters sitchair, a quarter sit', Math.abs(w1.sitchair - 0.75) < 0.03 && Math.abs(w1.sit - 0.25) < 0.03, w1);
+    check('blend: lean 0.25 (written through the authority) → three quarters sitchair, a quarter sit', Math.abs(w1.sitchair - 0.75) < 0.03 && Math.abs(w1.sit - 0.25) < 0.03, w1);
     check('blend: lean 1 → all sit', Math.abs(w2.sit - 1) < 0.03 && Math.abs(w2.sitchair) < 0.03, w2);
     // (e2) anchor hips: the hips joint lands on the socket, wherever the clip puts them
     const hips = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const s = EW.entities.get('stool'); s.updateWorldMatrix(true, false);
@@ -810,7 +810,7 @@ try {
   }
 
   // (c) a phase-locked swing pose follows the pendulum: the swing's plank is a PART swinging on its own part motion
-  //     (motion:plank, the door stamping its t0 so every client agrees on its phase); the seat rides the plank and its
+  //     (motion:plank, the authority stamping its t0 so every client agrees on its phase); the seat rides the plank and its
   //     pose is {clip: 'walk', time: 'phase'}. The clip's time, as a fraction of its length, must equal the pendulum's
   //     phase at the clock the seat read — computed here from the motion component with the shared closed form
   {
@@ -834,7 +834,7 @@ try {
     }
     const d = rows.map((x) => { const e = Math.abs(x.clip - x.want); return Math.min(e, 1 - e); });
     const ups = rows.map((x) => x.upZ);
-    check('swing: the plank\'s part motion carries the door\'s t0 (every client on one clock)', Number.isFinite(rows[0]?.t0), rows[0]);
+    check('swing: the plank\'s part motion carries the authority\'s t0 (every client on one clock)', Number.isFinite(rows[0]?.t0), rows[0]);
     check('swing: seated on the swinging plank, the walk clip holds the body (weight ≈ 1)', !!sat && rows.every((x) => x.w > 0.97), { sat, rows: rows.slice(0, 2) });
     check('swing: …its time follows the pendulum\'s phase (within 0.03 of a cycle, every sample)', d.every((x) => x < 0.03) && new Set(rows.map((x) => x.want?.toFixed(2))).size > 4, { d: d.map((x) => +x.toFixed(3)), rows });
     check('swing: …and the sitter tilts with the plank (body up leans fore and aft)', Math.max(...ups) - Math.min(...ups) > 0.2, ups);
@@ -953,5 +953,5 @@ try {
   rmSync(worlds, { recursive: true, force: true });
   rmSync(SWING_FILE, { force: true });
 }
-console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a v4 world, sees it, edits it through the door, and hears refusals');
+console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a v4 world, sees it, edits it through the authority, and hears refusals');
 process.exit(failed ? 1 : 0);

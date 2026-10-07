@@ -19,7 +19,7 @@ def check(name, ok, detail=""):
 # The world speaks protocol v4: a join says v4fold (an embodied client that doesn't is refused), a say is a door
 # request answered by v4-result, and chat reaches clients as `say` entries of the v4-log stream (actors are opaque
 # ids; the stream's `names` and the snapshot's v4.names say who). A say's chat number — what an attest names — is
-# its log position × 1000 (server/v4/world.ts sayLine).
+# its log position × 1000 (server/v4/worldlog.ts sayLine).
 NAMES = {}
 def learn(m):
     if m.get("type") == "snapshot": NAMES.update((m.get("v4") or {}).get("names") or {})

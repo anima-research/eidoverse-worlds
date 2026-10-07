@@ -1,5 +1,5 @@
 // shared/v4/names.js — the ONE mapping from an engine name (an actor, entity id, role key, component name) to the
-// §2.3 grammar, used by both the translator (old logs) and the live door (server/v4: who is asking). If the two ever
+// §2.3 grammar, used by both the translator (old logs) and the live authority (server/v4: who is asking). If the two ever
 // spelled one person differently, nobody in a translated world would match their own role (research 35, slice-2 #3).
 //
 //   enc(s)     an identity / entity id / key: [a-z0-9-]{1,64}. A name the grammar already accepts, and that doesn't
@@ -45,7 +45,7 @@ export function dec(s) {
 }
 
 // ---- display names for actors (round-2 review R1) ----
-// A v4 actor is an opaque id, u- + 20 base32 (server/v4/directory.ts). Its display name lives in the door's
+// A v4 actor is an opaque id, u- + 20 base32 (server/v4/directory.ts). Its display name lives in the authority's
 // directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
 // process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
 // person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.

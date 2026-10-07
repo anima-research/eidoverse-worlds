@@ -1,11 +1,11 @@
-// server/v4/world.ts — a world's log as this server holds it: the door over the world's directory.
+// server/v4/worldlog.ts — a world's log as this server holds it: the authority over the world's directory.
 //
 // Every world this server serves is a v4 world (its directory holds v4.jsonl, line 0 a v4 genesis: isV4Dir); World
-// (server/world.ts) holds one V4Log. Writes: every write is a v4 REQUEST through the door (shared/v4/door.js: one
+// (server/world.ts) holds one V4Log. Writes: every write is a v4 REQUEST through the authority (shared/v4/authority.js: one
 // `admit`, act + change entries, the ts from this server's clock); request() is the only way in.
 //
-// What clients see: every client folds v4 itself. A joiner adopts the door's cut (clientCut) and folds the raw entries
-// it is sent as {type: "log"}. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
+// What clients see: every client folds v4 itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
+// it is sent as {type: "log"}. `state` is the VIEW of the fold (shared/v4/view.js viewState) plus the chat window,
 // for this server's own readers (/geom, model warm-up, the chat window); it is rebuilt by its next reader after a
 // write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
 import fs from "node:fs";
@@ -14,27 +14,27 @@ import path from "node:path";
 import { WORLDS_DIR } from "../config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "../fsutil.ts";
-import { request as doorRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
-import { doorTime } from "./readmeter.ts";
-import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
-import { viewState } from "../../shared/v4/record.js";
+import { request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/authority.js";
+import { authorityTime } from "./readmeter.ts";
+import { clientCutOf, spokenOf } from "../../shared/v4/replica.js";
+import { viewState } from "../../shared/v4/view.js";
 import { holdWire } from "../../shared/grab.js";
 import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
-import { openLive, isV4Dir } from "./live.ts";
-import { ENGINE_CATALOGUE, warm, modelsIn } from "./catalogue.ts";
+import { openLive, isV4Dir } from "./livehost.ts";
+import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
 
 type Any = any;
 /** One chat line as this server's readers hold it (the chat window, history pages, the attest lookup): a v4 say entry
  *  numbered v4seq × 1000, its actor a display name. */
 export type ChatLine = { seq: number; ts: number; actor: string; verb: "say"; args: { text: string; to?: string; spoken?: boolean; utt?: number; t0?: number } };
-/** The view of the fold (shared/v4/record.js viewState) plus the chat window. */
+/** The view of the fold (shared/v4/view.js viewState) plus the chat window. */
 export type WorldView = { entities: Record<string, Any>; terrain: Any; grass: Any; sky: Any; assets: Any[]; recentChat: Any[]; chatTotal: number; roles: Record<string, Any>; bans: Record<string, Any> };
 const idOut = (s: string) => dec(s) ?? s;
 
 /** An entry as clients are sent it: without the chain fields (world, head, sig) and an act/say body's salt. Clients
  *  adopt a cut at join and fold ops; nothing reads those fields, and on a two-character say they were 380 of its 488
- *  bytes (Commons audit #8). The log on disk keeps them, and the door's history serves them whole. */
+ *  bytes (Commons audit #8). The log on disk keeps them, and the authority's history serves them whole. */
 export function wireEntry(e: Any) {
   if (!e || typeof e !== "object") return e;
   const { world: _w, head: _h, sig: _s, ...rest } = e;
@@ -66,7 +66,7 @@ export class V4Log {
   /** the last 256 says (the attest handler's lookup: a voice leg's receipt names one by seq) */
   recentSays: ChatLine[] = [];
   poses: Record<string, unknown> = {};
-  /** The chat lines, newest last (readHistory's source; the v4 log itself is the door's `history`). */
+  /** The chat lines, newest last (readHistory's source; the v4 log itself is the authority's `history`). */
   private hist: ChatLine[] = [];
   private dir: string;
   private posesPath: string;
@@ -84,18 +84,18 @@ export class V4Log {
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [] });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
-    // logged, so a joiner's cut already has it back in the world (door.js settleOrphans)
+    // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
     catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
     const st = this.live.state();
-    if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
+    if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the authority will refuse writes`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
     const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
     if (this._state) this._state.chatTotal = Math.max(0, says.length - 40);
     for (const e of says.slice(-40)) this.hearSay(e);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
-    void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the door
+    void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the authority
   }
   attach(host: V4Host) { this.host = host; }
 
@@ -118,7 +118,7 @@ export class V4Log {
   get snapSeq(): number { return this.head * 1000 + 999; }
 
   /** One v4 request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
-   *  the door can measure it; the door call itself is synchronous. */
+   *  the authority can measure it; the authority call itself is synchronous. */
   async request(actor: string, verb: string, args: Record<string, unknown> = {}) {
     await warm(modelsIn(args));
     return this.requestSync(actor, verb, args);
@@ -126,12 +126,12 @@ export class V4Log {
   requestSync(actor: string, verb: string, args: Record<string, unknown> = {}) {
     this.stats.requests++;
     const from = this.live.entries.length; const held = this.holdsKey();
-    const t0 = performance.now(); const r = doorRequest(this.live, actor, verb, args); if (r && typeof r === "object") doorTime.set(r, performance.now() - t0);
+    const t0 = performance.now(); const r = authorityRequest(this.live, actor, verb, args); if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
     if (this.live.entries.length > from) this.afterWrite(from);
     if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() });
     return r;
   }
-  /** Who holds what (the door's presence plane, design 20 P2): {id: {by}}. Never logged; every client draws a held thing
+  /** Who holds what (the authority's presence plane, design 20 P2): {id: {by}}. Never logged; every client draws a held thing
    *  in its holder's hand, so it is sent whenever it changes, and in every join cut. */
   holds(): Record<string, { by: string }> {
     const out: Record<string, { by: string }> = {};
@@ -141,18 +141,18 @@ export class V4Log {
   }
   private holdsKey() { return JSON.stringify(this.holds()); }
   /** A person's last connection left (not a takeover): what they held is dropped into the world (orphans, 18a), and the
-   *  door forgets their body. Their tracked body, if any, is all `leave` needs. */
+   *  authority forgets their body. Their tracked body, if any, is all `leave` needs. */
   departed(actor: string) {
     if (!this.live.presence.bodies?.[actor]) return;
     try { this.requestSync(actor, "leave", {}); } catch (err) { console.error(`[world:${this.name}] leave for ${actor}`, err); }
   }
 
-  /** Scripts (research 41): the door's timers on this server's clock (server.ts calls World.scripts.tick once a second). What
+  /** Scripts (research 41): the authority's timers on this server's clock (server.ts calls World.scripts.tick once a second). What
    *  they write goes out like any write. */
   tickScripts() {
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
-    try { doorTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+    try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
   }
   /** Someone arrived or left: scripts that listen for enter / leave hear it (by their v4 identity). */
   presenceScripts(kind: "enter" | "leave", who: string) {
@@ -160,10 +160,10 @@ export class V4Log {
     const from = this.live.entries.length;
     try { presenceEvent(this.live, kind, who); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
   }
-  /** The door's status view of every script here (debug panel, world_debug {behaviors}). */
+  /** The authority's status view of every script here (debug panel, world_debug {behaviors}). */
   scriptsView(id?: string) { return scriptsView(this.live, id); }
 
-  /** Send what the door just wrote: the raw v4 entries, to every client (they all fold v4). Chat lines go into the
+  /** Send what the authority just wrote: the raw v4 entries, to every client (they all fold v4). Chat lines go into the
    *  window; the view goes stale for its next reader; a role change re-sends everyone's rights. */
   private stale = false;
   private afterWrite(from: number) {
@@ -208,7 +208,7 @@ export class V4Log {
     this.stale = false;
     this._state = this.view();
   }
-  /** The role the door gives this identity (the door is what admits writes). */
+  /** The role the authority gives this identity (the authority is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
    *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
@@ -220,10 +220,10 @@ export class V4Log {
     for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the system's own (system, world, script:…) aren't people
     return out;
   }
-  /** The door's moderator log says this identity is banned here (door.js isBanned): join must refuse it too. */
+  /** The authority's moderator log says this identity is banned here (authority.js isBanned): join must refuse it too. */
   bannedHere(actor: string): boolean { return isBanned(this.live, actor); }
   private anon(actor: string) { return directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon"; }
-  /** What this identity may do here, from the door (roles.js effectiveOf): {role, name, rank, can, switches}. */
+  /** What this identity may do here, from the authority (roles.js effectiveOf): {role, name, rank, can, switches}. */
   rightsOf(actor: string) { return effectiveIn(this.live.state(), actor, { anon: this.anon(actor) }); }
   /** A kick whose cooldown still runs: {until, by, reason?} or null (join refuses it). */
   kickedHere(actor: string): Any { return kickOf(this.live, actor); }
@@ -237,7 +237,7 @@ export class V4Log {
   access(): Any { const a = this.live.state().entities?.["@world"]?.c?.access; return a && typeof a === "object" ? a : null; }
   /** Has this identity a roles:<id> here (access.join 'listed')? */
   listedHere(actor: string): boolean { return !!this.live.state().entities?.["@world"]?.c?.[`roles:${actor}`]; }
-  /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
+  /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/replica.js stateView), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
@@ -256,23 +256,23 @@ export class V4Log {
 // ---- founding and translating (tools/v4/world.ts is the command line) ----
 import { opsOf } from "../../shared/v4/fold.js";
 
-/** Found a new v4 world in `dir` (which must not hold a world): genesis + the founding act, through the door. */
+/** Found a new v4 world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
 export function foundV4(dir: string, name: string, owner: string, title?: string, now?: () => number) {
   if (fs.existsSync(path.join(dir, "v4.jsonl")) || fs.existsSync(path.join(dir, "log.jsonl"))) throw new Error(`${dir} already holds a world`);
   fs.mkdirSync(dir, { recursive: true });
   const w = openLive(dir, name, { now });
   // the owner is an account (human:…, agent:…, local:…); a bare name means `local:<name>`, the account a TRUST_NAMES
-  // server gives that typed name. Its opaque id comes from the door directory (round-2 review R1).
+  // server gives that typed name. Its opaque id comes from the authority directory (round-2 review R1).
   const acct = /^(human|agent|aid1|local):/.test(owner) ? owner : `local:${owner.toLowerCase()}`;
   const id = directoryFor(path.dirname(dir)).resolve({ sub: acct, name: acct.startsWith("local:") ? owner : acct.split(":").pop()!, agent: /^(agent|aid1):/.test(acct) });
-  const r = doorRequest(w, id, "create-world", { title: title ?? name });
+  const r = authorityRequest(w, id, "create-world", { title: title ?? name });
   if (!r.ok) throw new Error(`founding refused: ${JSON.stringify(r.refused)}`);
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
 
 // ---------- a person founds a world they own (ship list 10-07: only an operator could) ----------
-// The door's own founding act (`new`, genesis naming the founder as owner), built aside and renamed into place, as a fork
-// is. Who may (server/v4/messages.ts world-found decides from the connection; this file keeps the ledger):
+// The authority's own founding act (`new`, genesis naming the founder as owner), built aside and renamed into place, as a fork
+// is. Who may (server/v4/requestwire.ts world-found decides from the connection; this file keeps the ledger):
 //   - a signed-in PERSON: a guest (no account) never founds, and an agent's account doesn't either (an operator founds
 //     for an agent: tools/v4/world.ts found); spectators don't;
 //   - at most FOUNDING.perAccount worlds per account, ever (deleting isn't offered yet, so this is a lifetime cap);
@@ -312,8 +312,8 @@ export function foundOwnedV4(name: string, actor: string, account: string, title
   try {
     fs.mkdirSync(tmp, { recursive: true });
     const w = openLive(tmp, name, { catalogue: ENGINE_CATALOGUE });
-    const r = doorRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
-    if (!r.ok) throw new Error(`the door refused the founding: ${r.refused?.reason}`);
+    const r = authorityRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
+    if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
     if (fs.existsSync(dest)) throw new Error(`there's already a world called "${name}"`);   // taken while this one was built
     fs.renameSync(tmp, dest);
     const L = foundersLedger(); L[name] = { account, actor, ts: now }; atomicWrite(foundersPath(), JSON.stringify(L, null, 1));
@@ -335,7 +335,7 @@ function parentsFirst(st: Any): string[] {
   for (const id of Object.keys(st.entities)) if (id !== "@world") visit(id);
   return out;
 }
-/** Every component of the source as ordinary door requests (the same gate as a hand edit), in batches under the
+/** Every component of the source as ordinary requests (the same gate as a hand edit), in batches under the
  *  1 MiB line cap. Locks and pins are written last, after everything they'd protect exists. */
 function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => boolean) {
   const reqs: Any[] = [], late: Any[] = [];
@@ -346,7 +346,7 @@ function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => bool
     if (lock !== undefined) late.push({ verb: "set", args: { id, component: "lock", value: lock } });
   }
   const all = [...reqs, ...late]; let batch: Any[] = [], size = 0, acts = 0;
-  const flush = () => { if (!batch.length) return; const r = doorRequest(w, actor, "batch", { ops: batch, throughLock: true });
+  const flush = () => { if (!batch.length) return; const r = authorityRequest(w, actor, "batch", { ops: batch, throughLock: true });
     if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.op ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
   for (const q of all) { const n = JSON.stringify(q).length; if (size + n > 400_000) flush(); batch.push(q); size += n; }
   flush();
@@ -372,7 +372,7 @@ export function forkV4(src: V4Log, to: string, forker: string): { ok: true; worl
     if (fs.existsSync(blobs)) fs.cpSync(blobs, path.join(tmp, "v4-blobs"), { recursive: true });
     const w = openLive(tmp, to, { catalogue: ENGINE_CATALOGUE });
     const title = st.entities["@world"]?.c.about?.name ?? to;
-    const r0 = doorRequest(w, forker, "create-world", { title, from: { world: src.live.worldId, name: src.name, head: headOf(src.live) } });
+    const r0 = authorityRequest(w, forker, "create-world", { title, from: { world: src.live.worldId, name: src.name, head: headOf(src.live) } });
     if (!r0.ok) throw new Error(`founding refused: ${r0.refused?.reason}`);
     const skip = (k: string) => k === "about" || k === `roles:${forker}`;   // the founding act wrote these
     const acts = copyInto(w, forker, st, skip);
@@ -399,9 +399,9 @@ export function resetV4(log: V4Log): string {
   try {
     fs.mkdirSync(fresh, { recursive: true });
     const w = openLive(fresh, log.name, { catalogue: ENGINE_CATALOGUE });
-    const r0 = doorRequest(w, owners[0], "create-world", { title: st.entities["@world"]?.c.about?.name ?? log.name, from: prev });
+    const r0 = authorityRequest(w, owners[0], "create-world", { title: st.entities["@world"]?.c.about?.name ?? log.name, from: prev });
     if (!r0.ok) throw new Error(`founding again refused: ${r0.refused?.reason}`);
-    for (const o of owners.slice(1)) { const r = doorRequest(w, owners[0], "set", { id: "@world", component: `roles:${o}`, value: { role: "owner" } });
+    for (const o of owners.slice(1)) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: `roles:${o}`, value: { role: "owner" } });
       if (!r.ok) throw new Error(`restoring owner ${o} refused: ${r.refused?.reason}`); }
   } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);

@@ -25,7 +25,7 @@
 import { bus, CONFIG, report } from './base.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 import { logChat } from './chat.js';
 
 // ---------------------------------------------------------------- storage

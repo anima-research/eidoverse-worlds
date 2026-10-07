@@ -101,7 +101,7 @@ export function normalizePicture(data) {
   return { ok: true, picture, tier, notes };
 }
 
-/** The one line look() carries for a picture — the same string on the door, in mcpl and in every client, from the
+/** The one line look() carries for a picture — the same string on the authority, in mcpl and in every client, from the
  *  same bag. Says what the author said it shows (quoted, as data); never claims anything about the pixels. */
 export function describePicture(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a picture (malformed declaration)';

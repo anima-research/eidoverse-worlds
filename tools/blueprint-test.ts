@@ -7,7 +7,7 @@
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
 // 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch v4 world
-//    (tools/v4/scratchdoor.ts): the record, the copy's tree, its local poses, one act, the door's undo
+//    (tools/v4/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
 // 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
 //
 // Sections 1–3 are pure functions of shared/blueprint.js and stay as they were (NOTE: expand/overridesOf/rebase have
@@ -195,7 +195,7 @@ const copyOf = (rec: any, at: number[]) => {
 
 // ---- 6. v4: the door's publish and create {from} ------------------------------------------
 console.log('\n6. v4: publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
-const { scratchWorld } = await import('./v4/scratchdoor.ts');
+const { scratchWorld } = await import('./v4/scratchworld.ts');
 const { worldPose } = await import('../shared/hierarchy.js');
 const { qFromYaw, qNorm } = await import('../shared/rot.js');
 const near = (a: number[], b: number[], e = 2e-3) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= e);

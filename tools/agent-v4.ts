@@ -8,17 +8,17 @@
 //   await act("set", { id: "console", component: "picture", value }, { who: "antra" });   // a live write, by antra
 //   await act("sky", { hours: 12 }, { at: T0 + 20 * 60e3 });            // …at a chosen door time
 //
-// The door is the real one (shared/v4/door.js request over server/v4/disk.ts openWorld, the tools/v4/door-check.ts
+// The door is the real one (shared/v4/authority.js request over server/v4/filehost.ts openWorld, the tools/v4/authority-check.ts
 // pattern), its clock pinned through V4_NOW: each request is stamped at `at`, or one second after the last. `who` is
 // the display name the agent's percepts attribute the change to (the door's actor in a scratch world is its founder).
 // @ts-nocheck
 import { scratch } from "./v4/common.ts";
-import { request, LAB_CATALOGUE } from "../shared/v4/door.js";
-import { openWorld } from "../server/v4/disk.ts";
-import { viewState } from "../shared/v4/record.js";
+import { request, LAB_CATALOGUE } from "../shared/v4/authority.js";
+import { openWorld } from "../server/v4/filehost.ts";
+import { viewState } from "../shared/v4/view.js";
 import { enc, encName } from "../shared/v4/names.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
-import { makeV4Client, stateView } from "../shared/v4/client.js";
+import { makeV4Client, stateView } from "../shared/v4/replica.js";
 
 // any model path the tests name: the lab's measured models where they exist, else one the door can name, unmeasured
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });

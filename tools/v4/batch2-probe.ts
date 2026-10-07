@@ -63,7 +63,7 @@ try {
   const n0 = outside.length;
   const p1 = await empty("linkpic", [2, 0, -4], { picture: { src: `https://${UNTRUSTED}/party.png`, alt: "a poster from elsewhere" } });
   const s1 = await empty("linkradio", [-2, 0, -4], { sound: { src: `https://${UNTRUSTED}/party.mp3`, alt: "music from elsewhere" } });
-  check("PRIV1 the door takes both links (said: only viewers who opted in)", p1?.ok && s1?.ok && JSON.stringify([p1, s1]).includes("opted-in"), [p1?.notes, s1?.notes]);
+  check("PRIV1 the authority takes both links (said: only viewers who opted in)", p1?.ok && s1?.ok && JSON.stringify([p1, s1]).includes("opted-in"), [p1?.notes, s1?.notes]);
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('linkpic') && m.entities.has('linkradio'))`);
   await sleep(2500);   // time enough for any fetch, preload or decode to have been attempted
   const st1 = await page(`const s = await import('/lib/sounds.js'), p = await import('/lib/pictures.js');

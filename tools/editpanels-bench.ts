@@ -218,7 +218,7 @@ console.log('\nBlueprints — placing a copy (design §3, step 6b):');
 {
   const { blueprintHash } = await import('../shared/blueprint.js');
   const bf = `document.querySelector('[data-frame="build"]')`;
-  const lib = await evalJson(`import('/lib/palette.js').then((m) => m.starterModels()[0]?.path ?? null)`);
+  const lib = await evalJson(`import('/lib/catalog.js').then((m) => m.starterModels()[0]?.path ?? null)`);
   const rec: any = { kind: 'eido.blueprint', v: 1, name: 'Bench lamp', root: { components: [
     { type: 'Transform', params: {} }, { type: 'Model', params: { lib } }, { type: 'Label', key: 'label', params: { text: 'bench lamp' } },
   ], children: [

@@ -6,8 +6,8 @@
 //        set {id, component: 'script:<name>', value: {src, scope, on, every?}}
 //        set {id, component: 'reactions', value: {<action>: {kind: 'script', script: <name>}}, merge: true}   (on use)
 // Pure: no DOM, no network (client/lib/scriptnew.js draws the card and sends; tools/v4/build-check.ts K runs these
-// requests through the real door and sandbox).
-import { set } from "./ops.js";
+// requests through the real authority and sandbox).
+import { set } from "./requests.js";
 
 /** A starting point that runs as it stands and shows the loop: use it, and it speaks. */
 export const TEMPLATES = Object.freeze({
@@ -22,7 +22,7 @@ world.on("use", (e) => {
 world.on("tick", () => {
   const n = (world.get("self", "counter")?.n ?? 0) + 1;
   world.set("self", "counter", { n });
-  world.log("tick", n);
+  console.log("tick", n);
 });
 `,
 });
@@ -30,7 +30,7 @@ world.on("tick", () => {
 /** What a template writes (its scope), so the card's defaults run as they stand. */
 export const TEMPLATE_SCOPE = Object.freeze({ use: { comps: ["counter"], say: true }, timer: { comps: ["counter"], say: false } });
 
-/** A script name the door takes (script:<name>: a–z, 0–9 and '-', up to 64), from whatever was typed. */
+/** A script name the authority takes (script:<name>: a–z, 0–9 and '-', up to 64), from whatever was typed. */
 export function scriptName(typed) {
   const s = String(typed ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-").slice(0, 64);
   return s || null;

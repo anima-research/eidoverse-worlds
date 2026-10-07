@@ -4,7 +4,7 @@
 //
 // PROTOCOL-v4 L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
 // is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
-// Time: the engine's clock is the envelope's `ts` (§2.1: the door's admission time, the one clock readers trust),
+// Time: the engine's clock is the envelope's `ts` (§2.1: the authority's admission time, the one clock readers trust),
 // never running backwards: an entry without one happens at the latest time stated before it.
 // Ported from the v4 lab (code/v4-lab/simlayer.js @ 11db981). Engine changes: no node: imports (the browser imports
 // this file); the engine is ../sim.js (byte-identical to the lab's legacy/shared/sim.js), and its build hash is a
@@ -12,7 +12,7 @@
 // fails if they changed without a new engine name (Covenant II).
 import { sha256 } from "./hash.js";
 import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed } from "./fold.js";
-import { MODELS } from "./catalogue.js";
+import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
@@ -73,14 +73,14 @@ export function simFold(entries, now, opts = {}) {
   return f.view(now);
 }
 // The sim layer as a running fold (engine, slice 2; the lab re-folded the whole log on every call, O(n) per request).
-// feed(seq) takes the next VALID entry (the caller decides validity: the strict fold on load, the door's own re-read
+// feed(seq) takes the next VALID entry (the caller decides validity: the strict fold on load, the authority's own re-read
 // on append), in log order; view(now) advances the engine to `now` and returns what simFold returned. `now` must not
 // run backwards relative to later entries' ts (the server's clock is monotonic and every ts it writes is ≥ it), so
 // advancing early for a read and then folding a later entry is the same as folding it first: advancement is
 // schedule-independent. opts.models: the catalogue whose models count as colliders (default the lab's; the server
 // passes {} so geometry enters the sim only through the log's physics.shape, Covenant III).
 // opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched}, simCutOf's shape):
-// a joining client can't refold the whole log, so it adopts the door's sim where the door's clock stood, then feeds
+// a joining client can't refold the whole log, so it adopts the authority's sim where the authority's clock stood, then feeds
 // every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
 export function simFolder(entries, { models = MODELS, from = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
@@ -128,7 +128,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       }
       applyInPlace(st, ops, seq);
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
-      if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The door makes it a real cut: nothing in flight (P6).
+      if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
@@ -184,7 +184,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
-// A view over the log alone (no engine): every rest, where it put the body, and what the door did after it.
+// A view over the log alone (no engine): every rest, where it put the body, and what the authority did after it.
 export function restsOf(entries) {
   const out = [];
   entries.forEach((e, seq) => {
@@ -205,7 +205,7 @@ export function livePoses(sf) {
   for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map((n) => Math.round(n * 1000) / 1000), v: b.v.map((n) => Math.round(n * 100) / 100) };
   return out;
 }
-/** The sim's cut for a joiner (the door's side of simFolder's opts.from), as plain JSON: where the engine stands at the
+/** The sim's cut for a joiner (the authority's side of simFolder's opts.from), as plain JSON: where the engine stands at the
  *  view's clock, what is in flight, and the launch entries those flights came from (so a later rest's cause resolves). */
 export function simCutOf(sf, entries) {
   const launched = JSON.parse(JSON.stringify(sf.launched ?? {}));

@@ -1,5 +1,5 @@
 // Rows for the editor's History (and, later, its Credits facet): pure, so they can be tested without a browser.
-// A refused write is on the record as an act whose body carries refused {code} (door.js logRefusal, R7): it reads as
+// A refused write is on the record as an act whose body carries refused {code} (authority.js logRefusal, R7): it reads as
 // an attempt, never as a deed (Commons parity audit, 10-06: "refused acts print as done").
 import { phraseOf } from '../../shared/credits.js';
 export function worldHistoryRows(entries, nameOf) {

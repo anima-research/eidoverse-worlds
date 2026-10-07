@@ -2,7 +2,7 @@
 // sometimes translatedFrom) to §2.4 + §3d ({version, minor: 0, nonce, owners: [[<key>…], …], sequencer}). Ported from
 // code/v4-lab/migrate-genesis.js (lab 62301b8) for the engine's layout (<world dir>/v4.jsonl). Review F1, 2026-10-05.
 //   - owners: each old owner identity -> that identity's custody key; none -> [[], [sequencer]] (the custodial default:
-//     tier 0 empty, this door's key in tier 1). Keys come from the custody file every world in that worlds dir shares
+//     tier 0 empty, this server's key in tier 1). Keys come from the custody file every world in that worlds dir shares
 //     (<worlds dir>/.v4-custody.json, server/v4/custody.ts), so a running server reads the same keys.
 //   - nonce: the first 16 bytes of sha256(the old log's bytes): unique per log, and reproducible.
 //   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept,

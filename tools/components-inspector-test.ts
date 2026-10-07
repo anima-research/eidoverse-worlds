@@ -8,17 +8,17 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-inspector-test.ts
 //
 // v4 port (2026-10-06): the corpus is the spec fixtures (and COMPONENTS_CORPUS) TRANSLATED to v4
-// (shared/v4/translate-v1.js, as a world is migrated) and read as the view (shared/v4/record.js) — the records a v4
+// (shared/v4/translate-v1.js, as a world is migrated) and read as the view (shared/v4/view.js) — the records a v4
 // inspector sees. Light-verb lights and guard are gone (a translated light is a thing with a light component).
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { inspectSchema, fieldAt, editOps, partLabel, libLabel } from '../shared/editschema.js';
 import { componentsOf } from '../shared/components.js';
 import { translate } from './v4/import-v1/translate-v1.js';
-import { viewState } from '../shared/v4/record.js';
+import { viewState } from '../shared/v4/view.js';
 import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/v4/fold.js';
 import { v1FoldBuild } from './v4/import-v1/build.ts';
-import { scratchWorld, flat } from './v4/scratchdoor.ts';
+import { scratchWorld, flat } from './v4/scratchworld.ts';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };

@@ -23,7 +23,7 @@ import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
 import { initStructureUI } from './lib/structure_ui.js';
-import { initCauses } from './lib/realize/causes.js';
+import { initCauses } from './lib/realize/livechat.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
@@ -53,8 +53,8 @@ import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
 // may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
 const mayBuildStrict = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
-import { initPalette } from './lib/palette.js';
-import { initConjure } from './lib/conjure.js';
+import { initPalette } from './lib/catalog.js';
+import { initConjure } from './lib/generate.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
@@ -100,7 +100,7 @@ import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
 import { statusChip } from './lib/statuschips.js';
 import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
-import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
+import { registerSystem, startFrame, frameDebug } from './lib/frameloop.js';
 import { perf } from './lib/perf.js';
 import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
@@ -121,19 +121,19 @@ import { initXRKeyboard } from './lib/xrkeyboard.js';
 import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
-import { initLantern } from './lib/lantern.js';
+import { initLantern } from './lib/commandbar.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 
-// (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
+// (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
 
 if (CONFIG.params.has('mintthumbs')) {
-  // ?mintthumbs — seed the roster's portraits, then stop (lib/mint.js owns
+  // ?mintthumbs — seed the roster's portraits, then stop (lib/portraits.js owns
   // the why and the how). The else below is the entire normal boot.
-  await (await import('./lib/mint.js')).mintThumbnails();
+  await (await import('./lib/portraits.js')).mintThumbnails();
 } else {
 
 const isViewer = CONFIG.spectate || CONFIG.renderer;
@@ -147,7 +147,7 @@ setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
-// causes.js takes the fold-inert live verbs off the 'live-entry' bus.
+// livechat.js takes the fold-inert live verbs off the 'live-entry' bus.
 initModelsRealizer();
 initEnvironmentRealizer();
 initSocialRealizer();
@@ -352,7 +352,7 @@ function start() {
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered AFTER show, so it docks visible frames)
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
-  // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
+  // (lib/commandbar.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
 
   if (!isViewer) {
     // A body is never optional (owner, in-headset 09-04: no avatar at all, on
@@ -560,7 +560,7 @@ const readyPoll = setInterval(() => {
 }, 400);
 
 // ---------------------------------------------------------------- frame loop
-// The loop itself lives in lib/frame.js (§14.2 6b); this is the LIST — the
+// The loop itself lives in lib/frameloop.js (§14.2 6b); this is the LIST — the
 // registration order IS the execution order, and it encodes the constraints
 // §14.1 documents: motion before remotes, sky → materials → rig,
 // voice-mouths before the avatar update, bodydrag before remotes, gaze

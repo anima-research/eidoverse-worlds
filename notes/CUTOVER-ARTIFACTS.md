@@ -28,7 +28,7 @@ the pr0–pr3 diffs plus this PR's wiring.
 
 **None required, by construction — the wire contract is untouched.** The
 spoken-say trio (`spoken`+`utt`, optional `t0`) was validated in the server's
-say handler (today the door's `say`, `shared/v4/door.js` `spokenOf`), which
+say handler (today the door's `say`, `shared/v4/authority.js` `spokenOf`), which
 this delta did not modify. Producers (agent
 voice legs via `mcpl/agent.ts`) and the consumer (`voicemouths.js:88`) speak
 the same metadata before and after cutover. What moved is the *audio* lane

@@ -1,14 +1,14 @@
-// server/v4/catalogue.ts — the door's model catalogue in the engine: library paths, measured from their GLBs.
+// server/v4/modelcatalogue.ts — the authority's model catalogue in the engine: library paths, measured from their GLBs.
 //
-// The lab's door read its own table (shared/v4/catalogue.js: table, chair, crate… with hand-written sizes). The
+// The lab's authority read its own table (shared/v4/componentspec.js: table, chair, crate… with hand-written sizes). The
 // engine's models are library paths (`eidoverse/assets/models/…glb`, `store/<hash>.glb`), so the catalogue here is
 // what server/geometry.ts measures from the same GLB the client renders: the bounding box (in the model's own frame:
 // a GLB's origin is wherever its author put it) and the up-facing flat zones (seat pans, table tops) as surfaces.
 //
-// The door is synchronous and measuring is not, so this is a warm cache (the boxes.ts pattern): warm(libs) is awaited
-// on the wire before a request reaches the door (and on world load for every model standing in it); get(lib) answers
-// at once. A lib this server can't find or parse is still a model the door may NAME (refusing it would make worlds
-// stop at whatever this host happens to have on disk), but it has no size: the door says it can't place or collide
+// The authority is synchronous and measuring is not, so this is a warm cache (the boxes.ts pattern): warm(libs) is awaited
+// on the wire before a request reaches the authority (and on world load for every model standing in it); get(lib) answers
+// at once. A lib this server can't find or parse is still a model the authority may NAME (refusing it would make worlds
+// stop at whatever this host happens to have on disk), but it has no size: the authority says it can't place or collide
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "../libfile.ts";
 import { summarizeGlb } from "../geometry.ts";
@@ -18,7 +18,7 @@ import { join, relative } from "node:path";
 import { OPT_DIR, LIBRARY_DIR, ROOT } from "../config.ts";
 
 export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][]; credits?: Record<string, unknown> | null };
-// batch 2: who made each shipped asset (defs/library/credits.json, from the library's own CREDITS.md): the door's
+// batch 2: who made each shipped asset (defs/library/credits.json, from the library's own CREDITS.md): the authority's
 // inspect says it beside the model (derived.asset), /library-models beside each row
 let CREDITS: Record<string, any> | null = null;
 export function libraryCredits(): Record<string, any> {
@@ -45,13 +45,13 @@ async function measure(lib: string): Promise<void> {
       const surfaces = (sum!.topSurfaces ?? []).filter((s) => s.area >= MIN_ZONE && [s.y, ...s.x, ...s.z].every(Number.isFinite))
         .map((s) => ({ y: r3(s.y), x: s.x.map(r3), z: s.z.map(r3) })).sort((a, b) => a.y - b.y);
       // its solid parts (server/v4/solids.ts): a building's walls, floor and roof with its rooms open, so a body walks in
-      // through the door and a thing can be put down inside (review 10-06 S0-3); absent, the box is the solid
+      // through the authority and a thing can be put down inside (review 10-06 S0-3); absent, the box is the solid
       entry = { label, box, size: box[1].map((v, i) => r3(v - box[0][i])), surfaces, ...(sum!.solids ? { solids: sum!.solids } : {}) };
     }
   } catch { /* unmeasured: named, not sized */ }
   cache.set(lib, entry); version++;
 }
-let version = 0;   // bumped by every measurement: the door's spatial index is valid for one version of what's measured
+let version = 0;   // bumped by every measurement: the authority's spatial index is valid for one version of what's measured
 
 /** Make every lib in `libs` answerable synchronously. */
 export async function warm(libs: Iterable<unknown>): Promise<void> {
@@ -66,7 +66,7 @@ export async function warm(libs: Iterable<unknown>): Promise<void> {
 }
 
 /** Every string under a `model` key anywhere in a request (create {model}, components.model, set {component:
- *  'model', value}, batch ops…): what to warm before the door sees it. */
+ *  'model', value}, batch ops…): what to warm before the authority sees it. */
 export function modelsIn(args: unknown, out: string[] = [], depth = 0): string[] {
   if (depth > 16 || !args || typeof args !== "object") return out;
   const a = args as Record<string, unknown>;
@@ -91,7 +91,7 @@ function libraryListing(): string[] {
   return (listing = [...new Set(out)].sort());
 }
 
-/** The door's catalogue interface (shared/v4/door.js: get / list). */
+/** The authority's catalogue interface (shared/v4/authority.js: get / list). */
 export const ENGINE_CATALOGUE = {
   get version() { return version; },
   get(name: string): Entry | undefined {

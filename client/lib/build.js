@@ -12,11 +12,11 @@
 
 // SPLIT (R4): this file is the gesture CORE — mode, selection, ghost, drag,
 // undo, and the one pointer/key router. The panel sections live beside it
-// (palette.js models+avatars+upload, groundpanel.js, skypanel.js), and the
+// (catalog.js models+avatars+upload, groundpanel.js, skypanel.js), and the
 // seat-anchor grammar in seatedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/v4/requests.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
@@ -31,10 +31,10 @@ import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
-import { claimEscape } from './frames.js';
+import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
-import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world every write here is a door request
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world every write here is a request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -63,7 +63,7 @@ claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own 
 /** May this client enter edit mode at all?
  *
  * PERMISSIVE WHEN UNKNOWN, denying only on a known-insufficient role —
- * conjure.js:144 (`net.myRights?.gen !== false`) is the house idiom and this
+ * generate.js:144 (`net.myRights?.gen !== false`) is the house idiom and this
  * follows it. net.myRights has no declaration in net's object literal; it is
  * assigned at the snapshot (net.js:697) or a live grant (:468), so it is
  * `undefined` for the whole pre-snapshot window. Treating that as denial would
@@ -278,7 +278,7 @@ export async function holdGhost(lib, label) {
 /** Carry a COPY of a blueprint as the ghost (design §3, step 6b): the whole tree,
  *  each part at its local pose under its parent — the same nesting the renderer
  *  builds for a mounted child — so what you aim is what lands. Committing places
- *  it as the door's create {from: hash}: one act, one Ctrl+Z step. */
+ *  it as the authority's create {from: hash}: one act, one Ctrl+Z step. */
 export async function holdBlueprint(hash, record) {
   const why = record ? placeRefusal(record) : 'that blueprint is not in this world\'s store';
   if (why) { flashHint(`can't place it: ${why}`, 5000); return false; }
@@ -473,7 +473,7 @@ bus.on('drag', ({ id, pos, yaw, q }) => {
 function commitSpawn() {
   const p = ghost.obj.position;
   const id = crypto.randomUUID().slice(0, 8);
-  // one door request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
+  // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
   if (ghost.bp) V4.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
@@ -493,7 +493,7 @@ function commitPlace(before) {
   const o = selected.obj;
   // the drag was presence; the release is ONE request (the whole transform, local for a child), expecting where it started
   const id = selected.id;
-  V4.sendOps([OP.pose(state.st.entities?.[id] ?? {}, id, { pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) })],
+  V4.sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, { pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) })],
     { what: `move ${id}`, base: before.v4 ? { [id]: before.v4 } : null, revert: () => V4.revertPose(id) });
 }
 
@@ -503,7 +503,7 @@ function snapshotOf(obj) {
 }
 
 export function undo() {
-  // the door's undo {act} of MY last act (it refuses what others changed since)
+  // the authority's undo {act} of MY last act (it refuses what others changed since)
   deselect(); return V4.undo();
 }
 
@@ -525,7 +525,7 @@ function removeTargets() {
 
 function removeSelected() {
   if (!selected) return;
-  V4.del([selected.id]); deselect();   // a locked thing: the door asks ("This is locked. Delete anyway?")
+  V4.del([selected.id]); deselect();   // a locked thing: the authority asks ("This is locked. Delete anyway?")
 }
 
 // ============================================================ pointer
@@ -648,7 +648,7 @@ bus.on('key', (e) => {
   }
   // Undo stays available outside edit mode — you may only notice the mistake
   // after you have gone back to looking.
-  // redo is Ctrl+Shift+Z or Ctrl+Y (the door's undo of my undo)
+  // redo is Ctrl+Shift+Z or Ctrl+Y (the authority's undo of my undo)
   if ((e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) {   // keys: undo
     e.preventDefault?.(); V4.redo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo

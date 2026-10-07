@@ -11,7 +11,7 @@ import { register as registerAction } from './actions.js';
 import { send } from './v4edit.js';
 import { xrActive } from './xrask.js';
 import { nameOf } from './plainwords.js';
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/v4/requests.js';
 
 export const USE_REACH = 2.5;   // m, feet to the thing (Roblox's prompt reaches ~10 studs ≈ 2.8 m)
 let hooks = null;               // { myPos(): {x,y,z}, camera, editing(): bool, busy(): bool (photo mode, limp) }

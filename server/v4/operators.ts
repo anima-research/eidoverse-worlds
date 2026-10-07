@@ -1,4 +1,4 @@
-// server/v4/operators.ts — who operates this door (WORLD_ADMIN), by ACCOUNT only (security review 10-06 C3).
+// server/v4/operators.ts — who operates this server (WORLD_ADMIN), by ACCOUNT only (security review 10-06 C3).
 // An operator is owner everywhere and the unban path of last resort, so the list names proven accounts —
 // "human:discord:<id>", "agent:token:<id>", "aid1:<iss>:<sub>" — never a display name, which anyone can type.
 // An entry with no ":" is refused at boot rather than silently ignored: an operator who THINKS they listed

@@ -1,19 +1,19 @@
-// tools/v4/scratchdoor.ts — a scratch v4 world behind the real door, for the planner tests (tools/*-test.ts) that
-// check the RESULT of an edit: seed the records a test reads (view form), send the planner's door requests, read the
-// v4 state back as the view the planners read (shared/v4/record.js viewState). Same pattern as tools/v4/door-check.ts:
+// tools/v4/scratchworld.ts — a scratch v4 world behind the real authority, for the planner tests (tools/*-test.ts) that
+// check the RESULT of an edit: seed the records a test reads (view form), send the planner's requests, read the
+// v4 state back as the view the planners read (shared/v4/view.js viewState). Same pattern as tools/v4/authority-check.ts:
 // request(openWorld(root, name), actor, tool, args), a `new` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
-import { request, LAB_CATALOGUE } from "../../shared/v4/door.js";
-import { openWorld } from "../../server/v4/disk.ts";
-import { viewState } from "../../shared/v4/record.js";
+import { request, LAB_CATALOGUE } from "../../shared/v4/authority.js";
+import { openWorld } from "../../server/v4/filehost.ts";
+import { viewState } from "../../shared/v4/view.js";
 import { enc, encName } from "../../shared/v4/names.js";
 import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
 
 let T = 1800000000000;
-// the engine's catalogue is the library's GLB paths (server/v4/catalogue.ts); a scratch world names any path the tests
-// use: the lab's measured models where they exist, else a model the door can name but not measure (no `size`)
+// the engine's catalogue is the library's GLB paths (server/v4/modelcatalogue.ts); a scratch world names any path the tests
+// use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
 const open = (root, name) => { const w = openWorld(root, name); w.catalogue = ANY_MODEL; return w; };
 let n = 0;
@@ -23,8 +23,8 @@ const roots = new Map();
 export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" } = {}) {
   if (!roots.has(tag)) roots.set(tag, scratch(tag));
   const root = roots.get(tag); const name = `w${++n}`;
-  // one world object for the scratch world's life (its state is kept incrementally); the door's clock steps a second per
-  // request so a long sweep stays inside the door's rate budget (60 entries / 10 s per actor)
+  // one world object for the scratch world's life (its state is kept incrementally); the authority's clock steps a second per
+  // request so a long sweep stays inside the authority's rate budget (60 entries / 10 s per actor)
   let w = null;
   const call = (tool, args = {}, actor = owner) => { T += 1000; process.env.V4_NOW = String(T); w ??= open(root, name); return request(w, actor, tool, args); };
   const founded = call("create-world", { title });
@@ -32,9 +32,9 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
   const W = {
     name, root, owner,
     call,
-    /** send one planned door request ({tool, args}); extra args (throughLock, dry, expect) ride along. */
+    /** send one planned request ({tool, args}); extra args (throughLock, dry, expect) ride along. */
     send: (req, extra = {}, actor = owner) => (req ? call(req.verb, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
-    /** several planned requests as ONE gesture (shared/v4/ops.js batch semantics: one act). */
+    /** several planned requests as ONE gesture (shared/v4/requests.js batch semantics: one act). */
     sendAll: (reqs, extra = {}, actor = owner) => {
       const flat = reqs.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
       if (!flat.length) return { ok: true, noop: true };

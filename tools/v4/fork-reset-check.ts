@@ -4,7 +4,7 @@
 //       things and @world equal the source's; roles travel; chat does not; bad/taken names refused
 //   RS  reset: owner-only and name-confirmed; the old log is archived beside it; a fresh genesis whose founding act
 //       names the world it replaced; every owner is still an owner; the people present are told
-//   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the door's founding act;
+//   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the authority's founding act;
 //       a taken or bad name, a guest, and an account past its cap or the server past its hourly limit are refused
 // @ts-nocheck
 import fs from "node:fs";
@@ -134,7 +134,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const r = await bob.raw({ type: "world-found", name: "bobs-place", title: "Bob's place" }, "world-founded", 8000);
   ok(r?.type === "world-founded" && r.name === "bobs-place" && fs.existsSync(path.join(W, "bobs-place", "v4.jsonl")), "FD2 a signed-in person founds a world", r);
   const f = founding("bobs-place");
-  ok(f?.actor === bobId && fold(logOf("bobs-place")).entities["@world"].c[`roles:${bobId}`]?.role === "owner", "FD2 its founding act is the door's `new` by them, and they own it", [f?.actor, bobId]);
+  ok(f?.actor === bobId && fold(logOf("bobs-place")).entities["@world"].c[`roles:${bobId}`]?.role === "owner", "FD2 its founding act is the authority's `new` by them, and they own it", [f?.actor, bobId]);
   const there = await sock(S.port); const jt = await there.join("bobs-place", "Bob");
   ok(jt.snapshot?.yourRights?.role === "owner", "FD2 they can go there, as its owner", [jt.errors, jt.snapshot?.yourRights]);
   const made = await there.req("create", { id: "first-thing", model: MODEL });

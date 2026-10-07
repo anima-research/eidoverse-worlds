@@ -24,7 +24,7 @@ import { CONFIG, bus, report, setToken } from './lib/base.js';
 // that cannot draw a world, so lite builds its surface from the primitives that are
 // actually renderer-free. Sharing ui.js would mean gutting it; this costs less and
 // leaves the desktop shell untouched.
-import { makeFrame } from './lib/frames.js';
+import { makeFrame } from './lib/windows.js';
 import { initChat, logChat } from './lib/chat.js';
 import {
   net, connect, initIdentity, wireNet, sendWhisper, sendTyping, sendPoseExact,
@@ -37,7 +37,7 @@ import { initLiteEmotes } from './lib/emotebar_lite.js';
 // the server. Without it a lite client could SEND a message and never see it: the text
 // only appeared on reload, when history replayed through social.js instead. It is the
 // same narrator the full client uses, which is why it also reports builds and grants.
-import { initCauses } from './lib/realize/causes.js';
+import { initCauses } from './lib/realize/livechat.js';
 import { initRecentChat } from './lib/realize/recentchat.js';
 
 // The boot watchdog in index.html fails the splash after 20s unless __ewEngineUp is

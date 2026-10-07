@@ -1,25 +1,25 @@
-// server/v4/messages.ts — the ws messages that reach a world's door. server.ts consults this table first.
+// server/v4/requestwire.ts — the ws messages that reach a world's authority. server.ts consults this table first.
 //
-//   request {type: "request", id, verb, args} → {type: "reply", id, verb, ok, reply}, reply = the door's own answer
-//           (kept whole under `reply`: a door reply has fields of its own, such as inspect's `id`). Any door request
+//   request {type: "request", id, verb, args} → {type: "reply", id, verb, ok, reply}, reply = the authority's own answer
+//           (kept whole under `reply`: an authority reply has fields of its own, such as inspect's `id`). Any request
 //           (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/move/drop/wait, and the
 //           reads look/inspect/measure/find/lint/history/schema/help). The asker is stamped from the connection
 //           (L4), never read from the payload. Spectators may only read.
 //   world-fork, world-reset
 //           an owner copies the world to a new name, or erases it to zero (archived, founded again by its owners).
 //   world-found
-//           a signed-in person founds a new, empty world they own (server/v4/world.ts foundOwnedV4: caps and names).
+//           a signed-in person founds a new, empty world they own (server/v4/worldlog.ts foundOwnedV4: caps and names).
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one.
-import { forkV4, foundOwnedV4 } from "./world.ts";
+import { forkV4, foundOwnedV4 } from "./worldlog.ts";
 import { worldExists } from "../world.ts";
 import type { Client, World } from "../world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "../moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "../config.ts";
-import { isBanned } from "../../shared/v4/door.js";
-import { readMeter, doorTime } from "./readmeter.ts";
+import { isBanned } from "../../shared/v4/authority.js";
+import { readMeter, authorityTime } from "./readmeter.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -27,10 +27,10 @@ const READS = new Set(["look", "inspect", "measure", "find", "lint", "history", 
 const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
 const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", imported: "imported name (no account bound yet)" };
 
-/** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
+/** whois {name} — a name → identity lookup through the authority's directory, scoped to THIS world: the people present now,
  *  and every identity this world's log, roles or moderator log names. Never the whole directory (a name typed here
- *  can't fish for who exists elsewhere on this door), never an account (subs stay in the directory). An id (u-…)
- *  works too. Each match says its role here (the door's), whether it's here now, and whether it's banned. (Commons
+ *  can't fish for who exists elsewhere on this server), never an account (subs stay in the directory). An id (u-…)
+ *  works too. Each match says its role here (the authority's), whether it's here now, and whether it's banned. (Commons
  *  audit #1: /role <name> answered by name, so owners read as visitors; an absent person couldn't be banned, and an
  *  agent had no way to find the id a ban needs.) */
 export function whois(w: World, args: Any) {
@@ -45,9 +45,9 @@ export function whois(w: World, args: Any) {
     .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: v4.roleOf(id), here: here.has(id), banned: isBanned(v4.live, id) }));
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
-const reads = readMeter(); // per connection: reads and dry runs, by count and door time (security pass 2 H-A)
-// …and every request by door time: a refused step or write is cheap now, but nothing else bounds how much of the shared
-// thread one connection's stream of them takes (a guest is a fresh identity per connection, so the door's per-identity
+const reads = readMeter(); // per connection: reads and dry runs, by count and authority time (security pass 2 H-A)
+// …and every request by authority time: a refused step or write is cheap now, but nothing else bounds how much of the shared
+// thread one connection's stream of them takes (a guest is a fresh identity per connection, so the authority's per-identity
 // rate doesn't either). 3 s of 10 is far past any person's or agent's real use.
 const busy = readMeter({ n: Infinity, ms: 3000, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
@@ -57,14 +57,14 @@ function recordRefusal(c: Client): boolean {
   if (ts.length >= 20) { refusalTimes.set(c, ts); return false; }
   ts.push(now); refusalTimes.set(c, ts); return true;
 }
-/** What bystanders are told when the door removes someone: who did it, to whom (names, from the directory). Not the
+/** What bystanders are told when the authority removes someone: who did it, to whom (names, from the directory). Not the
  *  reason (that went to the person, and stays in the moderator log), not an address, not an account. */
 function modLine(w: World, by: string, verb: string, who: string) {
   const name = directoryFor(WORLDS_DIR).nameOf(who) ?? "someone";
   return verb === "ban" ? `${by} banned ${name} from this world` : verb === "kick" ? `${by} removed ${name} from this world` : verb === "mute" ? `${by} muted ${name}`
     : verb === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
 }
-/** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
+/** The identity the authority stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
 /** Presence messages a ghost or a role-less person doesn't send (they'd show them, or act on someone), and the one a
  *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
@@ -79,7 +79,7 @@ export function gagged(c: Client, type: string): boolean {
  *  reconnecting (R 10-07). When a mute or ghost lands on a guest present here, it is also filed against their
  *  connection's hashed address in this world (moderation.ts: at most a day, never past its own end), and server.ts gives
  *  it to every new guest from that address at join. Lifting one (unmute, unghost) lifts that record. A signed-in
- *  person's identity already carries; nothing is filed for them. `verb` is the door's act; `actor` the identity that did it. */
+ *  person's identity already carries; nothing is filed for them. `verb` is the authority's act; `actor` the identity that did it. */
 export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string) {
   const kind = verb === "mute" || verb === "unmute" ? "mute" : verb === "ghost" || verb === "unghost" ? "ghost" : null;
   if (!kind || !w.v4) return;
@@ -116,11 +116,11 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const metered = READS.has(verb) || args.dry === true;
     // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
     // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
-    // a meter's refusal reaches the flight recorder like the door's (bounded the same way)
+    // a meter's refusal reaches the flight recorder like the authority's (bounded the same way)
     const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, verb: verb.slice(0, 32), code: no.code, line: `${c.id}'s ${verb.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
     if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
     const mark = metered ? reads.record(c, Date.now()) : null;
-    if (verb === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
+    if (verb === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the authority's world
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
     if (verb === "caption") args.gen = c.legGen ?? 0;
@@ -130,9 +130,9 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const spent = busy.record(c, Date.now());
       const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
       const r = await w.v4.request(actorOf(c), verb, args);
-      const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
+      const ms = (r && typeof r === "object" && authorityTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
-      // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
+      // the flight recorder hears every refusal (world_debug, /debug): the authority logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
       // Bounded: a refusal's reason can quote what was sent (a shape refusal echoes the bad value), the ring holds 300 and
       // is read by anyone here, so each line is capped and each connection records at most 20 per 10 s (review 10-06 #1)
@@ -163,7 +163,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
         for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
         if (n) saveGlobalBans(); }
-      // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
+      // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
       if (r?.ok && (verb === "ban" || verb === "kick")) {
@@ -190,7 +190,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
     // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
-    // most FORK_PER_HOUR per person, so no owner can stall every world on the door by forking in a loop
+    // most FORK_PER_HOUR per person, so no owner can stall every world on the authority by forking in a loop
     const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
     if (now - last < FORK_GAP_MS) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — try again in a minute`);
     if (mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (at most ${FORK_PER_HOUR})`);

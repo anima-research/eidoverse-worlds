@@ -1,11 +1,11 @@
-// tools/v4/build-check.ts — ship-list group B (AUDIT-shiplist-blockers-2026-10-07): what a builder makes, through the door.
+// tools/v4/build-check.ts — ship-list group B (AUDIT-shiplist-blockers-2026-10-07): what a builder makes, through the authority.
 //   bun tools/v4/build-check.ts                 every case
 //   bun tools/v4/build-check.ts --only W1,N1    just those
 //   bun tools/v4/build-check.ts --tree <dir>    the cases against another checkout (the base, a mutant)
 //   bun tools/v4/build-check.ts --base          the base commit (7f1f1934): every case must be red there but the guards (G)
 //   bun tools/v4/build-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red
-// Cases (worlds open as the server opens them: server/v4/live.ts):
-//   W   walls (N2): a `structure` building's walls are solid to the door (a body's track, an arrival, a teleport), its
+// Cases (worlds open as the server opens them: server/v4/livehost.ts):
+//   W   walls (N2): a `structure` building's walls are solid to the authority (a body's track, an arrival, a teleport), its
 //       doorways stay walkable, its floor holds things up, and its placeholder model is no longer an invisible crate
 //   N   nested blueprints (N1): a blueprint holding two copies of another places, every time, with fresh ids
 //   K   scripts from the editor (item 3): the requests the editor's "new script" sends (shared/v4/newscript.js: upload,
@@ -28,13 +28,13 @@ const ONLY = opt("only")?.split(",") ?? null;
 // a re-published copy's own parts on their keys when a nested part names the same key; the dedupe alone already makes
 // N1/N2 place, and G1 holds the re-publish).
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the door reads a building's walls", "shared/v4/door.js", "const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));", "const geomE = (e) => geomOf(e?.c.model);", ["W1", "W2", "W3"]],
+  ["the authority reads a building's walls", "shared/v4/authority.js", "const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));", "const geomE = (e) => geomOf(e?.c.model);", ["W1", "W2", "W3"]],
   ["a doorway is the absence of a box (every wall edge solid)", "shared/structure.js", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(...wallBoxes(edge, ap, g, floorY));", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(edgeSpan(edge.axis, (edge.axis === 0 ? edge.z : edge.x) * g.tile, (edge.axis === 0 ? edge.x : edge.z) * g.tile, (edge.axis === 0 ? edge.x + 1 : edge.z + 1) * g.tile, -g.wallT / 2, g.wallT / 2, floorY, floorY + g.wallH, edge.mat, 'wall'));", ["W1", "W2"]],
-  ["floors are surfaces", "shared/v4/door.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
-  ["a key already taken falls back (no twins)", "shared/v4/door.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
+  ["floors are surfaces", "shared/v4/authority.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
+  ["a key already taken falls back (no twins)", "shared/v4/authority.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
   ["a new script never takes over the thing's own use", "shared/v4/newscript.js", "  if (!r.use || mine(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
   ["a use script gets its reaction", "shared/v4/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
-  ["an old record's twin keys each get an id", "shared/v4/door.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
+  ["an old record's twin keys each get an id", "shared/v4/authority.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
 function copyTree(tag: string) {
@@ -71,9 +71,9 @@ if (argv.includes("--base")) {
   console.log(`[build-check --base] at ${BASE}: ${lines.length} cases, ${wrong} wrong`); process.exit(wrong || !lines.length ? 1 : 0);
 }
 
-// ---------------- the door, from a tree ----------------
-const D = await import(TREE + "shared/v4/door.js");
-const L = await import(TREE + "server/v4/live.ts");
+// ---------------- the authority, from a tree ----------------
+const D = await import(TREE + "shared/v4/authority.js");
+const L = await import(TREE + "server/v4/livehost.ts");
 const SB = await import(TREE + "shared/v4/sandbox.js");
 const NS = await import(TREE + "shared/v4/newscript.js").catch(() => null);   // absent at the base commit: the editor had no planner
 const SE = await import(ENGINE + "shared/structure_edit.js");   // the editor's own planner makes the buildings (pure; this checkout's)
@@ -108,14 +108,14 @@ const PLACEHOLDER = "crate";   // the editor's new building rides a crate model 
 
 const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean }[] = [
   // ---------------- W: walls ----------------
-  { id: "W1", what: "a building's walls are solid to the door: a body walks in through the doorway and not through a wall or a window; it arrives inside the room (where the hidden placeholder sat); a teleport into a wall is refused", run(s) { cast(s);
+  { id: "W1", what: "a building's walls are solid to the authority: a body walks in through the doorway and not through a wall or a window; it arrives inside the room (where the hidden placeholder sat); a teleport into a wall is refused", run(s) { cast(s);
       const made = s.call("olive", "create", { id: "home", model: PLACEHOLDER, components: { transform: T0([10, 0, 10]), structure: house() } });
       const r: any = { made: show(made) };
       r.arrive = code(s.call("vic", "move", { to: [11.5, 0, 16] }));
       r.door = code(s.call("vic", "move", { to: [11.5, 0, 13] }));           // through the doorway (x 11..12 at z 14)
       r.inside = code(s.call("vic", "move", { to: [12.5, 0, 11.5] }));
       r.anchor = code(s.call("ann", "move", { to: [10.4, 0, 10.4] }));      // the anchor's corner, where the placeholder crate stood
-      r.outWall = code(s.call("vic", "move", { to: [12.5, 0, 15.5] }));      // south through the wall at x 12.5 (not the door)
+      r.outWall = code(s.call("vic", "move", { to: [12.5, 0, 15.5] }));      // south through the wall at x 12.5 (not the authority)
       r.arrive2 = code(s.call("bob", "move", { to: [16, 0, 11.5] }));
       r.window = code(s.call("bob", "move", { to: [12.5, 0, 11.5] }));       // west through the east window (x 14, z 11..12)
       r.tpWall = code(s.call("olive", "move", { to: [14, 0, 13] }));         // an arrival inside the east wall

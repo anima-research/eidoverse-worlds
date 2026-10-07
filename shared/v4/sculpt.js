@@ -2,7 +2,7 @@
 // Sculpt (PROTOCOL-v4 §3b; research 40 §6). Ground = a base (the `terrain` value) + integer-millimetre deltas in keyed
 // tiles `terrain-tile:<i>-<j>` {mm: [tile² ints, row-major]} on a grid `terrain-grid` {spacing, tile, origin, extent,
 // limits: {raise, lower}}. Tiles partition samples (no shared edges). An absent tile is all zero. This file is pure:
-// it turns a stroke and the tiles AT HEAD into whole new tile values. The door admits them like any write.
+// it turns a stroke and the tiles AT HEAD into whole new tile values. The authority admits them like any write.
 export const ADDITIVE = new Set(["raise", "lower"]);
 export const BRUSHES = ["raise", "lower", "smooth"];
 const key = (i, j) => `terrain-tile:${i}-${j}`;

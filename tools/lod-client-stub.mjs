@@ -114,7 +114,7 @@ export const warm = (label, fn) => Promise.resolve().then(fn);
 export const warmDepth = () => Promise.resolve();
 export const P_GATE = 0, P_MODEL = 1, P_AMBIENT = 2;
 export const laneBusy = () => false;
-// lightrig.js / emitters.js / terrain.js / frame.js / remotes.js: every lever
+// lightrig.js / emitters.js / terrain.js / frameloop.js / remotes.js: every lever
 // BELOW 'lod' in the ladder answers "nothing to shed", so a slow window
 // reaches the lod lever deterministically
 export const setSlotCap = () => {};

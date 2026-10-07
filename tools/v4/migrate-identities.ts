@@ -1,12 +1,12 @@
 // tools/v4/migrate-identities.ts — move an existing engine v4 world from name identities to directory ids (round-2
 // review R1), and seal it (R3). For the worlds founded or translated before b1ec40b1; a fresh translation does this
 // itself. Run with the world's server STOPPED (it holds the old log in memory).
-//   - every actor and every roles:/imported-bans: key that names a person becomes an opaque id from the door directory
+//   - every actor and every roles:/imported-bans: key that names a person becomes an opaque id from the authority directory
 //     (<worlds dir>/.v4-directory.json). The account: a reserved agent name -> agent:<slug>; with --trust-names (a
 //     PRIVATE server that runs TRUST_NAMES=1) a bare name -> local:<name>, the account a join there gets; otherwise a
 //     legacy identity an operator binds later. An escaped name (x--…) is read back first. A `sub` in a role value
 //     moves into the directory. A say's `to` follows its person. Act bodies (requests as sent) are left as written.
-//   - then the whole log is sealed with this door's keys: a salt on every set and act/say/sim body, {head, sig} on
+//   - then the whole log is sealed with this server's keys: a salt on every set and act/say/sim body, {head, sig} on
 //     every entry after genesis. Genesis and the world id don't change.
 // SAFETY: written only if the fold of the new log equals the fold of the old one with the same role/ban keys renamed
 // (digest), the reference reader says ok with 0 malformed, and chain.py verifies every head. The old log is kept
@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readLog, fold, digest } from "../../shared/v4/fold.js";
-import { seal } from "../../shared/v4/door.js";
+import { seal } from "../../shared/v4/authority.js";
 import { dec } from "../../shared/v4/names.js";
 import { directoryFor, mintId, type Entry } from "../../server/v4/directory.ts";
 import { custodyAt } from "../../server/v4/custody.ts";

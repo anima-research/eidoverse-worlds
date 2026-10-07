@@ -8,12 +8,12 @@
 //   bun tools/v4/shiplist-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red;
 //                                                  a no-op control mutation must stay green
 // Cases:
-//   O   openable (R 10-07: the behaviour, not the asset; it was `door`): the door's shape and ranges, toggle's default,
+//   O   openable (R 10-07: the behaviour, not the asset; it was `door`): the authority's shape and ranges, toggle's default,
 //       what look says, the importer's rename, the pose and the tween every client draws, the editor's card and Add
-//   R   reactions: Add Component offers only what the door takes; handlers are checked when WRITTEN (a value the door
+//   R   reactions: Add Component offers only what the authority takes; handlers are checked when WRITTEN (a value the authority
 //       would refuse, a field in a component the thing hasn't got, a toggle of a number, a push on a spinner); a use
 //       whose component was removed since says so and writes nothing
-//   M   motion: the door takes spin/orbit/path's conventional fields; the evaluator honours an orbit's period; the
+//   M   motion: the authority takes spin/orbit/path's conventional fields; the evaluator honours an orbit's period; the
 //       importer translates rpm and keeps center/face/period/points instead of parking them in imported:motion
 //   H   help text: physics.who and grabbable.who default to visitor (3b3ad8e2), and every place an agent reads says so
 //   P   people: a refusal in a person's words (no code, no tool syntax, things by label); warnings by label
@@ -30,13 +30,13 @@ const KEEP = new Set(["R7", "O0"]);
 
 // ---------------- the mutation and control drivers (they re-run this file as child processes) ----------------
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["a named openable toggles open", "shared/v4/door.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
-  ["toggle's default is openable", "shared/v4/door.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
-  ["openable: angle or slide", "shared/v4/door.js", "if (v.angle !== undefined && v.slide !== undefined) refuse(", "if (false) refuse(", ["O2"]],
-  ["openable: slide bounds", "shared/v4/door.js", "if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse(", "if (false) refuse(", ["O2"]],
-  ["openable: the catalogue's ranges", "shared/v4/catalogue.js", "ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },", "", ["O2"]],
-  ["`door` is called openable", "shared/v4/door.js", "if (name === \"door\") refuse(", "if (false) refuse(", ["O1"]],
-  ["look shows the openable", "shared/v4/door.js", "...(e.c.openable && typeof e.c.openable === \"object\" ? { openable: e.c.openable } : {}) };", "};", ["O4"]],
+  ["a named openable toggles open", "shared/v4/authority.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
+  ["toggle's default is openable", "shared/v4/authority.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
+  ["openable: angle or slide", "shared/v4/authority.js", "if (v.angle !== undefined && v.slide !== undefined) refuse(", "if (false) refuse(", ["O2"]],
+  ["openable: slide bounds", "shared/v4/authority.js", "if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse(", "if (false) refuse(", ["O2"]],
+  ["openable: the catalogue's ranges", "shared/v4/componentspec.js", "ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },", "", ["O2"]],
+  ["`door` is called openable", "shared/v4/authority.js", "if (name === \"door\") refuse(", "if (false) refuse(", ["O1"]],
+  ["look shows the openable", "shared/v4/authority.js", "...(e.c.openable && typeof e.c.openable === \"object\" ? { openable: e.c.openable } : {}) };", "};", ["O4"]],
   ["the importer renames door", "tools/v4/import-v1/translate-v1.js", "c[encName(k === \"door\" && !e.comp.openable ? \"openable\" : k)]", "c[encName(k)]", ["O5"]],
   ["the importer renames a reaction's door", "tools/v4/import-v1/translate-v1.js", "} else if (h && typeof h === \"object\" && h.component === \"door\") out[k] = { ...h, component: \"openable\" };", "}", ["O5"]],
   ["a turn keeps the hinge", "client/lib/motioneval.js", "const shift = qApply(q0, [pv[0] - rp[0], pv[1] - rp[1], pv[2] - rp[2]]);\n  return { pos: base.pos.map((v, i) => v + shift[i]), q: qMul(q0, q) };", "return { pos: [...base.pos], q: qMul(q0, q) };", ["O6"]],
@@ -44,25 +44,25 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["Add Openable brings its open action", "shared/editschema.js", "...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };", "], errors: [] };", ["O7"]],
   ["the hinge button", "shared/editschema.js", "comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4)", "comps.set('pivot', { pos: [round(0 && k === 'hingeL' ? box[0][0] : box[1][0], 4)", ["O7"]],
   ["Add Component doesn't offer LookAt", "shared/editschema.js", "const NOT_OFFERED = new Set(['LookAt']);", "const NOT_OFFERED = new Set([]);", ["R1"]],
-  ["a handler's effect is checked at write", "shared/v4/door.js", "handlerCheck(at, act, h); effectCheck(s, id, act, h); } }", "handlerCheck(at, act, h); } }", ["R2", "R3", "R4", "R6"]],
-  ["…the value it would write", "shared/v4/door.js", "else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });", "", ["R2"]],
-  ["…a field needs its component", "shared/v4/door.js", "if (field !== undefined && !isObj(c[comp])) refuse(\"no-target\"", "if (false) refuse(\"no-target\"", ["R3"]],
-  ["…a toggle flips true/false", "shared/v4/door.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
-  ["…a push swings a pendulum", "shared/v4/door.js", "if (h.kind === \"impulse\" && c.motion && c.motion.type !== \"pendulum\") refuse(", "if (false) refuse(", ["R6"]],
-  ["a use with its component gone says so", "shared/v4/door.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
-  ["motion: path is a type", "shared/v4/catalogue.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\"],", ["M1", "R1"]],
-  ["motion: rpm is taught", "shared/v4/door.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
-  ["motion: one speed", "shared/v4/door.js", "if ((v.type === \"spin\" || v.type === \"orbit\") && v.degPerSec !== undefined && v.period !== undefined) refuse(", "if (false) refuse(", ["M2"]],
-  ["motion: a path's points", "shared/v4/door.js", "if (v.type === \"path\" && !(Array.isArray(v.points)", "if (false && !(Array.isArray(v.points)", ["M2"]],
-  ["motion: a part's enums", "shared/v4/door.js", "for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(\":\")[0]]?.enums ?? {})) if (obj", "for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj", ["M2"]],
+  ["a handler's effect is checked at write", "shared/v4/authority.js", "handlerCheck(at, act, h); effectCheck(s, id, act, h); } }", "handlerCheck(at, act, h); } }", ["R2", "R3", "R4", "R6"]],
+  ["…the value it would write", "shared/v4/authority.js", "else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });", "", ["R2"]],
+  ["…a field needs its component", "shared/v4/authority.js", "if (field !== undefined && !isObj(c[comp])) refuse(\"no-target\"", "if (false) refuse(\"no-target\"", ["R3"]],
+  ["…a toggle flips true/false", "shared/v4/authority.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
+  ["…a push swings a pendulum", "shared/v4/authority.js", "if (h.kind === \"impulse\" && c.motion && c.motion.type !== \"pendulum\") refuse(", "if (false) refuse(", ["R6"]],
+  ["a use with its component gone says so", "shared/v4/authority.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
+  ["motion: path is a type", "shared/v4/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\"],", ["M1", "R1"]],
+  ["motion: rpm is taught", "shared/v4/authority.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
+  ["motion: one speed", "shared/v4/authority.js", "if ((v.type === \"spin\" || v.type === \"orbit\") && v.degPerSec !== undefined && v.period !== undefined) refuse(", "if (false) refuse(", ["M2"]],
+  ["motion: a path's points", "shared/v4/authority.js", "if (v.type === \"path\" && !(Array.isArray(v.points)", "if (false && !(Array.isArray(v.points)", ["M2"]],
+  ["motion: a part's enums", "shared/v4/authority.js", "for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(\":\")[0]]?.enums ?? {})) if (obj", "for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj", ["M2"]],
   ["the orbit's period", "client/lib/motioneval.js", "if (Number.isFinite(m.period) && m.period > 0) return 360 / m.period;", "", ["M3"]],
   ["the editor reads the rate as the evaluator does", "shared/editschema.js", "Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : ", "", ["M3"]],
   ["the importer: rpm → degPerSec", "tools/v4/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? v4Motion(v) : v;", "v;", ["M4"]],
   ["the editor's rate drops the period", "shared/editschema.js", "if (param === 'degPerSec') { delete next.rpm; delete next.period; }", "if (param === 'degPerSec') { delete next.rpm; }", ["M5"]],
   ["Add Path starts where it stands", "shared/editschema.js", "Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };", "Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };", ["M5"]],
-  ["help: physics.who's default", "shared/v4/catalogue.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
-  ["help: punt's default", "shared/v4/toolspec.js", "who may is physics.who (default visitor)", "who may is physics.who (default builder)", ["H1"]],
-  ["an open door is out of the way", "shared/v4/door.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
+  ["help: physics.who's default", "shared/v4/componentspec.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
+  ["help: punt's default", "shared/v4/verbspec.js", "who may is physics.who (default visitor)", "who may is physics.who (default builder)", ["H1"]],
+  ["an open door is out of the way", "shared/v4/authority.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
   ["a person's refusal drops tool syntax", "shared/v4/refusal.js", "const fix = typeof r.fix === \"string\" && r.fix && !TOOLISH.test(r.fix) ? r.fix : \"\";", "const fix = r.fix ?? \"\";", ["P1"]],
   ["a person's refusal names things", "shared/v4/refusal.js", "const n = nameOf(id); if (!n) return m;", "const n = null; if (!n) return m;", ["P1", "P2"]],
   ["CONTROL (no-op: must stay green)", "shared/v4/refusal.js", "// ---- for people (ship list 10-07", "// ----  for people (ship list 10-07", []],
@@ -115,8 +115,8 @@ if (argv.includes("--control")) {
 const T = opt("tree") ?? ENGINE;
 const only = opt("only")?.split(",") ?? null;
 const imp = async (p: string) => { try { return await import(path.join(T, p)); } catch (e) { return { __err: String(e?.message ?? e) }; } };
-const D = await imp("shared/v4/door.js"), CAT = await imp("shared/v4/catalogue.js"), TS = await imp("shared/v4/toolspec.js");
-const SD = await imp("tools/v4/scratchdoor.ts"), TV1 = await imp("tools/v4/import-v1/translate-v1.js"), FOLD = await imp("shared/v4/fold.js");
+const D = await imp("shared/v4/authority.js"), CAT = await imp("shared/v4/componentspec.js"), LAB = await imp("shared/v4/labmodels.js"), TS = await imp("shared/v4/verbspec.js");
+const SD = await imp("tools/v4/scratchworld.ts"), TV1 = await imp("tools/v4/import-v1/translate-v1.js"), FOLD = await imp("shared/v4/fold.js");
 const ME = await imp("client/lib/motioneval.js"), ES = await imp("shared/editschema.js"), RF = await imp("shared/v4/refusal.js");
 let pass = 0, fail = 0;
 const ok = (id: string, cond: any, what: string, detail?: any) => {
@@ -135,14 +135,14 @@ const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", verb: "genes
 const finalOf = (r: any) => r.final.v4;
 
 // ---- O: openable ----
-await C("O0", "the door model is still in the catalogue (the asset keeps its name)", () => !!CAT.MODELS?.door);
+await C("O0", "the door model is still in the lab models (the asset keeps its name)", () => !!LAB.MODELS?.door);
 await C("O1", "openable is a registered component; `door` is refused with 'did you mean openable'", () => {
   const W = world(); W.call("create", { id: "gate", model: "door", place: { at: [0, 0] } });
   const r = W.call("set", { id: "gate", component: "door", value: { open: false } });
   const sch = W.call("schema", { component: "openable" });
   return [!!CAT.COMPONENTS?.openable && !r.ok && r.refused.didYouMean?.includes("openable") && sch.ok !== false, { r: why(r), sch: JSON.stringify(sch).slice(0, 120) }];
 });
-await C("O2", "the door takes openable {open, locked, angle, axis, time} and {slide}; refuses both, time > 10, angle > π, slide > 10 m", () => {
+await C("O2", "the authority takes openable {open, locked, angle, axis, time} and {slide}; refuses both, time > 10, angle > π, slide > 10 m", () => {
   const W = world(); W.call("create", { id: "gate", model: "door", place: { at: [0, 0] } });
   const good = [{ open: false, locked: false, angle: 1.5708, axis: "y", time: 0.8 }, { open: true, slide: [0.9, 0, 0], time: 0.5 }, { open: false, part: "leaf", angle: -1 }].map((v) => why(W.call("set", { id: "gate", component: "openable", value: v })));
   const bad = [{ open: false, angle: 1, slide: [1, 0, 0] }, { open: false, time: 11 }, { open: false, angle: 4 }, { open: false, slide: [20, 0, 0] }, { open: "yes" }].map((v) => why(W.call("set", { id: "gate", component: "openable", value: v })));
@@ -159,7 +159,7 @@ await C("O4", "look tells an agent the openable's state", () => {
   const l = W.call("look", {}, "vic"); const t = JSON.stringify(l);
   return [/"openable":\{"open":true\}/.test(t), t.slice(0, 300)];
 });
-await C("O5", "the importer: a v1 `door` component is `openable`, a reaction's component 'door' is 'openable'; the door takes them", () => {
+await C("O5", "the importer: a v1 `door` component is `openable`, a reaction's component 'door' is 'openable'; the authority takes them", () => {
   const r = TV1.translate(v1({ verb: "spawn", args: { id: "gate", lib: "door", pos: [0, 0, 0] } }, { verb: "comp", args: { id: "gate", type: "door", data: { open: false, locked: false } } },
     { verb: "comp", args: { id: "gate", type: "reactions", data: { open: { kind: "toggle", component: "door", field: "open", unless: "locked" } } } }));
   const c = finalOf(r).gate;
@@ -180,7 +180,7 @@ await C("O6", "every client's pose: a quarter turn about a hinge keeps the hinge
   const ease = F(tw, 0) === 0 && F(tw, 500) === 0.5 && F(tw, 1000) === 1 && F(tw, 250) < 0.25 && F({ from: 0.5, to: 0, t0: 0, dur: 500 }, 250) === 0.25;
   return [hingeStill && turned && slid && ease, { hingeStill, turned, slid, sl, ease }];
 });
-await C("O7", "the editor: Add Component offers Openable; it writes the openable and its open action (the door takes them, a visitor opens it); the card has its fields; a hinge button puts the pivot on an edge; removing it takes its action along", () => {
+await C("O7", "the editor: Add Component offers Openable; it writes the openable and its open action (the authority takes them, a visitor opens it); the card has its fields; a hinge button puts the pivot on an edge; removing it takes its action along", () => {
   const ent = { lib: "door", pos: [0, 0, 0], comp: {} }; const sc = ES.inspectSchema(ent, "gate", {});
   const offered = (sc.sections?.add ?? []).some((a: any) => a.name === "Openable" && !a.blocked);
   const add = ES.addOps(ent, "gate", "Openable");
@@ -199,7 +199,7 @@ await C("O7", "the editor: Add Component offers Openable; it writes the openable
     { offered, add: add.errors, sent: why(sent), used: why(used), keys, pv, hs: why(hs), rs: why(rs), after: Object.keys(after) }];
 });
 
-await C("O8", "a body walks through an open door, not a shut one (the door's own body track, as an agent walks)", () => {
+await C("O8", "a body walks through an open door, not a shut one (the authority's own body track, as an agent walks)", () => {
   const W = world(); W.call("create", { id: "gate", model: "wall", components: { openable: { open: false }, reactions: { open: { kind: "toggle" } } }, place: { at: [0, 0] } });
   W.call("move", { to: [0, 0, -1] }, "vic");
   const shut = W.call("move", { to: [0, 0, 1] }, "vic");
@@ -209,7 +209,7 @@ await C("O8", "a body walks through an open door, not a shut one (the door's own
 });
 
 // ---- R: reactions ----
-await C("R1", "every entry Add Component offers (a modelled thing; a swinging one; a part) is one the door takes", () => {
+await C("R1", "every entry Add Component offers (a modelled thing; a swinging one; a part) is one the authority takes", () => {
   const out: any[] = [];
   for (const [label, ent, value] of [["plain", { lib: "crate", pos: [0, 0, 0], comp: {} }, undefined], ["swing", { lib: "crate", pos: [0, 0, 0], comp: { motion: { type: "pendulum", amp: 0, period: 3.5 } } }, undefined]] as any) {
     const sc = ES.inspectSchema(ent, "thing", { box: [[-0.3, 0, -0.3], [0.3, 0.6, 0.3]], parts: ["lid"] });
@@ -221,7 +221,7 @@ await C("R1", "every entry Add Component offers (a modelled thing; a swinging on
   }
   return [!out.length, out];
 });
-await C("R2", "a set handler whose value the door would refuse is refused when it's written, in plain terms", () => {
+await C("R2", "a set handler whose value the authority would refuse is refused when it's written, in plain terms", () => {
   const W = world(); W.call("create", { id: "lamp", model: "table-lamp", components: { light: { intensity: 4 } }, place: { at: [0, 0] } });
   const r = W.call("set", { id: "lamp", component: "reactions", value: { glow: { kind: "set", component: "light", field: "intensity", value: "bright" } } });
   const good = W.call("set", { id: "lamp", component: "reactions", value: { glow: { kind: "set", component: "light", field: "intensity", value: 40 } } });
@@ -269,7 +269,7 @@ await C("R7", "what was right stays right: a door made with its state and handle
 });
 
 // ---- M: motion ----
-await C("M1", "the door takes spin {degPerSec | period}, orbit {center, radius, period, face}, path {points, speed | duration, loop, face}", () => {
+await C("M1", "the authority takes spin {degPerSec | period}, orbit {center, radius, period, face}, path {points, speed | duration, loop, face}", () => {
   const W = world(); W.call("create", { id: "m", model: "crate", place: { at: [0, 0] } });
   const vs = [{ type: "spin", degPerSec: 30 }, { type: "spin", period: 12 }, { type: "orbit", center: [1, 0, 1], radius: 2, period: 8, face: false },
     { type: "path", points: [[0, 0, 0], [0, 0, 3], [2, 0, 3]], speed: 1, loop: "pingpong", face: true }, { type: "path", points: [[0, 0, 0], [1, 0, 0]], duration: 4, loop: "once" }];
@@ -292,7 +292,7 @@ await C("M3", "an orbit's period sets its speed (a 4 s lap turns 90° in 1 s), e
   const rate = sc.groups.find((g: any) => g.group === "motion")?.fields.find((f: any) => f.k === "degPerSec")?.value;
   return [quarter && spin && rate === 90, { o: o.pos, spin, rate }];
 });
-await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/period and a path's points/speed/loop stay in the motion (no imported:motion); the door takes each", () => {
+await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/period and a path's points/speed/loop stay in the motion (no imported:motion); the authority takes each", () => {
   const r = TV1.translate(v1(
     { verb: "spawn", args: { id: "fan", lib: "crate", pos: [0, 0, 0] } }, { verb: "motion", args: { id: "fan", type: "spin", rpm: 3, axis: "y" } },
     { verb: "spawn", args: { id: "boat", lib: "crate", pos: [5, 0, 0] } }, { verb: "motion", args: { id: "boat", type: "orbit", center: [5, 0, 5], radius: 3, period: 20, face: false } },
@@ -331,7 +331,7 @@ await C("P2", "a warning for a person names things by label (an agent's still by
   const p = RF.warningText(w, nameOf), a = RF.warningText(w);
   return [p === "“Desk lamp” floats 0.3 m above “Front door”" && a === "lamp floats 0.3 m above 3485c78e0a1b", { p, a }];
 });
-await C("P3", "the client shows a person the plain words and the door's warnings (edit sends), and a moderator's warning on the XR quad in a headset", () => {
+await C("P3", "the client shows a person the plain words and the authority's warnings (edit sends), and a moderator's warning on the XR quad in a headset", () => {
   const src = (f: string) => { try { return fs.readFileSync(path.join(T, f), "utf8"); } catch { return ""; } };
   const v4e = src("client/lib/v4edit.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
   return [/toast\(text, 'warn'/.test(v4e) && /const text = plain\(what, r\)/.test(v4e) && /showWarnings\(what, r\)/.test(v4e) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('v4-warned'/.test(xr),

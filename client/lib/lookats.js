@@ -8,8 +8,8 @@
 //   @nearest       the nearest body within range (yours included), its head
 //   u-…            that person's head, within range
 // Beyond range, or with no target, it eases back to rest. It runs after motion (main.js registers it later), so a bob or
-// an orbit moves it and then it turns; a rotating motion on the same node is refused at the door (one driver per node).
-// The door's geometry (placing, colliders, what stands on what) uses the logged transform, never the turned one.
+// an orbit moves it and then it turns; a rotating motion on the same node is refused at the authority (one driver per node).
+// The authority's geometry (placing, colliders, what stands on what) uses the logged transform, never the turned one.
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { entities, comps, findPart } from './world.js';

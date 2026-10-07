@@ -1,9 +1,9 @@
 // tools/v4/scripts-check.ts — v4 scripts (research 41; the lab's 46 B-cases, ported from its toy language to real
-// JavaScript in the QuickJS sandbox), through the real door, plus `use` → script and a timer through a real server.
+// JavaScript in the QuickJS sandbox), through the real authority, plus `use` → script and a timer through a real server.
 //   bun tools/v4/scripts-check.ts                 every case (the server cases start a scratch sequencer)
 //   bun tools/v4/scripts-check.ts --only B2,B5    just those
-//   bun tools/v4/scripts-check.ts --tree <dir>    run the door cases against another checkout's shared/ (a mutant, a base)
-//   bun tools/v4/scripts-check.ts --control       the base commit (bbc9ac22, before scripts): every door case must FAIL there
+//   bun tools/v4/scripts-check.ts --tree <dir>    run the authority cases against another checkout's shared/ (a mutant, a base)
+//   bun tools/v4/scripts-check.ts --control       the base commit (bbc9ac22, before scripts): every server case must FAIL there
 //   bun tools/v4/scripts-check.ts --mutants       remove each gate in turn (a copy of shared/): its cases must go red; a
 //                                                 no-op control mutation must stay green
 // Cases:
@@ -28,37 +28,37 @@ const BASE = "bbc9ac22";
 // replacement; a mutation whose text isn't found is itself a failure (the gate moved: update the list).
 const MUTANTS: [string, string, string, string[]][] = [
   // [name, file, find, replace, cases]
-  ["install: scope within installer's rights", "door.js", "if (need) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
-  ["sponsor's role NOW", "door.js", "const need = lacks(w, st, cap.sponsor, op,", "const need = null && lacks(w, st, cap.sponsor, op,", ["B2", "B3", "B24"]],
-  ["scope narrowing", "door.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
-  ["sponsor = latest write (not creator)", "door.js", "const W = scriptWrites(w, id, key);\n  for (let k = 0; k < W.length; k++)", "const W = scriptWrites(w, id, key).slice(-1);\n  for (let k = 0; k < W.length; k++)", ["B18"]],
-  ["no-op elision", "door.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
-  ["timers sleep with nobody present", "door.js", "if (!present && v.always !== true) { rt.sleepingSince ??= now;", "if (false) { rt.sleepingSince ??= now;", ["B5", "E4"]],
-  ["world hourly budget", "door.js", ": B.all + cost > cfg.budget ?", ": false ?", ["B6"]],
-  ["sponsor's fair share", "door.js", ": B.bySponsor + cost > B.share ?", ": false ?", ["B6b"]],
-  ["per-script rate", "door.js", "(B.mine >= cfg.rate ?", "(false ?", ["B6c"]],
-  ["script count", "door.js", "if (n > cfg.max) refuse(\"too-many\"", "if (false) refuse(\"too-many\"", ["B7"]],
-  ["cascade depth", "door.js", "if (depth > cfg.depth) return out(\"refused\"", "if (false) return out(\"refused\"", ["B8"]],
-  ["locks bind scripts", "door.js", "if (k) lockCheck(w, st, who, role, k, op, at); }", "if (k && !cap) lockCheck(w, st, who, role, k, op, at); }", ["B9"]],
-  ["in flight binds scripts", "door.js", "if (inFlight(op.id)) refuse(\"in-flight\"", "if (inFlight(op.id) && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
-  ["hygiene at install", "door.js", "const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", "const dirty = null; if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", ["H2"]],
-  ["hygiene at upload", "door.js", "const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason", "const dirty = null; if (dirty) refuse(dirty.code, dirty.reason", ["H1"]],
-  ["scope names checked for typos at install", "door.js", "if (near.length) refuse(\"schema\", `${at}.scope.comps:", "if (false) refuse(\"schema\", `${at}.scope.comps:", ["H4"]],
-  ["syntax at install", "door.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
-  ["banned → suspended", "door.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
-  ["adopt base", "door.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
-  ["always needs an owner", "door.js", "if (v.always === true && prev?.always !== true && role !== \"owner\")", "if (false)", ["B17"]],
-  ["install rank", "door.js", "if (!may(st, installer, \"scripts\")) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["B17"]],
-  ["timer floor", "door.js", "if (v.every !== undefined && !(typeof v.every === \"number\" && v.every >= 5))", "if (false)", ["B17"]],
-  ["paused", "door.js", "if (v.paused === true) { const pb = pausedBy(w, id, key); return out(\"paused\"", "if (false) { const pb = pausedBy(w, id, key); return out(\"paused\"", ["B20", "PA1"]],
-  ["run: false", "door.js", "if (cfg.run === false) return out(\"stopped\"", "if (false) return out(\"stopped\"", ["B20"]],
-  ["pause after repeated failures", "door.js", "if (!dry && (rt.fails ?? 0) >= cfg.fails) return out(\"paused\"", "if (false) return out(\"paused\"", ["B20"]],
-  ["say needs scope.say", "door.js", "if (res.says.length && !v.scope?.say) return mark(\"scope\"", "if (false) return mark(\"scope\"", ["B21"]],
-  ["create needs scope.create", "door.js", "if (!cap.create) refuse(\"scope\", `${cap.key} doesn't declare create: true`", "if (false) refuse(\"scope\", `${cap.key} doesn't declare create: true`", ["B22"]],
-  ["created things stay in the subtree", "door.js", "if (cap?.kind === \"script\") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", "if (false) for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", ["B22"]],
-  ["a script's body effect meets consent", "door.js", "const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
-  ["bodies need scope.bodies", "door.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
-  ["sponsor-wide body allowance", "door.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
+  ["install: scope within installer's rights", "authority.js", "if (need) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
+  ["sponsor's role NOW", "authority.js", "const need = lacks(w, st, cap.sponsor, op,", "const need = null && lacks(w, st, cap.sponsor, op,", ["B2", "B3", "B24"]],
+  ["scope narrowing", "authority.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
+  ["sponsor = latest write (not creator)", "authority.js", "const W = scriptWrites(w, id, key);\n  for (let k = 0; k < W.length; k++)", "const W = scriptWrites(w, id, key).slice(-1);\n  for (let k = 0; k < W.length; k++)", ["B18"]],
+  ["no-op elision", "authority.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
+  ["timers sleep with nobody present", "authority.js", "if (!present && v.always !== true) { rt.sleepingSince ??= now;", "if (false) { rt.sleepingSince ??= now;", ["B5", "E4"]],
+  ["world hourly budget", "authority.js", ": B.all + cost > cfg.budget ?", ": false ?", ["B6"]],
+  ["sponsor's fair share", "authority.js", ": B.bySponsor + cost > B.share ?", ": false ?", ["B6b"]],
+  ["per-script rate", "authority.js", "(B.mine >= cfg.rate ?", "(false ?", ["B6c"]],
+  ["script count", "authority.js", "if (n > cfg.max) refuse(\"too-many\"", "if (false) refuse(\"too-many\"", ["B7"]],
+  ["cascade depth", "authority.js", "if (depth > cfg.depth) return out(\"refused\"", "if (false) return out(\"refused\"", ["B8"]],
+  ["locks bind scripts", "authority.js", "if (k) lockCheck(w, st, who, role, k, op, at); }", "if (k && !cap) lockCheck(w, st, who, role, k, op, at); }", ["B9"]],
+  ["in flight binds scripts", "authority.js", "if (inFlight(op.id)) refuse(\"in-flight\"", "if (inFlight(op.id) && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
+  ["hygiene at install", "authority.js", "const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", "const dirty = null; if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", ["H2"]],
+  ["hygiene at upload", "authority.js", "const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason", "const dirty = null; if (dirty) refuse(dirty.code, dirty.reason", ["H1"]],
+  ["scope names checked for typos at install", "authority.js", "if (near.length) refuse(\"schema\", `${at}.scope.comps:", "if (false) refuse(\"schema\", `${at}.scope.comps:", ["H4"]],
+  ["syntax at install", "authority.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
+  ["banned → suspended", "authority.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
+  ["adopt base", "authority.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
+  ["always needs an owner", "authority.js", "if (v.always === true && prev?.always !== true && role !== \"owner\")", "if (false)", ["B17"]],
+  ["install rank", "authority.js", "if (!may(st, installer, \"scripts\")) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["B17"]],
+  ["timer floor", "authority.js", "if (v.every !== undefined && !(typeof v.every === \"number\" && v.every >= 5))", "if (false)", ["B17"]],
+  ["paused", "authority.js", "if (v.paused === true) { const pb = pausedBy(w, id, key); return out(\"paused\"", "if (false) { const pb = pausedBy(w, id, key); return out(\"paused\"", ["B20", "PA1"]],
+  ["run: false", "authority.js", "if (cfg.run === false) return out(\"stopped\"", "if (false) return out(\"stopped\"", ["B20"]],
+  ["pause after repeated failures", "authority.js", "if (!dry && (rt.fails ?? 0) >= cfg.fails) return out(\"paused\"", "if (false) return out(\"paused\"", ["B20"]],
+  ["say needs scope.say", "authority.js", "if (res.says.length && !v.scope?.say) return mark(\"scope\"", "if (false) return mark(\"scope\"", ["B21"]],
+  ["create needs scope.create", "authority.js", "if (!cap.create) refuse(\"scope\", `${cap.key} doesn't declare create: true`", "if (false) refuse(\"scope\", `${cap.key} doesn't declare create: true`", ["B22"]],
+  ["created things stay in the subtree", "authority.js", "if (cap?.kind === \"script\") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", "if (false) for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", ["B22"]],
+  ["a script's body effect meets consent", "authority.js", "const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
+  ["bodies need scope.bodies", "authority.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
+  ["sponsor-wide body allowance", "authority.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
   ["names replayed from the act", "sandbox.js", "const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null);", "const n = x.name ? x.name(id) ?? null : null;", ["M1"]],
@@ -66,42 +66,42 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["fuel", "sandbox.js", "if (fuel > L.fuel) {", "if (false) {", ["R1"]],
   ["host-call cap", "sandbox.js", "if (++calls > L.calls) {", "if (false) {", ["R4"]],
   ["write cap", "sandbox.js", "if (ops.length >= L.ops) {", "if (false) {", ["R5"]],
-  ["param values are numbers (schema)", "door.js", "if (!isNum(v[k])) refuse(\"shape\", `${at}.${k} is a number (a signal)", "if (false) refuse(\"shape\", `${at}.${k} is a number (a signal)", ["P2"]],
-  ["param keys pass the schema", "door.js", "v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith(\"param.\")));", "", ["P1"]],
-  ["changed:<comp> cascades", "door.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
-  ["say events", "door.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
-  ["a script never hears its own say", "door.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
-  ["use of an imported binding says re-install", "door.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
-  ["imported behaviours are listed", "door.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
+  ["param values are numbers (schema)", "authority.js", "if (!isNum(v[k])) refuse(\"shape\", `${at}.${k} is a number (a signal)", "if (false) refuse(\"shape\", `${at}.${k} is a number (a signal)", ["P2"]],
+  ["param keys pass the schema", "authority.js", "v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith(\"param.\")));", "", ["P1"]],
+  ["changed:<comp> cascades", "authority.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
+  ["say events", "authority.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
+  ["a script never hears its own say", "authority.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
+  ["use of an imported binding says re-install", "authority.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
+  ["imported behaviours are listed", "authority.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
-  ["runs per script per minute", "door.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
-  ["cpu per sponsor per minute", "door.js", "if (ms >= cfg.cpu) return", "if (false) return", ["B23"]],
-  ["a guest sponsor is a guest", "door.js", "const n = needOf(op); const eff = effective(st, holder);", "const n = needOf(op); const eff = effective(st, holder, false);", ["B24"]],
-  ["upload rate", "door.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
-  ["acts point at a say's text, never copy it", "door.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
+  ["runs per script per minute", "authority.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
+  ["cpu per sponsor per minute", "authority.js", "if (ms >= cfg.cpu) return", "if (false) return", ["B23"]],
+  ["a guest sponsor is a guest", "authority.js", "const n = needOf(op); const eff = effective(st, holder);", "const n = needOf(op); const eff = effective(st, holder, false);", ["B24"]],
+  ["upload rate", "authority.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
+  ["acts point at a say's text, never copy it", "authority.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
-  ["a door runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
+  ["an authority runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
   ["the kill at the deadline", "sandbox.js", "deadline = sentAt + L.wallMs + GRACE,", "deadline = sentAt + L.wallMs + GRACE + 60000,", ["I1"]],
-  ["a pause write adopts nothing (sponsor skips it)", "door.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return", "if (true) return", ["PA1"]],
+  ["a pause write adopts nothing (sponsor skips it)", "authority.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return", "if (true) return", ["PA1"]],
   ["the auditor's sponsor skips pause writes too", "scriptaudit.js", "|| jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);", "|| true) return by(L, W[k].seq);", ["PA1"]],
-  ["a pause write skips install checks", "door.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", ") installCheck(", ["PA2"]],
+  ["a pause write skips install checks", "authority.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", ") installCheck(", ["PA2"]],
   ["the inspector's script permission", "../editschema.js", "ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));", "", ["PA3"]],
-  ["status says who paused it", "door.js", "...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),", "", ["PA1"]],
+  ["status says who paused it", "authority.js", "...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),", "", ["PA1"]],
   ["bounded wait for a warm process", "sandbox.js", "const WARM_MS = 300;", "const WARM_MS = 5000;", ["I3"]],
-  ["a pause write is judged against the value just before it", "door.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", "&& !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(", ["PA4"]],
-  ["dry runs spend the duty", "door.js", "  { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); }", "  if (!dry) { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); }", ["I4"]],
-  ["one world gets a share of the duty", "door.js", "return Math.min(DUTY.maxMs - all, DUTY.maxMs * DUTY.worldShare - mine); };", "return DUTY.maxMs - all; };", ["I7"]],
-  ["admit copies one entity per op, not the world", "door.js", "    applyCow(s, [op]); norm.push(op);", "    s = applyOps(s, [op]); norm.push(op);", ["I5"]],
+  ["a pause write is judged against the value just before it", "authority.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", "&& !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(", ["PA4"]],
+  ["dry runs spend the duty", "authority.js", "  { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); }", "  if (!dry) { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); }", ["I4"]],
+  ["one world gets a share of the duty", "authority.js", "return Math.min(DUTY.maxMs - all, DUTY.maxMs * DUTY.worldShare - mine); };", "return DUTY.maxMs - all; };", ["I7"]],
+  ["admit copies one entity per op, not the world", "authority.js", "    applyCow(s, [op]); norm.push(op);", "    s = applyOps(s, [op]); norm.push(op);", ["I5"]],
   ["elision copies one entity per op, not the world", "scriptrules.js", "out.push(o); try { applyCow(s, [o]); }", "out.push(o); try { JSON.parse(JSON.stringify(s.entities)); applyCow(s, [o]); }", ["I5"]],
   ["read-your-writes without copying the world", "sandbox.js", "const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", "const writable = (id) => { const b = ov.has(id) ? ov.get(id) : base[id]; if (!b) return null; for (const k of Object.keys(base)) JSON.parse(JSON.stringify(base[k])); const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", ["I5"]],
   // (not a mutation: the check between host answers is defence in depth. A process can't send its next call before its
-  // answer arrives, so the door always finds the pipe empty first and its ordinary deadline check fires: measured, I9)
+  // answer arrives, so the authority always finds the pipe empty first and its ordinary deadline check fires: measured, I9)
   ["time spent answering isn't the process's starvation", "sandbox.js", "if (used !== null && own > 0.5 * wall && used < STARVED * own)", "if (used !== null && used < STARVED * wall)", ["I9"]],
   ["a starved process isn't the script's failure", "sandbox.js", "export const STARVED = 0.3;", "export const STARVED = 0;", ["I8"]],
   ["end of file means the process died", "sandbox.js", "if ((n === 0 && c.opened) || c.proc.exitCode !== null", "if (c.proc.exitCode !== null", ["I6"]],
-  ["the process's script duty", "door.js", "if (dutyLeft(w.worldId) <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2", "I4", "I7"]],
-  ["CONTROL (no-op: must stay green)", "door.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
+  ["the process's script duty", "authority.js", "if (dutyLeft(w.worldId) <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2", "I4", "I7"]],
+  ["CONTROL (no-op: must stay green)", "authority.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
   const args = ["bun", path.join(ENGINE, "tools/v4/scripts-check.ts"), "--tree", tree, "--no-server", ...(only ? ["--only", only.join(",")] : []), ...extra];
@@ -127,7 +127,7 @@ if (argv.includes("--mutants")) {
   console.log(`[scripts-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  // the base commit's shared/ (default: the door before scripts, where every door case must FAIL). --control <commit>
+  // the base commit's shared/ (default: the authority before scripts, where every server case must FAIL). --control <commit>
   // runs against a later base (a round's start) and lists what is red there, with --want <ids> naming what must be
   const at = opt("control") && !opt("control")!.startsWith("--") ? opt("control")! : BASE; const want = opt("want")?.split(",") ?? null;
   const d = scratch("ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${at} shared | tar -x -C ${d}`], { cwd: ENGINE });
@@ -143,22 +143,22 @@ if (argv.includes("--control")) {
   process.exit(passing.length ? 1 : 0);
 }
 
-// ---------------- the door, from a tree (this checkout unless --tree) ----------------
+// ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const tryImport = async (p: string) => { try { return await import(p); } catch (e) { if (!argv.includes("--expect-absent")) throw e; return null; } };
-const D = await import(TREE + "shared/v4/door.js");
+const D = await import(TREE + "shared/v4/authority.js");
 const F = await import(TREE + "shared/v4/fold.js");
 const SB = await tryImport(TREE + "shared/v4/sandbox.js");
 const AU = await tryImport(TREE + "shared/v4/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
-// the edit UI's schema and the view record it reads (shared code: from the same tree as the door, so a mutant reaches it)
-const await_ES = await import(TREE + "shared/editschema.js"), await_RV = await import(TREE + "shared/v4/record.js");
-// the process-wide script duty (DUTY, door.js) is about real seconds; these cases fire hundreds of activations in a tight
+// the edit UI's schema and the view record it reads (shared code: from the same tree as the authority, so a mutant reaches it)
+const await_ES = await import(TREE + "shared/editschema.js"), await_RV = await import(TREE + "shared/v4/view.js");
+// the process-wide script duty (DUTY, authority.js) is about real seconds; these cases fire hundreds of activations in a tight
 // loop on a simulated clock, so it's opened wide here, and I2 sets it on purpose
 const DUTY0 = D.setScriptDuty ? D.setScriptDuty({ maxMs: 1e9 }) : null;
 const root = scratch("scripts");
 
-// a world on disk over THIS tree's door (as server/v4/disk.ts does with the checkout's)
+// a world on disk over THIS tree's door (as server/v4/filehost.ts does with the checkout's)
 function openWorld(name: string, o: any = {}) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`), storeDir = path.join(root, "store");
   const entries = F.readLog(readLogBytes(logPath)).map(D.posAt);
@@ -204,7 +204,7 @@ world.on("use", (e) => {
 function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model: "bell", place: { at: [0, 0] } });
   const r = install(s, who, "bell1", "bell", BELL, { scope: { ids: "self", comps: ["bell"], say: true }, on: ["use"] });
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
-const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the door's directory (M1)
+const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; server?: boolean; opts?: any };
@@ -384,7 +384,7 @@ const cases: Case[] = [
       const pause = s.call("bob", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true }); // a pause is still his to flip (creator)
       return { owner: show(owner), adopt: code(adopt), reset: code(reset), twice: code(twice), pause: show(pause), sponsor: s.call("olive", "scripts", {}).scripts?.[0]?.sponsor }; },
     good: (o) => o.owner === "ok" && o.adopt === "rights" && o.reset === "rights" && o.twice === "rights" && o.pause === "ok" && o.sponsor === "olive" },
-  { id: "PA3", what: "the edit UI's permission: the inspector (shared/editschema.js, the same schema the VR quad and agents' edit use) shows each script as a card with a 'paused' check; flipping it plans one merged {paused} set, which the door takes from an owner, and the sponsor stays", run(s) { cast(s);
+  { id: "PA3", what: "the edit UI's permission: the inspector (shared/editschema.js, the same schema the VR quad and agents' edit use) shows each script as a card with a 'paused' check; flipping it plans one merged {paused} set, which the authority takes from an owner, and the sponsor stays", run(s) { cast(s);
       bell(s, "bob");
       const ES = await_ES; const RV = await_RV;
       const ent = () => RV.viewOf("bell1", s.w().state().entities.bell1.c);
@@ -407,7 +407,7 @@ const cases: Case[] = [
       const knobs = s.call("olive", "set", { id: "bell1", component: "script:bell", value: { knobs: { x: 1 } }, merge: true }); // a real edit is an install: refused, the source is missing
       return { ann: code(ann), olive: show(olive), knobs: code(knobs), status: s.call("olive", "scripts", {}).scripts?.[0]?.status }; },
     good: (o) => o.ann === "rights" && o.olive === "ok" && o.knobs === "not-found" && o.status === "paused" },
-  { id: "B19", what: "replay never runs code: the fold alone (no door, no sandbox, no blobs) gives the door's world after script activations", run(s) { cast(s);
+  { id: "B19", what: "replay never runs code: the fold alone (no door, no sandbox, no blobs) gives the authority's world after script activations", run(s) { cast(s);
       bell(s, "bob"); for (let i = 0; i < 3; i++) s.call("vic", "use", { id: "bell1", action: "ring" });
       const f = F.fold(F.readLog(fs.readFileSync(s.logPath))); const foldSrc = fs.readFileSync(TREE + "shared/v4/fold.js", "utf8");
       return { same: F.digest(f) === F.digest(s.w().state()), rung: f.entities.bell1?.c.bell?.rung, foldImportsVm: /sandbox|scriptaudit|quickjs/.test(foldSrc) }; },
@@ -470,7 +470,7 @@ const cases: Case[] = [
       const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }) });
       return { nowIsTs: t1?.now === act1?.ts, same: t1?.same, r1: t1?.r, r2: t2?.r, rerun: again.ops?.[0]?.value?.r }; },
     good: (o) => o.nowIsTs && o.same === true && JSON.stringify(o.r1) === JSON.stringify(o.rerun) && JSON.stringify(o.r1) !== JSON.stringify(o.r2) },
-  { id: "D3", what: "the sandbox's time zone is UTC wherever the door runs: local-time methods, parsing and Date() agree under TZ=UTC and TZ=Asia/Tokyo", run() {
+  { id: "D3", what: "the sandbox's time zone is UTC wherever the authority runs: local-time methods, parsing and Date() agree under TZ=UTC and TZ=Asia/Tokyo", run() {
       if (!SB) return { absent: true };
       const f = path.join(root, "tz-probe.ts");
       fs.writeFileSync(f, `import { runScript } from ${JSON.stringify(TREE + "shared/v4/sandbox.js")};
@@ -480,7 +480,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
-  { id: "B23", what: "the door's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute, and a sponsor to `cpu` ms of sandbox time", run(s) { cast(s);
+  { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute, and a sponsor to `cpu` ms of sandbox time", run(s) { cast(s);
       s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } }); s.call("ann", "create", { id: "mill", model: "crate", place: { at: [2, 0] } });
       install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
       install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
@@ -494,7 +494,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
       return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
-      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the door's time/.test(o.why) },
+      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why) },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
     run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
@@ -519,14 +519,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { inst: show(inst), r: st(s, r), scripted, next: st(s, next) }; },
     good: (o: any) => (want === "syntax" ? o.inst.startsWith("refused syntax") : o.r === `failed ${want}` && o.scripted === 0 && o.next === "ran") })),
   // ---------------- I: isolation (a killable sandbox process per activation's VM side) ----------------
-  { id: "I1", what: "isolation: a script stuck in a slow native builtin (indexOf on crafted text, a huge BigInt power, out of memory inside Array.fill) is stopped at its deadline and its process killed; the door is back within it, another world answers at once, and the run is counted against its sponsor",
+  { id: "I1", what: "isolation: a script stuck in a slow native builtin (indexOf on crafted text, a huge BigInt power, out of memory inside Array.fill) is stopped at its deadline and its process killed; the authority is back within it, another world answers at once, and the run is counted against its sponsor",
     run(s) { cast(s); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!SB?.isolationStats) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `(7n ** 300000n).toString().length;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
       for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(Object.keys(HOSTILE).map((k) => [k, { kind: "script", script: k }])) });
-      SB.warm(); Bun.sleepSync(800); // warm processes, as a door with scripts has at load
+      SB.warm(); Bun.sleepSync(800); // warm processes, as an authority with scripts has at load
       const k0 = SB.isolationStats().kills; const runs: any[] = [];
       // spaced as the process's script duty spaces them in a door (I2 tests the duty): a killed process's spare is warm again
       for (const k of Object.keys(HOSTILE)) { Bun.sleepSync(800); const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
@@ -550,7 +550,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       delete process.env.EIDO_SANDBOX_TEST_DELAY; Bun.sleepSync(3300); // let the slow spares finish starting before the next case
       return { runs, worst: Math.round(worst), each }; },
     good: (o) => o.worst < 300 + 500 + 200 && o.runs.every((x: string) => ["failed time", "unavailable unavailable", "paused", "refused budget"].includes(x)) && o.runs.includes("failed time") && o.runs.includes("unavailable unavailable") },
-  { id: "I4", what: "review r2 #1: dry runs spend the door's thread too: a visitor's 12 back-to-back dry uses of a hostile script are held to the duty and a dry-run rate (they used to run unmetered, 6 s)", run(s) { cast(s);
+  { id: "I4", what: "review r2 #1: dry runs spend the authority's thread too: a visitor's 12 back-to-back dry uses of a hostile script are held to the duty and a dry-run rate (they used to run unmetered, 6 s)", run(s) { cast(s);
       if (!D.setScriptDuty) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -561,7 +561,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const ms = performance.now() - t0; D.setScriptDuty({ maxMs: 1e9 });
       return { ms: Math.round(ms), rs }; },
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
-  { id: "I5", what: "review r2 #2: the door's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
+  { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
       for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { data: { xs: big } } } })) }, 6000); // under the byte rate
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -581,7 +581,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms) }; },
     good: (o) => o.r === "failed sandbox" && /died/.test(o.why) && o.ms < 400 },
-  { id: "I7", what: "review r2 (design note): fairness between worlds: one world's storm of short activations stops at its share of the door's second, so another world's script still runs in that second", run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2);
+  { id: "I7", what: "review r2 (design note): fairness between worlds: one world's storm of short activations stops at its share of the authority's second, so another world's script still runs in that second", run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2);
       if (!D.setScriptDuty) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 40 } });
@@ -610,7 +610,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|calm"]?.fails ?? 0, next: st(s, next) }; },
     good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" },
-  { id: "I9", what: "re-review: reads that keep the DOOR busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
+  { id: "I9", what: "re-review: reads that keep the AUTHORITY busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
     run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
@@ -620,7 +620,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|ask"]?.fails ?? 0 }; },
     good: (o) => o.r === "failed time" && o.ms < 650 && o.fails === 1 },
-  { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the door's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
+  { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the authority's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
     run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
       if (!D.setScriptDuty) return { absent: true };
       SB.warm(); Bun.sleepSync(800); D.setScriptDuty({ maxMs: DUTY0.maxMs, windowMs: DUTY0.windowMs });
@@ -808,7 +808,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 ];
 
 // ---------------- S: the real server ----------------
-const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the door's view", run: async () => {
+const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
   const W4 = path.join(root, "srv"); fs.mkdirSync(W4, { recursive: true });
   const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" };
   const f = Bun.spawnSync(["bun", "tools/v4/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env });

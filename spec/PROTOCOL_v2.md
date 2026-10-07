@@ -34,11 +34,11 @@ the world depends on carrying the engine; only watching the flight does.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
   change entries and its `sim` entries (launches, lifts, catches), run by
   the engine `@world.physics-engine` names. It owns what is in the air between a launch
-  and its rest. It never writes the log; the door does, from its own copy.
+  and its rest. It never writes the log; the authority does, from its own copy.
 
 A change entry whose `cause` is a launch IS that body's rest, and its value
 MUST equal where the engine has the body. A carrier checks this; a
-disagreement is evidence against the door, not a second truth.
+disagreement is evidence against the authority, not a second truth.
 
 ## 2. Covenant I — owned numerics
 
@@ -77,7 +77,7 @@ versioned in the log itself:
   `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
   `shared/v4/simlayer.js`; `bun run test:v4` recomputes it from the files
   and fails if they changed without a new name).
-- **Changing the engine is a cut**: the door refuses to change or delete
+- **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
@@ -99,7 +99,7 @@ The eidosim laws, each kept exactly as written:
   earliest contact resolved, so a fast body can't cross a thin wall
   between two tick endpoints.
 - **0.3.0 — the world's things are colliders.** Each thing's shape enters
-  the sim only as stamped by the door into the log (`physics.shape`, its
+  the sim only as stamped by the authority into the log (`physics.shape`, its
   measured box): a static's top is ground, its side is a wall.
 - **0.2.0 — terrain-aware ground** (`shared/terrainmath.js`).
 - **0.1.0 — ballistic flight** with bounces on a flat ground plane.
@@ -121,7 +121,7 @@ The eidosim laws, each kept exactly as written:
 ## 5. Covenant IV — tick-indexed time
 
 - Sim time is a dense tick counter of `tickMs` steps. The only clock is the
-  entries' `ts` (the door's admission time); wall clock never enters the
+  entries' `ts` (the authority's admission time); wall clock never enters the
   sim.
 - An intent takes effect at the **first tick boundary at or after its
   entry's `ts`**, by fixed quantization. Two implementations replaying the
@@ -148,7 +148,7 @@ A physics mod is an engine: a named, versioned implementation a world
 selects in `@world.physics-engine`. What it must be is exactly what §2–§5 say — owned
 numerics, no clock, no randomness, ordered iteration; its constants are its
 version; it reads only what is stamped in entries; it advances by ticks. To
-be carried, it registers beside eidosim in the door's engine table
+be carried, it registers beside eidosim in the authority's engine table
 (`ENGINES` in `shared/v4/simlayer.js`) with its build hash, and passes the
 same conformance (§8). An engine only the server carries would need the
 server to stream its state to clients as presence — never folded — while

@@ -1,12 +1,12 @@
-// tools/v4/directory-check.ts — the door directory (server/v4/directory.ts): who an identity is lives outside the log
+// tools/v4/directory-check.ts — the authority directory (server/v4/directory.ts): who an identity is lives outside the log
 // (§2.3), an id is reached only through an account, and typing someone's name yields nothing (round-2 review R1, R2).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/v4/directory-check.ts
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { directoryAt, isMinted } from "../../server/v4/directory.ts";
-import { openLive } from "../../server/v4/live.ts";
-import { request, actIndexOf, isBanned } from "../../shared/v4/door.js";
+import { openLive } from "../../server/v4/livehost.ts";
+import { request, actIndexOf, isBanned } from "../../shared/v4/authority.js";
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, what: string, why?: unknown) => { if (c) pass++; else { fail++; console.log(`  FAIL ${what}${why === undefined ? "" : ` — ${JSON.stringify(why).slice(0, 300)}`}`); } };
@@ -34,7 +34,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(again.resolve({ sub: "human:discord:111", name: "Annie" }) === ann && again.nameOf(twin) === "Annie", "D10 it survives a reopen");
   ok(JSON.stringify(again.names([ann, twin, "u-nobody"])) === JSON.stringify({ [ann]: "Annie", [twin]: "Annie" }), "D11 names() gives display names only (never accounts), skipping unknown ids"); }
 
-// ---- I: the door with directory ids (R2: a role is held by an id, never by a name) ----
+// ---- I: the authority with directory ids (R2: a role is held by an id, never by a name) ----
 { let T = 1800000000000; const d = directoryAt(file);
   const w: any = openLive(path.join(tmp, "worlds", "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const owner = d.resolve({ sub: "human:discord:111", name: "Annie" });
@@ -63,7 +63,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
     "K1 a founded world's genesis: tier 0 empty (custodial default, §2.4), the operator's governance key in tier 1, never the sequencer's key", g);
   const other: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
-  ok(!wr.ok && wr.refused?.code === "custody", "K2 a door that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
+  ok(!wr.ok && wr.refused?.code === "custody", "K2 an authority that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
@@ -178,9 +178,9 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", sun: 1.2, fill: 0.4, world: "earth", clock: "authored" };
   const m: any = { verb: "sky", args: panel };   // what the sky panel sends (client/lib/skypanel.js)
   const we: any = worldEditOps({ sky: null, terrain: null, grass: null }, { "weather.state": "rain" }, { now: T });
-  ok(we.ops.length === 1 && we.ops[0].verb === "weather" && we.ops[0].args.weather === "rain", "W1 edit @world plans the door's own tools (weather), never a v1 verb", we);
+  ok(we.ops.length === 1 && we.ops[0].verb === "weather" && we.ops[0].args.weather === "rain", "W1 edit @world plans the authority's own tools (weather), never a v1 verb", we);
   const r: any = request(w, own, m.verb, m.args); const sky = w.state().entities["@world"].c.sky;
-  ok(r.ok && sky.hours === 18 && sky.world === "earth" && Number.isInteger(sky.ts) && !("seq" in sky) && !("by" in sky), "W2 sky sets the sky, stamped with the door's clock, with no echo of who (R8)", [r.refused, sky]);
+  ok(r.ok && sky.hours === 18 && sky.world === "earth" && Number.isInteger(sky.ts) && !("seq" in sky) && !("by" in sky), "W2 sky sets the sky, stamped with the authority's clock, with no echo of who (R8)", [r.refused, sky]);
   const r2: any = request(w, own, "weather", { weather: "rain" }); const sky2 = w.state().entities["@world"].c.sky;
   ok(r2.ok && sky2.weather === "rain" && sky2.clouds === "cumulus" && sky2.world === "earth", "W3 weather merges onto the standing sky", [r2.refused, sky2]);
   ok(request(w, vis, "sky", panel).refused?.code === "rights", "W4 a visitor can't set the world's sky"); }
@@ -222,8 +222,8 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   let r: any = null, threw: any = null; try { r = request(w, "u-aaaaaaaaaaaaaaaaaaaa", "use", { id: "bell", action: "ring" }); } catch (e) { threw = String(e); }
   ok(!threw && r?.refused?.code === "no-runtime" && /bell's 'ring'/.test(r.refused.reason), "X1 using a translated script reaction refuses (no-runtime) and names the thing, instead of throwing", threw ?? r?.refused); }
 
-// ---- XB: a v1 ban survives translation as a ban the door enforces (component review, world-settings #3: it became a
-// state key the door never reads, so a translated world quietly unbanned everyone) ----
+// ---- XB: a v1 ban survives translation as a ban the authority enforces (component review, world-settings #3: it became a
+// state key the authority never reads, so a translated world quietly unbanned everyone) ----
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
@@ -231,7 +231,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
   const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
   const at = Object.keys(w.state().entities["@world"].c).find((k) => k.startsWith("imported-bans:")); const who = at?.slice("imported-bans:".length);
-  ok(!!who && isBanned(w, who) && w.mod.some((m: any) => m.verb === "ban" && m.who === who && m.reason === "spam"), "XB1 a v1 ban is a ban the door enforces after translation (filed in the moderator log, reason kept)", [at, w.mod]); }
+  ok(!!who && isBanned(w, who) && w.mod.some((m: any) => m.verb === "ban" && m.who === who && m.reason === "spam"), "XB1 a v1 ban is a ban the authority enforces after translation (filed in the moderator log, reason kept)", [at, w.mod]); }
 
 // ---- V: a visitor undoes their own use, under the use's capability (round-2 R11) ----
 { let T = 1800000000000; const d = directoryAt(file);

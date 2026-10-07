@@ -124,7 +124,7 @@ try {
     await pg.click(`#emenu-sub .mpin[data-pin="${id}"]`); await sleep(150);
   }
   // the HUD follows: a closed window's rail button, a glyph, the resting line — each shows iff pinned (open windows show anyway)
-  { await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+  { await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
     await sleep(300);
     for (const id of ['glyph:mic', 'lantern', 'world', 'search', 'edit']) {
       await pg.click(`#emenu-sub .mpin[data-pin="${id}"]`); await sleep(200);
@@ -158,7 +158,7 @@ try {
   }
 
   // HUD LAYOUT MODE (chat back on screen, so the shot shows a frame wearing its arrange chrome)
-  await pg.evaluate(async () => (await import('/lib/frames.js')).getFrame('chat')?.show());
+  await pg.evaluate(async () => (await import('/lib/windows.js')).getFrame('chat')?.show());
   await openPanels(pg);
   await pg.click('#emenu-sub .mrow[data-layout]'); await sleep(250);
   let s = await state(pg);

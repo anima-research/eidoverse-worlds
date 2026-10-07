@@ -320,7 +320,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    content, so the chrome has to get out of the way on the user's terms. */
 .frame {
   position: fixed; display: flex; flex-direction: column;
-  z-index: 10; /* must equal Z_LO in frames.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: frames.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
+  z-index: 10; /* must equal Z_LO in windows.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: windows.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
 }
 .fr-head {
   display: flex; align-items: center; gap: 6px;
@@ -876,7 +876,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 10px; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
-.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (frames.js fitTabStrip) the strip scrolls rather than clip */
+.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (windows.js fitTabStrip) the strip scrolls rather than clip */
 .pf-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
@@ -1040,11 +1040,11 @@ body.edit-mode canvas { cursor: crosshair; }
 #hintbar kbd { font-size: var(--fs-xs); }
 #hintbar.gone { opacity: 0; }
 
-/* ---- the lantern (lib/lantern.js): one line for talk, /commands and actions.
+/* ---- the lantern (lib/commandbar.js): one line for talk, /commands and actions.
    Ported from the HUD redesign mockups (the lantern direction, desktop and open).
    ONE element owns bottom-centre: the resting line. The hint bar borrows that same
    spot while it has something to say ("X — sit", a flash) and the line steps aside;
-   the open panel replaces it. --ln-x (lantern.js place()) is the shared axis: the
+   the open panel replaces it. --ln-x (commandbar.js place()) is the shared axis: the
    viewport centre, or the free span beside the chat compose box when centre would
    sit on it.
    z 38: over frames (≤25), the rail (27) and the frame rim (30); under the ∃
@@ -1067,12 +1067,12 @@ body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer 
 #lantern-pill:hover { color: var(--fg); }
 #lantern-pill.open { visibility: hidden; }
 /* HUD layout mode (owner, 10-01): the resting line is one more thing to arrange — dashed like the frames, grabbable
-   (lantern.js drags it, --ln-x/--ln-b); it shows even while the hint bar would borrow its spot */
+   (commandbar.js drags it, --ln-x/--ln-b); it shows even while the hint bar would borrow its spot */
 body.arranging:not(.ui-locked) #lantern-pill { cursor: grab; outline: 1px dashed rgb(255 255 255 / .3); outline-offset: 3px; }
 body.arranging:not(.ui-locked) #lantern-pill:active { cursor: grabbing; }
 body.arranging #hintbar { visibility: hidden; }
 body.arranging #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: visible; }
-/* unpinned in the ∃ menu, or put away with the panels by Esc (lantern.js paintRest): no resting line. Ctrl/Cmd+K
+/* unpinned in the ∃ menu, or put away with the panels by Esc (commandbar.js paintRest): no resting line. Ctrl/Cmd+K
    still opens the lantern; the hint bar sits on --ln-x on its own, so "panels hidden" still shows in this spot */
 #lantern-pill.unpinned, #lantern-pill.quiet { display: none; }
 #lantern-pill .lp-glyph { display: flex; color: var(--brand); }
@@ -1102,7 +1102,7 @@ body.arranging #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: vis
     0 0 30px color-mix(in srgb, var(--brand) 10%, transparent), 0 24px 60px rgb(0 0 0 / .55);
 }
 #lantern[hidden] { display: none; }
-/* a pill moved into the top half: the panel hangs down from it instead of growing off the top (lantern.js place) */
+/* a pill moved into the top half: the panel hangs down from it instead of growing off the top (commandbar.js place) */
 #lantern.down { top: var(--ln-t); bottom: auto; max-height: calc(100vh - var(--ln-t) - 12px); }
 #lantern .ln-head { display: flex; align-items: center; gap: 12px; height: 54px; flex: none; padding: 0 14px 0 18px;
   box-shadow: inset 0 -1px 0 var(--edge); }
@@ -1439,7 +1439,7 @@ body.photo #hudstatus, body.photo #stpop, body.photo #platecard { display: none 
 
 /* THE NAMEPLATE CARD (platecard.js): an in-world tooltip beside a person's nameplate — hover a plate 300 ms, or tap it
    on a touch screen. The status-chip popover's recipe in the neutral edge instead of amber: nothing here is a caveat.
-   z 9: a thing in the world, so every panel (frames.js Z_LO 10 … 25) and all chrome sit over it as it follows. */
+   z 9: a thing in the world, so every panel (windows.js Z_LO 10 … 25) and all chrome sit over it as it follows. */
 #platecard {
   position: fixed; z-index: 9; min-width: 150px; max-width: min(220px, calc(100vw - 16px)); box-sizing: border-box;
   padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); line-height: 1.35;
@@ -2381,7 +2381,7 @@ html.lite { --lite-x: max(0px, calc((100vw - 720px) / 2)); }
 #lite-emote-host .lite-emote { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
 /* the card spans the column under the bar, not the full client's narrow top-centre notice */
 html.lite #lite-banner { left: calc(var(--lite-x) + 8px); right: calc(var(--lite-x) + 8px); transform: none; max-width: none; }
-/* the chat fills everything below the bar (and the card while it's up): frames.js sizes frames inline, so these win with !important */
+/* the chat fills everything below the bar (and the card while it's up): windows.js sizes frames inline, so these win with !important */
 html.lite .frame.chat-frame {
   /* edge to edge (owner, 10-01: "seems silly to have a panel at all if that's all there is") */
   position: fixed !important; left: var(--lite-x) !important; right: var(--lite-x) !important; width: auto !important; max-width: none;
@@ -2389,7 +2389,7 @@ html.lite .frame.chat-frame {
   border-radius: 0; border-left: none; border-right: none; border-bottom: none; box-shadow: none;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* …and its insides follow: frames.js pins the body to the frame's stored height inline, which left the compose
+/* …and its insides follow: windows.js pins the body to the frame's stored height inline, which left the compose
    row floating mid-panel once the box stretched */
 html.lite .frame.chat-frame { display: flex; flex-direction: column; }
 html.lite .frame.chat-frame > .fr-body { height: auto !important; flex: 1 1 auto; min-height: 0; }
@@ -2477,7 +2477,7 @@ html.lite .frame.panel { max-width: 100%; }
   <!-- the mark drawn as geometry, not typed as a glyph: no font can vary it. This is the HAND-SET 24 px
        master (notes: logo small/mark-24.svg — 3 px arms and peg on whole pixels, wider doorways than the
        splash's master scaled down), its sphere clip baked into the two hook outlines so the drawing
-       carries no ids (the lantern copies this svg, lantern.js EMARK). The splash's #splash .sp-logo is
+       carries no ids (the lantern copies this svg, commandbar.js EMARK). The splash's #splash .sp-logo is
        the large master; the favicon (<head>) is the 32/16 px masters.
        The PEG is scaled straight from the big master (owner, 10-01): as thick as the arms (3.025 units), not the
        whole-pixel 2 it once was, which read thin beside the arms at every size; at 1x it lands on half pixels. -->

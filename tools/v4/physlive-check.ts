@@ -1,29 +1,29 @@
 // tools/v4/physlive-check.ts — physics as the RUNNING server holds it, and as a client folds it (design 20 on the client).
-// phys-check.ts runs the door over the lab catalogue's colliders (simFold's default MODELS); the live server passes
+// phys-check.ts runs the authority over the lab catalogue's colliders (simFold's default MODELS); the live server passes
 // simModels {} (geometry enters the sim only through the log, Covenant III), so a suite that only ever ran the lab
 // configuration never saw what a real world does. usage: bun tools/v4/physlive-check.ts
-//   S   shapes: the door stamps physics.shape (its own measurement) so a thrown thing flies in a live world; statics too
+//   S   shapes: the authority stamps physics.shape (its own measurement) so a thrown thing flies in a live world; statics too
 //   K   punt: the kick that physobj offered, as a door tool (reach, rights, locks, in the air, no physics)
 //   R   release pose: throw/drop take the hand's pos (what a VR or desktop hand holds), checked for reach
 //   Q   one clock per request: a rest's digest agrees with any carrier re-folding the log, even when the wall clock moves
-//   F   the client's fold (shared/v4/client.js): adopt a cut (mid-flight too), fold the door's entries, and its own
-//       presentation flight comes to rest bit for bit where the door logs the rest
+//   F   the client's fold (shared/v4/replica.js): adopt a cut (mid-flight too), fold the authority's entries, and its own
+//       presentation flight comes to rest bit for bit where the authority logs the rest
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request } from "../../shared/v4/door.js";
+import { request } from "../../shared/v4/authority.js";
 import { readLog, fold, opsOf } from "../../shared/v4/fold.js";
 import { simFold, restsOf } from "../../shared/v4/simlayer.js";
-import { makeV4Client } from "../../shared/v4/client.js";
-import { openLive } from "../../server/v4/live.ts";
-import { clientCutOf } from "../../shared/v4/client.js";
+import { makeV4Client } from "../../shared/v4/replica.js";
+import { openLive } from "../../server/v4/livehost.ts";
+import { clientCutOf } from "../../shared/v4/replica.js";
 
 const root = scratch("physlive");
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 500)}` : ""}`); } };
 const code = (r: any) => r?.refused?.code;
 let N = 0;
-/** A live world (server/v4/live.ts) as the server opens it: no simModels, so the lab catalogue's colliders don't count.
+/** A live world (server/v4/livehost.ts) as the server opens it: no simModels, so the lab catalogue's colliders don't count.
  *  clock: "pinned" moves only when the test steps it; "ticking" also advances 1 ms on every read (a real wall clock). */
 function live(clock = "pinned") {
   const dir = `${root}w${++N}/`; fs.mkdirSync(dir, { recursive: true });
@@ -31,7 +31,7 @@ function live(clock = "pinned") {
   const w = openLive(dir, `w${N}`, { now: () => (clock === "ticking" ? ++now : now), custodyFile: `${root}custody.json`, nameOf: () => null, kindOf: () => "human" });   // lab names are known people (roles:<key> asks the directory)
   const call = (actor, tool, args = {}, step = 100) => { now += step; return request(w, actor, tool, args); };
   const L = () => readLog(fs.readFileSync(dir + "v4.jsonl"));
-  // walk there the way the door tracks a body: steps of at most 3.5 m, a second apart
+  // walk there the way the authority tracks a body: steps of at most 3.5 m, a second apart
   const walk = (actor, to) => { for (let i = 0; i < 40; i++) { const at = w.presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });
     const d = Math.hypot(to[0] - at[0], to[2] - at[2]); if (d < 1e-9) return { ok: true }; const k = Math.min(1, 3.5 / d);
     const r = call(actor, "move", { to: [at[0] + (to[0] - at[0]) * k, to[1], at[2] + (to[2] - at[2]) * k] }, 1000); if (!r.ok) return r; } };
@@ -53,7 +53,7 @@ function playground(clock = "pinned") {
 {
   const { call, w, L } = playground();
   const ph = w.state().entities.ball.c.physics;
-  ok(Array.isArray(ph?.shape) && ph.shape.length === 2 && ph.kind === "dynamic", "S1 a dynamic thing gets the door's measured shape", ph);
+  ok(Array.isArray(ph?.shape) && ph.shape.length === 2 && ph.kind === "dynamic", "S1 a dynamic thing gets the authority's measured shape", ph);
   const tb = w.state().entities["table-1"].c.physics;
   ok(tb?.kind === "static" && Array.isArray(tb.shape), "S2 a thing made in a world that runs physics is a static collider (shape stamped)", tb);
   ok(call("rowan", "grab", { id: "ball" }).ok && call("rowan", "throw", { id: "ball", v: [0, 2, 3] }).ok, "S3 grab and throw accepted");
@@ -67,7 +67,7 @@ function playground(clock = "pinned") {
   // a model change re-stamps; physics written without a model has no shape (and a throw of it says why instead of silently not flying)
   call("rowan", "create", { id: "crate-9", model: "crate", components: { physics: { kind: "dynamic", shape: [[0, 0, 0], [9, 9, 9]] } }, place: { at: [3, 0] } });
   const c9 = w.state().entities["crate-9"].c.physics;
-  ok(c9.shape && c9.shape[1][0] !== 9, "S7 a shape sent by the asker is replaced by the door's measurement (Covenant III)", c9);
+  ok(c9.shape && c9.shape[1][0] !== 9, "S7 a shape sent by the asker is replaced by the authority's measurement (Covenant III)", c9);
   const before = JSON.stringify(c9.shape);
   call("rowan", "set", { id: "crate-9", component: "model", value: "ball" });
   ok(JSON.stringify(w.state().entities["crate-9"].c.physics.shape) !== before, "S8 changing its model re-stamps its shape", w.state().entities["crate-9"].c.physics);
@@ -188,14 +188,14 @@ function playground(clock = "pinned") {
   call("rowan", "grab", { id: "ball" }); call("rowan", "throw", { id: "ball", v: [0.4, 2.5, 3] });
   for (let i = 0; i < 40; i++) call("rowan", "look", {}, 97);
   const v = simFold(L(), Date.now() + 1e9, { models: {} });
-  ok(restsOf(L()).length === 1 && !v.checks.disagree.length && v.checks.agree === 1, "Q1 with a wall clock that moves during a request, a carrier re-folding the log agrees with the door's digest and rest", v.checks);
+  ok(restsOf(L()).length === 1 && !v.checks.disagree.length && v.checks.agree === 1, "Q1 with a wall clock that moves during a request, a carrier re-folding the log agrees with the authority's digest and rest", v.checks);
   const LL = L(); const one = LL.map((e, i) => [e, i]).filter(([e]) => e?.kind === "sim" && e.verb === "digest").map(([e, i]) => [e.ts, LL[i + 1]?.ts]);
   ok(one.every(([a, b]) => a === b), "Q2 a digest and its rest carry one timestamp (the request's)", one);
 }
 
 // ---- F: the client's fold ----
 {
-  // a world, a cut taken mid-flight (as the server's clientCut would be), then the door's later entries folded in
+  // a world, a cut taken mid-flight (as the server's clientCut would be), then the authority's later entries folded in
   const { call, w, L, at } = playground("ticking");
   call("rowan", "grab", { id: "ball" }); call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] });
   const pre = call("rowan", "look", {}, 120);
@@ -214,14 +214,14 @@ function playground(clock = "pinned") {
   ok(last?.resting, "F3 …and it comes to rest", last);
   const from2 = x.L().length; x.call("rowan", "wait", {}, 6000); early.ingest(x.L().slice(from2), from2);
   const restX = restsOf(x.L()).at(-1);
-  ok(restX && JSON.stringify(last.p) === JSON.stringify(restX.at), "F4 the client's flight rests bit for bit where the door logs the rest", [last?.p, restX?.at]);
-  ok(early.sim?.checks?.agree === 1 && !early.sim.checks.disagree.length, "F5 the client's canonical fold agrees with the door's digest and rest (L3)", early.sim?.checks);
+  ok(restX && JSON.stringify(last.p) === JSON.stringify(restX.at), "F4 the client's flight rests bit for bit where the authority logs the rest", [last?.p, restX?.at]);
+  ok(early.sim?.checks?.agree === 1 && !early.sim.checks.disagree.length, "F5 the client's canonical fold agrees with the authority's digest and rest (L3)", early.sim?.checks);
   // the mid-flight joiner
   const from3 = L().length - 0; const before = L().length;
   call("rowan", "wait", {}, 6000);
   const rest = restsOf(L()).at(-1);
   let jl = null; for (let t = 0; t < 400; t++) { const b = c.simAt?.(at() - 6000 + t * 33)?.bodies?.ball; if (b) jl = b; }
-  ok(jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "F6 a client that joined mid-flight flies the rest of it and rests bit for bit where the door does", [jl?.p, rest?.at]);
+  ok(jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "F6 a client that joined mid-flight flies the rest of it and rests bit for bit where the authority does", [jl?.p, rest?.at]);
   c.ingest(L().slice(before), before);
   ok(c.sim?.checks && !c.sim.checks.disagree.length, "F7 …and its canonical fold (from the cut) raises no disagreement", c.sim?.checks);
   ok(JSON.stringify(c.st?.entities?.ball?.c.transform.pos) === JSON.stringify(rest?.at), "F8 …and its state holds the logged rest", c.st.entities.ball.c.transform);

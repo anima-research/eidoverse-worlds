@@ -40,10 +40,10 @@ for (const t of ["test_v4read.py", "test_chain.py"]) {
 const drift = files.filter((f) => fs.readFileSync(here + f, "utf8") !== before.get(f));
 if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
 // The engine's OWN output against the spec's readers (review F1, 2026-10-05: the conformance run checked the lab's
-// logs but never what this door writes). Found a world through the engine door, write a few kinds of request, then
+// logs but never what this server writes). Found a world through the engine authority, write a few kinds of request, then
 // the reference reader must say ok with 0 malformed, the Python chain verifier must accept every head and signature,
 // and a value altered after the fact must break the chain.
-{ const { openLive } = await import("../../server/v4/live.ts"); const { request } = await import("../../shared/v4/door.js");
+{ const { openLive } = await import("../../server/v4/livehost.ts"); const { request } = await import("../../shared/v4/authority.js");
   const os = await import("node:os"); const path = await import("node:path");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "v4-engine-conf-")); let T = 1800000000000;
   const w: any = openLive(path.join(tmp, "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json") });
@@ -54,7 +54,7 @@ if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${dri
   const ch = JSON.parse(py([here + "chain.py", "verify", log]).stdout.toString());
   fs.writeFileSync(log + ".t", text.replace("probe-value", "probe-valuf")); const bad = JSON.parse(py([here + "chain.py", "verify", log + ".t"]).stdout.toString());
   const checks: [boolean, string, unknown][] = [
-    [rs.every((r: any) => r.ok), "the engine door admitted every probe request", rs.map((r: any) => r.refused?.code ?? "ok")],
+    [rs.every((r: any) => r.ok), "the engine authority admitted every probe request", rs.map((r: any) => r.refused?.code ?? "ok")],
     [rd.status === "ok" && !(rd.diagnostics ?? []).some((d: any) => String(d).includes("malformed")), "the reference reader reads the engine's own log as ok, 0 malformed", rd.status],
     [ch.status === "ok" && ch.unsigned_tail === 0 && ch.last_signed === text.trimEnd().split("\n").length - 1, "the chain verifier accepts every head and signature the engine wrote", ch],
     [(() => { const salted = (x: any) => typeof x?.salt === "string" && /^[A-Za-z0-9_-]{22}$/.test(x.salt);

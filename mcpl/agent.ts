@@ -44,12 +44,12 @@ import { isFiniteVec3 } from "./shape.ts";
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
-// the world: this process folds the door's own stream and reads the VIEW of that fold, like the browser
-import { makeV4Client } from "../shared/v4/client.js";
+// the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
+import { makeV4Client } from "../shared/v4/replica.js";
 import { diffView } from "../shared/v4/viewdiff.js";
-import { emptyView, idOut } from "../shared/v4/record.js";
+import { emptyView, idOut } from "../shared/v4/view.js";
 import { hear } from "../shared/chatwindow.js";
-import * as OP from "../shared/v4/ops.js";
+import * as OP from "../shared/v4/requests.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -203,7 +203,7 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
-  /** The VIEW of this body's own fold of the world (shared/v4/record.js viewState over shared/v4/client.js), plus the
+  /** The VIEW of this body's own fold of the world (shared/v4/view.js viewState over shared/v4/replica.js), plus the
    *  chat window. The maps below are DERIVED VIEWS reconciled from it after every change; side effects (percepts,
    *  supports, pings) run in a separate pass that never touches it. */
   private st: any = emptyView();
@@ -243,13 +243,13 @@ export class WorldAgent {
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
   /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
    *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
-   *  an agent, the primary IS this door. So an agent with a local synthesizer
+   *  an agent, the primary IS this server. So an agent with a local synthesizer
    *  could not publish at all: its sidecar has the audio and no credential, the
    *  door has the credential and no audio.
    *
    *  Same shape as #100's fix, one layer out: rather than forcing the agent onto
    *  a raw world-ws side connection (which is what my media-peer was, and it
-   *  landed on the MESH while everyone else was on the SFU), the door forwards
+   *  landed on the MESH while everyone else was on the SFU), the authority forwards
    *  the media-signalling frames it is the only one authorized to carry. The
    *  door NEVER synthesizes, encodes, or holds a peer connection — it relays
    *  four message types and stays a text-tier participant.
@@ -375,7 +375,7 @@ export class WorldAgent {
     this.onEvent?.(ev);
   });
   /** The activity sense is the agent's own to tune (persisted per-agent by
-   *  the door; see net-server's `activity` tool). Instance values start at
+   *  the authority; see net-server's `activity` tool). Instance values start at
    *  the world defaults. */
   activityRadiusM = ACTIVITY_RADIUS_M;
   private activityPulseMs = ACTIVITY_PULSE_MS;
@@ -422,7 +422,7 @@ export class WorldAgent {
   /** The world's protocol facts, from the snapshot (version 4, its head and world id). Building tools route through
    *  request()/verbV4() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
   v4: { version: number; head: number; worldId: string } | null = null;
-  /** The world's own fold, from the join cut and the authority's `log` stream (shared/v4/client.js). */
+  /** The world's own fold, from the join cut and the authority's `log` stream (shared/v4/replica.js). */
   private v4c: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
   private spelling: Promise<unknown> = Promise.resolve();
@@ -671,7 +671,7 @@ export class WorldAgent {
           // after both sides reconnect nobody hears anybody and nothing errors.
           case "surface-transition":
           // 🔴 ADDED 2026-08-16 — the server broadcasts both of these to every
-          // client and the door dropped them on the floor, so an agent could
+          // client and the authority dropped them on the floor, so an agent could
           // not learn that its own voice had degraded or that a moderator had
           // silenced it. Both are facts ABOUT THIS IDENTITY's audio, which is
           // exactly what the media lane carries.
@@ -729,7 +729,7 @@ export class WorldAgent {
             }
             this.restoredPose = true;
             for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.v4ids.set(p.id, p.v4id); }
-            // adopt the door's cut and read the view of this body's own fold of it; the snapshot's `state` is the
+            // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
             if (!(msg as any).v4?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
             this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
@@ -996,7 +996,7 @@ export class WorldAgent {
    *  a long per-person refractory on top, and — since 2026-08-26 — DWELL.
    *
    *  The first three all suppress REPEATS. None of them could tell a knock
-   *  from someone crossing your bubble on the way to the door, so the event
+   *  from someone crossing your bubble on the way to the authority, so the event
    *  did not mean what declaration.ts promised it meant: "walked up to your
    *  body AND STOPPED within arm's reach". Now the crossing only opens a
    *  pending approach; delivery waits for stillness (see stepApproach).
@@ -1241,8 +1241,8 @@ export class WorldAgent {
   blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
     return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
-  /** This world's blueprints from the v4 fold: @world blueprints:<hash> → {name, parts?} (the door's publish). */
-  /** a placed copy (or one of its parts) says which blueprint it is: the door stamps copy-of {from, key} on every
+  /** This world's blueprints from the v4 fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
+  /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every
    *  part; the copy is the part whose parent isn't of the same copy */
   copyLineV4(id: string): string | null {
     const E = this.st.entities as Record<string, any>; const f = E[id]?.comp?.["copy-of"]?.from; if (typeof f !== "string") return null;
@@ -1712,7 +1712,7 @@ export class WorldAgent {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
     // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
-    // every renderer draws (shared/v4/client.js simAt, advanced to the door's clock) — so look() sees a punted crate
+    // every renderer draws (shared/v4/replica.js simAt, advanced to the authority's clock) — so look() sees a punted crate
     // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
     const sim = this.v4c?.simAt?.(this.serverNow());
     if (sim?.bodies) {
@@ -2528,7 +2528,7 @@ export class WorldAgent {
   }
   /** present people's v4 identities, by display name (their arrival carries it) */
   v4ids = new Map<string, string>();
-  /** A gesture's ops (shared/v4/ops.js) as ONE request — one act, the authority's answer — sent after the previous one
+  /** A gesture's ops (shared/v4/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
    *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
@@ -2540,7 +2540,7 @@ export class WorldAgent {
   }
 
   // ---- moderation ----
-  // Per-world kick/ban/unban are door requests (door()). These are the extra
+  // Per-world kick/ban/unban are requests (door()). These are the extra
   // plumbing: the server's own moderation messages, and a way to hear the
   // world's answer.
 
@@ -2548,7 +2548,7 @@ export class WorldAgent {
   lastRefusal: { ts: number; text: string } | null = null;
   lastMod: { ts: number; text: string } | null = null;
 
-  /** Moderation messages that aren't door requests: 'world-bans' (list this
+  /** Moderation messages that aren't requests: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
@@ -2557,7 +2557,7 @@ export class WorldAgent {
   }
 
   /** Ask the world to mint this identity's media credential (#104 phase-1).
-   *  Only the embodied primary may — which is this door. The answer arrives as
+   *  Only the embodied primary may — which is this server. The answer arrives as
    *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
   requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
@@ -2565,7 +2565,7 @@ export class WorldAgent {
   }
 
   /** Carry ONE media-signalling frame from the sidecar to the world. Whitelisted
-   *  by type for #100's reason — the door must not become a general tunnel into
+   *  by type for #100's reason — the authority must not become a general tunnel into
    *  the sequencer, and server-side validation stays the single authority.
    *  Payload shape is deliberately NOT inspected here: SDP and ICE are the
    *  server's to validate, and a door that parsed them would be a second,
@@ -2575,13 +2575,13 @@ export class WorldAgent {
     const t = String(frame?.type ?? "");
     // `voice-consent` is the LISTENER half: the world requires it from the
     // primary (server.ts refuses a spectator and keys on c.id/c.gen), so an
-    // agent that wants to HEAR must send it through this door too. It carries
-    // no audio and no identity claim beyond the one the door already holds —
+    // agent that wants to HEAR must send it through this server too. It carries
+    // no audio and no identity claim beyond the one the authority already holds —
     // it is a boolean about our own ears.
     //
     // 🔴 `voice-moderate` is DELIBERATELY NOT HERE (2026-08-16). It silences a
     // speaker for EVERYONE and needs owner rank — a moderation act, not media.
-    // The door already exposes moderation as first-class tools (kick/ban), which
+    // The authority already exposes moderation as first-class tools (kick/ban), which
     // go through the verb path with its rights check and its `mod` confirmation.
     // Letting it ride the media lane would give a SIDECAR — a process holding a
     // peer connection, not an identity — the ability to mute people, which is
@@ -2621,7 +2621,7 @@ export class WorldAgent {
       args.utt = extra.utt;
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
-    // a door request like every other write. The spoken trio rides it (the door validates it again and clamps t0)
+    // a request like every other write. The spoken trio rides it (the authority validates it again and clamps t0)
     return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
@@ -3153,7 +3153,7 @@ export class WorldAgent {
         if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
-      // what a hand may do with it (shared/grab.js: the door's own reader, so a dynamic thing with no grabbable counts)
+      // what a hand may do with it (shared/grab.js: the authority's own reader, so a dynamic thing with no grabbable counts)
       { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${e.id}"}}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that
@@ -3164,7 +3164,7 @@ export class WorldAgent {
       if (c.particles) aff.push(describeParticles(c.particles));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
-      // batch 2: a story, a sign, a picture, a sound and a look-at say what they say through the ONE describer the door's
+      // batch 2: a story, a sign, a picture, a sound and a look-at say what they say through the ONE describer the authority's
       // look uses (shared/says.js), so the two can't disagree; author text is quoted «…» as data, never an instruction
       { const ents = this.st.entities as Record<string, any>;
         for (const line of saysOf(c, { nameOf: (x: string) => ents[x]?.comp?.label ?? x, now: Date.now() })) aff.push(line); }
@@ -3176,7 +3176,7 @@ export class WorldAgent {
       // A sound is named by what its author SAID is playing, and whether it
       // is — never by the audio. The radio's music player; captions (#187)
       // on the same entity say the words.
-      // locked = nailed down: the door refuses every move/replace/remove on
+      // locked = nailed down: the authority refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: act {verb: "delete", args: {id, component: "lock"}}; or act through it with throughLock: true)`);
       if (c.hidden === true) aff.push(`hidden (not drawn; act {verb: "delete", args: {id, component: "hidden"}} shows it)`);

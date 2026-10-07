@@ -8,7 +8,7 @@
 import { renderer } from './core.js';
 import { bus } from './base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
-import { makeFrame } from './frames.js';
+import { makeFrame } from './windows.js';
 
 let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve}
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)

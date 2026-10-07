@@ -8,7 +8,7 @@ import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, mintId, type Entry } from "../../../server/v4/directory.ts";
 import { agentTokens } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/v4/custody.ts";
-import { seal } from "../../../shared/v4/door.js";
+import { seal } from "../../../shared/v4/authority.js";
 import { readLog, fold, digest } from "../../../shared/v4/fold.js";
 import { translate } from "./translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
@@ -21,8 +21,8 @@ export function translateV1World(srcDir: string, destDir: string) {
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "v4.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  // the sequencer key is this door's (the custody file every world in this worlds dir shares, server/v4/custody.ts)
-  // identities (round-2 review R1): every v1 person becomes an opaque id in the door directory; an account seen in the
+  // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/v4/custody.ts)
+  // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the
   // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
   // directory only after the log is: a failed translation leaves no identities behind.
   const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
@@ -34,7 +34,7 @@ export function translateV1World(srcDir: string, destDir: string) {
     const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
     const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
     const key = acct ?? `name:${name}`;
-    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this door
+    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this server
     if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "imported", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
     memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
@@ -47,7 +47,7 @@ export function translateV1World(srcDir: string, destDir: string) {
   const cust = custodyAt(path.join(path.dirname(destDir), ".v4-custody.json"));
   const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
-  // salted and signed like every line the door writes (§2.4; round-2 review R3): a translated world is a chained log
+  // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
   const back = fold(readLog(text));
@@ -58,7 +58,7 @@ export function translateV1World(srcDir: string, destDir: string) {
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "v4.jsonl"));
   dir.put(planned);
-  // v1 bans are the moderator's record in v4 (the door reads bans only from v4.mod.jsonl): file each one there, or a
+  // v1 bans are the moderator's record in v4 (the authority reads bans only from v4.mod.jsonl): file each one there, or a
   // translated world quietly unbans everyone (component review, world-settings #3)
   const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
   if (banned.length) { const m = modLogAt(path.join(destDir, "v4.mod.jsonl"));

@@ -14,7 +14,7 @@
 // Plus: her four dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world/flight divergences; every
 // launch rests where hers rests, re-checked by a carrier; deterministic; strict read-back clean); the sim build pin;
 // the hash shim (native = portable = the reference vectors).
-import { schemaRefusal } from "../../shared/v4/door.js";
+import { schemaRefusal } from "../../shared/v4/authority.js";
 import { hexColor } from "./import-v1/translate-v1.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -212,11 +212,11 @@ for (const p of logs.sort()) {
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
     else if (e.kind === "change") applyInPlace(v4, opsOf(e), s); }
   compareAt(k); if (loss) lossy++;
-  // the door takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
+  // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
   { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.v4)) for (const [k, v] of Object.entries<any>(comps)) {
       const why = schemaRefusal(k, v); if (why) bad.push(`${id}.${k}: ${why}`); }
-    check(`${name}: the door's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }
+    check(`${name}: the authority's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));
 }
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);

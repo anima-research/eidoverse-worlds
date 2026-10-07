@@ -1,17 +1,17 @@
 // server/v4/solids.ts — a model's solid parts, measured from its triangles (review 10-06 S0-3: nobody could walk into a
-// building, because the door took each model's ONE bounding box as solid).
+// building, because the authority took each model's ONE bounding box as solid).
 //
-// The door already reads a catalogue entry's `solids` (boxes in the model's frame; shared/v4/door.js obbs): the lab's
+// The authority already reads a catalogue entry's `solids` (boxes in the model's frame; shared/v4/authority.js obbs): the lab's
 // shelf and swing frame are hand-written that way. This measures them for a library model, from the same triangles the
 // client renders:
 //   1. surface voxels: every triangle is sampled densely enough that no cell it crosses is missed; each cell keeps the
 //      tight bounds of the geometry inside it (a floor slab's cell ends at the floor's top, not the cell's);
 //   2. the outside: empty cells reachable from the box's boundary (6-connected) are outside. Empty cells NOT reachable
-//      are enclosed (a crate's inside, a closed hut's) and count as solid: a door can't take a body into a closed box.
+//      are enclosed (a crate's inside, a closed hut's) and count as solid: an authority can't take a body into a closed box.
 //      A house with a doorway is reached through it, so its rooms stay open;
 //   3. the solid cells are merged greedily into boxes (x, then z, then y), each the union of its cells' bounds.
 // Only models with room for a body inside them are measured (at least minHeight tall and minSpan across): furniture
-// and props keep their bounding box, as does anything past the limits (null): conservative, and what the door did before.
+// and props keep their bounding box, as does anything past the limits (null): conservative, and what the authority did before.
 type V3 = [number, number, number];
 export const SOLIDS = { minHeight: 2, minSpan: 2, maxBoxes: 128, maxCells: 160_000, maxSamples: 6_000_000, cellsAcross: 32, minCell: 0.08 };
 

@@ -70,7 +70,7 @@ and mount alongside the shipped chrome. These class names are part of the
 contract — they are what a mod matches on, so they will not change without a
 note here:
 
-    frame panel              every frame's root (frames.js)
+    frame panel              every frame's root (windows.js)
     chat-cols                the chat frame's column pair
     chat-side                the people pane
     chat-side-tog            its collapse toggle

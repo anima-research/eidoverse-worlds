@@ -6,7 +6,7 @@
 //   1. every shared/v4 module a client runs imports (fold, hash, catalogue, toolspec, simlayer, door, names, record, …);
 //   2. the page hashes with the portable sync sha256 (no Bun there), and agrees with bun's native hasher;
 //   3. the lab cottage folds to the lab's digest;
-//   4. the door, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
+//   4. the authority, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
 // usage: bun tools/v4/browser-check.ts   (CHROME=<path> to pick a browser build)
 import fs from "node:fs";
 import { chromium } from "playwright";
@@ -14,20 +14,20 @@ import { ENGINE } from "./common.ts";
 import { sha256 } from "../../shared/v4/hash.js";
 
 const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b";
-const MODS = ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "names", "record", "client", "ops", "refusal"];
+const MODS = ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
 
 // the work, as one function that runs unchanged in bun and in the page (only the import base differs)
 const work = async (base: string, texts: { cottage: string }) => {
   const imp = (m: string) => import(`${base}/shared/v4/${m}.js`);
   const loaded: Record<string, boolean> = {};
   const M: Record<string, any> = {};
-  for (const m of ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "names", "record", "client", "ops", "refusal"]) {
+  for (const m of ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"]) {
     try { M[m] = await imp(m); loaded[m] = true; } catch (e) { loaded[m] = false; M[m] = String(e); }
   }
   const { readLog, fold, digest } = M.fold;
   const H = M.hash.sha256;
   const st = fold(readLog(texts.cottage));
-  // the door over in-memory storage, clock pinned
+  // the authority over in-memory storage, clock pinned
   let T = 1800000000000; const lines: string[] = []; const blobs = new Map<string, string>();
   const io = { name: "mem", entries: [] as any[], now: () => T, writeLine: (l: string) => { lines.push(l); },
     getBlob: (h: string) => { const s = blobs.get(h); if (s === undefined || `sha256:${H(s)}` !== h) throw new Error("missing"); return JSON.parse(s); },
@@ -36,11 +36,11 @@ const work = async (base: string, texts: { cottage: string }) => {
     // seeded bytes for genesis's nonce and every set's salt: both sides draw the same, so the logs compare byte for byte
     random: (() => { let k = 0; return (n: number) => Uint8Array.from({ length: n }, () => (k = (k * 1103515245 + 12345) >>> 0) >>> 24); })(),
     custody: { sequencer: () => "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", operator: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", keyOf: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0" } };
-  const w = M.door.worldOf(io);
+  const w = M.authority.worldOf(io);
   const reqs: [string, string, any][] = [["olive", "create-world", { title: "mem" }], ["olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }],
     ["bob", "create", { id: "table-1", model: "table", place: { at: [0, 0] } }], ["bob", "create", { id: "crate-1", model: "crate", place: { on: "table-1" } }],
     ["olive", "set", { id: "table-1", component: "lock", value: true }], ["bob", "delete", { id: "table-1" }], ["bob", "undo", {}]];
-  const results = reqs.map(([a, t, x]) => { T += 100; const r = M.door.request(w, a, t, x); return r.ok ? "ok" : `refused ${r.refused?.code}`; });
+  const results = reqs.map(([a, t, x]) => { T += 100; const r = M.authority.request(w, a, t, x); return r.ok ? "ok" : `refused ${r.refused?.code}`; });
   return { loaded, portable: H === M.hash.sha256Portable, abc: H("abc"), cottage: st.status === "ok" ? digest(st) : st.status,
     door: { results, log: H(lines.join("\n")), n: lines.length } };
 };
@@ -86,11 +86,11 @@ try {
     ["door results", JSON.stringify(here.door.results), JSON.stringify(there.door.results)], ["door log", here.door.log, there.door.log]];
   for (const [k, a, b] of cmp) { console.log(`${a === b ? "same" : "DIFF"} ${k.padEnd(16)} bun ${String(a).slice(0, 64)}${a === b ? "" : `  page ${String(b).slice(0, 64)}`}`); if (a !== b) fails.push(`${k} differs`); }
   if (here.cottage !== LAB_DIGEST) fails.push("cottage digest is not the lab's");
-  if (here.door.n < 8 || !here.door.results.includes("ok")) fails.push(`the door scenario wrote too little (${here.door.n} lines)`);
+  if (here.door.n < 8 || !here.door.results.includes("ok")) fails.push(`the authority scenario wrote too little (${here.door.n} lines)`);
   console.log(`door: ${here.door.results.join(", ")} (${here.door.n} lines)`);
 } catch (e: any) { fails.push(`probe: ${e.message}`); }
 finally { try { await browser?.close(); } catch {} server.stop(true); }
 for (const e of errors) { console.log(e); fails.push("page reported an error"); }
 for (const f of fails) console.log(`FAIL ${f}`);
-console.log(fails.length ? `browser: ${fails.length} failed` : `browser: ${MODS.length} modules import in the page; hash, fold and the door agree with bun byte for byte`);
+console.log(fails.length ? `browser: ${fails.length} failed` : `browser: ${MODS.length} modules import in the page; hash, fold and the authority agree with bun byte for byte`);
 process.exit(fails.length ? 1 : 0);

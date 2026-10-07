@@ -1,5 +1,5 @@
 // openable — a thing that opens and closes when someone uses it (R 10-07: the behaviour, not the asset: a door, a
-// gate, a lid, a hatch; shared/v4/catalogue.js `openable`). The log holds its STATE (open: true/false); every client
+// gate, a lid, a hatch; shared/v4/componentspec.js `openable`). The log holds its STATE (open: true/false); every client
 // tweens toward it over `time` seconds, the conventional door (Unity/Godot/Roblox recipes, Unreal's door timeline): a
 // turn of `angle` about `axis` through the thing's pivot, or a slide of `slide` in its own frame. The tween is
 // presentation, never logged: a late joiner draws it as it is, with no swing. A part (`part`) moves instead of the whole

@@ -2,7 +2,7 @@
 // Each thing lives in exactly one place (research §7):
 //   MODERATION (dock: a shield; shown only while you hold mute, kick, ban or pauseScripts — it follows your-rights)
 //     Bans     bans in force, then mutes, kicks cooling down and ghosts, each with its lift where you may; ended bans
-//              collapsed. Lifting follows the door's rule (an owner, the author, or someone who outranks the author).
+//              collapsed. Lifting follows the authority's rule (an owner, the author, or someone who outranks the author).
 //     Log      the moderator log, newest first, with role changes merged in; a person filter and verb chips; older.
 //     Scripts  every script here: thing, name, sponsor, status, who paused it, Pause / Resume where you may.
 //   WORLD SETTINGS (dock: a flag; everyone reads, owners edit; editWorld holders edit Card and Places)
@@ -34,7 +34,7 @@ async function act(verb, args, what, refresh) {
   if (r?.ok) toast(`${what}: done`, 'info'); else toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   await refresh?.(); return r;
 }
-/** May I lift this record? (the door's rule, mirrored for drawing the button; the door decides) */
+/** May I lift this record? (the authority's rule, mirrored for drawing the button; the authority decides) */
 const mayLift = (rec, power, strict = true) => { if (!has(power)) return false; if (isOwner() || rec.actor === me().id) return true; const a = rankOfId(rec.actor); return strict ? me().rank > a : me().rank >= a; };
 
 // ---------------------------------------------------------------- Moderation
@@ -46,7 +46,7 @@ async function paintBans(body) {
   const r = await requestV4('bans', {});
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the ban list")}</p>`; return; }
   const now = r.now ?? [];
-  // names from the door's reply (its directory knows absent people; this page knows only who is here)
+  // names from the authority's reply (its directory knows absent people; this page knows only who is here)
   const named = new Map([...now.map((x) => [x.who, x.name]), ...(r.ended ?? []).map((m) => [m.who, m.name])]);
   const nm = (id) => named.get(id) ?? nameOf(id);
   const row = (who, rec, kind, lift) => `<div class="rp-row" data-who="${esc(who)}"><div class="rp-main"><b>${esc(nm(who))}</b>${badge(who)} <span class="rp-dim">${esc(kind)}</span></div>`

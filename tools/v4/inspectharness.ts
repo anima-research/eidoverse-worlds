@@ -1,10 +1,10 @@
 // tools/v4/inspectharness.ts — the client's edit path (client/lib/inspect.js → v4edit.js) headless, against the REAL
-// door on a scratch v4 world (tools/v4/scratchdoor.ts). Import this BEFORE importing client/lib/inspect.js: it
+// door on a scratch v4 world (tools/v4/scratchworld.ts). Import this BEFORE importing client/lib/inspect.js: it
 // registers the Bun plugin that stubs the page around them. What is real: inspect.js, v4edit.js (send, expect, the
-// lock dialog's three answers, undo/redo by act), the shared planners, the door. What is stubbed, from client/lib:
-//   net.js     requestV4 → the scratch door, as the signed-in person `actor`; v4.st = the door's v4 state (kept in
+// lock dialog's three answers, undo/redo by act), the shared planners, the authority. What is stubbed, from client/lib:
+//   net.js     requestV4 → the scratch door, as the signed-in person `actor`; v4.st = the authority's v4 state (kept in
 //              sync after every request, as the live client's fold is); isV4 → true; sendDrag records
-//   state.js   state.st = the door's state as the view (shared/v4/record.js viewState), what the panels read
+//   state.js   state.st = the authority's state as the view (shared/v4/view.js viewState), what the panels read
 //   world.js   the realized objects (a Map the test fills)
 //   ui.js, confirmcenter.js, panels.js   toasts and hints recorded; the lock dialog answers `H.choose`
 //   realize/models.js (from inspect.js)  boxOf → null (the realizer is three.js and the GPU; not under test)
@@ -13,8 +13,8 @@
 // @ts-nocheck
 import { plugin } from "bun";
 import path from "node:path";
-import { scratchWorld } from "./scratchdoor.ts";
-import { viewState } from "../../shared/v4/record.js";
+import { scratchWorld } from "./scratchworld.ts";
+import { viewState } from "../../shared/v4/view.js";
 
 const ROOT = path.resolve(new URL("../../", import.meta.url).pathname);
 
@@ -27,7 +27,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
     sync() { H.state.st = viewState(W.state()); H.v4.st = W.state(); },
     /** settle the async sends (requestV4 answers at once; the lock dialog is a promise) */
     flush: () => new Promise((r) => setTimeout(r, 10)),
-    /** someone else writes (another person at the door) */
+    /** someone else writes (another person at the authority) */
     other(tool, args, who = "bob") { const r = W.call(tool, args, who); if (!r.ok) throw new Error(`H.other: ${who}'s ${tool} refused: ${JSON.stringify(r.refused)}`); H.sync(); return r; },
   };
   plugin({

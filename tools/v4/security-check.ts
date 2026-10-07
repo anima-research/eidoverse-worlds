@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold } from "../../shared/v4/fold.js";
-import { makeV4Client } from "../../shared/v4/client.js";
+import { makeV4Client } from "../../shared/v4/replica.js";
 
 const root = scratch("security");
 let pass = 0, fail = 0;
@@ -266,7 +266,7 @@ console.log("\n=== M2: directory files: two writers (CLI + server) lose entries 
   for (const c of clients) c.close();
 }
 
-console.log("\n=== M6: one id per door → per-world pairwise ids ===");
+console.log("\n=== M6: one id per server → per-world pairwise ids ===");
 // M6: same account in two new v4 worlds gets the same v4id (cross-world linkability)
 // Fix: per-world pairwise ids HMAC(door secret, worldId||account)
 // NOTE: This test is deferred (part 1 implements M6 but full coverage requires more setup).

@@ -4,7 +4,7 @@
 // is how a thing gets INTO your hand, build.js is what your hand does with it.
 
 import { enc } from '../../shared/v4/names.js';
-import * as OP from '../../shared/v4/ops.js';
+import * as OP from '../../shared/v4/requests.js';
 import { sendOps } from './v4edit.js';
 import { TIER_COLORS } from '../../shared/perfrank.js';
 import { CONFIG, report, bus } from './base.js';
@@ -116,7 +116,7 @@ async function paintBuild(body) {
       chip.dataset.busy = '1'; chip.firstChild.data = '…';
       try {
         const q = new URLSearchParams({ path });
-        // the door key rides a header, never the URL; a signed-in session rides its cookie (same-origin fetch sends it)
+        // the authority key rides a header, never the URL; a signed-in session rides its cookie (same-origin fetch sends it)
         const r = await fetch(`/rebuild?${q}`, { method: 'POST', headers: CONFIG.token ? { authorization: `Bearer ${CONFIG.token}` } : {} });
         const j = r.ok ? await r.json() : null;
         toast(j ? (j.busy ? 'the encoder is busy with other rebuilds — try again in a minute' : j.cooldownS ? `rebuilt recently — this model can be rebuilt again in ${Math.ceil(j.cooldownS / 60)} min` : j.queued.length ? `rebuilding ${j.queued.map((k) => PASS[k] ?? k).join(' + ')} — the card updates on the next search`
@@ -246,7 +246,7 @@ async function paintAvatars(body) {
   avatarBody = body;
   const list = await fetch('/avatars').then((r) => r.json()).catch(() => []);
   body.innerHTML = '';
-  // the door's proven recipe (09-05): dense grid, every card a 3:4 portrait
+  // the authority's proven recipe (09-05): dense grid, every card a 3:4 portrait
   // box whether the image loaded or not — inline styles on the placeholder
   // used to give it its own size, so cards came out at two sizes (R's shot)
   const grid = document.createElement('div');

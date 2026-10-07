@@ -60,7 +60,7 @@ import { setSlotCap, getSlotCap, maxSlots, litCount,
 import { setEmitterQuality, emitterQuality, emitterCount } from './emitters.js';
 import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
 import { setLodBias } from './remotes.js';
-import { setSystemEvery, getSystemEvery } from './frame.js';
+import { setSystemEvery, getSystemEvery } from './frameloop.js';
 import { toast } from './ui.js';
 import { statusChip, clearStatusChip } from './statuschips.js';
 

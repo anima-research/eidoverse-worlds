@@ -310,7 +310,7 @@ function fingerTick(vrm, curls) {
 function applyLookChain(h, qIn, lk, dt) {
   eul.setFromQuaternion(qIn, 'YXZ');
   const pitch = THREE.MathUtils.clamp(eul.x, -0.7, 0.7), roll = THREE.MathUtils.clamp(eul.z, -0.5, 0.5), yaw = sa(eul.y);
-  // dt is 0 after a >2 s hitch (frame.js clamps it) — headless XR runs at ~0.5 fps and
+  // dt is 0 after a >2 s hitch (frameloop.js clamps it) — headless XR runs at ~0.5 fps and
   // every frame is one; a zero step would freeze the chain, so take a half step instead
   const s = dt > 0 ? Math.min(1, dt * 9) : 0.5;
   lk.x += (pitch - lk.x) * s; lk.y += (yaw - lk.y) * s; lk.z += (roll - lk.z) * s;

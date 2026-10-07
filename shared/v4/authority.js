@@ -1,24 +1,25 @@
-// The v4 door (lab). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
+// The v4 authority (from the lab's authority). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
-// PROTOCOL-v4 L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the door's
+// PROTOCOL-v4 L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
 // locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is
 // `changeEntry`, and it takes only what `admit` returned.
-// Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
+// Ported from the v4 lab (code/v4-lab/authority.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
-import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
-import { validate, verbHelp, VERBSPEC } from "./toolspec.js";
+import { COMPONENTS, PENDULUM } from "./componentspec.js";
+import { MODELS } from "./labmodels.js";
+import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
-import * as TR from "./terrain.js";
+import * as TR from "./sculpt.js";
 import * as SR from "./scriptrules.js";
 import * as R from "./roles.js";
 import { graphemes, cleanText } from "../text.js";
@@ -28,26 +29,26 @@ import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } fr
 import { collisionBoxes } from "../structure.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
-// The lab's door read its own table (./catalogue.js). The engine's models are library paths measured from their GLBs
-// (server/v4/catalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
+// The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
+// (server/v4/modelcatalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
 // list(query) → [name, entry][] }. An entry is { label, size?, box?, surfaces, solids?, sockets? }:
 //   box      [[x,y,z], [x,y,z]] in the model's frame (a GLB's origin is wherever its author put it); absent → the lab's
 //            convention, a size-box with the origin at the base centre;
 //   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
-//   size     absent → a model this door can name but not measure (no placement help, no collisions, said so).
-// request() sets CAT for the duration of one synchronous call; nothing in the door awaits, so calls can't interleave.
-// own keys only: MODELS["constructor"] is Object (the lab door accepted model "constructor"; L1's no-prototype rule)
+//   size     absent → a model this server can name but not measure (no placement help, no collisions, said so).
+// request() sets CAT for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
+// own keys only: MODELS["constructor"] is Object (the lab authority accepted model "constructor"; L1's no-prototype rule)
 export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
 let CAT = LAB_CATALOGUE;
 let THROUGH = false; // the request's throughLock flag, set by request() for one synchronous call (like CAT)
-// is this identity a guest (no account: the door directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
+// is this identity a guest (no account: the authority directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
 let ISANON = () => false;
 // the directory knows this identity (a world opened without a directory, as in the lab, knows everyone)
 let KNOWNID = (_id) => true;
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
-// A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the door
+// A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the authority
 // never read `structure`, so bodies walked through Commons walls and things were put inside them). Its geometry is the
 // structure's own collision boxes (shared/structure.js collisionBoxes: the same derivation the browser's colliders use),
 // in the thing's frame, as a measured model's `solids` are; its floors are surfaces (a body steps over a slab, a thing
@@ -92,7 +93,7 @@ export const posAt = (e, i) => { if (e && typeof e === "object") Object.definePr
  *   entries: what readLog returned for the log so far, each with its seq attached by posAt (unenumerable).
  *   getBlob must verify a blob against its name and throw if it doesn't match (§2.2).
  *   writeLine appends one already-checked line (no trailing LF) to durable storage.
- *   now: the door's clock in ms (§2.1 ts); presence: the unlogged presence plane (P1, P2).
+ *   now: the authority's clock in ms (§2.1 ts); presence: the unlogged presence plane (P1, P2).
  */
 export function worldOf(io) {
   const { name, entries, getBlob, putBlob } = io;
@@ -100,24 +101,24 @@ export function worldOf(io) {
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.random = io.random ?? null;
   w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
-  w.nameOf = io.nameOf ?? null; // id → display name (the door's directory, §2.3); null = old escaped ids only
+  w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
   w.now = io.now;
   // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/v4/sandbox.js), never imported
   // here (browsers import this file). No sandbox: scripts install, and every activation says "unavailable".
   w.scripts = io.scripts ?? null;
-  // who is present beyond the door's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
+  // who is present beyond the authority's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
   w.present = io.present ?? null;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
   w.savePresence = () => io.savePresence?.(w.presence);
-  // Governance keys (§2.4) live outside the log. Custody is door practice (§5 identity), injected like storage:
-  // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/v4/disk.ts keeps the keys).
+  // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
+  // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/v4/filehost.ts keeps the keys).
   w.custody = () => io.custody ?? null;
-  // §2.1: moderation lives in a SEPARATE moderator log with door enforcement, never in the world log
+  // §2.1: moderation lives in a SEPARATE moderator log with the authority's enforcement, never in the world log
   w.mod = io.mod ?? [];
   w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; w.mod.push(r); io.appendMod?.(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
-  // incremental when the new lines are plain entries this door wrote (state/act/sim/say): clone + apply their ops, which
+  // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
   // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
   w.state = () => { if (cache?.n === entries.length) return cache.st;
     const fresh = entries.slice(cache?.n ?? 0);
@@ -125,7 +126,7 @@ export function worldOf(io) {
       const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
       return (cache = { n: entries.length, st }).st; }
     return (cache = { n: entries.length, st: fold(entries) }).st; };
-  // §2.4 chain heads as a view over the log (the lab door doesn't sign them): head(i) = sha256(head(i-1) ‖
+  // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
   // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
   const heads = [];
   w.headAt = (seq) => { for (let i = heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1];
@@ -135,12 +136,12 @@ export function worldOf(io) {
   w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
   w.sim = () => simFold(entries, w.now());
   w.stateAt = (seq) => fold(entries, { until: seq });
-  // The door re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
-  // §2.1: ts = the door's admission time, an integer that never decreases along the log (a clock that steps back,
-  // an NTP slew or a VM restore, must not make the door write a line every reader refuses)
+  // The authority re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
+  // §2.1: ts = the authority's admission time, an integer that never decreases along the log (a clock that steps back,
+  // an NTP slew or a VM restore, must not make the authority write a line every reader refuses)
   w.nextTs = () => { let lastTs = 0; for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastTs = entries[i].ts; break; }
     return Math.max(Math.floor(w.now()), lastTs); };
-  // §2.4 the chain: "the door signs at least every write it commits". When custody can sign, every entry after
+  // §2.4 the chain: "the authority signs at least every write it commits". When custody can sign, every entry after
   // genesis is a chain point {head, sig} (genesis can't be: the world id is the hash of genesis itself). head(i) is
   // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
   const render = (e, seq, chained = false) => {
@@ -162,11 +163,11 @@ export function worldOf(io) {
   // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
   w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k); if (!bad) continue;
     if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§2.4)`, "split it into smaller requests, or put big data in a blob and store its hash");
-    throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
+    throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
-    if (e.kind === "change" && token !== CHANGE) throw new Error("door bug: a change entry must come from changeEntry (L7: one gate)");
+    if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (L7: one gate)");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
-    if (bad) throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
+    if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
     if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
     w.exists = true; return seq;
@@ -189,7 +190,7 @@ function skeleton(e) {
   return s;
 }
 const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
-/** Seal a whole log the door didn't write line by line (a translation): the same salts and chain points render gives
+/** Seal a whole log the authority didn't write line by line (a translation): the same salts and chain points render gives
  *  each line it appends (§2.4; round-2 review R3). entries[0] is genesis (never a chain point: the world id is its
  *  hash); every later entry gets a salt on each set and on its act/say/sim body, then {head, sig}. Returns new objects;
  *  `sign(msg)` is the sequencer key's, `random(n)` optional. */
@@ -222,7 +223,7 @@ function versionSeq(w, v, what) {
 const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 // PROTOCOL-v4 §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
-// untranslated. A lock is on when its value is truthy; the door itself only ever writes `true`.
+// untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
@@ -331,11 +332,11 @@ function surfacesOf(st, id) {
     return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
 }
 // ---------- the spatial index (review 10-06 S0-2 / security pass 2 H-A) ----------
-// The door is synchronous and every world on a server shares its one thread, so no request may cost the world's size
+// The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
 //   Per thing: its world AABB, oriented boxes and surfaces, cached on its ENTITY OBJECT (a live world's states share every
-//   entity a write didn't touch: server/v4/live.ts applyShared), valid while its model entry and every ancestor's entity
+//   entity a write didn't touch: server/v4/livehost.ts applyShared), valid while its model entry and every ancestor's entity
 //   object are the same ones. So a write re-measures only what it touched.
 //   Per folded state: a 4 m grid over those boxes (huge things on a list of their own), built on the state's first query.
 //   A state is never mutated once folded or previewed (admit's working copy is never queried), so neither is its index.
@@ -350,7 +351,7 @@ const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
 let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
 const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
   if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
-    refuse("too-costly", `${what} would take more of the door's time than one request may have (it's shared by every world on this server)`, fix); } };
+    refuse("too-costly", `${what} would take more of the authority's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
 function geoOf(st, id) {
   const e = st.entities[id]; if (!e) return null;
@@ -493,7 +494,7 @@ function supportBelow(st, x, z, y, ignore = new Set()) {
 }
 
 // Supported anywhere under its footprint (the engine's rule: a box rests on a top its footprint overlaps), not just
-// under its centre — so a thing physics left resting is never called floating by the door (playtest 22, F5).
+// under its centre — so a thing physics left resting is never called floating by the authority (playtest 22, F5).
 function supportUnder(st, b, ignore) {
   let best = { y: 0, id: "ground" };
   const ix = spatial(st);
@@ -504,7 +505,7 @@ function supportUnder(st, b, ignore) {
 
 // ---------- rights ----------
 // The ladder, the closed permission list and the effective set live in shared/v4/roles.js (the Sanctioned Society: ranked
-// membership only; banned and ghost are states outside it). Every rank comparison in the door goes through rankOf /
+// membership only; banned and ghost are states outside it). Every rank comparison in the authority goes through rankOf /
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
 const RANK = R.RANK;
 const wcOf = (st) => st.entities?.["@world"]?.c;
@@ -529,14 +530,14 @@ const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || 
 /** Does this identity hold any power that acts on people (mute, kick, ban, pauseScripts)? Opens the moderation log. */
 const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
 export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
-/** The role the door gives `actor` in a folded state (a view: what a client should be told it may do here). */
+/** The role the authority gives `actor` in a folded state (a view: what a client should be told it may do here). */
 export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 // ---------- sanctions: views over the moderator log (research §5) ----------
-// Every sanction is a record with an optional `until` (the door's clock, ms). Expiry is computed, never written: a view
-// reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the door's clock). Records
+// Every sanction is a record with an optional `until` (the authority's clock, ms). Expiry is computed, never written: a view
+// reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the authority's clock). Records
 // name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted",
 // an old kick) is permanent for a ban and no cooldown for a kick.
 // Every record since the last LIFT of its kind (unban, unmute, unghost) that is still in force counts, and the STRONGEST
@@ -615,10 +616,10 @@ export function lastSetterOf(w, id, comp) {
 // Who made a thing: the view inspect shows (no stored `placer`).
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 
-// ---------- the door ----------
+// ---------- the authority ----------
 class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }
 const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, fix, extra); };
-// A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the door's
+// A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the authority's
 // directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CAT). An old
 // escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
 // must match it.
@@ -626,7 +627,7 @@ let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
 // verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
 const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans"]);
-const RESERVED = new Set(["system", "sim", "world"]); // the door's own identities: a request can never be stamped as one
+const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
 function wire(args) {
@@ -637,12 +638,12 @@ function wire(args) {
   return out;
 }
 
-// The door's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID, the mint's world, the
-// work budget) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withDoor):
+// The authority's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID, the mint's world, the
+// work budget) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withAuthority):
 // review 10-06 S3 found two hand-written copies that already disagreed, and a nested call (leave → request(drop), or a
-// host callback re-entering the door) reset the outer call's queues under it. enter() saves everything, sets this call's,
+// host callback re-entering the authority) reset the outer call's queues under it. enter() saves everything, sets this call's,
 // and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
-// the door's own work.
+// the authority's own work.
 function enter(w, actor) {
   const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
   CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w; WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
@@ -651,19 +652,19 @@ function enter(w, actor) {
 }
 export function request(w, actor, verb, args = {}) {
   const exit = enter(w, actor);
-  // ONE clock per request (§2.1: ts is the door's admission time). A wall clock read twice in one request could put a
+  // ONE clock per request (§2.1: ts is the authority's admission time). A wall clock read twice in one request could put a
   // rest's digest (computed where the engine stood at the first read) under a later ts, across a tick boundary, and every
-  // carrier re-folding the log would then call the door's own digest wrong (physlive Q1).
+  // carrier re-folding the log would then call the authority's own digest wrong (physlive Q1).
   const clock = w.now; const t0 = clock(); w.now = () => t0;
   try {
-    if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
+    if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the authority can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); system, sim and world are the authority's own");
     const h = VERBS[verb];
     if (h && !w.exists && !["create-world", "help"].includes(verb)) refuse("no-world", `there is no world called '${w.name}' yet`, `create-world {title: '…'} founds it (you become its owner); or pick a world that exists`);
-    // §2.4: chain points are signed by the key genesis names (or the latest handoff). A door holding another key would
+    // §2.4: chain points are signed by the key genesis names (or the latest handoff). An authority holding another key would
     // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
-      refuse("custody", "this door doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
-    if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
+      refuse("custody", "this server doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
+    if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the authority won't write to a log its own reader refuses");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
     // body and what it held were never released)
@@ -678,7 +679,7 @@ export function request(w, actor, verb, args = {}) {
     if (w.exists && (!GHOST_OK.has(verb) || (verb === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
       refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
-    // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
+    // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
     // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
@@ -698,15 +699,15 @@ export function request(w, actor, verb, args = {}) {
     if (r && r.refused && !r.refused.fix) r.refused.fix = verbHelp(verb) ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb";
     return r;
   } catch (e) {
-    if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
+    if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the authority's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
-// byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the door's own state (rate,
-// identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the door counts
+// byte budget. Never logged: reads, dry runs, and the refusals that ARE the budget or the authority's own state (rate,
+// identity, no-world, custody, unreadable, banned): logging those would be the flood. Past the budget, the authority counts
 // what it didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
@@ -714,7 +715,7 @@ const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable
 const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
 function logRefusal(w, actor, verb, args, code) {
   try {
-    // a verb the door doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
+    // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
     if (!w.exists || !(VERBS[verb] || /^[a-z][a-z0-9-]{0,31}$/.test(String(verb))) || READ_ONLY.has(verb) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
     // a body's track is presence: a refused move (a step, an arrival or a teleport) is never recorded. A person's client
     // keeps the track current several times a second and answers a refused step with a teleport; a person indoors, flying
@@ -732,7 +733,7 @@ function logRefusal(w, actor, verb, args, code) {
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
 // §3a: "Release settles as one act with `expect` on the starting values." expect is a list of {id, component, value?}:
 // the component must hold exactly that value now (JCS-equal), or be absent when value is left out. Anything else is
-// refused as `changed`, naming who changed it, and nothing is written. It is door practice (the act records it, as
+// refused as `changed`, naming who changed it, and nothing is written. It is authority practice (the act records it, as
 // sent); the fold never reads it. A purged value never equals anything.
 function expectCheck(w, list) {
   if (!Array.isArray(list) || !list.length || list.length > 256) refuse("shape", "expect is a list of {id, component, value?} (1–256 of them)", "e.g. expect: [{id: 'lamp-1', component: 'transform', value: {pos, q, scale}}]");
@@ -763,7 +764,7 @@ function guess(s, opts) {
 //              only while the handler's author could still change it themselves (the cause chain records both);
 //   handle   — a settlement of something you hold (physics.who decides who may), transform/parent of that thing only;
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
-//   door     — the door's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
+//   system   — the authority's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
 //   founding — the `new` act's first write to @world, by an owner named in genesis, once.
 // What a lock guards (§5, the first protocol's lock matrix): nothing may MOVE, REPLACE or REMOVE a locked thing
 // or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
@@ -773,7 +774,7 @@ function guess(s, opts) {
 // physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
 // and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
 const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
-// L7 rate (round-2 review R6): per actor, over a 10 s window by the door's clock. Counted in ENTRIES and in BYTES, with
+// L7 rate (round-2 review R6): per actor, over a 10 s window by the authority's clock. Counted in ENTRIES and in BYTES, with
 // talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
 // make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
 // An identity with no account (io.kindOf → "anon") gets less. A say's text is at most 8 KiB (the Commons' longest real
@@ -791,12 +792,12 @@ const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 10
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
 class Admitted { constructor(who, ops, after) { this.who = who; this.ops = ops; this.after = after; Object.freeze(this); } }
-// L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the door's clock. One function:
+// L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
-// agents" is the actor alone here. Refusals aren't logged, so they cost the door, not the log (door practice).
+// agents" is the actor alone here. Refusals aren't logged, so they cost the authority, not the log (authority practice).
 function rateCheck(w, actor, kind = "act", extra = 0) {
-  if (w.leaving === actor) return; // a disconnect's settlement is the door's duty, not the leaver's request: never rate-refused
+  if (w.leaving === actor) return; // a disconnect's settlement is the authority's duty, not the leaver's request: never rate-refused
   const r = rateOf(w, actor); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
   if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
   if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; big data goes in a blob");
@@ -818,7 +819,7 @@ function admit(w, st, who, ops) {
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
   // L6 (33 F1): a launched thing belongs to the engine until it rests. No write may touch it in flight except its rest
-  // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.physics-engine) may freeze it (P6, force).
+  // (cap rest) or the authority's own follow-ups; an epoch cut (a write to @world.physics-engine) may freeze it (P6, force).
   const sf = st.entities["@world"]?.c["physics-engine"] && !(cap && ["rest", "system"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "physics-engine") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
   let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
@@ -828,13 +829,13 @@ function admit(w, st, who, ops) {
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
-      if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the door keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
+      if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
     const e = s.entities[op.id];
-    if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the door mints one");
+    if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
       // §3d H7: an id is never reused, so a re-created id can't inherit references (parents, portals, old acts) or a sponsorship
       // …except the SAME thing coming back: an undo restoring what its own target deleted (who.restores, set only by
       // buildUndo's whole-thing branch). Its references are its own, so inheriting them is the point (Ctrl+Z after Delete).
-      if ((w.everIds().has(op.id) && !who.restores?.has(op.id)) || made.has(op.id)) refuse("reused", `'${op.id}' existed before in this world; an id is never reused`, "choose another id, or leave id out and the door mints a fresh one"); }
+      if ((w.everIds().has(op.id) && !who.restores?.has(op.id)) || made.has(op.id)) refuse("reused", `'${op.id}' existed before in this world; an id is never reused`, "choose another id, or leave id out and the authority mints a fresh one"); }
     else if (!e) refuse("not-found", `no thing called '${op.id}'`, "look lists what's here", { didYouMean: guess(op.id, Object.keys(s.entities)) });
     else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2.3: delete or change its components instead (owners only)");
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
@@ -902,7 +903,7 @@ function capacityCheck(w, st, s, who, norm) {
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
-// all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the door's own follow-ups) never
+// all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the authority's own follow-ups) never
 // acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
 function lockCheck(w, st, who, role, k, op, at) {
   const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" });
@@ -986,14 +987,14 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   else if (cap.kind === "handle") { const g = grabOf(st.entities[op.id]?.c);
     if (!g) refuse("not-grabbable", `${op.id} isn't something you can carry`, "");
     if (rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
-  // founding: once, before any state, in a world whose genesis names this door's operator key (founded here)
+  // founding: once, before any state, in a world whose genesis names this server's operator key (founded here)
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
-    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
+    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this server founded", ""); }
 }
 // §5 / L7: a KEYED component (`<name>:<key>`, an instance such as blueprints:<hash> or roles:<id>) that exists may be
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
 // or by an owner. Making a new key needs only the component's ordinary rank. A capability changes it with the rights it
-// carries: a handler with its author's. The door's own scoped follow-ups (rest, door, handle, founding) touch no keys
+// carries: a handler with its author's. The authority's own scoped follow-ups (rest, system, handle, founding) touch no keys
 // that someone else made; founding makes roles:<founder>. A whole-entity delete is NOT gated here (see note 34).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
 // §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, blueprints:, roles:) carry the creator
@@ -1023,7 +1024,7 @@ export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = I
 function seniority(w, st, who, op) {
   if (op.id !== "@world" || !op.comp?.startsWith("roles:")) return;
   // a capability acts with its holder's rights, seniority included (review 10-07: a junior owner's reaction demoted the
-  // founder); the door's own scoped follow-ups (rest, door, handle, founding) never write a role
+  // founder); the authority's own scoped follow-ups (rest, system, handle, founding) never write a role
   const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
   const target = op.comp.slice(6);
@@ -1088,11 +1089,11 @@ function rolesCheck(st, s, ops) {
   if (bad) refuse(bad.code, `@world.role-defs: ${bad.reason}`, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
   // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
-// Sanity and shape of the values the door's own engine reads (what the change IS, not which word carried it).
+// Sanity and shape of the values the authority's own engine reads (what the change IS, not which word carried it).
 function valueCheck(s, { id, comp, value: v }) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
-  // meant different things to the door and the renderer (component review T1a/T1b)
+  // meant different things to the authority and the renderer (component review T1a/T1b)
   const on = COMPONENTS[comp.split(":")[0]]?.on;
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
@@ -1135,7 +1136,7 @@ function valueCheck(s, { id, comp, value: v }) {
   if (comp === "sockets" && obj) for (const [slot, sk] of Object.entries(v)) if (sk?.body && typeof sk.body === "object") whoOk(sk.body.who, `${at}.${slot}.body`);
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); 
-    // a rotation is a unit quaternion (the renderer normalizes; the door's own maths uses q as written), and a scale of
+    // a rotation is a unit quaternion (the renderer normalizes; the authority's own maths uses q as written), and a scale of
     // 0 makes every child's transform divide by zero (review T0e)
     if (Math.hypot(...v.q) < 1e-6) refuse("shape", `${at}.q is all zeros, which isn't a rotation`, "no rotation is [0, 0, 0, 1]");
     if (v.scale.some((x) => Math.abs(x) < 1e-4)) refuse("shape", `${at}.scale has a 0 in it; a thing can't be flat to nothing`, "to hide something, delete it or give it a tiny scale like 0.01"); }
@@ -1185,7 +1186,7 @@ const isLookAt = (k) => k === "look-at" || k.startsWith("look-at:");
 const nodeOf = (k, v) => (k.includes(":") ? k.slice(k.indexOf(":") + 1) : k === "motion" && typeof v?.part === "string" ? v.part : null);   // null = the whole thing
 function mediaCheck(s, id, comp, v, at, obj) {
   // where a picture's or a sound's bytes may come from (shared/mediasrc.js): this server's store, or an https link to a
-  // public host. Who may FETCH a link is each viewer's browser's question (clientMayFetch); the door refuses what nobody may
+  // public host. Who may FETCH a link is each viewer's browser's question (clientMayFetch); the authority refuses what nobody may
   if ((comp === "picture" || comp === "sound") && obj && v.src !== undefined) { const t = mediaTier(v.src, comp === "picture" ? "image" : "audio");
     if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }
   if (comp === "sound" && obj && isNum(v.near) && isNum(v.radius) && v.near > v.radius) refuse("bounds", `${at}.near (${v.near}) is past radius (${v.radius})`, "near is where it's at full volume; radius is where it goes silent");
@@ -1244,7 +1245,7 @@ function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j)
 // the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit
 const nearMiss = (name) => Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
- *  whether a translated world is one the door takes as it is (sweep). */
+ *  whether a translated world is one the authority takes as it is (sweep). */
 export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
     // the enums too (valueCheck's): a translated motion {type: 'path'} passed this and was refused at the first edit
     const ob = v && typeof v === "object" && !Array.isArray(v);
@@ -1298,14 +1299,14 @@ function schemaCheck(at, comp, v) {
     if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.fix); }
 }
 // N5 (review 10-07): a handler is checked when it's WRITTEN, not when the first visitor uses it. What it would write is
-// checked now as the door would check that write (a light's intensity 'bright' was taken, and the visitor got "must be
+// checked now as the authority would check that write (a light's intensity 'bright' was taken, and the visitor got "must be
 // number"); a field it changes must be inside a component the thing has (a toggle on a plain crate wrote an invisible
 // openable); toggle flips true/false fields; an impulse swings a pendulum. Rights stay a use-time question (reactionCap).
 function effectCheck(s, id, act, h) {
   const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== PURGED;
   const where = `reactions.${act}`;
   const would = (comp, value) => { try { valueCheck(s, { id, comp, value }); }
-    catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the door refuses: ${e.reason}`, e.fix, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
+    catch (e) { if (!(e instanceof Refusal)) throw e; refuse(e.code, `${where} would set ${id}.${comp} to something the authority refuses: ${e.reason}`, e.fix, e.didYouMean ? { didYouMean: e.didYouMean } : undefined); } };
   if (h.kind === "impulse" && c.motion && c.motion.type !== "pendulum") refuse("shape", `${where} pushes a swing, and ${id} moves by '${c.motion.type}'`, "an impulse swings a pendulum (motion {type: 'pendulum'}); use set or toggle for anything else");
   if (h.kind !== "set" && h.kind !== "toggle") return;
   const { comp, field } = h.kind === "toggle" ? toggleOf(h) : { comp: h.component, field: h.field };
@@ -1333,7 +1334,7 @@ function changeShape(plan, cause, w) {
   return { kind: "change", actor: plan.who.actor, cause, ...one };
 }
 function changeEntry(w, plan, cause) {
-  if (!(plan instanceof Admitted)) throw new Error("door bug: a state write that admit() didn't produce (L7)");
+  if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (L7)");
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
@@ -1359,11 +1360,11 @@ function commit(w, actor, verb, args, build) {
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
-// log, as physics.shape: the DOOR's measurement of its model (model-local box [[min], [max]]), never the asker's word.
-// The live server folds the sim with no catalogue of its own (live.ts: simModels {}), so a thing with no stamped shape
+// log, as physics.shape: the AUTHORITY's measurement of its model (model-local box [[min], [max]]), never the asker's word.
+// The live server folds the sim with no catalogue of its own (livehost.ts: simModels {}), so a thing with no stamped shape
 // is no body at all: thrown, it never flew and never rested (found 10-06: every throw on a running server did nothing).
 // Stamped on every write of the asker's own (a capability's writes are scoped to what they name and are left alone):
-//   - a physics value written (create or set): its shape is the door's, whatever was sent;
+//   - a physics value written (create or set): its shape is the authority's, whatever was sent;
 //   - a model changed on a thing with physics: re-measured;
 //   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
 //     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
@@ -1387,15 +1388,15 @@ function stampShapes(ctx, ops) {
     else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
       next = { ...ph }; if (want) next.shape = want; else delete next.shape;
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
-        ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the door: a shape is its measurement of the model (Covenant III), never the asker's" }); }
+        ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
     const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
     if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); stamped.push(id); }
   }
-  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the door's measured shape" });
+  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the authority's measured shape" });
   return out;
 }
-// batch 2: a sound starts on the door's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
-// another file) or the request named no t0, the door sets t0 = now and says so: a reaction, a script, an agent and the
+// batch 2: a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
+// another file) or the request named no t0, the authority sets t0 = now and says so: a reaction, a script, an agent and the
 // editor all start it in step, and no client invents its own clock (as motion.t0). A pause keeps t0; a resume restarts.
 // And a link's reach is said once, when it's written: who will hear or see it (shared/mediasrc.js).
 function stampMedia(ctx, ops) {
@@ -1408,7 +1409,7 @@ function stampMedia(ctx, ops) {
     if (o.comp !== "sound" || v.playing === false) return o;
     const p = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : null;
     if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;
-    const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: "sound", field: "t0", kept: t0, why: "stamped by the door: it starts now, for everyone at once" });
+    const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: "sound", field: "t0", kept: t0, why: "stamped by the authority: it starts now, for everyone at once" });
     return { ...o, value: { ...v, t0 } };
   });
 }
@@ -1454,7 +1455,7 @@ function needThing(ctx, id) {
 
 // Resolve a component value fully (R7): defaults written out, conveniences converted, stamps applied. Shape and rights
 // are admit's; this only turns what was asked into a plain value.
-// @world.bounds as the readers use it: a malformed one already in a log (written before the door checked it) is
+// @world.bounds as the readers use it: a malformed one already in a log (written before the authority checked it) is
 // treated as no bounds, never a crash in every create's reply (review T0d)
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
@@ -1473,11 +1474,11 @@ function resolve(ctx, id, comp, value, prev) {
   }
   if (!COMPONENTS[comp] && !comp.includes(":")) ctx.notes.push({ id, component: comp, why: `'${comp}' isn't a component this world's engine knows: it is kept (and will be preserved), but nothing will draw or run it`, didYouMean: guess(comp, Object.keys(COMPONENTS)) });
   if (comp === "motion" && value && typeof value === "object") { const v = { ...(value.type === "pendulum" ? PENDULUM : {}), ...value }; delete v.pivot;
-    if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the door" }); } return v; }
+    if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
   // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
   if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value) && value.t0 === undefined) {
-    const v = { ...value, t0: ctx.w.now() }; ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the door" }); return v; }
+    const v = { ...value, t0: ctx.w.now() }; ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); return v; }
   if (def?.defaults && value && typeof value === "object" && !Array.isArray(value)) {
     const filled = Object.keys(def.defaults).filter((k) => !(k in value));
     if (filled.length) ctx.notes.push({ id, component: comp, filled, why: "defaults written out so the engine can't change them later" });
@@ -1502,7 +1503,7 @@ function buildCreate(ctx, a) {
   const comps = { ...(a.components ?? {}) };
   if (a.model) comps.model = a.model;
   const id = a.id ?? mint(ctx.st, comps.model ?? "thing");
-  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out and the door mints one");
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
   for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
   const out = {};
@@ -1593,7 +1594,7 @@ function buildTurn(ctx, a) {
   return [setOp(a.id, "transform", { pos: pos.map((v) => Math.round(v * 1e4) / 1e4), q: q2.map((v) => Math.round(v * 1e9) / 1e9), scale: t.scale })];
 }
 
-// Relational placement (A1): the door solves; the log gets a plain transform.
+// Relational placement (A1): the authority solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
   const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
@@ -1604,7 +1605,7 @@ function buildPlace(ctx, a) {
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
   const fam = new Set([a.id, ...descendants(st, a.id)]);
   let yaw = a.yaw ?? qYaw(cur.q);
-  // lying: rest on the largest face. The door owns the tilt and where the origin ends up (W6).
+  // lying: rest on the largest face. The authority owns the tilt and where the origin ends up (W6).
   let tilt = [0, 0, 0, 1];
   if (a.lying) { const d = m.size.map((v, i) => v * scale[i]); const k = d.indexOf(Math.min(...d)); const r = Math.SQRT1_2;
     tilt = k === 2 ? [r, 0, 0, r] : k === 0 ? [0, 0, r, r] : tilt; }
@@ -1733,7 +1734,7 @@ function buildPlace(ctx, a) {
     ops.push(setOp(a.id, "transform", wt));
   }
   // a hung thing swings from where its ropes would tie: the UNDERSIDE of the member right above it (agent lab round 2,
-  // Rowan: the swing's pivot was the frame's top), stored as its pivot component, which the door's pivot, inspect, the
+  // Rowan: the swing's pivot was the frame's top), stored as its pivot component, which the authority's pivot, inspect, the
   // renderer and the agent's look all read (research 52). A pivot someone already set is left alone.
   if (a.hang && !e.c.pivot) {
     const tie = obbs(st, a.hang).map((o) => { const ext = [0, 1, 2].map((i) => o.ax.reduce((acc, axv, j) => acc + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - ext[i]), max: o.c.map((v, i) => v + ext[i]) }; })
@@ -1779,7 +1780,7 @@ function warnings(st, ids, strict = false) {
   }
   } catch (e) {
     if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
-    out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the door's time than one request may have; lint {id} checks one thing" });
+    out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the authority's time than one request may have; lint {id} checks one thing" });
   } finally { WORK.what = was; }
   return out;
 }
@@ -1818,7 +1819,7 @@ function buildUse(ctx, a) {
     const ok = socks.filter(may);
     if (!ok.length) refuse("rights", `only a ${socks[0].body.who} may ${action} ${a.id}`, "ask someone who can");
     const pick = socket != null ? ok.find((x) => x.slot === socket) : ok[0];
-    // attaching is presence (your frames say where you're attached; nothing is recorded), so the door only answers: where,
+    // attaching is presence (your frames say where you're attached; nothing is recorded), so the authority only answers: where,
     // and what the body does there (the socket's body block read with its defaults: shared/sockbody.js bodyOf)
     const { clip, ...body } = pick.body;
     return { presence: true, attach: { to: a.id, socket: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
@@ -1892,14 +1893,14 @@ function offersFor(st, id, actor) {
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
 }
 
-// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, code/v4-lab/door.js @ 2300bae, on a real sandbox) ----------
+// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, code/v4-lab/authority.js @ 2300bae, on a real sandbox) ----------
 // A script is a keyed component `script:<name>` naming a source blob ({lang: "js", api, text}, by its sha256 name) and a
 // declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
 // rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
 // ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
 // reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
-// Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Door practice: timers
+// Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Authority practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
@@ -1989,7 +1990,7 @@ function pausedBy(w, id, key) {
   if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "act" ? c.actor : at.e.actor;
   return { by, at: at.e.seq, ts: at.e.ts };
 }
-// who is here: the door's own bodies plus whoever the host says is connected (a server's people), id → position | null
+// who is here: the authority's own bodies plus whoever the host says is connected (a server's people), id → position | null
 function presentOf(w) { const out = new Map();
   for (const [id, b] of Object.entries(w.presence.bodies ?? {})) out.set(id, Array.isArray(b?.at) ? b.at : null);
   for (const p of w.present?.() ?? []) if (p && typeof p.id === "string" && !out.has(p.id)) out.set(p.id, Array.isArray(p.at) && p.at.length === 3 && p.at.every(Number.isFinite) ? p.at : null);
@@ -2003,7 +2004,7 @@ function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out
     if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
     for (const x of mine.list) out.push(x); }
   scriptMemo.set(st, out); return out; }
-// budgets (door practice, stated in @world.script-settings; §3d M3): per script per minute; per world per hour; each sponsor a fair
+// budgets (authority practice, stated in @world.script-settings; §3d M3): per script per minute; per world per hour; each sponsor a fair
 // share of the world's hour, so one builder's chatty scripts can't starve everyone else's (and spreading a script over
 // many things or hashes gains nothing: the share is keyed on the sponsor)
 function budgetOf(w, st, now, id, key, sponsor, cfg) {
@@ -2016,7 +2017,7 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
     if (e.kind === "act" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
-// The door's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
+// The authority's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
 // world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
 // ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
 // chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
@@ -2030,12 +2031,12 @@ const dutyLeft = (wid) => { const t = performance.now(); while (dutyLog.length &
   const all = dutyLog.reduce((n, d) => n + d.ms, 0), mine = dutyLog.reduce((n, d) => n + (d.w === wid ? d.ms : 0), 0);
   return Math.min(DUTY.maxMs - all, DUTY.maxMs * DUTY.worldShare - mine); };
 const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per person per minute: they run code and log nothing
-// door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
+// authority practice: what the authority spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
   const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.script-settings.runs)`;
-  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the door's time in the last minute; at most ${cfg.cpu} (@world.script-settings.cpu)`;
-  const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the door's time in the last minute; at most ${cfg.cpu * 3}`;
+  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the authority's time in the last minute; at most ${cfg.cpu} (@world.script-settings.cpu)`;
+  const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the authority's time in the last minute; at most ${cfg.cpu * 3}`;
   return null;
 }
 // what an act records of its event: everything but what its trigger already holds (a say's text and `to`, a use's args),
@@ -2061,16 +2062,16 @@ function activate(w, id, name, ev) {
   if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: `paused after ${rt.fails} failed activations in a row; set it again (a fix, or the same value) to retry` });
   const depth = 1 + (cause !== undefined ? scriptDepth(w, cause) : 0);
   if (depth > cfg.depth) return out("refused", { code: "depth", why: `cascade depth ${depth} > ${cfg.depth}` });
-  if (!w.scripts) return out("unavailable", { why: "this door has no script sandbox" });
+  if (!w.scripts) return out("unavailable", { why: "this server has no script sandbox" });
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* below */ }
   const fail = (code, why, logs) => { if (!dry && code !== "unavailable") rt.fails = (rt.fails ?? 0) + 1; return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
   if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", `${id}.${key}.src: no ${SR.LANG} source ${v.src} here`);
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
   if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
-  const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
+  const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the authority a run
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
-  if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the door's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
+  if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the authority's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
   if (dry) { const now0 = w.now(), who = ev.by ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
     if (D0.length >= DRY.n) return out("refused", { code: "rate", why: `${said(who)} has asked for ${D0.length} dry runs in the last minute; at most ${DRY.n}` });
     D0.push(now0); w.presenceDirty = true; }
@@ -2110,19 +2111,19 @@ function activate(w, id, name, ev) {
   for (const g of gates) g.deliver();
   rt.fails = 0; return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...logs });
 }
-function withDoor(w, fn) {
+function withAuthority(w, fn) {
   const exit = enter(w, null);
   try { return fn(); } finally { exit(); if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
 }
 /**
- * Timers (door practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
+ * Timers (authority practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
  * arrives it gets ONE `wake {slept}`, never a burst. Several missed periods while awake coalesce into one tick. A timer
  * act's cause is the entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on
  * its own clock (server/v4: once a second); it never runs inside a request.
  */
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];
-  return withDoor(w, () => {
+  return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = [];
     const now = w.now(), present = presentOf(w).size > 0, ran = [];
     for (const { id, name, v } of allScripts(w.state())) { if (!(typeof v.every === "number" && v.every >= 5)) continue; const rt = rtOf(w, id, name);
@@ -2139,11 +2140,11 @@ export function tick(w) {
   });
 }
 /** A world opened after its host stopped without settling presence (a crash, a SIGKILL: no leave ran). Holds are
- *  presence. A host that persists presence (server/v4/disk.ts) still has the hold, with no one connected to let go: it's
+ *  presence. A host that persists presence (server/v4/filehost.ts) still has the hold, with no one connected to let go: it's
  *  settled as `leave` settles it (a drop as the holder, which its grabbable may send home, into a socket or straight
- *  down; a drop the door refuses becomes its return-held). A host that keeps presence in memory (server/v4/live.ts)
+ *  down; a drop the authority refuses becomes its return-held). A host that keeps presence in memory (server/v4/livehost.ts)
  *  has lost the hold, but in a world that runs physics the grab's `lift` took the thing out of the engine and nothing
- *  put it back: it would stay a ghost (no body, no collider) until someone moved it. That is settled by the door as
+ *  put it back: it would stay a ghost (no body, no collider) until someone moved it. That is settled by the authority as
  *  leave's refusal is: a return-held act (cause: the lift) writing where the log last had it, which seats it in the
  *  engine again, or, for a grabbable that returns, a return-home. `present` = identities connected now (none, at
  *  load). Returns what it settled. */
@@ -2161,10 +2162,10 @@ export function settleOrphans(w, present = []) {
     out.push({ deferred: late.size, why: `more than ${ORPHANS.holders} holders at once: their holds ended; what the log still has lifted settles at the next load` }); }
   for (const who of holders.slice(0, ORPHANS.holders)) {
     const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
-    // a holder the door won't take requests from now (banned since): the hold just ends (presence), and what the log
-    // lifted is settled below by the door, as leave's own refusal is (review 10-06)
+    // a holder the authority won't take requests from now (banned since): the hold just ends (presence), and what the log
+    // lifted is settled below by the authority, as leave's own refusal is (review 10-06)
     if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
-  withDoor(w, () => {
+  withAuthority(w, () => {
     const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
     let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
@@ -2200,7 +2201,7 @@ function orphanLifts(w) {
  *  cause is the entry that made the script's sponsor (an arrival isn't logged on every path). */
 export function presenceEvent(w, kind, who) {
   if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
-  return withDoor(w, () => {
+  return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = []; const ran = [];
     for (const { id, name, v } of allScripts(w.state())) if (Array.isArray(v.on) && v.on.includes(kind)) { const sp = sponsorOf(w, id, `script:${name}`);
       ran.push(activate(w, id, name, { on: kind, by: who, ...(sp ? { cause: sp.sponsorAt } : {}) })); }
@@ -2255,7 +2256,7 @@ function scriptStatus(w, st, id, name, v) {
       resume: `set {id: '${id}', component: '${key}', value: {paused: false}, merge: true}` }; }
   if (cfg.run === false) return { ...base, status: "stopped", why: "@world.script-settings.run is false" };
   if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
-  if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };
+  if (!w.scripts) return { ...base, status: "unavailable", why: "this server has no script sandbox" };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
   const role = roleOf(st, sp?.sponsor); const lost = [];
   for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
@@ -2268,8 +2269,8 @@ function scriptsOf(w, st, id) {
     ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (w.scripts.available?.() === true ? SR.ENGINE : `unavailable: ${w.scripts.available?.()}`) : "none" };
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
-export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withDoor(w, () => scriptsOf(w, w.state(), id)); }
-// an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The door never runs them.
+export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }
+// an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The authority never runs them.
 const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
 function importedBehaviours(w, st) {
   return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
@@ -2279,13 +2280,13 @@ function importedBehaviours(w, st) {
 // ---------- the act index (slice 3a): undo and wait without scanning the log ----------
 // A view over the log (L2), built once per world object and advanced per appended entry, so a live world (server/v4,
 // where `w` lives as long as the world is open) pays for each entry once. A purge is retroactive (L1), so a purge entry
-// throws the index away and rebuilds it, as live.ts refolds the state. What it holds:
+// throws the index away and rebuilds it, as livehost.ts refolds the state. What it holds:
 //   actsOf    actor → their act seqs, in order          resultOf  act seq → the first change entry it caused
 //   undone    act seqs some `undo` act names (body.undoes)
 //   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${op|-}` → a purged set value (as the fold keys it)
 //   changes   every change seq, in order                touch     id → the change seqs that touch it, in order
-//   rests     change seqs that are rests (caused by a sim launch); restAfter: rest seq → the door's follow-up act
-//   lastAct   the latest act that isn't an undo or the door's (for "the latest change was X's")
+//   rests     change seqs that are rests (caused by a sim launch); restAfter: rest seq → the authority's follow-up act
+//   lastAct   the latest act that isn't an undo or the authority's (for "the latest change was X's")
 // A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request, as before.
 function freshIndex() {
   return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), changes: [], touch: new Map(),
@@ -2313,8 +2314,8 @@ function indexEntry(x, E, i) {
     for (const id of new Set(opsQuiet(e).map((o) => o.id))) { let a = x.touch.get(id); if (!a) x.touch.set(id, (a = [])); a.push(i); }
     const c = E[e.cause]; if (isE(c) && c.kind === "sim" && c.verb === "launch") x.rests.push(i); }
 }
-// The entries the fold calls malformed (it shapes nothing with them). The door never writes one; an old or hand-made
-// log may hold some, and they're known when the index is built (the door re-reads every line it appends).
+// The entries the fold calls malformed (it shapes nothing with them). The authority never writes one; an old or hand-made
+// log may hold some, and they're known when the index is built (the authority re-reads every line it appends).
 const malformedSeqs = (st) => new Set((st?.diagnostics ?? []).filter(([, c]) => String(c).startsWith("malformed")).map(([q]) => q));
 /** The act index for a world, advanced to the log's end (rebuilt from scratch when a purge arrives). */
 export function actIndexOf(w) {
@@ -2428,7 +2429,7 @@ function buildUndo(ctx, a, w) {
   // F2 (decided 10-05): revert goes along rank, never upward. Someone else's act may be undone by a builder (a builder's
   // or a visitor's) or an owner (anyone's, owners included: round-2 R11, owners revert owners). Roles as they are NOW.
   const othersAct = (seq) => { const e = E[seq]; if (!(isE(e) && e.kind === "act")) return undefined;
-    if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the door's own, not a person's`, "undo takes back people's acts");
+    if (RESERVED.has(e.actor)) refuse("rank", `act ${seq} was the authority's own, not a person's`, "undo takes back people's acts");
     // research S2: undoing another person's act needs editOthers, and still goes only along rank (custom roles included)
     const me = rankOf(ctx.st, ctx.actor), them = rankOf(ctx.st, e.actor), eo = may(ctx.st, ctx.actor, "editOthers");
     if (!eo || me < them) refuse("rank", `act ${seq} was ${said(e.actor)}'s; ${!eo ? "undoing someone else's work needs builder (editOthers)" : `they're ${roleOf(ctx.st, e.actor)}, above you`}`, "revert goes along rank, never upward: ask an owner");
@@ -2491,7 +2492,7 @@ function sculptInverse(w, ctx, target, res) {
   if (!ops.length) refuse("nothing", "undoing that stroke changes nothing now", "");
   return ops;
 }
-// `sculpt`: one act per stroke, applied by the door to the tiles AT HEAD (never the client's copy), writing only the
+// `sculpt`: one act per stroke, applied by the authority to the tiles AT HEAD (never the client's copy), writing only the
 // touched tiles, whole. Additive brushes commute; smooth reads its neighbours at head and may carry expect {id,
 // component, at} (expect by version) to be refused instead of re-applied.
 function buildSculpt(ctx, a) {
@@ -2612,7 +2613,7 @@ function buildUpdate(ctx, a, w) {
   for (const o of ops) ctx.refs.add(o.id);
   return ops;
 }
-// L1: a copy is expanded by the door into an explicit batch. The fold never reads the record.
+// L1: a copy is expanded by the authority into an explicit batch. The fold never reads the record.
 function buildCreateFrom(ctx, a) {
   if (typeof a.from === "string" && !a.from.startsWith("sha256:")) return buildDuplicate(ctx, a);
   const w = ctx.w; let rec;
@@ -2681,8 +2682,8 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
 // cause is the launch, it goes through admit like every write, and admit checks it against the engine. The engine
-// digest is its own `sim` entry. Whatever the door then does about it (attach it to what it rests on, return a thing
-// that left the world) is a SEPARATE entry caused by a door act, so a rest and a correction never look alike.
+// digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
+// that left the world) is a SEPARATE entry caused by a system act, so a rest and a correction never look alike.
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
@@ -2696,13 +2697,13 @@ function settleSim(w) {
     const rest = changeEntry(w, plan, r.seq);
     const st2 = w.state(); const B = boundsOf(st2);
     if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
-      // it landed outside the world: lost. The door returns it to where it was picked up, as its own act.
+      // it landed outside the world: lost. The authority returns it to where it was picked up, as its own act.
       const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
       const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
       changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
       continue;
     }
-    // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the door's word)
+    // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
     const fam = new Set([r.id, ...descendants(st2, r.id)]); const sup = supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
     if (sup.id === "ground") continue;
     const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
@@ -2720,7 +2721,7 @@ function buildEpoch(ctx, v, a) {
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
-  unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the door builds the value from these keys: a typo would vanish silently
+  unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the authority builds the value from these keys: a typo would vanish silently
   const known = ENGINES[v.engine];
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
@@ -2740,7 +2741,7 @@ function holdOf(w, actor, id) {
   if (!w.state().entities[id]) { delete w.presence.holds[id]; w.savePresence(); refuse("gone", `${id} was deleted while you held it`, "your hand is empty now"); }
   return h;
 }
-// L6 / 25d M3: the door's own plausibility TRACK of each body (presence: unlogged). A body is where the door last
+// L6 / 25d M3: the authority's own plausibility TRACK of each body (presence: unlogged). A body is where the authority last
 // ACCEPTED it, never where a client last claimed. Walking spends a token bucket (SPEED m/s sustained, CAP m of
 // burst) and may not enter a solid a body can't step over; a refused step leaves the body where it was (reverted for
 // its sender, visibly). Arriving, or `teleport: true`, is a teleport: an ACT on the record (it resets the track), refused
@@ -2813,7 +2814,7 @@ const PHYSICS_VERBS = {
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
-    // range (grabbable): from the hand; past arm's reach the door grants it as a pull (the thing flies to the hand: a
+    // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
     const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
     const how = holdHow(a, g); // which hand, by which grip or offset: refused before anything is written
@@ -2859,7 +2860,7 @@ const PHYSICS_VERBS = {
     heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
     return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
   },
-  // P3: putting something down is a settlement: a claim the door checks like any write, then logs as a plain result.
+  // P3: putting something down is a settlement: a claim the authority checks like any write, then logs as a plain result.
   // grabbable says where it goes (research §3): home (release: return), into a socket that accepts it (fits), where
   // the hand let go (release: stay), or straight down onto what's below (drop, the default).
   put(w, actor, a, how = "put") {
@@ -2872,7 +2873,7 @@ const PHYSICS_VERBS = {
     if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
       const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
     { const role = roleOf(st, actor); if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
-    // home: the holder's act, then the door's return (its own act, caused by the release)
+    // home: the holder's act, then the authority's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
       if (ret.plan) { rateCheck(w, actor); const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "return" }));
@@ -2893,7 +2894,7 @@ const PHYSICS_VERBS = {
     const stay = g?.release === "stay";
     let pos = a.pos;
     if (pos === undefined && stay) pos = h.pose.pos.map(r3);
-    if (pos === undefined) { // no pose given: straight down from where it's held, onto what's below (the door resolves)
+    if (pos === undefined) { // no pose given: straight down from where it's held, onto what's below (the authority resolves)
       const fam = new Set([a.id, ...descendants(st, a.id)]); const sup = supportBelow(st, h.pose.pos[0], h.pose.pos[2], h.pose.pos[1], fam);
       pos = [r3(h.pose.pos[0]), sup.y, r3(h.pose.pos[2])]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
@@ -2903,7 +2904,7 @@ const PHYSICS_VERBS = {
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
     const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
-    if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
+    if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the authority checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = changeEntry(w, plan, act);
     delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: stay ? "stay" : how, seq: act });
@@ -2938,7 +2939,7 @@ const PHYSICS_VERBS = {
       return PHYSICS_VERBS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
-  // a kick (/punt, an agent's door punt), as a sim intent (design 20, P4: "punt is a sim intent
+  // a kick (/punt, an agent's punt request), as a sim intent (design 20, P4: "punt is a sim intent
   // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
   // your feet through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's: dynamic,
   // physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
@@ -2977,7 +2978,7 @@ const PHYSICS_VERBS = {
     const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
     const wasLeaving = w.leaving; w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = wasLeaving ?? null; }   // a nested request (enter() keeps the outer call's state)
     // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
-    // where the log last had it; if picking it up took it out of the engine, the door puts it back there, as its own act.
+    // where the log last had it; if picking it up took it out of the engine, the authority puts it back there, as its own act.
     for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
@@ -3064,7 +3065,7 @@ function snapTarget(st, id, g, p) {
   }
   return out;
 }
-// Home (research §3): where a returning thing goes. A door act (actor door, verb return-home) whose cause is the
+// Home (research §3): where a returning thing goes. A system act (actor system, verb return-home) whose cause is the
 // release, then its change entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
 // parent that's gone) means it stays where it is.
 function returnPlan(w, st, id, g) {
@@ -3078,7 +3079,7 @@ function returnHome(w, id, plan, cause) {
   const act = w.append({ kind: "act", actor: "system", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
   return { act, seq: changeEntry(w, plan, act) };
 }
-// What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the door's follow-up to one):
+// What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the authority's follow-up to one):
 // the entry and the release that caused it. An edit, a script or a return isn't one (they don't send it home).
 const HAND_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), SYSTEM_AFTER = new Set(["settle", "return-lost", "return-held"]);
 function lastRelease(w, id) {
@@ -3091,7 +3092,7 @@ const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.t
   const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-3);
   return near(t.pos, home.pos) && near(t.q, home.q) && (e.c.parent?.to ?? null) === (home.parent?.to ?? null) && (e.c.parent?.socket ?? null) === (home.parent?.socket ?? null); };
 // returnAfter (research §3): at the first request after a thing has been unheld that long since a hand or physics last
-// moved it, the door sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
+// moved it, the authority sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
 function returnDue(w) {
   const st = w.state(); const now = w.now(); let sf = null;
@@ -3134,12 +3135,12 @@ function flyingWorld(st) {
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
 function shaped(e, id) {
-  if (!Array.isArray(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the door measures it` : "put it down instead; give it a model first");
+  if (!Array.isArray(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
-// where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the door's track of the body
+// where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
 function releasePos(me, pos) {
   if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "pos is [x, y, z]: where your hand lets go", "");
-  const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the door tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
+  const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the authority tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
   return pos.map(noNeg0);
 }
 function launch(w, actor, a, verb, g = null) {
@@ -3162,7 +3163,7 @@ function launch(w, actor, a, verb, g = null) {
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
 // ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
-// The door keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
+// The authority keeps every body's table (consent.js) beside `bodies` and `holds`, refuses BEFORE delivery, and keeps an
 // unlogged attempt ring. Delivery in the lab is the target's `inbox` (a stand-in for the relay to its client).
 const ringPush = (P, r) => { (P.ring ??= []).push(r); if (P.ring.length > 200) P.ring.shift(); };
 const inboxPush = (P, who, m) => { ((P.inbox ??= {})[who] ??= []).push(m); };
@@ -3257,7 +3258,7 @@ const BODY_VERBS = {
 // ---------- acting on a person (research roles §6) ----------
 const WARN_OR_MOD = (st, who) => modHolder(st, who) || roleOf(st, who) === "owner";
 const reasonOf = (a) => (typeof a.reason === "string" && a.reason.trim() ? { reason: a.reason.slice(0, R.REASON_MAX) } : {});
-/** A duration in minutes → until (door ms). Capped below owner at `cap` (an owner may go past it only when ownerCap is false). */
+/** A duration in minutes → until (the authority's ms). Capped below owner at `cap` (an owner may go past it only when ownerCap is false). */
 function minutesUntil(w, actor, minutes, { cap, what, required = false, ownerCap = false }) {
   if (minutes === undefined) { if (required) refuse("shape", `${what} needs minutes (how long)`, `e.g. minutes: 5, 60 or 1440 (at most ${cap})`); return undefined; }
   if (!(typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0)) refuse("shape", `${what}: minutes is a number above 0`, "");
@@ -3305,7 +3306,7 @@ const VERBS = {
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
     // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
     // here in custody) is tier 0; rewind_window is left at its default (1000 change entries).
-    const cu = w.custody(); if (!cu) throw new Error("door bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
+    const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
     w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
@@ -3426,12 +3427,12 @@ const VERBS = {
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
       if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
-        // an imported world: the reaction names an old binding (@world imported-behavior:<name>), which the door never runs
+        // an imported world: the reaction names an old binding (@world imported-behavior:<name>), which the authority never runs
         // (a binding there, or the handler itself written by the translation: its cause is a `legacy` act)
         const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
         if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
-          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice(9) : probe.script}', carried by translation; the door doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists imported behaviours as needs-reinstall`);
+          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice("imported-behavior:".length) : probe.script}', carried by translation; the authority doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
@@ -3440,9 +3441,9 @@ const VERBS = {
     }
     return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
   },
-  // moderation (§2.1): a separate log, enforced by the door; never a world entry. Research roles §5–6: every act on a
+  // moderation (§2.1): a separate log, enforced by the authority; never a world entry. Research roles §5–6: every act on a
   // person needs its permission and a target ranked strictly below you (never yourself, never your equal, never an owner);
-  // its duration is capped below owner; its record names identities. Expiry is the door's clock (sanction views above).
+  // its duration is capped below owner; its record names identities. Expiry is the authority's clock (sanction views above).
   warn: (w, actor, a) => { const t = personAct(w, actor, a, "warn", R.WARN_POWERS);
     if (typeof a.reason !== "string" || !a.reason.trim()) refuse("shape", "warn {who, reason}: a warning says why", "e.g. warn {who, reason: 'please keep it friendly'}");
     w.appendMod({ actor, verb: "warn", who: a.who, reason: a.reason.slice(0, R.REASON_MAX) }); return { ok: true, warned: a.who, ...t, logged: "moderator log" }; },
@@ -3453,7 +3454,7 @@ const VERBS = {
     w.appendMod({ actor, verb: "mute", who: a.who, channels: ch, until, ...reasonOf(a) }); return { ok: true, muted: a.who, channels: ch, until, ...t, logged: "moderator log" }; },
   unmute: (w, actor, a) => { personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true });
     w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
-  // a kick removes a live session now (the door's server does the removing on this reply); they may come back after
+  // a kick removes a live session now (the authority's server does the removing on this reply); they may come back after
   // `minutes` (default 10, at most 60: VRChat's kick is a one-hour bar)
   kick: (w, actor, a) => { const t = personAct(w, actor, a, "kick", ["kick"], { noOwner: "kicked" });
     const until = minutesUntil(w, actor, a.minutes ?? R.KICK_DEFAULT_MIN, { cap: R.KICK_MAX_MIN, what: "a kick's cooldown", ownerCap: true });
@@ -3483,7 +3484,7 @@ const VERBS = {
     personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" });
     w.appendMod({ actor, verb: "unghost", who: a.who }); return { ok: true, unghosted: a.who }; },
   // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
-  // from the world log (roles:* writes, read-only) and the door's automatic cool-downs
+  // from the world log (roles:* writes, read-only) and the authority's automatic cool-downs
   modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
     const lim = Math.max(1, Math.min(200, a.limit ?? 50)); const before = a.before ?? Infinity;
     const rows = w.mod.map((m, i) => ({ ...m, at: i, src: "mod" }));
@@ -3546,14 +3547,14 @@ const VERBS = {
   // that need re-installing. With {id, script, test: {on, …}}: a dry run (41 §3.12): what it WOULD write, refused or not.
   scripts(w, actor, a) { const st = w.state();
     if (a.test !== undefined) {
-      if (!may(st, actor, "build")) refuse("rights", "a dry run needs builder (it spends the door's time)", "");
+      if (!may(st, actor, "build")) refuse("rights", "a dry run needs builder (it spends the authority's time)", "");
       if (!a.test || typeof a.test !== "object" || typeof a.test.on !== "string") refuse("shape", "test is an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}", "e.g. scripts {id: 'bell1', script: 'bell', test: {on: 'use', action: 'ring'}}");
       if (!st.entities[a.id]?.c[`script:${a.script}`]) refuse("not-found", `${a.id} has no script:${a.script}`, "scripts lists them");
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
   // the sky panel's two verbs, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
-  // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
+  // `sky` replaces the sky, stamped with the AUTHORITY's clock (hours advance from it); `weather` merges onto the standing
   // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),

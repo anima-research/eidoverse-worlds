@@ -87,7 +87,7 @@ try {
 
   // QUALITY REDUCED: a state, not an event — slow seconds post it, smooth ones lift it. The real 1 Hz pulse is paused
   // while the probe feeds the governor its seconds (headless is slow: it would shed again between them)
-  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/frame.js')).setSystemEnabled('pulse', on), on);
+  const pulse = (pg, on) => pg.evaluate(async (on) => (await import('/lib/frameloop.js')).setSystemEnabled('pulse', on), on);
   await pulse(pg, false);
   for (let i = 0; i < 12 && !(await shedOn(pg)); i++) await drive(pg, 10, 4);
   const red = await chip(pg, 'quality-reduced');

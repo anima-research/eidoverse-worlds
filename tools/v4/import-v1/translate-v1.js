@@ -13,18 +13,18 @@ import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "
 import { enc, encName, dec } from "../../../shared/v4/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/v4/hash.js";
-import { COMPONENTS } from "../../../shared/v4/catalogue.js";
+import { COMPONENTS } from "../../../shared/v4/componentspec.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
 // "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
 // (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
 // it when the caller knows it (translate(…, {foldBuild}); build.ts beside this file computes it from the files).
-// @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
+// @2 (slice 3a): a mounted thing comes out in the authority's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
-// v1 took any key in any component; v4's catalogue components are closed (the door refuses an unknown key, L7). A
+// v1 took any key in any component; v4's catalogue components are closed (the authority refuses an unknown key, L7). A
 // v1 key the v4 component doesn't define (a lamp's `flicker`) goes to imported:<component> {key: value} beside it: carried,
 // never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
 // v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
@@ -98,8 +98,8 @@ export const TRANSLATOR = "eidoverse/translate-v1@7";
 // words people read stay on the label. Both are also carried in legacy:story beside it (with plantedBy, assetAuthor:
 // who planted it is the log's create; who made the model is the library's credits), so nothing is lost (R10).
 // @5 (2026-10-07, ship list): a v1 `door` component is v4's `openable` (R 10-07: the behaviour's name, not the asset's), and
-// a reaction naming component 'door' names 'openable'; a spin's `rpm` is degPerSec (rpm × 6), the rate the door takes. Orbit
-// center/face/period and path points/speed/duration/loop are the door's own motion fields now, so they stay in the
+// a reaction naming component 'door' names 'openable'; a spin's `rpm` is degPerSec (rpm × 6), the rate the authority takes. Orbit
+// center/face/period and path points/speed/duration/loop are the authority's own motion fields now, so they stay in the
 // motion (they were parked in legacy:motion, which nothing reads). Output differs from @4 on any log with these.
 // @4 (2026-10-06, roles S5): a v1 `fly: true` grant becomes roles:<id>.can.fly (it fell into legacy:roles:<id> before).
 // @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
@@ -109,7 +109,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@7";
 // the `translated` act right after it. v1's owners are @world roles (from its grants), as before.
 export const LAB_DOOR_KEY = "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"; // the conformance suite's fixed sequencer key
 const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
-// A real door passes its own keys and a random nonce (round-2 review R4): the operator's governance key in tier 1,
+// A real authority passes its own keys and a random nonce (round-2 review R4): the operator's governance key in tier 1,
 // never the sequencer's, and a nonce that makes two translations of one log two worlds. Without them (the pure tests)
 // the nonce is derived from the source and one fixed key stands in for both.
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
@@ -119,7 +119,7 @@ export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = k
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-// §2.3 grammar for old names: names.js (one encoding, shared with the live door).
+// §2.3 grammar for old names: names.js (one encoding, shared with the live authority).
 const keyed = (prefix, k) => `${prefix}:${enc(k)}`;
 
 // The projection: what the old fold's state MEANS, in v4 terms. Every deliberate difference is named in DROPPED.
@@ -133,13 +133,13 @@ export const DROPPED = {
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3)",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock: true, which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
-  "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the door's one name for it",
+  "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
 // riding thing sits at parent.offset, else its socket's pos, else the carrier's origin; turned by parent.q, else
 // parent.yaw, else the socket's yaw. Only while its carrier exists: a thing whose carrier is gone stays where its own
-// pose puts it (as v1 draws it), and the door reads a parent that names nothing the same way (worldT).
+// pose puts it (as v1 draws it), and the authority reads a parent that names nothing the same way (worldT).
 const fin = (n) => { n = Number(n); return Number.isFinite(n) ? n : 0; };
 function rideOf(st, e) {
   const rel = e.parent; if (!rel || typeof rel !== "object" || typeof rel.to !== "string" || !Object.hasOwn(st.entities ?? {}, rel.to)) return null;
@@ -150,10 +150,10 @@ function rideOf(st, e) {
   return { pos, q };
 }
 const PARENT_POSE = new Set(["offset", "yaw", "q"]);
-// who(name, {sub}) → the v4 identity for a v1 person (round-2 review R1): the server passes the door directory's
+// who(name, {sub}) → the v4 identity for a v1 person (round-2 review R1): the server passes the authority directory's
 // mapping, so actors and role/ban keys become opaque ids and the account (`sub`) leaves the log for the directory.
 // Without one (the pure tests, the sweep), names are escaped as before and `sub` stays in the value.
-// v1's own system actors (v1 vocabulary: the v1 server wrote "door"); in v4 the door's own acts are actor `system`
+// v1's own system actors (v1 vocabulary: the v1 server wrote "door"); in v4 the authority's own acts are actor `system`
 const SYSTEM = new Set(["door", "world", "sim"]);
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
@@ -191,7 +191,7 @@ export function project(st, seen = null, who = null) {
     w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("assets", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
   // research roles §translation: v1's `fly` and `gen` grants are the fly and generate switches, can.fly / can.generate
-  // (@7: gen had stayed as written, read by the door as generate); `caption` stays in imported until screens carry captioners
+  // (@7: gen had stayed as written, read by the authority as generate); `caption` stays in imported until screens carry captioners
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
@@ -219,7 +219,7 @@ export function diff(prev, now) {
 }
 export const v4project = (s) => Object.fromEntries(Object.keys(s.entities).map((id) => [id, { ...s.entities[id].c }]));
 export const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
-// one entry in the §2.4 envelope; the door's re-read discipline applies: what we emit must parse back unchanged
+// one entry in the §2.4 envelope; the authority's re-read discipline applies: what we emit must parse back unchanged
 export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } });
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
@@ -248,7 +248,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     foldEntry(v1, e);
     const now = project(v1, seen, who);
     const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : actorOf(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
-    const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the door's admission time, carried from the old entry
+    const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the authority's admission time, carried from the old entry
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
       : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const ops = diff(prev, now);

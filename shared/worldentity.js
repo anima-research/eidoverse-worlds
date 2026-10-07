@@ -2,7 +2,7 @@
 //
 // A world's sky, ground and grass are the world entity's components in v4 (the view shows them as state.sky,
 // state.terrain, state.grass; weather is part of the sky). This file reads them as ONE entity whose components are
-// Sky, Weather, Terrain and Grass (records in shared/components.js), and writes every edit as door requests: the
+// Sky, Weather, Terrain and Grass (records in shared/components.js), and writes every edit as requests: the
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
@@ -11,15 +11,15 @@
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration
-//   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as door requests
-//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one door request
+//   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as requests
+//   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one request
 //
 // "One sky per world" is not a rule here: Sky is one-per-entity, and there is
 // one world entity. Picking a sky preset REPLACES the Sky component's params
 // (pickSky); the Weather component is a different component and is carried
 // across the sky verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
 
-import * as OP from './v4/ops.js';
+import * as OP from './v4/requests.js';
 import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
@@ -123,7 +123,7 @@ export function pickSky(sky, preset) {
   return { ...clone(weather), ...omit(clone(preset) ?? {}, ['doc']) };
 }
 
-/** One world change as its door request (v4): the sky and weather are the door's `sky`/`weather` tools (they stamp the
+/** One world change as its request (v4): the sky and weather are the authority's `sky`/`weather` tools (they stamp the
  *  clock: PROTOCOL-v4 sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
 const skyOp = (args) => ({ verb: 'sky', args });
 const weatherOp = (weather) => ({ verb: 'weather', args: { weather } });
@@ -164,7 +164,7 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
  *  grass.* (grass.mow mows).
  *  @param live { now?: number, mayShape?: boolean } — mayShape false = this viewer
  *  is known not to hold owner rank (sky/terrain/grass/weather are owner verbs);
- *  undefined = unknown: nothing is disabled on its account and the door decides. */
+ *  undefined = unknown: nothing is disabled on its account and the authority decides. */
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
@@ -197,7 +197,7 @@ export function worldSchema(st, live = {}) {
     { t: 'enum', k: 'state', label: 'weather', value: eff?.weather ?? 'clear', def: 'clear', options: WEATHERS.map((v) => ({ v, label: v })), ...ro,
       ...(f && !ro.hint ? { hint: 'a forecast governs: a pick holds until the next segment boundary, then the forecast resumes' } : {}) },
     { t: 'info', label: 'now', value: eff ? `${eff.weather ?? 'clear'} — ${eff.source === 'forecast' ? 'the forecast\'s' : eff.source === 'manual' ? `set by ${eff.by ?? '?'} until the next segment` : 'authored'}` : 'clear — no sky authored yet' },
-    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the door's sky tool (its forecast)` }] : []),
+    ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the authority's sky tool (its forecast)` }] : []),
   ];
   groups.push({ group: 'weather', label: 'Weather', fields: wxFields });
 
@@ -238,9 +238,9 @@ export function worldSchema(st, live = {}) {
   return { id: WORLD_ID, world: true, groups, sections: { header: [], list, add: [], lib: null, libLabel: 'the world' } };
 }
 
-// ---------------------------------------------------------------- edits → door requests
+// ---------------------------------------------------------------- edits → requests
 
-/** Turn `edit @world` edits into the fewest door requests: every sky.* edit is
+/** Turn `edit @world` edits into the fewest requests: every sky.* edit is
  *  ONE re-authored sky, weather.state ONE weather, terrain.* ONE terrain set, grass.*
  *  ONE grass set (grass.mow: delete @world grass). Relative math works on numbers, as
  *  on any entity. Pure: never sends, never mutates `st`. */
@@ -301,7 +301,7 @@ export function worldEditOps(st, edits, live = {}) {
 
 // ---------------------------------------------------------------- the Build tab's World tiles
 
-/** A preset pick from Build ▸ World, as one door request: picking replaces the current
+/** A preset pick from Build ▸ World, as one request: picking replaces the current
  *  choice of that kind.
  *    kind 'sky'     v = a sky preset name (ctx.presets, defs/sky/_presets.json) → sky (pickSky)
  *    kind 'weather' v = one of WEATHERS                                          → weather

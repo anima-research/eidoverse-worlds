@@ -14,7 +14,7 @@ import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
-import { libraryCredits } from "./v4/catalogue.ts";
+import { libraryCredits } from "./v4/modelcatalogue.ts";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
@@ -51,7 +51,7 @@ const knownWorld = (name: string) => {
   return worldDirs.has(name) && hasWorldLog(name);
 };
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
- *  JOIN_TOKEN they need a key a join would take (the door key, an agent token, an aid1 credential) as a Bearer header,
+ *  JOIN_TOKEN they need a key a join would take (the authority key, an agent token, an aid1 credential) as a Bearer header,
  *  or a signed-in session cookie from this page (security review 10-06 pass 2, L-C). An open box (no JOIN_TOKEN) is open. */
 function mayRead(req: Request): boolean {
   if (!JOIN_TOKEN) return true;
@@ -454,7 +454,7 @@ const ROUTES: Route[] = [
       const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
       // a label the server does not know shares one bucket and one file. A brand-new world has no dir until its first
       // join, so its pre-join boot lines land there too — a window, not a hole: nothing is lost, only shared.
-      // The door key rides in an Authorization header, NEVER the URL: query-carried join tokens have shown up in
+      // The authority key rides in an Authorization header, NEVER the URL: query-carried join tokens have shown up in
       // proxy/access diagnostics before (review of #172), and this route is called from every browser console.
       // A key in the query is refused outright so the old client shape cannot ship by accident.
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
@@ -621,7 +621,7 @@ const ROUTES: Route[] = [
     // Write authority: a NAMED actor only — a tokens.json bearer or a
     // home-node-verified aid1 identity, the same two legs /upload trusts.
     // The anonymous door token may NOT write here: a seat profile moves
-    // every wearer of an avatar, and "?by=" is self-asserted. This door
+    // every wearer of an avatar, and "?by=" is self-asserted. This server
     // writes PROPOSALS only (the store refuses accepted-shaped records with
     // a 403 by construction); the countersign that makes a profile
     // load-bearing has no HTTP path at all — tools/seat-accept.ts is an
@@ -635,7 +635,7 @@ const ROUTES: Route[] = [
       const tok = url.searchParams.get("token") ?? "";
       const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
       if (!actor) {
-        return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the door token may not write seat profiles" }, 401);
+        return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the authority token may not write seat profiles" }, 401);
       }
       const text = await req.text();
       if (new TextEncoder().encode(text).length > MAX_PROPOSAL_BYTES) {
@@ -737,7 +737,7 @@ const ROUTES: Route[] = [
     // upstream #51, ported to the route table: which build is this world
     // running — public, cheap, cache-hostile; the whole point is NOW
     //
-    // WORLD_INSTANCE_NONCE is an opt-in TEST affordance, mirroring the door's
+    // WORLD_INSTANCE_NONCE is an opt-in TEST affordance, mirroring the authority's
     // MCPL_INSTANCE_NONCE: when set, /version carries `instance`, letting a
     // harness prove the process answering is the one IT spawned rather than a
     // stale listener squatting the port. Unset in production, where the body is
@@ -804,7 +804,7 @@ const ROUTES: Route[] = [
     // rebuilt in place). Gated on the /upload sign-ins + a session cookie (below); rate-limited; the queue dedups.
     match: (u, req) => u.pathname === "/rebuild" && req.method === "POST",
     handler: ({ req, url, srv }) => {
-      // Who may ask: the sign-ins /upload accepts (the door key, an agent token, an aid1 credential) plus a signed-in
+      // Who may ask: the sign-ins /upload accepts (the authority key, an agent token, an aid1 credential) plus a signed-in
       // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
       // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
       if (JOIN_TOKEN) {
@@ -813,7 +813,7 @@ const ROUTES: Route[] = [
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
           // a cookie rides cross-site requests from sibling subdomains (SameSite=Lax is per-SITE): take it only from this page
           || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
-        if (!ok) return new Response("sign in or send the door key as a Bearer header", { status: 401 });
+        if (!ok) return new Response("sign in or send the authority key as a Bearer header", { status: 401 });
       }
       // a forced rebuild skips the freshness check, so a POST loop could keep the one serial pump busy and starve uploads
       const ip = req.headers.get("x-real-ip") ?? srv?.requestIP?.(req)?.address ?? "?";
@@ -831,7 +831,7 @@ const ROUTES: Route[] = [
   {
     match: (u, req) => u.pathname === "/thumb" && req.method === "POST",
     handler: async ({ req, url }) => {
-      // The door key rides `Authorization: Bearer`, never the URL (access logs; see /clientlog). The old ?token= shape
+      // The authority key rides `Authorization: Bearer`, never the URL (access logs; see /clientlog). The old ?token= shape
       // is refused outright so a stale client cannot keep leaking it.
       if (url.searchParams.has("token")) return new Response("key belongs in the Authorization header", { status: 400 });
       const auth = req.headers.get("authorization") ?? "";
@@ -1231,7 +1231,7 @@ const ROUTES: Route[] = [
 //
 //   • DRACO decoder wasm from gstatic (assets.js) — fine either way; gstatic
 //     sends `cross-origin-resource-policy: cross-origin`.
-//   • Orrery API via fetch(credentials:'include') (conjure.js) — UNAFFECTED.
+//   • Orrery API via fetch(credentials:'include') (generate.js) — UNAFFECTED.
 //     COEP governs no-cors SUBRESOURCES; a cors-mode fetch is not one
 //     ("requests made in cors mode won't be blocked by COEP" — MDN).
 //   • Orrery thumbnails via <img> — WAS affected: a bare <img> is no-cors, so
@@ -1239,7 +1239,7 @@ const ROUTES: Route[] = [
 //     with crossorigin="use-credentials", moving it to cors mode.
 //
 // And COOP `same-origin` severs window.opener, which broke Orrery's OAuth
-// popup — it could not postMessage back and sign-in hung silently. conjure.js
+// popup — it could not postMessage back and sign-in hung silently. generate.js
 // now polls /api/auth/me as the primary signal, needing no opener at all.
 //
 // The headers must ride on EVERY response, not just the document: a worker

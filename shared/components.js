@@ -131,7 +131,7 @@ const DEFS = [
   { name: 'Grabbable', category: 'Interaction', needs: ['Model'], summary: 'it can be picked up and carried: who may, how it is held (grips), where it goes when let go, what using it while held does',
     params: { spec: { t: 'json', default: {}, hint: '{who, enabled, steal, range, priority, hold, pose, grips, twoHanded, throw, release, returnAfter, home, fits, use, prompt, fx}' } },
     fallback: { text: 'can be picked up' }, note: 'wire: the grabbable component; a dynamic thing with no grabbable is carryable by physics.who (the migration fallback)' },
-  // openable (R 10-07; shared/v4/catalogue.js): it opens and closes when used. The spec is the component's whole value; the
+  // openable (R 10-07; shared/v4/componentspec.js): it opens and closes when used. The spec is the component's whole value; the
   // card edits open, locked, how it opens and how long it takes; its JSON hatch reaches the rest (part)
   { name: 'Openable', category: 'Interaction', summary: 'opens and closes when someone uses it: a door, a gate, a lid, a hatch',
     params: { spec: { t: 'json', default: {}, hint: '{open, locked, angle, axis, slide, time, part}' } },
@@ -160,7 +160,7 @@ const DEFS = [
     params: { src: { t: 'asset', default: null, required: true, hint: 'store/audio/…, eidoverse/assets/…, or an https link' }, playing: { t: 'bool', default: true }, loop: { t: 'bool', default: true }, volume: { t: 'num', default: 0.8, min: 0, max: 1 },
       pitch: { t: 'num', default: 1, min: 0.5, max: 2 }, near: { t: 'num', unit: 'm', default: 1.5, min: 0.01, max: 100, hint: 'full volume inside it' },
       radius: { t: 'num', unit: 'm', default: 12, min: 1, max: 100, hint: 'silent at and beyond it' }, spatial: { t: 'bool', default: true, hint: 'off: heard evenly inside radius, no panning' },
-      t0: { t: 'num', default: null, hint: 'shared playhead start (stamped by the door)' },
+      t0: { t: 'num', default: null, hint: 'shared playhead start (stamped by the authority)' },
       alt: { t: 'text', default: null, max: 200, hint: 'Alternative text: describes this for people who can\'t hear it, and for agents' } },
     fallback: { visual: 'silent', text: 'not heard: <why>' } },
   { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
@@ -285,7 +285,7 @@ function compBag(inst) {
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
   const out = [];
-  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (record.js), kept through the round trip
+  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (view.js), kept through the round trip
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
   // client and replays; design §3) but belongs to the Transform: a valid one is
   // read here, and anything else under that key stays an Annotation below
@@ -457,7 +457,7 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 /** The light an entity casts, normalized, or null. Either spelling:
  *  kind:"light" (the light verb; the fold already defaulted its fields) or a
  *  plain-object comp.light on any other entity. When both are present the
- *  legacy kind:"light" wins (the door refuses `comp light` on such an entity;
+ *  legacy kind:"light" wins (the authority refuses `comp light` on such an entity;
  *  this rule is for hand-written logs). A comp.light field of the wrong type
  *  reads as its default — never a throw, never NaN reaching the rig. */
 export function lightOf(ent) {
@@ -492,7 +492,7 @@ export function colliderOf(ent) {
  *  carries) — no model, not a legacy light. A pivot, a group parent, a target. */
 export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.lib == null;
 
-/** Why a `comp` of type light/collider would be refused, or null. The door
+/** Why a `comp` of type light/collider would be refused, or null. The authority
  *  (server/verbs.ts vComp) and the inspector ask the same question, so a
  *  refusal reads the same from either. `data: null` (removal) is always fine.
  *  Keys a record does not name are allowed, as in every bag (annotations
@@ -520,7 +520,7 @@ export function compRefusal(type, data, ent = null) {
   return null;
 }
 
-/** A socket's body block (shared by the door, the client and the agent): present = a person can attach there by
+/** A socket's body block (shared by the authority, the client and the agent): present = a person can attach there by
  *  using it. The whole shape and its defaults live in shared/sockbody.js; read here so every consumer has one name. */
 export { bodyOf } from './sockbody.js';
 

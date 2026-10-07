@@ -57,6 +57,6 @@ export const chatLog = [];
 export const logChat = (actor, text, tag, extra) => { chatLog.push({ actor, text, tag, extra }); };
 // boot.js
 export const whenBooted = async () => {};
-// realize/models.js — causes.js only needs the PORTED verb set for its
+// realize/models.js — livechat.js only needs the PORTED verb set for its
 // "realized elsewhere" bookkeeping; the realizer itself stays out of the test
 export const PORTED = new Set(['spawn', 'place', 'remove', 'comp', 'motion', 'mount', 'dismount', 'light']);

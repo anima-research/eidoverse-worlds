@@ -2,7 +2,7 @@
 // screen names in its `captioners {ids}` (whoever may edit the screen sets
 // that), and sends one door `caption` request per final line. It reads the
 // stage cue (a `stage` component on the screen) off its own fold of the
-// world (shared/v4/client.js), so `speaker` is the operator's word, never
+// world (shared/v4/replica.js), so `speaker` is the operator's word, never
 // the bot's guess.
 //
 // RECEIPTS (Mica, #187 review B3). A line is not done when it is sent; it is
@@ -30,7 +30,7 @@
 // perception, not history. This client keeps nothing the world does not.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
-import { makeV4Client } from '../../shared/v4/client.js';
+import { makeV4Client } from '../../shared/v4/replica.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {

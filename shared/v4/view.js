@@ -1,4 +1,4 @@
-// shared/v4/record.js — the v4 fold as the records the renderer, the panels and the agent's tools read (slice 3c).
+// shared/v4/view.js — the v4 fold as the records the renderer, the panels and the agent's tools read (slice 3c).
 // A VIEW, not a protocol: no verbs, no second fold. Pure; browser, server and agent run the same code.
 //   viewOf(id, c)      one entity: {lib, pos, q, yaw, scale (one number), scale3? (non-uniform), parent?, comp?, …}
 //   viewState(v4st)    the whole world: {entities, sky, terrain, grass, assets, roles, bans, …}

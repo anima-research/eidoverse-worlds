@@ -34,7 +34,7 @@
 // retires the older leg), and vCaption stamps that generation onto every
 // caption entry — a client cannot supply it. The bag remembers the
 // generation that wrote it; a caption from a lower generation is refused as
-// a superseded leg, a higher one takes over. So supersession is the door's
+// a superseded leg, a higher one takes over. So supersession is the authority's
 // own fact, never a clock the bot claims: a restart under clock rollback
 // still takes over (its leg is newer), a stale predecessor cannot present a
 // "later" timestamp and win (its leg is older), and two captioners for one
@@ -91,7 +91,7 @@ export function normalizeCaption(c) {
 }
 
 /** The `caption` verb's args, shape-checked: `ok:false` carries WHY (the
- *  refusal the door sends), `ok:true` the normalized args that become
+ *  refusal the authority sends), `ok:true` the normalized args that become
  *  history. Pure — the sequencer's validator and the bot's own pre-check
  *  are the same function. */
 export function normalizeCaptionArgs(a) {

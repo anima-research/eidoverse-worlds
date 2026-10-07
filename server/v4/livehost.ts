@@ -1,29 +1,29 @@
-// server/v4/live.ts — a v4 world as a running server holds it: the door (shared/v4/door.js) over one directory, with
-// every view the door reads kept INCREMENTALLY (research 35, slice-2 #5):
+// server/v4/livehost.ts — a v4 world as a running server holds it: the authority (shared/v4/authority.js) over one directory, with
+// every view the authority reads kept INCREMENTALLY (research 35, slice-2 #5):
 //   state   the strict fold, advanced per appended entry (copy-on-write: only the entities an entry touches are
 //           copied, so a held state never changes under its holder, and a write costs the world's touched part, not
 //           the log). A purge refolds from the log (purge is retroactive by law, L1).
-//   sim     the sim layer as a running folder (simFolder), viewed at the door's clock. The lab simFolded the whole
+//   sim     the sim layer as a running folder (simFolder), viewed at the authority's clock. The lab simFolded the whole
 //           log on EVERY request (settleSim calls it first).
 //   index   id → seqs of the change entries that touch it, so creatorOf / lastTouch cost a thing's own history.
-//   clock   monotonic: max(wall clock, every ts already written). §2.1 says ts never decreases; a monotonic door
+//   clock   monotonic: max(wall clock, every ts already written). §2.1 says ts never decreases; a monotonic authority
 //           clock also makes "advance the sim for a read, then fold a later entry" equal to folding it first.
-//   presence the door's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
+//   presence the authority's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
 //           file because its CLI ran one process per request).
 // The log file is <dir>/v4.jsonl (UTF-8 JSONL, §2.4); blobs are <dir>/v4-blobs/sha256-<hex>.json, named by the full
 // hash of their JCS bytes, written once, verified on read (§2.2). Each line is appended and fsynced (durable.ts) before
-// the request returns: the door has already re-read it with the strict reader.
+// the request returns: the authority has already re-read it with the strict reader.
 import fs from "node:fs";
 import path from "node:path";
 import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed } from "../../shared/v4/fold.js";
-import { worldOf, posAt } from "../../shared/v4/door.js";
+import { worldOf, posAt } from "../../shared/v4/authority.js";
 import { simFolder } from "../../shared/v4/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { directoryFor } from "./directory.ts";
 import { SANDBOX } from "../../shared/v4/sandbox.js";
 
-type Any = any; // the door is JSDoc-typed JS; the server holds it structurally
+type Any = any; // the authority is JSDoc-typed JS; the server holds it structurally
 
 const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
 const opsQuiet = (e: Any) => { try { return opsOf(e); } catch { return []; } };
@@ -39,11 +39,11 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 }
 
 export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
-  /** the door's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
-  /** id → display name (the door directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
+  /** the authority's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
+  /** id → display name (the authority directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
   /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/v4/sandbox.js; null = none) */ scripts?: Any;
-  /** who is connected beyond the door's own bodies: [{id, at}] (server/v4/world.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
+  /** who is connected beyond the authority's own bodies: [{id, at}] (server/v4/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
 
 /** Open (or prepare to found) the v4 world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
@@ -91,7 +91,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // a world that holds scripts starts its sandbox processes now, so its first activation doesn't wait for one
   if (st.status === "ok" && Object.values(st.entities ?? {}).some((e: Any) => Object.keys(e.c).some((k) => k.startsWith("script:")))) w.scripts?.warm?.();
   w.state = () => st;
-  w.sim = () => sim.view(w.now()); // the door's clock: one per request (door.js request pins it)
+  w.sim = () => sim.view(w.now()); // the authority's clock: one per request (authority.js request pins it)
   w.touching = (id: string) => touching.get(id) ?? [];
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {

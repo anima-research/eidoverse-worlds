@@ -13,7 +13,7 @@ import { refusalText } from '../../shared/v4/refusal.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
-// narration, live say) dispatch over the bus as 'live-entry' (causes.js
+// narration, live say) dispatch over the bus as 'live-entry' (livechat.js
 // listens — emitted rather than imported so this file adds no lap around
 // the net → chat → net cycle). One writer per verb, always.
 
@@ -22,12 +22,12 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
-// this client folds the door's own stream (shared/v4/client.js) and derives the view the realizers draw from it,
-// locally; edit mode sends door requests (v4edit.js) and waits for the door.
-import { makeV4Client } from '../../shared/v4/client.js';
+// this client folds the authority's own stream (shared/v4/replica.js) and derives the view the realizers draw from it,
+// locally; edit mode sends requests (v4edit.js) and waits for the authority.
+import { makeV4Client } from '../../shared/v4/replica.js';
 import { actorName } from '../../shared/v4/names.js';
 export const v4 = makeV4Client();
-/** Is this client in a world (it has adopted the door's cut)? */
+/** Is this client in a world (it has adopted the authority's cut)? */
 export const isV4 = () => v4.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
@@ -102,9 +102,9 @@ export function wireNet(h) {
 
 // ---------------------------------------------------------------- sending
 
-// Every write is a door request (requestV4 below; edits go through v4edit.js sendOps). No verb crosses the wire.
+// Every write is a request (requestV4 below; edits go through v4edit.js sendOps). No verb crosses the wire.
 
-/** People present, by the name they show → the identity the world knows them by (u-…, from the door's directory;
+/** People present, by the name they show → the identity the world knows them by (u-…, from the authority's directory;
  *  the server sends it on arrive and in the join roster). A role, a ban or a rollback goes to THIS, never to a typed
  *  name (round-2 R1/R2; security review 10-06 H2). */
 export const identities = new Map();
@@ -113,7 +113,7 @@ export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
 net.modMuted = {};
 export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
-/** Say something in the world (the door's `say`). Resolves with the door's reply. Never silent (Commons audit #6): a
+/** Say something in the world (the authority's `say`). Resolves with the authority's reply. Never silent (Commons audit #6): a
  *  line typed while the connection is down is QUEUED and sent when the world is back, and a refused say (the rate
  *  limit, a ban, too long) is shown to the person in plain words. */
 const sayQueue = [];   // {args, resolve}: says typed while reconnecting, sent in order on the next snapshot
@@ -136,7 +136,7 @@ function sendSay(args) {
 export function say(text, extra = {}) {
   const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
   if (net.joined && net.ws?.readyState === 1) return sendSay(args);
-  // removed, taken over, or refused at the door: nothing will reconnect, so nothing is queued (it would wait forever)
+  // removed, taken over, or refused at the authority: nothing will reconnect, so nothing is queued (it would wait forever)
   if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
   logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
   return new Promise((resolve) => sayQueue.push({ args, resolve }));
@@ -265,16 +265,16 @@ export function sendJoin() {
   }));
 }
 
-// ---- requests: {type: 'request', id, verb, args} → {type: 'reply', id, ok, reply} (server/v4/messages.ts) ----
+// ---- requests: {type: 'request', id, verb, args} → {type: 'reply', id, ok, reply} (server/v4/requestwire.ts) ----
 let v4Seq = 0;
 const v4Pending = new Map();   // id → {resolve, timer}
-/** One door request; resolves with the door's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
+/** One request; resolves with the authority's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
  *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
 export function requestV4(verb, args = {}, { timeoutMs = 15000 } = {}) {
   if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', fix: 'wait for the connection to come back, then try again' } });
   const id = ++v4Seq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
+    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
     v4Pending.set(id, { resolve, timer });
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
@@ -282,9 +282,9 @@ export function requestV4(verb, args = {}, { timeoutMs = 15000 } = {}) {
 function onV4Result(msg) {
   const p = v4Pending.get(msg.id); if (!p) return;
   v4Pending.delete(msg.id); clearTimeout(p.timer);
-  p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the door sent no reply body' } });
+  p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the authority sent no reply body' } });
 }
-/** The door's fresh entries: fold them (v4.ingest), then hand state.js the new view of that fold (it tells the
+/** The authority's fresh entries: fold them (v4.ingest), then hand state.js the new view of that fold (it tells the
  *  realizers what changed, in v4 terms). Chat lines take the chat path (they aren't world state). */
 function onV4Log(msg) {
   if (!v4.active) return;
@@ -293,7 +293,7 @@ function onV4Log(msg) {
   // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
   // Numbered v4seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
-    // the spoken trio (validated at the door) rides along: chat merges a spoken utterance and places it by t0
+    // the spoken trio (validated at the authority) rides along: chat merges a spoken utterance and places it by t0
     const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
     hear(shadowState.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });
     if (hydrating) pendingLive.push(e);
@@ -351,7 +351,7 @@ export function sendPose(now) {
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // what I press while I hold a thing (grabbable's presence tier: every receiver draws its fx while this rides;
-  // absent = not pressing). Never logged: a use.down/up that changes the world is a door request of its own
+  // absent = not pressing). Never logged: a use.down/up that changes the world is a request of its own
   if (s.useHeld) pose.use = s.useHeld;
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
@@ -442,7 +442,7 @@ async function fetchIdentity() {
 /** A logged-out returning Discord user goes back through the login — it
  *  round-trips without interaction while Discord still knows them. Key-link
  *  visitors (CONFIG.token) are never bounced, and one bounce per minute is
- *  the cap: if the identity node is down we fall through to the door (which
+ *  the cap: if the identity node is down we fall through to the authority (which
  *  offers the same link) instead of redirect-looping. */
 export function bounceToLogin() {
   if (identity || !authCfg?.login || CONFIG.token) return false;
@@ -462,7 +462,7 @@ export async function initIdentity() {
   return identity;
 }
 
-/** The deployment's login URL, if identity is wired up — the door offers it as
+/** The deployment's login URL, if identity is wired up — the authority offers it as
  *  the keyless way in. Only meaningful after initIdentity()/connect(). */
 export function loginUrl() {
   return authCfg?.login ?? null;
@@ -478,13 +478,13 @@ export async function connect() {
   }
   // Not required, but this browser used to be logged in and isn't anymore —
   // re-login is silent while Discord still authorizes, so don't make them
-  // rediscover the door.
+  // rediscover the authority.
   if (bounceToLogin()) return;
   // The early socket (inline boot script in index.html): the HTML may have
   // already opened the WS and sent this exact join while the module graph
   // was still parsing — the snapshot downloaded DURING parse instead of
   // after it. Adopt it only when the join it sent is byte-for-byte the one
-  // we would send now; on ANY mismatch (rename at the door, avatar switch,
+  // we would send now; on ANY mismatch (rename at the authority, avatar switch,
   // a login flow) close it and connect fresh. The early socket is an
   // optimization, never an authority.
   const early = globalThis.__ewEarlySocket;
@@ -546,7 +546,7 @@ function wireSocket(ws) {
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
-    // the name can never exist, so reconnecting is just hammering the door.
+    // the name can never exist, so reconnecting is just hammering the authority.
     if (ev.code === 4005) {
       net.status = 'rejected';
       bus.emit('net', net);
@@ -555,7 +555,7 @@ function wireSocket(ws) {
       return;
     }
     // 4003 = bad or missing door key. This used to fall through to the generic
-    // retry, so a wrong key hammered the door forever while the client said
+    // retry, so a wrong key hammered the authority forever while the client said
     // "disconnected — retrying…" and never explained why.
     if (ev.code === 4003) {
       net.status = 'rejected';
@@ -773,7 +773,7 @@ async function handle(msg) {
       break;
 
     case 'holds':
-      // who holds what (the door's presence plane, design 20 P2): v4phys.js draws each held thing in its holder's hand
+      // who holds what (the authority's presence plane, design 20 P2): v4phys.js draws each held thing in its holder's hand
       bus.emit('holds', msg.holds ?? {});
       break;
 
@@ -900,7 +900,7 @@ async function onSnapshot(msg) {
   net.joined = true;
   net.status = 'live';
   net.myId = msg.you;
-  net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
+  net.mySub = msg.yourSub ?? null;   // the durable subject the authority vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
   // adopt it — and say so, a silently different nameplate is confusing.
@@ -955,7 +955,7 @@ async function onSnapshot(msg) {
       .catch((e) => report(`present ${p.id}`, e));
   }
 
-  // State adopts the snapshot FIRST, synchronously: the door's own cut, drawn as the view of THIS client's fold of it
+  // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
   if (!msg.v4?.state) { v4.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
   v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('holds', msg.v4.holds ?? {});

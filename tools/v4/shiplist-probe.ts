@@ -1,11 +1,11 @@
 // tools/v4/shiplist-probe.ts — the ship list's group A in a real browser (one headless Chromium against a scratch
 // sequencer, tools/harness.ts scratchBench; test:v4 runs it under the house guards, like client-check):
-//   D   a desktop visitor's door: the hint bar offers "E open “Gate”" within reach; E opens it through the door (one
+//   D   a desktop visitor's door: the hint bar offers "E open “Gate”" within reach; E opens it through the authority (one
 //       use act); every client draws it swinging (it turns about its hinge over its time, then rests open); E again
 //       offers "close" and closes it
-//   F   a refusal reads in a person's words (no code, no tool syntax, the thing by its label), the door's whole answer
+//   F   a refusal reads in a person's words (no code, no tool syntax, the thing by its label), the authority's whole answer
 //       still on the event for the console
-//   W   a write the door warns about (it floats) shows the warning to the person, by label
+//   W   a write the authority warns about (it floats) shows the warning to the person, by label
 //   V   in a headset (renderer.xr presenting, emulated), a moderator's warning rides the XR quad, not the DOM card
 //   E   the editor: the Inspector's Openable card (its rows; a hinge button writes the pivot), and Add Component finds
 //       Openable by 'door' and adding it makes the thing usable
@@ -50,7 +50,7 @@ try {
 
   // each stage stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red)
   const stage = async (id: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
-  // ---- D: the door, as a desktop visitor meets it ----
+  // ---- D: the authority, as a desktop visitor meets it ----
   const me = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
   const at = [me[0] + 1.2, me[2]];
   await stage("D", async () => {
@@ -66,7 +66,7 @@ try {
     while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => setTimeout(r, 40)); }
     return out; })(), true)`);
   await key("KeyE");
-  check("D2 E opens it through the door: one use act, openable.open = true", await waitDisk(() => disk().entities.gate?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
+  check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities.gate?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
     { open: disk().entities.gate?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
   const samp: any[] = await evalJson(`window.__samp`);
   const moving = samp.filter(([, f, to]) => to === 1 && f > 0.05 && f < 0.95);
@@ -99,7 +99,7 @@ try {
   await stage("W", async () => {
   const w0 = await evalJson(`__warned.length`);
   await page(`const e = await import('/lib/v4edit.js'); return (await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' })).ok;`);
-  check("W1 a write the door warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), await evalJson(`__warned.at(-1) ?? null`));
+  check("W1 a write the authority warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), await evalJson(`__warned.at(-1) ?? null`));
   check("W2 …on screen (a toast)", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => /Done, but “Floating crate”/.test(t.textContent))`, 3000));
 
   });
@@ -139,7 +139,7 @@ try {
   const all = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   await evalJson(`(() => { const i = document.querySelector('.sp-pop-search'); i.value = 'door'; i.dispatchEvent(new Event('input')); return true; })()`);
   const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
-  check("E3 Add Component offers Path and no LookAt (what the door takes), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && !all?.some((t: string) => /LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
+  check("E3 Add Component offers Path and no LookAt (what the authority takes), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && !all?.some((t: string) => /LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
   check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);

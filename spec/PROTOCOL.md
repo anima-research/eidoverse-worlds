@@ -65,7 +65,7 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 |---|---|
 | `world` | the world id (§2); required on every entry after genesis |
 | `kind` | `genesis` · `change` · `act` · `sim` · `say` · `purge` · `sequencer` |
-| `ts` | the door's admission time, integer milliseconds ≥ 0; required after genesis, never decreasing along the log |
+| `ts` | the authority's admission time, integer milliseconds ≥ 0; required after genesis, never decreasing along the log |
 | `actor` | who: an identity, `system`, `sim`, `world` or `script:<entity>` (§6) |
 | `cause` | the seq of the entry that caused this one, `0 ≤ cause < seq`; required on `change` |
 | `verb` | a string: for `change`, one of the four operations (§3) |
@@ -136,12 +136,12 @@ A `change` entry's `verb` and `body` are one of:
   op, with a diagnostic.
 - The fold reads only the entry: never a blob's bytes, never anything
   outside the log. Blobs appear only as values (a model's path, a script
-  source's hash). A blueprint copy is expanded by the door into an explicit
+  source's hash). A blueprint copy is expanded by the authority into an explicit
   batch.
 - A deleted id may be created again by the fold, and starts empty. (The
   reference door refuses to re-create an id that existed before, so a
   reborn id can't inherit references or a sponsorship.)
-- "All or nothing" is the door's promise about what it writes; it is not a
+- "All or nothing" is the authority's promise about what it writes; it is not a
   fold rule.
 
 ### 3.1 Names and ids
@@ -164,10 +164,10 @@ All ASCII.
 
 Components are how a world grows: **a new feature is a new component,
 never a new operation**. The fold applies every component blindly; meaning
-lives in whatever reads it — a renderer, the door's checks, a script.
+lives in whatever reads it — a renderer, the authority's checks, a script.
 
 - **Bare names are the protocol's registry.** The registered components,
-  their fields, defaults and meanings are in `shared/v4/catalogue.js`; a
+  their fields, defaults and meanings are in `shared/v4/componentspec.js`; a
   door answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
   `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
@@ -199,7 +199,7 @@ lives in whatever reads it — a renderer, the door's checks, a script.
 
 A **blueprint** is a saved entity with its children, published into the
 world's blueprints (`@world.blueprints:<hash>`) by a `publish` request; a
-**copy** is made by `create {from: <hash>}`, which the door expands into an
+**copy** is made by `create {from: <hash>}`, which the authority expands into an
 explicit batch carrying every component (each part marked with
 `copy-of {from, key}`), so a copy folds with no resolver. An `update`
 request moves a copy to a newer version, keeping its own overrides.
@@ -236,7 +236,7 @@ request moves a copy to a newer version, keeping its own overrides.
   pose packet's fields are `docs/pose-wire.md`.
 - **Presence touches the log only through checked acts.** Arriving,
   teleporting, putting something down, letting it go and throwing it are
-  requests the door checks (against its own cheap track of each body: speed,
+  requests the authority checks (against its own cheap track of each body: speed,
   reach, solids) and records. A release with velocity is a launch. Continuous
   contact from a body or a held thing gives no unlogged impulse. A disconnect
   settles at the last accepted state.
@@ -247,7 +247,7 @@ request moves a copy to a newer version, keeping its own overrides.
 - **Body consent.** Every body has one table of act classes (near, follow,
   social touch, intimate touch, pose, shove, move, voice), each set to
   everyone, ask, or nobody, separately for strangers and friends — the same
-  table for humans and agents. Silence is no. The door refuses before
+  table for humans and agents. Silence is no. The authority refuses before
   delivery, and the target's own client has the final word. Consent is
   presence: it is never logged and is not a grant.
 
@@ -264,7 +264,7 @@ request moves a copy to a newer version, keeping its own overrides.
 - Display names are a view, kept outside the log. A stranger who takes your
   old name inherits nothing.
 
-## 7. Authority — the door
+## 7. Authority — the authority
 
 Every write reaches the log through the world's **door**. A request
 `{tool, args}` — `create`, `set`, `delete`, `place`, `batch`, `use`, `say`,
@@ -310,7 +310,7 @@ the log records only the edit. A lock binds authoring, not motion.
 
 **Requests are open; results are closed.** Anyone may add a request word —
 a tool, a `use` action, a script command — and no request word grants a
-right. Unknown requests are refused at the door; nothing about them reaches
+right. Unknown requests are refused at the authority; nothing about them reaches
 the fold.
 
 **Moderation** (kicks, bans and their reasons) lives in a separate
@@ -338,7 +338,7 @@ reads and compare. The reference API, limits and determinism rules are
 
 Metres. Y-up. Right-handed. Forward = +Z; a heading `yaw` is the angle about
 +Y, `atan2(x, z)` of the facing vector. Colors are integers (`0xffd9a0`).
-Times are epoch milliseconds on the door's clock (`ts`). Entity ids are
+Times are epoch milliseconds on the authority's clock (`ts`). Entity ids are
 opaque; asset paths are content-addressed under `store/` (`<hash>.glb`) and
 blobs are named `sha256:<64 hex>` — a reference pins exact bytes.
 
@@ -400,7 +400,7 @@ argument will be short.
   `commit`.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
   Ed25519 over UTF-8 `"eidoverse-v4-head:<world id>:<seq>:<head hex>"`, by
-  the sequencer key named in genesis (or the latest handoff). The door signs
+  the sequencer key named in genesis (or the latest handoff). The authority signs
   at least every write it commits. A client SHOULD remember the last `(seq,
   head)` it saw for each world and check that the log extends it on its next
   visit: that is what catches a sequencer rewriting its own history. Two

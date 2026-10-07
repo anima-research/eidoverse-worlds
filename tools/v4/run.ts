@@ -3,7 +3,7 @@
 //   V4_LAB=<v4-lab checkout>        also run the control arms (the lab's pre-fix door and fold; see common.ts)
 //   V4_WORLDS=<dir>[:<dir>…]        where the sweep looks for world logs (default: the checkout's parent directory)
 //   bun tools/v4/run.ts hostile phys    run only the named suites
-// Each suite runs in its own process (they pin the door's clock through V4_NOW). Prints each suite's tail; exits 1
+// Each suite runs in its own process (they pin the authority's clock through V4_NOW). Prints each suite's tail; exits 1
 // if any suite fails.
 import { existsSync } from "node:fs";
 import { ENGINE, controlNote } from "./common.ts";
@@ -11,7 +11,7 @@ import { ENGINE, controlNote } from "./common.ts";
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["hostile", "hostile-check.ts", 2],   // PROTOCOL-v4 §6 proof 1: hostile logs against the strict fold
-  ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the door (admit, L7)
+  ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the authority (admit, L7)
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
   ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
@@ -19,7 +19,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],             // the old-world importer (tools/v4/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
-  ["door", "door-check.ts", 1],
+  ["authority", "authority-check.ts", 1],
   ["directory", "directory-check.ts", 1],
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
   ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
@@ -30,11 +30,11 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
-  ["scale", "scale-check.ts", 1],       // the door at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
+  ["scale", "scale-check.ts", 1],       // the authority at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
   ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions, ghost
   ["batch2", "batch2-check.ts", 1],     // edit mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
   ["client-b2", "batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
-  ["build", "build-check.ts", 1],       // ship-list group B (10-07): building walls at the door, nested blueprints, the editor's new script
+  ["build", "build-check.ts", 1],       // ship-list group B (10-07): building walls at the authority, nested blueprints, the editor's new script
   ["build-client", "build-probe.ts", 1], // …and in a real browser: a building edit and its undo, turn/size before placing, the new-script card (one browser, guarded)
   ["shiplist", "shiplist-check.ts", 1], // ship list group A (audit 10-07): openable, reactions checked at write, motion fields, help text, people's words
   ["shiplist-probe", "shiplist-probe.ts", 1], // …in headless Chromium: E opens a door and it swings; a person's refusal and warning; a moderator's warning in VR

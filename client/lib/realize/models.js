@@ -802,7 +802,7 @@ function execMount(id) {
   // after the mount must re-seat the rider, not be ignored (review S5)
   const relKey = JSON.stringify([rel, sock ?? null]);
   if (child.userData.mountRel === relKey) return;   // already exactly this
-  // a loop (a log written before the door refused them): parenting a thing
+  // a loop (a log written before the authority refused them): parenting a thing
   // under its own descendant would make three.js recurse forever every frame —
   // leave it where it stands; the Hierarchy shows both as roots (hierarchy.js treeOf)
   for (let p = parent; p; p = p.parent) if (p === child) return;
@@ -1120,7 +1120,7 @@ export function initModelsRealizer() {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });
-  // a gesture the door refused, or one cancelled with Esc (v4 worlds, v4edit.js): the preview snaps back to the fold.
+  // a gesture the authority refused, or one cancelled with Esc (v4 worlds, v4edit.js): the preview snaps back to the fold.
   // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
   bus.on('pose-revert', ({ id }) => {
     const ent = state.st.entities[id]; const obj = entities.get(id);

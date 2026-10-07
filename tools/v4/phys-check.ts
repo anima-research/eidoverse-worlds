@@ -1,9 +1,9 @@
-// Physics checks (design 20). Every scenario is built through the door's ordinary tools, at pinned clock times.
+// Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
 // Ported from code/v4-lab/phys-check.js @ 11db981; only paths changed. usage: bun tools/v4/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
-import { request } from "../../shared/v4/door.js";
-import { openWorld } from "../../server/v4/disk.ts";
+import { request } from "../../shared/v4/authority.js";
+import { openWorld } from "../../server/v4/filehost.ts";
 import { fold, readLog } from "../../shared/v4/fold.js";
 import { simFold, restsOf } from "../../shared/v4/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
@@ -47,7 +47,7 @@ function playground(name) {
   const L = log(W); const rest = rests(L);
   ok(rest.length === 1 && L[rest[0].seq].actor === "sim" && L[rest[0].cause].verb === "launch", "A exactly one rest result, caused by the launch", rest);
   const v = view(W);
-  ok(v.restTicks[rest[0].seq] < 150, "A rest tick (the engine's, re-derived by a carrier) is when it stopped, not when the door noticed", v.restTicks);
+  ok(v.restTicks[rest[0].seq] < 150, "A rest tick (the engine's, re-derived by a carrier) is when it stopped, not when the authority noticed", v.restTicks);
   ok(v.checks.agree >= 1 && !v.checks.disagree.length, "A a carrier re-folding the log agrees (digest + resting place)", v.checks);
   const blind = fold(L); // a reader with no engine at all
   ok(!blind.entities.ball.c.parent && blind.entities.ball.c.transform.pos[1] === 0 && blind.entities.ball.c.transform.pos[2] > 3,
@@ -58,7 +58,7 @@ function playground(name) {
   const b2 = fold(log(W)).entities.ball.c;
   ok(b2.parent?.to === "table-1", "A a dropped ball rests on the table, and the log says so (parent: it rides with it)", b2);
   const r2 = rests(log(W)).at(-1);
-  ok(Math.abs(r2.at[1] - 0.75) < 1e-9 && r2.onto === "table-1", "A on the table top (0.75); the door's attach is its own entry", r2);
+  ok(Math.abs(r2.at[1] - 0.75) < 1e-9 && r2.onto === "table-1", "A on the table top (0.75); the authority's attach is its own entry", r2);
   const f1 = view(W), f2 = view(W); ok(JSON.stringify(f1.sim) === JSON.stringify(f2.sim) && f1.checks.agree === 2, "A folding the same log twice: same sim state, both rests verified", f1.checks);
 
 }
@@ -89,7 +89,7 @@ function playground(name) {
   ok(rs.length === 1 && rs[0].id === "ball", "C the engine's word stands: its rest is logged", rs);
   const after = call(W, "rowan", "set", { id: "ball", component: "transform", value: { pos: [3, 0, 3] } });
   ok(after.ok && JSON.stringify(fold(log(W)).entities.ball.c.transform.pos) === "[3,0,3]", "C at rest it's an ordinary thing again", after);
-  const L = log(W); const i = rs[0].seq; const throwAct = L[rs[0].cause].cause; // a reader catches a write that slipped past the door mid-flight
+  const L = log(W); const i = rs[0].seq; const throwAct = L[rs[0].cause].cause; // a reader catches a write that slipped past the authority mid-flight
   const forged = insertAt(L, rs[0].cause + 1, { world: L[1].world, kind: "change", ts: L[rs[0].cause].ts + 200, actor: "rowan", cause: throwAct, verb: "set", body: { id: "ball", comp: "label", value: "mid-air" } });
   ok(simFold(forged, openWorld(root, W).now()).checks.disagree.some((d) => /in flight/.test(d.why ?? "")), "C a carrier flags any write that touched it in flight", simFold(forged, openWorld(root, W).now()).checks);
 }
@@ -117,7 +117,7 @@ function playground(name) {
   call(W, "rowan", "move", { to: [0, 0, 3.2] }); call(W, "rowan", "grab", { id: "crate-1" }, 50);
   const g = call(W, "rowan", "grab", { id: "crate-1" });
   ok(!g.ok && g.refused.code === "out-of-reach", "E grab beyond reach refused", g.refused);
-  call(W, "rowan", "move", { to: [1.6, 0, 0.5] }, 1000); const g2 = call(W, "rowan", "grab", { id: "crate-1" }); // a body walks (the door's track, L6): it takes time
+  call(W, "rowan", "move", { to: [1.6, 0, 0.5] }, 1000); const g2 = call(W, "rowan", "grab", { id: "crate-1" }); // a body walks (the authority's track, L6): it takes time
   ok(g2.ok, "E grab in reach", g2);
   call(W, "rowan", "move", { to: [0.5, 0, 3.2] }, 1000);
   const inside = call(W, "rowan", "put", { id: "crate-1", pos: [0, 0.3, 4] });

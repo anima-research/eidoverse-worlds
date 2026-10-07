@@ -28,7 +28,7 @@ import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
 import { send } from '../v4edit.js';
-import * as OP from '../../../shared/v4/ops.js';
+import * as OP from '../../../shared/v4/requests.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
@@ -102,7 +102,7 @@ register('role', (arg) => {
 register('grant', (arg) => {
   // /grant <name> <role> [+gen|-gen] [+fly|-fly] — a role is any role this world has (visitor, builder, moderator, owner,
   // or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly, research roles S5).
-  // The door decides: owners grant anything, a grantRoles holder only roles ranked below their own, with permissions they hold.
+  // The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own, with permissions they hold.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
   const role = parts.slice(1).find((p) => /^[a-z][a-z0-9-]{0,23}$/i.test(p))?.toLowerCase();
@@ -127,7 +127,7 @@ register('grant', (arg) => {
 });
 
 // /kick <name> [minutes] [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
-// /warn <name> <reason…>, /ghost <name> [minutes] [reason…]: the door enforces the permission and the rank (only below you);
+// /warn <name> <reason…>, /ghost <name> [minutes] [reason…]: the authority enforces the permission and the rank (only below you);
 // everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here); the others also
 // reach someone who has left (the world's lookup).
 function moderate(cmd, arg) {
@@ -172,18 +172,18 @@ register('punt', (arg) => {
   }
   puntThing(arg);
 });
-// carrying (v4 worlds: door requests; T and C are the keys)
+// carrying (v4 worlds: requests; T and C are the keys)
 register('grab', (arg) => grab((arg || '').trim() || undefined));
 register('put', (arg) => put((arg || '').trim() || undefined));
 register('drop', (arg) => drop((arg || '').trim() || undefined));
 register('throw', (arg) => throwHeld(arg));
 register('ban', (arg) => moderate('ban', arg));
 
-// /epoch [tickMs] (/physics) — run physics in this world: set @world.physics-engine (design 20 P4). Owner-ranked: the door
+// /epoch [tickMs] (/physics) — run physics in this world: set @world.physics-engine (design 20 P4). Owner-ranked: the authority
 // refuses below owner and refuses an engine this server doesn't carry; it stamps the build and every thing's shape.
 register('epoch', (arg) => {
   const a = (arg || '').trim();
-  // /epoch off — stop physics (explicit, never a toggle): the door refuses while anything is in flight (P6: a cut
+  // /epoch off — stop physics (explicit, never a toggle): the authority refuses while anything is in flight (P6: a cut
   // waits for rests). Owners only; the world refuses or announces.
   if (/^(off|leave|exit|none)$/i.test(a)) {
     send(OP.unset('@world', 'physics-engine'), { what: 'leave the physics epoch' });
@@ -406,7 +406,7 @@ register('use', (arg) => {
   const [id, action] = (arg || '').trim().split(/\s+/);
   if (!id) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
   if (!entities.has(id)) return logChat('*', `nothing here called "${id}"`);
-  // no action: the door does the thing's one action, or says what it offers (it was sent 'use', which most don't)
+  // no action: the authority does the thing's one action, or says what it offers (it was sent 'use', which most don't)
   send(OP.use(id, action || null), { what: action ? `${action} ${id}` : `use ${id}` });
 });
 
@@ -447,7 +447,7 @@ register('rename', () => {
   // chat.js emitted this command for years with nobody subscribed (§14.1
   // found bug) — a silently dead command. Until mid-session renames exist,
   // say so instead of saying nothing.
-  logChat('*', "renaming mid-session isn't supported yet — set your name at the door (clear ew-name in devtools to re-open it)");
+  logChat('*', "renaming mid-session isn't supported yet — set your name at the authority (clear ew-name in devtools to re-open it)");
 });
 
 function bearingTo(p) {

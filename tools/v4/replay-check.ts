@@ -1,6 +1,6 @@
 // Fold a world from its log using ONLY shared/v4/fold.js: no door, no catalogue, no blob store (L1: the fold reads
 // only entries). Ported from code/v4-lab/replay-check.js @ 11db981, which printed; this one asserts. The fixture is
-// the lab's cottage world, built through the lab door; its digest there (node:crypto) is pinned here, so it also
+// the lab's cottage world, built through the lab authority; its digest there (node:crypto) is pinned here, so it also
 // checks the engine's hash shim against the lab's hash.
 // usage: bun tools/v4/replay-check.ts
 import fs from "node:fs";

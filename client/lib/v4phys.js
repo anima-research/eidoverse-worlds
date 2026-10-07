@@ -1,19 +1,19 @@
 // v4phys — physics in a v4 world, on the client (design 20: notes/eidoverse/v4-research/20-physics-in-v4-design.md).
 //
-// Nothing here simulates for anyone else and nothing is streamed: every act is a DOOR REQUEST, and every client draws
+// Nothing here simulates for anyone else and nothing is streamed: every act is a REQUEST, and every client draws
 // the same truth.
 //
-//   carrying   grab / put / throw / drop / punt are door tools (shared/v4/door.js). Who holds what is the door's
+//   carrying   grab / put / throw / drop / punt are requests (shared/v4/authority.js). Who holds what is the authority's
 //              presence plane (`v4-holds`, never logged); every client draws a held thing in its holder's hand, so it
 //              follows the hand for everyone (a remote's hand is their avatar's hand bone, driven by their own pose
 //              stream: desktop or VR alike), and the holder's own hand is where its release pose is sent from.
 //   flights    a launch (throw, drop, punt, a grab that let what rested on it fall) is a `sim` entry in the log. This
-//              client folds it with the SAME engine the door runs (shared/v4/client.js: simFolder + eidosim, no
+//              client folds it with the SAME engine the authority runs (shared/v4/replica.js: simFolder + eidosim, no
 //              catalogue of its own: shapes are the log's physics.shape), so a flight on screen is the engine's
-//              flight, and it rests bit for bit where the door logs the rest (tools/v4/physlive-check.ts F4/F6).
+//              flight, and it rests bit for bit where the authority logs the rest (tools/v4/physlive-check.ts F4/F6).
 //              The screen shows a COPY of the canonical sim advanced to the server's clock (serverNow), interpolated
 //              between ticks: the canonical fold advances only by the entries' own ts.
-//   the body   the door measures reach from its own track of your body (L6, 25d M3). A person's client keeps that
+//   the body   the authority measures reach from its own track of your body (L6, 25d M3). A person's client keeps that
 //              track current with `move` requests (presence: unlogged), arriving once when the world has physics.
 //
 // Presentation only, like hair: the tumble of a flying crate and the roll of a ball. The engine is yaw-only; the
@@ -36,8 +36,8 @@ import { onWorldChange } from './state.js';
 import { plain } from './plainwords.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
-const REACH = 1.5, HAND_Y = 1.1;                  // the door's: a hand reaches 1.5 m from feet + 1.1 m (door.js)
-const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the door's punt reach, from the feet
+const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
+const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the authority's punt reach, from the feet
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved
 const THROW = { speed: 8, arc: 0.45 };            // a desktop throw: along the view's heading, ~26° up
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
@@ -49,14 +49,14 @@ export function initV4Phys(h) { hooks = h; pushHostHook(frame); }
 let presenting = () => false;
 export const bindPresenting = (fn) => { presenting = fn; };
 
-// ---------------------------------------------------------------- who holds what (door presence)
-let holds = {};     // id -> the door's hold record: { by: v4 identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
+// ---------------------------------------------------------------- who holds what (the authority's presence plane)
+let holds = {};     // id -> the authority's hold record: { by: v4 identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
 const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
 bus.on('holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
   for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
-  // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the door
+  // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the authority
   // takes it from whoever pressed down), and the press stops riding my presence (review 10-06)
   if (pressing && holds[pressing]?.by !== net.v4you) void useHeld('up', pressing);
 });
@@ -68,7 +68,7 @@ function startPull(id) {
   const hand = handOf(holds[id].by, holds[id].hand ?? 'right'); const d = hand ? from.distanceTo(hand) : 0;
   pulls.set(id, { from, t0: performance.now(), dur: Math.min(400, Math.max(120, d / 8 * 1000)) });
 }
-// A put (or anything that writes where a held thing is) arrives as a change entry BEFORE the door's holds message says
+// A put (or anything that writes where a held thing is) arrives as a change entry BEFORE the authority's holds message says
 // the hand is empty (server order: the log, then presence). From that entry on the fold has it: stop drawing it in the
 // hand, or a frame between the two messages would leave it drawn there after the realizer placed it.
 onWorldChange((ev) => {
@@ -76,28 +76,28 @@ onWorldChange((ev) => {
   else if (ev.type === 'reset') holds = {};
 });
 export const holdsNow = () => holds;
-/** What I hold, per the door. */
+/** What I hold, per the authority. */
 export const myHolds = () => Object.keys(holds).filter((id) => holds[id].by === net.v4you);
 function released(id) {
   // the realizer re-asserts where the log has it on its next change; until the fold or the sim owns it again, the
   // last drawn pose stays (a put's change entry and a throw's launch both arrive BEFORE this message: server order)
   if (!presOwns(id)) suspendCollider(id, false);
 }
-/** A presence id (the people map's key) for a door identity. */
+/** A presence id (the people map's key) for an identity the authority stamps. */
 function presenceIdOf(v4id) {
   if (v4id === net.v4you) return null;               // me
   for (const [pid, vid] of identities) if (vid === v4id) return pid;
   return undefined;
 }
 
-// ---------------------------------------------------------------- the body the door tracks
-let arrived = false, moving = null, lastTrack = 0, doorAt = null, lastMove = null, lastTeleport = 0;
+// ---------------------------------------------------------------- the body the authority tracks
+let arrived = false, moving = null, lastTrack = 0, trackedAt = null, lastMove = null, lastTeleport = 0;
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = v4.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
-bus.on('v4-joined', () => { arrived = false; doorAt = null; holds = {}; });
-/** Bring the door's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
+bus.on('v4-joined', () => { arrived = false; trackedAt = null; holds = {}; });
+/** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
   if (!v4.active || !net.joined) return false;
   const to = feet(); if (!to) return false;
@@ -105,25 +105,25 @@ async function track(force = false) {
   const go = async () => {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await requestV4('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
-      if (r?.ok) { arrived = true; doorAt = r.at ?? to; }
+      if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
       else if (r?.refused) bus.emit('v4phys-refused', { verb: 'move', refused: r.refused });
       return arrived;
     }
-    const d = doorAt ? Math.hypot(to[0] - doorAt[0], to[1] - doorAt[1], to[2] - doorAt[2]) : Infinity;
+    const d = trackedAt ? Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) : Infinity;
     if (!force && d < TRACK_MIN) return true;
-    // walk the door's body toward mine in steps it accepts (6 m/s, 4 m at most at once: door TRACK)
-    const k = d > 3.5 ? 3.5 / d : 1; const step = doorAt ? doorAt.map((v, i) => r3(v + (to[i] - v) * k)) : to.map(r3);
+    // walk the authority's body toward mine in steps it accepts (6 m/s, 4 m at most at once: the authority's TRACK)
+    const k = d > 3.5 ? 3.5 / d : 1; const step = trackedAt ? trackedAt.map((v, i) => r3(v + (to[i] - v) * k)) : to.map(r3);
     let r = await requestV4('move', { to: step }); lastMove = { to: step, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
-    if (r?.ok) { doorAt = r.at ?? step; return true; }
-    if (r?.refused?.at) doorAt = r.refused.at;
+    if (r?.ok) { trackedAt = r.at ?? step; return true; }
+    if (r?.refused?.at) trackedAt = r.refused.at;
     stuck = { at: to, until: performance.now() + 2000 };
-    // the door lost me (flew faster than a body walks, or through something it calls solid): re-arrive, an act on the
+    // the authority lost me (flew faster than a body walks, or through something it calls solid): re-arrive, an act on the
     // record, which it refuses while I hold something (a teleport can't carry things)
     // (at most once in 3 s: each is an act on the record, and flying fast would otherwise write one per step)
     if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
       lastTeleport = performance.now();
       r = await requestV4('move', { to: to.map(r3), teleport: true }); lastMove = { teleport: true, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
-      if (r?.ok) { doorAt = r.at ?? to; return true; }
+      if (r?.ok) { trackedAt = r.at ?? to; return true; }
     }
     return false;
   };
@@ -136,8 +136,8 @@ function tickTrack(now) {
   if (hooks?.seated?.()) return;   // a seated body is where its seat is; it walks again when it stands
   if (stuck) { const f = feet(); if (now < stuck.until && f && Math.hypot(f[0] - stuck.at[0], f[2] - stuck.at[2]) < 0.3) return; stuck = null; }
   if (!arrived) { if (worldHasPhysics()) track(); else lastTrack = now; return; }
-  const to = feet(); if (!to || !doorAt) return;
-  if (Math.hypot(to[0] - doorAt[0], to[1] - doorAt[1], to[2] - doorAt[2]) >= TRACK_MIN) track();
+  const to = feet(); if (!to || !trackedAt) return;
+  if (Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) >= TRACK_MIN) track();
 }
 
 // ---------------------------------------------------------------- the hand
@@ -208,9 +208,9 @@ const compsOf = (id) => v4.st?.entities?.[id]?.c ?? null;
 const _held = new THREE.Vector3(), _hq = new THREE.Quaternion(), _ws = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tp = new THREE.Vector3();
 const _gq = new THREE.Quaternion(), _gv = new THREE.Vector3(), _v2 = new THREE.Vector3(), _aq = new THREE.Quaternion();
 const P1 = { p: new THREE.Vector3(), q: new THREE.Quaternion() }, P2 = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
-/** Where a held thing goes, from the holder's hand bone and the door's hold record (every client computes the same):
+/** Where a held thing goes, from the holder's hand bone and the authority's hold record (every client computes the same):
  *  a grip puts the palm on the grip (VRChat ExactGrip, Unity Attach Transform); an offset keeps it where the hand took
- *  it (Unreal Free); neither, it's held by its centre (what the door did before grips). A second hand on a twoHanded
+ *  it (Unreal Free); neither, it's held by its centre (what the authority did before grips). A second hand on a twoHanded
  *  thing steers it: the line from the primary grip to the secondary one points from hand to hand. A body without
  *  tracked hands carrying in both arms holds it between them. Returns the world {p, q} (q null: keep its rotation). */
 function heldPose(id, h, obj) {
@@ -251,7 +251,7 @@ function drawHeld() {
 }
 // What holding does to each holder's body (avatar.js setHoldPose): the grip's finger preset on each holding hand, and,
 // for a body without tracked hands, the arms' hold pose (grabbable.pose, else by size). Recomputed every frame from the
-// door's record; an avatar that stops holding lets go.
+// authority's record; an avatar that stops holding lets go.
 const posed = new Set();
 function poseHolders() {
   const want = new Map();
@@ -313,7 +313,7 @@ function drawFlights(wall, now) {
   const dt = Math.min(0.1, (now - (lastAt || now)) / 1000); lastAt = now;
   for (const id in pres.bodies) {
     // (a body here is a launch folded AFTER any grab: a grab is a lift, which takes the body out, so the engine wins
-    //  over a hold the door hasn't yet said is over)
+    //  over a hold the authority hasn't yet said is over)
     const b = pres.bodies[id]; const obj = entities.get(id); if (!obj) continue;
     let sp = spins.get(id);
     if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone(), shape: null, box: undefined }; spins.set(id, sp); suspendCollider(id, true); }
@@ -355,15 +355,15 @@ function frame(wall) {
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
 
-// ---------------------------------------------------------------- acts (door requests)
+// ---------------------------------------------------------------- acts (requests)
 const say = (t) => logChat('*', t);
 const refused = (what, r) => { const x = r?.refused; say(plain(what, r)); bus.emit('v4phys-refused', { verb: what, refused: x }); return r; };   // a person's words (plainwords.js)
-// what a hand may pick up: grabbable (shared/grab.js grabOf: the door's own reader, so a dynamic thing with no grabbable
-// counts, as at the door); what a foot may punt: physics {kind: 'dynamic'}
+// what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
+// counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
 const grabbableIds = () => { const st = v4.st; if (gIds.st !== st || gIds.head !== v4.head) { const es = st?.entities ?? {}; gIds = { st, head: v4.head, ids: Object.keys(es).filter((id) => grabOf(es[id].c)?.enabled) }; } return gIds.ids; };
 const dynamicIds = () => { const es = v4.st?.entities ?? {}; return Object.keys(es).filter((id) => es[id].c.physics?.kind === 'dynamic'); };
-/** Where the thing is now, as the door sees it: someone's hand, the air (the engine), or the log. */
+/** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
   const b = pres?.bodies?.[id]; if (b && !b.resting) return b.p;
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
@@ -422,7 +422,7 @@ export async function throwHeld(arg) {
   return r?.ok ? r : refused('throw', r);
 }
 /** A hand's grab (VR grip, or any caller with a hand position [x, y, z]): the nearest thing it can carry within reach of
- *  that point and of the door's hand. The same door request the desktop key sends. */
+ *  that point and of the authority's hand. The same request the desktop key sends. */
 export async function grabNear(at, within = 0.6) {
   const f = feet(); if (!f) return null; let best = null, bd = within;
   for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
@@ -454,13 +454,13 @@ export async function punt(arg) {
 }
 
 // ---------------------------------------------------------------- use while held (grabbable.use; research grab §3-4)
-// The use button while you hold a thing: a door request per press and per release (use.down, use.up: each one act; a
+// The use button while you hold a thing: a request per press and per release (use.down, use.up: each one act; a
 // hose turns on, then off), and, while it's pressed, presence (pose.use) every client draws the thing's fx from. Desktop:
 // the left mouse button while holding something usable (outside edit mode); phone: a button that appears while you do;
-// VR: the trigger (xr.js calls useHeld). Rapid effects are never a stream of acts: the door rate-limits acts on purpose.
+// VR: the trigger (xr.js calls useHeld). Rapid effects are never a stream of acts: the authority rate-limits acts on purpose.
 const usable = () => myHolds().find((id) => grabOf(compsOf(id))?.use) ?? null;
 let pressing = null;   // the id my use is held down on
-/** Press (phase 'down') or release ('up') the use of what I hold. Returns the door's reply, or null if nothing to use. */
+/** Press (phase 'down') or release ('up') the use of what I hold. Returns the authority's reply, or null if nothing to use. */
 export async function useHeld(phase = 'down', name) {
   const id = name || (phase === 'up' ? pressing : usable()); if (!id) return null;
   const h = holds[id]; const g = grabOf(compsOf(id));
@@ -507,13 +507,13 @@ if (typeof document !== 'undefined') {
 // each frame: the grip pressed takes the nearest thing within a 0.4 m sphere × the avatar's scale (VRChat's number),
 // choosing by grabbable.priority, then a grip for this hand, then distance; nothing near, the laser reaches out to the
 // thing's grabbable.range and it flies to the hand. hold auto/press is press-to-hold: letting the grip go lets go, with
-// the hand's velocity averaged over the last 0.1 s (the door scales it by grabbable.throw); hold toggle takes a second
+// the hand's velocity averaged over the last 0.1 s (the authority scales it by grabbable.throw); hold toggle takes a second
 // press. The trigger while holding is use. The other hand on what you hold takes it in both (twoHanded) or swaps. A
 // hand's take is felt (a firm pulse), and so is the first frame it can reach something (a light tick).
 const AVG_MS = 100;
 const vrHands = { left: { grip: false, trig: false, hist: [], hover: null, busy: false }, right: { grip: false, trig: false, hist: [], hover: null, busy: false } };
 const _bx = new THREE.Box3(), _hv = new THREE.Vector3();
-/** What my `side` hand holds now (as the door has it), or null. */
+/** What my `side` hand holds now (as the authority has it), or null. */
 const heldIn = (side) => { for (const [id, h] of Object.entries(holds)) if (h.by === net.v4you && (h.hand === side || h.second?.hand === side)) return id; return null; };
 function nearest4(side, at, scale) {
   const R = NEAR_GRAB * (scale || 1); let best = null;
@@ -565,7 +565,7 @@ async function vrTake(side, id, far, haptic) {
     const r = await requestV4('grab', { id, hand: side, ...(off ? { offset: off } : {}) });
     if (r?.ok) haptic(0.4, 30); else refused('grab', r);
     H.busy = false;
-    // a quick tap: the grip let go before the door answered. Press-to-hold means it lets go now (it never stays stuck)
+    // a quick tap: the grip let go before the authority answered. Press-to-hold means it lets go now (it never stays stuck)
     if (r?.ok && !H.grip && grabOf(compsOf(id))?.hold !== 'toggle') await vrLetGo(side, id);
     return r;
   } finally { H.busy = false; }
@@ -593,7 +593,7 @@ bus.on('key', (e) => {
   KEYS.find((k) => k.code === e.code)?.run();
 });
 
-/** The surface a runtime mod scripts against (mods.js EW.physics): the same door requests the keys send. */
+/** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
@@ -607,5 +607,5 @@ export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, r
   track: () => track(true), request: (verb, args) => requestV4(verb, args), frame: (wall) => frame(wall),
   /** the canonical fold's flights: id -> the launch seq it flies from */
   launched: () => Object.fromEntries(Object.entries(v4.sim?.launched ?? {}).map(([id, l]) => [id, l.seq])),
-  /** what this client believes about its door body (diagnostics) */
-  body: () => ({ arrived, doorAt, feet: feet(), lastMove, stats: { ...stats, ms: Math.round(stats.ms), maxMs: +stats.maxMs.toFixed(2) } }) };
+  /** what this client believes about its authority-tracked body (diagnostics) */
+  body: () => ({ arrived, trackedAt, feet: feet(), lastMove, stats: { ...stats, ms: Math.round(stats.ms), maxMs: +stats.maxMs.toFixed(2) } }) };

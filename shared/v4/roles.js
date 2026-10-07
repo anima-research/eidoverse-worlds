@@ -1,6 +1,6 @@
 // shared/v4/roles.js — who may do what in a v4 world (RESEARCH-roles-moderation-2026-10-06; PLAN decisions 10-06).
-// Pure data and pure functions: the door (shared/v4/door.js) reads them to admit writes, the server reads them through
-// the door to tell a client its rights, and the client reads them to draw badges, menus and the roles grid. No state
+// Pure data and pure functions: the authority (shared/v4/authority.js) reads them to admit writes, the server reads them through
+// the authority to tell a client its rights, and the client reads them to draw badges, menus and the roles grid. No state
 // of its own, no clock, no imports: a browser and bun import the same file.
 //
 // THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
@@ -84,7 +84,7 @@ export function roleDef(wc, id) {
     if (!d && wc?.["script-settings"]?.install === "owner") can.scripts = false;
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
   }
-  // a rank written around the door (a hand-edited log, an old translation) is range-checked here too: never above the owner
+  // a rank written around the authority (a hand-edited log, an old translation) is range-checked here too: never above the owner
   if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return null;
   return { id, name: typeof d.name === "string" ? d.name : id, rank: d.rank, can: { ...on(), ...(isObj(d.can) ? pickPermissions(d.can) : {}) }, custom: true, ...(d.note ? { note: d.note } : {}) };
 }
@@ -113,7 +113,7 @@ export function brokenNeed(can) {
 
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
  *  role, else visitor. A role the world doesn't define reads as visitor. A world with no owner caps everyone at visitor
- *  (§2.3). `anon` = a guest (no account). Mirrors the door's roleOf exactly; the door calls this. */
+ *  (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   if (!wc) return "none";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;

@@ -306,7 +306,7 @@ function placeMic() {
   // hang off the ∃ ALONG its own edge (the rail's line continues through
   // them); fold perpendicular only when a corner leaves no room
   const edge = document.getElementById('dock')?.dataset.edge || 'left';
-  // PUBLISH IT. frames.js CHROME_ANCHOR reads `dataset.edge` off these buttons to
+  // PUBLISH IT. windows.js CHROME_ANCHOR reads `dataset.edge` off these buttons to
   // charge them to the correct side, and nothing ever wrote it — the map entry, the
   // consumer and a comment claiming the behaviour all existed, with no producer, so
   // `|| 'left'` won unconditionally. Invisible at the default left dock; measured at

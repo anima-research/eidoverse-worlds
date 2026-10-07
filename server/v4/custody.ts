@@ -1,7 +1,7 @@
-// server/v4/custody.ts — the door's governance keys (PROTOCOL-v4 §2.4, §3d C1), held outside every log.
-// One sequencer key per keys file, and one key per identity that founds a world through this door, so two worlds one
+// server/v4/custody.ts — the authority's governance keys (PROTOCOL-v4 §2.4, §3d C1), held outside every log.
+// One sequencer key per keys file, and one key per identity that founds a world through this server, so two worlds one
 // person founds here carry the same keys and only genesis's nonce tells them apart. Keys never enter a log; the file
-// is written 0600. Same layout and key encoding as the lab's custody (code/v4-lab/door.js custodyOf).
+// is written 0600. Same layout and key encoding as the lab's custody (code/v4-lab/authority.js custodyOf).
 import { appendDurable, readLogBytes } from "./durable.ts";
 import fs from "node:fs";
 import path from "node:path";

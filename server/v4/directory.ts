@@ -8,11 +8,11 @@
 //   - a role is held by an id, and an id is reached only through its account (a `sub`): typing someone's display name
 //     gets you nothing. Two people who share a name are two ids; one person renamed is still one id.
 //   - forgetting a person is deleting their entries here: the log keeps ids that no longer mean anyone.
-//   - one id per account per door, the same in every world (R 10-06 14:05: friends, messages and "ask to be invited",
+//   - one id per account per server, the same in every world (R 10-06 14:05: friends, messages and "ask to be invited",
 //     as VRChat does, need a person who stays the same person between worlds; per-world ids — review M6 — were
-//     tried and withdrawn). A world's slice of this file (exportSlice) travels with the world to another door.
+//     tried and withdrawn). A world's slice of this file (exportSlice) travels with the world to another server.
 // Accounts (`sub`): "human:<provider>:<id>" from a verified session, "agent:token:<name>" for an operator-enrolled agent,
-// "aid1:<iss>:<sub>" for a home-node-verified agent, "local:<name>" only on a private TRUST_NAMES door. A connection
+// "aid1:<iss>:<sub>" for a home-node-verified agent, "local:<name>" only on a private TRUST_NAMES server. A connection
 // with no account is ANONYMOUS: a fresh id per connection, held in memory only (never written: M2), kind "anon".
 import fs from "node:fs";
 import path from "node:path";
@@ -27,8 +27,8 @@ export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
 const kindOfSub = (sub: string) => (sub.startsWith("agent:") || sub.startsWith("aid1:") ? "agent" : "human");
 
-/** `existingWorlds`: the world ids already in this door, read only on the one-time v1 → v2 upgrade (they keep their
- *  door-wide ids). */
+/** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
+ *  server-wide ids). */
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
   const read = (): File => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { v: 2, ids: {} });
   const d: File = read();
@@ -38,7 +38,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     // (`agent:token:<id>`), never a slug (C2). The enrolled agents keep their ids through the rename.
     for (const e of Object.values(d.ids)) e.subs = e.subs.map((s) => (/^agent:(?!token:)/.test(s) ? `agent:token:${s.slice(6)}` : s));
   }
-  const keyOf = (sub: string, _world?: string | null) => sub;   // door-wide: the same person in every world
+  const keyOf = (sub: string, _world?: string | null) => sub;   // server-wide: the same person in every world
   const byKey = new Map<string, string>();
   const index = (id: string, e: Entry) => { for (const s of e.subs) byKey.set(e.world ? `${s}|${e.world}` : s, id); };
   for (const [id, e] of Object.entries(d.ids)) index(id, e);
@@ -62,7 +62,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   return {
     /** The id for a connection in a world: its account's id there (minted on first sight; the display name kept
      *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
-     *  genesis hash); without it the id is door-wide (tools, tests, legacy worlds). */
+     *  genesis hash); without it the id is server-wide (tools, tests, legacy worlds). */
     resolve({ sub, name, agent = false, world = null }: { sub?: string | null; name: string; agent?: boolean; world?: string | null }): string {
       if (sub) { let id = byKey.get(keyOf(sub, world)); if (!id) { refresh(); id = byKey.get(keyOf(sub, world)); }
         if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
@@ -91,7 +91,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     /** id → display name for the ids given (what a client is sent; never subs). */
     names(ids: Iterable<string>): Record<string, string> { const o: Record<string, string> = {};
       for (const id of ids) { const n = get(id)?.name; if (n) o[id] = n; } return o; },
-    /** this world's slice: the entries a world's log can name, for a move to another door (never in the log). */
+    /** this world's slice: the entries a world's log can name, for a move to another server (never in the log). */
     exportSlice(world: string, ids: Iterable<string>): Record<string, Entry> { const o: Record<string, Entry> = {};
       for (const id of ids) { const e = d.ids[id]; if (e && (!e.world || e.world === world)) o[id] = JSON.parse(JSON.stringify(e)); } return o; },
   };

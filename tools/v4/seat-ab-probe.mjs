@@ -9,10 +9,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
-import { foundV4 } from '../../server/v4/world.ts';
-import { openLive } from '../../server/v4/live.ts';
-import { request } from '../../shared/v4/door.js';
-import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
+import { foundV4 } from '../../server/v4/worldlog.ts';
+import { openLive } from '../../server/v4/livehost.ts';
+import { request } from '../../shared/v4/authority.js';
+import { ENGINE_CATALOGUE, warm } from '../../server/v4/modelcatalogue.ts';
 import { directoryFor } from '../../server/v4/directory.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';

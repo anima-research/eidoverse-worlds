@@ -9,7 +9,7 @@
 // must never reach the world log, because the log is public, permanent, and
 // readable by everyone who ever joins.
 //
-// The world speaks protocol v4 (shared/v4/door.js): a join says `v4fold: true`,
+// The world speaks protocol v4 (shared/v4/authority.js): a join says `v4fold: true`,
 // the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
 // write is a door request {type: "request", id, verb: tool, args} answered by `v4-result`,
 // and what the door wrote reaches every client as `v4-log` entries. A world is

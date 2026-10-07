@@ -1,9 +1,9 @@
 # Scripts in v4 worlds
 
 A script is JavaScript that lives in the world and runs on the server, with nobody connected if it must. It is a
-component on a thing, `script:<name>`, and every change it makes is an ordinary result that the door's one gate
+component on a thing, `script:<name>`, and every change it makes is an ordinary result that the authority's one gate
 (`admit`) checks, exactly as it checks yours. Design: research note 41 (scripts and behaviours); law: PROTOCOL-v4 L4
-and L7. Code: `shared/v4/door.js` (the "behaviours" section), `shared/v4/sandbox.js` (the sandbox),
+and L7. Code: `shared/v4/authority.js` (the "behaviours" section), `shared/v4/sandbox.js` (the sandbox),
 `shared/v4/scriptrules.js` (limits and rules shared with auditors), `shared/v4/scriptaudit.js` (a reader's re-run).
 
 ## The loop
@@ -100,7 +100,7 @@ Refusals show on the card in these same words. (shared/v4/newscript.js plans it;
 | `world.param(id, comp, name, number)` | write `param.<name>` into a component's data: a signal something else reads (a seat pose that blends by signals) |
 | `world.say(text)` | a say entry (needs `scope.say`) |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |
-| `world.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged) |
+| `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). `world.log` is the old spelling, kept for one version |
 
 Events (`e`): every event has `on`.
 - `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent); used while held (a `grabbable`'s use
@@ -163,11 +163,11 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 | | |
 |---|---|
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
-| wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the door kills the activation's sandbox process |
+| wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process |
 | memory / native stack | 24 MB / 256 KB per activation |
 | reads per activation | 64; writes 32; says 4; body effects 4 |
 | logged activations | 6 per minute per script (`rate`) |
-| process script time | 500 ms per rolling second across every world on the door (host-settable); past it, `busy` |
+| process script time | 500 ms per rolling second across every world on the authority (host-settable); past it, `busy` |
 | waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |
 | runs, logged or not | 60 per minute per script (`runs`); 2000 ms of sandbox time per sponsor per minute (`cpu`), 3× that per world |
 | uploads | 20 per person per minute |
@@ -178,11 +178,11 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 | timer floor | 5 s; with nobody present a timer sleeps unless `always` |
 | source | 64 KiB of UTF-8; no bidi controls, invisible characters or BOM; no line over 1000 columns |
 
-**Isolation.** A script's code runs in a separate sandbox process; the door keeps everything the script can read or
+**Isolation.** A script's code runs in a separate sandbox process; the authority keeps everything the script can read or
 write on its own side and answers each `world.*` call down a pipe. Fuel and the 300 ms backstop stop runaway bytecode;
 a call into a slow native builtin (`indexOf` on crafted text, a huge BigInt, running out of memory inside `fill`)
-can't be interrupted, so at 500 ms the door kills the process and the activation fails with `time` (a spare process
-takes the next one). The door's thread is never held longer than that by one activation, and script time across every
+can't be interrupted, so at 500 ms the authority kills the process and the activation fails with `time` (a spare process
+takes the next one). The authority's thread is never held longer than that by one activation, and script time across every
 world in the process is capped at 500 ms per second (refused as `busy` past it), so one request that wakes many
 scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
 

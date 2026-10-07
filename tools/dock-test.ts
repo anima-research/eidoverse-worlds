@@ -1,5 +1,5 @@
 // ui.js — the dock rail, the ∃ menu, pins, and the registerPanel mod seam, run headless against the REAL
-// module (frames.js, icons.js and dropdown.js real underneath it; see dock-stub.mjs for what is not).
+// module (windows.js, icons.js and dropdown.js real underneath it; see dock-stub.mjs for what is not).
 //
 //   bun tools/dock-test.ts
 //
@@ -35,7 +35,7 @@ document.body.innerHTML = `
 
 const { bus } = await import("./dock-stub.mjs");
 const { fsvg } = await import("../client/lib/icons.js");
-const { makeFrame, getFrame, isLocked } = await import("../client/lib/frames.js");
+const { makeFrame, getFrame, isLocked } = await import("../client/lib/windows.js");
 const ui = await import("../client/lib/ui.js");
 const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
 
@@ -121,7 +121,7 @@ check("...and again to unlight", editFired === 2 && !btn("edit")!.classList.cont
 check("window.eido.ui.registerPanel is the exported seam", (window as any).eido?.ui?.registerPanel === registerPanel);
 
 console.log("DOCK — EMOJI_ICON: rail chrome never rides emoji");
-// world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — palette.js's
+// world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — catalog.js's
 // build section wears the hammer correctly. The world PANEL is a planet, so the
 // entry id overrides the emoji (ui.js ID_ICON). Live report, #185.
 const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["emotes", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
@@ -228,7 +228,7 @@ check("every window with a frame has a row; a frameless entry has none", ["chat"
 check("the wrench has a row while gated open", !!row("edit"));
 { // THE LANTERN'S RESTING LINE pins from here too (owner, 10-01: "add it as a pin feature for the reverse-E menu (might
   // need its own logo to differentiate), and have it obey the 'esc to hide' feature")
-  const L = await import("../client/lib/lantern.js");
+  const L = await import("../client/lib/commandbar.js");
   const r = row("lantern"), p = pin("lantern");
   const rows = [...sub().querySelectorAll(".mrow[data-row]")].map((x) => (x as HTMLElement).dataset.row);
   // its own area (owner, 10-01: "It's not *quite* a conventional panel so it can't get docked"): a group of one, after
@@ -246,7 +246,7 @@ check("the wrench has a row while gated open", !!row("edit"));
   check("…and the rail's search entry is untouched by it", btn("search")!.hidden === false);
   pin("lantern")!.click();
   check("clicking again pins it back", L.pillPinned() && pin("lantern")!.classList.contains("on"));
-  // every way in that also closes it is a TOGGLE to the lantern's blur (lantern.js): a held click on one of these used to
+  // every way in that also closes it is a TOGGLE to the lantern's blur (commandbar.js): a held click on one of these used to
   // close the lantern on blur and reopen it on release (measured in the browser, 10-01)
   check("the rail's search entry and the menu's lantern and search rows are lantern toggles",
     ["search"].every((id) => btn(id)!.hasAttribute("data-lantern-toggle")) && row("lantern")!.hasAttribute("data-lantern-toggle") && row("search")!.hasAttribute("data-lantern-toggle"));
@@ -262,7 +262,7 @@ check("the wrench has a row while gated open", !!row("edit"));
   check("the row itself opens the lantern (like a window row opens its window)", L.isLanternOpen());
   L.closeLantern();
   bus.emit("esc-quiet", "closed");
-  check("Esc put the panels away (frames.js says so on the bus): the resting line goes with them", L.pillQuiet());
+  check("Esc put the panels away (windows.js says so on the bus): the resting line goes with them", L.pillQuiet());
   bus.emit("esc-quiet", "restored");
   check("…and comes back with them", !L.pillQuiet());
   // the real key, with NO panel open (owner, 10-01: "Basically only the dock should be visible"): Esc still takes the
@@ -377,7 +377,7 @@ check("the wrench has a row while gated open", !!row("edit"));
 { // EVERY PIN, on → off → on with the menu open (owner, 10-01: "make sure they pin/unpin and highlight/unhighlight
   // correctly"): the highlight follows at once, the menu stays open, and the choice is where the next boot reads it
   const { glyphPinned } = await import("./dock-stub.mjs");
-  const L = await import("../client/lib/lantern.js");
+  const L = await import("../client/lib/commandbar.js");
   const stored = (id: string) => id === "lantern" ? L.pillPinned() && localStorage.getItem("ew-lantern-pinned") !== "0"
     : id.startsWith("glyph:") ? glyphPinned(id.slice(6)) : (savedPins() ?? []).includes(id);
   const ids = [...sub().querySelectorAll(".mpin[data-pin]:not([disabled])")].map((p) => (p as HTMLElement).dataset.pin!);
@@ -395,7 +395,7 @@ check("the wrench has a row while gated open", !!row("edit"));
     pin(id)!.click();   // back where it started
   }
 }
-{ // RESET LAYOUT puts the lantern's resting line back too (it moves in HUD layout mode, lantern.js)
+{ // RESET LAYOUT puts the lantern's resting line back too (it moves in HUD layout mode, commandbar.js)
   localStorage.setItem("ew-lantern-pos", JSON.stringify({ x: 0.2, b: 300 }));
   const reset = [...sub().querySelectorAll(".mrow")].find((r) => /reset layout/.test(r.textContent!)) as HTMLButtonElement;
   reset.click();
@@ -527,8 +527,8 @@ console.log("DOCK — HUD layout mode: the old click-∃ arranging, a switch of 
   check("a press on the rail keeps it", arranging());
   pd(document.getElementById("lantern-pill") ?? dock());
   check("a press on the resting line keeps it (it is draggable in this mode)", arranging());
-  const { escapeIsClaimed } = await import("../client/lib/frames.js");
-  check("Esc belongs to the mode (frames.js yields: escapeIsClaimed says 'layout')", escapeIsClaimed() === "layout", String(escapeIsClaimed()));
+  const { escapeIsClaimed } = await import("../client/lib/windows.js");
+  check("Esc belongs to the mode (windows.js yields: escapeIsClaimed says 'layout')", escapeIsClaimed() === "layout", String(escapeIsClaimed()));
   getFrame("chat")!.show();
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   check("Esc ends it, and the panels stay", !arranging() && bar().hidden && getFrame("chat")!.visible);
@@ -597,7 +597,7 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // Decoy ORDER — corrected by the ELEVENTH review, which falsified what this
   // comment used to claim. I had written that a mod can only mount as a LATER
   // sibling because initChat writes the chat's cols first. FALSE: mods.js:88
-  // hands a mod `makeFrame`, and frames.js:234 returns an EXISTING frame by
+  // hands a mod `makeFrame`, and windows.js:234 returns an EXISTING frame by
   // bare id — so `makeFrame('chat')` returns the LIVE chat frame, and a local
   // mod is an in-page ES module with the whole document (mods.js:5-8). It can
   // PREPEND. So a decoy before the real cols is not a bent fixture; it is the
@@ -621,7 +621,7 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // (chat.js, right after sideEls). togglePeopleHere reads that. Handing it `real`
   // is legitimate here precisely because `real` was captured before any decoy
   // exists — the same discipline this block already uses above.
-  // This suite never imports chat.js — makeFrame/getFrame come from frames.js
+  // This suite never imports chat.js — makeFrame/getFrame come from windows.js
   // and the markup above is hand-mirrored — so this stand-in can bind WHICH
   // node togglePeopleHere addresses (ownership/order) but NOT the lifetime guard
   // on chat.js's own read path: a ?.isConnected here would only test this

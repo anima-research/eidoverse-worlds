@@ -19,8 +19,8 @@ import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./v4/operators.ts";
 import { directoryFor } from "./v4/directory.ts";
-import { actorOf as v4ActorOf, whois } from "./v4/messages.ts";
-// the door's role ladder (shared/v4/door.js RANK), for the presence gates that mirror a door rule
+import { actorOf as v4ActorOf, whois } from "./v4/requestwire.ts";
+// the authority's role ladder (shared/v4/authority.js RANK), for the presence gates that mirror a door rule
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { worlds, type World, type Client } from "./world.ts";
@@ -357,7 +357,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
-    // (the door's rights for the person's identity)
+    // (the authority's rights for the person's identity)
     // the build switch (roles S2), never the old protocol's rank table: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
     if (!c.world.v4!.rightsOf(v4ActorOf(c)).can.build) return;   // the person's directory identity, never their name
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
@@ -395,7 +395,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // when, by whom); a list nobody can read is not an audit trail.
     if (!c.world) return;
     // v4: the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
-    // here could read every ban and its reason), and by the door's clock (a ban that ended isn't listed)
+    // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
     if (c.world.v4) { const e = c.v4id ? c.world.v4.rightsOf(c.v4id) : null;
       if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.v4!.sanctions();

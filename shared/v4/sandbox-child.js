@@ -1,9 +1,9 @@
-// shared/v4/sandbox-child.js — a sandbox PROCESS: runs the VM side of activations (sandbox.js vmRun) for a door, one at
+// shared/v4/sandbox-child.js — a sandbox PROCESS: runs the VM side of activations (sandbox.js vmRun) for an authority, one at
 // a time, over line-delimited JSON on two named pipes. It holds no world: every world.* call is a line out
-// ({h: <json>}) and a line back (the door's answer), so reads, writes and recorded inputs stay with the door
-// (sandbox.js makeHost). The door SIGKILLs this process when an activation passes its deadline: a slow native builtin
+// ({h: <json>}) and a line back (the authority's answer), so reads, writes and recorded inputs stay with the authority
+// (sandbox.js makeHost). The authority SIGKILLs this process when an activation passes its deadline: a slow native builtin
 // can stop nothing but this process. Started by sandbox.js with EIDO_SANDBOX_CHILD=1 <in fifo> <out fifo>; exits when
-// its input closes (the door went away).
+// its input closes (the authority went away).
 //   in:  {text, input, event, limits, max}      a job        out: {ready: true}   once QuickJS is loaded
 //   in:  <json>                                  a host answer      {h: <json>}   a host call
 //                                                                   {done: {fuel, ran?, fail?}}
@@ -20,7 +20,7 @@ function readLine() {
     if (n === 0) return null; pending += sd.write(buf.subarray(0, n)); }
 }
 function write(obj) { const b = Buffer.from(JSON.stringify(obj) + "\n"); let o = 0; while (o < b.length) o += fs.writeSync(out, b, o); }
-// tests only: start slowly (a loaded host), so a door's bounded wait for a warm process can be exercised
+// tests only: start slowly (a loaded host), so an authority's bounded wait for a warm process can be exercised
 const delay = Number(process.env.EIDO_SANDBOX_TEST_DELAY ?? 0); if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
 write({ ready: true });
 for (;;) {

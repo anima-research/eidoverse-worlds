@@ -1,10 +1,10 @@
 // text — words a builder writes into the world (a sign's text, a story, a picture's alt), read by every visitor and every
-// agent. Pure: the door (shared/v4/door.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
+// agent. Pure: the authority (shared/v4/authority.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
 // the agent describers all use these, so they can't disagree about what a string is, how long it is, or how it wraps.
 //
 //   graphemes(s)            how long a string is, the way a reader counts it: a ZWJ family emoji is 1, a CJK character
 //                           is 1, "é" written as e + U+0301 is 1 (Intl.Segmenter; Bun and every browser have it)
-//   cleanText(s, {lines})   null, or why the door refuses it (bidi overrides spoof, controls hide, zalgo smears)
+//   cleanText(s, {lines})   null, or why the authority refuses it (bidi overrides spoof, controls hide, zalgo smears)
 //   quoted(s, max)          «…» with any « » inside escaped, so author text reads as data and can't close its own quote
 //   layoutLines(text, w, m) the sign's line breaks, by words, falling back to graphemes for a word wider than a line
 //                           (CJK, a URL): m(str) → width in the same unit as w

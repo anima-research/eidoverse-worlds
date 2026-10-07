@@ -5,7 +5,7 @@
 import { chooseClient } from './litechoice.js';
 import { confirmCenter } from './confirmcenter.js';
 import { bus, CONFIG, setName, setToken, setErrorSink, report } from './base.js';
-import { resizeZoneAt, fitTabStrip } from './frames.js';
+import { resizeZoneAt, fitTabStrip } from './windows.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 
@@ -13,7 +13,7 @@ import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
 // Upstream labels its dock entries with emoji (main.js: world is '🧱'), and the
 // same emoji means different things in different places — '🧱' is genuinely a
-// hammer in palette.js's BUILD section. The world panel is NOT a build panel:
+// hammer in catalog.js's BUILD section. The world panel is NOT a build panel:
 // it holds world inventories, public avatars and other non-builder things, and
 // the editing affordances fork off elsewhere. A brick was wrong semantically,
 // not just visually. So the entry id wins over the emoji: remapping '🧱'
@@ -32,10 +32,10 @@ const EMOJI_ICON = {
 // the real one.
 let loadingItems = () => [];
 export function setLoadingItems(fn) { loadingItems = fn; }
-import { makeFrame, getFrame, isLocked, setLocked, resetLayout, escapeHid } from './frames.js';
+import { makeFrame, getFrame, isLocked, setLocked, resetLayout, escapeHid } from './windows.js';
 import { defsRegistry } from './defs.js';
 import { register as registerAction, get as getAction } from './actions.js';
-import { openLantern, closeLantern, isLanternOpen, CHORD, pillPinned, setPillPinned, setPillQuiet, resetPillPlace } from './lantern.js';
+import { openLantern, closeLantern, isLanternOpen, CHORD, pillPinned, setPillPinned, setPillQuiet, resetPillPlace } from './commandbar.js';
 
 const $ = (id) => document.getElementById(id);
 export const el = {
@@ -111,8 +111,8 @@ export function setAmbientHint(html) {
   if (ambientHint) { el.hint.innerHTML = ambientHint; el.hint.classList.remove('gone'); }
   else el.hint.classList.add('gone');
 }
-// Esc put every panel away (frames.js): say how to get them back, for a few seconds; when they come back, stop saying it
-// …and the lantern's resting line goes away with them and comes back with them (lantern.js setPillQuiet)
+// Esc put every panel away (windows.js): say how to get them back, for a few seconds; when they come back, stop saying it
+// …and the lantern's resting line goes away with them and comes back with them (commandbar.js setPillQuiet)
 bus.on('esc-quiet', (did) => {
   setPillQuiet(did === 'closed');
   if (did === 'closed') flashHint(`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Esc</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
@@ -514,7 +514,7 @@ function addDockButton(entry) {
     paintDock();
   };
   b.dataset.toggles = id;   // NOT data-frame — that belongs to the window itself
-  if (id === SEARCH_ENTRY.id) b.dataset.lanternToggle = '';   // its click closes an open lantern; the line's blur must not (lantern.js)
+  if (id === SEARCH_ENTRY.id) b.dataset.lanternToggle = '';   // its click closes an open lantern; the line's blur must not (commandbar.js)
   // the same act, findable by name in the lantern; a key table may merge its key in (main.js)
   if (!entry.noAction) registerAction({
     id: `panel:${id}`, title: PANEL_TITLE[id] ?? id, group: 'panels', icon, detail: 'open / close the panel',
@@ -818,7 +818,7 @@ function initEMenu() {
   addEventListener('resize', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
   addEventListener('dockmoved', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
 
-  // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (frames.js yields Esc to all
+  // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (windows.js yields Esc to all
   // three: escapeIsClaimed sees the open menu and body.arranging)
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
@@ -1089,7 +1089,7 @@ function paintEMenu() {
 export function resetHudLayout() { resetLayout(); resetPillPlace(); }
 // THE LANTERN'S RESTING LINE (owner, 10-01: "add it as a pin feature for the reverse-E menu (might need its own logo to
 // differentiate)"). A group of its own between the voice rows and the windows ("It's not *quite* a conventional panel
-// so it can't get docked"): the row opens the lantern, and its pin keeps the pill bottom-centre (lantern.js
+// so it can't get docked"): the row opens the lantern, and its pin keeps the pill bottom-centre (commandbar.js
 // setPillPinned — its own key, ew-lantern-pinned, like the glyphs'). Unpinned, the lantern is still one chord away.
 const LANTERN_GLYPH = 'lighthouse';   // the owner's pick (10-01); its own glyph, so it reads apart from the search glass
 function pinButton(id, onclick) {

@@ -3,11 +3,11 @@
 //
 // A person signs in with Discord (the only human provider: human:discord:<snowflake>). A Discord id IS its creation
 // time: the top 42 bits are milliseconds since Discord's epoch (2015-01-01T00:00:00Z = 1420070400000).
-// Agents are exempt: an operator enrolled them (agent:token:<id>, mcpl/tokens.json) or the door's own pinned home node
+// Agents are exempt: an operator enrolled them (agent:token:<id>, mcpl/tokens.json) or the authority's own pinned home node
 // vouched for them (aid1:<iss>:<sub>, kind agent) — a person decided they may come, so "how new" isn't the question.
-// A private TRUST_NAMES door's local:<name> is exempt the same way (the operator trusts typed names there). A guest has
+// A private TRUST_NAMES server's local:<name> is exempt the same way (the operator trusts typed names there). A guest has
 // no account, so a world asking for an account's age refuses a guest (as 'signed-in' does). Any other human account
-// (a provider this door can't date) is refused, saying so: the gate fails closed.
+// (a provider this server can't date) is refused, saying so: the gate fails closed.
 export const DISCORD_EPOCH_MS = 1420070400000;
 const DAY_MS = 86400000;
 
@@ -27,7 +27,7 @@ export function accountAgeRefusal({ world, minDays, account, anonymous, now }: {
   if (anonymous || !account) return rule;
   if (/^(agent:|aid1:|local:)/.test(account)) return null;
   const made = accountCreatedAt(account);
-  if (made == null) return `${rule}, and this door can't tell how old your account is`;
+  if (made == null) return `${rule}, and this server can't tell how old your account is`;
   const left = made + minDays * DAY_MS - now;
   if (left <= 0) return null;
   const days = Math.ceil(left / DAY_MS);

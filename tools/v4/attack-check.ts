@@ -5,13 +5,13 @@
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
 import { scratch, labAt, controlNote } from "./common.ts";
-import * as doorNow from "../../shared/v4/door.js";
+import * as doorNow from "../../shared/v4/authority.js";
 import * as simNow from "../../shared/v4/simlayer.js";
-import { openWorld as openNow } from "../../server/v4/disk.ts";
+import { openWorld as openNow } from "../../server/v4/filehost.ts";
 
 const root = scratch("attack");
 const B = labAt("4f62913", ["door.js", "fold.js", "simlayer.js", "catalogue.js", "toolspec.js", "legacy"], "attack");
-const doors = { baseline: B ? { ...(await import(B + "door.js")), sim: await import(B + "simlayer.js"), root: B } : null,
+const doors = { baseline: B ? { ...(await import(B + "authority.js")), sim: await import(B + "simlayer.js"), root: B } : null,
   now: { ...doorNow, openWorld: openNow, sim: simNow, root } };
 let T = 1800000000000;
 function session(d, name) {
@@ -142,7 +142,7 @@ attacks.push({ id: "H4f", what: "a log with no owner at all: roles:bob says buil
   baseOut: () => ownerless(doors.baseline), nowOut: () => ownerless(doors.now),
   baseBad: (o) => ok(o.bob) && ok(o.zed), nowGood: (o) => o.bob.refused?.code === "rights" && o.zed.refused?.code === "rights" });
 
-// ---- H2: the rest check verifies a copy, not the fact (P1a–d, P4), run on each door's own physics log ----
+// ---- H2: the rest check verifies a copy, not the fact (P1a–d, P4), run on each server's own physics log ----
 function physLog(d) {
   const s = session(d, "atk-phys"); T = 1800000000000;
   s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });

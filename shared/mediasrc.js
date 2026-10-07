@@ -1,7 +1,7 @@
 // mediasrc — where a picture's or a sound's bytes may come from, and whose browser may fetch them (batch 2, R 10-07).
 //
 // THE HOLE THIS CLOSES. A link in the world is a fetch every visitor's browser makes: whoever runs the far server sees
-// each visitor's IP address, when they came, and what browser they use. Before this, the door took any src (an https
+// each visitor's IP address, when they came, and what browser they use. Before this, the authority took any src (an https
 // link included) into the log; only the browser's own allow-list kept it from being fetched.
 //
 // THE RULE (VRChat's convention: creators.vrchat.com/worlds/udon/video-players/www-whitelist, image-loading):
@@ -10,7 +10,7 @@
 //           would if they'd opened the link themselves; these are hosts people already trust with that.
 //   link    any other https link: ONLY for a viewer who turned on "allow untrusted links" (Settings › 🛡 safety, off by
 //           default). Everyone else's browser never contacts it: not a preload, not a HEAD, nothing (clientMayFetch).
-//   bad     refused at the door: not https, a user:password@, an IP address or a local name (a visitor's router, a
+//   bad     refused at the authority: not https, a user:password@, an IP address or a local name (a visitor's router, a
 //           printer: Hubs closed the same hole in 2022), a port of its own, over 2048 characters, or not a URL at all.
 //
 // The check is on the URL as written. The host's own redirects aren't followed or checked here: a browser follows them

@@ -1,19 +1,19 @@
 // tools/v4/client-check.ts — slice 3b in a real browser: edit mode in a v4 world sends v4 requests, folds v4 and
-// waits for the door. One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench: scratch port,
+// waits for the authority. One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench: scratch port,
 // scratch WORLDS_DIR, its own profile; never 8968/8970). Run it under the house guards:
 //   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/v4/client-check.ts      (test:v4's `client` suite does this)
 //
 //   B   boot: the page knows it's in a v4 world; its own fold of the v4 stream = the log on disk (digest)
-//   P   place from the Build tab's ghost: one `create` act, the page waited for the door
+//   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
-//   U   Ctrl+Z is the door's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
+//   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
 //   X   Esc mid-drag: the thing goes back, and nothing is written (0 acts)
 //   L   a lock refusal (the cup rides a table someone else locked): the dialog offers Move anyway; it re-sends the
 //       SAME request with throughLock: the log has one act, the lock is still on
 //   D   duplicate (Alt+D) is create {from: <thing>}: one act
 //   M   deleting two selected things is ONE batch act
-//   S   Save as blueprint is the door's publish; its tile places a copy (create {from: <hash>})
+//   S   Save as blueprint is the authority's publish; its tile places a copy (create {from: <hash>})
 // The writes go through the real edit code (build.js, gizmo.js, inspect.js, editpanels.js); a few gestures are driven
 // at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns), as editpanels-bench does.
 // @ts-nocheck
@@ -113,13 +113,13 @@ try {
   check("G2 …a set of the transform with expect on where the drag started (§3a)", g?.e.verb === "set" && gReq?.component === "transform" && JSON.stringify(gReq?.expect?.[0]?.value) === JSON.stringify(start), gReq);
   check("G3 …and it moved 1 m on the record", Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3, disk().entities[crate].c.transform);
 
-  // ---- U: undo and redo through the door ----
+  // ---- U: undo and redo through the authority ----
   n0 = myActs().length;
   await key("KeyZ", { ctrlKey: true });
   check("U1 Ctrl+Z = undo {act} of my act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === g.seq), myActs().slice(n0).map((a) => a.e.body));
   check("U2 …it's back where it was", await waitDisk(() => JSON.stringify(disk().entities[crate].c.transform) === JSON.stringify(start)));
   const undoAct = myActs().at(-1).seq;
-  // the door writes before it replies: wait until the page has its reply (the act on its redo stack) before the key
+  // the authority writes before it replies: wait until the page has its reply (the act on its redo stack) before the key
   await waitFor(`globalThis.__v4edit().redo.at(-1) === ${undoAct}`);
   await key("KeyZ", { ctrlKey: true, shiftKey: true });
   check("U3 Ctrl+Shift+Z redoes: undo {act: <my undo>}", await waitDisk(() => myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === undoAct && Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), myActs().at(-1)?.e.body);
@@ -134,7 +134,7 @@ try {
   check("U6 …and redo again", await waitDisk(() => myActs().at(-1).e.body.request.act === undo2 && Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), myActs().at(-1)?.e.body);
   await waitFor(`import('/lib/net.js').then((m) => Math.abs(m.v4.st.entities['${crate}'].c.transform.pos[0] - ${start.pos[0] + 1}) < 1e-3)`);
 
-  // ---- Q: a Ctrl+Z pressed in the same tick as the release undoes THAT release (it waits for the door's reply) ----
+  // ---- Q: a Ctrl+Z pressed in the same tick as the release undoes THAT release (it waits for the authority's reply) ----
   { n0 = myActs().length; const before = JSON.stringify(disk().entities[crate].c.transform);
     await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
       return import('/lib/world.js').then((m) => { m.entities.get('${crate}').position.z += 1; c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false });
@@ -210,7 +210,7 @@ try {
   check("S0 Build › Blueprints offers 'save as blueprint' for the selection", await waitFor(`[...${bf}.querySelectorAll('.sp-btn')].some((b) => /save as blueprint/.test(b.textContent) && !b.disabled)`));
   n0 = myActs().length;
   await evalJson(`[...${bf}.querySelectorAll('.sp-btn')].find((b) => /save as blueprint/.test(b.textContent)).click(), true`);
-  check("S1 it is the door's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
+  check("S1 it is the authority's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
   const lib = Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));
   check("S2 …this world's library has it (2 parts: the table and its cup)", !!lib && disk().entities["@world"].c[lib].parts === 2, lib && disk().entities["@world"].c[lib]);
   check("S3 …and its tile shows in 'saved here'", await waitFor(`[...${bf}.querySelectorAll('.sp-tile')].some((t) => t.textContent.trim() === 'tbl')`));
@@ -234,7 +234,7 @@ try {
 
   // ---- K: my own lock asks too: "This is locked. Move anyway?" with ✓ / ✕ / 🔓 ----
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); (await import('/lib/build.js')).setTool('move'); return true;`);
-  check("K0 the gizmo attaches to a thing I locked myself (the door asks; the client no longer blocks the drag)", await waitFor(`globalThis.__gizmo?.().attached === '${crate}'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
+  check("K0 the gizmo attaches to a thing I locked myself (the authority asks; the client no longer blocks the drag)", await waitFor(`globalThis.__gizmo?.().attached === '${crate}'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
   const kStart = disk().entities[crate].c.transform;
   n0 = myActs().length;
   await drag(1);
@@ -277,7 +277,7 @@ try {
       return true; })()`);
     const refusedV = await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'locked'`);
     const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
-    check("V1 a visitor's move of a locked thing: the refusal, in a person's words (the agents' beside them), and no dialog", refusedV && !dialogV && /^Couldn't move/.test(await evalJson(`__refused.at(-1).text`)) && (await evalJson(`__refused.at(-1).agentText`))?.startsWith(`move ${crate} refused by the door (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
+    check("V1 a visitor's move of a locked thing: the refusal, in a person's words (the agents' beside them), and no dialog", refusedV && !dialogV && /^Couldn't move/.test(await evalJson(`__refused.at(-1).text`)) && (await evalJson(`__refused.at(-1).agentText`))?.startsWith(`move ${crate} refused by the authority (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
     if (dialogV) await dlgClick("Cancel");
     await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'visitor' }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V2 …and its Hierarchy lock icons can't be clicked", await waitFor(`${lockBtn(crate)}?.disabled === true`), await evalJson(`${lockBtn(crate)}?.outerHTML ?? null`));
@@ -353,8 +353,8 @@ try {
     check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === "pebble" && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
     await sleep(800);
     const pAfter = (await geo(0, 0)).P;
-    check("F5 …and once the door's echo is drawn, the pebble is where the drag left it", Math.hypot(...d(pAfter, p1)) < 0.02, { pAfter, p1 });
-    // a mesh drag of a thing I locked asks too (the old client stopped it before the door was asked)
+    check("F5 …and once the authority's echo is drawn, the pebble is where the drag left it", Math.hypot(...d(pAfter, p1)) < 0.02, { pAfter, p1 });
+    // a mesh drag of a thing I locked asks too (the old client stopped it before the authority was asked)
     check("(setup) I lock the pebble", (await page(`return (await (await import('/lib/v4edit.js')).lock('pebble', true)).ok;`)) === true);
     n0 = myActs().length;
     await settle();
@@ -376,7 +376,7 @@ try {
   const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
   check("I1 the Inspector leads with the name, then the id", labels?.[0] === "name" && labels?.[1] === "id", labels);
   check("I2 …no lib line (the Model card has it), no filter box; the Parent card shows its parent, not its children", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
-  check("I3 …placed by names who made it (the door's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
+  check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
   check("I4 …rotation order sits inside the folded Advanced group, not in the main Transform", await evalJson(`![...${insp}.querySelectorAll('.sp-row .sp-label')].some((l) => /order/i.test(l.textContent))`), labels);
   check("I5 Add Component is ONE button", await evalJson(`[...${insp}.querySelectorAll('.sp-pop-btn')].length === 1 && ![...${insp}.querySelectorAll('.sp-btn')].some((b) => /^\\+ (Light|Pendulum|Spin)/.test(b.textContent))`), await evalJson(`[...${insp}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
   await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);
@@ -411,7 +411,7 @@ try {
   // frame whose saved state says "shown" (saved while docked) must still start hidden; edit mode alone opens it.
   const reborn = await page(`localStorage.setItem('ew-frame-zz-edit', JSON.stringify({ x: 60, y: 60, w: 300, h: 12, hidden: false }));
     localStorage.setItem('ew-frame-zz-plain', JSON.stringify({ x: 60, y: 60, w: 300, h: 200, hidden: false }));
-    const F = await import('/lib/frames.js');
+    const F = await import('/lib/windows.js');
     const e = F.makeFrame('zz-edit', { title: 'zz', className: 'edit' }), p = F.makeFrame('zz-plain', { title: 'zz' });
     const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
   check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
@@ -563,7 +563,7 @@ try {
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
   // ---- GR: the ground panel writes in a v4 world (R 10-06: ground & grass panels broken). It sent v1 'terrain'/'grass'
-  // verbs, which fromv1 had no spelling for, so the page refused them itself and nothing reached the door. ----
+  // verbs, which fromv1 had no spelling for, so the page refused them itself and nothing reached the authority. ----
   { const st4 = () => fold(entries());
     const gpanel = `const d = document.createElement('div'); document.body.appendChild(d); (await import('/lib/groundpanel.js')).paintGround(d); window.__gp = d;
       window.__gbtn = (re) => [...window.__gp.querySelectorAll('button, .sp-btn')].find((b) => re.test(b.textContent)); return true;`;
@@ -581,27 +581,27 @@ try {
 
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
-  check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.v4.st)); return n.v4.stats.ingested > 10 && n.v4.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.v4.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/record.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.v4.stats, diff: d.diffView(s.state.st, r.viewState(n.v4.st)) }))`));
+  check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/view.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.v4.st)); return n.v4.stats.ingested > 10 && n.v4.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.v4.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/v4/view.js'), import('/shared/v4/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.v4.stats, diff: d.diffView(s.state.st, r.viewState(n.v4.st)) }))`));
   // a UI verb path (the chat box sends through net.js sendVerb('say')), driven for real so B5 has a subject
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
   check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
-  check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a door request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
+  check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
   // ---- CP: the Commons v1→v4 parity audit (10-06): what a person who isn't in the editor sees ----
   { const lines = () => evalJson(`[...document.querySelectorAll('#chatlog .line')].map((l) => l.textContent)`);
     const type = (text: string) => evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
     const lineLike = (re: string, ms = 5000) => waitFor(`[...document.querySelectorAll('#chatlog .line')].some((l) => ${re}.test(l.textContent))`, ms);
     // CP1 role narration names people (the setup above made bob a builder: "editbot made u-… builder")
     check("CP1 the role narration names the person, not their u-… id", await lineLike(`/made bob builder/`, 3000) && !(await lines() as string[]).some((l) => /made u-[a-z2-7]{20}/.test(l)), (await lines() as string[]).filter((l) => /made /.test(l)));
-    // CP2 /role <name> is the door's role (it read v1's role map by name: "bob holds no role here (visitor)")
+    // CP2 /role <name> is the authority's role (it read v1's role map by name: "bob holds no role here (visitor)")
     await type("/role bob");
-    check("CP2 /role bob says builder (the door's role)", await lineLike(`/bob: builder/`), (await lines() as string[]).slice(-3));
+    check("CP2 /role bob says builder (the authority's role)", await lineLike(`/bob: builder/`), (await lines() as string[]).slice(-3));
     await type("/role");
     check("CP2 …and /role is mine: owner", await lineLike(`/you: owner/`), (await lines() as string[]).slice(-3));
     // CP3 /use <thing> with no action does its one action (it sent 'use', which the bell doesn't do)
     { const r = await page(`const m = await import('/lib/net.js'); return (await m.requestV4('create', { id: 'bell', model: '${CRATE}', components: { reactions: { ring: { kind: 'set', component: 'label', value: 'rung' } } }, place: { at: [4, 4] } })).ok;`);
       await waitFor(`import('/lib/world.js').then((m) => m.entities.has('bell'))`);
       await type("/use bell");
-      check("CP3 /use bell rings it: the door did its one action (the label is on the record)", r && await waitDisk(() => disk().entities.bell?.c.label === "rung"), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
+      check("CP3 /use bell rings it: the authority did its one action (the label is on the record)", r && await waitDisk(() => disk().entities.bell?.c.label === "rung"), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
     // CP5 a spoken utterance arriving in two says is one chat line again (the trio was dropped on v4)
     { await bobReq("say", { text: "the first half", spoken: true, utt: 41 }); await bobReq("say", { text: "and the rest", spoken: true, utt: 41 });
       check("CP5 a spoken utterance's continuation merges into its line", await lineLike(`/the first half and the rest/`), (await lines() as string[]).slice(-3)); }

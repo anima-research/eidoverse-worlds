@@ -1,5 +1,5 @@
 // The v4 fold (PROTOCOL-v4 §1 L1, §2.3, §2.4). It knows nothing about any component type: it creates entities,
-// replaces component values, deletes components and entities. It reads only the entry: never a blob, never the door.
+// replaces component values, deletes components and entities. It reads only the entry: never a blob, never the authority.
 // It is total: a malformed entry shapes nothing and is named in diagnostics, never in the world. A version it
 // doesn't implement gives "unknown version" and no world.
 // Ported from the v4 lab (code/v4-lab/fold.js @ 11db981). Engine changes: sha256 comes from ./hash.js (sync, no
@@ -10,7 +10,7 @@ import { sha256 } from "./hash.js";
 export const VERSION = 4;
 export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
-// §2.1 + §2.4: `ts` is the door's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
+// §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
 const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
 const KINDS = new Set(["genesis", "change", "act", "sim", "say", "purge", "sequencer"]);
 const IDENT = "[a-z0-9-]{1,64}";
@@ -99,7 +99,7 @@ function checkString(s) {
     if ((cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xfffe) === 0xfffe) bad("ijson-noncharacter", cp.toString(16));
   }
 }
-// The same rules for a value that was built in memory rather than parsed (a door's own entry, a test's tamper).
+// The same rules for a value that was built in memory rather than parsed (a authority's own entry, a test's tamper).
 // A number in [2^53, 1e21) is refused too: every JSON writer (and JCS) spells it as an integer lexeme, which §2.4
 // makes malformed on the next read.
 function checkValue(v, depth = 0) {
@@ -145,13 +145,13 @@ export function jcs(v) {
 export { sha256 };
 export const worldIdOf = (genesis) => "sha256:" + sha256(jcs(genesis));
 export const PURGED = Object.freeze({ purged: true });
-export function view(st) {
+export function canonicalView(st) {
   const out = Object.create(null);
   for (const id of Object.keys(st.entities)) { const c = st.entities[id].c, v = Object.create(null);
     for (const k of Object.keys(c)) v[k] = c[k] === PURGED ? { purged: true } : { v: c[k] }; out[id] = v; }
   return out;
 }
-export const digest = (st) => sha256(jcs(view(st)));
+export const digest = (st) => sha256(jcs(canonicalView(st)));
 
 // ---------- envelope and state bodies ----------
 export function checkEntry(e, seq) {
@@ -322,9 +322,9 @@ export function cloneState(st) {
     for (const k of Object.keys(e.c)) c[k] = clone(e.c[k]); entities[id] = { born: e.born, c }; }
   return { ...st, entities, diagnostics: [...st.diagnostics] };
 }
-// Apply ops to a state copy, as a fold of one more change entry would (the door's preview of a write).
+// Apply ops to a state copy, as a fold of one more change entry would (the authority's preview of a write).
 export const applyOps = (st, ops, seq = Infinity) => applyInPlace(cloneState(st), ops, seq);
-// A working copy for applying ops one at a time (the door's admit, script elision): it shares every entity with `st`
+// A working copy for applying ops one at a time (the authority's admit, script elision): it shares every entity with `st`
 // until an op touches it, then copies that one entity (its component map; values are never mutated in place, a set
 // replaces one). The same states as applyOps op by op, without a deep copy of the whole world per op.
 const COW = new WeakMap(); // a working copy → the ids it has copied already

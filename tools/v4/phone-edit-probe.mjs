@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
-import { foundV4 } from '../../server/v4/world.ts';
+import { foundV4 } from '../../server/v4/worldlog.ts';
 
 const KEY = 'v4phone';
 const worlds = mkdtempSync(join(tmpdir(), 'v4-phone-'));

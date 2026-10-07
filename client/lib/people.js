@@ -2,7 +2,7 @@
 //
 // ONE function decides the menu: personActions(me, them) in shared/v4/roles.js (pure, tested in tools/v4/roles-check.ts
 // P1–P3). It shows only what you may do to that one person, so a visitor sees "Message" and nothing else, and when rank
-// is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the door
+// is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the authority
 // decides every act again (the menu is a courtesy, never the gate):
 //   desktop  right-click a row in Chat › People, or the ⋯ on a nameplate card: the house context menu; an act with
 //            choices (how long, which channels, why) opens one small centred card
@@ -34,7 +34,7 @@ export const myself = () => personOf(CONFIG.name);
 /** The items the menu shows for this person (pure: roles.js personActions). */
 export function menuFor(display) {
   const me = myself(), them = personOf(display);
-  if (!them.id && !them.me) return [{ id: 'message', label: 'Message' }];   // not known to the door yet (an old client)
+  if (!them.id && !them.me) return [{ id: 'message', label: 'Message' }];   // not known to the authority yet (an old client)
   return R.personActions(me, them, { muted: them.muted, ghosted: false });
 }
 export const badgeHtml = (display, esc) => { const b = R.badgeOf(personOf(display)); return b ? `<span class="who-badge" data-tone="${b.tone}">${esc(b.text)}</span>` : ''; };
@@ -152,7 +152,7 @@ export function openForm(verb, display, surface = 'card') {
     const paint = () => box.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(isOn(opts[i][0]))));
     for (const [v, label] of opts) { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-chip'; b.textContent = label; b.onclick = (e) => { e.stopPropagation(); onPick(v); paint(); }; box.append(b); }
     r.append(box); paint(); return box; };
-  { const r = row('pm-who'); const n = document.createElement('b'); n.textContent = `${VERB[verb]} ${display}`; const i = document.createElement('code'); i.textContent = them.id ?? ''; i.title = 'their identity: the door acts on this, never on a name';
+  { const r = row('pm-who'); const n = document.createElement('b'); n.textContent = `${VERB[verb]} ${display}`; const i = document.createElement('code'); i.textContent = them.id ?? ''; i.title = 'their identity: the authority acts on this, never on a name';
     const p = document.createElement('p'); p.textContent = SAY[verb]; r.append(n, i, p); }
   if (PRESETS[verb]) {
     const opts = [...PRESETS[verb], ...(verb === 'ban' && owner ? [['forever', 'until lifted']] : [])];

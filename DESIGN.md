@@ -105,7 +105,7 @@ region membership.
 
 Entities carry **components**: `transform`, `model`, `parent`, `light`,
 `motion`, `sockets`, `reactions`, `lock`, `grabbable`… (the registry is
-`shared/v4/catalogue.js`). The fold applies them blindly — it never learns
+`shared/v4/componentspec.js`). The fold applies them blindly — it never learns
 what a `swing` means; meaning lives in whichever reader consumes a
 component: `motion` in the client's evaluator, `sockets` in seating,
 `reactions` in the door. Unknown components are kept and replayed,

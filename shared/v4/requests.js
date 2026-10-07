@@ -1,7 +1,7 @@
-// shared/v4/ops.js — the door requests an edit plans, in v4 terms.
+// shared/v4/requests.js — the authority requests an edit plans, in v4 terms.
 // Every planner (editschema, hierarchy, blueprint, the client's gestures, the agent's tools) builds these, and every
 // sender sends them as they are: {tool, args}, one per change, or one `batch` for one gesture (= one act = one undo).
-// Ids and component names arrive as the VIEW shows them (shared/v4/record.js decodes the translator's x-- escapes)
+// Ids and component names arrive as the VIEW shows them (shared/v4/view.js decodes the translator's x-- escapes)
 // and are encoded here, once. A transform is always written whole ({pos, q, scale}); for a child it is LOCAL to its
 // parent (PROTOCOL-v4 §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
 import { socketQ } from '../components.js';
@@ -17,10 +17,10 @@ export const set = (id, component, value, { merge = false } = {}) =>
   ({ verb: "set", args: { id: E(id), component: encName(String(component)), value, ...(merge ? { merge: true } : {}) } });
 /** remove one component. */
 export const unset = (id, component) => ({ verb: "delete", args: { id: E(id), component: encName(String(component)) } });
-/** remove a thing (and let its children go: the door's rule). */
+/** remove a thing (and let its children go: the authority's rule). */
 export const remove = (id) => ({ verb: "delete", args: { id: E(id) } });
 /** use a thing (its reactions: a swing's push, a door's open). */
-/** use a thing. With no action the door does the thing's one action, or names what it offers (never 'use' by default:
+/** use a thing. With no action the authority does the thing's one action, or names what it offers (never 'use' by default:
  *  a thing that offers 'push' doesn't 'use'). */
 export const use = (id, action = null, args = null) => ({ verb: "use", args: { id: E(id), ...(action != null ? { action: String(action) } : {}), ...(args ? { args } : {}) } });
 /** make a thing. components: {name: value}; the transform is whole (missing parts default). */
@@ -42,7 +42,7 @@ export function transformOf(ent, patch = {}) {
   };
 }
 /** move/turn/scale a thing (local to its parent if it has one). */
-export const pose = (ent, id, patch) => set(id, "transform", transformOf(ent, patch));
+export const setTransform = (ent, id, patch) => set(id, "transform", transformOf(ent, patch));
 
 /** ride `to` (optionally on a named socket): parent + the local pose. With no pose given, the socket's pose, else the
  *  carrier's origin (shared/hierarchy.js localOf reads a parent the same way). Re-parenting to the parent it already
@@ -67,7 +67,7 @@ export function batch(ops) {
   if (!flat.length) return null;
   return flat.length === 1 ? flat[0] : { verb: "batch", args: { ops: flat } };
 }
-/** the (id, component) pairs a request sets — what a gesture's `expect` covers (ids as the door has them). */
+/** the (id, component) pairs a request sets — what a gesture's `expect` covers (ids as the authority has them). */
 export function writesOf(req) {
   if (!req) return [];
   const ops = req.verb === "batch" ? req.args.ops : [req];

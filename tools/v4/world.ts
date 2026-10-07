@@ -6,18 +6,18 @@
 //
 // The server never makes a world by itself (it serves only v4 worlds, and refuses a directory holding only an old log). A world is v4 because its directory holds v4.jsonl
 // whose line 0 is a v4 genesis, and only this tool writes one (shell access to the host, like every other operator
-// act on world files). `found` runs the door's own `new` request, so genesis names the owner and the founding act
+// act on world files). `found` runs the authority's own `new` request, so genesis names the owner and the founding act
 // writes @world (about, bounds, roles:<owner>) through admit. --owner is the name you join with; it is stamped through
-// names.js exactly as the live door stamps you, so you are the owner when you arrive.
+// names.js exactly as the live authority stamps you, so you are the owner when you arrive.
 // `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
 // (tools/v4/import-v1/: 0 divergences required), re-reads the output with the strict reader, and only then writes
 // <new name>/v4.jsonl. The old directory stays on disk as it was; the server doesn't serve it.
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
-import { foundV4, isV4World } from "../../server/v4/world.ts";
+import { foundV4, isV4World } from "../../server/v4/worldlog.ts";
 import { translateV1World } from "./import-v1/world.ts";
-import { openLive } from "../../server/v4/live.ts";
+import { openLive } from "../../server/v4/livehost.ts";
 import { digest } from "../../shared/v4/fold.js";
 
 const [cmd, ...rest] = process.argv.slice(2);

@@ -4,8 +4,8 @@
 import { inspectSchema, editOps } from '../shared/editschema.js';
 import { bodyOf, socketQ } from '../shared/components.js';
 import { localOf } from '../shared/hierarchy.js';
-import { scratchWorld } from './v4/scratchdoor.ts';
-import * as OP from '../shared/v4/ops.js';
+import { scratchWorld } from './v4/scratchworld.ts';
+import * as OP from '../shared/v4/requests.js';
 import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
 

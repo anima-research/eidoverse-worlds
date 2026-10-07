@@ -1,4 +1,4 @@
-// Every request verb declares its arguments: type, which modes they apply to, and an example. The door validates every
+// Every request verb declares its arguments: type, which modes they apply to, and an example. The authority validates every
 // request against this BEFORE doing anything, and `help {verb}` is generated from it (fresh-builder findings W1–W3).
 const xz = { type: "xz", doc: "[x, z] in metres (ground position; y comes from what's below)" };
 const ref = (doc) => ({ type: "id", doc });
@@ -6,7 +6,7 @@ const target = (doc) => ({ type: "id|xz", doc });
 export const PLACE_MODES = ["on", "beside", "hang", "against", "near", "at"];
 export const VERBSPEC = {
   place: {
-    doc: "put a thing somewhere by saying where it goes relative to other things; the door solves the numbers",
+    doc: "put a thing somewhere by saying where it goes relative to other things; the authority solves the numbers",
     oneOf: PLACE_MODES,
     args: {
       id: ref("the thing to move"),
@@ -24,7 +24,7 @@ export const VERBSPEC = {
       gap: { type: "number", doc: "metres of clearance", modes: ["beside", "against", "near"] },
       height: { type: "number", doc: "metres above the ground: hang (seat height), against (wall-mount height)", modes: ["hang", "against"] },
       along: { type: "number", doc: "metres along the target's width from its centre", modes: ["hang", "against"] },
-      lying: { type: "bool", doc: "rest it on its largest face (a book laid flat); the door handles the tilt", modes: ["on", "at", "near"] },
+      lying: { type: "bool", doc: "rest it on its largest face (a book laid flat); the authority handles the tilt", modes: ["on", "at", "near"] },
       attach: { type: "bool", doc: "ride with what it's placed on (default true for on/beside/hang/against-with-height)" },
       dry: { type: "bool", doc: "preview only" },
     },
@@ -52,15 +52,15 @@ export const VERBSPEC = {
   set: { doc: "replace a component's value (merge: true patches only the fields you send)", args: { id: ref("the thing"), component: { type: "string" }, value: { type: "any" }, merge: { type: "bool" }, force: { type: "bool", doc: "@world.physics-engine only: cut even with things in flight (they freeze where they are)" }, base: { type: "any", doc: "the version you read, {seq, head} (inspect → versions; §3d M7, never a bare seq); refused if someone changed it since, or if it isn't this world's history" }, dry: { type: "bool" } }, required: ["id", "component"],
     example: { id: "lamp-1", component: "light", value: { range: 8 }, merge: true } },
   delete: { doc: "remove a thing (with its children) or one component", args: { id: ref("the thing"), component: { type: "string" }, force: { type: "bool", doc: "@world.physics-engine only: cut even with things in flight" }, dry: { type: "bool" } }, required: ["id"] },
-  move: { doc: "walk your body somewhere (presence: not recorded). Things you hold come with you. The door tracks your body: about 6 m/s, 4 m at most in one go, not through walls. Your first move (arriving) and teleport: true are acts on the record, and can't carry things", args: { to: { type: "any", doc: "[x, y, z] in metres (y = the floor you stand on, usually 0)" }, teleport: { type: "bool", doc: "jump there (recorded; refused while holding; a world may limit arrivals to its spawn)" }, client: { type: "string", doc: "a presence claim (human|agent): shown, never read by consent (every body gets the same defaults)" } }, required: ["to"],
+  move: { doc: "walk your body somewhere (presence: not recorded). Things you hold come with you. The authority tracks your body: about 6 m/s, 4 m at most in one go, not through walls. Your first move (arriving) and teleport: true are acts on the record, and can't carry things", args: { to: { type: "any", doc: "[x, y, z] in metres (y = the floor you stand on, usually 0)" }, teleport: { type: "bool", doc: "jump there (recorded; refused while holding; a world may limit arrivals to its spawn)" }, client: { type: "string", doc: "a presence claim (human|agent): shown, never read by consent (every body gets the same defaults)" } }, required: ["to"],
     example: { to: [0, 0, 1.5] } },
   grab: { doc: "pick something up (within its grabbable.range of your hand, default 1.5 m). Things with a grabbable component, or physics {kind: 'dynamic'} (then physics.who decides who may); inspect shows how it's held. You can catch a thing in the air. Grabbing what you already hold with your other hand takes it in both (twoHanded) or swaps hands", args: { id: ref("the thing"),
       hand: { type: "enum", values: ["left", "right"], doc: "which hand (default right, or the grip's own hand)" }, grip: { type: "string", doc: "one of its grabbable.grips by name (default: the first that suits the hand)" },
       offset: { type: "any", doc: "{pos: [x, y, z], q: [x, y, z, w]}: where it sits in your hand (the palm's frame), for a thing with no grips: a VR hand sends where it took hold" } }, required: ["id"],
     example: { id: "ball-1" } },
-  put: { doc: "set down what you're holding. Leave pos out to set it straight down onto whatever's below your hand; or give pos (what a VR hand would): the door checks it like any write (not inside things, not floating, within reach)", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where its base rests" }, q: { type: "any", doc: "[x, y, z, w] (optional)" } }, required: ["id"],
+  put: { doc: "set down what you're holding. Leave pos out to set it straight down onto whatever's below your hand; or give pos (what a VR hand would): the authority checks it like any write (not inside things, not floating, within reach)", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where its base rests" }, q: { type: "any", doc: "[x, y, z, w] (optional)" } }, required: ["id"],
     example: { id: "ball-1" } },
-  throw: { doc: "let go of what you're holding with a velocity; physics (if the world runs it) decides where it lands, and the log records where it came to rest", args: { id: ref("the thing you hold"), v: { type: "any", doc: "[x, y, z] in m/s (+y is up); 20 m/s max" }, pos: { type: "any", doc: "[x, y, z]: where your hand lets go (a VR hand, or the hand you see); within reach. Default: the door's hand" } }, required: ["id", "v"],
+  throw: { doc: "let go of what you're holding with a velocity; physics (if the world runs it) decides where it lands, and the log records where it came to rest", args: { id: ref("the thing you hold"), v: { type: "any", doc: "[x, y, z] in m/s (+y is up); 20 m/s max" }, pos: { type: "any", doc: "[x, y, z]: where your hand lets go (a VR hand, or the hand you see); within reach. Default: the authority's hand" } }, required: ["id", "v"],
     example: { id: "ball-1", v: [0, 3, 4] } },
   drop: { doc: "let go of what you're holding: it falls (with physics), or is set straight down (without); its grabbable may send it home, into a socket that accepts it, or leave it where you let go", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where your hand lets go; within reach" }, hand: { type: "enum", values: ["left", "right"], doc: "let go with this hand only (of a thing held in both: the other keeps it)" } }, required: ["id"], example: { id: "ball-1" } },
   punt: { doc: "kick a thing at your feet (or in the air beside you: a volley) into flight. Only things with physics {kind: 'dynamic'}; who may is physics.who (default visitor). Needs the world to run physics", args: { id: ref("the thing"), power: { type: "number", doc: "m/s along the line from your feet through it, lifted (default 4: a hop; 10: hard)" }, v: { type: "any", doc: "or exactly [x, y, z] in m/s (20 max)" } }, required: ["id"],

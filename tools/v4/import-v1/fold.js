@@ -212,7 +212,7 @@ export function foldEntry(st, e) {
       st.entities[a.id] = {
         ...(a.lib != null ? { lib: a.lib } : {}), pos: a.pos ?? [0, 0, 0], ...orient(a),
         ...(a.scale != null ? { scale: a.scale } : {}),
-        // scale3: a v4 world's per-axis scale, beside the one-number `scale` (shared/v4/record.js); v1 never writes it
+        // scale3: a v4 world's per-axis scale, beside the one-number `scale` (shared/v4/view.js); v1 never writes it
         ...(Array.isArray(a.scale3) && a.scale3.length === 3 && a.scale3.every(Number.isFinite) ? { scale3: a.scale3 } : {}),
         // `collide` ("exact" | "box") is the spawner's override of the
         // size-derived collider choice, and the fold used to drop it: the

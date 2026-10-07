@@ -41,7 +41,7 @@ const RULES = [
 ];
 // "v1" where it names something that isn't the old protocol: file → a pattern the whole line must match, and why
 const UNRELATED = [
-  ["server/v4/directory.ts", /directory|v1 → v2|v1 keyed an agent/, "the door directory's own file format version (v1 → v2), not the protocol"],
+  ["server/v4/directory.ts", /directory|v1 → v2|v1 keyed an agent/, "the authority directory's own file format version (v1 → v2), not the protocol"],
   ["shared/blueprint.js", /blueprint|v1 = an original|nested cop/, "the blueprint RECORD format's version (kind eido.blueprint, v: 1)"],
   ["client/lib/seatcore.js", /SEAT_METHOD/, "a seat-measuring method's name"],
   ["shared/sim.js", /semantics whole|\bV1\b/, "the engine's hashed source (EIDOSIM_BUILD covers its bytes): V1 is eidosim@0.1.0's law, and rewording a comment renames the engine, so these wait for its next real change"],

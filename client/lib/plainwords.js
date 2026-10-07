@@ -1,4 +1,4 @@
-// plainwords — the door's refusals and warnings as a PERSON reads them (ship list 10-07): what they tried and why, with
+// plainwords — the authority's refusals and warnings as a PERSON reads them (ship list 10-07): what they tried and why, with
 // things named by their labels (or what they are), never hex ids or tool syntax. shared/v4/refusal.js does the wording;
 // this file knows the world: which words are things here, and what people call them. Agents keep refusalText.
 import { comps, entities } from './world.js';

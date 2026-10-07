@@ -16,7 +16,7 @@
 // that line is the ∃'s ROW, so the chips run along it, away from the edge. On a horizontal rail (top/bottom) the row
 // is the rail itself, so the line is the ∃'s COLUMN (the glyphs fold down/up from it) and the chips stack along that.
 // It depends only on the ∃ and its glyphs — never on frames or the emote bar — so no placement cycle can form; the
-// emote bar and default frames count it as chrome (emotebar.js roomFor, frames.js CHROME_ANCHOR '#hudstatus'), and
+// emote bar and default frames count it as chrome (emotebar.js roomFor, windows.js CHROME_ANCHOR '#hudstatus'), and
 // the ∃ menu (z 50) opens OVER it and the glyphs, as a dropdown hanging from the ∃ (ui.js anchorBeside).
 //
 // No imports beyond icons: the governor and capnotice post here, and this must not pull the engine in with it.
@@ -37,7 +37,7 @@ function ensure() {
   document.body.append(strip, pop);
   addEventListener('resize', place);
   addEventListener('dockmoved', place);
-  // Esc folds an open popover and goes no further: preventDefault is what frames.js's Esc toggle yields to
+  // Esc folds an open popover and goes no further: preventDefault is what windows.js's Esc toggle yields to
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && openId) { e.preventDefault(); collapse(); } });
   // a click anywhere but the popover or its chip folds it
   document.addEventListener('pointerdown', (e) => {

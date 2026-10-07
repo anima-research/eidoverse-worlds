@@ -8,8 +8,8 @@
 //   commitEdit(id, key, value, {live})
 //     live   → PREVIEW: the group's handler moves the realized object (a
 //              light brightens, a seat gizmo slides) — no log traffic;
-//     final  → COMMIT: editOps() turns the edit into the fewest door ops, sent as ONE request (shared/v4/ops.js via
-//              v4edit.sendOps): one act, undone by the door's undo; expect carries the values as the gesture began.
+//     final  → COMMIT: editOps() turns the edit into the fewest door ops, sent as ONE request (shared/v4/requests.js via
+//              v4edit.sendOps): one act, undone by the authority's undo; expect carries the values as the gesture began.
 //
 //   registerHandler(group, fn(id, obj, k, value, opts) → handled?)
 //     evaluator modules install previews and viewport GESTURES here ('+ seat
@@ -32,7 +32,7 @@ import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
-import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's component edits are door requests
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's component edits are requests
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -95,8 +95,8 @@ export function schemaFor(id) {
 let gesture = null;   // { id, v4 } — the thing's components as they stood when a drag began
 export function endGesture() { gesture = null; }
 
-/** The door ops ONE edit would send (shared/editschema.js editOps), computed but not sent — a multi-selection batches
- *  these across ids into one request (one act, one Ctrl+Z: the door's undo). */
+/** The authority ops ONE edit would send (shared/editschema.js editOps), computed but not sent — a multi-selection batches
+ *  these across ids into one request (one act, one Ctrl+Z: the authority's undo). */
 export function planEdit(id, key, value) {
   if (id === WORLD_ID) { const r = worldEditOps(state.st, { [key]: value }, worldLive()); return { ops: r.ops, errors: r.errors }; }
   const rec = foldRecord(id);
@@ -137,7 +137,7 @@ export function commitEdit(id, key, value, opts = {}) {
   // editOps' contract — a model's — is the FACE, converted once there (review B1: amp/phase/socket yaw landed at 1/57th);
   // and a raw-JSON box cleared and blurred must not delete the component — 'remove <type>' (null) is the deliberate act.
   const { ops, errors, euler, asks } = planEdit(id, key, value);
-  // one edit is ONE door request (a batch when it took several ops): one act, one Ctrl+Z, and it waits for the door;
+  // one edit is ONE request (a batch when it took several ops): one act, one Ctrl+Z, and it waits for the authority;
   // expect names what it changes as this viewer saw it (a scrubbed field: as the scrub began)
   if (ops.length) V4.sendOps(ops, { what: `${key} of ${id}`, base: baseV4 ? { [id]: baseV4 } : null, revert: () => V4.revertPose(id) });
   if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
