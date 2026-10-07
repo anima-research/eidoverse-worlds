@@ -324,6 +324,18 @@ export function cloneState(st) {
 }
 // Apply ops to a state copy, as a fold of one more state entry would (the door's preview of a write).
 export const applyOps = (st, ops, seq = Infinity) => applyInPlace(cloneState(st), ops, seq);
+// A working copy for applying ops one at a time (the door's admit, script elision): it shares every entity with `st`
+// until an op touches it, then copies that one entity (its component map; values are never mutated in place, a set
+// replaces one). The same states as applyOps op by op, without a deep copy of the whole world per op.
+const COW = new WeakMap(); // a working copy → the ids it has copied already
+export function cowState(st) { const s = { ...st, entities: Object.assign(Object.create(null), st.entities), diagnostics: [...st.diagnostics] }; COW.set(s, new Set()); return s; }
+export function applyCow(s, ops, seq = Infinity) {
+  let mine = COW.get(s); if (!mine) COW.set(s, (mine = new Set()));
+  for (const o of ops) { const id = o?.id; const e = typeof id === "string" ? s.entities[id] : undefined;
+    if (e && !mine.has(id)) { s.entities[id] = { born: e.born, c: Object.assign(Object.create(null), e.c) }; mine.add(id); }
+    applyInPlace(s, [o], seq); }
+  return s;
+}
 export function applyInPlace(s, ops, seq = Infinity) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
   for (const o of ops) applyOp(s, seq, shapeOne(o.verb, o, true, "door"), undefined, d);

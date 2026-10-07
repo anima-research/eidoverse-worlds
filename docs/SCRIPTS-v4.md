@@ -63,6 +63,11 @@ world.on("use", (e) => {
 - A demoted sponsor's script goes **dormant** (the status view says who, since when, and what it can no longer
   change). A banned sponsor's is **suspended**. Recovery is explicit: `adopt {id, script, base?}` (its creator or an
   owner), logged as one act.
+- **Pausing is a switch, not an edit.** `set {id, component: "script:<name>", value: {paused: true}, merge: true}`
+  (or the "paused" check on the script's card in the Inspector) stops it, and `paused: false` resumes it. Its creator
+  or an owner may flip it; it needs nothing of the script (no source, no scope: it works even if the source is gone),
+  and it adopts nothing: the sponsor stays whoever last changed something else. `scripts` says who paused it and when,
+  read from the log (nothing is stored in the value).
 - A lock binds scripts like everyone; a script never acts through one. A thing in flight can't be written.
 - People are presence. A script's `shove`/`pose` lands only where that body's consent allows it, and a script is a
   stranger to everyone unless they allow it by name: `consent {allow: "bhv:<thing>", class: "shove"}`, or all of one
@@ -135,10 +140,12 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 | | |
 |---|---|
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
-| wall-clock backstop | 200 ms per activation, host calls included (see "Known limit" below) |
+| wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the door kills the activation's sandbox process |
 | memory / native stack | 24 MB / 256 KB per activation |
 | reads per activation | 64; writes 32; says 4; body effects 4 |
 | logged activations | 6 per minute per script (`rate`) |
+| process script time | 500 ms per rolling second across every world on the door (host-settable); past it, `busy` |
+| waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |
 | runs, logged or not | 60 per minute per script (`runs`); 2000 ms of sandbox time per sponsor per minute (`cpu`), 3× that per world |
 | uploads | 20 per person per minute |
 | script entries per world per hour | 600 (`budget`), each sponsor a fair share |
@@ -148,13 +155,13 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 | timer floor | 5 s; with nobody present a timer sleeps unless `always` |
 | source | 64 KiB of UTF-8; no bidi controls, invisible characters or BOM; no line over 1000 columns |
 
-**Known limit (not yet fixed):** the sandbox runs on the sequencer's own thread. Fuel and the wall clock are checked
-between bytecodes, so a single call into a slow native builtin can't be interrupted: `s.indexOf(t)` on a few hundred
-KB of crafted text, `3n ** 300000n`, or running out of memory inside `Array.prototype.fill` can each hold every world
-on the process for seconds or longer (measured: 1–13 s). The fix is running activations in a worker (research 41
-§3.13); an experiment showed a worker gives the sequencer back at the deadline, though the stuck thread can't be
-killed until its call returns. A script that hits the backstop counts as a failure, and its sponsor's `cpu` budget
-pays for what it used.
+**Isolation.** A script's code runs in a separate sandbox process; the door keeps everything the script can read or
+write on its own side and answers each `world.*` call down a pipe. Fuel and the 300 ms backstop stop runaway bytecode;
+a call into a slow native builtin (`indexOf` on crafted text, a huge BigInt, running out of memory inside `fill`)
+can't be interrupted, so at 500 ms the door kills the process and the activation fails with `time` (a spare process
+takes the next one). The door's thread is never held longer than that by one activation, and script time across every
+world in the process is capped at 500 ms per second (refused as `busy` past it), so one request that wakes many
+scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
 
 A refused or failed activation writes nothing. Its reason goes to the script's console and the status view.
 `@world.scripts {run: false}` (owner) stops every script; `paused: true` stops one.

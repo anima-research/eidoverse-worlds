@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf } from "../components.js";
 import { checkSockets } from "../sockbody.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
+import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
@@ -521,7 +521,8 @@ function admit(w, st, who, ops) {
   // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.sim) may freeze it (P6, force).
   const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "door"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
-  let s = st; const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
+  let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
+  const prevOf = new Map(); // script: sets → the key's value just before that op, within this write
   ops.forEach((raw, i) => {
     const { verb, ...rest } = raw; const op = { verb, ...shapeOneOrRefuse(verb, rest, i) };
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
@@ -561,10 +562,11 @@ function admit(w, st, who, ops) {
       const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = held ? null : ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
       const k = own ?? anc;
       if (k) lockCheck(w, st, who, role, k, op, at); }
-    s = applyOps(s, [op]); norm.push(op);
+    if (op.verb === "set" && op.comp.startsWith("script:")) prevOf.set(op, s.entities[op.id]?.c[op.comp]); // the value just before it
+    applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
-  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:")) installCheck(w, st, s, who, op); // 41 §3.14: at install
+  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -1300,6 +1302,7 @@ function installCheck(w, st, s, who, op) {
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
   const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install (41 §3.12): reviewers must see what runs");
+  w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
   const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS-v4.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
@@ -1329,8 +1332,34 @@ const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...l
 // how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
 function bhvDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
   while (isE(e) && isBhv(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
-// §5 "Two views" (H3): the sponsor is whose rights admitted the LATEST write to the script: key in its current life
-const sponsorOf = (w, id, key) => { if (!creatorOf(w, id, key)) return null; const c = lastSetterOf(w, id, key); return c && !c.deleted ? { sponsor: c.rights, sponsorAt: c.seq } : null; };
+// The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
+function scriptWrites(w, id, key) {
+  const out = [];
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue; const ops = opsQuiet(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && o.comp === key) out.push({ e, value: o.value });
+      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
+  return out;
+}
+// `paused` is a switch, not the script: a write that changes only it (pause, resume) is a "pause write"
+export const unpaused = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
+const pauseOnly = (v, prev) => v !== undefined && prev !== undefined && jcs(unpaused(v)) === jcs(unpaused(prev));
+// §5 "Two views" (H3), with R's decision on lab 49 F4 (2026-10-06): the sponsor is whose rights admitted the latest write
+// to the script: key in its current life THAT CHANGED MORE THAN `paused`. Pausing or resuming adopts nothing: an owner
+// who pauses a builder's script stops it, and the builder still answers for it (an explicit adopt is how to take it on).
+function sponsorOf(w, id, key) {
+  if (!creatorOf(w, id, key)) return null;
+  const W = scriptWrites(w, id, key);
+  for (let k = 0; k < W.length; k++) if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return { sponsor: entryBy(w, W[k].e).rights, sponsorAt: W[k].e.seq };
+  return null;
+}
+// who paused it: the write that turned `paused` on, in the run of writes since (a view: never a name in the value)
+function pausedBy(w, id, key) {
+  const W = scriptWrites(w, id, key); let at = null;
+  for (const x of W) { if (x.value?.paused !== true) break; at = x; }
+  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "act" ? c.actor : at.e.actor;
+  return { by, at: at.e.seq, ts: at.e.ts };
+}
 // who is here: the door's own bodies plus whoever the host says is connected (a server's people), id → position | null
 function presentOf(w) { const out = new Map();
   for (const [id, b] of Object.entries(w.presence.bodies ?? {})) out.set(id, Array.isArray(b?.at) ? b.at : null);
@@ -1353,6 +1382,20 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
     if (e.kind === "act" && e.actor === `bhv:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
+// The door's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
+// world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
+// ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
+// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
+export const DUTY = { windowMs: 1000, maxMs: 500, worldShare: 0.6 }; // one world gets at most worldShare of it (fairness between worlds)
+/** A host sets the process's script duty (a big server may give scripts more of each second; a test that fires a thousand
+ *  activations in a tight loop opens it wide). Returns the previous setting. */
+export function setScriptDuty({ windowMs = DUTY.windowMs, maxMs = DUTY.maxMs, worldShare = DUTY.worldShare } = {}) { const was = { ...DUTY }; Object.assign(DUTY, { windowMs, maxMs, worldShare }); dutyLog.length = 0; return was; }
+const dutyLog = [];
+// what's left of the duty for world `wid`: the process's, and that world's share of it
+const dutyLeft = (wid) => { const t = performance.now(); while (dutyLog.length && t - dutyLog[0].at > DUTY.windowMs) dutyLog.shift();
+  const all = dutyLog.reduce((n, d) => n + d.ms, 0), mine = dutyLog.reduce((n, d) => n + (d.w === wid ? d.ms : 0), 0);
+  return Math.min(DUTY.maxMs - all, DUTY.maxMs * DUTY.worldShare - mine); };
+const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per person per minute: they run code and log nothing
 // door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
@@ -1376,7 +1419,7 @@ function activate(w, id, name, ev) {
   const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}) }); rt.status = status; }
     return { script: key, id, status, ...extra }; };
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
-  if (v.paused === true) return out("paused", { why: "paused: true (set by its sponsor or an owner)" });
+  if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
   if (cfg.run === false) return out("stopped", { why: "@world.scripts.run is false (the owner's kill switch)" });
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
@@ -1393,11 +1436,17 @@ function activate(w, id, name, ev) {
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
+  if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the door's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
+  if (dry) { const now0 = w.now(), who = ev.by ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
+    if (D0.length >= DRY.n) return out("refused", { code: "rate", why: `${said(who)} has asked for ${D0.length} dry runs in the last minute; at most ${DRY.n}` });
+    D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
-  if (!dry) ((w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(performance.now() - t0) }), w.presenceDirty = true);
+  { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
+  if (!dry) { const ms = performance.now() - t0;
+    (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
   const ops = SR.elide(st, res.ops);
@@ -1495,7 +1544,9 @@ function scriptStatus(w, st, id, name, v) {
   const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
     ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
   if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
-  if (v.paused === true) return { ...base, status: "paused", why: "paused: true" };
+  if (v.paused === true) { const pb = pausedBy(w, id, key);
+    return { ...base, status: "paused", why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true", ...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),
+      resume: `set {id: '${id}', component: '${key}', value: {paused: false}, merge: true}` }; }
   if (cfg.run === false) return { ...base, status: "stopped", why: "@world.scripts.run is false" };
   if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };

@@ -27,11 +27,17 @@ export function creatorAt(L, id, comp, upto) {
       else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found === null ? null : by(L, found); } }
   return found === null ? null : by(L, found);
 }
-/** sponsor of script key (id, comp) as of seq `upto`: the LATEST write to it in its current life */
+/** sponsor of script key (id, comp) as of seq `upto`: the latest write to it in its current life that changed more than
+ *  `paused` (§5 "Two views"; R on lab 49 F4: pausing adopts nothing). The door's own rule (door.js sponsorOf). */
 export function sponsorAt(L, id, comp, upto) {
   if (!creatorAt(L, id, comp, upto)) return null;
-  for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "state") continue; const ops = quiet(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id === id && o.verb === "set" && o.comp === comp) return by(L, i); } }
+  const W = []; // newest first, current life only
+  scan: for (let i = upto; i >= 0; i--) { const e = L[i]; if (!isE(e) || e.kind !== "state") continue; const ops = quiet(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
+      if (o.verb === "set" && o.comp === comp) W.push({ seq: i, value: o.value });
+      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === comp || o.comp === undefined))) break scan; } }
+  const unp = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
+  for (let k = 0; k < W.length; k++) if (k === W.length - 1 || W[k].value === undefined || W[k + 1].value === undefined || jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);
   return null;
 }
 export function depthOf(L, seq) { let n = 0, e = L[seq], g = 0; while (isE(e) && isBhv(e.actor) && g++ < 10000) { if (e.kind === "act") n++; e = L[e.cause]; } return n; }
