@@ -238,7 +238,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const m3 = await sock(S4.port); const jm3 = await m3.join("heath", "Moss", { agentToken: "tok-moss" });
     await sleep(2200);
     const m4 = await sock(S4.port); const jm4 = await m4.join("heath", "Moss", { agentToken: "tok-moss" });
-    ok(kk.ok && m2.closed === 4006 && !!said && !jm3.snapshot && /may come back/.test(jm3.errors.join(" ")) && !!jm4.snapshot, "RS3 a kick: removed now (4006, with until), refused while the cooldown runs, admitted after it", [kk, m2.closed, said, jm3.errors, !!jm4.snapshot]);
+    // join() waits 3 s for the snapshot; a loaded host can take longer (the snapshot then arrives late, not never)
+    for (let i = 0; i < 100 && !jm4.snapshot && !jm4.errors.length && m4.closed == null; i++) { await sleep(100); jm4.snapshot = m4.msgs.find((m) => m.type === "snapshot"); }
+    ok(kk.ok && m2.closed === 4006 && !!said && !jm3.snapshot && /may come back/.test(jm3.errors.join(" ")) && !!jm4.snapshot, "RS3 a kick: removed now (4006, with until), refused while the cooldown runs, admitted after it", [kk, m2.closed, said, jm3.errors, !!jm4.snapshot, jm4.errors]);
     m3.close();
     // RS4: ghost: unseen by others (leave, no frames), no chat (says arrive emptied), and back (arrive) when lifted
     const gk = own.msgs.length;

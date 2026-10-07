@@ -54,7 +54,11 @@ export function writesOf(req) {
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
-export const mayLift = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
+// may I lift a lock (so the page offers "move anyway")? A visitor or a role-less person never does (decided by the role:
+// client-check V1 drives a visitor by the role alone); any other role by its build switch (a moderator, a custom role).
+// The door decides either way; this only chooses between the dialog and the refusal.
+export const mayLift = () => { const r = net.myRights; if (!r || r.role === 'visitor' || r.role === 'none') return false;
+  return Array.isArray(r.switches) ? r.switches.includes('build') : ['builder', 'owner'].includes(r.role); };
 
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {
