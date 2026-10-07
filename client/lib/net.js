@@ -132,9 +132,15 @@ function sendSay(args) {
 export function say(text, extra = {}) {
   const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
   if (net.joined && net.ws?.readyState === 1) return sendSay(args);
-  if (sayQueue.length >= SAY_QUEUE_MAX) { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
+  // removed, taken over, or refused at the door: nothing will reconnect, so nothing is queued (it would wait forever)
+  if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
   logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
   return new Promise((resolve) => sayQueue.push({ args, resolve }));
+}
+/** The connection won't come back (a kick, a ban, a takeover, a refused join): what was queued is told so, not kept. */
+function failSays() {
+  while (sayQueue.length) { const { args, resolve } = sayQueue.shift(); const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } };
+    logChat('*', sayRefusalWords(r, args.text)); resolve(r); }
 }
 /** Send what was typed while the connection was down, in order (called once the snapshot has landed). */
 function flushSays() {
@@ -519,6 +525,7 @@ function wireSocket(ws) {
     if (ev.code === 4002) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast(`"${CONFIG.name}" is connected in another tab. This one has yielded — reload to take over.`, 'warn', 60000);
       return;
     }
@@ -529,6 +536,7 @@ function wireSocket(ws) {
     if (ev.code === 4006) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
       return;
     }
@@ -537,6 +545,7 @@ function wireSocket(ws) {
     if (ev.code === 4005) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast(`"${CONFIG.world}" is not a valid world name — check the link that brought you here`, 'warn', 60000);
       return;
     }
@@ -546,6 +555,7 @@ function wireSocket(ws) {
     if (ev.code === 4003) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       // If we entered verified, this refusal means the session died
       // server-side (TTL lapsed mid-visit). The cached identity is stale —
       // drop it and go back through the login rather than asking for a key

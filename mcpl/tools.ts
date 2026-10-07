@@ -124,7 +124,7 @@ export const TOOLS = [
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
   { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "door", description: "v4 worlds only: one request to the world's door, answered by the door itself — {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, teach}}. tool is one of: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the door solves where it goes) | batch {ops: [{tool, args}…]} | use {id, action?} | say {text} | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move/grab/put/throw/drop/wait (your door-tracked body) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | check | history {id?, limit?, before?} | schema {component?} | help {tool?}. Every write may add dry: true, expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and through_lock: true. undo {act: <your undo>} is redo. spawn/place/light/remove/edit also wait for the door and report refusals. whois {name} finds a person's identity (u-…) here, present or not.", inputSchema: { type: "object", properties: { tool: { type: "string" }, args: { type: "object" } }, required: ["tool"] } },
+  { name: "door", description: "v4 worlds only: one request to the world's door, answered by the door itself — {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, teach}}. tool is one of: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the door solves where it goes) | batch {ops: [{tool, args}…]} | use {id, action?} | say {text} | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move/grab/put/throw/drop/wait (your door-tracked body) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | check | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {tool?}. Every write may add dry: true, expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and through_lock: true. undo {act: <your undo>} is redo. spawn/place/light/remove/edit also wait for the door and report refusals. whois {name} finds a person's identity (u-…) here, present or not.", inputSchema: { type: "object", properties: { tool: { type: "string" }, args: { type: "object" } }, required: ["tool"] } },
   // Description narrowed to what the implementation actually does (antra
   // review, #3). It previously promised "held pose and posture survive", which
   // joinWorld does NOT transfer — and which contradicts the existing pose
@@ -250,7 +250,8 @@ const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 export function historyLine(e: any): string {
   const who = actorName(String(e.actor)); const when = e.ts ? `${new Date(e.ts).toISOString()} ` : "";
   const args = (v: any) => { const j = JSON.stringify(v ?? {}); return j.length > 300 ? `${j.slice(0, 300)}…` : j; };
-  if (e.kind === "say") { const b = e.body ?? {}; return `#${e.seq} ${when}${who}: say ${JSON.stringify(b.text ?? "")}${b.to ? ` (to ${actorName(String(b.to))})` : ""}`; }
+  if (e.kind === "say") { const b = e.body ?? {}; if (b.text === undefined && b.commit !== undefined) return `#${e.seq} ${when}${who}: say (purged)`;
+    return `#${e.seq} ${when}${who}: say ${JSON.stringify(b.text ?? "")}${b.to ? ` (to ${actorName(String(b.to))})` : ""}`; }
   const b = e.body ?? {};
   if (e.verb === "legacy") return `#${e.seq} ${when}${who}: ${b.verb ?? "?"} ${args(b.args)} (from the v1 log${Number.isInteger(b.from) ? `, #${b.from}` : ""})`;
   if (b.refused) return `#${e.seq} ${when}${who}: tried ${e.verb} ${args(b.request)} — REFUSED (${b.refused.code}); nothing changed`;
@@ -452,6 +453,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : undefined;
       // the door answers a say: a refused one (the rate limit, a ban) comes back as an error in its own words, not "said"
       const r: any = await ag.say(String(a.text).slice(0, 4000), extra);
+      // no answer isn't a refusal: it may have landed. Say so, so a retry doesn't say it twice
+      if (r && r.ok === false && r.refused?.code === "timeout") return { content: [{ type: "text", text: "say: the world didn't confirm it in time — it may still have landed; look (or catch_up) before saying it again" }], isError: true };
       if (r && r.ok === false) return refusedBy(r, "say");
       return text("said");
 
@@ -889,9 +892,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
           ...(typeof a.before === "number" ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
         if (!h?.ok) return refusedBy(h, "world_history");
         const rows = (h.entries ?? []).filter((e: any) => e.kind === "act" || e.kind === "say");
-        if (!rows.length) return text(Array.isArray(a.verbs) && a.verbs.length ? `no entries with ${a.verbs.join(" / ")}${h.next != null ? "" : " in this stretch of the log"}` : "no entries yet");
-        return text(rows.map(historyLine).join("\n")
-          + (h.next != null ? `\n… more ${typeof a.after === "number" ? `after #${h.next} (page with after)` : `before #${h.next} (page with before)`}` : "")
+        const more = h.next != null ? `\n… more ${typeof a.after === "number" ? `after #${h.next} (page with after)` : `before #${h.next} (page with before)`}` : "";
+        // a page can hold only state entries (an act's results), which this view leaves out: say so, and where to go on
+        if (!rows.length) return text(`${Array.isArray(a.verbs) && a.verbs.length ? `no acts or says with ${a.verbs.join(" / ")}` : "no acts or says"} in this page of the log${more || " — and nothing further that way"}`);
+        return text(rows.map(historyLine).join("\n") + more
           + "\n(the door's log: acts and says; door history {id} reads one thing's own acts)");
       }
       const r = await ag.history({

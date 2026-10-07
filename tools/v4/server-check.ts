@@ -232,6 +232,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(ml?.text === "Ann removed Kim from this world" && spec.of("moderated").at(-1)?.text === ml?.text, "CM1 bystanders see \"Ann removed Kim\" (v1 showed it; v4 told nobody)", vic.of("moderated").slice(nB));
   ok(!/secret/.test(JSON.stringify([...vic.msgs, ...ann.msgs, ...spec.msgs].filter((m) => m.type === "moderated"))) && /secret reason/.test(kim.of("error").at(-1)?.error ?? "") && !kim.of("moderated").length,
     "CM1 …not the reason (that's the person's, and the moderator log's); the person removed gets it, and no bystander line", kim.of("error").at(-1));
+  // …and a kick the door accepts for someone who isn't here (a raw id: the agent skips whois for one) tells nobody anything
+  const nK = vic.of("moderated").length;
+  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)"); await sleep(250);
+  ok(vic.of("moderated").length === nK, "CM1 …nobody is told \"Ann removed Kim\" when nobody was removed", vic.of("moderated").slice(nK));
   // CM2 role narration names the person: a role written for someone who never acted here carries their name to clients
   const nv = vic.of("v4-log").length;
   ok((await ann.req("set", { id: "@world", component: `roles:${KIM}`, value: { role: "builder" } })).ok, "CM2 (Ann makes the absent Kim a builder)");
@@ -247,6 +251,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const ww = await vic.req("whois", { name: "Watcher" });
   ok(ww.ok && ww.people.length === 0 && /has been in this world/.test(ww.note ?? ""), "CM3 …scoped to this world: a spectator who never acted here, in the door's directory all the same, isn't found", ww);
   ok((await spec.req("whois", { name: "Ann" })).ok, "CM3 …a spectator may ask (it's a read)");
+  ok((await vic.req("whois", { name: "🙂" })).refused?.code === "shape", "CM3 …a name with no letters or digits is refused (it folded to \"\" and matched everyone whose name did too)");
+  ok(tool(["found", "elsewhere", "--owner", "Una"]).code === 0, "CM3 (a second world, founded by Una, who has never been in this one)");
+  { const una = await client(srv.port, "elsewhere", "Una", V4); await una.req("say", { text: "only here" }); una.close(); }
+  const wu = await vic.req("whois", { name: "Una" });
+  ok(wu.ok && wu.people.length === 0, "CM3 …someone who acted only in another world on this door isn't found from this one", wu);
   // CM4 an agent owner bans an absent person by name, and lifts it; bystanders are told; a kick of someone absent says so
   const oz: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Oz", world: "garden", avatar: "" });
   await oz.connect(); for (let i = 0; i < 40 && !oz.v4c?.active; i++) await sleep(50);
@@ -263,11 +272,18 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const kk = await HANDLERS.kick(oz, { id: "Zed" }, {} as any, "kick");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
   ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError && vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed"), "CM4 …and unban by name works, told to bystanders");
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
+  ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the door's reason
   await vic.req("create", { id: "vics2", model: "test/cup.glb" });
   const dbg = await new Promise<any>((res) => { const id = "dbg1"; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === id) { vic.ws.removeEventListener("message", on); res(m); } }; vic.ws.addEventListener("message", on); vic.send({ type: "debug", reqId: id, limit: 50 }); setTimeout(() => res({ events: [], timeout: true }), 5000); });
   const rv = dbg.events?.filter((e: any) => e.kind === "refused" && e.who === "Vic" && e.code === "rights").at(-1);
   ok(rv && /Vic's create vics2 was refused \(rights\)/.test(rv.line), "CM5 a refused request is in the flight recorder, in words (world_debug only had v4-v1-verb lines)", dbg.events?.slice(-3));
+  // bounded: a shape refusal quotes what was sent; a megabyte of it mustn't sit in the ring (or go to everyone who asks)
+  await vic.req("history", { limit: "x".repeat(200_000) });
+  const dbg2 = await new Promise<any>((res) => { const id = "dbg2"; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === id) { vic.ws.removeEventListener("message", on); res(m); } }; vic.ws.addEventListener("message", on); vic.send({ type: "debug", reqId: id, limit: 50 }); setTimeout(() => res({ events: [], timeout: true }), 5000); });
+  const big = dbg2.events?.filter((e: any) => e.kind === "refused" && e.tool === "history").at(-1);
+  ok(big && JSON.stringify(big).length < 600 && /…$/.test(big.line), "CM5 a refusal quoting 200 KB is recorded in under 600 bytes", big ? JSON.stringify(big).length : dbg2.events?.slice(-2));
   const wd = await HANDLERS.world_debug(oz, { kinds: ["refused"] }, {} as any, "world_debug");
   ok(/Vic's create vics2 was refused \(rights\)/.test(T(wd)), "CM5 …and the agent's world_debug reads it", T(wd).slice(0, 300));
   // CM6 the agent's history: verbs and before reach the door; a refused attempt reads REFUSED; a v1 entry its own verb

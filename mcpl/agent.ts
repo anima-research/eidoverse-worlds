@@ -873,7 +873,7 @@ export class WorldAgent {
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
             if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
             for (const x of r.says) {
-              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}) } };
+              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
               this.lastSeq = Math.max(this.lastSeq, e.seq);
               this.noteOwnSay(e);
               hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the window, no v1 fold

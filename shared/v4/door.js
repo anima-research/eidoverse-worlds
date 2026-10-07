@@ -1147,9 +1147,11 @@ function buildUse(ctx, a) {
   const e = ctx.st.entities[a.id]; if (!e) refuse("not-found", `no '${a.id}'`, "", { didYouMean: guess(a.id, Object.keys(ctx.st.entities)) });
   const offers = actionsOf(ctx.st, a.id);
   // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
+  // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
   if (a.action == null && !offers.length) refuse("no-action", `${a.id} has nothing to use: it offers no actions`, "inspect shows what a thing offers; a builder gives it reactions, or a seat (a socket with a body block)");
-  if (a.action == null && offers.length > 1) refuse("no-action", `${a.id} offers ${offers.length} things to do: say which`, `it offers: ${offers.join(", ")} (use {id: '${a.id}', action: '${offers[0]}'})`, { offers });
-  const action = a.action ?? offers[0];
+  const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
+  if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });
+  const action = a.action ?? mine[0] ?? offers[0];   // none you may do: the first, so the refusal says why
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
@@ -2266,7 +2268,7 @@ const TOOLS = {
     // matches an entry's verb or kind, and a translated act's v1 verb (its body names it); before/after page by seq
     if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — a translated v1 entry matches its v1 verb too ('comp', 'mount')");
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
-    const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs ? new Set(a.verbs) : null;
+    const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
     const match = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
     const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;

@@ -629,7 +629,17 @@ try {
     { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
       check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|\+gen|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
-      check("CP8 the command bar lists nothing that sends nothing on v4 (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); } }
+      check("CP8 the command bar lists nothing that sends nothing on v4 (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); }
+    // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
+    { await page(`const m = await import('/lib/net.js'); return (await m.requestV4('set', { id: '@world', component: 'default-role', value: { role: 'builder', guests: 'builder' } })).ok;`);
+      await sleep(1200);   // CP7's flood is the say budget; this is an act
+      await type("/grant * builder");
+      check("CP9 /grant * builder sets the default role and keeps guests: 'builder'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "builder" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
+    // CP10 removed from the world (4006): a line typed after it isn't queued "until the world is back" (it never comes)
+    { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(4006, 'test: as if removed'), true))`);
+      await waitFor(`import('/lib/net.js').then((m) => m.net.status === 'rejected')`, 5000);
+      const r = await page(`const m = await import('/lib/net.js'); return await Promise.race([m.say('after removal'), new Promise((res) => setTimeout(() => res('pending'), 3000))]);`);
+      check("CP10 a say after removal answers at once, in words, and isn't queued", r?.ok === false && await lineLike(`/“after removal” wasn't sent: not connected/`, 2000) && !(await lines() as string[]).some((l) => /queued “after removal”/.test(l)), { r, last: (await lines() as string[]).slice(-2) }); } }
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
   check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (v4seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

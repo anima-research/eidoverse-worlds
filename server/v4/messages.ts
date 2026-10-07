@@ -38,9 +38,17 @@ export function whois(w: World, args: Any) {
   const here = new Map<string, string>(); for (const c of w.clients) if (c.v4id && !c.spectator) here.set(c.v4id, c.id);
   const known = new Set<string>([...here.keys(), ...v4.knownIds()]);
   const want = foldName(q);
+  if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, teach: "the name someone goes by here, as their nameplate shows it" } };
   const people = [...known].filter((id) => id === q || (dir.nameOf(id) != null && foldName(dir.nameOf(id)!) === want) || (here.has(id) && foldName(here.get(id)!) === want))
     .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: v4.roleOf(id), here: here.has(id), banned: isBanned(v4.live, id) }));
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
+}
+const refusalTimes = new WeakMap<Client, number[]>();
+/** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */
+function recordRefusal(c: Client): boolean {
+  const now = Date.now(); const ts = (refusalTimes.get(c) ?? []).filter((t) => now - t < 10_000);
+  if (ts.length >= 20) { refusalTimes.set(c, ts); return false; }
+  ts.push(now); refusalTimes.set(c, ts); return true;
 }
 /** What bystanders are told when the door removes someone: who did it, to whom (names, from the directory). Not the
  *  reason (that went to the person, and stays in the moderator log), not an address, not an account. */
@@ -78,16 +86,24 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
+      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4!.live, String(args.who)) : false;
       const r = await w.v4!.request(actorOf(c), tool, args);
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
-      if (r && !r.ok && r.refused) w.debug("refused", { who: c.id, tool, ...(typeof args.id === "string" ? { id: args.id } : {}), code: r.refused.code,
-        line: `${c.id}'s ${tool}${typeof args.id === "string" ? ` ${args.id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}` });
+      // Bounded: a refusal's reason can quote what was sent (a shape refusal echoes the bad value), the ring holds 300 and
+      // is read by anyone here, so each line is capped and each connection records at most 20 per 10 s (review 10-06 #1)
+      if (r && !r.ok && r.refused && recordRefusal(c)) { const cap = (x: unknown, n: number) => { const t = String(x ?? ""); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+        const id = typeof args.id === "string" ? cap(args.id, 64) : null;
+        w.debug("refused", { who: c.id, tool: cap(tool, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
+          line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
       // bystanders see a removal as v1 showed it ("A removed B"), from the server (the moderator log is never a world entry)
+      // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
       if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban") && typeof args.who === "string") {
-        const text = modLine(w, c.id, tool, String(args.who));
-        for (const t of w.clients) if (t.v4id !== args.who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } }
+        const who = String(args.who);
+        const happened = tool === "kick" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
+        if (happened) { const text = modLine(w, c.id, tool, who);
+          for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
       }
       // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their

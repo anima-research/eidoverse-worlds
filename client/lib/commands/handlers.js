@@ -118,7 +118,8 @@ register('grant', (arg) => {
   // * = the world's default role for people who signed in (v1's roles['*']; guests stay visitors unless the world opts in)
   if (id === '*') {
     if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
-    send({ tool: 'set', args: { id: '@world', component: 'default-role', value: { role } } }, { what: `make everyone ${role}` });
+    // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
+    send({ tool: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}` });
     return;
   }
   onePerson(id, 'grant').then((who) => { if (who) send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value: { role } } }, { what: `make ${id} ${role}` }); });

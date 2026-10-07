@@ -25,7 +25,7 @@ import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
 import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView } from "../../shared/v4/door.js";
-import { stateView } from "../../shared/v4/client.js";
+import { stateView, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
@@ -105,7 +105,7 @@ export class V4Log {
   /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
   private sayLine(e: Any): LogEntry {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}) } } as LogEntry;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as LogEntry;
   }
   private hearSay(e: Any) {
     const line = this.sayLine(e);
