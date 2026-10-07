@@ -53,12 +53,13 @@ try {
   ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', v4fold: true }));
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'snapshot' || m.type === 'error'); i++) await sleep(100);
   const req = (id, tool, args) => { ws.send(JSON.stringify({ type: 'v4', id, tool, args })); };
-  req('c1', 'create', { id: 'nov1-live', model: 'eidoverse/assets/models/crate_large_red.glb', place: { at: [2, 2] } });
+  const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the door never reuses an id: a fresh one each run
+  req('c1', 'create', { id: LIVE, model: 'eidoverse/assets/models/crate_large_red.glb', place: { at: [2, 2] } });
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'v4-result' && m.id === 'c1'); i++) await sleep(100);
   const made = inbox.find((m) => m.type === 'v4-result' && m.id === 'c1');
-  const has = () => race(pg.evaluate(() => globalThis.EW?.entities?.has?.('nov1-live') ?? false));
+  const has = () => race(pg.evaluate((id) => globalThis.EW?.entities?.has?.(id) ?? false, LIVE));
   let live = false; for (let i = 0; i < 60 && !live; i++) { live = await has(); if (!live) await sleep(250); }
-  req('c2', 'delete', { id: 'nov1-live' });
+  req('c2', 'delete', { id: LIVE });
   let gone = false; for (let i = 0; i < 60 && !gone; i++) { gone = !(await has()); if (!gone) await sleep(250); }
   check('live: a thing created through the door while the page watches is realized, and goes when it is removed', made?.ok && live && gone, { made: made?.reply?.ok ?? made?.reply?.refused, live, gone });
   // a signed-out visitor's /whoami is a 401 by design (net.js asks whether a home-node session exists); Chrome logs the
