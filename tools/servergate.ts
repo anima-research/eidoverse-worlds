@@ -55,9 +55,9 @@ function reap(p: Bun.Subprocess | null) {
 type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number; sweepPorts?: number[] };
 const BATTERY: Row[] = [
   { name: "smoke", tool: "tools/smoke.ts" },   // its own free port (8987 is a live sequencer here)
-  { name: "authtest", tool: "tools/authtest.ts", sweepPorts: [8992] },
+  { name: "authtest", tool: "tools/authtest.ts" },   // its own free port
   { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000, sweepPorts: [8940] },
-  { name: "permtest", tool: "tools/permtest.ts", server: true },
+  { name: "permtest", tool: "tools/permtest.ts" },
 ];
 
 /** Kill whatever LISTENS on `port` (Windows netstat) — self-booting suites
