@@ -57,7 +57,13 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const st = fold(L, { until: b.head }); const v = st.entities[id]?.c[b.script];
     if (!v || v.src !== b.src) { flags.push({ seq, check: "src", claimed: b.src, view: v?.src ?? null }); return; }
     let blob; try { blob = getBlob(b.src); } catch { flags.push({ seq, check: "src", why: "the source blob is missing" }); return; }
-    const res = run({ text: blob.text, self: id, key: b.script, event: b.event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, st, reads: b.reads ?? { near: [], count: [], names: [] } });
+    // the event as recorded, plus what the act points at instead of copying (a say's text, a use's args: purgeable there)
+    const trig = Number.isInteger(b.trigger?.seq) ? L[b.trigger.seq] : null; const event = { ...b.event };
+    if (b.on === "say") { if (!isE(trig) || typeof trig.body?.text !== "string") { flags.push({ seq, check: "input", why: "the say it heard is gone (purged?): it can't be re-run" }); return; }
+      event.text = trig.body.text; if (trig.body.to !== undefined) event.to = trig.body.to; }
+    if (b.on === "use" && isE(trig) && trig.body?.request?.args !== undefined) event.args = trig.body.request.args;
+    // no wall clock on a re-run: fuel (deterministic) is the limit; the auditor's machine may be slower than the door's
+    const res = run({ text: blob.text, self: id, key: b.script, event, knobs: v.knobs ?? {}, now: a.ts, seed: b.seed, st, reads: b.reads ?? { near: [], count: [], names: [] }, limits: { wallMs: 10000 } });
     if (!res.ok) { flags.push({ seq, check: "rerun", why: `the re-run failed: ${res.code}: ${res.why}` }); return; }
     reran++;
     const want = elide(st, res.ops);

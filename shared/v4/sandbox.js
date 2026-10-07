@@ -20,8 +20,11 @@
 //
 // SYNCHRONOUS, on the caller's thread. Research 41 recommends running the sandbox OFF the sequencer's thread; this
 // slice doesn't (the door is synchronous end to end). The input is (source, head state, event, presence answers) and
-// the output is a proposed batch, so moving it to a worker is a change of transport, not of meaning. Until then the
-// fuel and the wall-clock backstop are what bound how long one activation can hold the door.
+// the output is a proposed batch, so moving it to a worker is a change of transport, not of meaning. Until then fuel and
+// the wall clock bound BYTECODE only: both are checked by QuickJS's interrupt handler, which never runs inside a native
+// builtin. One slow builtin call (String#indexOf on crafted text, BigInt **, an out-of-memory inside Array#fill) holds
+// the thread until it returns: measured 1–13 s (review, 2026-10-06). An experiment: a Worker + Atomics.wait gives the
+// sequencer back at the deadline, but worker.terminate() can't stop the WASM thread until its call returns.
 import { applyOps, jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamKey } from "./scriptrules.js";
 
@@ -37,10 +40,26 @@ const PRELUDE = String.raw`"use strict";
   const host = globalThis.__host; delete globalThis.__host;
   const IN = JSON.parse(globalThis.__in); delete globalThis.__in;
   const NOW = IN.now;
-  const RealDate = Date;
-  function FrozenDate(...a) { if (!new.target) return new RealDate(NOW).toString(); return a.length ? new RealDate(...a) : new RealDate(NOW); }
-  FrozenDate.now = () => NOW; FrozenDate.UTC = RealDate.UTC; FrozenDate.parse = RealDate.parse; FrozenDate.prototype = RealDate.prototype;
-  Object.defineProperty(RealDate.prototype, "constructor", { value: FrozenDate });
+  const RealDate = Date, P = RealDate.prototype;
+  // every activation's time zone is UTC: the host's zone would leak into local-time methods and parsing, and a re-run on
+  // another machine would disagree. Local-time methods ARE the UTC ones; a date-time string with no zone is read as UTC.
+  const hostOffset = P.getTimezoneOffset;
+  for (const k of ["FullYear", "Month", "Date", "Day", "Hours", "Minutes", "Seconds", "Milliseconds"]) { P["get" + k] = P["getUTC" + k]; if (k !== "Day") P["set" + k] = P["setUTC" + k]; }
+  P.getTimezoneOffset = function getTimezoneOffset() { return 0; };
+  const iso = (d) => (Number.isNaN(d.getTime()) ? "Invalid Date" : d.toISOString());
+  P.toString = P.toLocaleString = function toString() { return iso(this); };
+  P.toDateString = P.toLocaleDateString = function toDateString() { const s = iso(this); return s === "Invalid Date" ? s : s.slice(0, 10); };
+  P.toTimeString = P.toLocaleTimeString = function toTimeString() { const s = iso(this); return s === "Invalid Date" ? s : s.slice(11, 19) + " GMT+0000"; };
+  const parse = (str) => { const s = String(str); const t = RealDate.parse(s); if (Number.isNaN(t)) return t;
+    // ES: a date-time without an offset is LOCAL time (host-dependent); here it is UTC, like a date-only string
+    return /[T ]\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(s.trim()) ? t - hostOffset.call(new RealDate(t)) * 60000 : t; };
+  function FrozenDate(...a) {
+    if (!new.target) return iso(new RealDate(NOW));
+    if (!a.length) return new RealDate(NOW);
+    if (a.length === 1) return new RealDate(typeof a[0] === "string" ? parse(a[0]) : a[0] instanceof RealDate ? a[0].getTime() : a[0]);
+    return new RealDate(RealDate.UTC(...a)); }
+  FrozenDate.now = () => NOW; FrozenDate.UTC = RealDate.UTC; FrozenDate.parse = parse; FrozenDate.prototype = P;
+  Object.defineProperty(P, "constructor", { value: FrozenDate });
   globalThis.Date = FrozenDate;
   // sfc32 seeded from the activation's seed (64 hex): the same seed gives the same numbers
   let a = parseInt(IN.seed.slice(0, 8), 16) | 0, b = parseInt(IN.seed.slice(8, 16), 16) | 0, c = parseInt(IN.seed.slice(16, 24), 16) | 0, d = parseInt(IN.seed.slice(24, 32), 16) | 0;
@@ -96,7 +115,7 @@ export function runScript(x) {
   const logs = [];
   if (!Q) return { ok: false, code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})`, logs, fuel: 0 };
   const clock = x.clock ?? (() => performance.now());
-  const deadline = clock() + L.wallMs;
+  let deadline = Infinity; // set once the prelude (ours) has run: fuel and time are the script's
   const ops = [], says = [], bodies = [], reads = { near: [], count: [], names: [] }; let nearAt = 0, countAt = 0, nameAt = 0;
   let calls = 0, minted = 0, fuel = 0, stop = null, cur = x.st, pending = [];
   const view = () => { if (pending.length) { for (const o of pending) { try { cur = applyOps(cur, [o]); } catch { /* admit names it */ } } pending = []; } return cur; };
@@ -153,6 +172,7 @@ export function runScript(x) {
     const evalStep = (code, file) => { const r = ctx.evalCode(code, file);
       if (r.error) { const e = ctx.dump(r.error); r.error.dispose(); return { e }; } const v = ctx.dump(r.value); r.value.dispose(); return { v }; };
     let r = evalStep(PRELUDE, "prelude.js"); if (r.e) return { ok: false, code: "sandbox", why: `the prelude failed: ${errMsg(r.e)}`, logs, fuel };
+    fuel = 0; stop = null; deadline = clock() + L.wallMs;
     r = evalStep(x.text, "eval.js");
     if (!r.e) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(x.event))})`, "deliver.js");
     if (clock() > deadline) stop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` };
@@ -179,6 +199,8 @@ export function checkSyntax(text) {
   } catch (e) { return { code: "sandbox", why: String(e?.message ?? e).slice(0, 200) }; }
   finally { try { ctx?.dispose(); } catch { /* already */ } try { rt?.dispose(); } catch { /* already */ } }
 }
+// warm the sandbox once at load (the first QuickJS run in a process is several times slower than the rest)
+if (Q) try { runScript({ text: "", self: "warm", key: "script:warm", event: { on: "warm" }, now: 0, seed: "0".repeat(64), st: { entities: {} } }); } catch { /* the next run says what's wrong */ }
 /** What a door injects as io.scripts. */
 export const SANDBOX = Object.freeze({ run: runScript, checkSyntax, available: sandboxAvailable });
 export { jcs };

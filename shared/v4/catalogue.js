@@ -88,9 +88,9 @@ export const COMPONENTS = {
   schemas:   { keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (L5, §3d M6)" },
   library:   { keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "ground-paint": { keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
-  scripts:   { fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int" }, enums: { install: ["builder", "owner"] },
-               ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 } },
-               help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5)}" },
+  scripts:   { fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int", cpu: "int", runs: "int" }, enums: { install: ["builder", "owner"] },
+               ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 }, cpu: { min: 0, max: 60000 }, runs: { min: 0, max: 600 } },
+               help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5), cpu (ms of the door's time per sponsor per minute, default 2000; the world 3×), runs (activations per script per minute, whatever they write, default 60)}" },
 };
 
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

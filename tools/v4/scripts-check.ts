@@ -29,7 +29,7 @@ const BASE = "bbc9ac22";
 const MUTANTS: [string, string, string, string[]][] = [
   // [name, file, find, replace, cases]
   ["install: scope within installer's rights", "door.js", "if (RANK[role] < RANK[need]) refuse(\"rights\", `${at}'s scope reaches", "if (false) refuse(\"rights\", `${at}'s scope reaches", ["B1"]],
-  ["sponsor's role NOW", "door.js", "const r = roleOf(st, cap.sponsor, false);\n  if (RANK[r] < RANK[need])", "const r = \"owner\";\n  if (RANK[r] < RANK[need])", ["B2", "B3"]],
+  ["sponsor's role NOW", "door.js", "const r = roleOf(st, cap.sponsor);\n  if (RANK[r] < RANK[need])", "const r = \"owner\";\n  if (RANK[r] < RANK[need])", ["B2", "B3", "B24"]],
   ["scope narrowing", "door.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
   ["sponsor = latest write (not creator)", "door.js", "const c = lastSetterOf(w, id, key); return c && !c.deleted ? { sponsor: c.rights, sponsorAt: c.seq } : null; };", "const c = creatorOf(w, id, key); return c ? { sponsor: c.rights, sponsorAt: c.seq } : null; };", ["B18"]],
   ["no-op elision", "door.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
@@ -73,6 +73,14 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["a script never hears its own say", "door.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `bhv:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
   ["use of a v1 binding says re-install", "door.js", "if (v1 || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
   ["v1 behaviours are listed", "door.js", "...(id && id !== \"@world\" ? {} : { v1: v1Behaviours(w, st) })", "...{}", ["V1"]],
+  ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
+  ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
+  ["runs per script per minute", "door.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
+  ["cpu per sponsor per minute", "door.js", "if (ms >= cfg.cpu) return", "if (false) return", ["B23"]],
+  ["a guest sponsor is a guest", "door.js", "const r = roleOf(st, cap.sponsor);\n  if (RANK[r] < RANK[need])", "const r = roleOf(st, cap.sponsor, false);\n  if (RANK[r] < RANK[need])", ["B24"]],
+  ["upload rate", "door.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
+  ["acts point at a say's text, never copy it", "door.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
+  ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
   ["CONTROL (no-op: must stay green)", "door.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -129,7 +137,7 @@ function openWorld(name: string, o: any = {}) {
     getBlob: (h: string) => { const s = fs.readFileSync(blobPath(h), "utf8"); if (`sha256:${F.sha256(s)}` !== h) throw new Error("blob mismatch"); return JSON.parse(s); },
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => Number(process.env.V4_NOW), writeLine: (line: string) => appendDurable(logPath, line),
-    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts === undefined ? SB?.SANDBOX ?? null : o.scripts, present: o.present, nameOf: o.nameOf,
+    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts === undefined ? SB?.SANDBOX ?? null : o.scripts, present: o.present, nameOf: o.nameOf, kindOf: o.kindOf,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 let T = 1800000000000, N = 0;
@@ -384,6 +392,42 @@ const cases: Case[] = [
       const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }) });
       return { nowIsTs: t1?.now === act1?.ts, same: t1?.same, r1: t1?.r, r2: t2?.r, rerun: again.ops?.[0]?.value?.r }; },
     good: (o) => o.nowIsTs && o.same === true && JSON.stringify(o.r1) === JSON.stringify(o.rerun) && JSON.stringify(o.r1) !== JSON.stringify(o.r2) },
+  { id: "D3", what: "the sandbox's time zone is UTC wherever the door runs: local-time methods, parsing and Date() agree under TZ=UTC and TZ=Asia/Tokyo", run() {
+      if (!SB) return { absent: true };
+      const f = path.join(root, "tz-probe.ts");
+      fs.writeFileSync(f, `import { runScript } from ${JSON.stringify(TREE + "shared/v4/sandbox.js")};
+const r = runScript({ self: "b", key: "script:x", now: 1800000000000, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" },
+  text: 'world.on("use", () => { const d = new Date(); world.set("self", "t", [d.getHours(), d.getTimezoneOffset(), String(d), Date(), new Date(2020, 0, 1).getTime(), Date.parse("2020-01-01T00:00"), new Date("2020-01-01 12:30").getTime(), d.toLocaleString(), d.toTimeString()]); })' });
+console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
+      const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
+      return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
+    good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
+  { id: "B23", what: "the door's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute, and a sponsor to `cpu` ms of sandbox time", run(s) { cast(s);
+      s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } }); s.call("ann", "create", { id: "mill", model: "crate", place: { at: [2, 0] } });
+      install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
+      install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
+      const last = (id: string) => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === id).last.at(-1);
+      // phase 1: runs (cpu out of the way)
+      s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 5, cpu: 60000 } });
+      const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
+      const earWhy = last("ear")?.why;
+      // phase 2: cpu (runs out of the way), a minute later. Measured: the mill's run ≈ 30–45 ms (30 fuel)
+      s.advance(61000); s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 600, cpu: 60 } });
+      const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
+      return { ear, earWhy, mill, why: last("mill")?.why }; },
+    good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
+      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the door's time/.test(o.why) },
+  { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
+    run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
+      s.call("olive", "set", { id: "@world", component: "roles:gus", value: { role: "builder" } });
+      s.call("gus", "create", { id: "gbox", model: "crate", place: { at: [0, 0] } });
+      install(s, "gus", "gbox", "g", onUse(`world.set("self", "n", 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      s.call("gus", "set", { id: "gbox", component: "reactions", value: { go: { kind: "script", script: "g" } } });
+      s.call("olive", "delete", { id: "@world", component: "roles:gus" });
+      const direct = s.call("gus", "set", { id: "gbox", component: "label", value: "x" }); const r = s.call("vic", "use", { id: "gbox", action: "go" });
+      return { direct: code(direct), r: st(s, r), status: s.call("olive", "scripts", { id: "gbox" }).scripts?.[0]?.status }; },
+    good: (o) => o.direct === "rights" && o.r === "refused rights" && o.status === "dormant" },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
@@ -414,8 +458,10 @@ const cases: Case[] = [
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "parrot", "echo", `world.on("say", (e) => { world.set("self", "heard", { by: e.by, text: e.text, n: (world.get("self", "heard")?.n ?? 0) + 1 }); world.say("squawk: " + e.text); });\n`, { scope: { ids: "self", comps: ["heard"], say: true }, on: ["say"] });
       s.call("vic", "say", { text: "!hello" });
-      return { heard: comp(s, "parrot", "heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "bhv:parrot").map((e: any) => e.body.text) }; },
-    good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' },
+      const act = s.entries().find((e: any) => e.actor === "bhv:parrot" && e.kind === "act"); const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
+      return { heard: comp(s, "parrot", "heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "bhv:parrot").map((e: any) => e.body.text),
+        copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
+    good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
@@ -554,6 +600,11 @@ const cases: Case[] = [
       const own = install(s, "bob", "box", "b", onUse(`world.set("self", "glow", true);`), { scope: { ids: "self", comps: ["glow", "my.place/lit"] }, on: ["use"] }).r;
       return { r: code(r), dym: r.refused?.didYouMean?.[0], own: show(own) }; },
     good: (o) => o.r === "schema" && o.dym === "light" && o.own === "ok" },
+  { id: "H5", what: "uploads are rate-limited (20 a person a minute: a blob costs storage and a parse, and logs nothing)", run(s) { cast(s);
+      const rs = []; for (let i = 0; i < 22; i++) rs.push(code(s.call("bob", "upload", { text: `world.on("use", () => {}); // ${i}` }, 10)) ?? "ok");
+      s.advance(61000); rs.push(code(s.call("bob", "upload", { text: "// later" })) ?? "ok");
+      return { rs }; },
+    good: (o) => o.rs.slice(0, 20).every((x: string) => x === "ok") && o.rs[20] === "rate" && o.rs[21] === "rate" && o.rs[22] === "ok" },
   { id: "H3", what: "source that doesn't parse is refused at upload and at install, with the line", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const u = s.call("bob", "upload", { text: "world.on('use', () => {\n  world.set('self', 'a' 1);\n});" });

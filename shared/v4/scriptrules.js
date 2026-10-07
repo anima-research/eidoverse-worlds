@@ -15,10 +15,12 @@ export const LANG = "js";
 export const API = 1;
 export const LIMITS = Object.freeze({
   source: 65536,        // characters of source (v1's upload cap)
-  fuel: 100,            // QuickJS interrupt-handler calls per activation: deterministic for one QuickJS build (41 §3.7). Measured
-                        // (2026-10-06, this host): 1e6 loop iterations of `x += i` = 201 calls ≈ 60 ms, so 100 ≈ 30 ms of dense
-                        // work: fuel, not the wall clock, is what stops runaway code, and fuel is the same on every re-run
-  wallMs: 100,          // the wall-clock backstop per activation, host calls included (non-deterministic: a run that hits it writes nothing)
+  fuel: 60,             // QuickJS interrupt-handler calls per activation: deterministic for one QuickJS build (41 §3.7). Measured
+                        // (2026-10-06, this host): 1e6 loop iterations of `x += i` = 201 calls ≈ 60 ms idle, about twice that
+                        // under load, so 60 ≈ 18–40 ms of dense work. Fuel, not the wall clock, must be what stops runaway code
+                        // (a reviewer saw 100 lose to the backstop under load): fuel is the same on every re-run
+  wallMs: 200,          // the wall-clock backstop per activation, host calls included (non-deterministic: a run that hits it
+                        // writes nothing). It can't interrupt a native builtin (String#indexOf, BigInt **): see sandbox.js
   memory: 24 << 20,     // bytes per activation's runtime (v1)
   stack: 256 << 10,     // bytes of native stack
   calls: 64,            // host calls (reads) per activation (Decentraland's 40 in flight; 41 §3.10)
@@ -27,6 +29,9 @@ export const LIMITS = Object.freeze({
   bodies: 4,            // body effects per activation
   ids: 1000,            // ids one read returns at most
   logLines: 20,         // world.log lines kept per activation in the console ring
+  cpu: 2000,            // door practice: ms of sandbox time per sponsor per minute (runs that write nothing cost the door too)
+  runs: 60,             // door practice: activations per script per minute, whatever they write
+  uploads: 20,          // uploads per person per minute (a blob costs storage and a parse, and logs nothing)
 });
 // what QuickJS build ran an activation (the act names it, as `sim` names its engine): an auditor re-runs with the same
 export const ENGINE = "quickjs-emscripten@0.32.0/release-sync";

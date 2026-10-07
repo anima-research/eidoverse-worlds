@@ -1199,7 +1199,7 @@ function offersFor(st, id, actor) {
 // Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Door practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
-const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true };
+const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c.scripts; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
 const SCRIPT_EVENTS = ["use", "say", "enter", "leave"];
@@ -1211,7 +1211,7 @@ function scriptRights(st, cap, op, at, need) {
   else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
     if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
       refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install (41 §3.5)"); }
-  const r = roleOf(st, cap.sponsor, false);
+  const r = roleOf(st, cap.sponsor);
   if (RANK[r] < RANK[need]) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${need})`, "dormant: a behaviour has its sponsor's rights now, never more (L4). An owner may adopt it: adopt {id, script}");
 }
 // At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
@@ -1219,7 +1219,7 @@ function scriptRights(st, cap, op, at, need) {
 // timer floor, `always` only by an owner, the world's script count.
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
-  const role = roleOf(st, installer, cap ? false : undefined), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
+  const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
   if (RANK[role] < RANK[cfg.install]) refuse("rights", `installing a script here needs ${cfg.install}; ${said(installer)} is ${role}`, "@world.scripts.install says who may (the owner sets it)");
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
@@ -1279,6 +1279,17 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
     if (e.kind === "act" && e.actor === `bhv:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
+// door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
+function overCpu(w, now, id, key, sponsor, cfg) {
+  const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
+  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.scripts.runs)`;
+  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the door's time in the last minute; at most ${cfg.cpu} (@world.scripts.cpu)`;
+  const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the door's time in the last minute; at most ${cfg.cpu * 3}`;
+  return null;
+}
+// what an act records of its event: everything but what its trigger already holds (a say's text and `to`, a use's args),
+// so purging that say or that request purges it everywhere (an auditor reads it from the trigger: scriptaudit.js)
+const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.scripts.budget)`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
@@ -1304,12 +1315,15 @@ function activate(w, id, name, ev) {
   const fail = (code, why, logs) => { if (!dry && code !== "unavailable") rt.fails = (rt.fails ?? 0) + 1; return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
   if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", `${id}.${key}.src: no ${SR.LANG} source ${v.src} here`);
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
+  if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
+  const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
+  if (!dry) ((w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(performance.now() - t0) }), w.presenceDirty = true);
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
   const ops = SR.elide(st, res.ops);
@@ -1326,7 +1340,7 @@ function activate(w, id, name, ev) {
   for (const b of res.bodies) { const g = bodyGate(w, `bhv:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
   const actE = { kind: "act", actor: `bhv:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
-      event, head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
+      event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       ...(gates.length ? { bodies: gates.map((g) => ({ act: g.act, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
   const sayE = (t, c) => ({ kind: "say", actor: `bhv:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
@@ -1412,7 +1426,7 @@ function scriptStatus(w, st, id, name, v) {
   if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
-  const role = roleOf(st, sp?.sponsor, false); const lost = [];
+  const role = roleOf(st, sp?.sponsor); const lost = [];
   for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { const need = rankNeeded({ id: x, comp: sampleOf(c) }); if (RANK[role] < RANK[need]) lost.push(`${x}.${c}`); }
   if (lost.length) { const since = lastSetterOf(w, "@world", `roles:${sp.sponsor}`);
     return { ...base, status: "dormant", why: `dormant: sponsor ${said(sp.sponsor)} (${role} now${since ? `, since seq ${since.seq}` : ""}) can no longer change ${lost.join(", ")}`, adopt: `an owner may: adopt {id: '${id}', script: '${name}'}` }; }
@@ -2263,6 +2277,9 @@ const TOOLS = {
   upload(w, actor, a) {
     if (RANK[roleOf(w.state(), actor)] < RANK[scriptsCfg(w.state()).install]) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner");
     if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS-v4.md");
+    { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
+      if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
+      U.push(now); w.presenceDirty = true; }
     const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused (41 §3.12): reviewers must see what runs");
     const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS-v4.md shows the API");
     if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };

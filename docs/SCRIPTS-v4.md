@@ -120,6 +120,11 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 
 - `Date.now()`, `new Date()` and `world.now` are **frozen** at the activation's own timestamp.
 - `Math.random()` is seeded from the activation (`seed` in the act): re-running it gives the same numbers.
+- The time zone is always UTC: local-time methods (`getHours`, `new Date(2026, 0, 1)`) are the UTC ones, and a
+  date-time string with no zone is read as UTC. The host's zone never leaks in.
+- What a script reads from outside the log (`world.near`, `world.count`, `world.name`) is recorded in its act and
+  replayed on a re-run. A `say`'s text and a `use`'s `args` are not copied into the act: it points at them (`trigger`),
+  so purging that say or request purges them everywhere.
 - Each activation runs in a **fresh** sandbox: nothing survives between activations. Keep state in a component in your
   scope (it is world state: forkable, readable, undoable). There is no private kv.
 - No timers (`setTimeout`), network, files or other clocks exist. Motion is a function of time (`motion`), never a
@@ -129,17 +134,27 @@ clock (the act's `ts`), `seed` and presence `reads`, and compares the writes.
 
 | | |
 |---|---|
-| fuel | 100 interrupt ticks per activation, about 30 ms of dense work (deterministic for one QuickJS build) |
-| wall-clock backstop | 100 ms per activation, host calls included |
+| fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
+| wall-clock backstop | 200 ms per activation, host calls included (see "Known limit" below) |
 | memory / native stack | 24 MB / 256 KB per activation |
 | reads per activation | 64; writes 32; says 4; body effects 4 |
 | logged activations | 6 per minute per script (`rate`) |
+| runs, logged or not | 60 per minute per script (`runs`); 2000 ms of sandbox time per sponsor per minute (`cpu`), 3× that per world |
+| uploads | 20 per person per minute |
 | script entries per world per hour | 600 (`budget`), each sponsor a fair share |
 | cascade depth | 8 (`depth`): script acts in a cause chain |
 | failures before pause | 5 in a row (`fails`); set the script again to retry |
 | scripts per world | 12 (`max`) |
 | timer floor | 5 s; with nobody present a timer sleeps unless `always` |
 | source | 64 KiB of UTF-8; no bidi controls, invisible characters or BOM; no line over 1000 columns |
+
+**Known limit (not yet fixed):** the sandbox runs on the sequencer's own thread. Fuel and the wall clock are checked
+between bytecodes, so a single call into a slow native builtin can't be interrupted: `s.indexOf(t)` on a few hundred
+KB of crafted text, `3n ** 300000n`, or running out of memory inside `Array.prototype.fill` can each hold every world
+on the process for seconds or longer (measured: 1–13 s). The fix is running activations in a worker (research 41
+§3.13); an experiment showed a worker gives the sequencer back at the deadline, though the stuck thread can't be
+killed until its call returns. A script that hits the backstop counts as a failure, and its sponsor's `cpu` budget
+pays for what it used.
 
 A refused or failed activation writes nothing. Its reason goes to the script's console and the status view.
 `@world.scripts {run: false}` (owner) stops every script; `paused: true` stops one.
