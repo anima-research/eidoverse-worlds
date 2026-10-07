@@ -68,7 +68,7 @@ export const COMPONENTS = {
   sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", radius: "number", t0: "number", look: "string" },
                 ranges: { volume: { min: 0, max: 1 }, radius: { min: 1, max: 200 } }, help: "a sound this thing plays: {src (eidoverse/assets/… or store/audio/…), playing?, loop?, volume? 0..1, radius? m, t0?, look? (what is playing, in words: what text-tier residents read)}" },
   // captions (a screen's live subtitles): written only by the caption tool, a line at a time (shared/captions.js);
-  // who may caption a screen is the screen's own captioners list (R 10-06: caption rights live on the screen)
+  // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
   captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" }, help: "a screen's captions, written by the caption tool only: {session, n, gen, title?, mediaTime, window: [{t0, t1, text, speaker?}]}" },
   captioners: { on: "thing", fields: { ids: "array" }, help: "who may caption this screen with the caption tool: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
   // round-2 review R8 (2026-10-05): names the engine reads, carried by imported worlds, registered with their old
