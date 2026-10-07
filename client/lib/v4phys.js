@@ -34,7 +34,7 @@ import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf } from '../../shared/sim.js';
 import { onWorldChange } from './state.js';
-import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, HAND_REACH } from '../../shared/grab.js';
+import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
 const REACH = 1.5, HAND_Y = 1.1;                  // the door's: a hand reaches 1.5 m from feet + 1.1 m (door.js)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the door's punt reach, from the feet
@@ -496,6 +496,81 @@ if (typeof document !== 'undefined') {
   bus.on('v4-holds', () => setTimeout(sync, 0));
 }
 
+// ---------------------------------------------------------------- VR hands (research grab §4; xr.js calls xrHand per hand)
+// The owner took world grabbing out of xr.js until it was "a proper object component" (09-07): this is that. Per hand,
+// each frame: the grip pressed takes the nearest thing within a 0.4 m sphere × the avatar's scale (VRChat's number),
+// choosing by grabbable.priority, then a grip for this hand, then distance; nothing near, the laser reaches out to the
+// thing's grabbable.range and it flies to the hand. hold auto/press is press-to-hold: letting the grip go lets go, with
+// the hand's velocity averaged over the last 0.1 s (the door scales it by grabbable.throw); hold toggle takes a second
+// press. The trigger while holding is use. The other hand on what you hold takes it in both (twoHanded) or swaps. A
+// hand's take is felt (a firm pulse), and so is the first frame it can reach something (a light tick).
+const AVG_MS = 100;
+const vrHands = { left: { grip: false, trig: false, hist: [], hover: null, busy: false }, right: { grip: false, trig: false, hist: [], hover: null, busy: false } };
+const _bx = new THREE.Box3(), _hv = new THREE.Vector3();
+/** What my `side` hand holds now (as the door has it), or null. */
+const heldIn = (side) => { for (const [id, h] of Object.entries(holds)) if (h.by === net.v4you && (h.hand === side || h.second?.hand === side)) return id; return null; };
+function nearest4(side, at, scale) {
+  const R = NEAR_GRAB * (scale || 1); let best = null;
+  for (const id of grabbableIds()) {
+    if (holds[id]?.by === net.v4you && (holds[id].hand === side || holds[id].second?.hand === side)) continue;   // already in this hand
+    const obj = entities.get(id); if (!obj) continue;
+    const d = _bx.setFromObject(obj).distanceToPoint(at); if (d > R) continue;
+    const g = grabOf(compsOf(id)); const k = [g.priority, pickGrip(g, side) ? 1 : 0, -d];
+    if (!best || k[0] > best.k[0] || (k[0] === best.k[0] && (k[1] > best.k[1] || (k[1] === best.k[1] && k[2] > best.k[2])))) best = { id, k };
+  }
+  return best?.id ?? null;
+}
+/** One hand, one frame. pos: the hand's world position (the controller grip); grip/trig: buttons; pick(): the laser's
+ *  first entity {id, dist} or null; scale: the avatar's; haptic(v, ms). Returns {holding, took} so xr.js knows the hand
+ *  is busy (no panel chord or select with it). */
+export function xrHand(side, { pos, grip, trig, pick, scale = 1, haptic = () => {}, now = performance.now() }) {
+  const H = vrHands[side]; if (!H || !pos || !v4.active) return { holding: null };
+  H.hist.push({ t: now, p: [pos.x, pos.y, pos.z] }); while (H.hist.length > 2 && now - H.hist[0].t > AVG_MS) H.hist.shift();
+  const mine = heldIn(side); const g = mine ? grabOf(compsOf(mine)) : null;
+  const near = !mine && !H.busy ? nearest4(side, pos, scale) : null;
+  if (near && near !== H.hover) haptic(0.15, 10); H.hover = near;
+  let took = false;
+  if (grip && !H.grip && !H.busy) {
+    if (mine && g?.hold === 'toggle') void vrLetGo(side, mine);
+    else if (!mine) { let id = near;
+      if (!id) { const hit = pick?.(); const hg = hit ? grabOf(compsOf(hit.id)) : null; const obj = hit ? entities.get(hit.id) : null;
+        if (hg?.enabled && obj && obj.getWorldPosition(_hv).distanceTo(pos) <= hg.range) id = hit.id; }
+      if (id) { took = true; void vrTake(side, id, !near, haptic); } }
+  }
+  if (!grip && H.grip && mine && g?.hold !== 'toggle') void vrLetGo(side, mine);
+  if (mine && g?.use) { if (trig && !H.trig) void useHeld('down', mine); else if (!trig && H.trig) void useHeld('up', mine); }
+  H.grip = grip; H.trig = trig;
+  return { holding: mine, took };
+}
+// the offset a near hand takes a thing at: where it is in the palm's frame now (held where grabbed: Unreal Free)
+function offsetIn(side, id) {
+  const obj = entities.get(id); const palm = palmOf(net.v4you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); if (!obj || !palm) return null;
+  obj.updateWorldMatrix(true, false); const qi = palm.q.clone().invert();
+  const p = obj.getWorldPosition(new THREE.Vector3()).sub(palm.p).applyQuaternion(qi);
+  if (p.length() > 1.9) return null;
+  const q = qi.multiply(obj.getWorldQuaternion(new THREE.Quaternion()));
+  return { pos: p.toArray().map(r3), q: q.normalize().toArray().map((n) => Math.round(n * 1e6) / 1e6) };
+}
+async function vrTake(side, id, far, haptic) {
+  const H = vrHands[side]; H.busy = true;
+  try {
+    const g = grabOf(compsOf(id)); const off = !far && !Object.keys(g?.grips ?? {}).length ? offsetIn(side, id) : null;
+    await track(true);
+    const r = await requestV4('grab', { id, hand: side, ...(off ? { offset: off } : {}) });
+    if (r?.ok) haptic(0.4, 30); else refused('grab', r);
+    return r;
+  } finally { H.busy = false; }
+}
+async function vrLetGo(side, id) {
+  const H = vrHands[side]; const h = holds[id]; H.busy = true;
+  try {
+    if (h?.second) { await track(true); return await requestV4('drop', { id, hand: side }); }   // the other hand keeps it
+    const a = H.hist[0], b = H.hist[H.hist.length - 1]; const dt = a && b ? (b.t - a.t) / 1000 : 0;
+    const v = dt > 0.02 ? b.p.map((x, i) => (x - a.p[i]) / dt) : [0, 0, 0];
+    return await release(v, id);
+  } finally { H.busy = false; }
+}
+
 // ---------------------------------------------------------------- keys: T take/put · C throw/punt
 const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
@@ -510,7 +585,7 @@ bus.on('key', (e) => {
 });
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same door requests the keys send. */
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, holds: holdsNow, mine: myHolds, shown: simShown,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */

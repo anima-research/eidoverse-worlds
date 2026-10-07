@@ -23,8 +23,13 @@
 //             grip's preset and her desktop body the hold pose; a thing Bob holds in his LEFT hand by its handle is drawn
 //             there on Ann's screen, from his remote body's own bones; a two-handed thing aims from hand to hand; a
 //             far grab eases into the hand
+//   xr        (PROBE_ONLY=xr: its own boot, under IWER with ?xr=1) a VR hand's grip takes a thing near it (held where
+//             grabbed: an offset), letting go throws it with the hand's velocity × its grabbable.throw, the trigger while
+//             holding is use (down, up), the laser reaches a thing out to its range, and a second hand takes a
+//             two-handed thing in both
 //   errors    no page error and no console.error from the v4 path
-// PROBE_ONLY=grab runs boot, see, live and the grab stages only (the rest is skipped, said so).
+// PROBE_ONLY=grab runs boot, see, live and the grab stages only (the rest is skipped, said so). PROBE_ONLY=xr the same
+// with the VR stages.
 // The owned server runs with SKIP_OPT_SWEEP=1 and a scratch WORLDS_DIR; the world has no sky (the headless-sky
 // rule: no cloud bake in SwiftShader). Teardown (browser, server, scratch) is in finally.
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -43,6 +48,10 @@ import { cycleOf } from '../../client/lib/socksignals.js';
 import { swingGlb } from './probe-swing-glb.mjs';
 import { OPT_DIR } from '../../server/config.ts';
 import { fingerPose, armPose } from '../../shared/grab.js';
+// IWER (the VR stages only): installed before any client code, with its device loop pinned to the native clock (memory:
+// reference_iwer_headless_probe; tools/xr-lifecycle-probe.mjs says why)
+const IWER_RAW = readFileSync(new URL('../../node_modules/iwer/build/iwer.js', import.meta.url), 'utf8');
+const DEVICE_LOOP = 'globalThis.requestAnimationFrame(this[P_SESSION].onDeviceFrame)';
 const ONLY = (process.env.PROBE_ONLY ?? '').split(',').filter(Boolean);
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
@@ -76,7 +85,24 @@ try {
   pg.on('pageerror', (e) => errors.push(String(e)));
   pg.on('console', (m) => { const t = m.text(); logs.push(t); if (m.type() === 'error') errors.push(t); });
   const http4xx = []; pg.on('response', (r) => { if (r.status() >= 400) http4xx.push(`${r.status()} ${new URL(r.url()).pathname}`); });
-  await pg.goto(`${world.origin}/?world=garden&name=Ann&key=${KEY}${process.env.PROBE_AVATAR ? `&avatar=${process.env.PROBE_AVATAR}` : ''}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const XR = ONLY.includes('xr');
+  if (XR) {
+    if (IWER_RAW.split(DEVICE_LOOP).length !== 2) throw new Error(`iwer build changed: expected exactly one '${DEVICE_LOOP}'`);
+    await pg.addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });   // the sky guard
+    await pg.addInitScript(`globalThis.__iwerNativeRAF = globalThis.requestAnimationFrame.bind(globalThis);\n` + IWER_RAW.replace(DEVICE_LOOP, 'globalThis.__iwerNativeRAF(this[P_SESSION].onDeviceFrame)'));
+    await pg.addInitScript(() => {
+      if (window.__probe) return;
+      const { XRDevice, metaQuest3 } = window.IWER ?? {};
+      if (!XRDevice) { window.__probe = { fatal: 'IWER did not load' }; return; }
+      const device = new XRDevice(metaQuest3); device.installRuntime({ forceInstall: true });   // forceInstall: headless Chromium ships a stub
+      window.__iwerDevice = device; try { delete window.IWER; } catch { window.IWER = undefined; }
+      window.__probe = { grants: 0, sessionFrames: 0 };
+      const real = navigator.xr.requestSession.bind(navigator.xr);
+      navigator.xr.requestSession = async (...a) => { const s = await real(...a); window.__probe.grants++;
+        const sRaf = s.requestAnimationFrame.bind(s); s.requestAnimationFrame = (cb) => sRaf((t, fr) => { window.__probe.sessionFrames++; return cb(t, fr); }); return s; };
+    });
+  }
+  await pg.goto(`${world.origin}/?world=garden&name=Ann&key=${KEY}${process.env.PROBE_AVATAR ? `&avatar=${process.env.PROBE_AVATAR}` : ''}${XR ? '&xr=1' : ''}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const race = (p, ms = 20000) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error(`evaluate stalled ${ms} ms`)), ms))]);
   const ents = () => race(pg.evaluate(() => [...(globalThis.EW?.entities?.keys?.() ?? [])]));
   // boot: the client's own ready line, and the splash gone
@@ -107,7 +133,8 @@ try {
   // Bob builds through the door; Ann grabs with her own page (the T key's act). What's drawn is read off the live scene:
   // the thing's grip point in the world against the palm frame v4phys computes from the hand's own raw bones, the
   // fingers and arms on the normalized rig. Angles in degrees, distances in metres.
-  if (!ONLY.length || ONLY.includes('grab')) {
+  if (XR) stage('grab: (the desktop grab stages are skipped in an XR boot)', true);
+  if ((!ONLY.length || ONLY.includes('grab')) && !XR) {
     let gid = 500; const gdoor = async (tool, args) => { const id = ++gid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
       for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: false, refused: { reason: 'no answer' } }; };
@@ -241,6 +268,103 @@ try {
     const logged6 = readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl'))).length - n6;
     check('grab: …and Bob pressing use on the nozzle he holds draws its fx on Ann\'s page, from his presence alone (nothing logged), until he lets go', b6?.ok && on6 && off6 && logged6 === 0, { b6: b6?.ok ?? b6?.refused, on6, off6, logged6 });
     await gdoor('put', { id: 'nozzle' });
+  }
+
+  // ===================================================================== VR hands (v4phys xrHand, driven by xr.js)
+  // The real visor is clicked; IWER's controllers are moved and squeezed. A controller's pose is in the XR reference
+  // space, which the rig carries into the world: a target world point is put through the rig's inverse, then the hand's
+  // grip is read back in the world and the error corrected (twice), so the probe never assumes the mapping. Headless XR
+  // ticks slowly (SwiftShader, both eyes): every step waits on session frames, never on the clock.
+  if (XR) {
+    let xid = 800; const xdoor = async (tool, args) => { const id = ++xid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
+      for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
+      return { ok: false, refused: { reason: 'no answer' } }; };
+    const xsleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const xev = (fn, arg) => race(pg.evaluate(fn, arg), 30000);
+    const frames = async (n) => { const f0 = await xev(() => window.__probe.sessionFrames); const t = Date.now(); while (Date.now() - t < 120000) { const f = await xev(() => window.__probe.sessionFrames).catch(() => f0); if (f - f0 >= n) return f - f0; await xsleep(250); } return null; };
+    const xwait = async (fn, arg, ms = 90000) => { const t = Date.now(); let v = null; while (Date.now() - t < ms) { v = await xev(fn, arg).catch(() => null); if (v) return v; await xsleep(300); } return v; };
+    const LOGX = () => readLog(readFileSync(join(worlds, 'garden', 'v4.jsonl')));
+    await pg.waitForFunction(() => { const b = document.querySelector('#xrbtn'); return !!b && getComputedStyle(b).display !== 'none'; }, null, { timeout: 90000 }).catch(() => {});
+    const gate = await xev(() => ({ xrbtn: !!document.querySelector('#xrbtn'), probe: !!window.__probe && !window.__probe.fatal, fatal: window.__probe?.fatal ?? null }));
+    if (!check('xr: the visor shows under IWER (a synthetic headset, installed before boot)', gate.xrbtn && gate.probe, gate)) throw new Error('xr gate failed');
+    await xev(() => document.querySelector('#xrbtn').click());
+    await pg.waitForFunction(() => { if (window.__probe.grants > 0) return true; const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Not now' && x.offsetParent); if (b) b.click(); return false; }, null, { timeout: 60000, polling: 500 }).catch(() => {});
+    const ticked = await frames(6);
+    const pres = await xev(async () => ({ presenting: (await import('./lib/xr.js')).isPresenting(), frames: window.__probe.sessionFrames }));
+    if (!check('xr: the session is granted and ticks (session frames counted, not assumed)', pres.presenting && ticked >= 6, { ...pres, ticked })) throw new Error('xr session gate failed');
+    // put a controller's grip at a world point (and aim its ray at another), squeeze/trigger as given
+    const hand = (side, at, { squeeze = 0, trigger = 0, aim = null } = {}) => xev(async ({ side, at, squeeze, trigger, aim }) => {
+      const T = globalThis.EW.THREE; const X = await import('./lib/xr.js'); const rig = X.xrRig(); const c = window.__iwerDevice.controllers[side];
+      window.__ctl ??= {}; const corr = window.__ctl[side] ??= [0, 0, 0];
+      rig.updateWorldMatrix(true, false); const inv = rig.matrixWorld.clone().invert();
+      const p = new T.Vector3(at[0] + corr[0], at[1] + corr[1], at[2] + corr[2]).applyMatrix4(inv); c.position.set(p.x, p.y, p.z);
+      if (aim) { const from = new T.Vector3(...at), to = new T.Vector3(...aim); const d = to.sub(from).normalize(); const rq = rig.getWorldQuaternion(new T.Quaternion()).invert(); d.applyQuaternion(rq);
+        const q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, -1), d); c.quaternion.set(q.x, q.y, q.z, q.w); }
+      c.updateButtonValue('squeeze', squeeze); c.updateButtonValue('trigger', trigger); return true; }, { side, at, squeeze, trigger, aim });
+    // read where the hand's grip IS in the world, and correct the next placements by the error (the mapping is measured)
+    const settle = async (side, at, opts) => { for (let k = 0; k < 3; k++) { await hand(side, at, opts); await frames(2);
+      const err = await xev(async ({ side, at }) => { const X = await import('./lib/xr.js'); const g = X.xrHands()[side]?.grip; if (!g) return null; const w = g.getWorldPosition(new globalThis.EW.THREE.Vector3());
+        const e = [at[0] - w.x, at[1] - w.y, at[2] - w.z]; const c = (window.__ctl[side] ??= [0, 0, 0]); c[0] += e[0]; c[1] += e[1]; c[2] += e[2]; return Math.hypot(...e); }, { side, at });
+      if (err != null && err < 0.01) return err; } return null; };
+    const centre = (id) => xev((id) => { const o = globalThis.EW.entities.get(id); if (!o) return null; return new globalThis.EW.THREE.Box3().setFromObject(o).getCenter(new globalThis.EW.THREE.Vector3()).toArray(); }, id);
+    const mePos = await xev(() => globalThis.EW.me().root.position.toArray());
+    await xsleep(1200);   // xr.js trusts the buttons ~0.7 s after the controllers wake
+    // (X1, X2) a cup in front of her: the right grip takes it near, held where it was grabbed; a flick lets it fly ×2
+    await xdoor('create', { id: 'cup', model: MODEL, components: { transform: { pos: [mePos[0], 0.9, mePos[2] + 0.45], scale: [0.04, 0.04, 0.04] }, physics: { kind: 'dynamic' }, grabbable: { who: 'visitor', throw: 2 } } });
+    await xwait((i) => !!globalThis.EW.entities.get(i), 'cup');
+    const c0 = await centre('cup');
+    const e1 = await settle('right', c0, { squeeze: 0 });
+    await hand('right', c0, { squeeze: 1 }); await frames(2);
+    const held1 = await xwait(() => { const h = globalThis.EW.physics.holds().cup; return h ? h : null; });
+    check('xr: the right grip near a cup takes it: the door\'s record says right hand, held where it was grabbed (an offset)', held1?.hand === 'right' && Array.isArray(held1?.offset?.pos), { e1, held1, c0 });
+    const stay = await centre('cup'); await frames(3); const drift = await centre('cup');
+    check('xr: …and it stays where the hand took it (drawn at the offset: no jump into the palm)', stay && drift && Math.hypot(drift[0] - c0[0], drift[1] - c0[1], drift[2] - c0[2]) < 0.05, { c0, drift });
+    const n2 = LOGX().length;
+    await hand('right', [c0[0], c0[1] + 0.1, c0[2] + 0.5], { squeeze: 1 }); await frames(1);
+    await hand('right', [c0[0], c0[1] + 0.2, c0[2] + 1.0], { squeeze: 0 }); await frames(2);
+    const thrown = await xwait(() => !globalThis.EW.physics.holds().cup);
+    const L2 = LOGX().slice(n2); const tact = L2.find((e) => e.kind === 'act' && (e.verb === 'throw' || e.verb === 'drop') && e.body?.request?.id === 'cup'); const tl = L2.find((e) => e.kind === 'sim' && e.verb === 'launch' && e.body?.id === 'cup');
+    const sent = tact?.body?.request?.v ?? null; const flew = tl?.body?.v ?? null;
+    check('xr: letting the grip go mid-flick throws it with the hand\'s velocity (forward, up), and the door scales it by its grabbable.throw (×2)', thrown && tact?.verb === 'throw' && sent && sent[2] > 0.05 && flew && flew.every((x, i) => Math.abs(x - 2 * sent[i]) < 1e-6), { verb: tact?.verb, sent, flew });
+    // (X3) the trigger while holding is use: the left hand takes a lamp, the trigger lights it, letting go of the trigger darkens it
+    const me3 = await xev(() => globalThis.EW.me().root.position.toArray());
+    await xdoor('create', { id: 'lamp', model: MODEL, components: { transform: { pos: [me3[0] - 0.35, 0.9, me3[2] + 0.4], scale: [0.04, 0.04, 0.04] }, grabbable: { who: 'visitor', use: { down: 'on', up: 'off' } },
+      reactions: { on: { kind: 'set', component: 'shining', value: true }, off: { kind: 'set', component: 'shining', value: false } } } });
+    await xwait((i) => !!globalThis.EW.entities.get(i), 'lamp');
+    const l0 = await centre('lamp'); await settle('left', l0);
+    await hand('left', l0, { squeeze: 1 }); const lh = await xwait(() => globalThis.EW.physics.holds().lamp?.hand === 'left');
+    await hand('left', l0, { squeeze: 1, trigger: 1 }); const on = await xwait(() => globalThis.EW.comps.get('lamp')?.shining === true);
+    await hand('left', l0, { squeeze: 1, trigger: 0 }); const off = await xwait(() => globalThis.EW.comps.get('lamp')?.shining === false);
+    const uses = LOGX().filter((e) => e.kind === 'act' && e.verb === 'use' && e.body?.request?.id === 'lamp').map((e) => `${e.body.held?.hand}:${e.body.held?.phase}:${e.body.action}`);
+    check('xr: the trigger while the left hand holds a lamp is use: down lights it, up darkens it (one act each, held in the left hand)', lh && on && off && JSON.stringify(uses) === '["left:down:on","left:up:off"]', { lh, on, off, uses });
+    await hand('left', l0, { squeeze: 0 }); await xwait(() => !globalThis.EW.physics.holds().lamp);
+    // (X4) the laser: a thing 2.5 m off with range 4; the right hand aims at it and grips: it flies to the hand
+    const me4 = await xev(() => globalThis.EW.me().root.position.toArray());
+    await xdoor('create', { id: 'far', model: MODEL, components: { transform: { pos: [me4[0] + 0.3, 0, me4[2] + 2.6], scale: [0.06, 0.06, 0.06] }, grabbable: { who: 'visitor', range: 4 } } });
+    await xwait((i) => !!globalThis.EW.entities.get(i), 'far');
+    const f0 = await centre('far'); const H4 = [me4[0] + 0.25, 1.1, me4[2] + 0.3];
+    await settle('right', H4, { aim: f0 }); await hand('right', H4, { aim: f0, squeeze: 1 });
+    const fh = await xwait(() => globalThis.EW.physics.holds().far ?? null); await frames(3);
+    const fc = await centre('far'); const gw = await xev(async () => { const X = await import('./lib/xr.js'); return X.xrHands().right.grip.getWorldPosition(new globalThis.EW.THREE.Vector3()).toArray(); });
+    check('xr: the laser reaches a thing 2.6 m off (its range is 4): it is taken, and flies to the hand', fh?.hand === 'right' && !fh?.offset && fc && Math.hypot(fc[0] - gw[0], fc[1] - gw[1], fc[2] - gw[2]) < 0.3, { fh, fc, grip: gw, f0 });
+    await hand('right', H4, { squeeze: 0 }); await xwait(() => !globalThis.EW.physics.holds().far);
+    // (X5) two hands: the right grips the rifle's stock, the left its fore grip: in both; the left lets go, the right keeps it
+    const me5 = await xev(() => globalThis.EW.me().root.position.toArray());
+    await xdoor('create', { id: 'rifle', model: MODEL, components: { transform: { pos: [me5[0], 0.95, me5[2] + 0.45], scale: [0.03, 0.03, 0.4] },
+      grabbable: { who: 'visitor', twoHanded: true, grips: { stock: { pos: [0, 1, -0.6], hand: 'right' }, fore: { pos: [0, 1, 0.6], role: 'secondary' } } } } });
+    await xwait((i) => !!globalThis.EW.entities.get(i), 'rifle');
+    const G5 = await xev(() => { const o = globalThis.EW.entities.get('rifle'); const G = globalThis.EW.physics.grabbable('rifle').grips; o.updateWorldMatrix(true, false);
+      return { s: new globalThis.EW.THREE.Vector3(...G.stock.pos).applyMatrix4(o.matrixWorld).toArray(), f: new globalThis.EW.THREE.Vector3(...G.fore.pos).applyMatrix4(o.matrixWorld).toArray() }; });
+    await settle('right', G5.s); await hand('right', G5.s, { squeeze: 1 }); await xwait(() => globalThis.EW.physics.holds().rifle?.hand === 'right');
+    await settle('left', G5.f, { squeeze: 0 }); await hand('left', G5.f, { squeeze: 1 });
+    const both = await xwait(() => { const h = globalThis.EW.physics.holds().rifle; return h?.second?.hand === 'left' ? h : null; });
+    const n5 = LOGX().length; await hand('left', G5.f, { squeeze: 0 });
+    const one = await xwait(() => { const h = globalThis.EW.physics.holds().rifle; return h && !h.second ? h : null; });
+    const logged5 = LOGX().slice(n5).filter((e) => e.kind !== 'sim' || e.verb !== 'digest').length;
+    check('xr: a second hand on a two-handed rifle takes it in both (its fore grip); letting that hand go leaves it in the right (presence: nothing logged)', both?.grip === 'stock' && both?.second?.grip === 'fore' && one?.hand === 'right' && logged5 === 0, { both, one, logged5 });
+    if (process.env.PROBE_SHOTS) { await frames(2); await pg.screenshot({ path: `${process.env.PROBE_SHOTS}/xr-two-hands.png` }); }
+    await hand('right', G5.s, { squeeze: 0 }); await xwait(() => !globalThis.EW.physics.holds().rifle);
+    await xev(() => window.__iwerDevice.activeSession?.end()).catch(() => {});
   }
   const SKIP_REST = ONLY.length > 0 && !ONLY.includes('phys');
   if (SKIP_REST) stage('rest of the probe skipped (PROBE_ONLY)', true, ONLY);
