@@ -77,6 +77,9 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
+    // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
+    // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
+    if (tool === "caption") args.gen = c.legGen ?? 0;
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
       const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;

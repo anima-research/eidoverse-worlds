@@ -1,19 +1,20 @@
 // The projector's captioner — voicebot run backwards.
 //
 //   mediamtx (RTSP audio) ──▶ ffmpeg ──▶ AudioTap ──▶ Captioner (VAD + STT)
-//        ──▶ world WS: caption {id: <screen>, session, n, t0, t1, text, speaker?}
+//        ──▶ the world's door: caption {id: <screen>, session, n, t0, t1, text, speaker?}
 //
-// One `caption` verb per final line, once; the sequencer folds the bounded
-// window on the screen entity (shared/captions.js). Captions are durable
-// world testimony like `say`; `end` clears current perception, not history.
-// The bot needs the CAPTION DEED for its screen, granted once by the world's
-// owner — `grant {id: <ACTOR>, caption: "<SCREEN_ID>"}` — and nothing more:
-// it joins as a visitor and keeps a visitor's verbs.
+// One door `caption` request per final line, once; the door folds the bounded
+// window on the screen (shared/captions.js). Captions are durable world
+// testimony like `say`; `end` clears current perception, not history.
+// The bot needs to be one of its screen's captioners — whoever may edit the
+// screen sets `captioners {ids: [<the bot's identity>]}` on it (the bot logs
+// its identity when it joins) — and nothing more: it joins as a visitor.
 //
 // Env:
 //   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse)
 //   WORLD_URL      ws(s)://host/ws               (default ws://127.0.0.1:8940/ws)
-//   WORLD_TOKEN    the bot's bearer token          (its actor id is reserved in mcpl/tokens.json)
+//   WORLD_TOKEN    the door's join key, if it has one
+//   AGENT_TOKEN    the bot's own token (mcpl/tokens.json): its reserved name, its identity
 //   WORLD_NAME     world                           (default commons)
 //   ACTOR          the bot's actor id              (default captioner)
 //   SCREEN_ID      the entity that owns the screen (required)
@@ -53,7 +54,7 @@ if (!env('ELEVEN_KEY') && !env('ASSEMBLYAI_KEY')) log('⚠ no STT key — sessio
 
 const spool = env('SPOOL', './captionbot.spool.jsonl');
 const world = DRY_RUN ? null : new WorldClient({
-  url: env('WORLD_URL', 'ws://127.0.0.1:8940/ws'), token: env('WORLD_TOKEN'), world: env('WORLD_NAME', 'commons'),
+  url: env('WORLD_URL', 'ws://127.0.0.1:8940/ws'), token: env('WORLD_TOKEN'), agentToken: env('AGENT_TOKEN') || undefined, world: env('WORLD_NAME', 'commons'),
   actor: env('ACTOR', 'captioner'), screenId: SCREEN_ID, title: env('TITLE') || undefined,
   spool: spool || undefined, maxPending: Number(env('MAX_PENDING', '600')), log,
 });

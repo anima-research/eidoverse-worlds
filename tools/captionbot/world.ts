@@ -1,22 +1,22 @@
-// The world client: joins EMBODIED as a visitor holding the caption deed for
-// one screen (grant {id: <actor>, caption: "<screen>"}, owner-granted) and
-// writes one `caption` verb per final line. It reads the stage cue (a
-// `stage` comp on the screen) off the snapshot and the live log, so
-// `speaker` is the operator's word, never the bot's guess.
+// The world client: joins EMBODIED (a visitor is enough) as an identity the
+// screen names in its `captioners {ids}` (whoever may edit the screen sets
+// that), and sends one door `caption` request per final line. It reads the
+// stage cue (a `stage` component on the screen) off its own fold of the
+// world (shared/v4/client.js), so `speaker` is the operator's word, never
+// the bot's guess.
 //
 // RECEIPTS (Mica, #187 review B3). A line is not done when it is sent; it is
-// done when its own log echo comes back — verb `caption`, our actor, our
-// screen, our session and n. Until then it is PENDING: kept in memory, kept
-// on disk in the spool, and resent after a disconnect or a silent timeout.
-// The sequencer refuses a duplicate n before append (shared/captions.js
-// captionRefusal), so a resend can never write twice — that refusal is
-// read here as the receipt it is.
+// done when the door answers ok. Until then it is PENDING: kept in memory,
+// kept on disk in the spool, and resent after a disconnect or a silent
+// timeout. The door refuses a duplicate n before anything is written
+// (shared/captions.js captionRefusal), so a resend can never write twice —
+// that refusal is read here as the receipt it is.
 //
-// ORDER. One line in flight at a time, FIFO, paced under the door's verb
-// rate (12 per 4 s): a burst of finals queues rather than tripping the
-// limiter. WHO the captioner is, is the sequencer's fact, not ours: it
-// stamps its leg generation on every line and the bag follows the live leg
-// (a same-identity join is a takeover). A restart's old-session tail still
+// ORDER. One line in flight at a time, FIFO, paced under the door's rate
+// (60 entries per 10 s; a caption is two): a burst of finals queues rather
+// than tripping the limiter. WHO the captioner is, is the server's fact, not
+// ours: it stamps this connection's leg generation on every line and the bag
+// follows the live leg (a same-identity join is a takeover). A restart's old-session tail still
 // drains first, FIFO, so the window switches exactly once.
 //
 // BACKPRESSURE. The queue is BOUNDED (`maxPending`, default 600 lines ≈ five
@@ -30,12 +30,15 @@
 // perception, not history. This client keeps nothing the world does not.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { normalizeCaptionArgs, mintSession } from '../../shared/captions.js';
+import { makeV4Client } from '../../shared/v4/client.js';
 import type { Caption } from './captioner.ts';
 
 export interface WorldOptions {
   url: string; token: string; world: string;
   /** The bot's actor id — reserved like an agent's, so the door knows it. */
   actor: string;
+  /** Its agent token (tokens.json), proving that reserved name: its identity is what the screen's captioners list. */
+  agentToken?: string;
   /** The entity that owns the screen. */
   screenId: string;
   /** What is showing, for look(); rides the first line of each session. */
@@ -78,9 +81,14 @@ export class WorldClient {
   private lastSentAt = 0;
   private halted: string | null = null;
   private titled = false;
+  private v4 = makeV4Client();
+  private reqId = 0;
+  private inflightId: string | null = null;
   session: string;
   n = 0;
   sent = 0; acked = 0; refused = 0; overflow = 0;
+  /** this connection's identity (the snapshot's v4.you): what the screen's captioners must list */
+  you: string | null = null;
   onReceipt: ((args: Args) => void) | null = null;
 
   constructor(private opts: WorldOptions) {
@@ -95,7 +103,7 @@ export class WorldClient {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token }));
+      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', v4fold: true, ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
     };
     ws.onclose = () => {
       this.open = false;
@@ -109,21 +117,30 @@ export class WorldClient {
       const msg = JSON.parse(String(ev.data));
       if (msg.type === 'snapshot') {
         this.open = true;
-        const ent = msg.state?.entities?.[this.opts.screenId];
+        if (msg.v4?.state) this.v4.adopt(msg.v4);
+        const ent = this.screen();
         this.stageSpeaker = ent?.comp?.stage?.speaker;
-        const deed = msg.yourRights?.caption;
-        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${msg.yourRights?.role ?? '?'}${deed ? `, caption deed for ${deed.id}` : ', NO caption deed — ask the owner: grant {id: "' + this.opts.actor + '", caption: "' + this.opts.screenId + '"}'}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — spawn it first'}`);
+        const me = msg.v4?.you; this.you = me ?? null; const listed = Array.isArray(ent?.comp?.captioners?.ids) && ent.comp.captioners.ids.includes(me);
+        this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: ["${me}"]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
-      } else if (msg.type === 'log' && msg.entry?.verb === 'comp' && msg.entry.args?.id === this.opts.screenId && msg.entry.args?.type === 'stage') {
-        this.stageSpeaker = msg.entry.args.data?.speaker;
-        this.log(`stage cue: speaker = ${this.stageSpeaker ?? '(none)'}`);
-      } else if (msg.type === 'log' && msg.entry?.verb === 'caption' && msg.entry.actor === this.opts.actor && msg.entry.args?.id === this.opts.screenId) {
-        this.onEcho(msg.entry.args as Args);
+      } else if (msg.type === 'v4-log') {
+        const r = this.v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
+        if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
+        const sp = this.screen()?.comp?.stage?.speaker;
+        if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
+      } else if (msg.type === 'v4-result' && msg.id === this.inflightId) {
+        const p = this.inflight; this.inflightId = null;
+        if (!p) return;
+        if (msg.reply?.ok) this.onEcho(p.args);
+        else this.onError(`${msg.reply?.refused?.code ?? 'refused'}: ${msg.reply?.refused?.reason ?? ''}`);
       }
     };
   }
+
+  /** The screen as this client's fold holds it (the view record), or null. */
+  private screen(): any { return this.v4.active ? (this.v4.view()?.entities?.[this.opts.screenId] ?? null) : null; }
 
   /** The operator's stage cue, if any. */
   speaker(): string | undefined { return this.stageSpeaker; }
@@ -179,7 +196,8 @@ export class WorldClient {
     this.lastSentAt = Date.now();
     this.sent++;
     this.opts.onSend?.(p.key);
-    this.ws.send(JSON.stringify({ type: 'verb', verb: 'caption', args: p.args }));
+    this.inflightId = `c${++this.reqId}`;
+    this.ws.send(JSON.stringify({ type: 'v4', id: this.inflightId, tool: 'caption', args: p.args }));
     // no receipt in time: unconfirmed, so resend — the door dedupes
     this.ackTimer = setTimeout(() => {
       this.ackTimer = null;
@@ -196,7 +214,7 @@ export class WorldClient {
     this.schedule();
   }
 
-  /** Our own entry came back through the log: the world holds it. */
+  /** The door wrote it: the world holds it. */
   private onEcho(args: Args): void {
     const key = keyOf(args);
     const p = this.inflight;
@@ -229,11 +247,11 @@ export class WorldClient {
       this.settle(p, { state: 'refused', key: p.key, why: error, at: Date.now() });
       return;
     }
-    // no deed / wrong deed / screen gone / rank: nothing will land until the
-    // owner acts — hold everything, say so once, and try again later
-    // …and a NEWER leg holding the screen (another captioner joined after
-    // us): ours is superseded until we rejoin; hold, do not drop
-    if (/caption deed|not here|was replaced|needs .* rights|spectators|superseded captioner/.test(error)) {
+    // not a captioner of this screen / screen gone / a spectator: nothing will
+    // land until someone acts — hold everything, say so once, and try again
+    // later …and a NEWER leg holding the screen (another captioner joined
+    // after us): ours is superseded until we rejoin; hold, do not drop
+    if (/^rights:|^no-such:|^spectator:|^banned:|superseded captioner/.test(error)) {
       if (this.ackTimer) { clearTimeout(this.ackTimer); this.ackTimer = null; }
       this.inflight = null; this.pending.unshift(p);
       if (this.halted !== error) { this.halted = error; this.log(`⛔ held (${this.pendingCount} pending): ${error}`); }

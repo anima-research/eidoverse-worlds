@@ -821,5 +821,31 @@ const w0 = () => openWorld(root, "tier0");
   const k = makeV4Client(); k.adopt({ state: stateView(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
+// ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
+// the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
+{ const cw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "captions"), actor, tool, args); };
+  cw("ann", "new", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
+  const sess = "2026-10-07T00:00:00.000Z-abc123";
+  const line = (n, extra = {}) => ({ id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}`, ...extra });
+  const v1r = cw("vic", "caption", line(1));
+  ok(code(v1r) === "rights", "CA1 a visitor who isn't one of the screen's captioners can't caption it", v1r.refused);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CA2 whoever may edit the screen names its captioners");
+  const c1 = cw("vic", "caption", line(1, { title: "the talk" }));
+  const bag = () => openWorld(root, "captions").state().entities.screen.c.captions;
+  ok(c1.ok && bag()?.window?.[0]?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a visitor) writes a line", [c1.refused, bag()]);
+  const dup = cw("vic", "caption", line(1));
+  ok(code(dup) === "caption" && bag().n === 1, "CA4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
+  ok(cw("vic", "caption", line(2)).ok && bag().window.length === 2, "CA5 the next n appends");
+  ok(cw("vic", "caption", line(3, { gen: 5 })).ok, "CA6 (setup) a newer leg (the server stamps each connection's generation) writes");
+  const stale = cw("vic", "caption", line(4, { gen: 2 }));
+  ok(code(stale) === "caption" && /newer leg/.test(stale.refused?.reason), "CA6 a superseded leg (a lower generation) can't write over its successor", stale.refused);
+  const forged = cw("bob", "set", { id: "screen", component: "captions", value: { session: sess, n: 99, gen: 99, window: [{ t0: 0, t1: 1, text: "forged" }] } });
+  ok(code(forged) === "caption-tool" && bag().n === 3, "CA7 a builder can't forge the bag with a plain set (only the caption tool writes it)", forged.refused);
+  ok(code(cw("vic", "caption", { id: "screen", session: "nope", n: 1, t0: 0, t1: 1, text: "x" })) === "shape", "CA8 a malformed line is refused by shape (the session's form, shared/captions.js)");
+  const end = cw("vic", "caption", { id: "screen", session: sess, end: true, gen: 5 });
+  ok(end.ok && bag() === undefined, "CA9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

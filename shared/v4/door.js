@@ -15,6 +15,7 @@ import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
 import { foldSkyEntry } from "../forecast.js";
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./terrain.js";
@@ -611,6 +612,14 @@ function shapeOneOrRefuse(verb, op, i) {
 const rankNeeded = (op) => (op.id !== "@world" ? "builder" : op.comp?.startsWith("library:") ? "builder" : "owner");
 function rights(w, st, s, who, role, op, at) {
   const { actor, cap } = who; const need = rankNeeded(op);
+  // a screen's captions are written by the caption tool only (its session, order and generation rules), never set by
+  // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
+  // delete them (CAPTIONS below)
+  if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-tool", `${at} is written by the caption tool, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
+  if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
+    const ids = st.entities[op.id]?.c.captioners?.ids;
+    if (!(Array.isArray(ids) && ids.includes(actor)) && RANK[role] < RANK[need]) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
+    return; }
   if (!cap) { if (RANK[role] < RANK[need]) refuse("rights", `changing ${at} needs ${need}; you are ${role}`, `ask the world's owner for ${need} rights (say {text, to: <owner>}); help shows your role`); return; }
   if (cap.kind === "script") return scriptRights(st, cap, op, at, need);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
@@ -2749,6 +2758,20 @@ const TOOLS = {
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
+  // ---- captions: one line of what a screen said (a captioner bot, live subtitles). Rights live on the SCREEN: its
+  // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by
+  // hand, writes `captions`. The rules are shared/captions.js's: a session, a strictly rising n within it, a leg
+  // generation (the server stamps `gen` from the connection: a superseded captioner can't write over its successor),
+  // and `end` to clear the screen. The bag keeps the newest lines (CAPTIONS_MAX_LINES). ----
+  caption: (w, actor, a) => commit(w, actor, "caption", a, (ctx) => {
+    const n = normalizeCaptionArgs(a); if (!n.ok) refuse("shape", n.why, "caption {id, session, n, t0, t1, text, speaker?, title?} | {id, session, end: true}");
+    const id = n.args.id; const e = ctx.st.entities[id]; if (!e) refuse("no-such", `nothing here called ${id}`, "look lists what's here");
+    const args = { ...n.args, gen: Number.isSafeInteger(a.gen) && a.gen >= 0 ? a.gen : 0 };
+    const why = captionRefusal(e.c.captions, args); if (why) refuse("caption", why, "a resend of a line already written is refused: read that as its receipt");
+    ctx.cap = { kind: "caption", ids: [id], comps: ["captions"] };
+    const next = foldCaption(e.c.captions, args);
+    return [next ? setOp(id, "captions", next) : delOp(id, "captions")];
+  }),
   // ---- scripts (research 41) ----
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
   // checked here (to teach early) and again at install (what binds).

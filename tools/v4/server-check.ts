@@ -438,6 +438,27 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   a.close(); c.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
+// ================= CB: the captioner bot (tools/captionbot/world.ts) through a real server: the door's caption tool, the
+// screen's captioners list, the server-stamped leg generation, the duplicate refusal read as a receipt =================
+{ const { WorldClient } = await import("../captionbot/world.ts");
+  const own = await client(srv.port, "garden", "Ann", V4);
+  ok((await own.req("create", { id: "screen1", model: "test/table.glb", place: { at: [6, 6] } })).ok, "CB (setup) a screen");
+  const logs: string[] = [];
+  const bot = new WorldClient({ url: `ws://127.0.0.1:${srv.port}/ws`, token: "", world: "garden", actor: "Capper", screenId: "screen1", title: "the talk", paceMs: 50, ackTimeoutMs: 2000, deedRetryMs: 300, log: (m: string) => logs.push(m) });
+  bot.connect();
+  for (let i = 0; i < 60 && !bot.you; i++) await sleep(50);
+  bot.caption({ t0: 0, t1: 1, text: "before the list" } as any); await sleep(500);
+  ok(bot.acked === 0 && bot.pendingCount === 1 && logs.some((l) => /held/.test(l)), "CB a bot that isn't one of the screen's captioners writes nothing; its line is held, not dropped", logs.slice(-3));
+  ok((await own.req("set", { id: "screen1", component: "captioners", value: { ids: [bot.you] } })).ok, "CB the screen's owner lists the bot's identity", bot.you);
+  for (let i = 0; i < 40 && bot.pendingCount; i++) await sleep(100);
+  bot.caption({ t0: 1, t1: 2, text: "and after" } as any);
+  for (let i = 0; i < 40 && bot.pendingCount; i++) await sleep(100);
+  const bag = heldBy(own)?.view()?.entities?.screen1?.comp?.captions;
+  ok(bot.acked === 2 && bag?.window?.map((l: any) => l.text).join("|") === "before the list|and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
+  const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
+  ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.screen1?.comp?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.screen1?.comp?.captions?.gen]);
+  bot.close(); own.close(); await sleep(200); }
+
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
 // (S7 used to byte-compare v1 worlds against slice 1's tree; the server has no v1 runtime now, by design)
 { const ghost = await client(srv.port, "nobodyhome", "Ann", V4);
