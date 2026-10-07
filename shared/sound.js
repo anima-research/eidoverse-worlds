@@ -2,7 +2,7 @@
 // host (client/lib/sounds.js) and the mcpl agent (text-tier perception), so
 // the two can never describe different sounds.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, radius?, t0?, look?}}
+//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}}   (batch 2: look → alt)
 //   comp {id, type: "sound", data: null}          # silence it
 //
 // A sound is an audio file playing FROM an entity: positional, in the world,
@@ -11,6 +11,8 @@
 // design.md) with a file where the stream will be; the captions comp (#187)
 // rides the same entity and says what the words are.
 //
+// (Batch 2, R 10-07: an https link is a source too now; shared/mediasrc.js decides whose browser may fetch it,
+// and an untrusted host is fetched only for a viewer who opted in. What follows is the rule for the store paths.)
 // SOURCE ALLOW-LIST — the picture's rule, for audio: a library-relative path
 // under `eidoverse/assets/` (what the operator placed) or `store/audio/` (what
 // came in through `POST /upload?as=audio`, sniffed by bytes), never a URL. A

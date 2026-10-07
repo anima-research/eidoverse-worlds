@@ -431,6 +431,23 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
 
 /** Which audio container these bytes are, by magic — the five the sound
  *  allow-list admits. `null` for anything else: the name is not evidence. */
+/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
+export const MAX_IMAGE_PX = 8192;
+export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const u16 = (i: number) => (b[i] << 8) | b[i + 1], u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  const le16 = (i: number) => b[i] | (b[i + 1] << 8), le24 = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
+  try {
+    if (kind === "png") return b.length >= 24 ? [u32(16), u32(20)] : null;
+    if (kind === "jpg") { let i = 2; while (i + 9 < b.length) { if (b[i] !== 0xff) { i++; continue; } const m = b[i + 1];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return [u16(i + 7), u16(i + 5)];
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; } i += 2 + u16(i + 2); } return null; }
+    if (kind === "webp" && b.length >= 30) { const c = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (c === "VP8X") return [1 + le24(24), 1 + le24(27)];
+      if (c === "VP8 ") return [le16(26) & 0x3fff, le16(28) & 0x3fff];
+      if (c === "VP8L") { const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24); return [1 + (v & 0x3fff), 1 + ((v >> 14) & 0x3fff)]; } }
+  } catch { /* unreadable */ }
+  return null;
+}
 export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a" | null {
   const tag = (off: number, s: string) => b.length >= off + s.length && [...s].every((ch, i) => b[off + i] === ch.charCodeAt(0));
   if (tag(0, "ID3")) return "mp3";
@@ -477,6 +494,9 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     const kind = sniffImage(body);
     if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
+    // batch 2: a decompression bomb (a tiny file that decodes to 16k × 16k) is refused before any viewer decodes it
+    const dims = imageDims(body, kind);
+    if (dims && Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return new Response(`image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)`, { status: 413 });
     const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
     const idir = join(OPT_DIR, "store", "images");
     mkdirSync(idir, { recursive: true });

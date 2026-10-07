@@ -2,7 +2,7 @@
 // browser host (client/lib/pictures.js) and the mcpl agent (text-tier
 // perception), so the two can never describe different pictures.
 //
-//   comp {id, type: "picture", data: {src, part, look?, lit?, flip?}}
+//   comp {id, type: "picture", data: {src, part?, width?, alt?, lit?, flip?}}   (batch 2: no part = a quad of its own; look → alt)
 //   comp {id, type: "picture", data: null}          # take it down
 //
 // A picture is an image on a NAMED PART of the entity that owns it — the #167
@@ -12,6 +12,8 @@
 // (allow-listed source, named part, the look line, restore-on-remove) is the
 // seam the screen will reuse.
 //
+// (Batch 2, R 10-07: an https link is a source too now; shared/mediasrc.js decides whose browser may fetch it,
+// and an untrusted host is fetched only for a viewer who opted in. What follows is the rule for the store paths.)
 // SOURCE ALLOW-LIST. `src` is a library-relative path under one of two roots,
 // both served by the sequencer's own /library/ route: `eidoverse/assets/`
 // (Skye's library plus the assets/opt overlay — what the operator placed) and

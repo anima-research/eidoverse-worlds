@@ -269,6 +269,13 @@ const cases: Case[] = [
       return { q: sayLines(s, "poster")?.[0], p: sayLines(s, "tv")?.[0], b: sayLines(s, "bare")?.[0] }; },
     good: (o) => o.q === "a picture: «the hearth at dusk»" && o.p === "a picture on its screen: «static»" && o.b === "a picture (0123456789abcdef.png)" },
 
+  { id: "P6", what: "upload: an image's pixel size is read from its header (PNG, JPEG, WebP) so a 9000-px decompression bomb is refused before any viewer decodes it (cap 8192)", async run() {
+      const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageDims) return { none: true };
+      const png = new Uint8Array(32); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); new DataView(png.buffer).setUint32(16, 9000); new DataView(png.buffer).setUint32(20, 10);
+      const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "../eidoverse-video/eidoverse/assets/sky/moon_color_1k.jpg")).buffer.slice(0));
+      return { png: UP.imageDims(png, "png"), moon: UP.imageDims(moon, "jpg"), cap: UP.MAX_IMAGE_PX }; },
+    good: (o) => !o.none && JSON.stringify(o.png) === "[9000,10]" && JSON.stringify(o.moon) === "[1024,512]" && o.cap === 8192 },
+
   // ---------------- S: sound ----------------
   { id: "S1", what: "sound src: an http link and an IP address refused; a trusted host's link admitted and said to reach everyone; another host's admitted and said to reach only viewers who opted in", run(s) { cast(s);
       s.call("olive", "create", { id: "radio", components: { transform: { pos: [0, 0, 0] } } });
@@ -441,7 +448,7 @@ let pass = 0, fail = 0;
 for (const c of cases) {
   if (ONLY && !ONLY.includes(c.id)) continue;
   let o: any, good = false;
-  try { o = c.run(session()); good = !!c.good(o); } catch (e: any) { o = { threw: `${e?.constructor?.name}: ${e?.message}`.slice(0, 300) }; }
+  try { o = await c.run(session()); good = !!c.good(o); } catch (e: any) { o = { threw: `${e?.constructor?.name}: ${e?.message}`.slice(0, 300) }; }
   if (good) pass++; else fail++;
   console.log(`${good ? "ok  " : "FAIL"} ${c.id.padEnd(4)} ${c.what}${good && !argv.includes("--verbose") ? "" : `\n       ${JSON.stringify(o).slice(0, 700)}`}`);
 }
