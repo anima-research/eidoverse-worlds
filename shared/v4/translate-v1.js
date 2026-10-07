@@ -70,7 +70,8 @@ function v4Reactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@3";
+export const TRANSLATOR = "eidoverse/translate-v1@4";
+// @4 (2026-10-06, roles S5): a v1 `fly: true` grant becomes roles:<id>.can.fly (it fell into legacy:roles:<id> before).
 // @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
 // translating door's key is the sequencer and the only governance key, in tier 1 (the custodial default: tier 0
 // empty, the operator the real owner). The nonce is the first 16 bytes of sha256 of the source log's lines, so
@@ -152,7 +153,10 @@ export function project(st, seen = null, who = null) {
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("palette", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
-  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[`roles:${person(k, v)}`] = unsub(v);
+  // research roles §translation: v1's `fly` grant is the fly switch (it had been lost to legacy); `gen` stays as written
+  // (the door reads roles:<id>.gen as the generate switch); `caption` stays in legacy until screens carry captioners
+  const flyToCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v)) return v; const { fly, ...rest } = v; return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest; };
+  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[`roles:${person(k, v)}`] = flyToCan(unsub(v));
   for (const [k, v] of Object.entries(st.bans ?? {})) w[`bans:${person(k, v)}`] = unsub(v);
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;

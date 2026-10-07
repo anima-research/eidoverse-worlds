@@ -24,7 +24,7 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
+import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
 import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { holdWire } from "../../shared/grab.js";
@@ -56,6 +56,8 @@ export type V4Host = {
   /** who is here (embodied, not spectating): their v4 identity and last known position. Scripts' timers sleep when this
    *  is empty, and world.near(r) reads it (research 41 §3.5, §3.8) */
   present?(): { id: string; at: number[] | null }[];
+  /** the log stream: `msg` to everyone, `ghostMsg` (says emptied) to a ghost (PLAN 10-06: a ghost can't read chat) */
+  broadcastLog?(msg: unknown, ghostMsg: unknown): void;
 };
 
 export class V4Log {
@@ -179,10 +181,14 @@ export class V4Log {
     const named = new Set<string>(newActors);
     for (const e of fresh) { if (e?.kind !== "state") continue; let ops: Any[] = []; try { ops = opsOf(e); } catch { /* malformed: nothing to name */ }
       for (const o of ops) if (o?.id === "@world" && String(o.comp ?? "").startsWith("roles:")) named.add(String(o.comp).slice(6)); }
-    this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh.map(wireEntry), ...(named.size ? { names: this.names(named) } : {}) });
+    const msg = { type: "v4-log", world: this.name, from, entries: fresh.map(wireEntry), ...(named.size ? { names: this.names(named) } : {}) };
+    // a ghost gets every entry (the fold must stay contiguous) but each say's body and speaker emptied
+    if (this.host?.broadcastLog) this.host.broadcastLog(msg, { ...msg, entries: msg.entries.map((e: Any) => (e?.kind === "say" ? { ...e, actor: "world", body: {} } : e)) });
+    else this.host?.broadcast(msg);
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
-    const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
+    // anything that can change what someone may do: a role, the definitions, the default role, the install setting
+    const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "scripts", "access"].includes(o.comp))); } catch { return false; } };
     if (fresh.some(roles)) this.host?.rightsChanged();
   }
   private record(e: LogEntry) {
@@ -228,6 +234,19 @@ export class V4Log {
   }
   /** The door's moderator log says this identity is banned here (door.js isBanned): join must refuse it too. */
   bannedHere(actor: string): boolean { return isBanned(this.live, actor); }
+  private anon(actor: string) { return directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon"; }
+  /** What this identity may do here, from the door (roles.js effectiveOf): {role, name, rank, can, switches}. */
+  rightsOf(actor: string) { return effectiveIn(this.live.state(), actor, { anon: this.anon(actor) }); }
+  /** A kick whose cooldown still runs: {until, by, reason?} or null (join refuses it). */
+  kickedHere(actor: string): Any { return kickOf(this.live, actor); }
+  mutedHere(actor: string, channel?: "voice" | "chat"): Any { return muteOf(this.live, actor, channel); }
+  ghostHere(actor: string): Any { return ghostOf(this.live, actor); }
+  /** Everything in force now, per identity (the sweep that re-applies voice mutes and ghost hiding reads it). */
+  sanctions(): Record<string, Any> { return sanctionsNow(this.live); }
+  /** @world.access ({join, max?, soft?}) or null. */
+  access(): Any { const a = this.live.state().entities?.["@world"]?.c?.access; return a && typeof a === "object" ? a : null; }
+  /** Has this identity a roles:<id> here (access.join 'listed')? */
+  listedHere(actor: string): boolean { return !!this.live.state().entities?.["@world"]?.c?.[`roles:${actor}`]; }
   /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {

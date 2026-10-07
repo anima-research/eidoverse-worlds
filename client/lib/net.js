@@ -108,6 +108,10 @@ export function wireNet(h) {
  *  the server sends it on arrive and in the join roster). A role, a ban or a rollback goes to THIS, never to a typed
  *  name (round-2 R1/R2; security review 10-06 H2). */
 export const identities = new Map();
+/** Display ids of people here without an account (the server marks them on arrive/present): the 'guest' badge. */
+export const guests = new Set();
+/** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
+net.modMuted = {};
 export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
 /** Say something in the world (the door's `say`). Resolves with the door's reply. Never silent (Commons audit #6): a
  *  line typed while the connection is down is QUEUED and sent when the world is back (v1 did this; v4 dropped it as
@@ -665,6 +669,7 @@ async function handle(msg) {
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
       ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
       if (msg.v4id) identities.set(msg.id, msg.v4id);
+      if (msg.guest) guests.add(msg.id); else guests.delete(msg.id);
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');
       break;
@@ -857,8 +862,21 @@ async function handle(msg) {
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
     case 'moderated':
-      // someone was removed or banned here (or a ban lifted): what everyone else is told, as v1 told them (names only)
-      logChat('*', String(msg.text ?? ''));
+      // someone was removed or banned here (or a ban lifted): what everyone else is told, as v1 told them (names only).
+      // `you`: the act was on you (a mute, a ghost): said to you, with how long
+      if (msg.you) { const until = msg.until ? ` until ${new Date(msg.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+        const what = msg.verb === 'mute' ? `muted your ${(msg.channels ?? ['voice', 'chat']).join(' and ')}` : msg.verb === 'ghost' ? 'made you a ghost (unseen; you can look and walk, not act or talk)' : msg.verb;
+        logChat('*', `${msg.by} ${what}${until}${msg.reason ? ` — ${msg.reason}` : ''}`); bus.emit('moderated-me', msg); }
+      else logChat('*', String(msg.text ?? ''));
+      break;
+    case 'warned':
+      // a warning (research roles §5): a notice you dismiss, and a line in chat to keep
+      logChat('*', `${msg.by} warned you: ${String(msg.reason ?? '')}`);
+      bus.emit('warned', msg);
+      break;
+    case 'mod-state':
+      net.modMuted = msg.muted && typeof msg.muted === 'object' ? msg.muted : {};
+      bus.emit('roster');
       break;
 
     case 'error':
@@ -934,9 +952,10 @@ async function onSnapshot(msg) {
 
   // remote avatars build in parallel and never block log replay — the
   // roster is an AUTHORITY: a same-id record here is a fresh generation
-  identities.clear(); if (msg.v4?.you) net.v4you = msg.v4.you;
+  identities.clear(); guests.clear(); if (msg.v4?.you) net.v4you = msg.v4.you;
   for (const p of msg.present) {
     if (p.v4id) identities.set(p.id, p.v4id);
+    if (p.guest) guests.add(p.id);
     ensureRemote(p.id, p.avatar, { agent: p.agent, authority: true })
       .then(() => { if (p.pose) pushPose(p.id, p.pose); })
       .catch((e) => report(`present ${p.id}`, e));

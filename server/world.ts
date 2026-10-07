@@ -71,6 +71,8 @@ export type Client = {
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
+  // roles S4 / ghost: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
+  sfuMuted?: boolean; ghostHidden?: boolean; sanctionKey?: string;
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
@@ -465,18 +467,30 @@ export class World {
     return this.openSeq * 1_000_000 + (++this.legCount);
   }
 
+  /** Is this connection a ghost here (PLAN 10-06: in the world, outside society)? A sanction or a chosen mode. */
+  modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
+  sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
+  isGhost(c: Client): boolean { return !!(this.v4 && c.v4id && this.v4.ghostHere(c.v4id)); }
+  /** The hooks a v4 log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
+   *  is sent the log with every say emptied (it can't read chat). */
+  private v4Host(v4: V4Log) {
+    return {
+      broadcast: (msg: unknown) => this.session.broadcast(msg),
+      broadcastLog: (msg: unknown, ghostMsg: unknown) => { const d = JSON.stringify(msg), g = JSON.stringify(ghostMsg);
+        for (const c of this.clients) { try { c.ws.send(this.isGhost(c) ? g : d); } catch { /* gone */ } } },
+      rightsChanged: () => v4Rights(this),
+      debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
+      present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world" && !v4.ghostHere(c.v4id)).map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
+    };
+  }
+
   constructor(name: string) {
     this.name = name;
     if (isV4World(name)) { // decided by the world's own genesis (server/v4/live.ts isV4Dir); v1 worlds never enter
       const v4 = new V4Log(name);
       this.v4 = v4;
       this.log = v4 as unknown as WorldLog; // the WorldLog surface it serves: the view of its fold (no v1 entries)
-      v4.attach({
-        broadcast: (msg) => this.session.broadcast(msg),
-        rightsChanged: () => v4Rights(this),
-        debug: (kind, detail) => this.debug(kind, detail),
-        present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world").map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
-      });
+      v4.attach(this.v4Host(v4));
     } else this.log = new WorldLog(name);
     this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
     this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
@@ -555,11 +569,7 @@ export class World {
     const v4 = new V4Log(this.name);
     this.v4 = v4;
     this.log = v4 as unknown as WorldLog;
-    v4.attach({
-      broadcast: (msg) => this.session.broadcast(msg),
-      rightsChanged: () => v4Rights(this),
-      debug: (kind, detail) => this.debug(kind, detail),
-    });
+    v4.attach(this.v4Host(v4));
     this.bhv = new V4Scripts(v4);
     this.bhv.sync();
     return arch;

@@ -20,9 +20,10 @@ import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "../config.ts";
 import { isBanned } from "../../shared/v4/door.js";
 
-type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string) => void };
+type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
-const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois"]);
+const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
+const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
 const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "v1 name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
@@ -54,7 +55,8 @@ function recordRefusal(c: Client): boolean {
  *  reason (that went to the person, and stays in the moderator log), not an address, not an account. */
 function modLine(w: World, by: string, tool: string, who: string) {
   const name = directoryFor(WORLDS_DIR).nameOf(who) ?? "someone";
-  return tool === "ban" ? `${by} banned ${name} from this world` : tool === "kick" ? `${by} removed ${name} from this world` : `${by} lifted the ban on ${name}`;
+  return tool === "ban" ? `${by} banned ${name} from this world` : tool === "kick" ? `${by} removed ${name} from this world` : tool === "mute" ? `${by} muted ${name}`
+    : tool === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
 }
 /** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
@@ -74,7 +76,7 @@ const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not 
 
 
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
-  "v4": ({ c, ws, expel }, msg) => {
+  "v4": ({ c, ws, expel, sweep }, msg) => {
     // {tool, args}: a door request (a v1 `verb` in it is refused: clients spell at their own edge, 3c)
     const w = c.world; if (!w?.v4) return;
     const rid = msg.id ?? null;
@@ -99,9 +101,16 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
       // bystanders see a removal as v1 showed it ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
-      if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban") && typeof args.who === "string") {
+      // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a
+      // notice they dismiss, a mute or a ghost is told to its person; a ghost is never named to bystanders (unseen)
+      if (r?.ok && PERSON_ACTS.has(tool)) { sweep?.(w);
+        const who = String(args.who ?? ""); const notice = tool === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
+          : tool === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
+          : tool === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
+        if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
+      if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = tool === "kick" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
+        const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
         if (happened) { const text = modLine(w, c.id, tool, who);
           for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
       }
@@ -115,7 +124,8 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
             globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until: Date.now() + ADDR_BAN_MS, world: w.name, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
-          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}`);
+          const back = r.until ? ` — you may come back ${tool === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
+          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
     });

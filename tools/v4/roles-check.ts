@@ -93,6 +93,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a ghost may look and walk", "v4/door.js", "const GHOST_OK = new Set([\"help\", \"look\",", "const GHOST_OK = new Set([\"help\",", ["G1"]],
   ["a sanction isn't the ghost's to end", "v4/door.js", "if (!a.on && sanc?.verb === \"ghost\" && inForce(w, sanc)) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
   ["the chosen mode", "v4/door.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
+  // S5, S6
+  ["translation: v1 fly → can.fly", "v4/translate-v1.js", "return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest;", "return v;", ["T1"]],
+  ["legacy gen reads as generate", "v4/roles.js", "if (entry?.gen === true) can.generate = true;", "", ["T1"]],
+  ["the menu: only below you", "v4/roles.js", "const below = them.rank < me.rank;", "const below = them.rank <= me.rank;", ["P3"]],
+  ["the menu: acts follow switches", "v4/roles.js", "if (has(\"ban\")) out.push({ id: \"ban\", label: \"Ban…\" });", "out.push({ id: \"ban\", label: \"Ban…\" });", ["P1"]],
+  ["the menu: unmute when muted", "v4/roles.js", "out.push(state.muted ? { id: \"unmute\", label: \"Unmute\" } : { id: \"mute\", label: \"Mute…\" });", "out.push({ id: \"mute\", label: \"Mute…\" });", ["P2"]],
+  ["badges: guests are guests", "v4/roles.js", "if (p.anon) return { text: \"guest\", tone: \"guest\" };", "", ["P4"]],
   ["CONTROL (no-op: must stay green)", "v4/roles.js", "// ---------------- the other caps (research §5) ----------------", "// ---------------- the other caps (research §5)  ----------------", []],
 ];
 
@@ -377,7 +384,37 @@ const cases: Case[] = [
       const n0 = s.w().mod.length, e0 = s.entries().length; const on = s.call("vic", "ghost", { on: true }); const say = s.call("vic", "say", { text: "boo" });
       const off = s.call("vic", "ghost", { on: false }); const say2 = s.call("vic", "say", { text: "hello" });
       return { on: show(on), say: code(say), off: show(off), say2: show(say2), mod: s.w().mod.length - n0, logged: s.entries().slice(e0).filter((e: any) => e.verb === "ghost").length }; },
-    good: (o) => o.on === "ok" && o.say === "ghost" && o.off === "ok" && o.say2 === "ok" && o.mod === 0 && o.logged === 0 }
+    good: (o) => o.on === "ok" && o.say === "ghost" && o.off === "ok" && o.say2 === "ok" && o.mod === 0 && o.logged === 0 },
+
+  // ---------------- T: S5 translation ----------------
+  { id: "T1", what: "translation: a v1 {builder, fly, gen} grant becomes roles:<id> {role, gen, can: {fly}}, and the effective set holds fly and generate", run() {
+      const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "visitor", fly: false } } });
+      const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
+      return { v: w["@world"][key], bo: w["@world"][bo], legacy: Object.keys(w["@world"]).filter((k) => k.startsWith("legacy:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.switches, tag: TV1.TRANSLATOR }; },
+    good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.gen === true && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.legacy.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag === "eidoverse/translate-v1@4" },
+  { id: "T2", what: "the Commons (staging's commons-v4, read-only): a stranger is still a builder and now builds and generates by its default-role gen; a guest is a visitor", run() {
+      const f = process.env.V4_COMMONS ?? "/home/claude/eido/staging/worlds/commons-v4/v4.jsonl";
+      if (!fs.existsSync(f)) return { skipped: f };
+      const st = F.fold(F.readLog(fs.readFileSync(f)));
+      const e = D.effectiveIn?.(st, "u-aaaaaaaaaaaaaaaaaaaa"), g = D.effectiveIn?.(st, "u-bbbbbbbbbbbbbbbbbbbb", { anon: true });
+      return { role: D.roleIn(st, "u-aaaaaaaaaaaaaaaaaaaa"), sw: e?.switches, guest: g?.role }; },
+    good: (o) => !!o.skipped || (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "visitor") },
+
+  // ---------------- P: S6 the person menu (pure) ----------------
+  { id: "P1", what: "personActions: a visitor sees only Message, for anyone", run() { const A = RL.personActions;
+      const vis = { id: "v", rank: 0, switches: [] }; return { a: A?.(vis, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), b: A?.(vis, { id: "n", rank: -1, role: "none" }).map((x: any) => x.id) }; },
+    good: (o) => JSON.stringify(o.a) === '["message"]' && JSON.stringify(o.b) === '["message"]' },
+  { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ghost, ban, role and history", run() {
+      const mo = { id: "m", rank: 200, switches: RL.BUILTIN?.moderator ? RL.SWITCH_NAMES.filter((k: string) => RL.BUILTIN.moderator.can[k]) : [] };
+      return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id) }; },
+    good: (o) => JSON.stringify(o.ids) === '["message","warn","mute","kick","ghost","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") },
+  { id: "P3", what: "personActions: a moderator acting on a moderator gets no acts, and one dim line saying rank is why", run() {
+      const mo = { id: "m", rank: 200, switches: ["mute", "kick", "ban", "grantRoles"] };
+      return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },
+    good: (o) => Array.isArray(o) && o.map((x: any) => x.id).join() === "message,rank-line,history" && /moderator; you can't act on equal or higher ranks/.test(o[1].label) && o[1].dim },
+  { id: "P4", what: "badges: none for a visitor, 'guest' for someone without an account, the role's name otherwise", run() { const B = RL.badgeOf;
+      return { v: B?.({ role: "visitor" }), g: B?.({ role: "builder", anon: true }), o: B?.({ role: "owner", name: "Owner" }), c: B?.({ role: "crew", name: "Crew" }) }; },
+    good: (o) => o.v === null && o.g?.text === "guest" && o.o?.text === "owner" && o.o.tone === "owner" && o.c?.text === "crew" && o.c.tone === "role" }
 ];
 
 // ---------------- run ----------------
@@ -387,7 +424,7 @@ for (const c of cases) {
   let o: any, good = false;
   try { o = c.run(session()); good = !!c.good(o); } catch (e: any) { o = { threw: `${e?.constructor?.name}: ${e?.message}`.slice(0, 300) }; }
   if (good) pass++; else fail++;
-  console.log(`${good ? "ok  " : "FAIL"} ${c.id.padEnd(4)} ${c.what}${good && !argv.includes("--verbose") ? "" : `\n       ${JSON.stringify(o).slice(0, 700)}`}`);
+  console.log(`${good ? "ok  " : "FAIL"} ${c.id.padEnd(4)} ${c.what}${good && !argv.includes("--verbose") ? "" : `\n       ${String(JSON.stringify(o)).slice(0, 700)}`}`);
 }
 console.log(`[roles-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

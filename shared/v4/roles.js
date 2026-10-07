@@ -231,3 +231,11 @@ const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.t
 export function grantableRoles(wc, me) {
   return rolesOf(wc).filter((r) => me.role === "owner" ? true : r.rank < me.rank && SWITCH_NAMES.every((k) => !r.can[k] || (me.switches ?? []).includes(k)));
 }
+/** The badge a person's row shows (research §UI): none for a visitor (the list doesn't shout), "guest" for someone
+ *  without an account (whatever role guests get), else the role's name. {text, tone: 'owner'|'mod'|'role'|'guest'}. */
+export function badgeOf(p) {
+  if (!p) return null;
+  if (p.anon) return { text: "guest", tone: "guest" };
+  if (!p.role || p.role === "visitor" || p.role === "none") return null;
+  return { text: (p.name ?? p.role).toLowerCase(), tone: p.role === "owner" ? "owner" : p.role === "moderator" ? "mod" : "role" };
+}
