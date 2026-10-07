@@ -65,7 +65,7 @@ export const isSignal = (s) => typeof s === 'string' && (SIGNALS.includes(s) || 
 const MAX_BLEND = 16, MAX_POSES = 16, LIM = 1e4;
 
 /** What an action means when the socket says nothing more: the pose it holds. The anchor defaults to the ROOT for
- *  every action — where every seat put a body before anchors existed (v1's legacy-root, the Commons' twelve seats),
+ *  every action — where every seat put a body before anchors existed (the Commons' twelve seats),
  *  so no existing seat moves; a socket names hips, feet or head to seat that body point instead. (For the house sit
  *  clips the root IS about the seat surface: the clip lifts the hips a pelvis above it.) */
 export const ACTION_DEFAULTS = {

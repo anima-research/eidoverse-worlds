@@ -70,7 +70,13 @@ claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own 
  * make holdGhost() silently do nothing on a slow join — a build click that
  * vanishes is worse than one that is refused out loud.
  */
+// No edit mode on a phone (R, 10-06 23:39: "Probably not a great surface for it"). A phone = a coarse pointer on a
+// screen whose short side is phone-sized; tablets, headset browsers and touch laptops keep edit mode. Viewing and
+// playing are untouched. VR edit mode comes later but must not be broken in principle (same date), so this never
+// reads XR state.
+export const editSurface = () => !(globalThis.matchMedia?.('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600);
 export const mayEdit = () => {
+  if (!editSurface()) return false;
   const r = net.myRights; const role = r?.role;
   // a v4 world says what you may do as switches (research roles S4): build, whatever the role is called (a moderator,
   // a custom role); a v1 world and an older server still say only the role
@@ -94,7 +100,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   // Edit is unpinned and gray." The rail says you cannot; the keyboard should
   // not disagree with the rail.
   if (on && !mayEdit()) {
-    if (!quiet) flashHint('builder mode needs build rights in this world');
+    if (!quiet) flashHint(editSurface() ? 'builder mode needs build rights in this world' : 'builder mode is for a desktop (or tablet); on a phone you can look around and play');
     return editMode;
   }
   if (editMode === on) return editMode;

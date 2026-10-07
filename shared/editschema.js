@@ -86,12 +86,10 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
 
 /** @param ent   the folded entity record (shared/fold.js), or null
  *  @param id    its id
- *  @param live  optional viewer extras: { casting?: boolean, mayAuthor?: boolean,
+ *  @param live  optional viewer extras: { casting?: boolean,
  *               parts?: string[] (the model's named mesh parts — a picture's `part`
  *               becomes a dropdown and '+ picture' is offered), now?: number }
- *               mayAuthor — may THIS viewer author the thing (its placer, the
- *               owner, an operator)? undefined = unknown: nothing is disabled
- *               on its account and the server decides, as it always does. */
+ *               Who may change it is the door's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
   const c = ent.comp ?? {};

@@ -38,7 +38,6 @@ import { playWhenAllowed } from './audiounlock.js';
 import { volumeFor } from './voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — by placer, never latest actor (#190)
 import { normalizeSound, SOUND_LOOK_MAX, SOUND_STORE } from '../../shared/sound.js';
 
 // id → { sound, el, srcNode, gain, panner }
@@ -173,15 +172,6 @@ export async function uploadSound(file) {
 registerEditor(({ id, obj, meta, bag, commit }) => {
   if (!obj || obj.userData?.isLight) return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
-  // guarded by someone I am not: the server would refuse the comp, so the
-  // block says so instead of offering a form. Authorship is the PLACER's —
-  // by subject when the door vouched for one, never `meta.actor`, which an
-  // owner's partial update moves while the placer stays (#190 round 2; the
-  // sound block had reintroduced the actor shortcut — Mica, #192 blocker 2).
-  const heldBy = guardedByOther(id) ? placerName(id) : null;
-  if (heldBy) {
-    return { html: `<div style="margin:4px 0;color:var(--dim)">🔊 sound — guarded by ${esc(heldBy)}; only they or the world's owner can change it${cur ? ` (${cur.playing === false ? 'paused' : 'playing'}: ${esc(cur.look ?? cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
-  }
   const vol = cur?.volume ?? 0.8, rad = cur?.radius ?? 12;
   return {
     html: `<div data-se-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">

@@ -84,7 +84,7 @@ async function onePerson(name, what) {
 
 register('role', (arg) => {
   // the DOOR's role (it's what admits writes): your own comes with your rights; anyone else's from the world's lookup,
-  // present or not (by name it used to read v1's role map, keyed by id in v4, so owners read as visitors)
+  // present or not (roles are keyed by identity, never by name)
   const who = (arg || '').trim();
   if (!who || who === CONFIG.name) {
     const r = net.myRights;
@@ -112,7 +112,7 @@ register('grant', (arg) => {
     return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] — roles: visitor, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
   }
   const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
-  // * = the world's default role for people who signed in (v1's roles['*']; guests stay visitors unless the world opts in)
+  // * = the world's default role for people who signed in (guests stay visitors unless the world opts in)
   if (id === '*') {
     if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
@@ -341,11 +341,6 @@ register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
   return logChat('*', `shoves and blasts ${pushable() ? 'CAN' : 'can NOT'} knock you over${v ? '' : ' — /pushable on|off to change'}`);
-});
-
-register('boom', () => {
-  // v1's /boom was a `force` verb; the v4 door has no blast (yet). Unlisted, and it says so rather than sending nothing.
-  return logChat('*', 'a blast (/boom) isn\'t in v4 worlds yet: physics pushes are being redesigned for v4');
 });
 
 register('fork', (arg) => {

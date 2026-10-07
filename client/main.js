@@ -46,11 +46,10 @@ import {
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
-import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
-// may I build here: the build switch where the server sends switches (v4), else the role (v1); unknown = no (strict)
+import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
+// may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
 const mayBuildStrict = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
 import { initPalette } from './lib/palette.js';
-import { setRightsSink } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
@@ -115,6 +114,7 @@ import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initXRKeyboard } from './lib/xrkeyboard.js';
+import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
 import { initLantern } from './lib/lantern.js';
@@ -174,6 +174,7 @@ initRolesPanels();
 initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
 initEmoteBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
+initXRAsk();        // the lock question and refusals, on a quad in VR (the centre card is DOM-only)
 initWorldQuad();
 initVRPanel();
 settingsFrame();               // exists (hidden) so the ∃ menu can open it
@@ -205,11 +206,12 @@ initDock([
     active: () => isEditing(),
     // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
     title: (on) => (on ? 'leave builder mode (B)' : null),
-    gate: () => mayBuildStrict(),
+    gate: () => editSurface() && mayBuildStrict(),   // no edit mode on a phone (build.js editSurface)
+    deadWhy: () => (editSurface() ? null : ' — builder mode is for a desktop or tablet'),
   },
 ]);
 // the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
-setMenuSources({ buildRights: () => mayBuildStrict(), loginUrl: () => loginUrl() });
+setMenuSources({ buildRights: () => editSurface() && mayBuildStrict(), loginUrl: () => loginUrl() });
 paintPresence(presence());            // the dot needs the button: after initDock
 bus.on('presence:me', paintPresence);
 initDebug({
@@ -432,15 +434,10 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
 // Wired here for the same reason initV4Phys and wireNet are: net.js must not
 // import the controller, so main.js is where the two meet. Live, not captured
-// -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
-// body that is already in the air the next time it acts.
+// -- a role change (your-rights) takes effect on the next resolve, and losing
+// fly grounds a body that is already in the air the next time it acts.
 setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
-// LIVE RIGHTS: state.js folds every entry and recomputes what I may do with
-// the SAME function the sequencer answers with, but net.js already imports
-// state.js, so state reaches net through this sink rather than an import.
-// Read with no argument, written with one.
-setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
 // physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });

@@ -14,7 +14,7 @@ import { sha256 } from "./hash.js";
 export const LANG = "js";
 export const API = 1;
 export const LIMITS = Object.freeze({
-  source: 65536,        // characters of source (v1's upload cap)
+  source: 65536,        // characters of source
   fuel: 60,             // QuickJS interrupt-handler calls per activation: deterministic for one QuickJS build (41 §3.7). Measured
                         // (2026-10-06, this host): 1e6 loop iterations of `x += i` = 201 calls ≈ 60 ms idle, about twice that
                         // under load, so 60 ≈ 18–40 ms of dense work. Fuel, not the wall clock, must be what stops runaway code
@@ -23,7 +23,7 @@ export const LIMITS = Object.freeze({
                         // writes nothing). The door kills the activation's sandbox process at wallMs + GRACE (sandbox.js): a
                         // native builtin can't outlast that. Generous on purpose: a loaded host can stall an innocent run
                         // (measured: 1 in ~4,300 trivial runs passed 300 ms at load average ~35)
-  memory: 24 << 20,     // bytes per activation's runtime (v1)
+  memory: 24 << 20,     // bytes per activation's runtime
   stack: 256 << 10,     // bytes of native stack
   calls: 64,            // host calls (reads) per activation (Decentraland's 40 in flight; 41 §3.10)
   ops: 32,              // writes in one activation's batch

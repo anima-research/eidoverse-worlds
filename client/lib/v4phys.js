@@ -1,8 +1,7 @@
 // v4phys — physics in a v4 world, on the client (design 20: notes/eidoverse/v4-research/20-physics-in-v4-design.md).
 //
-// Replaces physobj.js (v1 leases: a volunteer simulated a punt and streamed it, the lease table arbitrated) and
-// simworld.js (v1 dialect-3 intents folded in state.js). In a v4 world nothing here simulates for anyone else and
-// nothing is streamed: every act is a DOOR REQUEST, and every client draws the same truth.
+// Nothing here simulates for anyone else and nothing is streamed: every act is a DOOR REQUEST, and every client draws
+// the same truth.
 //
 //   carrying   grab / put / throw / drop / punt are door tools (shared/v4/door.js). Who holds what is the door's
 //              presence plane (`v4-holds`, never logged); every client draws a held thing in its holder's hand, so it

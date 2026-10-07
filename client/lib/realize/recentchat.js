@@ -2,7 +2,7 @@
 //
 // The join snapshot carries `state.st.recentChat` - what was said before you arrived -
 // and someone has to put it on screen. In the full client that is social.js, alongside
-// applying grants and behaviors. But social.js imports world.js for those, and world.js
+// applying roles. But social.js imports world.js for those, and world.js
 // is the engine (core, materials, colliders, terrain), so a renderer-free client could
 // not reach the one loop it actually needed and arrived into a room with no history
 // (#188 round two). This is that loop, and social.js now calls it too - one

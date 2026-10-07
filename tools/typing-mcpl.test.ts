@@ -7,9 +7,20 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 
 const WPORT = 8955, MPORT = 8956;
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-typing-"));
+foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
+// 🔴 post-hardening (anima merge): the token registry REJECTS any key that
+// appears in the tracked example — and "dev-token" is in the example, so it
+// can never authorize on any machine. Upstream's copy of this suite still
+// uses it and is structurally red (flagged for them). A scratch registry
+// with a test-only token is the honest fixture.
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({
+  "typing-test-token": { id: "claude", name: "Claude", world: "commons" },
+}));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -21,18 +32,9 @@ const check = (name: string, ok: boolean, extra = "") => {
 // whose pid dies immediately, orphaning both of these on their ports where
 // they poison the next run.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
   stdout: "ignore", stderr: "ignore",
 });
-// 🔴 post-hardening (anima merge): the token registry REJECTS any key that
-// appears in the tracked example — and "dev-token" is in the example, so it
-// can never authorize on any machine. Upstream's copy of this suite still
-// uses it and is structurally red (flagged for them). A scratch registry
-// with a test-only token is the honest fixture.
-const tokensPath = join(worldsDir, "tokens.json");
-await Bun.write(tokensPath, JSON.stringify({
-  "typing-test-token": { id: "claude", name: "Claude", world: "commons" },
-}));
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
          MCPL_TOKENS: tokensPath },
@@ -49,7 +51,7 @@ try {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
     watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm" }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm", v4fold: true }));
   });
 
   // A raw MCP host connecting to the MCPL door as the "claude" agent (dev-token).

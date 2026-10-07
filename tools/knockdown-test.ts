@@ -4,11 +4,9 @@
 // it, (3) slump visibly (clip ragdoll + DOWNED_POSE), (4) perceive the event,
 // and (5) stand up clean when it decides to move.
 //
-//   WORLDS_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8996 bun run server/server.ts &
-//   WORLD_URL=ws://localhost:8996/ws WORLD_TOKEN=test-door JOIN_TOKEN=test-door \
-//     bun run tools/knockdown-test.ts
-// (WORLD_TOKEN is what WorldAgent presents at the door; JOIN_TOKEN is what the
-//  test's bare "human" socket presents. Same value, two doors.)
+//   bun tools/knockdown-test.ts        (boots its own scratch sequencer, the world founded)
+// or against a door you run, whose world W already exists:
+//   WORLD_URL=ws://localhost:8996/ws WORLD_TOKEN=test-door JOIN_TOKEN=test-door bun run tools/knockdown-test.ts
 
 // Bun 1.3.x caches transpiled module graphs globally by content, so a stale
 // plugin-resolved path can bypass onResolve entirely and leave the headless
@@ -32,9 +30,12 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 
 const { WorldAgent } = await import("../mcpl/agent.ts");
 
-const URL = process.env.WORLD_URL ?? "ws://localhost:8996/ws";
-const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
 const W = `kd-${Math.random().toString(36).slice(2, 8)}`;
+// its own scratch sequencer (a free port, scratch WORLDS_DIR) with the world founded: joining never founds one
+const { scratchSequencer } = await import("./harness.ts");
+const H = process.env.WORLD_URL ? null : await scratchSequencer("knockdown", { worlds: [W], serverEnv: { SKIP_OPT_SWEEP: "1" } });
+const URL = process.env.WORLD_URL ?? `ws://127.0.0.1:${H!.PORT}/ws`;
+const TOKEN = process.env.JOIN_TOKEN ?? "";
 
 let passed = 0, failed = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -44,15 +45,14 @@ const check = (name: string, ok: boolean, detail = "") => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // a "human" — a bare socket that joins, watches, and throws its weight around
-function human(name: string): Promise<{ ws: WebSocket; verb: (v: string, a: any) => void; send: (m: any) => void; close: () => void }> {
+function human(name: string): Promise<{ ws: WebSocket; send: (m: any) => void; close: () => void }> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, v4fold: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "snapshot") res({
         ws,
-        verb: (v, a) => ws.send(JSON.stringify({ type: "verb", verb: v, args: a })),
         send: (m2) => ws.send(JSON.stringify(m2)),
         close: () => ws.close(),
       });
@@ -70,17 +70,19 @@ await sleep(400);
 const h = await human("shover");
 await sleep(400);
 
-// 1. radial blast: the REAL tumble — sim pose, displaced away, perceived
+// 1. a shove along +x: the REAL tumble — sim pose, displaced along the lean, lying
+// (v1's radial blast, the `force` verb, went with protocol v1: a push is a puppet ragdoll lean, or the door's body
+//  shove under the target's consent)
 const before = { x: ag.pos.x, z: ag.pos.z };
-h.verb("force", { at: [ag.pos.x - 2, 0, ag.pos.z], power: 4, radius: 6 });
+h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
 await sleep(2500);
-check("a blast knocks the agent down", ag.clip === "ragdoll" && ag.heldPose != null, `clip=${ag.clip}`);
+check("a shove knocks the agent down", ag.clip === "ragdoll" && ag.heldPose != null, `clip=${ag.clip}`);
 check("...with a SIMULATED pose, not the canned slump",
   ag.heldPose != null && Object.keys(ag.heldPose).length >= 10 && ag.heldPose !== (ag as any).DOWNED_POSE,
   `bones=${ag.heldPose ? Object.keys(ag.heldPose).length : 0}`);
-check("...displaced AWAY from the blast", ag.pos.x > before.x + 0.2, `Δx=${(ag.pos.x - before.x).toFixed(2)}`);
+check("...displaced along the lean", ag.pos.x > before.x + 0.2, `Δx=${(ag.pos.x - before.x).toFixed(2)}`);
 check("...lying, not standing (root followed the hips down)", ag.pos.y < -0.2, `y=${ag.pos.y.toFixed(2)}`);
-check("...and the agent PERCEIVED it", events.some((t) => t.includes("blast")), events.join(" | "));
+check("...and the agent PERCEIVED it", events.some((t) => t.includes("knocks you over")), events.join(" | "));
 
 // 2. walking stands it up clean — no zombie-walk slump
 await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000);
@@ -98,27 +100,23 @@ check("...and named the shover", events.some((t) => t.includes("shover") && t.in
 ag.pushable = false;
 ag.setPose(null);
 const b3 = { x: ag.pos.x, z: ag.pos.z };
-h.verb("force", { at: [ag.pos.x, 0, ag.pos.z], power: 6, radius: 6 });
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
 await sleep(600);
 check("pushable=false: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 
-// 5. replay never re-detonates: a fresh agent folding the log stays standing
+// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A v4 push is
+//     presence, never in the log, so there is nothing to replay.)
 ag.close?.();
 await sleep(200);
-const ag2 = new WorldAgent({ url: URL, name: "kd-bot2", world: W });
-await ag2.connect();
-await sleep(600);
-check("a late joiner folding the force history stays on its feet", ag2.clip !== "ragdoll", `clip=${ag2.clip}`);
 
 // 6. drag release with a nail: the agent's OWN sim hangs the body for real —
 // not a held pose pretending, a live Verlet with the pin enforced
 const ag3 = new WorldAgent({ url: URL, name: "kd-bot3", world: W });
 await ag3.connect();
 await sleep(400);
-h.verb("force", { at: [ag3.pos.x - 1, 0, ag3.pos.z], power: 4, radius: 6 });
+h.send({ type: "puppet", target: "kd-bot3", ragdoll: { lean: [2, 0, 0] } });
 await sleep(2000);
 h.send({ type: "bodydrag", target: "kd-bot3", grab: { joint: "head" } });
 await sleep(300);
@@ -145,7 +143,7 @@ ag3.close?.();
 const ag4 = new WorldAgent({ url: URL, name: "kd-bot4", world: W });
 await ag4.connect();
 await sleep(400);
-h.verb("force", { at: [ag4.pos.x - 1, 0, ag4.pos.z], power: 4, radius: 6 });
+h.send({ type: "puppet", target: "kd-bot4", ragdoll: { lean: [2, 0, 0] } });
 await sleep(1800);
 h.send({ type: "bodydrag", target: "kd-bot4", grab: { joint: "head" } });
 await sleep(200);
@@ -169,6 +167,6 @@ check("...and an empty release pose does not wipe the last real pose",
 ag4.close?.();
 
 h.close();
-ag2.close?.();
 console.log(`\n${passed} passed, ${failed} failed`);
+await H?.cleanup(failed ? 1 : 0);
 process.exit(failed ? 1 : 0);

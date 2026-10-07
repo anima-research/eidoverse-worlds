@@ -65,14 +65,19 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 a door that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
-{ const { translateV1World } = await import("../../server/v4/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const a = translateV1World(path.join(W, "old"), path.join(W, "a")), b = translateV1World(path.join(W, "old"), path.join(W, "b"));
   const ga = JSON.parse(fs.readFileSync(path.join(W, "a", "v4.jsonl"), "utf8").split("\n")[0]).body;
   ok(a.worldId !== b.worldId, "K4 two translations of one v1 log are two worlds (random nonce: their signed heads can't replay into each other)", [a.worldId, b.worldId]);
-  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga); }
+  ok(ga.owners[1]?.[0] && ga.owners[1][0] !== ga.sequencer, "K5 a translated genesis: the operator's governance key, never the sequencer's", ga);
+  // the old world remembered where each person stood by display NAME; the copy remembers it by identity
+  fs.writeFileSync(path.join(W, "old", "poses.json"), JSON.stringify({ Ann: { p: [4, 0, 5], yaw: 1 }, Nobody: { p: [0, 0, 0] } }));
+  const c = translateV1World(path.join(W, "old"), path.join(W, "c"));
+  const pc = JSON.parse(fs.readFileSync(path.join(W, "c", "poses.json"), "utf8")); const ann = Object.keys(pc)[0];
+  ok(c.poses === 1 && /^u-[a-z2-7]{20}$/.test(ann) && pc[ann].p[0] === 4 && !("Ann" in pc) && !("Nobody" in pc), "K6 a translated world's remembered places are keyed by identity (Ann's id), and a name the log never knew is dropped", pc); }
 
 // ---- B: budgets and attempts (round-2 R6, R7) ----
 { let T = 1800000000000; const d = directoryAt(file); const kindOf = (id: string) => d.entry(id)?.kind ?? null;
@@ -207,7 +212,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(q(own, "undo", { actor: mal, since: s2, confirm: true }).ok && !Object.keys(w.state().entities).some((k) => k.startsWith("spam-")), "RB7 with confirm it rolls back all 22"); }
 
 // ---- X: a translated thing whose reaction runs a v1 script (round-2 R14: this path threw a ReferenceError) ----
-{ const { translateV1World } = await import("../../server/v4/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xs"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "bell", lib: "a.glb", pos: [1, 0, 1] } },
@@ -219,7 +224,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- XB: a v1 ban survives translation as a ban the door enforces (component review, world-settings #3: it became a
 // state key the door never reads, so a translated world quietly unbanned everyone) ----
-{ const { translateV1World } = await import("../../server/v4/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");

@@ -112,8 +112,8 @@ console.log("\n━━ agent: own say is not an event ━━");
   const agent = new WorldAgent({ name: "claude" });
   const heard: string[] = [];
   agent.onEvent = (ev) => { if (ev.kind === "say") heard.push(`${ev.who}:${ev.text}`); };
-  await (agent as any).applyEntry({ verb: "say", args: { text: "me talking" }, actor: "claude", ts: Date.now(), seq: 1 }, true);
-  await (agent as any).applyEntry({ verb: "say", args: { text: "hey claude" }, actor: "digi", ts: Date.now(), seq: 2 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "me talking" }, actor: "claude", ts: Date.now(), seq: 1 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "hey claude" }, actor: "digi", ts: Date.now(), seq: 2 }, true);
   check("own say suppressed, other's say delivered", heard.length === 1 && heard[0].startsWith("digi:"), heard.join(" | "));
   check("own say still lands in the inbox (honest scrollback)",
     agent.inbox.some((m) => m.kind === "say" && m.who === "claude"), JSON.stringify(agent.inbox));
@@ -178,10 +178,10 @@ console.log("\n━━ agent: activity pulse — regular wakes only while life is
   agent.onEvent = (ev) => { if (ev.kind === "activity") pulses.push(ev.text!); };
   // digi 10m away: walking and talking — inside the 30m radius
   (agent as any).notePose("digi", { p: [10, 0, 0], yaw: 0, speed: 1.5, clip: "walk" });
-  await (agent as any).applyEntry({ verb: "say", args: { text: "движуха" }, actor: "digi", ts: Date.now(), seq: 10 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "движуха" }, actor: "digi", ts: Date.now(), seq: 10 }, true);
   // ghost 100m away: also walking and talking — must not count
   (agent as any).notePose("ghost", { p: [100, 0, 0], yaw: 0, speed: 1.5, clip: "walk" });
-  await (agent as any).applyEntry({ verb: "say", args: { text: "far away" }, actor: "ghost", ts: Date.now(), seq: 11 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "far away" }, actor: "ghost", ts: Date.now(), seq: 11 }, true);
   await sleep(200);
   check("one pulse while activity is near", pulses.length === 1, JSON.stringify(pulses));
   check("digest names digi, ignores the far ghost",
@@ -189,7 +189,7 @@ console.log("\n━━ agent: activity pulse — regular wakes only while life is
   await sleep(250);
   check("quiet nearby → the stream stops by itself", pulses.length === 1, String(pulses.length));
   // a build near the body revives it
-  await (agent as any).applyEntry({ verb: "spawn", args: { id: "t1", lib: "x.glb", pos: [3, 0, 3] }, actor: "digi", ts: Date.now() }, true);
+  (agent as any).noteBuild("digi", [3, 0, 3]);   // what a thing born near the body runs (agent.ts onThingChange 'born')
   await sleep(200);
   check("a nearby build revives the pulse", pulses.length === 2 && pulses[1].includes("1 thing changed"), JSON.stringify(pulses.slice(1)));
   agent.close();
@@ -220,7 +220,7 @@ console.log("\n━━ agent: recurrence is not novelty — ambient scenery dedup
     pulses[1]);
   // a discrete event always speaks, even with identical scenery
   np(11.5);
-  await (agent as any).applyEntry({ verb: "say", args: { text: "о!" }, actor: "digi", ts: Date.now(), seq: 30 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "о!" }, actor: "digi", ts: Date.now(), seq: 30 }, true);
   await sleep(200);
   check("speech cuts through the dedupe",
     pulses.length === afterPacing + 1 && pulses[pulses.length - 1].includes("1 message"),
@@ -250,7 +250,7 @@ console.log("\n━━ agent: activity dial — the sense is the agent's own to t
   check("radius setter returns the applied value", cur.radiusM === 5, JSON.stringify(cur));
   // digi walks and talks at 10m — outside the shrunk 5m sense
   (agent as any).notePose("digi", { p: [10, 0, 0], yaw: 0, speed: 1.5, clip: "walk" });
-  await (agent as any).applyEntry({ verb: "say", args: { text: "outside" }, actor: "digi", ts: Date.now(), seq: 20 }, true);
+  (agent as any).hearSay({ verb: "say", args: { text: "outside" }, actor: "digi", ts: Date.now(), seq: 20 }, true);
   await sleep(200);
   check("activity beyond the tuned radius → no pulse", pulses.length === 0, JSON.stringify(pulses));
   cur = agent.setActivity({ pulseSec: 0, radiusM: 50 });

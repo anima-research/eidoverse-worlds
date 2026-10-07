@@ -44,17 +44,12 @@ import { isFiniteVec3 } from "./shape.ts";
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
-// The snapshot re-synthesizer, shared with the browser — this agent's
-// deliberate omissions ride as flags (see stateToEntries below).
-import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
-// a v4 world (slice 3c): this process folds the door's own stream and reads the VIEW of that fold, like the browser
+// the world: this process folds the door's own stream and reads the VIEW of that fold, like the browser
 import { makeV4Client } from "../shared/v4/client.js";
 import { diffView } from "../shared/v4/viewdiff.js";
-import { emptyView } from "../shared/v4/record.js";
+import { emptyView, idOut } from "../shared/v4/record.js";
 import { hear } from "../shared/chatwindow.js";
 import * as OP from "../shared/v4/ops.js";
-import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
-import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -84,10 +79,6 @@ type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: stri
   comp?: Record<string, any> };
 type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; observedAt?: number | null; bodyGeneration?: number };
 
-/** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
- *  state; say/use/force shape nothing). */
-const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount", "caption"]);   // caption folds into the screen's comp bag (shared/captions.js)
-
 /** Presence is a live, lossy plane: a just-joining browser can briefly send a
  * pose shell whose coordinates are null/non-finite before its controller has
  * a real transform. Treat that as "position unknown", never as a reason for
@@ -112,21 +103,6 @@ function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
   ];
 }
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
-
-/** The snapshot re-synthesizer lives in shared/fold.js now — one
- *  implementation, every species, with this agent's deliberate omissions
- *  encoded as EXPLICIT flags rather than a hand-mirrored copy that "must
- *  stay in step" (the drift that crashed look() for every agent in the
- *  world is the incident that comment carried): roles/grants and behaviors
- *  have no local reader here, spawn `collide` is browser-only collider
- *  state, and body mounts read as "who sits where", attributed to the
- *  sitter. */
-function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
-  return sharedStateToEntries(state, {
-    skipChatFromSeq, roles: false, behaviors: false, collide: false,
-    bodyMountRel: "seat", bodyMountActor: "rider",
-  });
-}
 
 /** How much of a `/geom` top-surface band is actually SURFACE.
  *
@@ -228,21 +204,13 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
-  /** THE fold (§24k R0, survey A6): one implementation of what an entry
-   *  means — shared/fold.js — replacing this file's hand-mirrored copy,
-   *  which had already drifted on four verbs (place strictness, light's
-   *  partial merge, remove's cargo cascade, spawn's collide). The maps
-   *  below are DERIVED VIEWS reconciled from this state after every
-   *  entity-shaping entry; side effects (percepts, supports, pings) run in
-   *  a separate pass that never touches state. */
-  private st = emptyState();
-  /** The sim fold beside it (§24k R0, survey A7): the agent was blind to
-   *  dialect-3 flights — look() reported a punted crate at its last placed
-   *  spot while every renderer showed it flying. Adopted from the join
-   *  snapshot's cut, folded per entry in the normative order, advanced on
-   *  the tick; live body positions are stamped into the entity view. */
-  private sim: ReturnType<typeof emptySim> = emptySim();
+  /** The VIEW of this body's own fold of the world (shared/v4/record.js viewState over shared/v4/client.js), plus the
+   *  chat window. The maps below are DERIVED VIEWS reconciled from it after every change; side effects (percepts,
+   *  supports, pings) run in a separate pass that never touches it. */
+  private st: any = emptyView();
+  /** Things the world's physics has brought to rest, so a rest re-registers their support once (see tick). */
   private simRested = new Set<string>();
+  private simFlying = new Set<string>();
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
@@ -452,14 +420,14 @@ export class WorldAgent {
    *  and it is directly comparable with what the world hands out. */
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
-  /** This world's protocol, from the snapshot: set only in a v4 world (protocol/v4 slice 2). Building tools route
-   *  through door()/verbV4() there and WAIT for the door's reply, so a refusal reaches the agent (PARITY (d)1). */
+  /** The world's protocol facts, from the snapshot (version 4, its head and world id). Building tools route through
+   *  door()/verbV4() and WAIT for the door's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
   v4: { version: number; head: number; worldId: string } | null = null;
-  /** A v4 world's own fold, from the join cut and the door's `v4-log` stream (shared/v4/client.js). null in a v1 world. */
+  /** The world's own fold, from the join cut and the door's `v4-log` stream (shared/v4/client.js). */
   private v4c: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
   private spelling: Promise<unknown> = Promise.resolve();
-  /** v4fold: this body folds a v4 world's stream itself, so the server sends it no v1 projection (slice 3c). */
+  /** v4fold: this body folds the world's v4 stream itself (the server refuses a client that doesn't). */
   private joinMsg() {
     return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, v4fold: true,
       token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
@@ -478,6 +446,9 @@ export class WorldAgent {
     this.agentToken = opts.agentToken ?? process.env.AGENT_TOKEN ?? "";
   }
 
+  /** The key this body joined with, as the Bearer header the world's state reads take (/snap, /worlds, /geom?world:
+   *  behind the same door as a join). */
+  get readHeaders(): Record<string, string> { const k = this.agentToken || process.env.WORLD_TOKEN || ""; return k ? { authorization: `Bearer ${k}` } : {}; }
   get httpBase(): string {
     // Proper URL surgery, not string surgery: a WORLD_URL carrying a query
     // string (…/ws?token=…) used to defeat the old `/\/ws$/` replace and
@@ -684,7 +655,7 @@ export class WorldAgent {
             break;
           case "moderated":
             // someone was removed or banned here, or a ban lifted: what bystanders are told (names only; the reason went
-            // to the person). v1 agents heard it as a log entry
+            // to the person)
             this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
             break;
           // ── media signalling (see onMedia) ─────────────────────────────
@@ -740,14 +711,9 @@ export class WorldAgent {
             this.bodyReader?.forget();
             this.selfBodyGeneration = ++this.bodyGenerationCounter;
             this.selfObservedAt = Date.now();
-            // fresh folds for a fresh world (§24k): the instant fold restarts
-            // empty; the sim fold ADOPTS the sequencer's cut — a joiner
-            // cannot recompute flights whose intents were folded out of the
-            // tail, and adoption is exact (advancement is schedule-
-            // independent, PROTOCOL_v2).
-            this.st = emptyState();
-            this.sim = (msg as any).sim?.epoch ? structuredClone((msg as any).sim) : emptySim();
-            this.simRested.clear();
+            // a fresh view for a fresh world: the cut below is adopted whole
+            this.st = emptyView();
+            this.simRested.clear(); this.simFlying.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
             if (msg.restore && !this.restoredPose && !this.target && this.pos.x === 0 && this.pos.z === 0) {
@@ -764,25 +730,15 @@ export class WorldAgent {
             }
             this.restoredPose = true;
             for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.v4ids.set(p.id, p.v4id); }
-            // A join is now the folded world plus a tail, not the whole log.
-            // An agent that only read `entries` would arrive in an empty room.
-            const oldestTail = msg.entries.length
-              ? Math.min(...msg.entries.map((e: any) => e.seq ?? Infinity)) : Infinity;
-            if ((msg as any).v4?.state) {
-              // a v4 world: adopt the door's cut and read the view of this body's own fold of it. The snapshot's v1
-              // `state` is read for its chat window only (chat isn't world state)
-              this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
-              (this.st as any).recentChat = structuredClone(msg.state?.recentChat ?? []);
-              (this.st as any).chatTotal = msg.state?.chatTotal ?? 0;
-              for (const e of stateToEntries(msg.state, oldestTail)) if (e.verb === "say") this.hearSay(e, false);
-              await this.applyView(false, null, null);
-            } else {
-              this.v4c = null;
-              for (const e of stateToEntries(msg.state, oldestTail)) await this.applyEntry(e, false);
-              for (const e of msg.entries) await this.applyEntry(e, false);
-            }
+            // adopt the door's cut and read the view of this body's own fold of it; the snapshot's `state` is the
+            // chat window (chat isn't world state): its lines land in the inbox once, as history
+            if (!(msg as any).v4?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
+            this.v4c = makeV4Client(); this.v4c.adopt((msg as any).v4);
+            this.st.recentChat = structuredClone(msg.state?.recentChat ?? []);
+            this.st.chatTotal = msg.state?.chatTotal ?? 0;
+            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
+            await this.applyView(false, null, null);
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
-            for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
             this.joined = true;
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
@@ -896,23 +852,12 @@ export class WorldAgent {
               const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
               this.lastSeq = Math.max(this.lastSeq, e.seq);
               this.noteOwnSay(e);
-              hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the window, no v1 fold
+              hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the chat window
               this.hearSay(e, true);
             }
             if (r.changed) await this.applyView(true, r.actor ?? null, r.ts ?? null);
             break;
           }
-          case "log":
-            this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
-            // Remember our OWN says briefly, so a sidecar that airs one can be
-            // attested for it: the receipt is sha256 of the text the world
-            // logged, and only the world's copy is authoritative (ours could
-            // differ by a trailing space and the digest would not match).
-            // Small ring — a receipt is valid for 5 minutes server-side, so
-            // holding more than a handful of utterances is pointless.
-            this.noteOwnSay(msg.entry);
-            await this.applyEntry(msg.entry, true);
-            break;
           case "v4-result": {
             const p = this.pendingV4.get(String(msg.id));
             if (p) { this.pendingV4.delete(String(msg.id)); p(msg); }
@@ -1374,7 +1319,7 @@ export class WorldAgent {
       try { this.onThingChange(c, was.get(c.id), live, actor ?? "world", ts ?? this.serverNow()); }
       catch (e) { console.error(`[agent] ${c.what} ${c.id}:`, e); }
     }
-    // the world's own keys: the ground this body walks on, the sky, the grass (as a v1 world's verbs do below)
+    // the world's own keys: the ground this body walks on, the sky, the grass
     const W = this.st as any;
     try {
       if (d.world.includes("terrain") && W.terrain) await this.buildTerrain(W.terrain);
@@ -1417,7 +1362,7 @@ export class WorldAgent {
     }
   }
 
-  /** A chat line heard (a v1 say entry, or a v4 one in that shape): the inbox once, and a live line from someone else
+  /** A chat line heard ({seq, ts, actor, args: {text}}): the inbox once, and a live line from someone else
    *  is an event (and a mention ping when it names this body). The window itself is the caller's (the fold, or hear). */
   private hearSay(entry: any, live: boolean) {
     const { args, actor, ts } = entry;
@@ -1448,173 +1393,6 @@ export class WorldAgent {
       const mention = rx ? rx.test(String(args.text)) : false;
       if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
       this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
-    }
-  }
-
-  private async applyEntry(entry: any, live: boolean) {
-    const { verb, args, actor, ts } = entry;
-    // pre-fold captures the side effects need (state the fold will consume)
-    const preRemovePos = verb === "remove" ? this.entities.get(args?.id)?.pos : undefined;
-    const preComp = verb === "comp" && typeof args?.type === "string"
-      ? (this.entities.get(args?.id)?.comp?.[args.type] ?? null) : null;
-    const hadEntity = args?.id != null ? this.entities.has(args.id) : false;
-
-    // §24k R0: THE fold, then the sim fold, in the normative order — one
-    // implementation of what an entry means, for every species of client.
-    foldEntry(this.st, entry);
-    simEntry(this.sim, entry, this.st);
-    if (ENTITY_VERBS.has(verb)) this.reconcileFromFold();
-
-    // ---- side effects only below: percepts, supports, pings — no state ----
-    if (verb === "spawn") {
-      if (live) this.noteBuild(actor, args.pos);
-      this.trackSupport(this.syncSupport(args.id));   // a placed thing is a thing bodies can rest on (#17)
-    } else if (verb === "light") {
-      if (live) this.noteBuild(actor, args.pos);
-    } else if (verb === "place") {
-      // the malformed-pos NOTE survives the fold move (#88's forensics);
-      // the fold itself now carries the guard (shared/fold.js, upstreamed)
-      if (hadEntity && !isFiniteVec3(args.pos)
-        && (args.pos != null || args.x != null || args.y != null || args.z != null)) this.noteMalformed(verb, args);
-      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : this.entities.get(args.id)?.pos);
-      this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
-    } else if (verb === "remove") {
-      if (live) this.noteBuild(actor, preRemovePos);
-      this.dropSupport(args.id);
-    } else if (verb === "comp") {
-      // affordances are components — the fold tracked them; percepts here
-      const e = this.entities.get(args.id);
-      if (e && typeof args.type === "string") {
-        const before = preComp;
-        // An emitter beginning, changing or ending is something you SEE happen
-        // in the world — the one component type with a live sensory event.
-        // Replay reconstructs the state above and stops there: a fire that was
-        // lit last week is in look(), not in your ears (#25).
-        if (args.type === "particles" && live) {
-          // proximity-gate on where the emitter's owner ACTUALLY is — a
-          // carried lantern is judged at the carrier, not at its pre-mount
-          // spot (#82). When the chain cannot compose, ABSTAIN: gating on
-          // the stale pos would deliver a live sensory event to people near
-          // an abandoned address and miss those beside the actual carrier
-          // (#92, B2). The gap is logged, bounded, not performed.
-          const fx = this.eff(String(args.id), this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
-          else this.noteEffGap(String(args.id), fx.why);
-        }
-        // a motion arriving or leaving changes whether this thing may hold a
-        // body up (see hasActiveMotion)
-        if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
-      }
-    } else if (verb === "motion") {
-      if (this.entities.has(args.id)) {
-        this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
-      }
-    } else if (verb === "mount") {
-      // (offset/yaw stay RAW in the fold's record: effective.ts refuses
-      // non-finite values with a named link rather than substituting.)
-      // Cargo rides its parent, so its own support goes stale the instant the
-      // parent moves — world.js drops the collider here for exactly that
-      // reason and lets the pair collide as the parent. Entities only: a
-      // mount whose id is not a thing is a BODY taking a seat, which owns no
-      // support and is a separate seam.
-      if (this.entities.has(args.id)) this.dropSupport(args.id);
-    } else if (verb === "dismount") {
-      if (this.entities.has(args.id)) {
-        // the fold stamped where the ride let go; stand the support back up
-        this.trackSupport(this.syncSupport(args.id));
-      }
-    } else if (verb === "punt") {
-      // dialect 3: the sim owns the flight (folded above) — a flying thing
-      // stops being a support the moment it launches; rest re-syncs it
-      if (this.sim.bodies?.[args?.id]) this.dropSupport(args.id);
-    } else if (verb === "force") {
-      // an instantaneous radial CAUSE (blast, gust) — live only, because a
-      // replay must never re-detonate. The falloff arithmetic is
-      // shared/force.js (§24l R1) — ONE truth with the browser bodies; the
-      // consent and the ground-zero direction (a headless body topples the
-      // way it faces) stay here.
-      if (live) {
-        const f = radialForce(args?.at, this.pos.x, this.pos.z, args?.radius, args?.power);
-        if (f && f.mag >= FORCE_MIN) {
-          const nx = f.nx ?? Math.sin(this.yaw);
-          const nz = f.nz ?? Math.cos(this.yaw);
-          this.knockDown(actor, [nx * f.mag, 0, nz * f.mag],
-            actor === this.name
-              ? "(your own blast knocks you off your feet)"
-              : `(${actor}'s blast knocks you off your feet)`);
-        }
-      }
-    } else if (verb === "say") {
-      this.hearSay(entry, live);
-    } else if (verb === "grant") {
-      // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
-      // `myRights` was written once from snapshot.yourRights and never again:
-      // a `-fly` mid-session was invisible until reconnect, and the
-      // action-time provider -- the whole point of resolving per action --
-      // read a grant that had been withdrawn. mica found it in production:
-      // seq 15183 granted mythos fly:false, no later fly:true, and seq 15206
-      // was a completed sortie.
-      //
-      // The pure capability test passed the whole time because it called
-      // resolveFlight directly with a changed rights object. It never crossed
-      // THIS path, which is where the rights object stopped changing.
-      //
-      // ABSENT IS NOT FALSE, the same rule the browser learned the hard way
-      // (client/lib/world.js, and the auto-owner grant that erased its own
-      // fly): an entry carries only the fields it changed, so merge those and
-      // leave the rest standing.
-      //
-      // BY NAME ONLY, matching what the server would compute.
-      //
-      // Not the wildcard: rightsOf prefers a name-keyed record over `*`, so
-      // with `mythos: {fly:true}` on file a `/grant * -fly` leaves mythos
-      // flying -- verified against rights.ts directly. Honouring the wildcard
-      // here would refuse where the authority permits, and a client-side gate
-      // stricter than the server still misreports the server. Whoever has no
-      // record of their own is covered by the wildcard through the snapshot's
-      // yourRights at join.
-      //
-      // Not by durable sub either: the server binds grants to a sub when it
-      // knows one (server/verbs.ts vGrant) but never tells an agent its own,
-      // so there is nothing here to compare against. The residual gap is a
-      // grant written against a sub while the body wears a different name;
-      // closing it wants `you.sub` in the snapshot, which is out of scope for
-      // this repair and stated rather than papered over.
-      const mine = args?.id != null && args.id === this.name;
-      if (mine) {
-        const next = { ...(this.myRights ?? {}) };
-        if (args.role != null) next.role = String(args.role);
-        if (args.gen != null) next.gen = Boolean(args.gen);
-        if (args.fly != null) next.fly = Boolean(args.fly);
-        this.myRights = next;
-        // A revocation must be legible, not merely effective. If this body is
-        // in the air when flight is withdrawn, the next action refuses and the
-        // pilot should know why rather than discovering it as a failure.
-        if (args.fly === false && this.flight) {
-          this.inbox.push({ ts, kind: "act", who: actor,
-            text: "your flight capability was withdrawn — the next flight action will refuse" });
-        }
-      }
-    } else if (verb === "ban" || verb === "unban" || verb === "kick") {
-      // Moderation acts, narrated like any embodied transition — and, when
-      // this body is the ACTOR, the confirmation its fire-and-forget verb
-      // never gets: the authoritative echo doubles as the tool's answer.
-      const what = verb === "ban" ? "banned" : verb === "unban" ? "lifted the ban on" : "removed";
-      const line = `${what} ${args?.id}${verb !== "unban" && args?.reason ? ` — ${args.reason}` : ""}`;
-      if (live) {
-        this.inbox.push({ ts, kind: "act", who: actor, text: line });
-        if (actor === this.name) this.lastMod = { ts: Date.now(), text: `you ${line}` };
-        else this.onEvent?.({ ts, kind: "act", who: actor, text: line });
-      }
-    } else if (verb === "terrain") {
-      await this.buildTerrain(args);
-      this.worldInfo.terrain = { seed: args.seed, size: args.size, amplitude: args.amplitude, flatRadius: args.flatRadius };
-    } else if (verb === "sky" || verb === "weather") {
-      // the fold above already ran foldSkyEntry with the same rebase and
-      // provenance rules — the view just adopts its answer (§24k: one fold)
-      this.skyState = this.st.sky as typeof this.skyState;
-    } else if (verb === "grass") {
-      this.worldInfo.grass = this.grassInfo(args);
     }
   }
 
@@ -1870,8 +1648,7 @@ export class WorldAgent {
     // and abstains BEFORE the drop, leaving whatever support already stands.
     // This is the layer that turned one malformed packet into everyone's
     // outage: undefined rode e.pos into fitSupportBox and killed the shared
-    // door (#88). applyEntry now keeps such state out; this holds if it
-    // arrives anyway.
+    // door (#88). This holds if such a transform arrives anyway.
     if (!isFiniteVec3(e.pos) || !Number.isFinite(s) || !Number.isFinite(e.yaw ?? 0)) {
       // If position is readable, the entity has moved and any box at its old
       // address is now a ghost floor. Retaining existing support is correct
@@ -1935,21 +1712,20 @@ export class WorldAgent {
   private tick() {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
-    // §24k R0 (survey A7): advance the sim fold and stamp live body
-    // positions into the entity view — text-tier perception now sees a
-    // punted crate WHERE IT IS (and, at rest, where it CAME TO REST —
-    // recomputed, bit-identical with every renderer). Support rebuilds
-    // when a body rests; the punt side effect dropped it at launch.
-    if (this.sim.epoch && !this.sim.epoch.foreign) {
-      advanceSim(this.sim, tickOf(this.sim, this.serverNow()));
-      for (const id in this.sim.bodies) {
-        const b = this.sim.bodies[id];
+    // The world's physics (@world.sim): stamp where each flying thing IS into the entity view — the same engine state
+    // every renderer draws (shared/v4/client.js simAt, advanced to the door's clock) — so look() sees a punted crate
+    // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
+    const sim = this.v4c?.simAt?.(this.serverNow());
+    if (sim?.bodies) {
+      for (const sid in sim.bodies) {
+        const b = sim.bodies[sid]; const id = idOut(sid);
         const e = this.entities.get(id);
-        if (e) e.pos = [b.p[0], b.p[1], b.p[2]];
+        if (e && Array.isArray(b.p)) e.pos = [b.p[0], b.p[1], b.p[2]];
         if (b.resting && !this.simRested.has(id)) {
           this.simRested.add(id);
-          this.trackSupport(this.syncSupport(id));
-        } else if (!b.resting) this.simRested.delete(id);
+          if (e) this.trackSupport(this.syncSupport(id));
+        } else if (!b.resting && !this.simFlying.has(id)) { this.simFlying.add(id); this.simRested.delete(id); this.dropSupport(id); }   // a flying thing holds nobody up
+        if (b.resting) this.simFlying.delete(id);
       }
     }
     // ambient sky perception rides the body tick at 1Hz — cheap (cursor keeps
@@ -2740,11 +2516,10 @@ export class WorldAgent {
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
-  /** One v4 request (v4 worlds only), answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
+  /** One request to the world's door, answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
    *  teach}}. */
   door(tool: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
-    if (!this.v4) return Promise.resolve({ ok: false, refused: { code: "not-v4", reason: `${this.world} is not a v4 world`, teach: "the door tool works in worlds founded or translated as v4" } });
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the door did not answer within 8 s" } }); }, 8000);
@@ -2766,15 +2541,15 @@ export class WorldAgent {
   }
 
   // ---- moderation ----
-  // Per-world kick/ban/unban are ordinary verbs (owner-rank, same gate as
-  // grant) sent via verb(). These two are the extra plumbing: non-verb
-  // moderation messages, and a way to hear the world's answer.
+  // Per-world kick/ban/unban are door requests (door()). These are the extra
+  // plumbing: the server's own moderation messages, and a way to hear the
+  // world's answer.
 
   /** The world's most recent mid-life refusal / moderation reply. */
   lastRefusal: { ts: number; text: string } | null = null;
   lastMod: { ts: number; text: string } | null = null;
 
-  /** Moderation messages that are not world verbs: 'world-bans' (list this
+  /** Moderation messages that aren't door requests: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
@@ -2847,8 +2622,7 @@ export class WorldAgent {
       args.utt = extra.utt;
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
-    // a v4 world takes door requests only: spelled at this edge like every building verb. The spoken trio rides it (the
-    // door validates it again and clamps t0, as v1's say did)
+    // a door request like every other write. The spoken trio rides it (the door validates it again and clamps t0)
     return this.door("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
@@ -3369,10 +3143,7 @@ export class WorldAgent {
       // above thins a light's fields away) through the one shared reading.
       const lit = lightOf((this.st.entities as Record<string, any>)[e.id]);
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.keep ? ", kept lit" : ""}${lit.day ? "" : ", burns at noon"}`);
-      // a declared collider (comp.collider). The spawn verb's legacy `collide`
-      // is deliberately NOT described: this agent's snapshot path drops it
-      // (stateToEntries collide:false), so describing it would make two agents
-      // in one world disagree by when they joined.
+      // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
       if (c.sockets) {
@@ -3404,20 +3175,9 @@ export class WorldAgent {
       // is — never by the audio. The radio's music player; captions (#187)
       // on the same entity say the words.
       if (c.sound) aff.push(describeSound(c.sound));
-      // locked = nailed down: the server refuses every move/replace/remove on
-      // it. Saying so here saves an agent a refused verb round-trip.
+      // locked = nailed down: the door refuses every move/replace/remove on
+      // it. Saying so here saves an agent a refused round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with through_lock: true)`);
-      // guarded = its placer's to author: the server refuses comps, motion,
-      // behaviors, moves and removal from anyone but them, the world's
-      // owner, or an operator. Using it (use, sitting on it) stays open.
-      if (c.guard) {
-        // the principal stamped at creation (rights.ts placerOf); the legacy
-        // legs cover entities that predate the stamp
-        const actor = String(e.actor ?? "");
-        const placer = (e as any).placer?.id
-          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
-        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
-      }
       if (c.hidden === true) aff.push(`hidden (not drawn; door {tool: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading

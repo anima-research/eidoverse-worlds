@@ -1,19 +1,17 @@
 // components-corpus-test — the component view is lossless on every world we have.
 //
-// For every world log in the corpus, fold it entry by entry; after each entry,
-// read every entity it touched as components (shared/components.js
-// componentsOf) and write it back (entityOf). The bytes must come back
-// identical (canonical JSON), and every key must land in a component parameter,
-// a declared stamp, or `extra` (which is counted and printed, never silently
-// dropped). One differing entity anywhere = red.
+// The primitives (sha256, canon), the step-2 spellings (synthetic entity records), and then the corpus: for every v4
+// world log, fold it (shared/v4/fold.js), take the view a client reads (shared/v4/record.js viewState), and read every
+// entity as components (shared/components.js componentsOf) and back (entityOf). The bytes must come back identical
+// (canonical JSON), and every key must land in a component parameter, a declared stamp, or `extra` (which is counted
+// and printed, never silently dropped). One differing entity anywhere = red.
 //
-// Corpus: spec/fixtures (always), plus any dirs in COMPONENTS_CORPUS
-// (colon-separated; each is searched for worlds/*/log.jsonl or */log.jsonl).
+// Corpus: spec/v4/fixtures (always), plus any dirs in COMPONENTS_CORPUS (colon-separated; each is searched for
+// <world>/v4.jsonl).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-corpus-test.ts
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { emptyState, foldEntry } from '../shared/fold.js';
 import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty, recordHash } from '../shared/components.js';
 import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
 import { blueprintRefusal, blueprintHash, expand, overridesOf, placeVerbs, placeRefusal, copyTree, modernize, localComponents, LINK_KEY } from '../shared/blueprint.js';
@@ -104,28 +102,14 @@ check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add o
   && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')
   && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 
-// the same spellings arriving through the REAL fold, as a world would write
-// them: round trip after every entry, exactly as the corpus is checked below
-{
-  const st: any = emptyState(); let n = 0; const badS: string[] = [];
-  const log = [
-    ['spawn', { id: 'pivot', pos: [0, 1, 0] }], ['spawn', { id: 'lamp', lib: L, collide: 'box' }],
-    ['comp', { id: 'lamp', type: 'light', data: { color: 0xffaa66, intensity: 24, range: 9, day: false } }],
-    ['comp', { id: 'lamp', type: 'collider', data: { shape: 'exact' } }], ['comp', { id: 'pivot', type: 'light', data: { keep: true } }],
-    ['mount', { id: 'pivot', to: 'lamp', offset: [0, 1.8, 0] }], ['place', { id: 'pivot', q: [0, 0.3826834, 0, 0.9238795] }],
-    ['light', { id: 'old', pos: [2, 1, 0], intensity: 40 }], ['comp', { id: 'old', type: 'label', data: 'porch' }],
-    ['comp', { id: 'lamp', type: 'light', data: null }], ['comp', { id: 'lamp', type: 'rotOrder', data: 'YXZ' }],
-    ['place', { id: 'lamp', q: [0.1, 0.2, 0.3, 0.9] }], ['comp', { id: 'lamp', type: 'rotOrder', data: null }], ['spawn', { id: 'pivot', scale: 3 }],
-  ] as const;
-  for (const [i, [verb, args]] of log.entries()) {
-    foldEntry(st, { seq: i, ts: 1000 + i, actor: 'owner', verb, args } as any);
-    const ent = st.entities[(args as any).id]; if (!ent) { badS.push(`${verb} ${(args as any).id}: folded to nothing`); continue; }
-    n++; if (canon(entityOf(componentsOf(ent))) !== canon(ent)) badS.push(`${verb} ${(args as any).id}: ${canon(ent)}`);
-  }
-  check(`a synthetic world of the new spellings, through the real fold: round trip exact after every entry (${n} entity states)`, badS.length === 0 && n === log.length, badS.join(' | '));
-}
-
-// ------------------------------------------------------------ the corpus
+// ------------------------------------------------------------ the corpus (v4)
+// Every v4 world log we have: fold it (shared/v4/fold.js), take the view a client reads (record.js viewState: the
+// entity records the editor's componentsOf reads), and every entity must read as components and write back exact.
+// (Protocol v1 removed, 2026-10-07: the v1 corpus went with it — every entry of every v1 log through the v1 fold, the
+//  @world sky/terrain/grass components after every v1 world verb, and each entity saved as a blueprint and PLACED
+//  through placeVerbs into the v1 fold. v4 blueprints are the door's: tools/blueprint-test.ts sections 6–7.)
+const { readLog, fold } = await import('../shared/v4/fold.js');
+const { viewState } = await import('../shared/v4/record.js');
 const logs: string[] = [];
 const walk = (d: string, depth = 0) => {
   if (depth > 4 || !existsSync(d)) return;
@@ -133,164 +117,28 @@ const walk = (d: string, depth = 0) => {
     const p = join(d, n);
     let st; try { st = statSync(p); } catch { continue; }
     if (st.isDirectory()) { if (n === 'node_modules' || n === '.git') continue; walk(p, depth + 1); }
-    else if (n === 'log.jsonl') logs.push(p);
+    else if (n.endsWith('.jsonl') && (n === 'v4.jsonl' || d.endsWith(join('spec', 'v4', 'fixtures')))) logs.push(p);
   }
 };
-walk(join(import.meta.dir, '..', 'spec', 'fixtures'));
+walk(join(import.meta.dir, '..', 'spec', 'v4', 'fixtures'));
 for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
 const seen = new Set<string>(); const unique: string[] = [];
 for (const p of logs) { const h = createHash('md5').update(readFileSync(p)).digest('hex'); if (!seen.has(h)) { seen.add(h); unique.push(p); } }
-
-console.log(`\nthe corpus: ${unique.length} distinct world logs (${logs.length} found)`);
-let entries = 0, checked = 0, entitiesSeen = 0;
-const bad: string[] = [];
-// the world entity (design §3, shared/worldentity.js): the fold's sky / terrain / grass
-// read as @world's components and written back, after every world verb, exact
-const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass']);
-let worldChecked = 0; const worldBad: string[] = []; const worldTypes = new Map<string, number>();
-const types = new Map<string, number>();
-const extras = new Map<string, number>();
-// blueprints (design §3, step 6a): every final entity saved as a one-part
-// blueprint — its components minus placement, parenting, captions and the
-// stamps — must be a record the door accepts (or be refused for size alone),
-// expand back to its exact bytes once the placement is put back, and read
-// as a copy with no overrides
-let bpSaved = 0; const bpRefused = new Map<string, number>(); const bpBad: string[] = [];
-// …and then PLACED (step 6b): each saved blueprint placed as a copy (placeVerbs → the fold) where
-// the entity stood, read back (copyTree) as exactly the record, with bytes that are the original's —
-// or, for a legacy spelling (kind:"light", spawn's collide), the component spelling of the same
-// light / collider (owner, 10-02: every new write uses the component form). Then every root that
-// carries children saved WHOLE (its subtree, each child's Transform local) and placed the same way.
-let placed = 0, legacyPlaced = 0, treesPlaced = 0, treeParts = 0; const placeBad: string[] = []; const treeBad: string[] = []; const placeRefused = new Map<string, number>();
-const STAMP_KEYS = ['placer', 'born', 'actor', 'ts', 'box'];
-const bytesOf = (e: any) => { const o: any = { ...e }; for (const k of [...STAMP_KEYS, 'pos', 'q', 'yaw', 'parent']) delete o[k]; if (o.comp) { o.comp = { ...o.comp }; delete o.comp[LINK_KEY]; delete o.comp.captions; if (!Object.keys(o.comp).length) delete o.comp; } return o; };
-const placeInto = (pst: any, rec: any, at: any) => {
-  const plan = placeVerbs(rec, at, { taken: (x: string) => !!pst.entities[x] });
-  if (plan.errors.length) return { plan, error: plan.errors[0] };
-  let s = 0; for (const v of plan.verbs) foldEntry(pst, { seq: s++, ts: 1, actor: 'corpus', verb: v.verb, args: v.args });
-  return { plan, error: null };
-};
+console.log(`\nthe corpus: ${unique.length} distinct v4 world logs (${logs.length} found; COMPONENTS_CORPUS adds dirs holding <world>/v4.jsonl)`);
+let checkedE = 0; const bad: string[] = []; const types = new Map<string, number>(); const extras = new Map<string, number>();
 for (const path of unique) {
-  const st: any = emptyState();
-  const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
-  const ids = new Set<string>();
-  for (const line of lines) {
-    let e; try { e = JSON.parse(line); } catch { continue; }
-    try { foldEntry(st, e); } catch { continue; }
-    entries++;
-    if (WORLD_VERBS.has(e?.verb)) {
-      const view = worldComponents(st);
-      worldChecked++;
-      for (const c of view.components) worldTypes.set(c.type, (worldTypes.get(c.type) ?? 0) + 1);
-      const sky = view.components.find((c: any) => c.type === 'Sky'), wx = view.components.find((c: any) => c.type === 'Weather');
-      // the partition by meaning, from an oracle of its own (not worldentity's list): the weather
-      // verb's keys, a forecast and its override are the Weather's, never the Sky's
-      const split = !(sky?.params && wx?.params && Object.keys(wx.params).some((k) => k in sky.params))
-        && !Object.keys(sky?.params ?? {}).some((k) => /^weather|^forecast$|^override$/.test(k));
-      if ((canon(worldOf(view)) !== canon(worldState(st)) || !split) && worldBad.length < 8) worldBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} @${e.seq ?? '?'} ${e.verb}\n     was ${canon(worldState(st)).slice(0, 300)}\n     got ${canon(worldOf(view)).slice(0, 300)}`);
-    }
-    const id = e?.args?.id ?? e?.id;
-    const touched = typeof id === 'string' ? [id] : [];
-    for (const tid of touched) {
-      const ent = st.entities?.[tid];
-      if (!ent) continue;
-      ids.add(tid);
-      const view = componentsOf(ent);
-      const back = entityOf(view);
-      checked++;
-      if (canon(back) !== canon(ent)) { if (bad.length < 12) bad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} @${e.seq ?? '?'} ${tid}\n     was ${canon(ent).slice(0, 300)}\n     got ${canon(back).slice(0, 300)}`); }
-    }
-  }
-  entitiesSeen += ids.size;
-  for (const [eid, ent] of Object.entries(st.entities ?? {}) as [string, any][]) {
-    const { components, stamps } = componentsOf(ent);
-    const placement: any = {};
-    const design = components.filter((c: any) => c.type !== 'Parent' && c.type !== 'Captions').map((c: any) => {
-      if (c.type !== 'Transform') return c;
-      const p = { ...c.params };
-      for (const k of ['pos', 'q', 'yaw']) if (p[k] !== undefined) { placement[k] = p[k]; delete p[k]; }
-      return { ...c, params: p };
-    });
-    const rec: any = { kind: 'eido.blueprint', v: 1, name: String(ent.comp?.label ?? eid).slice(0, 64) || 'thing', root: { components: design, children: [] } };
-    const why = blueprintRefusal(rec);
-    if (why) { const k = why.replace(/\d+/g, 'N').slice(0, 60); bpRefused.set(k, (bpRefused.get(k) ?? 0) + 1); continue; }
-    bpSaved++;
-    const x = expand(rec);
-    const back = { ...x.entity, ...placement, ...(ent.parent ? { parent: ent.parent } : {}), ...stamps };
-    if (ent.comp?.captions !== undefined) (back.comp ??= {}).captions = ent.comp.captions;
-    const asCopy = { components, children: [] };
-    const ov = overridesOf(asCopy, rec);
-    // placed: in a world of its own, at the entity's own placement
-    {
-      const pst: any = emptyState();
-      const { error } = placeInto(pst, rec, { id: 'copy', pos: placement.pos ?? [0, 0, 0], ...(placement.q ? { q: placement.q } : {}), ...(placement.yaw != null ? { yaw: placement.yaw } : {}) });
-      const tag = `${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${eid}`;
-      if (error) { const k = error.replace(/\d+/g, 'N').slice(0, 70); placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); }
-      else {
-        placed++;
-        const got = pst.entities.copy;
-        const t = copyTree(pst.entities, 'copy', rec);
-        const pov = t ? overridesOf(t.tree, rec) : [{ missing: true }];
-        const legacy = ent.kind === 'light' || ent.collide !== undefined;
-        if (legacy) legacyPlaced++;
-        // the bytes: the original's, or (legacy) the modern spelling's — and then the meaning matches the original's
-        const want = legacy ? bytesOf(expand({ ...rec, root: { ...rec.root, components: modernize(rec.root.components) } }).entity) : bytesOf(ent);
-        const same = canon(bytesOf(got)) === canon(want)
-          && (!legacy || (canon({ ...lightOf(got), spelling: 0 }) === canon({ ...lightOf(ent), spelling: 0 }) && colliderOf(got) === colliderOf(ent) && got.kind == null))
-          && J(got.pos) === J(placement.pos ?? [0, 0, 0]) && got.comp?.[LINK_KEY]?.hash === blueprintHash(rec);
-        if ((!same || pov.length) && placeBad.length < 8) placeBad.push(`${tag}\n     was ${canon(bytesOf(ent)).slice(0, 240)}\n     got ${canon(bytesOf(got)).slice(0, 240)}${pov.length ? `\n     overrides ${JSON.stringify(pov).slice(0, 200)}` : ''}`);
-      }
-    }
-    if ((canon(back) !== canon(ent) || ov.length || !/^[0-9a-f]{64}$/.test(blueprintHash(rec))) && bpBad.length < 8) {
-      bpBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${eid}\n     was ${canon(ent).slice(0, 300)}\n     got ${canon(back).slice(0, 300)}${ov.length ? `\n     overrides ${JSON.stringify(ov).slice(0, 200)}` : ''}`);
-    }
-  }
-  // whole trees: every root that carries children, saved with its subtree and placed
-  {
-    const world = st.entities ?? {};
-    const { roots, kids } = treeOf(world);
-    const strip = (comps: any[]) => comps.filter((c: any) => c.type !== 'Parent' && c.type !== 'Captions');
-    for (const rid of roots) {
-      if (!kids.get(rid)?.length) continue;
-      const placement: any = {};
-      const node = (id: string, isRoot: boolean): any => {
-        const comps = isRoot ? componentsOf(world[id]).components : localComponents(world, world[id]);
-        const design = strip(comps).map((c: any) => {
-          if (c.type !== 'Transform' || !isRoot) return c;
-          const p = { ...c.params }; for (const k of ['pos', 'q', 'yaw']) if (p[k] !== undefined) { placement[k] = p[k]; delete p[k]; }
-          return { ...c, params: p };
-        });
-        const n: any = { components: design, children: (kids.get(id) ?? []).map((k) => node(k, false)) };
-        if (!isRoot) n.id = id.replace(/\//g, '_');
-        return n;
-      };
-      const rec: any = { kind: 'eido.blueprint', v: 1, name: 'tree', root: node(rid, true) };
-      const why = blueprintRefusal(rec);
-      if (why) { const k = `tree: ${why.replace(/\d+/g, 'N').slice(0, 60)}`; placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); continue; }
-      const pst: any = emptyState();
-      const { plan, error } = placeInto(pst, rec, { id: 'copy', pos: placement.pos ?? [0, 0, 0], ...(placement.q ? { q: placement.q } : {}), ...(placement.yaw != null ? { yaw: placement.yaw } : {}) });
-      if (error) { const k = `tree: ${error.replace(/\d+/g, 'N').slice(0, 60)}`; placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); continue; }
-      treesPlaced++; treeParts += Object.keys(plan.parts).length;
-      const t = copyTree(pst.entities, 'copy', rec);
-      const pov = t ? overridesOf(t.tree, rec) : [{ missing: true }];
-      if ((pov.length || Object.keys(t?.parts ?? {}).length !== Object.keys(plan.parts).length) && treeBad.length < 8) treeBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} tree ${rid} (${Object.keys(plan.parts).length} parts)\n     overrides ${JSON.stringify(pov).slice(0, 300)}`);
-    }
-  }
-  for (const ent of Object.values(st.entities ?? {})) for (const c of componentsOf(ent).components) {
-    types.set(c.type, (types.get(c.type) ?? 0) + 1);
-    for (const k of Object.keys(c.extra?.unknown ?? {})) extras.set(`${c.type}.${k}`, (extras.get(`${c.type}.${k}`) ?? 0) + 1);
+  let view: any;
+  try { view = viewState(fold(readLog(readFileSync(path)))); } catch (e) { bad.push(`${path}: unreadable (${(e as Error).message})`); continue; }
+  for (const [id, ent] of Object.entries(view.entities ?? {}) as [string, any][]) {
+    const { born, ...rec } = ent;   // the fold's creation stamp rides beside the record, not in it
+    const comps = componentsOf(rec);
+    checkedE++;
+    if (canon(entityOf(comps)) !== canon(rec) && bad.length < 12) bad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${id}\n     was ${canon(rec).slice(0, 300)}\n     got ${canon(entityOf(comps)).slice(0, 300)}`);
+    for (const c of comps.components) { types.set(c.type, (types.get(c.type) ?? 0) + 1); for (const k of Object.keys(c.extra?.unknown ?? {})) extras.set(`${c.type}.${k}`, (extras.get(`${c.type}.${k}`) ?? 0) + 1); }
   }
 }
-check(`round trip exact after every entry (${checked} entity states, ${entries} entries, ${entitiesSeen} entities)`, bad.length === 0 && checked > 0, '\n   ' + bad.join('\n   '));
-check(`@world: the world's sky / terrain / grass as components and back, exact after every world verb (${worldChecked} world states; ${[...worldTypes].map(([t, n]) => `${t} ${n}`).join(' · ')})`,
-  worldBad.length === 0 && worldChecked > 0 && (worldTypes.get('Sky') ?? 0) > 0, '\n   ' + worldBad.join('\n   '));
-check(`blueprints: every final entity saved as a one-part blueprint expands back exact, with no overrides (${bpSaved} saved${bpRefused.size ? `; refused: ${[...bpRefused].map(([k, n]) => `${n}× ${k}`).join(' · ')}` : ''})`,
-  bpBad.length === 0 && bpSaved > 0 && [...bpRefused.keys()].every((k) => /bytes|larger than a component/.test(k)), '\n   ' + bpBad.join('\n   '));
-check(`blueprints placed: every saved blueprint placed as a copy reads back as its record, with the original's bytes (${placed} placed, ${legacyPlaced} of them legacy lights/colliders written as components${placeRefused.size ? `; refused: ${[...placeRefused].map(([k, n]) => `${n}× ${k}`).join(' · ')}` : ''})`,
-  placeBad.length === 0 && placed > 0 && placed === bpSaved - [...placeRefused].filter(([k]) => !k.startsWith('tree:')).reduce((a, [, n]) => a + n, 0) && [...placeRefused.keys()].every((k) => /bytes|larger than a component/.test(k)), '\n   ' + placeBad.join('\n   '));
-check(`blueprints placed whole: every root with children saved with its subtree, placed, read back as its record (${treesPlaced} trees, ${treeParts} parts)`,
-  treeBad.length === 0 && (treesPlaced > 0 || !process.env.COMPONENTS_CORPUS), '\n   ' + treeBad.join('\n   '));
-console.log('\ncomponents in the final worlds:', [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(' · '));
+check(`every entity of every v4 world, as the view a client reads, round-trips through its components exactly (${checkedE} entities)`, bad.length === 0 && checkedE > 0, '\n   ' + bad.join('\n   '));
+console.log('\ncomponents in the worlds:', [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(' · '));
 console.log('keys no record names (kept in extra, not lost):', extras.size ? [...extras].map(([k, n]) => `${k} ×${n}`).join(' · ') : 'none');
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

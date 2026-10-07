@@ -104,7 +104,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a sanction isn't the ghost's to end", "v4/door.js", "if (!a.on && inForceOf(w, actor, \"ghost\").length) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
   ["the chosen mode", "v4/door.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
   // S5, S6
-  ["translation: v1 fly → can.fly", "v4/translate-v1.js", "return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest;", "return v;", ["T1"]],
+  ["translation: v1 fly → can.fly", "../tools/v4/import-v1/translate-v1.js", "return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest;", "return v;", ["T1"]],
   ["legacy gen reads as generate", "v4/roles.js", "if (entry?.gen === true) can.generate = true;", "", ["T1"]],
   ["the menu: only below you", "v4/roles.js", "const below = them.rank < me.rank;", "const below = them.rank <= me.rank;", ["P3"]],
   ["the menu: acts follow switches", "v4/roles.js", "if (has(\"ban\")) out.push({ id: \"ban\", label: \"Ban…\" });", "out.push({ id: \"ban\", label: \"Ban…\" });", ["P1"]],
@@ -165,7 +165,7 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/v4/door.js");
 const F = await import(TREE + "shared/v4/fold.js");
 const RL = await import(TREE + "shared/v4/roles.js").catch(() => ({}));   // absent at the base commit (--control)
-const TV1 = await import(TREE + "shared/v4/translate-v1.js").catch(() => ({}));
+const TV1 = await import(TREE + "tools/v4/import-v1/translate-v1.js").catch(() => import(TREE + "shared/v4/translate-v1.js")).catch(() => ({}));   // moved to tools/v4/import-v1 on staging (v4-nov1)
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("roles");
 

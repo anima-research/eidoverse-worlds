@@ -46,19 +46,29 @@ export function decide(P, from, to, cls, now) {
   return { mode: t[tier][cls], tier, why: `${to}'s ${cls} for ${tier} is ${t[tier][cls]}` };
 }
 // L6: change a table. Only the person opens; anyone they named a friend may CLOSE (pause, deny), never open.
+// Names and classes arrive from the wire: every table is prototype-less, and a "who" must look like an identity
+// (security pass 2, H-0: deny '__proto__' wrote into Object.prototype for every world in the process).
+const BAD_KEY = new Set(["__proto__", "constructor", "prototype"]);
+const isWho = (w) => typeof w === "string" && /^[A-Za-z0-9_.:@+-]{1,64}$/.test(w) && !BAD_KEY.has(w);
+const bag = () => Object.create(null);
 export function setConsent(P, actor, a, now) {
+  if (a == null || typeof a !== "object") return { ok: false, code: "shape", reason: "consent takes an object" };
+  if (a.of !== undefined && !isWho(a.of)) return { ok: false, code: "shape", reason: "of: an identity" };
   const target = a.of ?? actor; const self = target === actor;
-  const t = ((P.consent ??= {})[target] ??= {});
+  const t = ((P.consent ??= bag())[target] ??= bag());
   const opening = a.preset !== undefined || (a.set && a.set.mode !== "nobody") || a.allow !== undefined || a.pause === false || a.friend !== undefined;
   if (!self && (opening || !(t.friends ?? []).includes(actor))) return { ok: false, code: "consent", reason: self ? "" : opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you someone they trust` };
-  if (a.preset !== undefined) { if (!PRESETS[a.preset]) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, teach: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = {}; }
+  if (a.preset !== undefined) { if (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset)) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, teach: Object.keys(PRESETS).join(", ") }; t.preset = a.preset; t.cells = bag(); }
   if (a.set) { const { class: c, tier = "strangers", mode } = a.set;
     if (!CLASSES.includes(c) || !MODES.includes(mode) || !["strangers", "friends"].includes(tier)) return { ok: false, code: "shape", reason: "set {class, tier: strangers|friends, mode: everyone|ask|nobody}" };
-    ((t.cells ??= {})[tier] ??= {})[c] = mode; }
-  if (a.allow !== undefined || a.deny !== undefined) { const who = a.allow ?? a.deny; const cls = a.class ? [a.class] : CLASSES;
+    ((t.cells ??= bag())[tier] ??= bag())[c] = mode; }
+  if (a.allow !== undefined || a.deny !== undefined) { const who = a.allow ?? a.deny; const cls = a.class !== undefined ? [a.class] : CLASSES;
+    if (!isWho(who)) return { ok: false, code: "shape", reason: "allow/deny: an identity" };
+    if (!cls.every((c) => CLASSES.includes(c))) return { ok: false, code: "shape", reason: `class: one of ${CLASSES.join(", ")}` };
     const until = a.allow !== undefined ? now + Math.min(a.for ?? 3600000, MAX_ALLOW_MS) : undefined;
-    for (const c of cls) ((t.over ??= {})[who] ??= {})[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until ? { until } : {}) }; }
+    for (const c of cls) ((t.over ??= bag())[who] ??= bag())[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until ? { until } : {}) }; }
   if (a.pause !== undefined) t.paused = !!a.pause;
+  if (a.friend !== undefined && !isWho(a.friend)) return { ok: false, code: "shape", reason: "friend: an identity" };
   if (a.friend !== undefined) t.friends = [...new Set([...(t.friends ?? []), a.friend])];
   return { ok: true, target };
 }

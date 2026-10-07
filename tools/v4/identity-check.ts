@@ -9,6 +9,10 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the door (per-world ids, review M6, withdrawn: R 10-06)
+//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second "Riannon" gets neither the first
+//       one's held whisper nor her remembered pose; the real one gets both
+//   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
+//   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
 //   RS  roles and moderation at the server (research roles S4): your-rights from the door, voice-moderate as the door's
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
 //       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited;
@@ -45,7 +49,7 @@ async function start(extra = {}) {
   const logf = path.join(root, `srv-${port}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   for (let i = 0; i < 80; i++) { await sleep(150); if (p.exitCode != null) return { port, proc: p, dead: true, log: logf };
-    try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p, log: logf }; } catch {} }
+    try { if ((await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p, log: logf }; } catch {} }
   return { port, proc: p, dead: true, log: logf };
 }
 /** A socket that can join more than once (C1 needs two joins on ONE socket). */
@@ -316,6 +320,47 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   const b = await sock(S2.port); const jb = await b.join("orchard", "x", { agentToken: "tok-rowan" });
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the door", [you(ja), you(jb)]);
   a.close(); b.close(); }
+
+// ---- HB: presence by identity (pass 2 H-B). Riannon (an aid1 human) leaves; a guest whispers to "Riannon"; a different
+// account (TRUST_NAMES: a typed name is local:<name>) joins wearing her name: no whisper, no remembered pose ----
+{ const tokR = () => mint({ kind: "agent", name: "Riannon", sub: "agent:riannon@home.test" });   // an aid1 account (an agent: a person signs in by cookie)
+  const r1 = await sock(srv.port); const j1 = await r1.join("garden", "x", { agentToken: tokR() });
+  const name = j1.snapshot?.you ?? "riannon";
+  r1.raw({ type: "pose", pose: { p: [7, 0, -3], yaw: 0.5, speed: 0, clip: "idle" } }); await sleep(250); r1.close(); await sleep(300);
+  const g = await sock(srv.port); await g.join("garden", "Tansy");
+  g.raw({ type: "whisper", to: name, text: "the door code is 4471" }); await sleep(250);
+  const other = await sock(srv.port); const jo = await other.join("garden", name);   // TRUST_NAMES: local:<name>, another account
+  await sleep(250);
+  ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you === name, "HB (setup) two accounts, one display name", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
+  ok(!other.msgs.some((m) => m.type === "whisper"), "HB a different account wearing an absent person's name doesn't receive her held whisper", other.msgs.filter((m) => m.type === "whisper"));
+  ok(!jo.snapshot?.restore, "HB …nor inherit her remembered pose", jo.snapshot?.restore);
+  other.close(); await sleep(300);
+  const r2 = await sock(srv.port); const j2 = await r2.join("garden", "x", { agentToken: tokR() }); await sleep(250);
+  ok(r2.msgs.some((m) => m.type === "whisper" && m.text === "the door code is 4471"), "HB the real Riannon gets the whisper held for her", r2.msgs.filter((m) => m.type === "whisper"));
+  ok(Array.isArray(j2.snapshot?.restore?.p) && j2.snapshot.restore.p[0] === 7, "HB …and wakes where she stood", j2.snapshot?.restore);
+  r2.close(); g.close(); }
+
+// ---- MA: a pose past the cap is dropped, never relayed or remembered; one message past the cap closes the socket ----
+{ const a = await sock(srv.port); await a.join("garden", "Sorrel"); const b = await sock(srv.port); await b.join("garden", "Yarrow");
+  const big = { p: [1, 0, 1], yaw: 0, speed: 0, clip: "idle", pose: Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`b${i}`, Array.from({ length: 30 }, () => 0.123456789)])) };
+  const k = b.msgs.length;
+  a.raw({ type: "pose", pose: big }); await sleep(400);
+  const relayed = b.msgs.slice(k).filter((m) => m.type === "frame" && JSON.stringify(m).length > 40_000).length;
+  ok(JSON.stringify(big).length > 40_000 && relayed === 0, "MA a pose past 32 KB isn't relayed to anyone", [JSON.stringify(big).length, relayed]);
+  a.raw({ type: "pose", pose: { p: [2, 0, 2], yaw: 0, speed: 0, clip: "idle" } }); await sleep(300);
+  ok(b.msgs.slice(k).some((m) => m.type === "frame"), "MA …and an ordinary pose still is (the control)", b.msgs.slice(k).map((m) => m.type).slice(0, 8));
+  const huge = await sock(srv.port); await huge.join("garden", "Burdock");
+  huge.raw({ type: "typing", pad: "x".repeat(3 * 1024 * 1024) }); await sleep(600);
+  ok(huge.closed != null, "MA one websocket message past 2 MiB closes the socket (Bun's default took 16 MB)", huge.closed);
+  a.close(); b.close(); }
+
+// ---- LC: the world's live state is behind the same door as a join ----
+{ const S4 = await start({ JOIN_TOKEN: "door-key" });
+  const get = (p, key) => fetch(`http://127.0.0.1:${S4.port}${p}`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);
+  const noKey = [await get("/worlds"), await get("/geom?world=garden"), await get("/snap?world=garden&follow=x")];
+  const withKey = [await get("/worlds", "door-key"), await get("/geom?world=garden", "tok-rowan")];
+  ok(noKey.every((c) => c === 401) && withKey.every((c) => c === 200), "LC /worlds, /geom?world and /snap answer 401 without a key a join would take, 200 with the door key or an agent token", [noKey, withKey]);
+  S4.proc.kill(); }
 
 S2.proc.kill(); srv.proc.kill();
 console.log(`[identity-check] ${pass} passed, ${fail} failed`);

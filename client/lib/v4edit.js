@@ -1,15 +1,13 @@
-// v4edit — edit mode's writes in a v4 world (protocol/v4 slice 3b).
+// v4edit — edit mode's writes.
 //
-// In a v4 world every edit is a door REQUEST, the same request an agent sends ({type: 'v4', tool, args}), and the
-// person waits for the door's answer: an act number to undo by, or a refusal in the same words an agent gets
-// (shared/v4/refusal.js). v1 worlds never reach this file: every caller asks isV4() first and keeps its old path.
+// Every edit is a door REQUEST, the same request an agent sends ({type: 'v4', tool, args}), and the person waits for
+// the door's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/v4/refusal.js).
 //
 //   send(req, opts)        one request; on a `locked` refusal by someone who may lift the lock, a centre dialog offers
 //                          "Move anyway", which re-sends the SAME request with through_lock: true (§5: the log records
 //                          only the edit; the lock stays on). A refusal reverts the local preview.
-//   spell(verbs)           today's edit code plans v1 verbs (editschema.js, build.js); this turns them into ONE request
-//                          (a single tool, or a batch) with shared/v4/fromv1.js, the mapping the server uses for old
-//                          clients and agents' verb tools. One edit is one act, so one Ctrl+Z.
+//   sendOps(ops, opts)     an edit's door ops (shared/v4/ops.js, planned by editschema.js, build.js…) as ONE request (a
+//                          single tool, or a batch): one edit is one act, so one Ctrl+Z.
 //   expectOf(ids, comps)   §3a: the values a gesture started from, as `expect`. A drag is presence until release; the
 //                          release is one request with expect, refused `changed` if anyone wrote those since.
 //   undo() / redo()        Ctrl+Z is the door's `undo {act}` of MY last act; redo is `undo {act: <my undo>}`, which the
@@ -22,6 +20,7 @@ import * as OP from '../../shared/v4/ops.js';
 import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
+import { chooseXR, xrActive } from './xrask.js';
 import { flashHint, toast } from './ui.js';
 
 export { isV4 };
@@ -100,7 +99,7 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
     const verb = lockVerb(req);
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
     console.info('[v4edit] lock:', refusalText(what, r));
-    const choice = await chooseCenter({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });
+    const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });   // a DOM card isn't drawn in a headset (xrask.js)
     bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, through_lock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }

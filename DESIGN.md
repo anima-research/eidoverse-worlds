@@ -31,12 +31,14 @@ multi-participant authority. That layer is this repo.
 World state splits into two things with different consistency needs:
 
 **1. The world log (authored plane).** Everything that constructs or mutates
-the world is an entry in an append-only, per-world event log of intent verbs:
-`spawn`, `place`, `makeCreature{seed}`, `transitionTo('storm')`, `say`,
-`importPlace{hash}`. Low frequency, high value, persisted forever. The log
-**is** the world format — there is no scene file. Late joiners fold the log
-(snapshot + tail). Deterministic seeded construction means a verb replays into
-the identical world on every client.
+the world is a request to the world's door, recorded in an append-only,
+per-world, hash-chained log as the request (an *act*) and its result (a
+*state* entry). Low frequency, high value, persisted forever. The log **is**
+the world format — there is no scene file. The log records **results, never
+processes**: a recorded result folds into the identical world on every
+client, in any year, while a recorded sequence of actions breaks when code
+changes. Late joiners adopt a cut of the fold and continue from it.
+(spec/PROTOCOL.md is the contract.)
 
 Consequences we get for free:
 - **Persistence**: a world is a log + content-addressed assets. A file.
@@ -45,7 +47,8 @@ Consequences we get for free:
   offline at production quality by pointing the existing eidoverse batch
   renderer at a replay. The video toolkit isn't discarded — it becomes the
   camera crew. Machinima-native platform.
-- **Undo**: inverse entries. History is first-class.
+- **Undo**: by act — take back one request's result, refusing what others
+  changed since. History is first-class.
 
 **2. Presence (embodied plane).** Avatar transforms, animation intent,
 visemes, gaze. High-frequency, ephemeral, lossy-tolerant, never persisted.
@@ -65,8 +68,11 @@ systems, not bone poses.
   pose — the VRChat model. Fluent movement is guaranteed because it's local.
 - GPU sims (fluid, cloth, grass, particles, weather rendering) are cosmetic,
   client-local, parameterized by log events. Allowed to diverge.
-- Contested interactions (two hands, one object) get server-validated
-  ownership transfer later — still not server physics.
+- Contested interactions (two hands, one object) are settled by the door:
+  it tracks who holds what and checks every put, drop and throw. Physics,
+  where a world turns it on, is a deterministic engine every client runs
+  on the same logged launches (spec/PROTOCOL_v2.md) — still not a server
+  simulating for everyone.
 - Trust/identity: keys per participant, capabilities per world (build rights,
   entry, visibility). Aligns with the connectome Archipelago design
   (keys → attestation → domain trust); federation of worlds across hosts
@@ -86,7 +92,7 @@ word for a pattern of email use without being a type in SMTP.
 | Entity | Notes |
 |---|---|
 | **Avatars** | Embodied participants, human- or agent-driven. VRM + controller + identity key. Presence plane only. |
-| **Things** | Placed objects: fetched GLBs, procedural builds, scan nodes, primitives. Transform, parent, owner, behaviors. |
+| **Things** | Placed objects: fetched GLBs, procedural builds, scan nodes, primitives. Transform, parent, creator, scripts. |
 | **Automata** | Self-animating (`makeCreature`/`makeBot`): autonomous motion + command surface. Ownable, possessable. |
 | **Regions** | Named volumes: capability scopes + triggers ("the kitchen", a private room). |
 | **Inscriptions** | Text/media anchored in space — notes, signs, screens. Substrate for asynchronous interaction. |
@@ -95,57 +101,54 @@ word for a pattern of email use without being a type in SMTP.
 Relations: scene-graph attachment (eidoverse support-chain memory), ownership,
 region membership.
 
-## Components (2026-08-02 — shipped: comp/mount/motion/use)
+## Components
 
-Entities carry a **generic component bag**: `comp {id, type, data|null}` folds
-`data` under `type`, blindly, on both server and client. The server never
-learns what a `swing` means; meaning lives in whichever evaluator consumes a
-type — `motion` in the client's evaluator library, `sockets` in mounting,
-`reactions` in the server's reaction hook. Unknown types sit in the bag,
-forward-compatible: a new component kind is client code plus emitted verbs,
-zero sequencer changes. This is the Unity entity/component *data* model with
-an event-sourcing discipline Unity doesn't have — and without its logic model:
-**components carry parameters, never code, and nothing writes a component
-per-frame.** Components change only via logged verbs.
+Entities carry **components**: `transform`, `model`, `parent`, `light`,
+`motion`, `sockets`, `reactions`, `lock`, `grabbable`… (the registry is
+`shared/v4/catalogue.js`). The fold applies them blindly — it never learns
+what a `swing` means; meaning lives in whichever reader consumes a
+component: `motion` in the client's evaluator, `sockets` in seating,
+`reactions` in the door. Unknown components are kept and replayed,
+forward-compatible: a new kind of component is client code plus a
+registry entry, with no change to the fold. This is the Unity
+entity/component *data* model with an event-sourcing discipline Unity
+doesn't have — and without its logic model: **components carry
+parameters, never code, and nothing writes a component per-frame.**
 
-Building blocks shipped:
+Building blocks:
 
 - **`motion`** — the log stores *functions of time*, never frames:
-  `pendulum` (swings), `spin` (windmills), `orbit`, `bob`, `path` (ferries,
-  patrol routes). Every client — live, late-joining, replaying a fork —
-  evaluates the same closed form at its own `now`: no integration, no drift,
-  no ongoing traffic. Sequencer-not-simulator, applied to dynamics. New motion
-  types are pure `f(params, t) → transform` added client-side.
-- **`mount` / `dismount`** — scene-graph attachment in the log. Things get
-  `parent`; bodies (avatars) go in `state.mounts`. Passengers and cargo ride
-  the parent frame with zero per-rider traffic. Sockets are a component
-  (`sockets: {seat: {...}, helm: {...}}`), merged with Layer-0 affordances.
-  **Invariant: any transition back to rest stamps absolute pose into the verb**
-  (`dismount {pos, yaw}`; a stopping ferry's `motion {type:null}` + `place`) —
-  the log stays self-sufficient, never dependent on reconstructing a ride.
-- **`use`** — the universal interact, rank 0 and fold-less: a *cause*, kept in
-  the log as history, whose *effects* are separately logged entries. Mounting
-  yourself is likewise rank 0: sitting on the swing is using the world, not
-  editing it.
-- **`reactions`** — the first slice of the Layer-2 behavior runtime: an
-  entity's component maps use-actions to effects (so far: pendulum `impulse`,
-  closed-form velocity-matched — pushing against the swing does little,
-  pushing with it builds). Reactions run server-side with world authority
-  under the author's standing decision, emit ordinary verbs with
-  `{cause, by}` provenance, and are wrapped so no reaction can ever take the
-  sequencer down. Crucially, **replay never re-executes behaviors** — it folds
-  the verbs they emitted. Scripts therefore get randomness and wall-clock for
-  free; only the fold must stay deterministic.
+  `pendulum` (swings), `spin` (windmills), `orbit`, `bob`. Every client —
+  live, late-joining, replaying a fork — evaluates the same closed form at
+  its own `now`: no integration, no drift, no ongoing traffic.
+  Sequencer-not-simulator, applied to dynamics. New motion types are pure
+  `f(params, t) → transform` added client-side.
+- **`parent` and `sockets`** — scene-graph attachment in the log. A child's
+  transform is local to its parent; cargo rides the parent frame with zero
+  per-rider traffic. A socket with a `body` is where a person sits, rides
+  or stands — and sitting is presence, not a log entry. **Invariant: any
+  transition back to rest stamps absolute state into the log** — the log
+  stays self-sufficient, never dependent on reconstructing a ride.
+- **`use`** — the universal interact, open to visitors: a *request*, kept
+  in the log as an act, whose *effects* are the state entries it caused.
+- **`reactions`** — the data half of interaction: an entity's component
+  maps use-actions to handlers (`toggle`, `set`, `impulse`, `script`). A
+  pendulum `impulse` is closed-form and velocity-matched — pushing against
+  the swing does little, pushing with it builds.
+- **`grabbable` / `physics`** — a thing a hand can carry, and a thing that
+  falls and flies when the world runs physics.
 
-**The script tier shipped 2026-08-02** (`server/behaviors.ts`, `sdk/`,
-AGENTS.md surface 2): uploaded script files (`/upload?as=script`,
-content-addressed) bound by `behavior` entries, each running server-side in
-its own QuickJS-in-WASM sandbox — gas/memory/emit-budgeted, capability-
-masked, author-rights checked at every emit, per-behavior log rings, paused
-loudly after repeated errors. Triggers: `use`, `say`, `enter`, `leave`,
-timers. Replay never re-executes scripts — it folds the verbs they emitted.
-Still ahead: proximity/phrase/region triggers, and `publish`/`attach` to
-promote an authored behavior into the world's Layer-1 vocabulary with knobs.
+**Scripts** are the Layer-2 tier (docs/SCRIPTS-v4.md): a `script:<name>`
+component naming an uploaded source, run by the door in a QuickJS sandbox
+with its sponsor's rights narrowed to a declared scope, fuel- and
+rate-budgeted, paused loudly after repeated failures. Each activation is
+one act plus one all-or-nothing batch through the same gate as anyone's
+request, and **replay never re-runs code** — it folds the batch the
+script wrote. Scripts therefore get a seeded `Math.random` and a frozen
+clock, and every cause chain ends at a person. Triggers: `use`, `say`,
+`enter`, `leave`, `grab`, `release`, component changes, timers. Still
+ahead: proximity/phrase/region triggers, and publishing an authored
+behaviour into the world's Layer-1 vocabulary with knobs.
 
 ## Interactions: three layers
 
@@ -158,7 +161,7 @@ Physicality is the universal interface between species.
 **Layer 1 — composed behaviors (authorable by anyone).** Trigger→action pairs
 from a fixed vocabulary. Triggers: proximity, touch/use, sit, timer, phrase,
 region enter/leave. Actions: play clip, move, particles, sound, say, give,
-teleport, flip state. Composable from the panel UI or by verb; the vocabulary
+teleport, flip state. Composable from the panel UI or by request; the vocabulary
 is data, so it's live-editable.
 
 **Layer 2 — scripts.** Full toolkit access, capability-scoped behaviors
@@ -189,7 +192,7 @@ speak → visemes); explicit triggers are emotes and Layer-1 firings.
 
 ## Human input
 
-Same verbs as agents, reached through embodiment and UI:
+Same requests as agents, reached through embodiment and UI:
 - **Move a chair**: embodied carry (click-hold, walk, drop, auto-reseat), or
   arrange mode where **drag semantics are the placement helpers** — the chair
   stays seated on surfaces, lands ON the table not beside it, kisses flush via
@@ -200,7 +203,7 @@ Same verbs as agents, reached through embodiment and UI:
   Smithsonian / NASA, theme-ranked); **ask a Claude** (commissioning as a
   first-class path); quick primitives.
 
-One verb surface, three modalities: mouse, speech, code.
+One request surface, three modalities: mouse, speech, code.
 
 ## Live everything — the no-manifest rule
 
@@ -208,12 +211,13 @@ One verb surface, three modalities: mouse, speech, code.
 asset manifest. Everything arrives through the log, at runtime:
 - Assets are content-addressed (hash = identity = cache key, immutable,
   upload-anytime, never stale, never deleted while referenced by any log).
-- The sequencer treats verbs as opaque — it never restarts for content.
+- The fold treats component values as opaque — the server never restarts
+  for content.
 - Ingestion is an in-world service (the fetch_model pipeline live; the
   reality pipeline: phone video → video-to-3D → hierarchy-of-meshes GLB →
   `importPlace`), used while standing in the world.
 - Layer-1 behaviors are data (hot); Layer-2 scripts are modules with an
-  attach/detach/version lifecycle (hot); platform updates are a client
+  install/pause/adopt lifecycle (hot); platform updates are a client
   reconnect (the world never restarts — state is the log).
 
 ## Real places
@@ -233,15 +237,15 @@ place has its own diffable chronicle. Per-place visibility (private / invited
 Worlds from the start; **archipelago, not grid** (discrete worlds + portals;
 no region-crossing netcode). World = log + asset refs — cheap, forkable,
 hostable N-per-server. Per-world trust domain and house rules. Travel is a
-client operation: drop presence in A, fold B's snapshot, spawn. Identity and
-inventory (hashes + verbs) travel by construction; standing does not — B's
+client operation: drop presence in A, adopt B's cut, arrive. Identity and
+inventory (hashes + blueprints) travel by construction; standing does not — B's
 capabilities apply. Portals are Layer-1 objects. Agents may hold presence in
 multiple worlds simultaneously — but visibly (presence never lies about
 attention).
 
 ## Agent frontend
 
-An MCPL server: verbs in, perception out. Perception is **tiered**: text-tier
+An MCPL server: door requests in, perception out. Perception is **tiered**: text-tier
 scene description from the entity registry (free, no GPU) up to rendered
 stills from a headless eidoverse viewport ("retina service" on a GPU box —
 agents mostly need sets of stills, not streams). Agent avatars run their
@@ -255,20 +259,21 @@ browser three.js client (humans) · MCPL (agents) · headless batch renderer
 (the film crew — replay-to-cinema) · text/narrative client · map view · VR
 later.
 
-## v1 prototype scope
+## First prototype scope (2026-07)
 
 - Bun/TS sequencer: WS, per-world JSONL logs, join = replay + tail, pose
   relay, library asset serving from the eidoverse-video checkout
 - Browser client: claudesona avatar, WASD + third-person camera, flat ground,
   idle/walk/run crossfade (full eidoverse controller port is a follow-up)
-- Verbs: `spawn`, `place`, `say`
+- Writes: place a model, move it, say something
 - Two browsers, one world; reload-and-refold proof
 - Then: agent MCPL (text perception + `say`/`walkTo`/`spawn`), retina service,
   replay-to-film demo
 
-Deferred deliberately (v1 list): server physics, prediction, contested
-objects, sandboxed untrusted scripts, interest management, scale. Voice has
-since shipped — see "Voice" below.
+Deferred deliberately then: server physics, prediction, contested objects,
+sandboxed untrusted scripts, interest management, scale. Voice, scripts,
+contested objects (the door's holds) and deterministic physics have since
+shipped.
 
 ## Voice (shipped)
 
@@ -293,67 +298,58 @@ mic always beats the synthesizer when both could produce.
   comprehensible?
 - Log compaction/folding policy (same problem-shape as connectome memory
   folding — fold events into snapshots while preserving replayability).
-- How raw may log entries be — verbs only vs. trusted JS escape hatch.
+- Log compaction is partly answered by checkpoints: a view whose digest the
+  log records, verified by folding forward (spec/PROTOCOL.md).
 - Licensing: eidoverse-video is AGPL-3.0; this repo should be compatible.
 
-## Permissions (2026-07-27)
+## Permissions
 
-Per-world roles, event-sourced through the log like everything else: an
-owner-authored `grant` verb (`{id, role?: owner|builder|visitor, gen?: bool}`)
-is the only way rights change, so permission history replays, folds, and
-audits. Enforcement is entirely server-side (`VERB_NEEDS` in server.ts).
+Per-world roles live in the log like everything else, as components on
+`@world`: `roles:<identity>` = `{role: owner | builder | visitor | none}`
+(plus `moderator` on the roles ladder), and `default-role` for everyone
+without an entry. Changing a role is an ordinary `set`, so permission
+history replays, folds and audits. Enforcement is the door's one gate,
+`admit`, keyed on *which components a request would change*, never on the
+request's name — so no path (a tool, a `use` handler, an undo, a script)
+can walk around it.
 
-- **visitor** — present, talk, emote.
-- **builder** — + `spawn` / `place` / `remove` / drag.
-- **owner** — + world-shaping (`terrain` / `grass` / `sky` / `weather`) and `grant`.
-- **gen** — orthogonal spend capability: the `asset` verb (introducing NEW
-  vocabulary — where Orrery generations land). Owners always have it.
+- **visitor** — present, talk, emote, `use` things, sit, carry what a
+  thing's `grabbable.who` allows.
+- **builder** — + create, change and delete things, publish blueprints,
+  install scripts, lift locks.
+- **owner** — + everything on `@world`: roles, sky, weather, ground,
+  physics, bounds, script limits; kick and ban.
 
-Defaults, chosen so casual worlds stay frictionless:
-- A world with **no owner** is OPEN — everyone is builder+gen (the
-  pre-permissions behaviour; legacy worlds are unchanged until someone owns them).
-- The **first embodied joiner of a brand-new world** is auto-granted owner
-  (actor `world` in the log).
-- In an **owned** world, unlisted ids default to builder WITHOUT gen —
-  friends can build together immediately, but spend is restricted. The
-  wildcard entry changes the default: `/grant * visitor` closes the world,
-  `/grant * +gen` opens generation to everyone. `*` cannot be owner.
-- `WORLD_ADMIN=<ids>` (env) makes operators owner everywhere — bootstrap for
-  legacy worlds and lockout recovery.
+Defaults, chosen so casual worlds stay frictionless but never open by
+accident: a world's founder is its owner; anyone without a role gets
+`default-role` (absent = visitor); guests without an account are visitors
+unless the world opts them in; a world with no owner left gives nobody
+more than visitor, and removing the last owner is refused.
 
-Identity, interim: ids are self-asserted names, EXCEPT names appearing in
-`mcpl/tokens.json` — those are **reserved for agents**, claimable only with
-the agent's own bearer (the MCPL door forwards it as `agentToken` at join;
-`AGENT_TOKEN` env for direct/stdio agents). When archipelago-home lands
-(connectome/docs/home-node.md), aid1 `sub`s replace names as the principal
-ids in the roles map without the model changing.
+Identity: the door stamps who asked from the authenticated connection,
+never from the payload. People and agents are opaque identities
+(`u-…`, `server/v4/directory.ts`); display names are a view, so a stranger
+wearing your old name inherits nothing.
 
-## Moderation (2026-08-02)
+## Moderation
 
-Two scopes, following the two kinds of state this codebase has:
+Two scopes:
 
-**Per-world** — `kick` / `ban` / `unban` are ordinary owner-rank verbs
-(`{id, reason?}`), gated by the same `VERB_NEEDS` ladder as `grant`. Bans
-fold into `WorldState.bans` (event-sourced: they replay, audit, and ride a
-fork); a kick is an act like `use` — logged, folded to nothing. Both land
-immediately on every matching connected body (`expel`: error, close `4006`,
-leave broadcast) and a ban additionally refuses joins — spectating included —
-at the door. Agents moderate through the identical gate: an agent that owns a
-world gets `kick`/`ban`/`unban`/`list_bans` MCP tools with no extra capability
-machinery. Guardrails: no self-moderation, no `*`, operators are untouchable,
-and owners cannot ban each other (a `WORLD_ADMIN` can).
+**Per-world** — `kick` / `ban` / `unban` are owner requests to the door,
+keyed on identity (`whois` finds the identity behind a name). They are
+recorded in the world's separate **moderator log**, never in the world log,
+so a ban never becomes world state that every reader folds. Both land
+immediately on every matching connected body (close `4006`) and a ban
+additionally refuses joins — spectating included. Agents moderate through
+the identical gate (`kick`/`ban`/`unban`/`list_bans` tools). A banned
+sponsor's scripts are suspended.
 
 **Global** — there is no global log, so instance-wide bans are messages
-(`global-ban` / `global-unban` / `global-bans`), `WORLD_ADMIN`-only, persisted
-in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a scratch
-sequencer gets a scratch ban list, same doctrine as the logs). A global ban
-expels from every world at once and closes every door.
-
-Bans key on the durable `sub` when the target was present to be identified
-(captured into the ban record at ban time), falling back to the display id —
-a verified human cannot shed a ban by renaming. Unverified name-only bans
-remain evadable by `/name` until archipelago-home identity is universal;
-close code `4006` is in both the browser client's and WorldAgent's no-retry
+(`global-ban` / `global-unban` / `global-bans`), `WORLD_ADMIN`-only,
+persisted in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a
+scratch sequencer gets a scratch ban list, same doctrine as the logs). A
+global ban expels from every world at once and closes every door. Close
+code `4006` is in both the browser client's and the agent's no-retry
 lists, so a removed client never hammers the door.
 
 ## Orrery (3D prompting) seam
@@ -365,7 +361,6 @@ here through the existing content-addressed door:
 
 - `POST /upload?token=<agent bearer or door token>&by=<requester>` — the
   store is inert bytes; accepting an upload grants nothing world-visible.
-- What enters a WORLD is the `asset` verb (+`spawn`), which per-world roles
-  gate: `asset` needs the gen capability. That is the whole spend-permission
-  story on this side; metering/allowances live in Orrery keyed by principal
-  (home-node §6).
+- What enters a WORLD is a `model` component naming the stored path
+  (`store/<hash>.glb`), which builder rank gates. Metering/allowances live
+  in Orrery keyed by principal (home-node §6).

@@ -325,8 +325,8 @@ console.log("\nnever a verb (source-level)");
 {
   const src = await Bun.file(here("../client/lib/terrain.js")).text();
   const gq = await Bun.file(here("../client/lib/grass_quality.js")).text();
-  check("terrain.js does not import net.js or send verbs",
-    !src.includes("net.js") && !src.includes("sendVerb"));
+  check("terrain.js does not import net.js or write to the world (no door requests)",
+    !src.includes("net.js") && !src.includes("requestV4") && !src.includes("sendOps"));
   check("grass_quality.js is dependency-free",
     !gq.includes("import "));
 }

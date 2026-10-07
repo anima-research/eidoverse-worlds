@@ -1,30 +1,28 @@
-// server/v4/messages.ts — the ws messages a v4 world answers differently (slice 2). server.ts consults this table
-// first, and ONLY when the client's world is a v4 world (World.v4); every v1 world dispatches exactly as before.
+// server/v4/messages.ts — the ws messages that reach a world's door. server.ts consults this table first.
 //
 //   v4      {type: "v4", id, tool, args} → {type: "v4-result", id, tool, ok, reply}, reply = the door's own answer
 //           (kept whole under `reply`: a door reply has fields of its own, such as inspect's `id`). Any door request
 //           (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/move/drop/wait, and the
 //           reads look/inspect/measure/find/check/history/schema/help). The asker is stamped from the connection
 //           (L4), never read from the payload. Spectators may only read.
-//   verb    refused (slice 3c): a v4 world takes door requests only. Every client spells its UI's verbs as requests at
-//           its own edge (shared/v4/fromv1.js: the page's net.js, the agent's sendVerb), so no v1 verb reaches here.
-//   lease, world-fork, world-reset
-//           refused: a lease's settlement skipped every gate in v1 (PARITY (c)2), and fork/reset act on v1 files.
+//   world-fork, world-reset
+//           an owner copies the world to a new name, or erases it to zero (archived, founded again by its owners).
 //
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
-// earlier one (the same per-client queue the v1 verb path uses).
+// earlier one.
 import { forkV4 } from "./world.ts";
 import type { Client, World } from "../world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "../config.ts";
 import { isBanned } from "../../shared/v4/door.js";
+import { readMeter, doorTime } from "./readmeter.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
 const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
-const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "v1 name (no account bound yet)" };
+const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
  *  and every identity this world's log, roles or moderator log names. Never the whole directory (a name typed here
@@ -44,6 +42,11 @@ export function whois(w: World, args: Any) {
     .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: v4.roleOf(id), here: here.has(id), banned: isBanned(v4.live, id) }));
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
+const reads = readMeter(); // per connection: reads and dry runs, by count and door time (security pass 2 H-A)
+// …and every request by door time: a refused step or write is cheap now, but nothing else bounds how much of the shared
+// thread one connection's stream of them takes (a guest is a fresh identity per connection, so the door's per-identity
+// rate doesn't either). 3 s of 10 is far past any person's or agent's real use.
+const busy = readMeter({ n: Infinity, ms: 3000, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
 /** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */
 function recordRefusal(c: Client): boolean {
@@ -83,24 +86,33 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
 
 const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
 const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
-const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not v1 verbs", teach: "send {type: 'v4', id, tool, args}; help lists the tools" };
-
-
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "v4": ({ c, ws, expel, sweep }, msg) => {
-    // {tool, args}: a door request (a v1 `verb` in it is refused: clients spell at their own edge, 3c)
-    const w = c.world; if (!w?.v4) return;
+    // {tool, args}: a door request
+    const w = c.world; if (!w) return;
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     const tool = String(msg.tool ?? "");
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
-    if (typeof msg.verb === "string") { w.debug("v4-v1-verb", { who: c.id, verb: msg.verb }); reply({ ok: false, refused: V1_VERB }); return; }
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
+    const metered = READS.has(tool) || args.dry === true;
+    // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
+    // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
+    // a meter's refusal reaches the flight recorder like the door's (bounded the same way)
+    const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, tool: tool.slice(0, 32), code: no.code, line: `${c.id}'s ${tool.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
+    if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
+    const mark = metered ? reads.record(c, Date.now()) : null;
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
+    // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
+    // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
+    if (tool === "caption") args.gen = c.legGen ?? 0;
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
-      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4!.live, String(args.who)) : false;
-      const r = await w.v4!.request(actorOf(c), tool, args);
+      { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
+      const spent = busy.record(c, Date.now());
+      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
+      const r = await w.v4.request(actorOf(c), tool, args);
+      const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)
@@ -110,7 +122,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         const id = typeof args.id === "string" ? cap(args.id, 64) : null;
         w.debug("refused", { who: c.id, tool: cap(tool, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
           line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.teach ? ` — ${r.refused.teach}` : ""}`, 300) }); }
-      // bystanders see a removal as v1 showed it ("A removed B"), from the server (the moderator log is never a world entry)
+      // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
       // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a
       // notice they dismiss, a mute or a ghost is told to its person; a ghost is never named to bystanders (unseen)
@@ -121,7 +133,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
       if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4!.live, who);
+        const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
         const ghostHere = [...w.clients].some((t) => t.v4id === who && w.isGhost(t));   // unseen: never named to bystanders
         if (happened && !ghostHere) { const text = modLine(w, c.id, tool, who);
           for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
@@ -149,16 +161,10 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       }
     });
   },
-  "verb": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
-    w.debug("v4-v1-verb", { who: c.id, verb: String(msg.verb ?? "") });
-    ws.send(JSON.stringify({ type: "error", error: `${V1_VERB.reason} (this '${String(msg.verb ?? "")}' wasn't written) — reload the page for the current client` }));
-  },
-  "lease": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "leases aren't part of v4 worlds: carrying is grab/put/throw through the door (L6)" })); },
   // Copy the world you're standing in to a new name: a new world (its own identity) whose founding act names this one,
   // holding a copy of its current state. Owner-only (it copies everything here; the owner's call).
   "world-fork": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
+    const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
@@ -177,7 +183,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   // Erase the world you're standing in to zero. Owner-only, and the request must carry the world's own name (the
   // client makes you type it). History is archived beside it, never destroyed; the same owners hold the fresh world.
   "world-reset": ({ c, ws }, msg) => {
-    const w = c.world; if (!w?.v4) return;
+    const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't erase worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);

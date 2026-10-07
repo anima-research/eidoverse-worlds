@@ -71,8 +71,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["changed:<comp> cascades", "door.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "door.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
   ["a script never hears its own say", "door.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `bhv:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
-  ["use of a v1 binding says re-install", "door.js", "if (v1 || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
-  ["v1 behaviours are listed", "door.js", "...(id && id !== \"@world\" ? {} : { v1: v1Behaviours(w, st) })", "...{}", ["V1"]],
+  ["use of an imported binding says re-install", "door.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
+  ["imported behaviours are listed", "door.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
   ["local-time methods are UTC", "sandbox.js", "P[\"get\" + k] = P[\"getUTC\" + k];", "", ["D3"]],
   ["runs per script per minute", "door.js", "if (runs >= cfg.runs) return", "if (false) return", ["B23"]],
@@ -773,8 +773,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const set = s.call("olive", "set", { id: "@world", component: "behavior:greeter", value: { src: "store/scripts/0123456789abcdef.js", attach: "bell1", knobs: {}, author: "olive", ts: 1 } });
       s.call("olive", "create", { id: "bell1", model: "bell", components: { reactions: { ring: { kind: "script", script: "greeter" } } }, place: { at: [0, 0] } });
       const use = s.call("vic", "use", { id: "bell1", action: "ring" });
-      const v = s.call("olive", "scripts", {}); return { set: show(set), v1: v.v1, use: code(use), teach: use.refused?.teach }; },
-    good: (o) => o.set === "ok" && o.v1?.[0]?.status === "needs-reinstall" && /re-install it as script:<name>/i.test(o.v1?.[0]?.why) && o.v1?.[0]?.attach === "bell1"
+      const v = s.call("olive", "scripts", {}); return { set: show(set), imported: v.imported, use: code(use), teach: use.refused?.teach }; },
+    good: (o) => o.set === "ok" && o.imported?.[0]?.status === "needs-reinstall" && /re-install it as script:<name>/i.test(o.imported?.[0]?.why) && o.imported?.[0]?.attach === "bell1"
       && o.use === "no-runtime" && /re-install it as script:greeter/.test(o.teach) },
   // ---------------- H: hygiene and syntax ----------------
   { id: "H1", what: "41 #16 Trojan Source at upload: U+202E inside a comment; code at column 4,000; a BOM; a zero-width space", run(s) { cast(s);

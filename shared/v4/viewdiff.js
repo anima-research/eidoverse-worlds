@@ -1,5 +1,5 @@
 // shared/v4/viewdiff.js — what changed between two world views (record.js viewState), said in v4 terms (slice 3c).
-// The renderer's realizers and the agent's caches react to these, not to v1 verbs. Pure.
+// The renderer's realizers and the agent's caches react to these. Pure.
 //   diffView(prev, next) → { things: [{id, what, comp?}], world: [key] }
 //     what: 'gone'   the thing left the world
 //           'born'   it's new, or became a different thing (another model, kind, or a field only a rebuild can show)

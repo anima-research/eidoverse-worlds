@@ -1,4 +1,4 @@
-// shared/v4/ops.js — the door requests an edit plans, in v4 terms (slice 3b: replaces fromv1.js; no v1 verb anywhere).
+// shared/v4/ops.js — the door requests an edit plans, in v4 terms.
 // Every planner (editschema, hierarchy, blueprint, the client's gestures, the agent's tools) builds these, and every
 // sender sends them as they are: {tool, args}, one per change, or one `batch` for one gesture (= one act = one undo).
 // Ids and component names arrive as the VIEW shows them (shared/v4/record.js decodes the translator's x-- escapes)

@@ -1031,20 +1031,16 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
   // agent. The browser had the SAME hole and worse -- applyGrantState() merged
   // grants by hand and was exported and called by nothing, so the "live grant"
-  // fix was dead code that read like a fix. Both sides now recompute from the
-  // folded roles with the one function the sequencer answers with.
+  // fix was dead code that read like a fix. Now (protocol v4) neither side
+  // computes rights at all: the server's `your-rights` answer, re-sent whenever
+  // a role changes, is the whole truth (server.ts rightsFor reads the door's
+  // roles record).
   const stt = readFileSync('client/lib/state.js', 'utf8');
-  check('the browser recomputes rights on a live grant entry',
-        /entry\?\.verb === 'grant'/.test(stt) && /rightsIn\(state\.st/.test(stt));
-  check('...with the SAME rule as the sequencer, not a second one',
-        /from '\.\.\/\.\.\/shared\/rightsfold\.js'/.test(stt) &&
-        /rightsIn/.test(readFileSync('server/rights.ts', 'utf8')));
+  check('the browser computes no rights of its own (no grant fold, no second rule)',
+        !/verb === 'grant'/.test(stt) && !/rightsIn\(/.test(stt) && !/rightsfold/.test(stt));
   check('...and the dead hand-merge is gone',
         !/net\.myRights = \{ \.\.\.net\.myRights, \.\.\.worldRoles/.test(
           readFileSync('client/lib/world.js', 'utf8')));
-  // An admin's grant comes from the environment, which the fold cannot see.
-  check('a recompute does not strip WORLD_ADMIN flight',
-        /admin \? cur\.fly : live\.fly/.test(stt));
   // And a withdrawal reaches a body that is ALREADY up: checking only at the
   // next action lets a revoked pilot soar indefinitely by touching nothing.
   check('a revoked grant grounds a body already in the air',
@@ -1207,37 +1203,12 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
 }
 
 
-// LIVE RIGHTS: the sequencer sends personalized folded answers after grants.
-// This is the general path that makes wildcard and durable-sub precedence live.
+// LIVE RIGHTS: the sequencer sends each client its effective rights (`your-rights`) whenever a role changes
+// (server.ts rightsFor over the door's roles record; that the answer reaches a client after a role write through the
+// door is tools/v4/server-check.ts S1). Here: the agent and the browser consume that answer, and a midair withdrawal
+// hands the agent to the leaf.
 {
-  const { emptyState, foldEntry } = await import('../shared/fold.js');
-  const { runVerb } = await import('../server/verbs.ts');
-  const st: any = emptyState();
-  st.roles.owner = { role: 'owner' };
-  st.roles['*'] = { role: 'builder', fly: true };
-  let seq = 0;
-  const ownerMsgs: any[] = [], pilotMsgs: any[] = [];
-  const w: any = {
-    name: 'rights-bench', state: st, clients: new Set(), leases: new Map(),
-    bhv: { sync() {}, onEntry() {} },
-    append(actor: string, verb: string, args: any) {
-      const e = { seq: ++seq, ts: Date.now(), actor, verb, args };
-      foldEntry(st, e); return e;
-    },
-    // rimward's runVerb commits through the entry bus (commit = append +
-    // publish, TEL0S_NOTES §24); a bench world answers both the same way
-    commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
-    broadcast() {}, debug() {},
-  };
-  const client = (id: string, out: any[]) => ({ id, spectator: false, world: w, lastPose: null,
-    ws: { send(x: string) { out.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 });
-  const owner: any = client('owner', ownerMsgs);
-  const pilot: any = client('pilot', pilotMsgs);
-  w.clients.add(owner); w.clients.add(pilot);
-  runVerb({ w, c: owner, now: Date.now(), expel() {} }, 'grant', { id: '*', fly: false });
-  const live = pilotMsgs.find(m => m.type === 'your-rights');
-  check('wildcard revocation emits personalized effective rights', live?.rights?.fly === false, JSON.stringify(live));
-  check('effective-rights message is bound to the grant cause', live?.causeSeq === 1, JSON.stringify(live));
+  const live = { type: 'your-rights', rights: { role: 'builder', gen: false, fly: false } };
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'pilot', world: 'rights-bench' });
   ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
@@ -1245,21 +1216,27 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
     'L_Wing_Lower', 'R_Wing_Lower'];
   ag.myRights = { role: 'builder', gen: false, fly: true };
   ag.flight = initialState({ phase: 'PILOT', pos: { x: 0, y: 11.3, z: 0 }, wings: 'OPEN' }, makeConfig());
-  if (live?.rights && typeof ag.acceptEffectiveRights === 'function') ag.acceptEffectiveRights(live.rights, 'world');
-  check('headless consumes effective rights and refuses the next action', Boolean(live?.rights) && !ag.flightAllowed().ok);
-  check('midair revocation hands the agent to the leaf', Boolean(live?.rights) && ag.flight.phase === 'LEAF', ag.flight.phase);
+  check('with fly granted, the agent may fly', ag.flightAllowed().ok);
+  ag.acceptEffectiveRights(live.rights, 'world');
+  check('headless consumes effective rights and refuses the next action', !ag.flightAllowed().ok);
+  check('midair revocation hands the agent to the leaf', ag.flight.phase === 'LEAF', ag.flight.phase);
+  const agSrc = readFileSync('mcpl/agent.ts', 'utf8');
+  check("the agent's `your-rights` case installs the server's answer",
+        /case "your-rights":[\s\S]{0,400}this\.acceptEffectiveRights\(msg\.rights/.test(agSrc));
   const netSrc = readFileSync('client/lib/net.js', 'utf8');
   check('browser consumes the server-folded effective-rights message',
         /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
 }
 
 // RED-FIRST REGRESSION: infrastructure flight events must never author resident chat.
-// On ccb065c this deliberately fails: flightEvent() calls verb("say", ...).
+// On ccb065c this deliberately fails: flightEvent() called verb("say", ...) (today it would be door/say).
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'pilot', world: 'bench' });
   let authored = 0;
-  ag.verb = () => { authored++; };
+  // every way an agent writes: the door (v4 requests, say included) and its say helper
+  ag.door = async () => { authored++; return { ok: true }; };
+  ag.say = async () => { authored++; return { ok: true }; };
   ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
   check('flight telemetry never authors resident say', authored === 0, `authored=${authored}`);
 }

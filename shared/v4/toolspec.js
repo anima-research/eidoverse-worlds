@@ -37,7 +37,7 @@ export const TOOLSPEC = {
     example: { act: 42 } },
   history: { doc: "what happened, newest first. With id: that one thing's acts (who, when, which components), a page at a time; the reply's next goes in before to page back. Without id: the world's latest entries (oldest first in the page), filtered by verbs, paged with before or after. inspect's touched says who last changed each component within the recent window (beyond = unchanged since before that act: page history for older)",
     args: { id: ref("one thing (omit for the whole world)"), limit: { type: "int", doc: "acts per page (with id: default 5, at most 50; without: default 12)" }, before: { type: "int", doc: "continue from here: the previous reply's next (older than this seq)" },
-      after: { type: "int", doc: "without id: newer than this seq, oldest first (the reply's next continues)" }, verbs: { type: "any", doc: "without id: only entries with one of these verbs or kinds (a translated v1 entry matches its v1 verb: 'comp', 'mount')" } } },
+      after: { type: "int", doc: "without id: newer than this seq, oldest first (the reply's next continues)" }, verbs: { type: "any", doc: "without id: only entries with one of these verbs or kinds (an imported entry matches its original verb: 'comp', 'mount')" } } },
   turn: {
     doc: "rotate a thing by an angle about an axis: in its own axes (space 'object', the default), its parent's, or the world's; about its pivot when it has one (the pivot stays put), else its origin",
     args: { id: ref("the thing to turn"), axis: { type: "any", doc: "'x', 'y', 'z' or [x, y, z]" }, deg: { type: "number", doc: "degrees; positive = counter-clockwise looking down the axis" },

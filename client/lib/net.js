@@ -7,7 +7,7 @@ import { avatarMounts } from './world.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, applyView } from './state.js';
+import { hydrate as shadowHydrate, reset as shadowReset, state as shadowState, applyView } from './state.js';
 import { hear } from '../../shared/chatwindow.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { pending, P } from './scheduler.js';
@@ -22,12 +22,12 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
-// protocol/v4 slice 3b: in a v4 world this client folds the door's own stream (shared/v4/client.js) and derives the
-// v1 state the realizers draw from it, locally; edit mode sends v4 requests (v4edit.js) and waits for the door.
+// this client folds the door's own stream (shared/v4/client.js) and derives the view the realizers draw from it,
+// locally; edit mode sends door requests (v4edit.js) and waits for the door.
 import { makeV4Client } from '../../shared/v4/client.js';
 import { actorName } from '../../shared/v4/names.js';
 export const v4 = makeV4Client();
-/** Is this client standing in a v4 world (one whose snapshot carried the v4 cut)? */
+/** Is this client in a world (it has adopted the door's cut)? */
 export const isV4 = () => v4.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
@@ -114,8 +114,8 @@ export const guests = new Set();
 net.modMuted = {};
 export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
 /** Say something in the world (the door's `say`). Resolves with the door's reply. Never silent (Commons audit #6): a
- *  line typed while the connection is down is QUEUED and sent when the world is back (v1 did this; v4 dropped it as
- *  'offline'), and a refused say (the rate limit, a ban, too long) is shown to the person in plain words. */
+ *  line typed while the connection is down is QUEUED and sent when the world is back, and a refused say (the rate
+ *  limit, a ban, too long) is shown to the person in plain words. */
 const sayQueue = [];   // {args, resolve}: says typed while reconnecting, sent in order on the next snapshot
 const SAY_QUEUE_MAX = 20;
 const excerpt = (t) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return `“${s.length > 40 ? `${s.slice(0, 39)}…` : s}”`; };
@@ -253,7 +253,7 @@ export function sendJoin() {
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
     token: CONFIG.token,
-    // a v4 world sends this client its own v4 stream and no compatibility projection (v1 worlds ignore it)
+    // this client folds the world's v4 stream itself (the server refuses a client that doesn't)
     v4fold: true,
   }));
 }
@@ -283,7 +283,7 @@ function onV4Log(msg) {
   if (!v4.active) return;
   const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
   if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
-  // a chat line: into the window (the shared rule, no v1 fold), then the live causes (bubbles, voice, chat log).
+  // a chat line: into the window (the shared rule), then the live causes (bubbles, voice, chat log).
   // Numbered v4seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
     // the spoken trio (validated at the door) rides along: chat merges a spoken utterance and places it by t0
@@ -295,7 +295,7 @@ function onV4Log(msg) {
   if (r.changed) narrate(applyView(v4.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
   bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
-/** Say in chat who changed someone's standing here (the role and ban maps), as the world's own narration. */
+/** Say in chat who changed someone's role here, as the world's own narration (a ban or a kick arrives as `moderated`). */
 function narrate(d, actor) {
   const who = actor === 'world' || !actor ? 'the world' : actor; const st = shadowState.st;
   // people by name (the directory's, sent beside the entries), never their u-… id (Commons audit #1); '*' is everyone
@@ -305,10 +305,6 @@ function narrate(d, actor) {
     if (!rec) { logChat('*', `${who} took away ${person(id)}'s role here`); continue; }
     const bits = [rec.role, rec.gen != null ? (rec.gen ? '+gen' : '-gen') : null].filter(Boolean);
     logChat('*', `${who} made ${person(id)} ${bits.join(' ')}`);
-  }
-  for (const id of d?.ids?.bans ?? []) {
-    const rec = st.bans?.[id];
-    logChat('*', rec ? `${who} banned ${person(id)}${rec.reason ? ` — ${rec.reason}` : ''}` : `${who} lifted the ban on ${person(id)}`);
   }
 }
 
@@ -629,19 +625,6 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-// shadow fold first, synchronously — seq-guarded, so the backlog flush after hydration can never double-fold what
-// landed here. When the realizers are active this IS the delivery: the fold event drives state realization, and
-// 'live-entry' carries the causes. (A v4 world's entries arrive here from this client's own fold, onV4Log.)
-function onLogEntry(entry) {
-  shadowFold(entry);
-  if (hydrating) pendingLive.push(entry);
-  else if ((entry.seq ?? -1) > lastSeq) {
-    lastSeq = entry.seq;
-    bus.emit('live-entry', entry);
-    if (entry.verb === 'say') noteSpeaking(entry.actor);
-  }
-}
-
 async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
@@ -794,10 +777,6 @@ async function handle(msg) {
       bus.emit('lib-geom', msg.geom ?? {});
       break;
 
-    case 'log':
-      onLogEntry(msg.entry);
-      break;
-
     case 'v4-log': onV4Log(msg); break;
     case 'v4-result': onV4Result(msg); break;
 
@@ -862,7 +841,7 @@ async function handle(msg) {
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
     case 'moderated':
-      // someone was removed or banned here (or a ban lifted): what everyone else is told, as v1 told them (names only).
+      // someone was removed or banned here (or a ban lifted): what everyone else is told (names only).
       // `you`: the act was on you (a mute, a ghost): said to you, with how long
       if (msg.you) { const until = msg.until ? ` until ${new Date(msg.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
         const what = msg.verb === 'mute' ? `muted your ${(msg.channels ?? ['voice', 'chat']).join(' and ')}` : msg.verb === 'ghost' ? 'made you a ghost (unseen; you can look and walk, not act or talk)' : msg.verb;
@@ -961,31 +940,15 @@ async function onSnapshot(msg) {
       .catch((e) => report(`present ${p.id}`, e));
   }
 
-  // Shadow state adopts the snapshot FIRST, synchronously — before the
-  // legacy replay's first await can let a live entry interleave. Today's
-  // server sends live-folded state (it already contains the tail's effects;
-  // the tail rides along for the chat overlap), so the shadow folds nothing
-  // twice: it marks the highest covered seq and lets foldLive take over.
-  // a v4 world: adopt the door's own cut, and draw the view of THIS client's fold of it (the snapshot's `state` is
-  // only read for its chat window)
-  if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {}); } else v4.reset();
-  shadowHydrate(msg.v4?.state ? v4.view(msg.state) : msg.state, [], Math.max(
-    typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
-    ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
-  ));
+  // State adopts the snapshot FIRST, synchronously: the door's own cut, drawn as the view of THIS client's fold of it
+  // (the snapshot's `state` is the chat window: chat isn't world state).
+  if (!msg.v4?.state) { v4.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
+  v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {});
+  shadowHydrate(v4.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
 
-
-  // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
-  // replay — join time becomes the slowest asset, not the sum of all of them.
   hydrating = true; pendingLive = [];
-  // Every tail seq counts as delivered whether or not legacy replays it —
-  // the realizer's entries are filtered out below, and an under-advanced
-  // lastSeq would let the backlog re-apply what state already holds.
-  for (const e of msg.entries) if ((e.seq ?? -1) > lastSeq) lastSeq = e.seq;
-  // flush the events that raced us, in order, once. Their folds already
-  // landed at arrival (seq-guarded); under the realizers this delivers
-  // their live causes, after the hydration window so a raced say lands
-  // below the arrival chat window, not above it.
+  // flush the chat lines that raced us, in order, once, after the hydration window so a raced say lands below the
+  // arrival chat window, not above it.
   const backlog = pendingLive.filter((e) => (e.seq ?? -1) > lastSeq).sort((a, b) => a.seq - b.seq);
   pendingLive = []; hydrating = false;
   for (const e of backlog) {

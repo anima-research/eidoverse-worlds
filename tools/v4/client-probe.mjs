@@ -387,6 +387,23 @@ try {
     check('xr: a second hand on a two-handed rifle takes it in both (its fore grip); letting that hand go leaves it in the right (presence: nothing logged)', both?.grip === 'stock' && both?.second?.grip === 'fore' && one?.hand === 'right' && logged5 === 0, { both, one, logged5 });
     if (process.env.PROBE_SHOTS) { await frames(2); await pg.screenshot({ path: `${process.env.PROBE_SHOTS}/xr-two-hands.png` }); }
     await hand('right', G5.s, { squeeze: 0 }); await xwait(() => !globalThis.EW.physics.holds().rifle);
+    // (X6) the lock question and a refusal, inside the headset (top-down review S1-3): the centre card is DOM and isn't
+    // drawn in an immersive session, so an edit to a locked thing hung on a question nobody saw. Now it rides the 'ask'
+    // quad; its button (the panel's own dispatch) answers it, and the edit lands through the lock.
+    const meL = await xev(() => globalThis.EW.me().root.position.toArray());
+    await xdoor('create', { id: 'lockbox', model: MODEL, components: { transform: { pos: [meL[0] + 1.2, 0, meL[2] + 1.2], scale: [0.2, 0.2, 0.2] }, lock: true } });
+    await xwait((i) => !!globalThis.EW.entities.get(i), 'lockbox');
+    await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/ops.js');
+      window.__lockEdit = E.sendOps([O.set('lockbox', 'transform', { pos: [0.5, 0, 0.5], scale: [0.2, 0.2, 0.2] })], { what: 'move lockbox' }); });   // a lock refuses a move (not a label)
+    const asked = await xwait(async () => { const A = await import('./lib/xrask.js'); const P = await import('./lib/xrpanels.js'); const st = A.xrAskState();
+      return st ? { ...st, open: P.xrPanelOpen('ask') } : null; });
+    await xev(async () => (await import('./lib/xrask.js')).xrAnswer('through'));
+    const landed = await xev(async () => { const r = await window.__lockEdit; return { ok: r?.ok, through: r?.ok === true }; });
+    check('xr: an edit to a locked thing asks on the VR quad (not the invisible centre card), and its answer goes through', asked?.open && asked.choices?.includes('through') && landed?.ok, { asked, landed });
+    const refusedAsk = await xev(async () => { const E = await import('./lib/v4edit.js'); const O = await import('./shared/v4/ops.js');
+      await E.sendOps([O.remove('no-such-thing-xr')], { what: 'delete no-such-thing-xr' }); return (await import('./lib/xrask.js')).xrAskState(); });
+    check('xr: a refusal shows on the VR quad (a toast is silent in a headset)', /refused/.test(refusedAsk?.title ?? '') && refusedAsk?.choices?.includes('ok'), refusedAsk);
+    await xev(async () => (await import('./lib/xrask.js')).xrAnswer('ok'));
     await xev(() => window.__iwerDevice.activeSession?.end()).catch(() => {});
   }
 
@@ -542,6 +559,19 @@ try {
   const SKIP_REST = ONLY.length > 0 && !ONLY.includes('phys');
   if (SKIP_REST) stage('rest of the probe skipped (PROBE_ONLY)', true, ONLY);
   if (!SKIP_REST) {
+  // history: a refused attempt reads as an attempt in the editor's whole-world History, never as a deed (Commons parity
+  // audit 10-06: "refused acts print as done"). Ann asks for something the door refuses, then the page builds History
+  // rows from the live door's answer with the module the browser actually serves (client/lib/historyrows.js).
+  {
+    const rows = await race(pg.evaluate(async () => {
+      const EW = globalThis.EW; const r0 = await EW.requestV4('delete', { id: 'no-such-thing-probe' });
+      const h = await EW.requestV4('history', { limit: 30 });
+      const { worldHistoryRows } = await import(new URL('lib/historyrows.js', location.href).href);
+      return { refusedReply: !r0?.ok, rows: worldHistoryRows(h.entries, EW.V4?.nameOf ?? ((x) => x)).slice(0, 4) };
+    }), 20000).catch((e) => ({ err: String(e) }));
+    const tried = rows?.rows?.find((x) => x.target === 'no-such-thing-probe');
+    check('history: a refused attempt reads "tried … refused", not as done', rows?.refusedReply && tried?.refused && /tried .* refused/.test(tried.text), rows);
+  }
   // (the old 'edit'/'refuse' stages sent v1 verbs from the page; v4 refuses those by design. The page's door-request
   //  path is covered headlessly by editcommit/hierarchy-commit.)
   // spot: a spot light set through the door (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in

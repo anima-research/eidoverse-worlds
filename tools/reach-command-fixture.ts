@@ -8,11 +8,11 @@ export async function commandsFor(getMe:()=>any, messages:string[]) {
     'base.js':{CONFIG:{name:'owner'},bus:{on:noop,emit:noop},report:noop},
     'capture.js':{captureFrame:noop},
     'world.js':{entities:new Map(),roleOf:noop,worldHasOwner:()=>false},
-    'net.js':{net:{myId:'owner'},sendVerb:noop,sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldReset:noop,requestDebug:noop},
+    'net.js':{net:{myId:'owner'},identityOf:()=>null,isV4:()=>true,requestV4:async()=>({ok:true}),sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldReset:noop,requestDebug:noop,sendAnim:noop,sendDrag:noop,v4:{active:true}},
     'remotes.js':{remotes:new Map()},
     'controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
     'v4phys.js':{punt:noop,grab:noop,put:noop,drop:noop,throwHeld:noop},'chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
-    'ui.js':{toggleHelp:noop,flashHint:noop},'scenegraph.js':{sceneAttach:noop,sceneDetach:noop},
+    'ui.js':{toggleHelp:noop,flashHint:noop,toast:noop},'scenegraph.js':{sceneAttach:noop,sceneDetach:noop},
     'consent.js':{setPushable:noop,pushable:()=>false},'localbody.js':{trySitOn:noop},'mybody.js':{getMe},
   };
   for(const [name,exports] of Object.entries(modules))mock.module(fileURLToPath(new URL('../client/lib/'+name,import.meta.url)),()=>exports as any);

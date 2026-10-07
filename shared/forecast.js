@@ -268,7 +268,7 @@ function normalizeClock(out, prior) {
  *  and the top-level `seq`/`by` (which sky entry authored this bag — the
  *  effective clock's provenance, issue #65) come from the ENTRY, never from
  *  the authored args — a policy bag cannot spoof its own provenance. The one
- *  exception is synthetic pre-history replay (stateToEntries' negative seqs):
+ *  exception is synthetic pre-history replay (negative seqs: a snapshot re-read as entries):
  *  those args ARE the already-stamped fold, so stamps pass through untouched —
  *  restamping them with the synthetic entry would re-epoch the forecast on
  *  every late join.

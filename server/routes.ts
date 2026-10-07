@@ -27,7 +27,6 @@ import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
-import { entryBusStats } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
 // client console tee (see the /clientlog route): a per-world bucket for every world this server KNOWS (loaded in
 // memory, or with a data dir on disk) plus one shared bucket for any other label, plus one global bucket — so a
@@ -49,8 +48,20 @@ const knownWorld = (name: string) => {
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
   return worldDirs.has(name) && hasWorldLog(name);
 };
-/** A world's directory holds its log: log.jsonl (v1) or v4.jsonl (a v4 world, protocol/v4 slice 2). */
-const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "log.jsonl")) || existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
+/** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
+ *  JOIN_TOKEN they need a key a join would take (the door key, an agent token, an aid1 credential) as a Bearer header,
+ *  or a signed-in session cookie from this page (security review 10-06 pass 2, L-C). An open box (no JOIN_TOKEN) is open. */
+function mayRead(req: Request): boolean {
+  if (!JOIN_TOKEN) return true;
+  const auth = req.headers.get("authorization") ?? "";
+  const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  return !!(key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || aid1JoinIdentity(key)))
+    || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
+}
+const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
+
+/** A world's directory holds its log, v4.jsonl. */
+const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
@@ -544,7 +555,7 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/geom",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
       // Geometry as DATA, for beings who perceive by reading. Three tiers:
       //   /geom?lib=<path>           one asset: bbox, flat zones, named parts
       //   /geom?world=W&id=<entity>  that asset + the entity's world transform
@@ -562,31 +573,23 @@ const ROUTES: Route[] = [
         const sum = await summarizeGlb(file);
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
+      if (!mayRead(req)) return unauthorized();
       // read-only: answer for LOADED or on-disk worlds, never create one
       if (!/^[a-z0-9_-]{1,64}$/i.test(wname)
         || (!worlds.has(wname) && !hasWorldLog(wname))) {
         return j({ error: "no such world" }, 404);
       }
       const w = getWorld(wname);
-      // COMPOSE with the sim (PROTOCOL_v2 §5): a punted body's fold position
-      // is its last AUTHORED word, which under an epoch can be a spawn point
-      // a dozen flights ago — the sim's answer outranks it, exactly as the
-      // punt verb's own reach math already composes (verbs.ts). Without this
-      // an agent measuring a punted crate was told where it USED to be.
-      // A folded q (PROTOCOL §9.1) is the full orientation — yaw is then its
-      // heading. A sim-owned body speaks yaw only, so its live answer drops q.
-      const simAt = (eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) => {
-        const b = (w as any).sim?.bodies?.[eid];
-        return b ? { pos: b.p as number[], yaw: (typeof b.yaw === "number" ? b.yaw : e.yaw ?? 0) }
-          : { pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) };
-      };
+      // A folded q is the full orientation — yaw is then its heading.
+      const poseOf = (_eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) =>
+        ({ pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) });
       const id = url.searchParams.get("id");
       if (id) {
         const e = w.state.entities[id];
         if (!e) return j({ error: `no entity "${id}" in ${wname}` }, 404);
         const file = e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = simAt(id, e);
+        const at = poseOf(id, e);
         return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
@@ -597,13 +600,13 @@ const ROUTES: Route[] = [
       for (const [eid, e] of Object.entries(w.state.entities)) {
         const file = withBoxes && e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        const at = simAt(eid, e);
-        out.push({ id: eid, lib: e.lib ?? null, kind: e.kind ?? "thing",
+        const at = poseOf(eid, e);
+        out.push({ id: eid, lib: e.lib ?? null, kind: e.comp?.light ? "light" : "thing",
           pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
-      return j({ world: wname, entities: out, mounts: w.state.mounts ?? {} });
+      return j({ world: wname, entities: out });
     },
   },
   {
@@ -647,7 +650,8 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
+      if (!mayRead(req)) return unauthorized();
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
@@ -660,12 +664,13 @@ const ROUTES: Route[] = [
   {
     // Discovery for travel: which worlds this sequencer fronts, and who is
     // embodied where. Union of LOADED worlds and on-disk worlds with a log —
-    // never creates one (getWorld is not called). Same trust level as the
-    // world log: public reads. Presence names are the same ids every join
-    // snapshot already hands out; spectators and renderers appear as nothing
-    // here exactly as they do in-world.
+    // never creates one (getWorld is not called). Behind the same door as a
+    // join (mayRead). Presence names are the same ids every join snapshot
+    // already hands out; spectators and renderers appear as nothing here
+    // exactly as they do in-world.
     match: (u) => u.pathname === "/worlds",
-    handler: () => {
+    handler: ({ req }) => {
+      if (!mayRead(req)) return unauthorized();
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
@@ -700,7 +705,7 @@ const ROUTES: Route[] = [
     // errors. Public and cheap like /version — "is the tick healthy" must
     // be a lookup, not an inference from symptoms.
     match: (u) => u.pathname === "/tick",
-    handler: () => new Response(JSON.stringify({ ...tickStats(), entryBus: entryBusStats() }),
+    handler: () => new Response(JSON.stringify({ ...tickStats() }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

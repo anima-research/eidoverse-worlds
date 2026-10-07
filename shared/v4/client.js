@@ -3,8 +3,7 @@
 //
 // The client folds v4 itself, from the server's own v4 stream:
 //   adopt(snap)        the join snapshot's v4 part: {state: stateView(fold), head, worldId, mine?}, the fold as the
-//                      server holds it at `head` (a client can't refold the whole log on join; it adopts a cut, as
-//                      v1 clients adopt the v1 snapshot);
+//                      server holds it at `head` (a client can't refold the whole log on join; it adopts a cut);
 //   ingest(entries, from, held)
 //                      the `v4-log` message: the raw entries the door just wrote, folded with the fold's own ops
 //                      (opsOf + applyInPlace, the strict reader's code). A gap, a purge (retroactive by law, L1) or a
@@ -12,7 +11,7 @@
 //
 // What the renderer reads (slice 3c): the VIEW of this fold (record.js viewState), recomputed from the fold itself,
 // so there's nothing held beside it to drift; client/lib/state.js diffs successive views and tells the realizers
-// what changed, in v4 terms. No v1 verbs are made. `say` entries come back as chat lines ({seq, ts, actor, text,
+// what changed, in v4 terms. `say` entries come back as chat lines ({seq, ts, actor, text,
 // to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
 import { simFolder, simCutOf } from "./simlayer.js";

@@ -71,7 +71,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
       return id;
     },
-    /** An identity with no account yet (a translated v1 name): holds its roles until an operator binds an account. */
+    /** An identity with no account yet (a name from an imported world's log): holds its roles until an operator binds an account. */
     legacy(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "legacy", since: now(),  }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
     bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);

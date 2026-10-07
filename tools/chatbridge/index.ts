@@ -1,8 +1,14 @@
 // Chat bridge: mirrors a world's spoken chat into one Discord text channel,
 // and carries that channel's messages back in as speech.
 //
-//   world WS (embodied "discord") ── say verbs ──▶ Discord channel
-//   Discord channel ── messages ──▶ say {text: "author: …"} in the world
+//   world WS (embodied "discord") ── `say` entries of the v4-log stream ──▶ Discord channel
+//   Discord channel ── messages ──▶ a door `say` request {text: "author: …"}
+//
+// The world speaks protocol v4: the join says `v4fold: true` (a client that
+// doesn't is refused), chat arrives as `say` entries in the `v4-log` stream
+// (actors are opaque ids; the stream's `names` and the snapshot's v4.names say
+// who they are), and a say is a door request {type: "v4", id, tool: "say",
+// args: {text}} answered by `v4-result` (a refusal is logged, not retried).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world
@@ -11,8 +17,9 @@
 // provenance survives in the log verbatim.
 //
 // Loop safety (both directions, both by identity):
-//   world → Discord: entries whose actor is the bridge's own id are skipped —
-//     that covers the echo of every line it just spoke.
+//   world → Discord: entries whose actor is the bridge's own identity (the
+//     snapshot's v4.you) are skipped — that covers the echo of every line it
+//     just spoke.
 //   Discord → world: messages from bots/webhooks are skipped — that covers
 //     the bridge's own posts (and any other bot; humans only by default).
 //
@@ -47,7 +54,7 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 const MAX_BACKLOG = 50;        // per direction; beyond this the oldest drop
 const MAX_LINE_CHARS = 1500;   // Discord → world cap (with honest ellipsis)
 const DISCORD_CHUNK = 1900;    // world → Discord split point (limit is 2000)
-const SEND_GAP_MS = 350;       // world verb pacing; VERB_RATE default is 12/4s
+const SEND_GAP_MS = 350;       // world say pacing (the door rate-limits says per actor)
 
 const log = (m: string) => console.log(`[chatbridge ${new Date().toISOString().slice(11, 19)}] ${m}`);
 
@@ -136,6 +143,7 @@ const toWorld: In[] = [];
 let worldWs: WebSocket | null = null;
 let joined = false;
 let speaking = false;
+let reqN = 0;
 
 async function pumpWorld() {
   if (speaking) return;
@@ -149,7 +157,7 @@ async function pumpWorld() {
     const m = toWorld.shift()!;
     let text = `${m.author}: ${m.text}`;
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
-    worldWs.send(JSON.stringify({ type: "verb", verb: "say", args: { text } }));
+    worldWs.send(JSON.stringify({ type: "v4", id: `chatbridge-${++reqN}`, tool: "say", args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;
@@ -157,13 +165,15 @@ async function pumpWorld() {
 
 // ---------------------------------------------------------------- world socket
 
-let lastSeq = -Infinity; // dedupe guard across reconnects (tail replay overlaps live)
+let lastSeq = -Infinity; // dedupe guard across reconnects (a v4-log re-delivery overlaps live)
+let myId: string | null = null; // the bridge's own identity (opaque), from the snapshot
+const names: Record<string, string> = {}; // identity → display name (the door's directory, as the world sends it)
 
 function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
   worldWs = ws;
   ws.onopen = () =>
-    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN }));
+    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, v4fold: true }));
   ws.onclose = () => {
     joined = false;
     log("world socket closed — reconnecting in 1.5s");
@@ -173,23 +183,37 @@ function connectWorld() {
     let msg: any;
     try { msg = JSON.parse(String(ev.data)); } catch { return; }
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
+    if (msg.type === "v4-result") {
+      if (!msg.ok) log(`world refused ${msg.tool}: ${msg.reply?.refused?.reason ?? JSON.stringify(msg.reply?.refused ?? msg.reply)}`);
+      return;
+    }
     if (msg.type === "snapshot") {
       joined = true;
-      // live lines only: the channel is a window, not an archive — but keep
-      // the tail's high-water seq so a reconnect can't replay it at us
-      for (const e of msg.entries ?? []) if (typeof e.seq === "number") lastSeq = Math.max(lastSeq, e.seq);
-      log(`joined "${msg.world}" as ${msg.you} (${msg.entries?.length ?? 0} tail entries skipped — live lines only)`);
+      myId = msg.v4?.you ?? null;
+      Object.assign(names, msg.v4?.names ?? {});
+      // live lines only: the channel is a window, not an archive. Everything at
+      // or before the snapshot's head is history (a reconnect replays none of
+      // it); the head, not a remembered high-water mark, so a reset world (a
+      // fresh, shorter log) isn't muted until it outgrows the old one
+      lastSeq = Number.isInteger(msg.v4?.head) ? msg.v4.head : lastSeq;
+      log(`joined "${msg.world}" as ${msg.you} (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       pumpWorld().catch((e) => log(`world pump error: ${e.message}`));
       return;
     }
-    if (msg.type !== "log" || msg.entry?.verb !== "say") return;
-    const { actor, seq, args } = msg.entry;
-    if (typeof seq === "number") { if (seq <= lastSeq) return; lastSeq = seq; }
-    if (actor === BRIDGE_ID) return; // our own speech echoing back
-    const text = String(args?.text ?? "").trim();
-    if (!text) return;
-    toDiscord.push({ actor, text, at: Date.now() });
-    pumpDiscord().catch((e) => log(`discord pump error: ${e.message}`));
+    if (msg.type !== "v4-log") return;
+    Object.assign(names, msg.names ?? {});
+    (msg.entries ?? []).forEach((e: any, i: number) => {
+      if (e?.kind !== "say") return;
+      const seq = msg.from + i;
+      if (seq <= lastSeq) return;
+      lastSeq = seq;
+      if (myId && e.actor === myId) return; // our own speech echoing back
+      const text = String(e.body?.text ?? "").trim();
+      if (!text) return;
+      const actor = names[e.actor] ?? String(e.actor);
+      toDiscord.push({ actor, text, at: Date.now() });
+      pumpDiscord().catch((err) => log(`discord pump error: ${err.message}`));
+    });
   };
 }
 

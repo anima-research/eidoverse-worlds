@@ -1,5 +1,5 @@
-// shared/chatwindow.js — the recent-chat window a joiner is shown, in a v1 world or a v4 one. Pure.
-//   hear(st, line)    append {actor, text, ts, seq} to st.recentChat (the shape v1's fold keeps), count it, trim fairly
+// shared/chatwindow.js — the recent-chat window a joiner is shown. Pure.
+//   hear(st, line)    append {actor, text, ts, seq} to st.recentChat, count it, trim fairly
 export const RECENT_CHAT = 40;
 
 /** Make room in the recent-chat window WITHOUT letting one loud speaker erase

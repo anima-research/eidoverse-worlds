@@ -1,4 +1,4 @@
-// shared/v4/names.js — the ONE mapping from an engine name (a v1 actor, entity id, role key, component name) to the
+// shared/v4/names.js — the ONE mapping from an engine name (an actor, entity id, role key, component name) to the
 // §2.3 grammar, used by both the translator (old logs) and the live door (server/v4: who is asking). If the two ever
 // spelled one person differently, nobody in a translated world would match their own role (research 35, slice-2 #3).
 //
