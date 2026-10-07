@@ -42,7 +42,9 @@ export const LOOKS = ['free', 'aim', 'locked'];
 export const UPS = ['world', 'socket'];
 export const VR_POLICIES = ['snap', 'track', 'near'];
 export const TIMES = ['loop', 'phase'];
-export const WHO = ['visitor', 'builder', 'owner'];
+export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
+// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the door (whoRank)
+const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
  *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */
@@ -119,7 +121,7 @@ export function bodyOf(sock) {
     input: { move: MOVES.includes(inp.move) ? inp.move : 'none', look: LOOKS.includes(inp.look) ? inp.look : 'free' },
     leaveBy: LEAVE_BY.includes(b.leaveBy) ? b.leaveBy : 'any',
     fromSeat: b.fromSeat === true,
-    who: WHO.includes(b.who) ? b.who : null,
+    who: isWho(b.who) ? b.who : null,
   };
 }
 
@@ -267,7 +269,7 @@ function checkBody(b, at) {
   }
   if (b.leaveBy !== undefined && !LEAVE_BY.includes(b.leaveBy)) return bad('shape', `${at}.leaveBy is ${LEAVE_BY.join(', ')} (leave it out: moving, jumping or getting up all leave)`);
   if (b.fromSeat !== undefined && typeof b.fromSeat !== 'boolean') return bad('shape', `${at}.fromSeat is true or false`);
-  if (b.who !== undefined && !WHO.includes(b.who)) return bad('shape', `${at}.who is visitor, builder or owner`);
+  if (b.who !== undefined && !isWho(b.who)) return bad('shape', `${at}.who is visitor, builder or owner`);
   return null;
 }
 

@@ -1,0 +1,233 @@
+// shared/v4/roles.js — who may do what in a v4 world (RESEARCH-roles-moderation-2026-10-06; PLAN decisions 10-06).
+// Pure data and pure functions: the door (shared/v4/door.js) reads them to admit writes, the server reads them through
+// the door to tell a client its rights, and the client reads them to draw badges, menus and the roles grid. No state
+// of its own, no clock, no imports: a browser and bun import the same file.
+//
+// THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
+//   visitor 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
+// "Below you" is a total order on it (ranks are unique), and every rank comparison compares two members.
+// Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
+// holds it: reason, by, until) and Ghost (in the world but outside society: unseen, can't interact, can't read or post
+// chat; a sanction from a rank above, or a mode someone chooses). A state is never compared as a rank, and a rank can't
+// express a state: that is why ghost is not "rank -5". The legacy role `none` (a v1/v4 demotion) reads as rank -1:
+// below every member, holding no switch, so no gate ever fails open on it.
+
+// ---------------- the five defaults R hasn't ruled on yet (one value each: flip it here) ----------------
+/** Q1: caption is a property of the SCREEN it captions, not a role switch (true = off the role list). */
+export const CAPTION_ON_SCREENS = true;
+/** Q2: owners fly by default (v1 had flight off even for owners). */
+export const OWNERS_FLY = true;
+/** Q3: people without an account (guests) can't be set above the world's default role. */
+export const GUESTS_AT_MOST_DEFAULT = true;
+/** Q4: editWorld (sky, weather, ground, the card, spawn, bounds, fall) is a switch; false = those stay owner-only. */
+export const EDIT_WORLD_SWITCH = true;
+/** Q5: a ban by anyone below owner is at most this many days; owners may ban for longer, or with no end. */
+export const MOD_BAN_MAX_DAYS = 30;
+
+// ---------------- the other caps (research §5) ----------------
+export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute (and a ghost sanction below owner) lasts at most 7 days
+export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
+export const REASON_MAX = 500;
+
+export const RANK = Object.freeze({ none: -1, visitor: 0, builder: 100, moderator: 200, owner: 255 });
+export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "owner"]);
+
+// ---------------- the closed switch list ----------------
+// [name, plain words (UI and help), needs]. The order is the order the grid shows.
+const LIST = [
+  ["build", "make things, and change or delete what you made; publish to the world's library", []],
+  ["editOthers", "change or delete things other people made (undo still goes only along rank)", ["build"]],
+  ...(EDIT_WORLD_SWITCH ? [["editWorld", "change the world's look and layout: sky, weather, ground, the card, spawn points, bounds", ["build"]]] : []),
+  ["generate", "add new models or pictures to the world's palette (the world's generation credit)", ["build"]],
+  ["fly", "fly in this world", []],
+  ["scripts", "install and edit scripts (they act with your rights)", ["build"]],
+  ["pauseScripts", "pause or resume scripts whose sponsor ranks below you", []],
+  ["mute", "mute someone's voice or chat for everyone, for a while (up to 7 days); warn them", []],
+  ["kick", "remove someone now; they can't come back for a while (up to 60 min); ghost them; warn them", []],
+  ["ban", `keep someone out for up to ${MOD_BAN_MAX_DAYS} days (owners: any length); lift bans you may; warn them`, ["kick"]],
+  ["grantRoles", "give or take roles ranked below yours, with only switches you hold", []],
+  ...(CAPTION_ON_SCREENS ? [] : [["caption", "caption a screen", []]]),
+];
+export const SWITCHES = Object.freeze(Object.fromEntries(LIST.map(([k, text, needs]) => [k, Object.freeze({ text, needs: Object.freeze(needs) })])));
+export const SWITCH_NAMES = Object.freeze(LIST.map(([k]) => k));
+/** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
+export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
+/** The powers that may warn (research §2: warn isn't a switch; the gentlest act comes with any of these). */
+export const WARN_POWERS = Object.freeze(["mute", "kick", "ban"]);
+
+const on = (...ks) => Object.freeze(Object.fromEntries(SWITCH_NAMES.map((k) => [k, ks.includes(k)])));
+// The built-in roles. Their rank is fixed; an owner may edit visitor's, builder's and moderator's switches (role-defs);
+// the owner column is locked: every switch, always (fly per OWNERS_FLY).
+export const BUILTIN = Object.freeze({
+  visitor:   Object.freeze({ name: "Visitor",   rank: RANK.visitor,   can: on() }),
+  builder:   Object.freeze({ name: "Builder",   rank: RANK.builder,   can: on("build", "editOthers", "scripts") }),
+  moderator: Object.freeze({ name: "Moderator", rank: RANK.moderator, can: on("build", "editOthers", "scripts", "pauseScripts", "mute", "kick", "ban", "grantRoles") }),
+  owner:     Object.freeze({ name: "Owner",     rank: RANK.owner,     can: Object.freeze(Object.fromEntries(SWITCH_NAMES.map((k) => [k, k === "fly" ? OWNERS_FLY : true]))) }),
+});
+
+const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
+const RESERVED_IDS = new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]);
+
+/** A world's role definitions: @world.role-defs (or {} ). */
+export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
+
+/** A role by id in a world (its @world components `wc`): {id, name, rank, can, builtin, custom} or null if the world
+ *  doesn't define it. `scriptsInstall` is @world.scripts.install ('builder' | 'owner'): until the owner edits a built-in
+ *  role, `install: 'owner'` reads as that role's `scripts` switch off (research §switch notes). */
+export function roleDef(wc, id) {
+  if (id === "none") return { id, name: "No role", rank: RANK.none, can: on(), builtin: true, legacy: true };
+  if (id === "owner") return { id, ...BUILTIN.owner, builtin: true };
+  const defs = defsOf(wc); const d = Object.hasOwn(defs, id) && isObj(defs[id]) ? defs[id] : null;
+  if (Object.hasOwn(BUILTIN, id)) {
+    const b = BUILTIN[id]; const can = { ...b.can, ...(isObj(d?.can) ? pickSwitches(d.can) : {}) };
+    if (!d && wc?.scripts?.install === "owner") can.scripts = false;
+    return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
+  }
+  if (!d || !CUSTOM_ID.test(id) || !Number.isInteger(d.rank)) return null;
+  return { id, name: typeof d.name === "string" ? d.name : id, rank: d.rank, can: { ...on(), ...(isObj(d.can) ? pickSwitches(d.can) : {}) }, custom: true, ...(d.note ? { note: d.note } : {}) };
+}
+const pickSwitches = (can) => Object.fromEntries(Object.entries(can).filter(([k, v]) => Object.hasOwn(SWITCHES, k) && typeof v === "boolean"));
+
+/** Every role a world has, highest rank first (owner first): what the grid and the role pickers list. */
+export function rolesOf(wc) {
+  const ids = [...BUILTIN_IDS, ...Object.keys(defsOf(wc)).filter((k) => !Object.hasOwn(BUILTIN, k))];
+  return ids.map((id) => roleDef(wc, id)).filter(Boolean).sort((a, b) => b.rank - a.rank);
+}
+/** The rank a role id stands at here; an id the world doesn't define is -1 (never "more"). */
+export const rankOfRole = (wc, id) => roleDef(wc, id)?.rank ?? RANK.none;
+
+/** The switches a set closes over: drop any switch whose needs aren't all on (read-time: never fail open). */
+export function closeOver(can) {
+  const out = { ...can };
+  for (let changed = true; changed;) { changed = false;
+    for (const k of SWITCH_NAMES) if (out[k] && SWITCHES[k].needs.some((n) => !out[n])) { out[k] = false; changed = true; } }
+  return out;
+}
+/** The first dependency a set breaks: [switch, missing] or null (write-time: refused, naming it). */
+export function brokenNeed(can) {
+  for (const k of SWITCH_NAMES) if (can[k]) for (const n of SWITCHES[k].needs) if (!can[n]) return [k, n];
+  return null;
+}
+
+/** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
+ *  role, else visitor. A role the world doesn't define reads as visitor. A world with no owner caps everyone at visitor
+ *  (§2.3). `anon` = a guest (no account). Mirrors the door's roleOf exactly; the door calls this. */
+export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
+  if (!wc) return "none";
+  const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
+  const base = dr?.role ?? "visitor";
+  let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
+  if (typeof r !== "string" || (r !== "none" && !roleDef(wc, r))) r = "visitor";
+  const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && wc[k]?.role === "owner");
+  return !hasOwner && rankOfRole(wc, r) > RANK.visitor ? "visitor" : r;
+}
+/** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
+ *  never above the default role; else visitor. */
+export function guestRoleOf(wc) {
+  const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null; const g = dr?.guests;
+  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g)) return "visitor";
+  if (GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, g) > rankOfRole(wc, dr?.role ?? "visitor")) return "visitor";
+  return g;
+}
+
+/** A person's effective rights: {role, name, rank, can: {<switch>: bool}, switches: [names on]}.
+ *  The role's switches, then legacy grants (default-role.gen for those who hold the default role; roles:<id>.gen), then
+ *  the per-person `can` (applied last: Discord's member overwrites), then closed over dependencies. Owners hold every
+ *  switch whatever `can` says (their column is locked); `can.fly: true` may still give an owner flight when OWNERS_FLY
+ *  is off. `none` holds nothing. */
+export function effectiveOf(wc, id, opts = {}) {
+  const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "visitor");
+  let can = { ...def.can };
+  const entry = isObj(wc?.[`roles:${id}`]) ? wc[`roles:${id}`] : null;
+  if (role === "owner") { if (entry?.can?.fly === true) can.fly = true; }
+  else if (role !== "none") {
+    const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null;
+    if (!entry && !opts.anon && dr?.gen === true) can.generate = true;
+    if (entry?.gen === true) can.generate = true;
+    if (isObj(entry?.can)) Object.assign(can, pickSwitches(entry.can));
+    can = closeOver(can);
+  }
+  return { role, name: def.name, rank: def.rank, can, switches: SWITCH_NAMES.filter((k) => can[k]) };
+}
+
+/** Why this role-defs value is refused, or null: {code, reason, teach, didYouMean?}. `held(id)` counts the people who
+ *  hold role `id` now (roles:* and the default role), so a custom role someone holds can't be deleted. `prev` is the
+ *  current value (to see what was removed). */
+export function checkRoleDefs(v, prev, held = () => 0) {
+  const bad = (code, reason, teach = "role-defs is {<role id>: {name, rank, can: {<switch>: true|false}, note?}}", extra = {}) => ({ code, reason, teach, ...extra });
+  if (!isObj(v)) return bad("shape", "role-defs must be an object {<role id>: {name, rank, can}}");
+  const ranks = new Map();
+  for (const [id, d] of Object.entries(v)) {
+    if (id === "owner") return bad("shape", "role-defs can't define owner: the owner holds every switch, always, at rank 255", "leave owner out");
+    if (!Object.hasOwn(BUILTIN, id) && (RESERVED_IDS.has(id) || !CUSTOM_ID.test(id))) return bad("shape", `'${id}' isn't a role id you can make: a–z first, then a–z, 0–9 and '-', up to 24 (not ${[...RESERVED_IDS].join(", ")})`);
+    if (!isObj(d)) return bad("shape", `role-defs.${id} must be {name, rank, can}`);
+    for (const k of Object.keys(d)) if (!["name", "rank", "can", "note"].includes(k)) return bad("schema", `role-defs.${id}: unknown key '${k}'`, "a role is {name, rank, can, note?}");
+    if (d.name !== undefined && !(typeof d.name === "string" && d.name.trim().length >= 1 && d.name.length <= 32)) return bad("shape", `role-defs.${id}.name is 1–32 characters`);
+    if (d.note !== undefined && !(typeof d.note === "string" && d.note.length <= 120)) return bad("shape", `role-defs.${id}.note is up to 120 characters`);
+    if (Object.hasOwn(BUILTIN, id)) { if (d.rank !== undefined && d.rank !== BUILTIN[id].rank) return bad("rank", `${id}'s rank is fixed at ${BUILTIN[id].rank}`, "make a custom role to stand somewhere else"); }
+    else {
+      if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad("rank", `role-defs.${id}.rank must be a whole number 1–254 (visitor is 0, owner 255)`, "place it between two roles: e.g. 150 sits between builder (100) and moderator (200)");
+      if ([RANK.builder, RANK.moderator].includes(d.rank)) return bad("rank", `rank ${d.rank} is ${d.rank === RANK.builder ? "builder" : "moderator"}'s; two roles never share a rank`, "pick a free number");
+    }
+    const r = Object.hasOwn(BUILTIN, id) ? BUILTIN[id].rank : d.rank;
+    if (ranks.has(r)) return bad("rank", `${id} and ${ranks.get(r)} both stand at rank ${r}; two roles never share a rank (so "below you" is never ambiguous)`, "pick a free number");
+    ranks.set(r, id);
+    if (d.can !== undefined) {
+      if (!isObj(d.can)) return bad("shape", `role-defs.${id}.can must be {<switch>: true|false}`);
+      for (const [k, x] of Object.entries(d.can)) {
+        if (!Object.hasOwn(SWITCHES, k)) { const dym = guessSwitch(k); return bad("schema", `role-defs.${id}.can: there is no switch '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, `the switches: ${SWITCH_NAMES.join(", ")}`, { didYouMean: dym }); }
+        if (typeof x !== "boolean") return bad("shape", `role-defs.${id}.can.${k} is true or false`);
+      }
+      const full = Object.hasOwn(BUILTIN, id) ? { ...BUILTIN[id].can, ...d.can } : d.can;
+      const br = brokenNeed(full); if (br) return bad("needs", `role-defs.${id}: ${br[0]} needs ${br[1]}, which is off`, `turn ${br[1]} on too, or ${br[0]} off`);
+    }
+  }
+  for (const id of Object.keys(isObj(prev) ? prev : {})) if (!Object.hasOwn(BUILTIN, id) && !Object.hasOwn(v, id)) { const n = held(id);
+    if (n > 0) return bad("held", `${n} ${n === 1 ? "person holds" : "people hold"} ${id}; give them another role first`, "move them to another role (one batch: their roles:<id> and role-defs together)"); }
+  return null;
+}
+/** Why this per-person `can` is refused, or null. */
+export function checkCan(can, at) {
+  if (!isObj(can)) return { code: "shape", reason: `${at}.can must be {<switch>: true|false}`, teach: `the switches: ${SWITCH_NAMES.join(", ")}` };
+  for (const [k, x] of Object.entries(can)) {
+    if (!Object.hasOwn(SWITCHES, k)) { const dym = guessSwitch(k); return { code: "schema", reason: `${at}.can: there is no switch '${k}'${dym.length ? `; did you mean '${dym[0]}'?` : ""}`, teach: `the switches: ${SWITCH_NAMES.join(", ")}`, didYouMean: dym }; }
+    if (typeof x !== "boolean") return { code: "shape", reason: `${at}.can.${k} is true or false`, teach: "" };
+  }
+  return null;
+}
+/** A typo of a switch name: case-insensitive, prefix either way, else one or two edits. */
+export function guessSwitch(k) {
+  const x = String(k).toLowerCase(); const lev = (a, b) => { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) { let p = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, p + (a[i - 1] === b[j - 1] ? 0 : 1)); p = t; } } return d[b.length]; };
+  return SWITCH_NAMES.map((s) => { const y = s.toLowerCase(); return [s, y === x ? 0 : (x.length >= 3 && (y.startsWith(x) || x.startsWith(y))) ? 0.5 : lev(x, y)]; })
+    .filter(([, d]) => d <= 2).sort((a, b) => a[1] - b[1]).slice(0, 3).map(([s]) => s);
+}
+
+// ---------------- what one person may do to another (the person menu; pure, unit-tested) ----------------
+/** The items of the person menu `me` sees for `them`. me/them: {id, rank, switches: [..], role?, name?} (from
+ *  effectiveOf); state: {muted?: bool, ghosted?: bool, banned?: bool}. Returns [{id, label}] in menu order, plus
+ *  {id: 'rank-line', label, dim: true} when rank is the only reason nothing more shows. Never yourself beyond Message. */
+export function personActions(me, them, state = {}) {
+  const out = [{ id: "message", label: "Message" }];
+  if (!me || !them || me.id === them.id) return out;
+  const has = (k) => (me.switches ?? []).includes(k);
+  const anyMod = MOD_POWERS.some(has) || has("grantRoles");
+  const below = them.rank < me.rank;
+  if (below) {
+    if (WARN_POWERS.some(has)) out.push({ id: "warn", label: "Warn…" });
+    if (has("mute")) out.push(state.muted ? { id: "unmute", label: "Unmute" } : { id: "mute", label: "Mute…" });
+    if (has("kick")) out.push({ id: "kick", label: "Kick…" });
+    if (has("kick")) out.push(state.ghosted ? { id: "unghost", label: "Bring back (end ghost)" } : { id: "ghost", label: "Ghost…" });
+    if (has("ban")) out.push({ id: "ban", label: "Ban…" });
+    if (has("grantRoles")) out.push({ id: "role", label: "Role ▸" });
+  } else if (anyMod) out.push({ id: "rank-line", dim: true, label: `they're ${article(them.name ?? them.role ?? "a member")}; you can't act on equal or higher ranks` });
+  if (MOD_POWERS.some(has)) out.push({ id: "history", label: "Moderation history" });
+  return out;
+}
+const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.toLowerCase()}`);
+/** The roles `me` may give (grantRoles): ranked below me, holding only switches I hold. Owners may give any but owner
+ *  through ownership's own path (seniority), so owner is listed for owners. */
+export function grantableRoles(wc, me) {
+  return rolesOf(wc).filter((r) => me.role === "owner" ? true : r.rank < me.rank && SWITCH_NAMES.every((k) => !r.can[k] || (me.switches ?? []).includes(k)));
+}

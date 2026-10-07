@@ -34,7 +34,9 @@
 
 import { HUMANOID_BONES } from './humanoid.js';
 
-export const WHO = ['visitor', 'builder', 'owner'];
+export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
+// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the door (whoRank)
+const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
 export const HOLDS = ['auto', 'press', 'toggle'];
 export const POSES = ['hand', 'carry', 'torch', 'pistol', 'two-hand', 'shoulder'];
 export const HANDS = ['left', 'right', 'either'];
@@ -86,13 +88,13 @@ export function grabOf(c) {
   if (!isObj(c)) return null;
   const v = c.grabbable;
   if (isObj(v)) return v.purged === true && Object.keys(v).length === 1 ? null : fill(v, 'grabbable');   // a purged value is absent, not a grabbable
-  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: WHO.includes(c.physics.who) ? c.physics.who : 'builder' }, 'physics');
+  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : 'builder' }, 'physics');
   return null;
 }
 function fill(v, source) {
   const g = { source };
   g.enabled = v.enabled !== false;
-  g.who = WHO.includes(v.who) ? v.who : DEFAULTS.who;
+  g.who = isWho(v.who) ? v.who : DEFAULTS.who;
   g.steal = v.steal !== false;
   g.range = num(v.range) ? Math.min(10, Math.max(0.1, v.range)) : DEFAULTS.range;
   g.priority = Number.isInteger(v.priority) ? Math.max(-10, Math.min(10, v.priority)) : 0;
@@ -231,7 +233,7 @@ export function checkGrabbable(v, at = 'grabbable') {
   if (!isObj(v)) return bad('shape', `${at} must be an object {who?, grips?, release?, …} ({} takes every default)`);
   let r = keys(at, v, KEYS, 'grabbable'); if (r) return r;
   for (const k of ['enabled', 'steal', 'twoHanded']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
-  if (v.who !== undefined && !WHO.includes(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
+  if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
   if (v.hold !== undefined && !HOLDS.includes(v.hold)) return bad('shape', `${at}.hold is ${HOLDS.join(', ')} (auto: press-to-hold in VR, sticky on desktop)`);
   if (v.pose !== undefined && !POSES.includes(v.pose)) return bad('shape', `${at}.pose is ${POSES.join(', ')} (leave it out: chosen by size)`);
   if (v.release !== undefined && !RELEASES.includes(v.release)) return bad('shape', `${at}.release is ${RELEASES.join(', ')}`);
