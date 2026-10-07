@@ -242,6 +242,7 @@ The ones you'll reach for:
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
 | `particles` | an emitter: fire, embers, smoke… (below) |
 | `script:<name>` | a script installed on it (below) |
+| `captions`, `captioners` | a screen's live subtitles, written only by `door {tool: "caption", args: {id, session, n, t0, t1, text, speaker?, title?}}` (one line each; `{id, session, end: true}` clears it); `captioners {ids: [<identity>]}` names who may caption that screen, and anyone who may edit it may too (tools/captionbot) |
 
 Plus whatever components the renderer reads from the bag, such as
 `picture` and `collider`. You may invent component names freely — a

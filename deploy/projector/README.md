@@ -69,9 +69,14 @@ decision, made by the screen comp's source allow-list, not here.
 ## The captioner
 
 `tools/captionbot` reads the RTSP face and turns each final line of speech
-into a caption for the screen. **It is not wired to protocol v4 yet:** it
-was written for the first protocol's `caption` verb and the per-screen
-caption deed, and a v4 world has neither, so captions don't reach a v4
-world today. Porting it means a v4 home for the captions (a component the
-captioner may write on its one screen, or a script's) and a door rule for
-who may write it.
+into a caption for the screen: one door `caption` request per line
+(`{id, session, n, t0, t1, text, speaker?, title?}`, or `{id, session, end}`),
+which writes the screen's `captions` component by `shared/captions.js`'s rules.
+Who may caption a screen is the screen's own `captioners {ids: [...]}`
+component: anyone who may edit the screen sets it to the bot's identity (the
+bot logs its identity when it joins), and anyone who may edit the screen can
+caption it too. Nobody writes `captions` with a plain `set` (owners excepted),
+so a builder can't forge the bot's lines. The server stamps the connection's
+leg generation on every line, so a superseded bot can't write over its
+successor. Run it with `AGENT_TOKEN` (its tokens.json entry) so it is the same
+identity every time.
