@@ -635,6 +635,17 @@ try {
       await sleep(1200);   // CP7's flood is the say budget; this is an act
       await type("/grant * builder");
       check("CP9 /grant * builder sets the default role and keeps guests: 'builder'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "builder" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
+    // CA1 World Settings › Access: the account-age field writes access.minAccountDays, and emptying it removes the key (R 10-07)
+    { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
+      const field = `document.querySelector('#__acc [data-k=minAccountDays]')`;
+      const shown = await evalJson(`!!${field} && ${field}.min === '0' && ${field}.max === '365'`);
+      await evalJson(`(() => { const x = ${field}; x.value = '14'; x.onchange(); return true; })()`);
+      const set = await waitDisk(() => disk().entities["@world"]?.c.access?.minAccountDays === 14);
+      await waitFor(`${field}?.value === '14'`, 4000);
+      await evalJson(`(() => { const x = ${field}; x.value = ''; x.onchange(); return true; })()`);
+      const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
+      await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
+      check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
     // CP10 removed from the world (4006): a line typed after it isn't queued "until the world is back" (it never comes)
     { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(4006, 'test: as if removed'), true))`);
       await waitFor(`import('/lib/net.js').then((m) => m.net.status === 'rejected')`, 5000);

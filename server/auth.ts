@@ -56,7 +56,8 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
 // and sent verified humans back to the door mid-event. They survive restarts
 // now. The file holds bearer-equivalent session ids — 0600 and gitignored,
 // same posture as mcpl/tokens.json.
-export const SESSIONS_FILE = join(ROOT, ".sessions.json");
+// SESSIONS_PATH: a self-contained test keeps its sessions in its scratch dir (like AGENT_TOKENS_PATH), never the checkout's
+export const SESSIONS_FILE = resolve(process.env.SESSIONS_PATH ?? join(ROOT, ".sessions.json"));
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());

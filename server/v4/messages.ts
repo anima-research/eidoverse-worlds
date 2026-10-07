@@ -12,7 +12,7 @@
 // earlier one.
 import { forkV4 } from "./world.ts";
 import type { Client, World } from "../world.ts";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "../moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "../config.ts";
 import { isBanned } from "../../shared/v4/door.js";
@@ -71,6 +71,21 @@ export function gagged(c: Client, type: string): boolean {
   // ghostHidden is the sweep's own flag (set at join and on every change): no moderator-log scan per typing packet
   if (c.ghostHidden || w.v4.roleOf(c.v4id) === "none") return true;
   return type === "caption" && !!w.v4.mutedHere(c.v4id);
+}
+/** A guest has no account: a fresh connection is a fresh identity, so a mute or ghost on one would be shed by
+ *  reconnecting (R 10-07). When a mute or ghost lands on a guest present here, it is also filed against their
+ *  connection's hashed address in this world (moderation.ts: at most a day, never past its own end), and server.ts gives
+ *  it to every new guest from that address at join. Lifting one (unmute, unghost) lifts that record. A signed-in
+ *  person's identity already carries; nothing is filed for them. `verb` is the door's act; `actor` the identity that did it. */
+export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string) {
+  const kind = verb === "mute" || verb === "unmute" ? "mute" : verb === "ghost" || verb === "unghost" ? "ghost" : null;
+  if (!kind || !w.v4) return;
+  const addrs = [...new Set([...w.clients].filter((t) => t.v4id === who && t.anonymous && t.addr).map((t) => t.addr as string))];
+  if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }
+  const now = kind === "mute" ? w.v4.mutedHere(who) : w.v4.ghostHere(who);   // in force now (a mute: every channel muted)
+  if (!now || now.chosen) return;
+  for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until: now.until ?? null,
+    ...(kind === "mute" ? { channels: now.channels } : {}), ...(reason ? { reason: reason.slice(0, 280) } : {}) });
 }
 export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };
 
@@ -131,6 +146,9 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           : tool === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
           : tool === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
         if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
+      // a guest's mute or ghost also names their address here, and its lift lifts that (R 10-07)
+      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(tool) && typeof args.who === "string" && args.who !== actorOf(c))
+        guestSanctionByAddress(w, actorOf(c), c.id, tool, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
       if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);

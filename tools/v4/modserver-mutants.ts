@@ -34,6 +34,15 @@ const M: [string, string, string, string, string[]][] = [
   ["a guest's kick names its address", "server/v4/messages.ts", "          if (t.anonymous && t.addr) {", "          if (false) {", ["RS9"]],
   ["reset is the most senior owner's", "server/v4/messages.ts", "if (w.v4.seniorOwner() !== actorOf(c)) return err(", "if (false) return err(", ["RS7"]],
   ["forks are rate-limited", "server/v4/messages.ts", "if (now - last < FORK_GAP_MS) return err(", "if (false) return err(", ["RS7"]],
+  // a guest's mute and ghost by address; minimum account age (R 10-07)
+  ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG3"]],
+  ["a guest's mute or ghost is filed against the address", "server/v4/messages.ts", "for (const addr of addrs) fileAddrSanction(", "for (const addr of [] as string[]) fileAddrSanction(", ["GG1", "GG3", "GG5"]],
+  ["the voice control's mute files it too", "server/server.ts", "guestSanctionByAddress(w, v4ActorOf(c), c.id, muted ?", "void (w, v4ActorOf(c), c.id, muted ?", ["GG5"]],
+  ["unmute / unghost lift the address record", "server/v4/messages.ts", "if (verb.startsWith(\"un\")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }", "if (verb.startsWith(\"un\")) { return; }", ["GG2", "GG4"]],
+  ["access: minimum account age", "server/server.ts", "accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays,", "accountAgeRefusal({ world: w.name, minDays: 0 && acc.minAccountDays,", ["AG3", "AG4"]],
+  ["minAccountDays: a guest is refused", "server/v4/accountage.ts", "if (anonymous || !account) return rule;", "if (false) return rule;", ["AG2", "AG4"]],
+  ["minAccountDays: agents are exempt", "server/v4/accountage.ts", "if (/^(agent:|aid1:|local:)/.test(account)) return null;", "", ["AG2", "AG4"]],
+  ["minAccountDays: 0–365", "shared/v4/catalogue.js", "minAccountDays: { min: 0, max: 365 }", "minAccountDays: { min: -9999 }", ["AG5"]],
   ["CONTROL (no-op)", "server/server.ts", "/** Does this identity hold a power that lets it in past access rules", "/** Does this identity hold  a power that lets it in past access rules", []],
 ];
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;

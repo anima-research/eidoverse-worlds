@@ -47,3 +47,46 @@ export function findBan(map: Record<string, BanRec> | undefined, account: string
 }
 /** The key a ban is filed under. */
 export const banKey = (account: string | null | undefined, addr?: string | null, world?: string | null) => `${world ? `world:${world}:` : ""}${account ? `acct:${account}` : `addr:${addr}`}`;
+
+// ---- a guest's mute and ghost, by address (R 10-07) ----------------------
+// A guest is a fresh identity per connection, so a mute or ghost on one was shed by reconnecting. Like a guest's ban
+// and kick (above), the sanction is also filed against the connection's HASHED address in that world, for at most
+// ADDR_BAN_MS (or the sanction's own shorter end), and every new guest joining that world from the address is given
+// the same sanction (server.ts, at join). Lifting it on any identity it was carried to lifts the address record. Kept
+// apart from the ban list so nothing that reads bans (findBan, the operator's list) can mistake a mute for a ban.
+export type AddrSanction = { kind: "mute" | "ghost"; world: string; addr: string; actor: string; by: string; ts: number; until: number; channels?: string[]; reason?: string; ids: string[] };
+export const ADDR_SANCTIONS_FILE = join(WORLDS_DIR, ".addr-sanctions.json");
+export const addrSanctions: Record<string, AddrSanction> = {};
+export const addrSanctionKey = (kind: string, world: string, addr: string) => `world:${world}:addr:${addr}:${kind}`;
+export function saveAddrSanctions(now = Date.now()) {
+  for (const [k, s] of Object.entries(addrSanctions)) if (!(s.until > now)) delete addrSanctions[k];
+  try { atomicWrite(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2), { mode: 0o600 }); }
+  catch (e) { console.log(`[mod] address sanction save failed: ${e}`); }
+}
+try {
+  if (existsSync(ADDR_SANCTIONS_FILE)) {
+    const raw = JSON.parse(readFileSync(ADDR_SANCTIONS_FILE, "utf8")) as Record<string, AddrSanction>;
+    for (const [k, s] of Object.entries(raw)) if (s && (s.kind === "mute" || s.kind === "ghost") && typeof s.addr === "string" && typeof s.world === "string" && typeof s.actor === "string" && s.until > Date.now()) addrSanctions[k] = { ...s, ids: Array.isArray(s.ids) ? s.ids : [] };
+  }
+} catch (e) { console.log(`[mod] address sanction restore failed (starting empty): ${e}`); }
+/** The address sanctions in force for a guest joining `world` from `addr`. */
+export function addrSanctionsFor(world: string, addr: string | null | undefined, now = Date.now()): AddrSanction[] {
+  if (!addr) return [];
+  return (["mute", "ghost"] as const).map((k) => addrSanctions[addrSanctionKey(k, world, addr)]).filter((s): s is AddrSanction => !!s && s.until > now);
+}
+/** File (or refresh) a guest's sanction against their address: at most a day, never past the sanction's own end. */
+export function fileAddrSanction(s: Omit<AddrSanction, "ts" | "ids" | "until"> & { until?: number | null; who: string }, now = Date.now()) {
+  const until = Math.min(now + ADDR_BAN_MS, s.until ?? Infinity);
+  const key = addrSanctionKey(s.kind, s.world, s.addr); const prev = addrSanctions[key];
+  const { who, ...rest } = s;
+  addrSanctions[key] = { ...rest, ts: now, until, ids: [...new Set([...(prev?.ids ?? []), who])] };
+  saveAddrSanctions(now);
+}
+/** Lifting a mute or ghost on an identity lifts the address record it was filed or carried under (by that identity,
+ *  or by the address it is joined from now). Returns how many were lifted. */
+export function liftAddrSanction(kind: "mute" | "ghost", world: string, who: string, addr?: string | null): number {
+  let n = 0;
+  for (const [k, s] of Object.entries(addrSanctions)) if (s.kind === kind && s.world === world && (s.ids.includes(who) || (addr && s.addr === addr))) { delete addrSanctions[k]; n++; }
+  if (n) saveAddrSanctions();
+  return n;
+}

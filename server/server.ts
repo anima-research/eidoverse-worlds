@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { TRUST_NAMES } from "./config.ts";
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { globalBans, findBan } from "./moderation.ts";
+import { globalBans, findBan, addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
+import { accountAgeRefusal } from "./v4/accountage.ts";
 import { isOperator } from "./v4/operators.ts";
 import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
@@ -22,7 +23,7 @@ import { summarizeGlb } from "./geometry.ts";
 // policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireV4 } from "./world.ts";
 import { isV4World } from "./v4/world.ts";
-import { v4Handler, actorOf as v4ActorOf, gagged } from "./v4/messages.ts";
+import { v4Handler, actorOf as v4ActorOf, gagged, guestSanctionByAddress } from "./v4/messages.ts";
 import { MOD_POWERS } from "../shared/v4/roles.js";
 import { directoryFor, foldName } from "./v4/directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
@@ -474,7 +475,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     // research roles S4: a kick's cooldown bars rejoining until it ends (the record's until), and @world.access decides
-    // who may come in (anyone / signed-in / listed, and at most `max` at once); moderators and owners always get in
+    // who may come in (anyone / signed-in / listed, accounts at least `minAccountDays` old, and at most `max` at once);
+    // moderators and owners always get in
     if (w.v4 && c.v4id && !isOperator(c.account)) {
       const k = w.v4.kickedHere(c.v4id);
       if (k) { const mins = Math.max(1, Math.ceil((k.until - Date.now()) / 60000));
@@ -484,8 +486,21 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       if (acc && !accessBypass(w, c.v4id)) {
         const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.v4id !== c.v4id).length;
         const why = acc.join === "signed-in" && c.anonymous ? `"${w.name}" is for signed-in people` : acc.join === "listed" && !w.v4.listedHere(c.v4id) ? `"${w.name}" admits only people with a role here` :
-          Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null;
+          accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays, account: c.account, anonymous: !!c.anonymous, now: Date.now() }) ??
+          (Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null);
         if (why) { ws.send(JSON.stringify({ type: "error", error: why })); c.ws.close?.(4005, "access"); return null; }
+      }
+      // a guest is a fresh identity per connection: a mute or ghost a guest was given here is also filed against their
+      // hashed address (moderation.ts), and every new guest from that address is given it too, written to the moderator
+      // log as the moderator's own act on the new identity (so it shows, applies and lifts like any other) (R 10-07)
+      if (c.anonymous && c.addr && !c.spectator && (c.surface ?? "world") === "world") {
+        let carried = 0;
+        for (const s of addrSanctionsFor(w.name, c.addr)) {
+          if (s.kind === "mute" ? w.v4.mutedHere(c.v4id) : w.v4.ghostHere(c.v4id)) continue;
+          w.v4.live.appendMod({ actor: s.actor, verb: s.kind, who: c.v4id, ...(s.kind === "mute" ? { channels: s.channels ?? ["voice", "chat"] } : {}), until: s.until, ...(s.reason ? { reason: s.reason } : {}), carried: "address" });
+          if (!s.ids.includes(c.v4id)) s.ids.push(c.v4id); carried++;
+        }
+        if (carried) { saveAddrSanctions(); console.log(`[world:${w.name}] a guest's ${carried} sanction(s) carried to ${c.id} by address`); }
       }
     }
     c.world = w;
@@ -1071,6 +1086,7 @@ const server = Bun.serve({
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
+              guestSanctionByAddress(w, v4ActorOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
               if (muted) for (const t of w.clients) if (t.v4id === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
               const name = [...w.clients].find((t) => t.v4id === target)?.id ?? target;

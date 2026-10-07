@@ -17,6 +17,10 @@
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
 //       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited;
 //       RS8 whispers obey mutes and ghost; RS9 ghost history/presence, the ban list, a guest's kick by address
+//   GG  a guest's mute and ghost carry by hashed address to the next guest from it (R 10-07: reconnecting sheds nothing);
+//       lifting them lifts the address record; a signed-in person is untouched
+//   AG  @world.access.minAccountDays: a Discord account's age from its snowflake (pure), and the join gate (young human
+//       refused with when they qualify, a guest refused, an enrolled agent exempt, a moderator's bypass, the range)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -42,7 +46,7 @@ const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
 fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"), HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
   let port = 9310; for (; port < 9400; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
@@ -53,8 +57,8 @@ async function start(extra = {}) {
   return { port, proc: p, dead: true, log: logf };
 }
 /** A socket that can join more than once (C1 needs two joins on ONE socket). */
-async function sock(port) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
+async function sock(port, headers = undefined) {
+  const ws = headers ? new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers }) : new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") waiters.get(m.id)?.(m.reply); };
   let closed = null; ws.onclose = (e) => { closed = e.code; };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
@@ -317,6 +321,93 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
       "RS9 a ghost's history is empty and its anim reaches nobody; the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [hist?.entries?.length, animSeen, visBans.slice(0, 60), kk.ok, jg2.errors]);
     for (const x of [vy, mo, gv, g2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
+
+// ---- AG (pure): a Discord account's age is its snowflake's timestamp; the gate's policy, case by case ----
+{ let A = null; try { A = await import(path.join(ENGINE, "server/v4/accountage.ts")); } catch (e) { A = null; }
+  // Discord's own documented example: snowflake 175928847299117063 was made at 1462015105796 ms (2016-04-30 11:18:25.796 UTC)
+  const t = A?.accountCreatedAt?.("human:discord:175928847299117063");
+  ok(t === 1462015105796 && new Date(t).toISOString() === "2016-04-30T11:18:25.796Z" && A.accountCreatedAt("human:discord:abc") === null
+    && A.accountCreatedAt("agent:token:rowan") === null && A.accountCreatedAt("human:discord:") === null,
+    "AG1 a Discord account's creation time is its snowflake's (id >> 22) + 1420070400000; anything else has none", [t, A ? Object.keys(A) : "no module"]);
+  const now = Date.UTC(2026, 9, 7, 12), DAY = 86400000;
+  const flake = (ms) => (BigInt(ms - 1420070400000) << 22n).toString();
+  const R = (o) => A?.accountAgeRefusal?.({ world: "moor", minDays: 7, now, anonymous: false, account: null, ...o });
+  const young = R({ account: `human:discord:${flake(now - 2 * DAY - 3600_000)}` });
+  ok(!!A && /at least 7 days old/.test(young ?? "") && /in 5 days/.test(young ?? "") && R({ account: "human:discord:175928847299117063" }) === null
+    && R({ anonymous: true }) === '"moor" is for signed-in people whose account is at least 7 days old' && R({ account: "agent:token:moss" }) === null && R({ account: "aid1:id.test:agent:x@y" }) === null
+    && R({ account: `human:discord:${flake(now - DAY)}`, minDays: 0 }) === null && /how old/.test(R({ account: "human:github:5" }) ?? ""),
+    "AG2 the policy: a young Discord account is told when it qualifies; an old one passes; a guest is refused; agents are exempt; 0 is off; an account whose age can't be read is refused",
+    [young, R({ anonymous: true }), R({ account: "human:github:5" })]); }
+
+// ---- GG / AG (server): a guest's mute and ghost carry by address; minimum account age ----
+{ ok(tool(["found", "moor", "--owner", "agent:token:rowan"]).code === 0, "(GG setup) found moor owned by the Rowan enrolment");
+  const S5 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu" });
+  const own = await sock(S5.port); const jo = await own.join("moor", "Rowan", { agentToken: "tok-rowan" });
+  const guest = async (n) => { const s = await sock(S5.port); const j = await s.join("moor", n); return [s, j]; };
+  const rights = (j) => j.snapshot?.yourRights ?? {};
+  // GG1: a guest's chat mute carries to the next guest from the same address, channels kept; a signed-in person is untouched
+  { const [g1, j1] = await guest("drifter");
+    const m = await own.req("mute", { who: you(j1), minutes: 10, channels: ["chat"], reason: "spam" }); await sleep(200);
+    g1.close(); await sleep(300);
+    const [g2, j2] = await guest("drifter2");
+    const said = await g2.req("say", { text: "still here" });
+    const log = await own.req("modlog", { who: you(j2) });
+    const moss = await sock(S5.port); const jm = await moss.join("moor", "Moss", { agentToken: "tok-moss" });
+    ok(m.ok && !!j2.snapshot && you(j2) !== you(j1) && JSON.stringify(rights(j2).muted?.channels) === '["chat"]' && said.refused?.code === "muted"
+      && log.records?.some((r) => r.verb === "mute" && r.who === you(j2) && r.actor === you(jo)) && !rights(jm).muted,
+      "GG1 a guest's chat mute holds against the next guest from the same address (channels kept, filed as the moderator's); a signed-in person isn't touched",
+      [m.ok, you(j1), you(j2), rights(j2).muted, said.refused?.code, log.records, rights(jm).muted]);
+    // GG2: unmuting the carried identity lifts the address record: the next guest is free
+    const um = await own.req("unmute", { who: you(j2) }); g2.close(); await sleep(300);
+    const [g3, j3] = await guest("drifter3");
+    ok(um.ok && !!j3.snapshot && !rights(j3).muted, "GG2 an unmute lifts the address record too: the next guest from it isn't muted", [um, rights(j3)]);
+    // GG3: a ghost (an owner's, with no end) carries too, capped at a day, hidden from the start
+    const gh = await own.req("ghost", { who: you(j3), reason: "trolling" }); await sleep(200); g3.close(); await sleep(300);
+    const k = own.msgs.length; const t0 = Date.now();
+    const [g4, j4] = await guest("drifter4"); await sleep(300);
+    const late = await sock(S5.port); const jl = await late.join("moor", "Fern", { agentToken: "tok-fern" });
+    const G = rights(j4).ghost;
+    ok(gh.ok && !!j4.snapshot && !!G && !G.chosen && G.until > t0 && G.until <= t0 + 24 * 3600_000 + 60_000
+      && !own.msgs.slice(k).some((m) => m.type === "arrive" && m.v4id === you(j4)) && !(jl.snapshot?.present ?? []).some((x) => x.v4id === you(j4) || x.id === j4.snapshot?.you),
+      "GG3 a guest's ghost holds against the next guest from the address (at most a day), unseen from their first moment", [gh.ok, G, own.msgs.slice(k).filter((m) => m.type === "arrive")]);
+    // GG4: unghosting lifts the address record
+    const ug = await own.req("unghost", { who: you(j4) }); g4.close(); await sleep(300);
+    const [g5, j5] = await guest("drifter5");
+    ok(ug.ok && !!j5.snapshot && !rights(j5).ghost, "GG4 an unghost lifts the address record too", [ug, rights(j5)]);
+    // GG5: the voice control's mute (voice-moderate) is a mute like any other: it carries, and its unmute lifts it
+    own.raw({ type: "voice-moderate", v4id: you(j5), muted: true, minutes: 5 }); await sleep(400); g5.close(); await sleep(300);
+    const [g6, j6] = await guest("drifter6");
+    own.raw({ type: "voice-moderate", v4id: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
+    const [g7, j7] = await guest("drifter7");
+    ok(JSON.stringify(rights(j6).muted?.channels) === '["voice"]' && !rights(j7).muted, "GG5 a voice-control mute carries by address (voice only), and its unmute lifts it", [rights(j6).muted, rights(j7).muted]);
+    for (const x of [moss, late, g7]) x.close(); }
+  // AG3-5: minAccountDays at the join
+  { const DAY = 86400000; const flake = (ms) => (BigInt(ms - 1420070400000) << 22n).toString();
+    const login = async (sub, name) => { const r = await fetch(`http://127.0.0.1:${S5.port}/auth`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: mint({ kind: "human", sub, name }) }) });
+      const ck = (r.headers.get("set-cookie") ?? "").split(";")[0]; return ck; };
+    const as = async (cookie, name) => { const s = await sock(S5.port, { cookie }); const j = await s.join("moor", name); return [s, j]; };
+    const ckYoung = await login(`human:discord:${flake(Date.now() - 2 * DAY - 3600_000)}`, "Sprout");
+    const ckMod = await login(`human:discord:${flake(Date.now() - 1 * DAY)}`, "Bud");
+    const ckOld = await login("human:discord:175928847299117063", "Oak");
+    // Bud is young but a moderator here: their identity comes from a first visit before the rule
+    const [b0, jb0] = await as(ckMod, "Bud"); await own.req("set", { id: "@world", component: `roles:${you(jb0)}`, value: { role: "moderator" } }); b0.close(); await sleep(200);
+    const set = await own.req("set", { id: "@world", component: "access", value: { join: "anyone", minAccountDays: 7 } });
+    const [y, jy] = await as(ckYoung, "Sprout"); const [o, jo2] = await as(ckOld, "Oak");
+    ok(set.ok && !!ckYoung && !jy.snapshot && /at least 7 days old/.test(jy.errors.join(" ")) && /in 5 days/.test(jy.errors.join(" ")) && y.closed === 4005 && !!jo2.snapshot,
+      "AG3 minAccountDays: a Discord account younger than the rule is refused and told when it qualifies; an older one comes in", [set.ok, set.refused, jy.errors, y.closed, !!jo2.snapshot, jo2.errors]);
+    const [gq, jg] = await guest("passerby");
+    const ag = await sock(S5.port); const ja = await ag.join("moor", "Wren", { agentToken: "tok-wren" });
+    const [b1, jb1] = await as(ckMod, "Bud");
+    ok(!jg.snapshot && /signed-in/.test(jg.errors.join(" ")) && !/how old/.test(jg.errors.join(" ")) && !!ja.snapshot && !!jb1.snapshot,
+      "AG4 with minAccountDays a guest is refused like 'signed-in'; an enrolled agent is exempt; a young moderator keeps the bypass", [jg.errors, ja.errors, jb1.errors]);
+    const big = await own.req("set", { id: "@world", component: "access", value: { join: "anyone", minAccountDays: 400 } });
+    const neg = await own.req("set", { id: "@world", component: "access", value: { join: "anyone", minAccountDays: -1 } });
+    const zero = await own.req("set", { id: "@world", component: "access", value: { join: "anyone", minAccountDays: 0 } });
+    const [y2, jy2] = await as(ckYoung, "Sprout");
+    ok(big.refused?.code === "bounds" && neg.refused?.code === "bounds" && zero.ok && !!jy2.snapshot, "AG5 minAccountDays is 0–365 (0 is off: the young account comes in)", [big.refused, neg.refused, zero.ok, jy2.errors]);
+    await own.req("delete", { id: "@world", component: "access" });
+    for (const x of [o, gq, ag, b1, y2]) x.close(); }
+  own.close(); S5.proc.kill(); }
 
 // ---- one person, one identity on this door (R 10-06: friends, messages, invites need it; per-world ids withdrawn) ----
 { const a = await sock(S2.port); const ja = await a.join("garden", "x", { agentToken: "tok-rowan" });
