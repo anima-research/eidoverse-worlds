@@ -100,11 +100,12 @@ if (argv.includes("--mutants")) {
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     for (const [a, b] of pairs) src = src.replace(a, () => b);
     fs.writeFileSync(f, src);
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
+    // a mutant whose cases can't finish in MUTANT_MS is as red as one that fails them (the bound is 50 ms a request)
+    const r = await runSelf(d, cases.length ? cases : null, Number(process.env.MUTANT_MS ?? 240000));
+    const redIds = r.timedOut ? cases : [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
+    const good = cases.length ? (r.timedOut || r.code !== 0) && cases.every((c) => redIds.includes(c)) : r.code === 0 && !r.timedOut;
     if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
+    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${r.timedOut ? "(timed out)" : redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
     if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
     fs.rmSync(d, { recursive: true, force: true });
   }
