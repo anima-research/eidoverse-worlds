@@ -746,6 +746,7 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && op.comp.startsWith("script:")) prevOf.set(op, s.entities[op.id]?.c[op.comp]); // the value just before it
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
+  capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
@@ -753,6 +754,30 @@ function admit(w, st, who, ops) {
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
   return new Admitted(who, norm, s);
+}
+// How much a world holds (review 10-06 S0-2, security pass 2): at most @world.capacity.things things (default 2 000: the
+// size tools/v4/scale-check.ts holds every request under 50 ms at, and already past what a standalone headset's browser
+// draws at frame rate; an owner may raise it to 5 000), and the world's guests TOGETHER at most capacity.guests standing
+// things they made (default 200): a guest is a fresh identity per connection, so no per-identity budget stopped one from
+// filling a world. Only a write that adds things is refused (full); deleting, and every other change, stay open at the cap.
+export const CAPACITY = { things: 2000, guests: 200 };
+const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const ok = (x) => Number.isInteger(x) && x >= 0;
+  return { things: ok(v?.things) ? v.things : CAPACITY.things, guests: ok(v?.guests) ? v.guests : CAPACITY.guests }; };
+// the things standing that a guest's rights made (a log view, kept incrementally like everIds)
+function guestMade(w, st) {
+  const G = (w.__guests ??= { n: 0, ids: new Set() });
+  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "state") continue; let by = null;
+    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (ISANON(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
+  let n = 0; for (const id of G.ids) if (st.entities[id]) n++; return n;
+}
+function capacityCheck(w, st, s, who, norm) {
+  const made = norm.filter((o) => o.verb === "create").length; if (!made) return;
+  const cap = capacityOf(s); const before = Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0), after = Object.keys(s.entities).length - (s.entities["@world"] ? 1 : 0);
+  if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before });
+  const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
+  if (!ISANON(holder)) return;
+  const g = guestMade(w, st);
+  if (g + made > cap.guests) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guests} (@world.capacity.guests), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guests", { limit: cap.guests, things: g });
 }
 // A lock binds everyone, the locker and owners included (§5). `through_lock: true` on the request lets anyone who may
 // remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
