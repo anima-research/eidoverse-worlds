@@ -205,11 +205,14 @@ function paintAccess(body) {
     + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'visitor')}</label>`
     + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), dr.guests ?? 'visitor')}</label>`
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
+    + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`
+    + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
     + `<p class="rp-dim">moderators and owners always get in${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
   body.querySelectorAll('[data-k]').forEach((x) => { x.addEventListener('keydown', (e) => e.stopPropagation()); x.onchange = () => {
     const k = x.dataset.k;
     if (k === 'role' || k === 'guests') act('set', { id: '@world', component: 'default-role', value: { [k]: x.value }, merge: true }, `${k === 'role' ? 'arrivals' : 'guests'}: ${x.value}`).then(() => paintAccess(body));
-    else { const v = { ...(wc().access ?? { join: 'anyone' }) }; if (k === 'max') { if (x.value) v.max = Math.max(1, Math.min(200, Number(x.value))); else delete v.max; } else v[k] = x.value;
+    else { const v = { ...(wc().access ?? { join: 'anyone' }) }; if (k === 'max') { if (x.value) v.max = Math.max(1, Math.min(200, Number(x.value))); else delete v.max; }
+      else if (k === 'minAccountDays') { const d = Math.round(Number(x.value)); if (x.value && d > 0) v.minAccountDays = Math.min(365, d); else delete v.minAccountDays; } else v[k] = x.value;
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
 }
 function paintCard(body) {
@@ -263,4 +266,4 @@ export function initRolesPanels() {
   bus.on('roster', () => { if (sections.bans?.isOpen) paintBans(sections.bans.body); });
   syncModeration();
 }
-export const _test = { paintRoles, syncModeration, sections };
+export const _test = { paintRoles, paintAccess, syncModeration, sections };
