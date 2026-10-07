@@ -68,13 +68,10 @@ decision, made by the screen comp's source allow-list, not here.
 
 ## The captioner
 
-`tools/captionbot` reads the RTSP face and writes one `caption` verb per
-final line (AGENTS.md, "Things can carry CAPTIONS"). It needs the caption
-deed for its screen, granted once by the world's owner:
-
-```
-grant {id: "captioner", caption: "cinema"}
-```
-
-Captions are durable world testimony like `say`; `end` clears current
-perception, not history.
+`tools/captionbot` reads the RTSP face and turns each final line of speech
+into a caption for the screen. **It is not wired to protocol v4 yet:** it
+was written for the first protocol's `caption` verb and the per-screen
+caption deed, and a v4 world has neither, so captions don't reach a v4
+world today. Porting it means a v4 home for the captions (a component the
+captioner may write on its one screen, or a script's) and a door rule for
+who may write it.

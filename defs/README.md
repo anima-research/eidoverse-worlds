@@ -39,7 +39,7 @@ engine edit, no client edit, no deploy beyond the file.
   the hex). `GRASS_COLORS` itself still lives in vegetation.js (calibrated
   against Sol's blade atlas — engine-adjacent for now; a candidate for
   `defs/flora/_colors.json` later).
-- Worlds reference species by name in `grass` verb args. A log that names a
+- Worlds reference species by name in their `grass` component. A log that names a
   species this instance lacks fails that stroke loudly at build time and
   leaves the rest of the world standing — the log itself is untouched
   (append-only, forever).
