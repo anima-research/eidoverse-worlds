@@ -22,7 +22,6 @@ import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus,
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
-import { initSimWorld, simState } from './lib/simworld.js';
 import { initStructureUI } from './lib/structure_ui.js';
 import { initCauses } from './lib/realize/causes.js';
 // side-effecting: the `particles` component's host wires itself to the comp
@@ -81,7 +80,7 @@ import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
 import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
-import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
+import { initV4Phys, physicsApi, simShown } from './lib/v4phys.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
@@ -152,7 +151,6 @@ initStructureUI();
 initCauses();
 // the deterministic sim's applier (PROTOCOL_v2 dialect 3): advances the
 // shadow sim fold to now and moves sim-owned bodies — inert pre-epoch
-initSimWorld();
 
 // ---------------------------------------------------------------- boot
 
@@ -424,7 +422,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 // FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
-// Wired here for the same reason initPhysObj and wireNet are: net.js must not
+// Wired here for the same reason initV4Phys and wireNet are: net.js must not
 // import the controller, so main.js is where the two meet. Live, not captured
 // -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
 // body that is already in the air the next time it acts.
@@ -436,7 +434,8 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 // Read with no argument, written with one.
 setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
-initPhysObj({ myPos: () => myState.pos });
+// physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
+initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to });
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({
@@ -590,7 +589,6 @@ registerSystem('me-update', (dt, t, now) => {
 });
 registerSystem('bodydrag', (dt, t, now) => updateBodyDrag(dt, now)); // before remotes:
                                  // the takeover pose lands in this frame's avatar.update
-registerSystem('physobj', (dt, t, now) => tickPhysObj(dt, now)); // entity leases I hold
 registerSystem('mods', (dt, t, now) => tickMods(dt, now));       // 🧩 runtime scripts
 registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
@@ -1006,7 +1004,7 @@ const EW = globalThis.EW = {
   },
   clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
-  lease: leaseApi,   // the entity-lease surface runtime plugins script against
+  physics: physicsApi, // grab/put/throw/drop/punt as door requests (v4phys.js): what runtime mods script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
   foldParity,        // shadow-mode drift probe (TEL0S_NOTES §11.6)
@@ -1025,7 +1023,7 @@ const EW = globalThis.EW = {
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
-  simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
+  simShown,                    // the sim as drawn: a copy of this client's v4 sim layer at the server's clock
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   warm: warmStats,             // the conductor's queue (§16.2.A)

@@ -951,8 +951,8 @@ function canDemote(id, ent) {
     for (const k in bag) if (k.startsWith('motion:')) return false;
     if (bag.sockets) for (const k in bag.sockets) if (bag.sockets[k]?.part) return false;
   }
-  return true;   // a live physobj sim self-clears in ~0.45s and kicks are
-                 // near-range by nature — distance already excludes them
+  return true;   // a flight comes to rest in seconds and punts are near-range
+                 // by nature — distance already excludes them
 }
 
 function demote(id) {

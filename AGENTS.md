@@ -155,27 +155,19 @@ you. Target movement, posture change and falling do not revoke that
 tracking relation. Target-side revoke is not implemented yet (issue #183);
 agree on release with the other participant.
 
-**Objects move too — physics is a PLUGIN tier** (docs/leases.md). Anyone
-may lease an entity: `{type:"lease", op:"claim"|"state"|"release", id, …}`
-over raw WS — claim it, stream transforms at ~15Hz, release; the server
-commits the resting `place` with your name in the provenance and forgets
-the lease. Rank 0, like `use`: physical play is using the world. A claim
-with `take:true` succeeds within reach of the object's LIVE position, so a
-rolling ball can be taken mid-roll.
-
-**You don't need to simulate to kick.** `punt {id, power?, dir?}` is an
-ordinary rank-0 VERB — `world_verb punt` and you're playing football. The
-punt is a logged CAUSE (attributed to you, replay-inert, arm's-reach
-gated); any present client with a physics plugin volunteers to simulate
-the flight, the lease table arbitrates the race, and the landing commits
-as a `place`. No dir = away from where you stand. Behaviors can emit it
-too. (On the wire it is `punt`, never `kick` — `kick` is moderation's
-remove-a-person.) Humans have `/kick`/`/punt`. Caveat: in a world with no
-simulating client present, a punt is history without motion — the house
-GPU delegate will close that gap. The
-built-in ball/box sim (client/lib/physobj.js) holds no privilege — your own
-script can claim the same objects and simulate them differently, from the
-ground up; the engine only ever sees who holds the lease and what streams.
+**Objects move too: carrying, throwing and punting are door requests** (v4; design 20). A thing with
+`physics {kind: 'dynamic', who?}` can be picked up (`grab {id}`, within 1.5 m of your hand as the door tracks your
+body: `move {to}` first), carried (it moves with your `move`s; every client draws it in your hand), set down
+(`put {id, pos?}`), let go (`drop {id, pos?}`) or thrown (`throw {id, v: [x, y, z], pos?}`; `pos` is where your hand
+lets go). `punt {id, power? | v?}` kicks a thing at your feet into flight (or volleys one in the air beside you);
+it is never `kick`, which is moderation's remove-a-person. Humans have T (pick up / put down), C (throw / punt) and
+`/grab /put /drop /throw /punt`. `physics.who` says who may (default builder); locks bind as they bind a place.
+Flight needs the world to run physics: `set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}}`
+(owner). Then a launch is a `sim` entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and the door
+LOGS where it came to rest (a state entry caused by the launch); `wait` reports rests. Every client folds the same
+launch with the same engine, so what you see in the air is where it lands, bit for bit. The door stamps each
+thing's measured shape into `physics.shape` (you never send it): when physics is on, everything with a model is a
+static collider. v1's entity leases (`{type: "lease"}`) are gone: a v4 door refuses them.
 
 The swing, as a recipe (this exact sequence is tested in `tools/comptest.ts`):
 

@@ -278,14 +278,6 @@ export function sendBodyDrag(target, payload) {
   }
 }
 
-/** Entity animation leases (docs/leases.md): claim / state / release. The
- *  server arbitrates and answers on the same channel (bus 'lease'). */
-export function sendLease(op, id, payload = {}) {
-  if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'lease', op, id, ...payload }));
-  }
-}
-
 // XR: the wire carries the AVATAR's actual yaw (root + its own chase of the head) and the look
 // pitch while presenting — porch-old sent head yaw (index.html:11066–11072); remotes turn with the head.
 let poseOverride = null;
@@ -736,10 +728,9 @@ async function handle(msg) {
       bus.emit('bodydrag', msg);
       break;
 
-    case 'lease':
-      // entity animation traffic: grants/denials for MY claims, and other
-      // holders' streamed transforms for everyone to render
-      bus.emit('lease', msg);
+    case 'v4-holds':
+      // who holds what (the door's presence plane, design 20 P2): v4phys.js draws each held thing in its holder's hand
+      bus.emit('v4-holds', msg.holds ?? {});
       break;
 
     case 'geom':
@@ -905,11 +896,11 @@ async function onSnapshot(msg) {
   // twice: it marks the highest covered seq and lets foldLive take over.
   // a v4 world: adopt the door's own cut, and draw the view of THIS client's fold of it (the snapshot's `state` is
   // only read for its chat window)
-  if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); } else v4.reset();
+  if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {}); } else v4.reset();
   shadowHydrate(msg.v4?.state ? v4.view(msg.state) : msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
-  ), msg.sim ?? null);
+  ));
 
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered

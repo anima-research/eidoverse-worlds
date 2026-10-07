@@ -17,7 +17,7 @@ import {
 } from '../net.js';
 import { remotes } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
-import { kick } from '../physobj.js';
+import { punt as puntThing, grab, put, drop, throwHeld } from '../v4phys.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
@@ -121,28 +121,29 @@ register('punt', (arg) => {
     shovePerson(named, pow, 'punt');
     return;
   }
-  kick(arg);
+  puntThing(arg);
 });
+// carrying (v4 worlds: door requests; T and C are the keys)
+register('grab', (arg) => grab((arg || '').trim() || undefined));
+register('put', (arg) => put((arg || '').trim() || undefined));
+register('drop', (arg) => drop((arg || '').trim() || undefined));
+register('throw', (arg) => throwHeld(arg));
 register('ban', (arg) => moderate('ban', arg));
 
-// /epoch [tickMs] — enter the deterministic-sim epoch (PROTOCOL_v2 §3).
-// Owner-ranked: the server refuses below rank 2 and refuses any sim name
-// this sequencer does not carry; the client only makes the door REACHABLE
-// (before this, entering an epoch took a raw world_verb — which is how a
-// playtest "of the new physics" ran the legacy volunteer sim instead).
+// /epoch [tickMs] (/physics) — run physics in this world: set @world.sim (design 20 P4). Owner-ranked: the door
+// refuses below owner and refuses an engine this server doesn't carry; it stamps the build and every thing's shape.
 register('epoch', (arg) => {
   const a = (arg || '').trim();
-  // /epoch off — LEAVE the sim epoch (ruling 2026-09-01: explicit, never a
-  // toggle): every flight is released to the fold where it stands, and punts
-  // go back to the volunteer physics. Owners only; the world refuses or announces.
+  // /epoch off — stop physics (explicit, never a toggle): the door refuses while anything is in flight (P6: a cut
+  // waits for rests). Owners only; the world refuses or announces.
   if (/^(off|leave|exit|none)$/i.test(a)) {
     send(OP.unset('@world', 'sim'), { what: 'leave the physics epoch' });
-    logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
+    logChat('*', 'asked the world to turn physics off — refused while anything is in flight (owners only; the world will refuse or announce)');
     return;
   }
   const tickMs = Math.round(Number(a)) || 66;
   send(OP.set('@world', 'sim', { engine: SIM_ID, tickMs }), { what: 'enter the physics epoch' });
-  logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
+  logChat('*', `asked the world to run ${SIM_ID} at a ${tickMs}ms tick — throws and punts fly, and the log records where they rest (owners only; the world will refuse or announce)`);
 });
 
 register('unban', (arg) => {
