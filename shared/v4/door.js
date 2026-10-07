@@ -25,6 +25,7 @@ import { graphemes, cleanText } from "../text.js";
 import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
+import { collisionBoxes } from "../structure.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's door read its own table (./catalogue.js). The engine's models are library paths measured from their GLBs
@@ -46,6 +47,37 @@ let KNOWNID = (_id) => true;
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
+// A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the door
+// never read `structure`, so bodies walked through Commons walls and things were put inside them). Its geometry is the
+// structure's own collision boxes (shared/structure.js collisionBoxes: the same derivation the browser's colliders use),
+// in the thing's frame, as a measured model's `solids` are; its floors are surfaces (a body steps over a slab, a thing
+// rests on one), and a doorway is the absence of a box, so it stays walkable. The anchor's model is ignored, as the
+// browser hides it. Cached per structure VALUE (a write replaces a value, never changes it in place), so the spatial
+// index's identity checks still hold. Past STRUCT_MAX solid boxes the building's whole box stands (conservative, as
+// server/v4/solids.ts does past its limit).
+const STRUCT_MAX = 512; const STRUCTGEO = new WeakMap();
+function structGeom(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || v === PURGED) return undefined;
+  if (STRUCTGEO.has(v)) return STRUCTGEO.get(v);
+  let boxes = []; try { boxes = collisionBoxes(v); } catch { boxes = []; }
+  const ok = (b) => [b.x0, b.y0, b.z0, b.x1, b.y1, b.z1].every(Number.isFinite);
+  const lohi = (b) => [[Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)], [Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)]];
+  const walls = boxes.filter((b) => ok(b) && b.kind !== "floor").map(lohi);
+  // floors as surfaces, one per row run of tiles at one height (a 30 × 30 floor is 30 surfaces, not 900)
+  const rows = new Map(); for (const b of boxes) if (ok(b) && b.kind === "floor") { const [lo, hi] = lohi(b); const k = `${hi[1]}|${lo[2]}|${hi[2]}`; let a = rows.get(k); if (!a) rows.set(k, (a = [])); a.push([lo[0], hi[0], lo[1]]); }
+  const surfaces = [], floors = [];
+  for (const [k, a] of rows) { const [y, z0, z1] = k.split("|").map(Number); a.sort((p, q) => p[0] - q[0]);
+    for (let i = 0; i < a.length;) { let x0 = a[i][0], x1 = a[i][1], y0 = a[i][2]; i++; while (i < a.length && a[i][0] <= x1 + 1e-6) { x1 = Math.max(x1, a[i][1]); y0 = Math.min(y0, a[i][2]); i++; }
+      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push([[x0, y0, z0], [x1, y, z1]]); } }
+  const all = [...walls, ...floors];
+  let g;
+  if (!all.length) g = undefined;   // an empty plan (a building just started): nothing to stand on or bump into
+  else { const lo = [0, 1, 2].map((i) => Math.min(...all.map((b) => b[0][i]))), hi = [0, 1, 2].map((i) => Math.max(...all.map((b) => b[1][i])));
+    g = { label: "a building", structure: true, box: [lo, hi], size: hi.map((x, i) => x - lo[i]), surfaces, solids: walls.length > STRUCT_MAX ? [[lo, hi]] : walls }; }
+  STRUCTGEO.set(v, g); return g;
+}
+/** A thing's geometry: its building's (structure) if it has one, else its model's. */
+const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
 export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
@@ -233,7 +265,7 @@ function localFrom(st, parentId, wt) {
   return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qmul(qinv(pt.q), wt.q).map(r3), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
 }
 function aabb(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return null;
+  const e = st.entities[id]; const m = geomE(e); if (!m) return null;
   const t = worldT(st, id); const [lo0, hi0] = boxOfM(m);
   const corners = [];
   for (const x of [lo0[0], hi0[0]]) for (const y of [lo0[1], hi0[1]]) for (const z of [lo0[2], hi0[2]]) {
@@ -245,7 +277,7 @@ function aabb(st, id) {
   return { min, max };
 }
 function solids(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
+  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
   if (!m.solids) { const b = aabb(st, id); return b ? [b] : []; }
   const t = worldT(st, id);
   return m.solids.map(([lo, hi]) => { const cs = [];
@@ -254,7 +286,7 @@ function solids(st, id) {
 }
 // Oriented boxes + the separating-axis test (F21): world-AABBs of rotated solids fatten into false overlaps.
 function obbs(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
+  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
   const t = worldT(st, id); const boxes = m.solids ?? [boxOfM(m)];
   const ax = [qrot(t.q, [1, 0, 0]), qrot(t.q, [0, 1, 0]), qrot(t.q, [0, 0, 1])];
   return boxes.map(([lo, hi]) => { const lc = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 * t.scale[i]);
@@ -290,7 +322,7 @@ const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
 const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
 
 function surfacesOf(st, id) {
-  const e = st.entities[id]; const m = geomOf(e?.c.model); const b = aabb(st, id); if (!m || !b) return [];
+  const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
     if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
@@ -324,7 +356,7 @@ function geoOf(st, id) {
   const e = st.entities[id]; if (!e) return null;
   // what its world box reads: its model entry, and the transform and parent VALUES of it and each ancestor (a value is
   // replaced, never changed in place, so these identities say whether anything it depends on changed)
-  const m = geomOf(e.c.model); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
+  const m = geomE(e); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
   while (p && n++ <= 33 && st.entities[p]) { const x = st.entities[p]; chain.push(x, x.c.transform, x.c.parent); p = x.c.parent?.to; }
   const g = GEO.get(e);
   if (g && g.id === id && g.m === m && g.chain.length === chain.length && g.chain.every((x, i) => x === chain[i])) return g;
@@ -1527,7 +1559,7 @@ function buildTurn(ctx, a) {
 // Relational placement (A1): the door solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
-  const m = geomOf(e.c.model); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
   // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
   // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
   // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
@@ -1613,7 +1645,7 @@ function buildPlace(ctx, a) {
   } else if (a.beside) {
     const nb = aabb(st, a.beside); const nt = worldT(st, a.beside); if (!nb) refuse("not-found", `no solid '${a.beside}'`, "", { didYouMean: guess(a.beside, Object.keys(st.entities)) });
     yaw = qYaw(nt.q); const right = qrot(nt.q, [1, 0, 0]), fwd = qrot(nt.q, [0, 0, 1]); const dir = a.side === "left" ? -1 : 1;
-    const nm = geomOf(st.entities[a.beside].c.model);
+    const nm = geomE(st.entities[a.beside]);
     const nh = nm.size[0] * nt.scale[0] / 2, mh = m.size[0] * scale[0] / 2, gap = a.gap ?? 0.005;
     const flush = ((m.size[2] * scale[2]) - (nm.size[2] * nt.scale[2])) / 2; // backs line up, as furniture does against a wall
     let k = nh + mh + gap, p, blocker = null;
@@ -2444,7 +2476,7 @@ function buildPublish(ctx, a, w) {
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
   const ids = [a.from, ...descendants(ctx.st, a.from)];
-  const keyOf = (id) => ctx.st.entities[id].c.blueprint?.key ?? id;
+  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c.blueprint?.from);
   const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
     if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
@@ -2457,9 +2489,11 @@ function buildPublish(ctx, a, w) {
 }
 function publishGroup(ctx, a, w, roots) {
   // a group of siblings: the record gets a root part at their footprint centre on the ground; the world is untouched
-  const keyOf = (id) => ctx.st.entities[id].c.blueprint?.key ?? id;
-  const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const all = [...new Set(roots.flatMap((r) => [r, ...descendants(ctx.st, r)]))];
+  // re-publishing a group copy's members (siblings under one copy) keeps their keys, as a single publish does
+  const up = roots.map((r) => ctx.st.entities[r].c.parent?.to); const lineage = up[0] && up.every((p) => p === up[0]) ? ctx.st.entities[up[0]]?.c.blueprint?.from : undefined;
+  const keyOf = partKeys(ctx.st, all, lineage, ["root"]);
+  const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
     ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
       if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
@@ -2468,6 +2502,21 @@ function publishGroup(ctx, a, w, roots) {
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
   const hash = w.putBlob(record); ctx.notes.push({ record: hash, parts: parts.length, roots: roots.length }); ctx.refs.add("@world");
   return [setOp("@world", libKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
+}
+// A record's part keys, unique within it (review 10-07 N1: a table holding two copies of a published leg got the keys
+// [top, leg, leg], and no copy of it could ever be placed). A part keeps the key it was copied as (blueprint.key) only
+// when it comes from the same record as what's being published (`lineage`: re-publishing an edited copy, so update {copy,
+// to} still matches part to part); a part nested from another record (a leg inside the table) is keyed by its id. Those
+// come first, so a nested part never takes a key the lineage needs; a key already taken falls back to the id, then to the
+// id with a number. Returns id → key.
+function partKeys(st, ids, lineage, reserved = []) {
+  const taken = new Set(reserved); const out = new Map();
+  const own = (id) => { const b = st.entities[id].c.blueprint; return lineage !== undefined && b?.from === lineage && typeof b.key === "string" ? b.key : null; };
+  for (const pass of [true, false]) for (const id of ids) { if (out.has(id) || !!own(id) !== pass) continue;
+    const want = own(id) ?? id; const k = taken.has(want) ? null : want;
+    let key = k ?? (taken.has(id) ? null : id); for (let n = 2; key === null; n++) if (!taken.has(`${id}-${n}`)) key = `${id}-${n}`;
+    taken.add(key); out.set(id, key); }
+  return (id) => out.get(id) ?? id;
 }
 // Ids for a copy's parts: minted, so they follow §2.3; which part is which lives in each part's blueprint.key.
 function partIds(st, copy, rootKey, keys) {
@@ -2530,12 +2579,16 @@ function buildCreateFrom(ctx, a) {
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(ctx.st, id, rec.root, rec.parts.map((p) => p.key));
+  // a record published before part keys were unique (N1) may name a key twice: each later twin gets an id of its own
+  // (a part that names a twin as its parent rides the first; there's no telling which was meant)
+  const seen = new Set(), used = new Set([...ids.values()]); const idAt = rec.parts.map((p) => { if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }
+    let n = 2, x; do x = `${ids.get(p.key)}`.slice(0, 60) + `-${n++}`; while (used.has(x) || ctx.st.entities[x]); used.add(x); return x; });
   const ops = [];
-  for (const p of rec.parts) { const c = clone(p.components);
-    if (p.key === rec.root) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
+  for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
+    if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
     c.blueprint = { from: a.from, key: p.key };
-    ops.push(...createOps(ids.get(p.key), c)); ctx.refs.add(ids.get(p.key)); }
+    ops.push(...createOps(idAt[i], c)); ctx.refs.add(idAt[i]); }
   return ops;
 }
 

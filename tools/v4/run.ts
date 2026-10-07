@@ -31,9 +31,11 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the door at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
-  ["roles", "roles-check.ts", 1],
+  ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, switches, the grant rule, sanctions, ghost
   ["batch2", "batch2-check.ts", 1],     // edit mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
-  ["client-b2", "batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in       // roles + moderation (research roles 10-06): ranks, switches, the grant rule, sanctions, ghost
+  ["client-b2", "batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
+  ["build", "build-check.ts", 1],       // ship-list group B (10-07): building walls at the door, nested blueprints, the editor's new script
+  ["build-client", "build-probe.ts", 1], // …and in a real browser: a building edit and its undo, turn/size before placing, the new-script card (one browser, guarded)
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
@@ -45,10 +47,10 @@ for (const [name, file, tail] of SUITES) {
   // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
   // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
   let cmd = ["bun", ENGINE + "tools/v4/" + file]; let senv: Record<string, string | undefined> = env;
-  if (name === "client" || name === "client-b2") {
+  if (name === "client" || name === "client-b2" || name === "build-client") {
     const home = process.env.HOME ?? "";
     const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
-    if (!chrome) { console.log(`\n== client (client-check.ts) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
+    if (!chrome) { console.log(`\n== ${name} (${file}) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
     senv = { ...env, CHROME: chrome, SKIP_OPT_SWEEP: "1" };
     const lock = `${home}/eido/.headless.lock`, guard = "/mnt/c/Users/Claude/code/scripts/perf-guard.sh";
     if (existsSync(guard) && existsSync(lock)) cmd = ["flock", lock, "bash", guard, "-t", "400", "--", ...cmd];

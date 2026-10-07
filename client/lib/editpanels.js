@@ -35,7 +35,8 @@ import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
 import { WEATHERS } from '../../shared/forecast.js';
 import { copiesOf } from '../../shared/blueprint.js';
-import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
+import { openNewScript, mayScript } from './scriptnew.js';
+import { structureTools, currentTool as structureTool, setTool as setStructureTool, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
@@ -572,10 +573,12 @@ function inspectorFields() {
   }
 
   const mine = behaviors.filter((b) => b.attach === id);
-  if (mine.length) {
-    f.push({ t: 'group', k: 'behaviors', label: `Scripts (${mine.length})`, open: isOpen(id, 'behaviors') });
-    f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
-  }
+  // Scripts: the ones on this thing, and (desktop: it's a card with a source box) a new one (scriptnew.js: upload, then
+  // one act). Its own group, so it never folds under the VR-only Add Component rows above.
+  if (mine.length || id !== WORLD_ID) f.push({ t: 'group', k: 'behaviors', label: mine.length ? `Scripts (${mine.length})` : 'Scripts', open: isOpen(id, 'behaviors') });
+  if (mine.length) f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
+  if (id !== WORLD_ID) f.push({ t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, disabled: !mayScript(),
+    hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' });
   f.push({ t: 'btn', k: 'remove', label: 'remove', danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
   const shown = filterFields(f, ifilter);
   painted = shown;
@@ -693,6 +696,8 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     case 'remove': removeMany([id]); break;
     case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'bhv': watchScript(payload); break;   // a script row → the Console, watching it
+    case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
+      flashHint(`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
   }
   repaintAll();
@@ -756,7 +761,7 @@ function removeMany(ids) {
 //               always did (build.js holdGhost → spawn). "add light" is a blueprint of one Light.
 //               Saved blueprints arrive with step 6; the group is there, empty, saying so.
 //   Tools       the transform tools (build.js setTool — the same call as Q/G/E/R), the building
-//               tools (structure_ui.js — its TOOLS, its setTool, its OWN undo stack, labelled so)
+//               tools (structure_ui.js — its TOOLS, its setTool; a building edit is one act, so Ctrl+Z undoes it)
 //               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
 //   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
 //               defs/sky/_presets.json, Ground and Grass from defs/ground/_palette.json (the same
@@ -868,7 +873,6 @@ function buildFields() {
     { t: 'tiles', k: 'xtool', value: seatArmed() ? 'seat' : null, disabled: !sel && !seatArmed(),
       options: [{ v: 'seat', label: 'seat', icon: 'armchair', hint: sel ? `click where a sitter goes on ${sel}` : 'select a thing first, then click where a sitter goes' }] },
     { t: 'btn', k: 'snew', label: 'new building', icon: 'plus', hint: 'start a new building on the ground in view' },
-    { t: 'btn', k: 'sundo', label: 'undo building edit', icon: 'undo2', disabled: !undoDepth(), hint: 'undo the last building edit — its own stack, separate from Ctrl+Z' },
     ...worldBuildFields(),
   ];
 }
@@ -883,7 +887,6 @@ function buildDispatch(action, payload) {
     case 'stool': cancelSeatArm(); setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
     case 'xtool': if (seatArmed()) cancelSeatArm(); else { if (structureTool()) setStructureTool(null); armSeatPlacement(sceneSelected()); } break;
     case 'snew': newBuilding(null); break;
-    case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
     case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;

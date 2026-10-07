@@ -201,6 +201,13 @@ export function sendWorldFork(to) {
   } else logChat('*', 'not connected — try again in a moment');
 }
 
+/** Found a new, empty world you own (server: a signed-in person, within its caps). The reply is world-founded. */
+export function sendWorldFound(name, title) {
+  if (net.joined && net.ws?.readyState === 1) {
+    net.ws.send(JSON.stringify({ type: 'world-found', name, ...(title ? { title } : {}) }));
+  } else logChat('*', 'not connected — try again in a moment');
+}
+
 /** Erase the current world back to zero (server: owner-only, archived not
  *  destroyed). Carries the world's own name as the confirmation the server
  *  demands — the caller is responsible for having made the user type it. */
@@ -820,6 +827,14 @@ async function handle(msg) {
       const link = `${location.origin}/?world=${encodeURIComponent(msg.to)}`;
       logChat('*', `world copied — "${msg.from}" → "${msg.to}" — visit: ${link}`);
       toast(`copied to "${msg.to}" — open ?world=${msg.to} to visit`, 'info', 12000);
+      break;
+    }
+
+    case 'world-founded': {
+      const link = `${location.origin}/?world=${encodeURIComponent(msg.name)}`;
+      logChat('*', `your new world "${msg.name}" is ready — you own it — visit: ${link}`);
+      toast(`founded "${msg.name}" — open ?world=${msg.name} to go there`, 'info', 12000);
+      bus.emit('world-founded', msg);
       break;
     }
 

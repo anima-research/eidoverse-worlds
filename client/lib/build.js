@@ -270,7 +270,8 @@ export async function holdGhost(lib, label) {
     collapseAll();
     flashHint(lib === '@light'
       ? 'placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel'
-      : `placing <b>${label ?? ''}</b> — click to place, then <kbd>E</kbd> rotate / <kbd>R</kbd> scale · <kbd>Esc</kbd> cancel`, 6000);
+      : `placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+    if (lib !== '@light') engage('ghostKeys');   // the status line keeps the keys while it's in hand
   } catch (e) { report('ghost', e); }
 }
 
@@ -320,13 +321,32 @@ export async function holdBlueprint(hash, record) {
     scene.add(holder);
     collapseAll();
     const n = (function count(x) { return 1 + x.children.reduce((k, c) => k + count(c), 0); })(record.root);
-    flashHint(`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place, then <kbd>E</kbd> rotate / <kbd>R</kbd> scale · <kbd>Esc</kbd> cancel`, 6000);
+    flashHint(`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+    engage('ghostKeys');
     return true;
   } catch (e) { report('ghost', e); return false; }
 }
 
 export function cancelGhost() {
-  if (ghost) { scene.remove(ghost.obj); ghost = null; }
+  if (ghost) { scene.remove(ghost.obj); ghost = null; release(); }
+}
+
+// Turn and size the thing in hand BEFORE the click (review 10-07: the ghost always landed at yaw 0, scale 1). The keys
+// are the old protocol's editor's and the seat tool's: Q / E turn (15°, Shift 1°), , / . size (×1.1, Shift ×1.01), clamped as the scale tool
+// clamps. Roblox's R / T and Godot GridMap's S / D rotate a held piece the same way, by key while the mouse aims; here
+// R is the scale tool and D walks, so the keys a builder already has in their fingers in THIS editor win.
+const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1.1, GHOST_SIZE_FINE = 1.01;
+/** The thing in hand, for tests and the hint: {yaw, scale} or null. */
+export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib, bp: ghost.bp?.hash ?? null } : null);
+function ghostKey(e) {
+  if (!ghost || ghost.lib === '@light' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
+  const fine = !!e.shiftKey;   // keys: ghostKeys
+  if (e.code === 'KeyQ' || e.code === 'KeyE') ghost.yaw += (e.code === 'KeyQ' ? 1 : -1) * (fine ? GHOST_TURN_FINE : GHOST_TURN);
+  else if (e.code === 'Comma' || e.code === 'Period') { const k = fine ? GHOST_SIZE_FINE : GHOST_SIZE; ghost.scale = THREE.MathUtils.clamp(ghost.scale * (e.code === 'Period' ? k : 1 / k), 0.1, 12); }
+  else return false;
+  ghost.yaw = Math.atan2(Math.sin(ghost.yaw), Math.cos(ghost.yaw));
+  flashHint(`turned <b>${Math.round(ghost.yaw * 180 / Math.PI)}°</b> · size <b>×${ghost.scale.toFixed(2)}</b>`, 1500);
+  return true;
 }
 
 /** Where the pointer is aiming, snapped onto whatever surface is under it.
@@ -454,7 +474,9 @@ function commitSpawn() {
   const p = ghost.obj.position;
   const id = crypto.randomUUID().slice(0, 8);
   // one door request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
-  if (ghost.bp) V4.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] });
+  // a copy's root keeps the record's own size, times the size it was given in hand
+  const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
+  if (ghost.bp) V4.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
   else if (ghost.lib === '@light') V4.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else V4.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   cancelGhost();
@@ -632,6 +654,8 @@ bus.on('key', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
   if (!editMode) return;
 
+  // the thing in hand holds Q / E and , / . before the tools do (they'd switch tool mid-aim)
+  if (ghostKey(e)) return;
   // a selected seat anchor holds the editing keys before things do
   if (seatKeyDown(e)) return;
   // Tool keys, every one OFF the walking set (the camera here is a BODY and

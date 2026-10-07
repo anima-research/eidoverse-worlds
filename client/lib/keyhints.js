@@ -14,6 +14,7 @@ export const KEYHINTS = {
   duplicate:     { before: 'Ctrl+D (or Alt+D) duplicates the selection: an independent copy · Save as blueprint for copies that stay in step', during: null },
   toolKeys:      { before: 'Q select · G move · E rotate · R scale · P pivot · the same key again switches world/object axes', during: null },
   seatTurn:      { before: 'Q / E turn the seat (Shift: a little)', during: '<kbd>Q</kbd> / <kbd>E</kbd> turn · <kbd>Shift</kbd> a little · <kbd>Esc</kbd> done' },
+  ghostKeys:     { before: 'while placing: Q / E turn it 15° · , / . size it (Shift: a little) · click places · Esc cancels', during: 'click places · <kbd>Q</kbd> / <kbd>E</kbd> turn · <kbd>,</kbd> / <kbd>.</kbd> size · <kbd>Shift</kbd> a little · <kbd>Esc</kbd> cancels' },
 };
 /** Put a gesture's keys on the status line while you're doing it. */
 export function engage(id) { const h = KEYHINTS[id]?.during; if (h) dispatchEvent(new CustomEvent('ew-keyhint', { detail: h })); }
