@@ -79,9 +79,12 @@ export function simFold(entries, now, opts = {}) {
 // advancing early for a read and then folding a later entry is the same as folding it first: advancement is
 // schedule-independent. opts.models: the catalogue whose models count as colliders (default the lab's; the server
 // passes {} so geometry enters the sim only through the log's physics.shape, Covenant III).
-export function simFolder(entries, { models = MODELS } = {}) {
-  const st = emptyState(); let clock = 0;
-  const out = { st, spec: null, foreign: false, sim: null, launched: {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
+// opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched}, simCutOf's shape):
+// a joining client can't refold the whole log, so it adopts the door's sim where the door's clock stood, then feeds
+// every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
+export function simFolder(entries, { models = MODELS, from = null } = {}) {
+  const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
+  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const tickOf = (ts) => (out.sim ? eidosim.tickOf(out.sim, ts) : 0);
   const advance = (ts) => {
     if (!out.sim) return;
@@ -201,6 +204,13 @@ export function livePoses(sf) {
   if (!sf.sim) return out;
   for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map((n) => Math.round(n * 1000) / 1000), v: b.v.map((n) => Math.round(n * 100) / 100) };
   return out;
+}
+/** The sim's cut for a joiner (the door's side of simFolder's opts.from), as plain JSON: where the engine stands at the
+ *  view's clock, what is in flight, and the launch entries those flights came from (so a later rest's cause resolves). */
+export function simCutOf(sf, entries) {
+  const launched = JSON.parse(JSON.stringify(sf.launched ?? {}));
+  const launches = {}; for (const l of Object.values(launched)) if (entries[l.seq]) launches[l.seq] = entries[l.seq];
+  return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches };
 }
 export const digestOf = (sim) => sha256(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
 // A cut, in our own format: the engine state as plain JSON, restorable. (For eidosim the format IS its snapshot.)

@@ -240,6 +240,7 @@ function expel(w: World, target: Client, why: string) {
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
   if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id); }
+  if (wasEmbodied && target.v4id) w.v4?.departed(target.v4id); // what they held drops into the world (design 20, orphans)
 }
 
 // Operator-log census: people are people, eyes are eyes.
@@ -794,6 +795,7 @@ const server = Bun.serve({
             }
             c.world.broadcast({ type: "leave", id: c.id });
             c.world.bhv.onPresence("leave", c.id);
+            if (!c.superseded && c.v4id) c.world.v4?.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
             // identity, and takeover means re-arrival, not departure).
@@ -863,6 +865,7 @@ const server = Bun.serve({
             if (!c.spectator) {
               c.world.broadcast({ type: "leave", id: c.id });
               c.world.bhv.onPresence("leave", c.id);
+              if (c.v4id) c.world.v4?.departed(c.v4id);
               reapAuxLegs(c.world, c, "primary traveled");
             }
           }

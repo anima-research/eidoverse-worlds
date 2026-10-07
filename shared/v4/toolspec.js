@@ -57,9 +57,11 @@ export const TOOLSPEC = {
     example: { id: "ball-1" } },
   put: { doc: "set down what you're holding. Leave pos out to set it straight down onto whatever's below your hand; or give pos (what a VR hand would): the door checks it like any write (not inside things, not floating, within reach)", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where its base rests" }, q: { type: "any", doc: "[x, y, z, w] (optional)" } }, required: ["id"],
     example: { id: "ball-1" } },
-  throw: { doc: "let go of what you're holding with a velocity; physics (if the world runs it) decides where it lands, and the log records where it came to rest", args: { id: ref("the thing you hold"), v: { type: "any", doc: "[x, y, z] in m/s (+y is up); 20 m/s max" } }, required: ["id", "v"],
+  throw: { doc: "let go of what you're holding with a velocity; physics (if the world runs it) decides where it lands, and the log records where it came to rest", args: { id: ref("the thing you hold"), v: { type: "any", doc: "[x, y, z] in m/s (+y is up); 20 m/s max" }, pos: { type: "any", doc: "[x, y, z]: where your hand lets go (a VR hand, or the hand you see); within reach. Default: the door's hand" } }, required: ["id", "v"],
     example: { id: "ball-1", v: [0, 3, 4] } },
-  drop: { doc: "let go of what you're holding: it falls (with physics), or is set straight down (without)", args: { id: ref("the thing you hold") }, required: ["id"], example: { id: "ball-1" } },
+  drop: { doc: "let go of what you're holding: it falls (with physics), or is set straight down (without)", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where your hand lets go; within reach" } }, required: ["id"], example: { id: "ball-1" } },
+  punt: { doc: "kick a thing at your feet (or in the air beside you: a volley) into flight. Only things with physics {kind: 'dynamic'}; who may is physics.who (default builder). Needs the world to run physics", args: { id: ref("the thing"), power: { type: "number", doc: "m/s along the line from your feet through it, lifted (default 4: a hop; 10: hard)" }, v: { type: "any", doc: "or exactly [x, y, z] in m/s (20 max)" } }, required: ["id"],
+    example: { id: "ball-1", power: 6 } },
   use: { doc: "do something to a thing (inspect shows what it offers you)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" } }, required: ["id"],
     example: { id: "swing-1", action: "push", args: { impulse: [0, 0, 1.5] } } },
 };

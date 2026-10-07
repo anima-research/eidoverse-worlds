@@ -368,6 +368,10 @@ function wire(args) {
 export function request(w, actor, tool, args = {}) {
   const prevCat = CAT, prevThrough = THROUGH, prevName = NAMEOF, prevAnon = ISANON; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null;
   ISANON = (id) => w.kindOf?.(id) === "anon";
+  // ONE clock per request (§2.1: ts is the door's admission time). A wall clock read twice in one request could put a
+  // rest's digest (computed where the engine stood at the first read) under a later ts, across a tick boundary, and every
+  // carrier re-folding the log would then call the door's own digest wrong (physlive Q1).
+  const clock = w.now; const t0 = clock(); w.now = () => t0;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -398,7 +402,7 @@ export function request(w, actor, tool, args = {}) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
     if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; }
+  } finally { CAT = prevCat; THROUGH = prevThrough; NAMEOF = prevName; ISANON = prevAnon; w.now = clock; }
 }
 // R7: a refused write is part of the record (what someone TRIED, in true order; §2.1 "the request as sent, plus its
 // refusal if refused"): an act whose body is {request, refused: {code}}, the request cut to 2 KiB, inside the actor's
@@ -764,7 +768,7 @@ function commit(w, actor, tool, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = build(ctx);
+  const ops = stampShapes(ctx, build(ctx));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, tool, sent, ctx.actExtra);
@@ -774,6 +778,42 @@ function commit(w, actor, tool, args, build) {
   const after = w.state();
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
+}
+// P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
+// log, as physics.shape: the DOOR's measurement of its model (model-local box [[min], [max]]), never the asker's word.
+// The live server folds the sim with no catalogue of its own (live.ts: simModels {}), so a thing with no stamped shape
+// is no body at all: thrown, it never flew and never rested (found 10-06: every throw on a running server did nothing).
+// Stamped on every write of the asker's own (a capability's writes are scoped to what they name and are left alone):
+//   - a physics value written (create or set): its shape is the door's, whatever was sent;
+//   - a model changed on a thing with physics: re-measured;
+//   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
+//     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
+const r4 = (n) => Math.round(n * 1e4) / 1e4;
+const shapeFor = (model) => { const m = geomOf(model); return m ? boxOfM(m).map((c) => c.map(r4)) : null; };
+function stampShapes(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops;
+  const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c.sim;
+  const ids = new Set();
+  for (const o of ops) if (o.verb === "set" && (o.comp === "physics" || o.comp === "model")) ids.add(o.id);
+  if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
+  if (ops.some((o) => o.id === "@world" && o.comp === "sim" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
+  ids.delete("@world");
+  const out = ops.slice(); const stamped = [];
+  for (const id of ids) {
+    const e = after.entities[id]; if (!e) continue;
+    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model) : null;
+    let next;
+    if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
+    else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
+    else { if (JSON.stringify(ph.shape ?? null) === JSON.stringify(want)) continue;
+      next = { ...ph }; if (want) next.shape = want; else delete next.shape;
+      if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
+        ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the door: a shape is its measurement of the model (Covenant III), never the asker's" }); }
+    const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
+    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); stamped.push(id); }
+  }
+  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the door's measured shape" });
+  return out;
 }
 function touched(ops, st) {
   const out = {};
@@ -1728,8 +1768,44 @@ const PHYSICS_TOOLS = {
   },
   throw(w, actor, a) { return launch(w, actor, a, "throw"); },
   drop(w, actor, a) {
-    if (!w.state().entities["@world"]?.c.sim) return PHYSICS_TOOLS.put(w, actor, { id: a.id });
+    if (!w.state().entities["@world"]?.c.sim) { // no physics: set straight down from where the hand let go
+      if (a.pos !== undefined) { const me = body(w, actor); const h = holdOf(w, actor, a.id); h.pose.pos = releasePos(me, a.pos); }
+      return PHYSICS_TOOLS.put(w, actor, { id: a.id }); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop");
+  },
+  // the kick physobj offered (/punt, an agent's world_verb punt), as a sim intent (design 20, P4: "punt is a sim intent
+  // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
+  // your feet through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's: dynamic,
+  // physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
+  punt(w, actor, a) {
+    const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
+    if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
+    const spec = flyingWorld(st);
+    const ph = e.c.physics;
+    if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
+    const need = ph.who ?? "builder"; if (RANK[roleOf(st, actor)] < RANK[need]) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
+    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
+    const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
+    shaped(e, a.id);
+    if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
+    const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
+    const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
+    const dx = here[0] - me.at[0], dz = here[2] - me.at[2], dh = Math.hypot(dx, dz), dy = here[1] - me.at[1];
+    if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from your feet${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
+    let v;
+    if (a.v !== undefined) { if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "punt's v is [x, y, z] in m/s", "e.g. v: [0, 2, 4]"); v = a.v.slice(); }
+    else { const p = a.power ?? 4; if (!Number.isFinite(p) || p <= 0) refuse("shape", "power is a speed in m/s, above 0", "e.g. power: 4 (a hop), 10 (hard)");
+      const fx = dh > 1e-6 ? dx / dh : 0, fz = dh > 1e-6 ? dz / dh : 1; const n = Math.hypot(fx, KICK.lift, fz); v = [fx / n * p, KICK.lift / n * p, fz / n * p]; }
+    const notes = []; const max = ENGINES[spec.engine].maxSpeed; const sp = Math.hypot(...v);
+    if (sp > max) { const sent = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent, kept: v.map(r3), why: `capped at ${max} m/s` }); }
+    // L7 (33 F3): the write it decides (its rest), admitted now as a launch's is: rights, locks, rate. A thing in the air
+    // is the engine's (L6: no write may touch it in flight), so for a volley the gates above are the whole check.
+    if (!flying) admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
+    else rateCheck(w, actor);
+    const act = w.append(actOf(w, actor, "punt", a, { presence: presenceFacts(me), ...(flying ? { volley: true } : {}) }));
+    if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
+    const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying ? noNeg0(b.yaw) : qYaw(t.q), v: v.map(noNeg0), handled: [actor] } });
+    return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
   },
   // a holder who leaves: what they held is dropped (into the sim if there is one), attributed to them (orphans, 18a)
   leave(w, actor) {
@@ -1765,12 +1841,31 @@ function recentRests(w, now) {
       ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) }); }
   return out.reverse();
 }
-function launch(w, actor, a, tool) {
-  const me = body(w, actor); const h = holdOf(w, actor, a.id);
-  const spec = w.state().entities["@world"]?.c.sim;
+// the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
+const KICK = { reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 };
+const noNeg0 = (n) => (n === 0 ? 0 : n); // I-JSON has no -0; an engine can make one (the same number, written as 0)
+function flyingWorld(st) {
+  const spec = st.entities["@world"]?.c.sim;
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}}");
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
+  return spec;
+}
+// a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
+function shaped(e, id) {
+  if (!Array.isArray(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the door measures it` : "put it down instead; give it a model first");
+}
+// where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the door's track of the body
+function releasePos(me, pos) {
+  if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "pos is [x, y, z]: where your hand lets go", "");
+  const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the door tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
+  return pos.map(noNeg0);
+}
+function launch(w, actor, a, tool) {
+  const me = body(w, actor); const h = holdOf(w, actor, a.id);
+  const spec = flyingWorld(w.state());
+  shaped(w.state().entities[a.id], a.id);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
+  if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
@@ -1904,8 +1999,8 @@ const TOOLS = {
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
-        body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z]}", "drop {id}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
+        body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?}", "punt {id, power? | v?}", "leave", "wait"],
+        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
