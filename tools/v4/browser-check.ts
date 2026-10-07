@@ -1,7 +1,7 @@
 // tools/v4/browser-check.ts — the shared v4 core in a real browser (headless Chromium), against the same work in bun.
 // A grep for node: imports isn't evidence that the client can import these files; loading them in a page is.
 // One static server (this process, /shared only), one page, no world server, no WebGL. (The old-world importer,
-// shared/v4/import-v1/, runs once at the operator's command, never in a browser: it isn't loaded here.)
+// tools/v4/import-v1/, runs once at the operator's command, never in a browser: it isn't loaded here.)
 // Checks, each computed in the page AND here, then compared:
 //   1. every shared/v4 module a client runs imports (fold, hash, catalogue, toolspec, simlayer, door, names, record, …);
 //   2. the page hashes with the portable sync sha256 (no Bun there), and agrees with bun's native hasher;

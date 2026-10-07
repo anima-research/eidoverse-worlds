@@ -3,18 +3,19 @@
  * (and moving things) where they ACTUALLY are, or refuse to give a number.
  * No servers needed; time is injected everywhere.
  *
- * Run: cd mcpl && bun run effective-test.ts
+ * Run: bun tools/effective-test.ts
  *
- * Fail-on-main controls: the look()-level checks below use only surface that
- * exists on main (WorldAgent, applyEntry, look), so running this file on a
- * pre-#82 checkout demonstrates the stale-coordinate contradiction failing
- * on its own receipts (the pure-module checks report the module as absent).
+ * The scenes are written as old-protocol entries (that is how these cases were
+ * first recorded) and folded by the old-world importer's fold
+ * (tools/v4/import-v1/fold.js) into entity records the agent reads as its view
+ * — the record shape (shared/v4/record.js) began as that fold's projection.
  *
  * Expected values are HAND-COMPUTED from the closed forms — never from the
  * code under test. Worked math is inline at each case.
  */
 
-import { WorldAgent } from "./agent.ts";
+import { WorldAgent } from "../mcpl/agent.ts";
+import { emptyState, foldEntry } from "./v4/import-v1/fold.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -27,17 +28,31 @@ const near3 = (a: number[], b: number[], eps = 1e-4) => a.length === 3 && a.ever
 // effective.ts does not exist on main — load it dynamically so the
 // look()-level receipts still run there.
 let EFF: typeof import("./effective.ts") | null = null;
-try { EFF = await import("./effective.ts"); } catch { /* pre-#82 checkout */ }
+try { EFF = await import("../mcpl/effective.ts"); } catch { /* pre-#82 checkout */ }
 
 const T0 = 1_700_000_000_000;                       // fixed epoch; all time injected
 
-/** An agent that never connects: entries are folded straight through
- *  applyEntry (live=false = replay semantics), the same door join uses. */
+/** An agent that never connects: each scene is folded into entity records and handed to the agent as its view (its
+ *  entities and mounts are reconciled from that, as from a joined world's view). */
+const scenes = new WeakMap<WorldAgent, any>();
 function offlineAgent(): WorldAgent {
-  return new WorldAgent({ url: "ws://127.0.0.1:9/ws", name: "tester", world: "efftest" });
+  const a = new WorldAgent({ url: "ws://127.0.0.1:9/ws", name: "tester", world: "efftest" });
+  scenes.set(a, emptyState());
+  return a;
 }
-const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string }, live = false) =>
-  (a as any).applyEntry({ seq: 0, ts: T0, actor: entry.actor ?? "t", ...entry }, live);
+let seqN = 0;
+const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string }, live = false) => {
+  const A = a as any;
+  // a body sitting is presence, never the fold: the agent's own seat
+  if ((entry.verb === "mount" || entry.verb === "dismount") && entry.args?.id === A.name) { A.setSeat(entry.verb === "mount" ? { to: entry.args.to, slot: entry.args.slot } : null); A.reconcileFromFold(); return; }
+  const was = entry.args?.id != null ? A.entities.get(entry.args.id) : undefined;
+  const st = scenes.get(a); foldEntry(st, { seq: ++seqN, ts: T0, actor: entry.actor ?? "t", ...entry });
+  A.st = { ...A.st, entities: structuredClone(st.entities) };
+  A.reconcileFromFold();
+  for (const id of Object.keys(st.entities)) A.trackSupport?.(A.syncSupport?.(id));
+  // a change seen live: the agent's own change handler (what a door write it watched would run)
+  if (live && entry.verb === "comp") A.onThingChange({ id: entry.args.id, what: "comp", comp: entry.args.type }, was, true, entry.actor ?? "t", T0);
+};
 
 // A fake view for the pure module — plain data, no agent.
 const view = (ents: Record<string, any>, mounts: Record<string, any>) => ({

@@ -21,11 +21,11 @@ import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
 import { custodyAt } from "../../server/v4/custody.ts";
-import { translate, TRANSLATOR } from "../../shared/v4/import-v1/translate-v1.js";
+import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openWorld } from "../../server/v4/disk.ts";
 import { openLive } from "../../server/v4/live.ts";
-import { v1FoldBuild, v1FoldFiles } from "../../shared/v4/import-v1/build.ts";
-import { emptyState as v1Empty, foldEntry as v1fold } from "../../shared/v4/import-v1/fold.js";
+import { v1FoldBuild, v1FoldFiles } from "./import-v1/build.ts";
+import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js";
 import { worldPose } from "../../shared/hierarchy.js";
 
 const root = scratch("door");
@@ -62,7 +62,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c = r.final.v4[enc("lamp_1")];
   ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the door's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
-  ok(v1FoldFiles().includes("shared/v4/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
+  ok(v1FoldFiles().includes("tools/v4/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
 // ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
 // v1: a lock refuses everything that would MOVE, REPLACE or REMOVE the thing, for everyone, its locker included;
@@ -618,7 +618,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   T += 100; const p4 = sw("bob", "use", { id: "seat2", action: "push" });
   const m4 = openWorld(root, "swingpush").state().entities.seat2.c.motion; const w4 = 2 * Math.PI / m4.period;
   ok(p4.ok && Math.abs(m4.amp - 0.35 / w4) < 2e-3, "SW4 an angular impulse adds exactly its turn rate (amp = angular / ω0)", { p4: p4.refused, amp: m4?.amp, want: 0.35 / w4 });
-  const tx = (await import("../../shared/v4/import-v1/translate-v1.js")).translate(
+  const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
   ok(/"reactions":\{"push":\{"kind":"impulse","angular":0.35\}\}/.test(JSON.stringify(tx)), "SW4 v1's {impulse: x} translates to the angular impulse, exactly", JSON.stringify(tx).match(/"reactions":[^}]*\}/)?.[0]);
 }
@@ -846,6 +846,17 @@ const w0 = () => openWorld(root, "tier0");
   const end = cw("vic", "caption", { id: "screen", session: sess, end: true, gen: 5 });
   ok(end.ok && bag() === undefined, "CA9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
   ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
+
+// ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
+// bans:<id>, behavior:<name> or legacy:* and wake readers that no longer mean anything) ----
+{ const iw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "imported"), actor, tool, args); };
+  iw("ann", "new", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+  const tries = [["box", "guard", true], ["box", "legacy:kind", "light"], ["@world", "behavior:x", { src: "store/scripts/x.js" }], ["@world", "bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "epoch", { sim: "eidosim@0.5.0" }]];
+  const by = tries.map(([id, component, value]) => code(iw("bob", "set", { id, component, value })));
+  ok(by.every((c) => c === "imported"), "IM1 a builder can't write a guard, a legacy field, an old binding, a bans record or an epoch", by);
+  ok(iw("ann", "set", { id: "box", component: "legacy:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
+  { const d = iw("ann", "delete", { id: "box", component: "legacy:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
 
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

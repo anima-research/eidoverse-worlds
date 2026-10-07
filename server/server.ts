@@ -329,7 +329,12 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
     // world behind it is refused, and only a v4 world is served (the old protocol has no runtime here: an old log is
     // translated once, by the operator, into a new v4 world).
-    if (!worldExists(wname) || !isV4World(wname)) {
+    if (worldExists(wname) && !isV4World(wname)) {   // a world saved in the old format: it is translated once, by the operator
+      ws.send(JSON.stringify({ type: "error", error: `"${wname}" is saved in an old format this server no longer opens — its operator translates it once (bun tools/v4/world.ts translate)` }));
+      c.ws.close?.(4005, "old-format world");
+      return null;
+    }
+    if (!worldExists(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" here — check the link that brought you here` }));
       c.ws.close?.(4005, "no such world");
       return null;
@@ -599,7 +604,10 @@ function rightsFor(w: World, c: Client) {
   const wc = (w.v4.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
   const rec = (me ? wc[`roles:${me}`] : null) ?? (c.anonymous ? null : wc["default-role"]) ?? {};
   const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && v?.role === "owner");
-  return { role, gen: role === "owner" || rec.gen === true, fly: rec.fly === true, open };
+  // an operator (WORLD_ADMIN, by account) flies and spends everywhere, as before; for everyone else flight is the role
+  // record's (the roles branch makes it a switch)
+  const op = isOperator(c.account);
+  return { role, gen: op || role === "owner" || rec.gen === true, fly: op || rec.fly === true, open };
 }
 
 function buildSnapshot(w: World, c: Client) {

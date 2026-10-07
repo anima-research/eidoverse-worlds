@@ -10,13 +10,13 @@
 // writes @world (about, bounds, roles:<owner>) through admit. --owner is the name you join with; it is stamped through
 // names.js exactly as the live door stamps you, so you are the owner when you arrive.
 // `translate` reads <v1 world>/log.jsonl, never writes it (R9: the original is kept), runs the importer
-// (shared/v4/import-v1/: 0 divergences required), re-reads the output with the strict reader, and only then writes
+// (tools/v4/import-v1/: 0 divergences required), re-reads the output with the strict reader, and only then writes
 // <new name>/v4.jsonl. The old directory stays on disk as it was; the server doesn't serve it.
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { foundV4, isV4World } from "../../server/v4/world.ts";
-import { translateV1World } from "../../shared/v4/import-v1/world.ts";
+import { translateV1World } from "./import-v1/world.ts";
 import { openLive } from "../../server/v4/live.ts";
 import { digest } from "../../shared/v4/fold.js";
 

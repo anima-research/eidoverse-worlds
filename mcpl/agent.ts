@@ -3160,20 +3160,9 @@ export class WorldAgent {
       // is — never by the audio. The radio's music player; captions (#187)
       // on the same entity say the words.
       if (c.sound) aff.push(describeSound(c.sound));
-      // locked = nailed down: the server refuses every move/replace/remove on
-      // it. Saying so here saves an agent a refused verb round-trip.
+      // locked = nailed down: the door refuses every move/replace/remove on
+      // it. Saying so here saves an agent a refused round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with through_lock: true)`);
-      // guarded = its placer's to author: the server refuses comps, motion,
-      // behaviors, moves and removal from anyone but them, the world's
-      // owner, or an operator. Using it (use, sitting on it) stays open.
-      if (c.guard) {
-        // the principal stamped at creation (rights.ts placerOf); the legacy
-        // legs cover entities that predate the stamp
-        const actor = String(e.actor ?? "");
-        const placer = (e as any).placer?.id
-          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
-        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
-      }
       if (c.hidden === true) aff.push(`hidden (not drawn; door {tool: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading

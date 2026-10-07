@@ -9,17 +9,17 @@
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/v4/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
-import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "../fold.js";
-import { enc, encName, dec } from "../names.js";
-import { qNorm } from "../../rot.js";
-import { sha256 } from "../hash.js";
-import { COMPONENTS } from "../catalogue.js";
+import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "../../../shared/v4/fold.js";
+import { enc, encName, dec } from "../../../shared/v4/names.js";
+import { qNorm } from "../../../shared/rot.js";
+import { sha256 } from "../../../shared/v4/hash.js";
+import { COMPONENTS } from "../../../shared/v4/catalogue.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
 // "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
 // (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
-// it when the caller knows it (translate(…, {foldBuild}); server/v4/build.ts computes it from the files).
+// it when the caller knows it (translate(…, {foldBuild}); build.ts beside this file computes it from the files).
 // @2 (slice 3a): a mounted thing comes out in the door's shape (transform LOCAL to its parent, parent {to, order, slot?}),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular

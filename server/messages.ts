@@ -379,8 +379,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
-    // anyone present — bans are log entries and the log is public; a
-    // list nobody can read is not an audit trail.
+    // anyone present — the moderator's record is public in its outline (who,
+    // when, by whom); a list nobody can read is not an audit trail.
     if (!c.world) return;
     // the door's moderation record (ban/unban, latest wins), named through the directory
     const last = new Map<string, any>(); for (const m of c.world.v4!.live.mod) if (m.verb === "ban" || m.verb === "unban") last.set(m.who, m);

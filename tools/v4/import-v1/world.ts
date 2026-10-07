@@ -1,4 +1,4 @@
-// shared/v4/import-v1/world.ts — translate an OLD (v1) world on disk into a NEW v4 world, once. The operator runs it
+// tools/v4/import-v1/world.ts — translate an OLD (v1) world on disk into a NEW v4 world, once. The operator runs it
 // (bun tools/v4/world.ts translate <v1 world> <new world>); nothing at runtime imports this directory
 // (tools/v4/nov1-check.ts enforces it). The v1 log is read, never written (R9).
 import fs from "node:fs";
@@ -8,8 +8,8 @@ import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, mintId, type Entry } from "../../../server/v4/directory.ts";
 import { agentTokens } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/v4/custody.ts";
-import { seal } from "../door.js";
-import { readLog, fold, digest } from "../fold.js";
+import { seal } from "../../../shared/v4/door.js";
+import { readLog, fold, digest } from "../../../shared/v4/fold.js";
 import { translate } from "./translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
 

@@ -3,7 +3,7 @@
 // A World is one v4 world as this server holds it: its log (server/v4/world.ts V4Log: the door over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
 // persisted). Every world this server serves is a v4 world: a directory that holds only an old log (the first
-// protocol's log.jsonl) is refused at open, with the command that translates it (shared/v4/import-v1/, run once by the
+// protocol's log.jsonl) is refused at open, with the command that translates it (tools/v4/import-v1/, run once by the
 // operator).
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
 // server.ts — waking scripted worlds with the server is boot policy, not world mechanics.

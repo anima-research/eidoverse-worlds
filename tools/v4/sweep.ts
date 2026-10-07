@@ -15,16 +15,16 @@
 // launch rests where hers rests, re-checked by a carrier; deterministic; strict read-back clean); the sim build pin;
 // the hash shim (native = portable = the reference vectors).
 import { schemaRefusal } from "../../shared/v4/door.js";
-import { hexColor } from "../../shared/v4/import-v1/translate-v1.js";
+import { hexColor } from "./import-v1/translate-v1.js";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/v4/hash.js";
 import { readLog, fold as v4fold, opsOf, applyInPlace, emptyState as v4Empty } from "../../shared/v4/fold.js";
-import { translate as translateV1, DROPPED } from "../../shared/v4/import-v1/translate-v1.js";
-import { translate as translateD3 } from "../../shared/v4/import-v1/translate-d3.js";
+import { translate as translateV1, DROPPED } from "./import-v1/translate-v1.js";
+import { translate as translateD3 } from "./import-v1/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/v4/simlayer.js";
-import { emptyState as v1Empty, foldEntry } from "../../shared/v4/import-v1/fold.js";
+import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "../../shared/sim.js";
 import { localOf } from "../../shared/hierarchy.js";
 

@@ -362,11 +362,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(t1.verb === "translated" && /^eidoverse\/translate-v1@/.test(t1.body.from?.translator) && /^[0-9a-f]{16}$/.test(t1.body.from?.fold), "S6 the act after genesis names the engine translator and the v1 fold build", t1.body);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
   // the old world as the old fold reads its log (the translator's own reader; nothing serves v1 any more) vs the v4 copy
-  const { emptyState: v1Empty, foldEntry: v1Fold } = await import("../../shared/v4/import-v1/fold.js");
+  const { emptyState: v1Empty, foldEntry: v1Fold } = await import("./import-v1/fold.js");
   const v1st = v1Empty(); for (const l of fs.readFileSync(v1log, "utf8").split("\n").filter(Boolean)) v1Fold(v1st, JSON.parse(l));
   const old = { snapshot: { state: v1st } }, neu = await client(srv.port, "oldtown-v4", "Ann", V4);
   const oldv1 = await client(srv.port, "oldtown", "Ann");
-  ok(!oldv1.snapshot && oldv1.of("error").some((m) => /no world called "oldtown"/.test(m.error)), "S6 the server doesn't serve the old world itself: v4 only, an old log is translated", oldv1.msgs.map((m) => m.type)); oldv1.close();
+  ok(!oldv1.snapshot && oldv1.of("error").some((m) => /"oldtown" is saved in an old format/.test(m.error)), "S6 the server doesn't serve the old world itself (it says the world is saved in the old format, to be translated once)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type)); oldv1.close();
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);

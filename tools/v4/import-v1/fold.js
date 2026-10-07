@@ -1,14 +1,14 @@
-// shared/v4/import-v1/fold.js — the OLD (v1) fold, kept only so an old world's log can be read once and translated
+// tools/v4/import-v1/fold.js — the OLD (v1) fold, kept only so an old world's log can be read once and translated
 // into a v4 world (translate-v1.js, translate-d3.js beside it). Nothing at runtime imports this directory
 // (tools/v4/nov1-check.ts enforces it): the server, the client and the agent run v4 only.
 //
 // Every timestamp comes off the entry, so a fold is a pure function of the log. The old protocol's spec
 // (spec/PROTOCOL.md, spec/fixtures/*) is what it was written against.
 
-import { foldSkyEntry } from '../../forecast.js';
-import { normalizeCaptionArgs, captionRefusal, foldCaption } from '../../captions.js';
-import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from '../../rot.js';
-import { blueprintHash } from '../../blueprint.js';
+import { foldSkyEntry } from '../../../shared/forecast.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from '../../../shared/captions.js';
+import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from '../../../shared/rot.js';
+import { blueprintHash } from '../../../shared/blueprint.js';
 
 // Orientation (PROTOCOL §9 amendment): `q` is the whole truth when
 // present and `yaw` is always its heading, so yaw-only readers stay correct
@@ -174,7 +174,7 @@ function placerOf(a) {
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
-import { trimRecentChat } from "../../chatwindow.js";
+import { trimRecentChat } from "../../../shared/chatwindow.js";
 
 /** @returns {WorldState} */
 export const emptyState = () => ({

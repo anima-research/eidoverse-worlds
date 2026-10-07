@@ -291,7 +291,7 @@ function onV4Log(msg) {
   if (r.changed) narrate(applyView(v4.view(shadowState.st), { ts: r.ts ?? undefined }), r.actor);
   bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
-/** Say in chat who changed someone's standing here (the role and ban maps), as the world's own narration. */
+/** Say in chat who changed someone's role here, as the world's own narration (a ban or a kick arrives as `moderated`). */
 function narrate(d, actor) {
   const who = actor === 'world' || !actor ? 'the world' : actor; const st = shadowState.st;
   // people by name (the directory's, sent beside the entries), never their u-… id (Commons audit #1); '*' is everyone
@@ -301,10 +301,6 @@ function narrate(d, actor) {
     if (!rec) { logChat('*', `${who} took away ${person(id)}'s role here`); continue; }
     const bits = [rec.role, rec.gen != null ? (rec.gen ? '+gen' : '-gen') : null].filter(Boolean);
     logChat('*', `${who} made ${person(id)} ${bits.join(' ')}`);
-  }
-  for (const id of d?.ids?.bans ?? []) {
-    const rec = st.bans?.[id];
-    logChat('*', rec ? `${who} banned ${person(id)}${rec.reason ? ` — ${rec.reason}` : ''}` : `${who} lifted the ban on ${person(id)}`);
   }
 }
 

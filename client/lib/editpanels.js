@@ -188,7 +188,6 @@ function badgesFor(id) {
   const bag = comps.get(id) ?? {};
   for (const [type, data] of Object.entries(bag)) {
     if (type === 'lock' || type === 'hidden' || type === 'label') continue;   // lock has its glyph, label IS the row's name, hidden is added once below
-    if (type === 'guard') { out.push('🛡'); continue; }
     if (type === 'motion' || type.startsWith('motion:')) out.push(`${type}(${data?.type ?? '…'})`);
     else if (type === 'sockets' || type === 'reactions') out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
     else out.push(type);
@@ -802,7 +801,7 @@ const blueprintFields = (pics) => [
  *  oldest publish first, each with its version and how many copies stand. A pick carries a copy
  *  as the ghost (build.js holdBlueprint) on desktop, or places one 1.5 m ahead in VR. Save as
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
- *  blueprint verb (an agent, or world_verb). */
+ *  door's publish (a person here, or an agent). */
 function savedFields(pics) { return savedFieldsV4(); }
 /** v4: this world's library is @world library:<hash> (the door's publish writes it); a copy is the door's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the door's publish {from, name} on the selection. */

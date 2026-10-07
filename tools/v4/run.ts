@@ -17,7 +17,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
-  ["sweep", "sweep.ts", 4],             // the old-world importer (shared/v4/import-v1/) on every local old world log + her dialect-3 goldens + pins
+  ["sweep", "sweep.ts", 4],             // the old-world importer (tools/v4/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["door", "door-check.ts", 1],
   ["directory", "directory-check.ts", 1],

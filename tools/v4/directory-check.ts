@@ -65,7 +65,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 a door that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work"); }
-{ const { translateV1World } = await import("../../shared/v4/import-v1/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -212,7 +212,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(q(own, "undo", { actor: mal, since: s2, confirm: true }).ok && !Object.keys(w.state().entities).some((k) => k.startsWith("spam-")), "RB7 with confirm it rolls back all 22"); }
 
 // ---- X: a translated thing whose reaction runs a v1 script (round-2 R14: this path threw a ReferenceError) ----
-{ const { translateV1World } = await import("../../shared/v4/import-v1/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xs"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "bell", lib: "a.glb", pos: [1, 0, 1] } },
@@ -224,7 +224,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
 
 // ---- XB: a v1 ban survives translation as a ban the door enforces (component review, world-settings #3: it became a
 // state key the door never reads, so a translated world quietly unbanned everyone) ----
-{ const { translateV1World } = await import("../../shared/v4/import-v1/world.ts");
+{ const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
     { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");

@@ -4,7 +4,7 @@
 // meshes): those diverge by design while an object is in flight or riding a motion.
 
 import { state } from './state.js';
-import { entities, entityMeta, comps, avatarMounts } from './world.js';
+import { entities, entityMeta, comps } from './world.js';
 
 const jstr = (v) => JSON.stringify(v ?? null);
 
@@ -66,14 +66,7 @@ export function foldParity() {
     }
   }
 
-  // body mounts: world.js's avatarMounts map vs the fold's mounts record
-  const shadowMounts = shadow.mounts ?? {};
-  const legacyMounts = avatarMounts instanceof Map ? Object.fromEntries(avatarMounts) : (avatarMounts ?? {});
-  for (const id of new Set([...Object.keys(shadowMounts), ...Object.keys(legacyMounts)])) {
-    if (jstr(legacyMounts[id]) !== jstr(shadowMounts[id])) {
-      out.mountDiffs.push({ id, legacy: legacyMounts[id] ?? null, shadow: shadowMounts[id] ?? null });
-    }
-  }
+  // (bodies on seats are presence — world.js avatarMounts — never the fold: nothing to compare them with here)
 
   out.ok = !out.onlyShadow.length && !out.onlyLegacy.length
     && !out.compDiffs.length && !out.mountDiffs.length && !out.identityDiffs.length

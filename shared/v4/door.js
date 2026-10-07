@@ -191,6 +191,7 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
+const IMPORTED_ONLY = (comp) => typeof comp === "string" && (comp === "guard" || comp === "epoch" || /^(legacy|behavior|bans):/.test(comp));
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
 const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
 const scratch = (st, ops) => applyOps(st, ops);
@@ -615,6 +616,10 @@ function rights(w, st, s, who, role, op, at) {
   // a screen's captions are written by the caption tool only (its session, order and generation rules), never set by
   // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
   // delete them (CAPTIONS below)
+  // an imported world's records (its old bindings, unmapped fields, bans, sim epoch, the old guard) are carried, never
+  // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
+  // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
+  if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
   if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-tool", `${at} is written by the caption tool, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
@@ -2289,7 +2294,7 @@ const PHYSICS_TOOLS = {
       return PHYSICS_TOOLS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
-  // the kick physobj offered (/punt, an agent's world_verb punt), as a sim intent (design 20, P4: "punt is a sim intent
+  // a kick (/punt, an agent's door punt), as a sim intent (design 20, P4: "punt is a sim intent
   // too"). A thing at your feet (or in the air beside you: a volley) is launched with v, or with power along the line from
   // your feet through it, lifted (physobj's 0.9 ratio: a knee-high hop at power 4). Its gates are grab's: dynamic,
   // physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
