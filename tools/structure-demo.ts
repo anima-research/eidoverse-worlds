@@ -61,9 +61,9 @@ ws.onopen = () => send({ type: 'join', world: WORLD, id: ID, token: TOKEN, v4fol
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = JSON.parse(String(ev.data));
-  if (m.type === 'snapshot') send({ type: 'v4', id: 'house', tool: 'create', args: { id: 'house1', model: 'eidoverse/assets/models/crate_large_red.glb',
+  if (m.type === 'snapshot') send({ type: 'request', id: 'house', verb: 'create', args: { id: 'house1', model: 'eidoverse/assets/models/crate_large_red.glb',
     components: { transform: { pos: [0, 0, 0] }, structure: STRUCTURE } } });
-  if (m.type === 'v4-result' && m.id === 'house') {
+  if (m.type === 'reply' && m.id === 'house') {
     if (!m.ok) { console.error('refused:', m.reply?.refused?.reason ?? JSON.stringify(m.reply)); ws.close(); process.exit(1); }
     const bytes = JSON.stringify(STRUCTURE).length;
     console.log(`authored house1 into "${WORLD}" — ${bytes} bytes of component, ${STRUCTURE.levels[0].walls.length} walls, ${STRUCTURE.levels[0].tiles.length} tiles (seq ${m.reply?.seq})`);

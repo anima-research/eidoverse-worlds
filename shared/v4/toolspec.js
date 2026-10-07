@@ -1,10 +1,10 @@
-// Every tool declares its arguments: type, which modes they apply to, and an example. The door validates every
-// request against this BEFORE doing anything, and `help {tool}` is generated from it (fresh-builder findings W1–W3).
+// Every request verb declares its arguments: type, which modes they apply to, and an example. The door validates every
+// request against this BEFORE doing anything, and `help {verb}` is generated from it (fresh-builder findings W1–W3).
 const xz = { type: "xz", doc: "[x, z] in metres (ground position; y comes from what's below)" };
 const ref = (doc) => ({ type: "id", doc });
 const target = (doc) => ({ type: "id|xz", doc });
 export const PLACE_MODES = ["on", "beside", "hang", "against", "near", "at"];
-export const TOOLSPEC = {
+export const VERBSPEC = {
   place: {
     doc: "put a thing somewhere by saying where it goes relative to other things; the door solves the numbers",
     oneOf: PLACE_MODES,
@@ -90,16 +90,16 @@ const okType = (spec, v) => {
     case "enum": return spec.values.includes(v); default: return true;
   }
 };
-export function validate(tool, a) {
-  const T = TOOLSPEC[tool]; if (!T) return null;
+export function validate(verb, a) {
+  const T = VERBSPEC[verb]; if (!T) return null;
   const ex = (k) => T.args[k]?.example ?? T.example;
-  for (const k of Object.keys(a)) if (!(k in T.args)) return { code: "unknown-arg", reason: `${tool} has no argument '${k}'`, fix: `${tool} takes: ${Object.keys(T.args).join(", ")}`, example: ex(k) };
-  for (const k of T.required ?? []) if (a[k] === undefined) return { code: "missing-arg", reason: `${tool} needs '${k}'`, fix: T.doc, example: T.example };
+  for (const k of Object.keys(a)) if (!(k in T.args)) return { code: "unknown-arg", reason: `${verb} has no argument '${k}'`, fix: `${verb} takes: ${Object.keys(T.args).join(", ")}`, example: ex(k) };
+  for (const k of T.required ?? []) if (a[k] === undefined) return { code: "missing-arg", reason: `${verb} needs '${k}'`, fix: T.doc, example: T.example };
   if (T.oneOf) { const m = T.oneOf.filter((k) => a[k] !== undefined);
-    if (m.length !== 1) return { code: "shape", reason: m.length ? `say one of ${m.join(" / ")}, not several` : `${tool} needs one of: ${T.oneOf.join(", ")}`, fix: T.oneOf.map((k) => `${k}: ${T.args[k].doc}`).join("; "), example: T.args[m[0] ?? "on"].example };
+    if (m.length !== 1) return { code: "shape", reason: m.length ? `say one of ${m.join(" / ")}, not several` : `${verb} needs one of: ${T.oneOf.join(", ")}`, fix: T.oneOf.map((k) => `${k}: ${T.args[k].doc}`).join("; "), example: T.args[m[0] ?? "on"].example };
     for (const [k, s] of Object.entries(T.args)) if (a[k] !== undefined && s.modes && !s.modes.includes(m[0])) return { code: "doesnt-apply", reason: `'${k}' doesn't apply with '${m[0]}' (it applies with ${s.modes.join(", ")})`, fix: `remove '${k}'${k === "facing" && ["beside", "against"].includes(m[0]) ? `: ${m[0]} sets the facing itself` : ""}`, example: T.args[m[0]].example }; }
   for (const [k, s] of Object.entries(T.args)) if (a[k] !== undefined && !okType(s, a[k])) return { code: "shape", reason: `'${k}' should be ${s.type === "enum" ? `one of ${s.values.join(" | ")}` : s.doc ?? s.type}, got ${JSON.stringify(a[k])}`, fix: s.doc ?? "", example: ex(k) };
   return null;
 }
-export function toolHelp(tool) { const T = TOOLSPEC[tool]; if (!T) return null;
-  return { tool, doc: T.doc, ...(T.oneOf ? { oneOf: T.oneOf } : {}), args: Object.fromEntries(Object.entries(T.args).map(([k, s]) => [k, { type: s.type === "enum" ? s.values : s.type, doc: s.doc, ...(s.modes ? { onlyWith: s.modes } : {}), ...(s.example ? { example: s.example } : {}) }])), ...(T.example ? { example: T.example } : {}) }; }
+export function verbHelp(verb) { const T = VERBSPEC[verb]; if (!T) return null;
+  return { verb, doc: T.doc, ...(T.oneOf ? { oneOf: T.oneOf } : {}), args: Object.fromEntries(Object.entries(T.args).map(([k, s]) => [k, { type: s.type === "enum" ? s.values : s.type, doc: s.doc, ...(s.modes ? { onlyWith: s.modes } : {}), ...(s.example ? { example: s.example } : {}) }])), ...(T.example ? { example: T.example } : {}) }; }

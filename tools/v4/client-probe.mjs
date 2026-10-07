@@ -127,9 +127,9 @@ try {
   // Bob wears a body with finger bones (the default claude.vrm has none), so the grab stages can read a grip's finger preset
   ws.send(JSON.stringify({ type: 'join', world: 'garden', id: 'Bob', avatar: process.env.PROBE_BOB_AVATAR ?? 'tigerbee', token: KEY, v4fold: true }));
   for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'snapshot'); i++) await new Promise((r) => setTimeout(r, 100));
-  ws.send(JSON.stringify({ type: 'v4', id: 1, tool: 'create', args: { id: 'crate-live', model: MODEL, place: { near: 'crate-before' } } }));
-  for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'v4-result'); i++) await new Promise((r) => setTimeout(r, 100));
-  const res = inbox.find((m) => m.type === 'v4-result');
+  ws.send(JSON.stringify({ type: 'request', id: 1, verb: 'create', args: { id: 'crate-live', model: MODEL, place: { near: 'crate-before' } } }));
+  for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'reply'); i++) await new Promise((r) => setTimeout(r, 100));
+  const res = inbox.find((m) => m.type === 'reply');
   let live = false; for (let i = 0; i < 40 && !live; i++) { live = (await ents()).includes('crate-live'); if (!live) await new Promise((r) => setTimeout(r, 250)); }
   if (!res?.ok) stage('live: Bob\'s replies', false, inbox.filter((m) => m.type !== 'presence').slice(0, 4).map((m) => [m.type, m.you ?? m.reply ?? m.error]));
   check('live: a crate Bob creates through the door while Ann watches is realized in her client', res?.ok && live, { reply: res?.reply?.ok ?? res?.reply?.refused, ents: await ents() });
@@ -140,8 +140,8 @@ try {
   // fingers and arms on the normalized rig. Angles in degrees, distances in metres.
   if (XR) stage('grab: (the desktop grab stages are skipped in an XR boot)', true);
   if ((!ONLY.length || ONLY.includes('grab')) && !XR) {
-    let gid = 500; const gdoor = async (tool, args) => { const id = ++gid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
-      for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
+    let gid = 500; const gdoor = async (tool, args) => { const id = ++gid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+      for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: false, refused: { reason: 'no answer' } }; };
     const gsleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const gev = (fn, arg) => race(pg.evaluate(fn, arg), 20000);
@@ -299,8 +299,8 @@ try {
   // grip is read back in the world and the error corrected (twice), so the probe never assumes the mapping. Headless XR
   // ticks slowly (SwiftShader, both eyes): every step waits on session frames, never on the clock.
   if (XR) {
-    let xid = 800; const xdoor = async (tool, args) => { const id = ++xid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
-      for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
+    let xid = 800; const xdoor = async (tool, args) => { const id = ++xid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+      for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: false, refused: { reason: 'no answer' } }; };
     const xsleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const xev = (fn, arg) => race(pg.evaluate(fn, arg), 30000);
@@ -440,8 +440,8 @@ try {
       const box = []; s.onmessage = (ev) => box.push(JSON.parse(String(ev.data)));
       s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, v4fold: true }));
       for (let i = 0; i < 60 && !box.some((m) => m.type === 'snapshot'); i++) await rs(100);
-      let n = 0; const req = async (tool, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'v4', id, tool, args }));
-        for (let i = 0; i < 80; i++) { const m = box.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await rs(100); } return { ok: false, refused: { reason: 'no answer' } }; };
+      let n = 0; const req = async (tool, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+        for (let i = 0; i < 80; i++) { const m = box.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await rs(100); } return { ok: false, refused: { reason: 'no answer' } }; };
       await settle();   // their body compiles on this page now: wait it out once, before anything is clicked
       return { req, you: box.find((m) => m.type === 'snapshot')?.v4?.you, close: () => s.close() }; };
     const openPeople = async () => { await rwait(() => !!document.querySelector('.chat-who'), null, 15000);
@@ -577,20 +577,20 @@ try {
   // spot: a spot light set through the door (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in
   // Ann's client with that cone, pointing where the thing's -Z points (here: pitched to face straight down)
   const down = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2];   // -90° about X: local -Z → world -Y
-  ws.send(JSON.stringify({ type: 'v4', id: 3, tool: 'batch', args: { ops: [
-    { tool: 'set', args: { id: 'crate-before', component: 'transform', value: { pos: [0, 2, 3], q: down, scale: [1, 1, 1] } } },
-    { tool: 'set', args: { id: 'crate-before', component: 'light', value: { kind: 'spot', angle: 0.4, inner: 0.1, intensity: 30, range: 9, important: true } } }] } }));
+  ws.send(JSON.stringify({ type: 'request', id: 3, verb: 'batch', args: { ops: [
+    { verb: 'set', args: { id: 'crate-before', component: 'transform', value: { pos: [0, 2, 3], q: down, scale: [1, 1, 1] } } },
+    { verb: 'set', args: { id: 'crate-before', component: 'light', value: { kind: 'spot', angle: 0.4, inner: 0.1, intensity: 30, range: 9, important: true } } }] } }));
   let spot = null; for (let i = 0; i < 40; i++) { await new Promise((r) => setTimeout(r, 250));
     spot = await race(pg.evaluate(() => globalThis.EW.lightrig().spots.find((x) => x.intensity > 0) ?? null)).catch(() => null); if (spot) break; }
   if (!spot) stage('spot: debug', false, await race(pg.evaluate(() => { const d = globalThis.EW.lightrig(); const e = globalThis.EW.state?.st?.entities?.['crate-before'];
     return { spots: d.spots, reqs: (d.requests ?? []).filter((r) => /crate/.test(r.key)), comp: e?.comp, kind: e?.kind }; })).catch((x) => String(x)));
   check('spot: a spot light set through the door lights a spot slot with its cone (angle 0.4, penumbra (0.4-0.1)/0.4)',
-    !!spot && Math.abs(spot.angle - 0.4) < 1e-3 && Math.abs(spot.penumbra - 0.75) < 1e-3, { spot, reply: inbox.find((m) => m.type === 'v4-result' && m.id === 3)?.reply });
+    !!spot && Math.abs(spot.angle - 0.4) < 1e-3 && Math.abs(spot.penumbra - 0.75) < 1e-3, { spot, reply: inbox.find((m) => m.type === 'reply' && m.id === 3)?.reply });
   check('spot: …shining down the thing\'s -Z (here straight down)', !!spot && spot.dir[1] < -0.99, spot);
   // rocket: a socket's WHOLE rotation (not just yaw). Bob builds a seat lying on its back beside Ann; Ann sits (the
   // page's own sit: nearest body socket in reach) and her body lies down with it; standing makes her upright again
   const at = await race(pg.evaluate(() => globalThis.EW.me().root.position.toArray()));
-  ws.send(JSON.stringify({ type: 'v4', id: 4, tool: 'create', args: { id: 'rocket', model: MODEL, components: { transform: { pos: [at[0] + 1, 0, at[2]] },
+  ws.send(JSON.stringify({ type: 'request', id: 4, verb: 'create', args: { id: 'rocket', model: MODEL, components: { transform: { pos: [at[0] + 1, 0, at[2]] },
     sockets: { seat: { pos: [0, 0.6, 0], q: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], body: { action: 'ride', pose: 'sit' } } } } } }));
   let upY = null; for (let i = 0; i < 40; i++) { await new Promise((r) => setTimeout(r, 250));
     if (!(await ents()).includes('rocket')) continue;
@@ -598,15 +598,15 @@ try {
     await new Promise((r) => setTimeout(r, 400));
     upY = await race(pg.evaluate(() => { const e = globalThis.EW.me().root.matrixWorld.elements; return +e[5].toFixed(3); })).catch(() => null);
     if (upY != null && upY < 0.2) break; }
-  check('rocket: sitting on a socket lying on its back lays the body down with it (body up ≈ horizontal)', upY != null && Math.abs(upY) < 0.05, { upY, reply: inbox.find((m) => m.type === 'v4-result' && m.id === 4)?.reply?.ok });
+  check('rocket: sitting on a socket lying on its back lays the body down with it (body up ≈ horizontal)', upY != null && Math.abs(upY) < 0.05, { upY, reply: inbox.find((m) => m.type === 'reply' && m.id === 4)?.reply?.ok });
   if (process.env.PROBE_SHOTS) await pg.screenshot({ path: `${process.env.PROBE_SHOTS}/rocket-seated.png` });
   const stood = await race(pg.evaluate(async () => { globalThis.EW.bus.emit('xr:stand'); await new Promise((r) => setTimeout(r, 400)); const r = globalThis.EW.me().root; r.updateMatrixWorld(); return +r.matrixWorld.elements[5].toFixed(3); })).catch(() => null);
   check('rocket: …and standing up makes the body upright again', stood != null && stood > 0.999, stood);
   stage('physics: frame cost of v4phys so far (reported)', true, await race(pg.evaluate(() => globalThis.EW.physics.body())).catch(() => null));
   // ---- physics (design 20 on the client) ----
   { let n = 1000; const bobReq = (tool, args) => new Promise((res) => { const id = ++n; const t = setTimeout(() => res({ ok: false, refused: { code: 'timeout' } }), 8000);
-      const h = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'v4-result' && m.id === id) { clearTimeout(t); ws.removeEventListener('message', h); res(m.reply); } };
-      ws.addEventListener('message', h); ws.send(JSON.stringify({ type: 'v4', id, tool, args })); });
+      const h = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'reply' && m.id === id) { clearTimeout(t); ws.removeEventListener('message', h); res(m.reply); } };
+      ws.addEventListener('message', h); ws.send(JSON.stringify({ type: 'request', id, verb: tool, args })); });
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const LOGF = join(worlds, 'garden', 'v4.jsonl'); const rests = () => restsOf(readLog(readFileSync(LOGF)));
     const shots = process.env.PROBE_SHOTS;
@@ -726,8 +726,8 @@ try {
   // inside it), Ann sits on it with her own /sit, and what her body does is read off the live skeleton and mixer.
   const SHOTS = process.env.PROBE_SHOTS;
   let rid = 10;
-  const door = async (tool, args) => { const id = ++rid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
-    for (let i = 0; i < 60; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
+  const door = async (tool, args) => { const id = ++rid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+    for (let i = 0; i < 60; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
     return { ok: false, refused: { reason: 'no answer' } }; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ev = (fn, arg) => race(pg.evaluate(fn, arg), 20000);

@@ -52,7 +52,7 @@ export const bindPresenting = (fn) => { presenting = fn; };
 // ---------------------------------------------------------------- who holds what (door presence)
 let holds = {};     // id -> the door's hold record: { by: v4 identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
 const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
-bus.on('v4-holds', (h) => {
+bus.on('holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
   for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
@@ -106,7 +106,7 @@ async function track(force = false) {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await requestV4('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; doorAt = r.at ?? to; }
-      else if (r?.refused) bus.emit('v4phys-refused', { tool: 'move', refused: r.refused });
+      else if (r?.refused) bus.emit('v4phys-refused', { verb: 'move', refused: r.refused });
       return arrived;
     }
     const d = doorAt ? Math.hypot(to[0] - doorAt[0], to[1] - doorAt[1], to[2] - doorAt[2]) : Infinity;
@@ -357,7 +357,7 @@ function frame(wall) {
 
 // ---------------------------------------------------------------- acts (door requests)
 const say = (t) => logChat('*', t);
-const refused = (what, r) => { const x = r?.refused; say(plain(what, r)); bus.emit('v4phys-refused', { tool: what, refused: x }); return r; };   // a person's words (plainwords.js)
+const refused = (what, r) => { const x = r?.refused; say(plain(what, r)); bus.emit('v4phys-refused', { verb: what, refused: x }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the door's own reader, so a dynamic thing with no grabbable
 // counts, as at the door); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
@@ -499,7 +499,7 @@ if (typeof document !== 'undefined') {
       btn.addEventListener('pointerup', () => { if (pressing) void useHeld('up'); }); btn.addEventListener('pointercancel', () => { if (pressing) void useHeld('up'); });
       box.prepend(btn); }
     btn.style.display = id ? '' : 'none'; if (g) btn.textContent = g.use.down ?? g.use.up; };
-  bus.on('v4-holds', () => setTimeout(sync, 0));
+  bus.on('holds', () => setTimeout(sync, 0));
 }
 
 // ---------------------------------------------------------------- VR hands (research grab §4; xr.js calls xrHand per hand)
@@ -604,7 +604,7 @@ export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, r
     const at = heldPose(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
   /** probe surface: the palm frame a holder's hand gives ({p, q} world arrays), and the hold pose a body wears */
   palm: (v4id, side = 'right') => { const o = palmOf(v4id ?? net.v4you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
-  track: () => track(true), request: (tool, args) => requestV4(tool, args), frame: (wall) => frame(wall),
+  track: () => track(true), request: (verb, args) => requestV4(verb, args), frame: (wall) => frame(wall),
   /** the canonical fold's flights: id -> the launch seq it flies from */
   launched: () => Object.fromEntries(Object.entries(v4.sim?.launched ?? {}).map(([id, l]) => [id, l.seq])),
   /** what this client believes about its door body (diagnostics) */

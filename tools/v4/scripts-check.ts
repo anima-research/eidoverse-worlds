@@ -86,7 +86,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["a pause write adopts nothing (sponsor skips it)", "door.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return", "if (true) return", ["PA1"]],
   ["the auditor's sponsor skips pause writes too", "scriptaudit.js", "|| jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);", "|| true) return by(L, W[k].seq);", ["PA1"]],
   ["a pause write skips install checks", "door.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", ") installCheck(", ["PA2"]],
-  ["the inspector's script switch", "../editschema.js", "ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));", "", ["PA3"]],
+  ["the inspector's script permission", "../editschema.js", "ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));", "", ["PA3"]],
   ["status says who paused it", "door.js", "...(pb ? { pausedBy: pb.by, pausedAt: pb.at, pausedTs: pb.ts } : {}),", "", ["PA1"]],
   ["bounded wait for a warm process", "sandbox.js", "const WARM_MS = 300;", "const WARM_MS = 5000;", ["I3"]],
   ["a pause write is judged against the value just before it", "door.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", "&& !pauseOnly(op.value, st.entities[op.id]?.c[op.comp])) installCheck(", ["PA4"]],
@@ -187,7 +187,7 @@ const isScriptActor = (a: any) => typeof a === "string" && a.startsWith("script:
 const ZERO = "sha256:" + "0".repeat(64);
 // owner olive (the founder), builders bob and ann, visitor vic
 function cast(s: any, extra: [string, string][] = []) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "visitor"], ...extra]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 function install(s: any, who: string, id: string, name: string, text: string, value: any) {
@@ -379,22 +379,22 @@ const cases: Case[] = [
       const wide = { ...v, scope: { ids: ["self", "@world"], comps: ["bell", "script-settings"], say: true } };
       const owner = s.call("olive", "set", { id: "bell1", component: "script:bell", value: wide }); // an owner may widen it: now olive's
       const adopt = s.call("bob", "adopt", { id: "bell1", script: "bell" });
-      const reset = s.call("bob", "batch", { ops: [{ tool: "delete", args: { id: "bell1", component: "script:bell" } }, { tool: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
-      const twice = s.call("bob", "batch", { ops: [{ tool: "set", args: { id: "bell1", component: "script:bell", value: v } }, { tool: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
+      const reset = s.call("bob", "batch", { ops: [{ verb: "delete", args: { id: "bell1", component: "script:bell" } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
+      const twice = s.call("bob", "batch", { ops: [{ verb: "set", args: { id: "bell1", component: "script:bell", value: v } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
       const pause = s.call("bob", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true }); // a pause is still his to flip (creator)
       return { owner: show(owner), adopt: code(adopt), reset: code(reset), twice: code(twice), pause: show(pause), sponsor: s.call("olive", "scripts", {}).scripts?.[0]?.sponsor }; },
     good: (o) => o.owner === "ok" && o.adopt === "rights" && o.reset === "rights" && o.twice === "rights" && o.pause === "ok" && o.sponsor === "olive" },
-  { id: "PA3", what: "the edit UI's switch: the inspector (shared/editschema.js, the same schema the VR quad and agents' edit use) shows each script as a card with a 'paused' check; flipping it plans one merged {paused} set, which the door takes from an owner, and the sponsor stays", run(s) { cast(s);
+  { id: "PA3", what: "the edit UI's permission: the inspector (shared/editschema.js, the same schema the VR quad and agents' edit use) shows each script as a card with a 'paused' check; flipping it plans one merged {paused} set, which the door takes from an owner, and the sponsor stays", run(s) { cast(s);
       bell(s, "bob");
       const ES = await_ES; const RV = await_RV;
       const ent = () => RV.viewOf("bell1", s.w().state().entities.bell1.c);
       const sch = ES.inspectSchema(ent(), "bell1"); const sec = sch.sections?.list?.find((x: any) => x.key === "script:bell");
       const field = sch.groups.find((g: any) => g.group === "script")?.fields?.find((f: any) => f.k === "bell");
       const plan = ES.editOps(ent(), "bell1", { "script.bell": true });
-      const r = plan.ops.length === 1 ? s.call("olive", plan.ops[0].tool, plan.ops[0].args) : null;
+      const r = plan.ops.length === 1 ? s.call("olive", plan.ops[0].verb, plan.ops[0].args) : null;
       const sv = s.call("olive", "scripts", {}).scripts?.[0];
       const after = ES.inspectSchema(ent(), "bell1").groups.find((g: any) => g.group === "script")?.fields?.[0]?.value;
-      const back = ES.editOps(ent(), "bell1", { "script.bell": false }); const r2 = s.call("olive", back.ops[0].tool, back.ops[0].args);
+      const back = ES.editOps(ent(), "bell1", { "script.bell": false }); const r2 = s.call("olive", back.ops[0].verb, back.ops[0].args);
       return { title: sec?.title, rows: sec?.fields, field: field ? `${field.t} ${field.label} ${field.value}` : null, op: plan.ops[0], errors: plan.errors, r: show(r), status: sv?.status, sponsor: sv?.sponsor, pausedBy: sv?.pausedBy, after, r2: show(r2),
         resumed: s.call("olive", "scripts", {}).scripts?.[0]?.status }; },
     good: (o) => o.title === "Script · bell" && o.rows?.[0] === "script.bell" && o.field === "check paused false" && JSON.stringify(o.op?.args) === '{"id":"bell1","component":"script:bell","value":{"paused":true},"merge":true}'
@@ -412,7 +412,7 @@ const cases: Case[] = [
       const f = F.fold(F.readLog(fs.readFileSync(s.logPath))); const foldSrc = fs.readFileSync(TREE + "shared/v4/fold.js", "utf8");
       return { same: F.digest(f) === F.digest(s.w().state()), rung: f.entities.bell1?.c.bell?.rung, foldImportsVm: /sandbox|scriptaudit|quickjs/.test(foldSrc) }; },
     good: (o) => o.same && o.rung === 3 && !o.foldImportsVm },
-  { id: "B20", what: "kill switches: paused: true and @world.script-settings.run: false stop it; runaway work dies by fuel; 5 failures in a row pause it until it is set again", run(s) { cast(s);
+  { id: "B20", what: "kill permissions: paused: true and @world.script-settings.run: false stop it; runaway work dies by fuel; 5 failures in a row pause it until it is set again", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "tick", onUse(`world.set("self", "n", (world.get("self", "n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
       install(s, "bob", "box", "spin", onUse(`while (true) {}`), { scope: { ids: "self", comps: ["m"] }, on: ["use"] });
@@ -563,7 +563,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
   { id: "I5", what: "review r2 #2: the door's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
-      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ tool: "create", args: { id: `t${b}-${i}`, components: { data: { xs: big } } } })) }, 6000); // under the byte rate
+      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { data: { xs: big } } } })) }, 6000); // under the byte rate
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "heavy", onUse(`for (let i = 0; i < 31; i++) world.set("self", "n", i); world.get("self"); world.set("self", "m", world.ids().length); world.children("box");`), { scope: { ids: "self", comps: ["n", "m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
@@ -821,11 +821,11 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
     let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch { /* not yet */ } }
     if (!up) return { up: false, err: fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : "" };
     const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
-      ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
+      ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
       ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", v4fold: true }));
       for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.v4?.you, req: (tool: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "v4", id: rid, tool, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
+      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.v4?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });
@@ -845,7 +845,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
     const srvLog = fs.readFileSync(logf, "utf8") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : "");
     ann.ws.close(); bob.ws.close();
     return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0.bell?.rung, tickActs, beats: st0.beats, hello: st0.hello === bob.you,
-      sawScript: bob.msgs.some((m) => m.type === "v4-log" && m.entries.some((e: any) => e.actor === "script:bell1" && e.body?.on === "tick")),
+      sawScript: bob.msgs.some((m) => m.type === "log" && m.entries.some((e: any) => e.actor === "script:bell1" && e.body?.on === "tick")),
       roster: dbg?.events?.map((e: any) => `${e.id}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
   } finally { proc.kill(); }
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
@@ -865,11 +865,11 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch { /* not yet */ } }
       if (!up) return { up: false };
       const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
-        ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
+        ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
         ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", v4fold: true }));
         for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-        return { ws, req: (tool: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "v4", id: rid, tool, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
+        return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");
       await ann.req("create", { id: "box" });
       const u = await ann.req("upload", { text: `world.on("use", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n` });

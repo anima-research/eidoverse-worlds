@@ -826,7 +826,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // ONE request for the whole edit (a batch when it took several ops): one act, one undo — what a person's edit sends
       const req: any = OP.batch(ops);
       const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.throughLock ? { throughLock: true } : {}) });
-      L.push(`${a.dry ? "would send" : "sent"} ${req.tool} ${JSON.stringify(req.args)}`);
+      L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
       if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/v4/refusal.js)
       else if (r) {
         // the door's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account

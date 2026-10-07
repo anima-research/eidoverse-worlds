@@ -31,7 +31,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the door at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
-  ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, switches, the grant rule, sanctions, ghost
+  ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions, ghost
   ["batch2", "batch2-check.ts", 1],     // edit mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
   ["client-b2", "batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
   ["build", "build-check.ts", 1],       // ship-list group B (10-07): building walls at the door, nested blueprints, the editor's new script

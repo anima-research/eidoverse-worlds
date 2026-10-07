@@ -1,4 +1,4 @@
-// The world can ask a client for a rendered view of someone ('snap'). That is the
+// The world can ask a client for a rendered view of someone ('capture'). That is the
 // one thing in the wire protocol which genuinely needs a renderer, so it lives here
 // rather than in net.js — lifting it out is what lets net.js carry the protocol for a
 // client that has no scene at all (lite.js). net.js keeps the socket: this returns a
@@ -13,7 +13,7 @@ const _snapHead = new THREE.Vector3();
 const _snapBox = new THREE.Box3();
 
 /** @returns {Promise<{dataUrl: string} | {error: string}>} */
-export async function snapshot(msg) {
+export async function capture(msg) {
   // Three framings:
   //   first  — the target's own eyes: the eye anchors on their LIVE head bone
   //            (mesh bounds when the rig has none) and their own body is

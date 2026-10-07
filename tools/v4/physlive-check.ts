@@ -41,7 +41,7 @@ const ENG = { engine: "eidosim@0.5.0" };
 const near = (a, b, e = 1e-9) => Array.isArray(a) && Array.isArray(b) && a.every((x, i) => Math.abs(x - b[i]) <= e);
 function playground(clock = "pinned") {
   const x = live(clock); const { call } = x;
-  call("rowan", "new", { title: "pg" });
+  call("rowan", "create-world", { title: "pg" });
   call("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
@@ -77,7 +77,7 @@ function playground(clock = "pinned") {
   const tb2 = gb.ok ? call("rowan", "throw", { id: "blob", v: [0, 1, 1] }) : gb;
   ok(code(tb2) === "no-shape", "S9 throwing a thing with no measured shape is refused with a reason (it would never fly)", tb2);
   // a world that turns physics on stamps what was standing there before
-  const y = live(); y.call("rowan", "new", { title: "late" });
+  const y = live(); y.call("rowan", "create-world", { title: "late" });
   y.call("rowan", "create", { id: "crate-1", model: "crate", place: { at: [3, 3] } });
   y.call("rowan", "create", { id: "wall-1", model: "wall", place: { at: [0, 2] } });
   y.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
@@ -147,7 +147,7 @@ function playground(clock = "pinned") {
   walk("rowan", [6, 0, 5.5]);
   ok(code(call("rowan", "punt", { id: "b2" })) === "locked", "K18 a thing resting on (attached to) a locked thing can't be punted off it");
   // no physics: refused with the reason
-  const z = live(); z.call("rowan", "new", { title: "still" });
+  const z = live(); z.call("rowan", "create-world", { title: "still" });
   z.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   z.call("rowan", "move", { to: [0, 0, -0.5] });
   ok(code(z.call("rowan", "punt", { id: "ball" })) === "no-physics", "K19 with no physics running, a punt is refused (nothing flies)");
@@ -177,7 +177,7 @@ function playground(clock = "pinned") {
   { const r = call("rowan", "move", { to: [0, 0, 10] }); ok(code(r) === "too-fast", "W1 a step too far is refused", r); }
   { const r = call("rowan", "move", { to: [0, 0, 3] }); ok(code(r) === "solid", "W2 a step through the table is refused", r); }
   ok(L().length === n0, "W3 …and neither refusal is written to the log (a person's client sends steps several times a second)", L().slice(n0).map((e) => [e.kind, e.verb, e.body?.refused]));
-  const x = live(); x.call("rowan", "new", { title: "w" }); x.call("rowan", "create", { id: "wall", model: "wall", place: { at: [0, 0] } });
+  const x = live(); x.call("rowan", "create-world", { title: "w" }); x.call("rowan", "create", { id: "wall", model: "wall", place: { at: [0, 0] } });
   const n1 = x.L().length;
   ok(code(x.call("rowan", "move", { to: [0, 0, 0] })) === "solid" && x.L().length === n1, "W4 a refused ARRIVAL isn't on the record either (a body's track is presence; review 10-06 S0-3)", x.L().slice(n1).map((e) => [e.kind, e.verb]));
 }

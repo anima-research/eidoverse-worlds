@@ -33,7 +33,7 @@ const rnd = (() => { let s = 777; return () => ((s = (s * 1664525 + 1013904223) 
 const near = (a: number[], b: number[], eps: number) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
 const sameRot = (a: number[], b: number[], eps: number) => near(a, b, eps) || near(a, b.map((v) => -v), eps);
 const LIB = 'eidoverse/assets/models/table_oak_round.glb';
-const tfOf = (r: any) => flat(r.ops).find((o: any) => o.tool === 'set' && o.args.component === 'transform')?.args.value;
+const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
 
 // ---------------------------------------------------------------- 1. the tree
 console.log('tree building from a v4 world\'s view');
@@ -186,10 +186,10 @@ function threeWorld(W: any, id: string) {
   const W: any = { box: { lib: LIB, pos: [1, 0, 0], q: qNorm([0.3, 0.2, 0.1, 0.9]), scale: 2 }, ball: { lib: LIB, pos: [1, 1, 0], yaw: 0, scale: 1 } };
   const pv = parentOps(W, 'ball', 'box');
   const o = flat(pv.ops);
-  check('parenting: ONE batch, set parent {to} then a whole local transform (scale local: 1/2 under a ×2 box)', pv.ops.length === 1 && pv.ops[0].tool === 'batch' && o.length === 2 && o[0].args.component === 'parent' && o[0].args.value.to === 'box'
+  check('parenting: ONE batch, set parent {to} then a whole local transform (scale local: 1/2 under a ×2 box)', pv.ops.length === 1 && pv.ops[0].verb === 'batch' && o.length === 2 && o[0].args.component === 'parent' && o[0].args.value.to === 'box'
     && o[1].args.component === 'transform' && o[1].args.value.q.length === 4 && o[1].args.value.pos.length === 3 && near(o[1].args.value.scale, [0.5, 0.5, 0.5], 1e-9), JSON.stringify(pv.ops));
   const un = flat(parentOps({ ...W, ball: { ...W.ball, parent: { to: 'box', offset: [0, 0.5, 0] } } }, 'ball', null).ops);
-  check('unparenting: delete parent, then the whole WORLD transform', un.length === 2 && un[0].tool === 'delete' && un[0].args.component === 'parent' && un[1].args.component === 'transform' && near(un[1].args.value.scale, [2, 2, 2], 1e-9), JSON.stringify(un));
+  check('unparenting: delete parent, then the whole WORLD transform', un.length === 2 && un[0].verb === 'delete' && un[0].args.component === 'parent' && un[1].args.component === 'transform' && near(un[1].args.value.scale, [2, 2, 2], 1e-9), JSON.stringify(un));
   check('an id that needs escaping is encoded once in the parent target', flat(parentOps({ Box: W.box, ball: W.ball }, 'ball', 'Box').ops)[0].args.value.to === enc('Box'));
   const L = localOf({ ...W.ball, parent: { to: 'box', yaw: 0.5 } }, W);
   check('localOf a yaw-only mount: q null, yaw the relative turn', L.q === null && L.yaw === 0.5 && L.mounted);

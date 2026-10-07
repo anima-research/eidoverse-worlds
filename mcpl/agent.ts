@@ -842,7 +842,7 @@ export class WorldAgent {
               if (Number.isFinite(msg.yaw)) this.yaw = msg.yaw;
             }
             break;
-          case "v4-log": {
+          case "log": {
             if (!this.v4c?.active) break;
             const r = this.v4c.ingest((msg as any).entries ?? [], (msg as any).from ?? -1, (msg as any).names);
             // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
@@ -857,7 +857,7 @@ export class WorldAgent {
             if (r.changed) await this.applyView(true, r.actor ?? null, r.ts ?? null);
             break;
           }
-          case "v4-result": {
+          case "reply": {
             const p = this.pendingV4.get(String(msg.id));
             if (p) { this.pendingV4.delete(String(msg.id)); p(msg); }
             break;
@@ -2517,13 +2517,13 @@ export class WorldAgent {
 
   /** One request to the world's door, answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
    *  fix}}. */
-  door(tool: string, args: Record<string, unknown> = {}): Promise<any> {
+  door(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
       const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the door did not answer within 8 s" } }); }, 8000);
       this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the door's answer had no reply" } }); });
-      this.ws!.send(JSON.stringify({ type: "v4", id, tool, args }));
+      this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
   /** present people's v4 identities, by display name (their arrival carries it) */
@@ -2534,7 +2534,7 @@ export class WorldAgent {
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
     const req: any = OP.batch(ops);
     if (!req) return { ok: true, noop: true };
-    const turn = this.spelling.then(() => this.door(req.tool, { ...req.args, ...extra }));
+    const turn = this.spelling.then(() => this.door(req.verb, { ...req.args, ...extra }));
     this.spelling = turn.catch(() => null);
     return turn;
   }

@@ -54,7 +54,7 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
         s.lat.push(Date.now() - m.t);
         if (s.lastSeq >= 0 && m.seq > s.lastSeq + 1) s.gaps += m.seq - s.lastSeq - 1;
         s.lastSeq = m.seq;
-      } else if (m.type === "v4-log") {
+      } else if (m.type === "log") {
         for (const e of m.entries ?? []) if (e?.kind === "say") s.says.add(e.body?.text);
       } else if (m.type === "error") {
         clearTimeout(to);
@@ -93,7 +93,7 @@ const tickers = perfs.map((s, i) => setInterval(() => {
 // chat burst mid-run: 24 messages in one second, all must arrive everywhere
 const burstTexts = Array.from({ length: N_PERF }, (_, i) => `burst-${i}-${Math.floor(t0)}`);
 setTimeout(() => {
-  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "v4", id: `burst-${i}`, tool: "say", args: { text: burstTexts[i] } })); });
+  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
 // reconnect churn: 10 spectators drop and rejoin mid-run

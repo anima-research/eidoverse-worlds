@@ -129,10 +129,15 @@ function open(name: string, o: any = {}) {
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
 }
+// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass
+const AT_BASE = path.resolve(TREE) !== path.resolve(ENGINE);
+const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };
+// …and its batch ops were {tool, args}
+const baseArgs = (verb: string, args: any) => (verb === "batch" && Array.isArray(args?.ops) ? { ...args, ops: args.ops.map((o: any) => (o && "verb" in o ? (({ verb: v, ...r }) => ({ tool: BASE_VERB[v] ?? v, ...r }))(o) : o)) } : args);
 function session(o: any = {}) {
   const name = `w${++N}`; let w = open(name, o);
-  const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.V4_NOW = String(T);
-    try { return D.request(w, actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.V4_NOW = String(T);
+    try { return AT_BASE ? D.request(w, actor, BASE_VERB[verb] ?? verb, baseArgs(verb, args)) : D.request(w, actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: () => w, reopen: (o2: any = {}) => (w = open(name, { ...o, ...o2 })), advance: (ms: number) => { T += ms; process.env.V4_NOW = String(T); } };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code ?? (r?.crashed ? "CRASH" : r?.ok ? "ok" : "?");
@@ -144,14 +149,14 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 
 // owner olive, builder bob, visitor vic; bounds wide enough for 2 000 things 2 m apart
 function cast(s: any) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-500, 0, -500], max: [500, 50, 500] } });
   for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 // n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: the door's rate window)
 function fill(s: any, n: number, at = (i: number, side: number) => [(i % side) * 2 - side, 0, Math.floor(i / side) * 2 - side]) {
   const side = Math.ceil(Math.sqrt(n));
-  for (let made = 0; made < n;) { const ops = []; for (let k = 0; k < 50 && made < n; k++, made++) ops.push({ tool: "create", args: { id: `c-${made}`, model: "crate", components: { transform: { pos: at(made, side), q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
+  for (let made = 0; made < n;) { const ops = []; for (let k = 0; k < 50 && made < n; k++, made++) ops.push({ verb: "create", args: { id: `c-${made}`, model: "crate", components: { transform: { pos: at(made, side), q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
     const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return r; }
   return { ok: true, side };
 }
@@ -175,13 +180,13 @@ function scaleCase(n: number) {
     const op = (k: string, f: (i: number) => any) => { const x = best(5, f); ms[k] = r1(x.ms); codes[k] = code(x.r); };
     op("delete", (i) => s.call("olive", "delete", { id: `base-${i}` }));
     op("step", (i) => { const at = s.w().presence.bodies.vic.at; return s.call("vic", "move", { to: [at[0], 0, at[2] < 2 ? 4.4 : 0.9] }, 1000); });
-    op("check", () => s.call("vic", "check", {}));
+    op("check", () => s.call("vic", "lint", {}));
     op("place", (i) => s.call("bob", "place", { id: `c-${7 + i}`, on: "big", dry: true }));
     op("placeVisitor", () => s.call("vic", "place", { id: "c-7", on: "big" }));
     op("look", () => s.call("vic", "look", {}));
     op("create", () => s.call("olive", "create", { model: "crate", components: { transform: T0([X - 40, 0, -20]) } }, 20000));
     op("set", (i) => s.call("olive", "set", { id: `c-${20 + i}`, component: "label", value: "x" }, 20000));
-    op("batch", (i) => s.call("olive", "batch", { ops: Array.from({ length: 50 }, (_, k) => ({ tool: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
+    op("batch", (i) => s.call("olive", "batch", { ops: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
     s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
     op("grab", (i) => { const r = s.call("vic", "grab", { id: `tray-${i}` }, 20000); s.call("vic", "drop", { id: `tray-${i}` }); return r; });
     return { n, ms, codes, things: Object.keys(s.w().state().entities).length - 1, load: r1(LOAD), bound: r1(bound()) }; };
@@ -232,8 +237,8 @@ const cases: Case[] = [
     good: (o) => o.dry === "too-costly" && o.real === "too-costly" && o.dryMs <= o.bound && o.realMs <= o.bound && /shared by every world/.test(o.why ?? "") },
   { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget; a batch of 120 creates into the heap still lands, its warnings saying what went unchecked", run(s) { cast(s);
       fill(s, 700, () => [0, 0, 0]);
-      const c = best(5, () => s.call("vic", "check", {})); const one = best(5, () => s.call("vic", "check", { id: "c-3" }));
-      const mk = best(3, (i) => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ tool: "create", args: { id: `more-${i}-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
+      const c = best(5, () => s.call("vic", "lint", {})); const one = best(5, () => s.call("vic", "lint", { id: "c-3" }));
+      const mk = best(3, (i) => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ verb: "create", args: { id: `more-${i}-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
       return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-0-119"],
         unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0 }; },
     good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.batch === "ok" && o.made && o.unchecked > 0 && o.batchMs <= 2 * o.bound },
@@ -247,7 +252,7 @@ const cases: Case[] = [
     good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
   { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);
       const holds: any = {}, bodies: any = {};
-      for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ tool: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "visitor" } } } });
+      for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "visitor" } } } });
         s.call("olive", "batch", { ops }, 20000); }
       for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: T, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: T, tokens: 4 }; }
       s.call("olive", "look", {}, 20000);
@@ -272,7 +277,7 @@ const cases: Case[] = [
       const over = s.call("bob", "create", { id: "t-10", model: "crate" }, 2000);
       const set = s.call("bob", "set", { id: "t-1", component: "label", value: "still open" }, 2000);
       s.call("bob", "delete", { id: "t-0" }, 2000);
-      const batch = s.call("bob", "batch", { ops: [{ tool: "create", args: { id: "t-11", model: "crate" } }, { tool: "create", args: { id: "t-12", model: "crate" } }] }, 2000);
+      const batch = s.call("bob", "batch", { ops: [{ verb: "create", args: { id: "t-11", model: "crate" } }, { verb: "create", args: { id: "t-12", model: "crate" } }] }, 2000);
       const one = s.call("bob", "create", { id: "t-13", model: "crate", components: { transform: T0([0, 0, 3]) } }, 2000);
       return { made: [...new Set(made)], over: code(over), why: over.refused?.reason, set: code(set), batch: code(batch), one: code(one), things: Object.keys(s.w().state().entities).length - 1 }; },
     good: (o) => JSON.stringify(o.made) === '["ok"]' && o.over === "full" && /limit is 10/.test(o.why ?? "") && o.set === "ok" && o.batch === "full" && o.one === "ok" && o.things === 10 },
@@ -286,7 +291,7 @@ const cases: Case[] = [
     good: (o) => o.fill === "ok" && o.over === "full" && o.raise === "ok" && o.now === "ok" && o.tooHigh === "bounds" && o.builder === "rights" },
   { id: "C3", what: "guests together have at most capacity.guestThings things standing (a fresh guest identity per connection gets no fresh share); an account still builds; a guest's delete frees room", run(s) {
       const sess = session({ kindOf: (id: string) => (id.startsWith("g") ? "anon" : "human") }); s = sess;
-      s.call("olive", "new", { title: "guests" });
+      s.call("olive", "create-world", { title: "guests" });
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
       s.call("olive", "set", { id: "@world", component: "capacity", value: { guestThings: 5 } });
       const r = [];
@@ -319,7 +324,7 @@ const cases: Case[] = [
       r.wall = code(s.call("vic", "move", { to: [4.2, 0, 0.5] }, 1000));
       r.grab = code(s.call("vic", "grab", { id: "mug" }, 1000)); r.put = show(s.call("vic", "put", { id: "mug", pos: [1.6, 0.1, 1.2] }, 1000));
       r.tp = code(s.call("bob", "move", { to: [-1.5, 0.1, -1.5] })); r.inWall = code(s.call("ann", "move", { to: [3, 0, 0] }));
-      r.check = s.call("olive", "check", { id: "mug" }).warnings?.map((x: any) => x.kind) ?? null;
+      r.check = s.call("olive", "lint", { id: "mug" }).warnings?.map((x: any) => x.kind) ?? null;
       return r; },
     good: (o) => o.arrive === "ok" && o.door === "ok" && o.inside === "ok" && o.wall === "solid" && o.grab === "ok" && o.put === "ok" && o.tp === "ok" && o.inWall === "solid" && JSON.stringify(o.check) === "[]" },
   { id: "I3", what: "a closed box measured the same way stays solid through and through: no arriving inside it, no walking into it", run(s) {
@@ -361,19 +366,19 @@ const cases: Case[] = [
   { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): check {}, look, and placing a book on a turned desk with a box in its middle each take under ${BOUND_MS} ms`, run(s) { cast(s);
       const yq = (deg: number) => [0, Math.sin(deg * Math.PI / 360), 0, Math.cos(deg * Math.PI / 360)];
       for (let d = 0; d < 300;) { const ops = []; for (let k = 0; k < 10; k++, d++) { const x = (d % 20) * 3 - 30, z = Math.floor(d / 20) * 3 - 22;
-          ops.push({ tool: "create", args: { id: `desk-${d}`, model: "table", components: { transform: { pos: [x, 0, z], q: yq(30), scale: [1.5, 1, 1.5] } } } });
-          for (let b = 0; b < 4; b++) ops.push({ tool: "create", args: { id: `bk-${d}-${b}`, model: "book", components: { transform: { pos: [x + (b - 1.5) * 0.25, 0.75, z], q: yq(30), scale: [1, 1, 1] } } } }); }
+          ops.push({ verb: "create", args: { id: `desk-${d}`, model: "table", components: { transform: { pos: [x, 0, z], q: yq(30), scale: [1.5, 1, 1.5] } } } });
+          for (let b = 0; b < 4; b++) ops.push({ verb: "create", args: { id: `bk-${d}-${b}`, model: "book", components: { transform: { pos: [x + (b - 1.5) * 0.25, 0.75, z], q: yq(30), scale: [1, 1, 1] } } } }); }
         const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
       s.call("olive", "create", { id: "pile", model: "crate", components: { transform: { pos: [-30, 0.75, -22], q: yq(30), scale: [1.2, 0.3, 1.2] } } }, 20000);
       s.call("olive", "create", { id: "cup", model: "book", components: { transform: T0([40, 0, 40]) } }, 20000);
       const ms: any = {}, codes: any = {};
       const op = (k: string, f: (i: number) => any) => { const x = best(5, f); ms[k] = r1(x.ms); codes[k] = code(x.r); };
-      op("check", () => s.call("vic", "check", {})); op("look", () => s.call("vic", "look", {}));
+      op("check", () => s.call("vic", "lint", {})); op("look", () => s.call("vic", "look", {}));
       op("place", () => s.call("bob", "place", { id: "cup", on: "desk-0", dry: true }));
       return { ms, codes, bound: r1(bound()) }; },
     good: (o) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound) && JSON.stringify(o.codes) === '{"check":"ok","look":"ok","place":"ok"}' },
   { id: "S6", what: `a 4 m step beside 800 small things at body height (books on shelves) takes under ${BOUND_MS} ms, and one into them is refused (solid) as fast`, run(s) { cast(s);
-      for (let made = 0; made < 800;) { const ops = []; for (let k = 0; k < 50 && made < 800; k++, made++) ops.push({ tool: "create", args: { id: `b-${made}`, model: "book", components: { transform: T0([2.2 + (made % 10) * 0.06, 0.9 + (Math.floor(made / 100) % 8) * 0.1, 2.2 + (Math.floor(made / 10) % 10) * 0.06]) } } });
+      for (let made = 0; made < 800;) { const ops = []; for (let k = 0; k < 50 && made < 800; k++, made++) ops.push({ verb: "create", args: { id: `b-${made}`, model: "book", components: { transform: T0([2.2 + (made % 10) * 0.06, 0.9 + (Math.floor(made / 100) % 8) * 0.1, 2.2 + (Math.floor(made / 10) % 10) * 0.06]) } } });
         const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
       s.call("vic", "move", { to: [0, 0, 2.8] }, 5000);
       const past = best(5, (i) => s.call("vic", "move", { to: i % 2 ? [0, 0, 2.8] : [2.8, 0, 0] }, 2000));
@@ -397,7 +402,7 @@ const cases: Case[] = [
         else if (k === 3) s.call("olive", "delete", { id: a });
         else if (k === 4) s.call("olive", "undo", {});
         else s.call("olive", "create", { model: "crate", components: { transform: T0([rand(40) - 20, 0, rand(40) - 20]) } });
-        s.call("vic", "check", { id: a });   // a read of this state: its index is derived (or built) now
+        s.call("vic", "lint", { id: a });   // a read of this state: its index is derived (or built) now
         const d = D.indexAudit(s.w()); if (d.length) { bad.push([i, k, d]); if (bad.length > 3) break; } }
       return { bad }; },
     good: (o) => o.skipped || o.bad.length === 0 },
@@ -440,13 +445,13 @@ function scenario() {
   c("ann", "create", { id: "lamp", model: "floor-lamp", place: { against: "w-1" } }, 2000);
   c("ann", "place", { id: "cr-0", on: "t-1", facing: "ch-1" }, 2000); c("ann", "place", { id: "c-3", near: "c-4" }, 2000); c("ann", "place", { id: "c-5", at: [30, 9] }, 2000);
   c("ann", "create", { id: "big", model: "crate", components: { transform: T0([-12, 0, -12], [3, 1, 3]) } }, 2000);
-  c("vic", "check", {}); c("vic", "check", { id: "c-14" }); c("vic", "check", { id: "big" }); c("vic", "look", { limit: 300 }); c("vic", "measure", { id: "t-2" });
+  c("vic", "lint", {}); c("vic", "lint", { id: "c-14" }); c("vic", "lint", { id: "big" }); c("vic", "look", { limit: 300 }); c("vic", "measure", { id: "t-2" });
   c("olive", "delete", { id: "t-1" }, 2000); c("olive", "delete", { id: "t-4", dry: true }); c("olive", "delete", { id: "shelf-1" }, 2000);
   c("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "visitor" } }, place: { on: "t-5" } }, 2000);
   c("vic", "move", { to: [35, 0, 9] }); for (const p of [[33, 0, 7], [31, 0, 6], [29, 0, 5.5], [26, 0, 5], [24.6, 0, 12], [24, 0, 11]]) c("vic", "move", { to: p }, 1000);
   c("vic", "move", { to: [35, 0, 5.4], teleport: true }, 4000); c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug", pos: [35, 0.75, 5.3] }, 1000);
   c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug" }, 1000); c("vic", "move", { to: [21, 0, 4.4], teleport: true }, 4000); c("vic", "grab", { id: "cr-1" }, 1000);
-  c("vic", "check", {}); c("vic", "look", { limit: 300 });
+  c("vic", "lint", {}); c("vic", "look", { limit: 300 });
   // a table scaled 12× with a slab in its middle: the nearest free spot, with and without offsets (one far off it)
   c("ann", "create", { id: "wide", model: "table", components: { transform: T0([60, 0, 60], [12, 1, 12]) } }, 2000); c("ann", "create", { id: "slab", model: "crate", components: { transform: T0([60, 0.75, 60], [4, 1, 4]) } }, 2000);
   for (const off of [undefined, [1000, 0], [0.3, -0.7], [-2, 2]]) c("ann", "place", { id: "c-50", on: "wide", ...(off ? { offset: off } : {}), dry: true });

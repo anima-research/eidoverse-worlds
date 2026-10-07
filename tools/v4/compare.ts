@@ -47,7 +47,7 @@ if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${dri
   const os = await import("node:os"); const path = await import("node:path");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "v4-engine-conf-")); let T = 1800000000000;
   const w: any = openLive(path.join(tmp, "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json") });
-  const rs = [["new", { title: "conf" }], ["create", { id: "tbl", model: "table", place: { at: [0, 2] } }], ["set", { id: "tbl", component: "label", value: "probe-value" }],
+  const rs = [["create-world", { title: "conf" }], ["create", { id: "tbl", model: "table", place: { at: [0, 2] } }], ["set", { id: "tbl", component: "label", value: "probe-value" }],
     ["say", { text: "hello" }], ["delete", { id: "tbl" }], ["undo", {}]].map(([t, a]: any) => request(w, "ann", t, a));
   const log = path.join(tmp, "w", "v4.jsonl"); const text = fs.readFileSync(log, "utf8");
   const rd = JSON.parse(py([here + "v4read.py", log, "--json"]).stdout.toString());

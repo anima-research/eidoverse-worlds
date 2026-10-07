@@ -24,7 +24,7 @@ const ok = (r) => r?.ok === true, crashed = (r) => !!r?.crashed, refused = (r) =
 const show = (r) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 90)}`);
 // a world: owner olive, builder bob, visitor vic (zed is a stranger)
 function cast(s) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
 }
@@ -106,8 +106,8 @@ const attacks = [
   // ---- H4 (§2.3) ----
   { id: "H4a", what: "brick by undo: the owner undoes three times; #3 deletes @world", run(s) { cast(s);
       const u = [1, 2, 3].map(() => s.call("olive", "undo", {}));
-      const newAct = s.world().entries.findIndex((e) => e.verb === "new" || e.args?.tool === "new"); // name the founding act explicitly, too
-      return { u, explicit: s.call("olive", "undo", { act: newAct }), after: s.call("olive", "set", { id: "@world", component: "about", value: { name: "still mine" } }), renew: s.call("olive", "new", { title: "again" }) }; },
+      const newAct = s.world().entries.findIndex((e) => e.verb === "create-world" || e.args?.verb === "create-world"); // name the founding act explicitly, too
+      return { u, explicit: s.call("olive", "undo", { act: newAct }), after: s.call("olive", "set", { id: "@world", component: "about", value: { name: "still mine" } }), renew: s.call("olive", "create-world", { title: "again" }) }; },
     baseBad: (o) => o.u.every(ok) && refused(o.after) && refused(o.renew),
     nowGood: (o) => ok(o.u[0]) && ok(o.u[1]) && refused(o.u[2]) && o.explicit.refused?.code === "founding" && ok(o.after) },
   { id: "H4b", what: "@world deleted outright by its owner", run(s) { cast(s);
@@ -131,7 +131,7 @@ const attacks = [
 // A world whose log names no owner (an import, a hand-edited log): nobody is above visitor, whatever roles say.
 function ownerless(d) {
   const name = "atk-ownerless"; for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
-  const s = session(d, name); s.call("olive", "new", { title: name }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  const s = session(d, name); s.call("olive", "create-world", { title: name }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   // rewrite the log so that olive's owner role was never there (same entries otherwise)
   const p = `${d.root}worlds/${name}.jsonl`; const lines = fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   for (const e of lines) { for (const o of [e.args, ...(e.args?.ops ?? []).map((x) => x.args), e.body, ...(e.body?.ops ?? [])]) if (o) { if (o.components) delete o.components["roles:olive"]; if ((o.component ?? o.comp) === "roles:olive") { o.value = { role: "visitor" }; } } }
@@ -145,7 +145,7 @@ attacks.push({ id: "H4f", what: "a log with no owner at all: roles:bob says buil
 // ---- H2: the rest check verifies a copy, not the fact (P1a–d, P4), run on each door's own physics log ----
 function physLog(d) {
   const s = session(d, "atk-phys"); T = 1800000000000;
-  s.call("rowan", "new", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
   s.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   s.call("rowan", "move", { to: [0, 0, -0.5] }); s.call("rowan", "grab", { id: "ball" }); s.call("rowan", "throw", { id: "ball", v: [0, 2, 3] });
   T += 6000; s.call("rowan", "wait", {});

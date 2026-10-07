@@ -88,7 +88,7 @@ try {
   await stage("F", async () => {
   await page(`const m = await import('/lib/net.js'); return await m.requestV4('create', { id: 'box1', model: '${CRATE}', components: { label: 'Toy box' }, place: { at: [${at[0] + 3}, ${at[1]}] } });`);
   const r0 = await evalJson(`__refused.length`);
-  await page(`const e = await import('/lib/v4edit.js'); return (await e.send({ tool: 'set', args: { id: 'box1', component: 'reactions', value: { open: { kind: 'toggle' } } } }, { what: 'change box1' })).ok;`);
+  await page(`const e = await import('/lib/v4edit.js'); return (await e.send({ verb: 'set', args: { id: 'box1', component: 'reactions', value: { open: { kind: 'toggle' } } } }, { what: 'change box1' })).ok;`);
   check("F1 a refusal is shown", await waitFor(`__refused.length > ${r0}`));
   const f = await evalJson(`__refused.at(-1)`);
   check("F2 …in a person's words: what and why, the thing by its label, no refusal code, no tool syntax, no ids", f && /^Couldn't change “Toy box”/.test(f.text) && !/no-target|\{|box1|openable \{/.test(f.text) && /\(no-target\)/.test(f.agentText ?? ""), f);
@@ -98,7 +98,7 @@ try {
   // ---- W: a warning, shown ----
   await stage("W", async () => {
   const w0 = await evalJson(`__warned.length`);
-  await page(`const e = await import('/lib/v4edit.js'); return (await e.send({ tool: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' })).ok;`);
+  await page(`const e = await import('/lib/v4edit.js'); return (await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' })).ok;`);
   check("W1 a write the door warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), await evalJson(`__warned.at(-1) ?? null`));
   check("W2 …on screen (a toast)", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => /Done, but “Floating crate”/.test(t.textContent))`, 3000));
 

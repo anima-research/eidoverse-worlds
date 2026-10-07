@@ -6,7 +6,7 @@
 //     absolute path, or any line of code that names import-v1. The importer reads an old log once, at the operator's
 //     command (tools/v4/world.ts translate); only tools load it, and the server never serves tools/;
 //   - a deleted v1 module that exists again (GONE);
-//   - the old protocol on the wire or in code, sending OR receiving: v1 verb / lease / log messages, world_verb, the v1
+//   - the old protocol on the wire or in code, sending OR receiving: v1 verb / lease messages, world_verb, the v1
 //     fold's, rights' and log bus's entry points (in comments too);
 //   - the word "v1" (any case, and as a name prefix: v1View) in code or comments, outside the few lines where it names
 //     something else, listed in UNRELATED below with why.
@@ -33,9 +33,11 @@ const RULES = [
   [/\bsendVerbs?\s*\(/, "sends a v1 verb (sendVerb)"],
   [new RegExp(`type:\\s*${Q}verb${Q}|type\\s*===?\\s*${Q}verb${Q}|case\\s+${Q}verb${Q}`), "a v1 `verb` message (sent or handled)"],
   [new RegExp(`\\bsendLease\\s*\\(|type:\\s*${Q}lease${Q}|type\\s*===?\\s*${Q}lease${Q}|case\\s+${Q}lease${Q}`), "a v1 lease (sent or handled)"],
-  [new RegExp(`type:\\s*${Q}log${Q}|type\\s*===?\\s*${Q}log${Q}`), "the v1 `log` message (sent or handled)"],
+  // (v1's `log` message and its WorldLog class were retired with v1; the names pass of 2026-10-07 gave both names to v4:
+  // `log` is the v4 entries stream (was v4-log), WorldLog the per-world log (was V4Log). A v1 client is refused at join,
+  // so it never reads a v4 `log`; the v1 entry points below still mark old code.)
   [/\bworld_verb\b/, "names world_verb (the v1 verb tool)"],
-  [/\b(foldEntry|stateToEntries|VERB_NEEDS|rightsIn|WorldLog|BehaviorHost|settleLease|publishEntry|onEntryCommitted)\b/, "a v1 fold / rights / log entry point"],
+  [/\b(foldEntry|stateToEntries|VERB_NEEDS|rightsIn|BehaviorHost|settleLease|publishEntry|onEntryCommitted)\b/, "a v1 fold / rights / log entry point"],
 ];
 // "v1" where it names something that isn't the old protocol: file → a pattern the whole line must match, and why
 const UNRELATED = [

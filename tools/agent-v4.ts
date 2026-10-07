@@ -32,7 +32,7 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
     w ??= Object.assign(openWorld(root, name), { catalogue: ANY_MODEL });
     return request(w, owner, tool, args);
   };
-  const founded = call("new", { title: tag });
+  const founded = call("create-world", { title: tag });
   if (!founded.ok) throw new Error(`agentOnDoor: new refused: ${JSON.stringify(founded.refused)}`);
   const A = agent;
   A.v4c = makeV4Client();

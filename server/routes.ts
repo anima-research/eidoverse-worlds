@@ -6,7 +6,7 @@
 // Handler bodies moved verbatim; server.ts's fetch() is a one-line delegate.
 // The static-file machinery (serveFrom/contentType/gzCache) and the avatar
 // roster live here with their only HTTP callers — the join snapshot imports
-// avatarRoster back, and the ws `snap-result` case imports pendingSnaps,
+// avatarRoster back, and the ws `capture-result` case imports pendingCaptures,
 // both one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
@@ -81,22 +81,22 @@ export type Srv = {
 // invisible hub-spectator on some GPU box, dialed OUT to us like any client)
 // to jump its camera to ID's head and return one frame. Clients never know
 // rendering exists as a separate thing — it's just the world's API.
-type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
-export const pendingSnaps = new Map<string, PendingSnap>();
-let nextSnapId = 1;
+type PendingCapture = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
+export const pendingCaptures = new Map<string, PendingCapture>();
+let nextCaptureId = 1;
 
-function requestSnap(world: World, follow: string, view = "first", at?: string): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
+function requestCapture(world: World, follow: string, view = "first", at?: string): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
   const renderer = [...world.clients].find((c) => c.renderer);
   if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
   const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
   if (!target) return Promise.resolve({ ok: false, err: `"${follow}" is not present in "${world.name}"`, status: 404 });
   if (!["first", "third", "selfie"].includes(view)) view = "first";
-  const id = `snap-${nextSnapId++}`;
+  const id = `capture-${nextCaptureId++}`;
   return new Promise((resolve) => {
-    pendingSnaps.set(id, { resolve });
-    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, ...(at ? { at } : {}) }));
+    pendingCaptures.set(id, { resolve });
+    renderer.ws.send(JSON.stringify({ type: "capture", id, follow, view, ...(at ? { at } : {}) }));
     setTimeout(() => {
-      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
+      if (pendingCaptures.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
     }, 12_000);
   });
 }
@@ -658,7 +658,7 @@ const ROUTES: Route[] = [
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
       const at = (url.searchParams.get("at") ?? "").slice(0, 200) || undefined;
-      const r = await requestSnap(w, follow, url.searchParams.get("view") ?? "first", at);
+      const r = await requestCapture(w, follow, url.searchParams.get("view") ?? "first", at);
       if (!r.ok) return new Response(r.err, { status: r.status });
       return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
     },

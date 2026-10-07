@@ -37,7 +37,7 @@ const work = async (base: string, texts: { cottage: string }) => {
     random: (() => { let k = 0; return (n: number) => Uint8Array.from({ length: n }, () => (k = (k * 1103515245 + 12345) >>> 0) >>> 24); })(),
     custody: { sequencer: () => "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic", operator: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", keyOf: () => "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0" } };
   const w = M.door.worldOf(io);
-  const reqs: [string, string, any][] = [["olive", "new", { title: "mem" }], ["olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }],
+  const reqs: [string, string, any][] = [["olive", "create-world", { title: "mem" }], ["olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }],
     ["bob", "create", { id: "table-1", model: "table", place: { at: [0, 0] } }], ["bob", "create", { id: "crate-1", model: "crate", place: { on: "table-1" } }],
     ["olive", "set", { id: "table-1", component: "lock", value: true }], ["bob", "delete", { id: "table-1" }], ["bob", "undo", {}]];
   const results = reqs.map(([a, t, x]) => { T += 100; const r = M.door.request(w, a, t, x); return r.ok ? "ok" : `refused ${r.refused?.code}`; });

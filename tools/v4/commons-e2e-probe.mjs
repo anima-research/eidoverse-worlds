@@ -52,11 +52,11 @@ try {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; }); ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
   ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', v4fold: true }));
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'snapshot' || m.type === 'error'); i++) await sleep(100);
-  const req = (id, tool, args) => { ws.send(JSON.stringify({ type: 'v4', id, tool, args })); };
+  const req = (id, verb, args) => { ws.send(JSON.stringify({ type: 'request', id, verb, args })); };
   const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the door never reuses an id: a fresh one each run
   req('c1', 'create', { id: LIVE, model: 'eidoverse/assets/models/crate_large_red.glb', place: { at: [2, 2] } });
-  for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'v4-result' && m.id === 'c1'); i++) await sleep(100);
-  const made = inbox.find((m) => m.type === 'v4-result' && m.id === 'c1');
+  for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'reply' && m.id === 'c1'); i++) await sleep(100);
+  const made = inbox.find((m) => m.type === 'reply' && m.id === 'c1');
   const has = () => race(pg.evaluate((id) => globalThis.EW?.entities?.has?.(id) ?? false, LIVE));
   let live = false; for (let i = 0; i < 60 && !live; i++) { live = await has(); if (!live) await sleep(250); }
   req('c2', 'delete', { id: LIVE });

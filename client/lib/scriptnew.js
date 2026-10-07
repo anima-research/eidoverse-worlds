@@ -5,7 +5,7 @@
 // (shared/v4/newscript.js) and sends them through the editor's one write path (v4edit.js):
 //   upload {text} → {src}, then ONE batch: script:<name> {src, scope, on, every?} + (on use) its reaction. One act, so
 //   one Ctrl+Z takes it off again.
-// A refusal (the scripts switch, a syntax error, a scope beyond your rights) is shown on the card in the door's words,
+// A refusal (the scripts permission, a syntax error, a scope beyond your rights) is shown on the card in the door's words,
 // and the card stays open with what you typed. Esc or Cancel closes it; nothing is written until Create.
 //
 //   openNewScript(id) → Promise<{ok, id, name} | {ok: false}>
@@ -14,9 +14,9 @@ import { net } from './net.js';
 import { refusalText } from '../../shared/v4/refusal.js';
 import { planNewScript, TEMPLATES, TEMPLATE_SCOPE } from '../../shared/v4/newscript.js';
 
-/** May I install a script here (the scripts switch; the door decides either way)? */
+/** May I install a script here (the scripts permission; the door decides either way)? */
 export const mayScript = () => { const r = net.myRights; if (!r) return false;
-  return Array.isArray(r.switches) ? r.switches.includes('scripts') : r.role === 'owner'; };
+  return Array.isArray(r.permissions) ? r.permissions.includes('scripts') : r.role === 'owner'; };
 
 const CSS = `#script-new { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .55); }
 #script-new .sn-card { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 18px; border-radius: 10px; border: 1px solid var(--edge-hi); box-shadow: var(--rim); display: flex; flex-direction: column; gap: 8px; }

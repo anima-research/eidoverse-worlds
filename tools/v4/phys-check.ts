@@ -25,7 +25,7 @@ const ENG = { engine: "eidosim@0.5.0" };
 
 function playground(name) {
   fresh(name);
-  call(name, "rowan", "new", { title: name });
+  call(name, "rowan", "create-world", { title: name });
   call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call(name, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
@@ -189,7 +189,7 @@ function playground(name) {
 
 // K — a foreign engine: this server can't run it, so nothing flies; the world is still fully readable.
 {
-  const W = fresh("pc-k"); call(W, "rowan", "new", { title: W });
+  const W = fresh("pc-k"); call(W, "rowan", "create-world", { title: W });
   const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", build: "deadbeefdeadbeef" } });
   ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a foreign build is accepted with a note", s);
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
@@ -203,9 +203,9 @@ function playground(name) {
 {
   const ghost = fresh("pc-l-none");
   const said = call(ghost, "sage", "say", { text: "hello?" });
-  ok(!said.ok && said.refused.code === "no-world" && /new \{title/.test(said.refused.fix), "L a world that doesn't exist refuses everything but new/help, and teaches new", said.refused);
+  ok(!said.ok && said.refused.code === "no-world" && /create-world \{title/.test(said.refused.fix), "L a world that doesn't exist refuses everything but create-world/help, and teaches create-world", said.refused);
   ok(!fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L …and nothing was written");
-  const dry = call(ghost, "sage", "new", { title: "x", dry: true }); ok(dry.ok && dry.dry && !fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L new honours dry", dry);
+  const dry = call(ghost, "sage", "create-world", { title: "x", dry: true }); ok(dry.ok && dry.dry && !fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L new honours dry", dry);
   const W = playground("pc-l");
   call(W, "rowan", "create", { id: "crate-2", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [2, 0] } });
   const b2 = call(W, "rowan", "inspect", { id: "crate-2" });

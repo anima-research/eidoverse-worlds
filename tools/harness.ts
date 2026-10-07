@@ -47,7 +47,7 @@ export function saysIn(msgs: any[]) {
   const out: { seq: number; actor: string; by: string; text: string; body: any }[] = [];
   for (const m of msgs) {
     if (m?.type === "snapshot" && m.v4?.names) Object.assign(names, m.v4.names);
-    if (m?.type !== "v4-log") continue;
+    if (m?.type !== "log") continue;
     if (m.names) Object.assign(names, m.names);
     (m.entries ?? []).forEach((e: any, i: number) => {
       if (e?.kind === "say") out.push({ seq: m.from + i, actor: names[e.actor] ?? String(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), body: e.body ?? {} });

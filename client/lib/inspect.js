@@ -84,7 +84,7 @@ export function liveFor(id) {
 // Those are owner-rank: false = this viewer is known not to be the owner
 // (WORLD_ADMIN operators fold to owner), undefined = not known yet.
 // shaping the world's look is the editWorld switch (research roles S2); the owner's on an older server
-export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.switches)) return r.switches.includes('editWorld'); return r?.role === undefined ? undefined : r.role === 'owner'; };
+export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : r.role === 'owner'; };
 export const worldLive = () => ({ now: Date.now(), mayShape: mayShape() });
 export function schemaFor(id) {
   if (id === WORLD_ID) return worldSchema(state.st, worldLive());
@@ -111,7 +111,7 @@ export function planEdit(id, key, value) {
   return { ops, errors, euler, asks };
 }
 /** Does this plan write a transform (a move/turn/scale)? The euler hint follows the pose. */
-export const movesPose = (ops) => ops.some((o) => (o.tool === 'batch' ? o.args.ops : [o]).some((x) => x.args?.component === 'transform'));
+export const movesPose = (ops) => ops.some((o) => (o.verb === 'batch' ? o.args.ops : [o]).some((x) => x.args?.component === 'transform'));
 
 export function commitEdit(id, key, value, opts = {}) {
   if (id === WORLD_ID) {   // no live preview: a world field commits on release, one request, one undo step

@@ -9,7 +9,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 
 const M: [string, string, string, string, string[]][] = [
-  ["your-rights from the door", "server/server.ts", "const e = w.v4.rightsOf(c.v4id); const g =", "const e = { role: w.v4.roleOf(c.v4id), name: \"\", rank: 0, switches: [] as string[] }; const g =", ["RS1"]],
+  ["your-rights from the door", "server/server.ts", "const e = w.v4.rightsOf(c.v4id); const g =", "const e = { role: w.v4.roleOf(c.v4id), name: \"\", rank: 0, permissions: [] as string[] }; const g =", ["RS1"]],
   ["voice-moderate names a present identity", "server/server.ts", "const target = typeof msg.v4id === \"string\" ? msg.v4id : [...w.clients].find((t) => t.id === String(msg.id ?? \"\") && (t.surface ?? \"world\") === \"world\" && !t.spectator)?.v4id;", "const target = String(msg.id ?? \"\");", ["RS2"]],
   ["a ghost is deafened at the SFU", "server/server.ts", "try { setSfuDeafened(w.name, c.id, ghost); }", "try { void 0; }", ["RS4"]],
   ["a voice mute is applied at the SFU", "server/server.ts", "try { setSfuModeratorMute(w.name, c.id, voice); }", "try { void 0; }", ["RS2"]],

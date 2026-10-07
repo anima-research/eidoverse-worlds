@@ -69,7 +69,7 @@ Refusals show on the card in these same words. (shared/v4/newscript.js plans it;
 - A demoted sponsor's script goes **dormant** (the status view says who, since when, and what it can no longer
   change). A banned sponsor's is **suspended**. Recovery is explicit: `adopt {id, script, base?}` (its creator or an
   owner), logged as one act.
-- **Pausing is a switch, not an edit.** `set {id, component: "script:<name>", value: {paused: true}, merge: true}`
+- **Pausing is a permission, not an edit.** `set {id, component: "script:<name>", value: {paused: true}, merge: true}`
   (or the "paused" check on the script's card in the Inspector) stops it, and `paused: false` resumes it. Its creator
   or an owner may flip it; it needs nothing of the script (no source, no scope: it works even if the source is gone),
   and it adopts nothing: the sponsor stays whoever last changed something else. `scripts` says who paused it and when,

@@ -51,7 +51,7 @@ export function paintGround(body) {
     // writes the same ones for the same pick
     // the ground is @world's terrain and grass components, so a pick is a `set` and mow is a `delete` — one door
     // request each, undoable like any edit
-    const ground = (component, value) => sendV4(value == null ? { tool: 'delete', args: { id: '@world', component } } : { tool: 'set', args: { id: '@world', component, value } }, { what: component });
+    const ground = (component, value) => sendV4(value == null ? { verb: 'delete', args: { id: '@world', component } } : { verb: 'set', args: { id: '@world', component, value } }, { what: component });
     const growTerrain = () => ground('terrain', terrainArgs(pal, { seed: st.seed, shape: st.shape, tint: st.tint }));
     // what "grow" plants — every option is one bag on the singleton grass
     // verb, straight from the def; blade plantings take the height dial and

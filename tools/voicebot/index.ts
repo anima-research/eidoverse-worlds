@@ -147,7 +147,7 @@ function connectWorld() {
       log(`watching world "${WORLD_NAME}" as spectator (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       return;
     }
-    if (msg.type !== "v4-log") return;
+    if (msg.type !== "log") return;
     Object.assign(names, msg.names ?? {});
     (msg.entries ?? []).forEach((e: any, i: number) => {
       if (e?.kind !== "say" || msg.from + i <= head) return;

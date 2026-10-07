@@ -24,8 +24,8 @@ ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, v4fold: true
 ws.onmessage = (ev) => {
   const m = JSON.parse(String(ev.data));
   if (m.type === "error") fail(m.error);
-  else if (m.type === "snapshot") ws.send(JSON.stringify({ type: "v4", id: "sky-1", tool: "sky", args: { hours, clouds, ...tuners } }));
-  else if (m.type === "v4-result" && m.id === "sky-1") {
+  else if (m.type === "snapshot") ws.send(JSON.stringify({ type: "request", id: "sky-1", verb: "sky", args: { hours, clouds, ...tuners } }));
+  else if (m.type === "reply" && m.id === "sky-1") {
     clearTimeout(timer);
     if (!m.ok) fail(`refused: ${m.reply?.refused?.reason ?? JSON.stringify(m.reply)}`);
     console.log(`sky {hours: ${hours}, clouds: ${clouds}${Object.keys(tuners).length ? `, ${JSON.stringify(tuners).slice(1, -1)}` : ""}} → ${world} (as ${m.reply?.seq !== undefined ? `seq ${m.reply.seq}` : "accepted"})`);

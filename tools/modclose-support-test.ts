@@ -63,8 +63,8 @@ await sleep(1500);
 // ---- the warden: the world's owner; moderation and building are door requests --------
 const warden = new WebSocket(URL_);
 const seen: any[] = []; const results = new Map<string, any>(); let rq = 0;
-warden.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m); if (m.type === "v4-result") results.set(m.id, m); };
-const wardenReq = async (tool: string, args: any) => { const id = `w${++rq}`; warden.send(JSON.stringify({ type: "v4", id, tool, args }));
+warden.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m); if (m.type === "reply") results.set(m.id, m); };
+const wardenReq = async (verb: string, args: any) => { const id = `w${++rq}`; warden.send(JSON.stringify({ type: "request", id, verb, args }));
   for (let i = 0; i < 60 && !results.has(id); i++) await sleep(50); return results.get(id); };
 /** a person's directory identity, as their arrival announced it (moderation names identities, never typed names) */
 const idOf = (name: string) => seen.find((m) => m.type === "arrive" && m.id === name)?.v4id;

@@ -261,7 +261,7 @@ const RAW = `
   // someone who is not here - which the server holds for delivery on arrival.
   await driver.evaluate(async ({ secret, prior, reader }) => {
     await globalThis.__raw([
-      { type: 'v4', id: 'prior-say', tool: 'say', args: { text: prior } },
+      { type: 'request', id: 'prior-say', verb: 'say', args: { text: prior } },
       { type: 'whisper', to: reader, text: secret },
     ], { id: 'sender' });
   }, { secret: SECRET, prior: PRIOR, reader: READER });

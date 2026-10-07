@@ -27,8 +27,8 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const near = (a: number, b: number, e = 1e-6) => Math.abs(a - b) < e;
 // the door ops one edit planned: sets / deletes of one component
-const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.tool === "set" && o.args.component === comp);
-const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.tool === "delete" && o.args.component === comp);
+const sets = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "set" && o.args.component === comp);
+const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb === "delete" && o.args.component === comp);
 const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
@@ -175,7 +175,7 @@ console.log("\nguard is merged into lock (PROTOCOL-v4 §5): an old habit is taug
   const g = editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.guard": true });
   check("flags.guard is refused, naming flags.lock; nothing sent", g.ops.length === 0 && /merged into `lock`/.test(g.errors[0] ?? "") && /flags\.lock/.test(g.errors[0] ?? ""), JSON.stringify(g));
   check("the schema has no guard field (Flags: lock, hidden, label)", !fieldAt(inspectSchema({ pos: [0, 0, 0], comp: { guard: true } }, "old"), "flags.guard"));
-  check("flags.lock → set lock true / delete lock", JSON.stringify(editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.lock": true }).ops) === JSON.stringify([{ tool: "set", args: { id: "crate", component: "lock", value: true } }])
+  check("flags.lock → set lock true / delete lock", JSON.stringify(editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.lock": true }).ops) === JSON.stringify([{ verb: "set", args: { id: "crate", component: "lock", value: true } }])
     && dels(editOps({ pos: [0, 0, 0], comp: { lock: true } }, "crate", { "flags.lock": false }), "lock").length === 1);
 }
 

@@ -20,8 +20,8 @@ let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
 const J = JSON.stringify;
 const LIB = 'eidoverse/assets/models/swing.glb';
-const set = (comp: string, value: any) => ({ tool: 'set', args: { id: 's', component: comp, value } });
-const del = (comp: string) => ({ tool: 'delete', args: { id: 's', component: comp } });
+const set = (comp: string, value: any) => ({ verb: 'set', args: { id: 's', component: comp, value } });
+const del = (comp: string) => ({ verb: 'delete', args: { id: 's', component: comp } });
 // through the door: the thing as `s` in a fresh world (hung from a frame, so a pendulum has something to swing from),
 // the planned ops sent as ONE request; the world handle comes back for follow-ups
 const door = (ent: any, ops: any[]) => {
@@ -39,7 +39,7 @@ console.log('a need with one sensible default is added for you, as real door ops
   check('the record says it: Reactions needs Pendulum', J(RECORDS.Reactions.needs) === '["Pendulum"]');
   const r = addOps(swing, 's', 'Reactions');
   check('add.Reactions on a thing that does not move: a Pendulum at rest, then the reaction (the swing recipe)',
-    r.ops.length === 2 && J(r.ops[0]) === J(set('motion', { type: 'pendulum', amp: 0, period: 3.5 })) && r.ops[1].tool === 'set' && r.ops[1].args.component === 'reactions' && !!r.ops[1].args.value?.push && r.errors.length === 0 && !r.choice, J(r));
+    r.ops.length === 2 && J(r.ops[0]) === J(set('motion', { type: 'pendulum', amp: 0, period: 3.5 })) && r.ops[1].verb === 'set' && r.ops[1].args.component === 'reactions' && !!r.ops[1].args.value?.push && r.errors.length === 0 && !r.choice, J(r));
   check('…and says what it brought', /Pendulum at rest/.test(r.brings ?? ''), J(r));
   const d = door(swing, r.ops);
   // KNOWN BUG (reported 2026-10-06, not fixed here): the recipe writes v1's handler {push: {impulse: 0.35}}; the v4

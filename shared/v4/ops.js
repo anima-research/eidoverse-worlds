@@ -14,19 +14,19 @@ const scale3 = (s) => (Number.isFinite(s) ? [s, s, s] : finite3(s) ? [...s] : nu
 
 /** set one component (value replaces it; `merge: true` merges an object value into the current one). */
 export const set = (id, component, value, { merge = false } = {}) =>
-  ({ tool: "set", args: { id: E(id), component: encName(String(component)), value, ...(merge ? { merge: true } : {}) } });
+  ({ verb: "set", args: { id: E(id), component: encName(String(component)), value, ...(merge ? { merge: true } : {}) } });
 /** remove one component. */
-export const unset = (id, component) => ({ tool: "delete", args: { id: E(id), component: encName(String(component)) } });
+export const unset = (id, component) => ({ verb: "delete", args: { id: E(id), component: encName(String(component)) } });
 /** remove a thing (and let its children go: the door's rule). */
-export const remove = (id) => ({ tool: "delete", args: { id: E(id) } });
+export const remove = (id) => ({ verb: "delete", args: { id: E(id) } });
 /** use a thing (its reactions: a swing's push, a door's open). */
 /** use a thing. With no action the door does the thing's one action, or names what it offers (never 'use' by default:
  *  a thing that offers 'push' doesn't 'use'). */
-export const use = (id, action = null, args = null) => ({ tool: "use", args: { id: E(id), ...(action != null ? { action: String(action) } : {}), ...(args ? { args } : {}) } });
+export const use = (id, action = null, args = null) => ({ verb: "use", args: { id: E(id), ...(action != null ? { action: String(action) } : {}), ...(args ? { args } : {}) } });
 /** make a thing. components: {name: value}; the transform is whole (missing parts default). */
 export function create(id, { model = null, transform = {}, components = {}, from = null } = {}) {
   const comps = {}; for (const [k, v] of Object.entries(components)) comps[encName(k)] = v;
-  return { tool: "create", args: { id: E(id), ...(model ? { model } : {}), ...(from ? { from } : {}),
+  return { verb: "create", args: { id: E(id), ...(model ? { model } : {}), ...(from ? { from } : {}),
     components: { transform: { pos: finite3(transform.pos) ? [...transform.pos] : [0, 0, 0], q: qNorm(transform.q) ?? [0, 0, 0, 1], scale: scale3(transform.scale) ?? [1, 1, 1] }, ...comps } } };
 }
 
@@ -63,13 +63,13 @@ export const unparent = (ent, id, worldPatch) => batch([unset(id, "parent"), set
 
 /** one request for one gesture: a single op as itself, several as one batch (nested batches flattened). */
 export function batch(ops) {
-  const flat = ops.filter(Boolean).flatMap((o) => (o.tool === "batch" ? o.args.ops : [o]));
+  const flat = ops.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
   if (!flat.length) return null;
-  return flat.length === 1 ? flat[0] : { tool: "batch", args: { ops: flat } };
+  return flat.length === 1 ? flat[0] : { verb: "batch", args: { ops: flat } };
 }
 /** the (id, component) pairs a request sets — what a gesture's `expect` covers (ids as the door has them). */
 export function writesOf(req) {
   if (!req) return [];
-  const ops = req.tool === "batch" ? req.args.ops : [req];
-  return ops.filter((o) => o.tool === "set").map((o) => [o.args.id, o.args.component]);
+  const ops = req.verb === "batch" ? req.args.ops : [req];
+  return ops.filter((o) => o.verb === "set").map((o) => [o.args.id, o.args.component]);
 }

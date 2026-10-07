@@ -11,7 +11,7 @@
 //
 // The world speaks protocol v4 (shared/v4/door.js): a join says `v4fold: true`,
 // the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
-// write is a door request {type: "v4", id, tool, args} answered by `v4-result`,
+// write is a door request {type: "request", id, verb: tool, args} answered by `v4-result`,
 // and what the door wrote reaches every client as `v4-log` entries. A world is
 // founded by its operator (bun tools/v4/world.ts found); joining never founds one.
 // Against a running server, the worlds WORLD, WORLD-hist, WORLD-noise,
@@ -64,7 +64,7 @@ class Client {
         this.msgs.push(m);
         if (m.type === "snapshot") { this.snapshot = m; clearTimeout(t); resolve(); }
         if (m.type === "error" && !this.snapshot) { clearTimeout(t); reject(new Error(`${this.id}: ${m.error}`)); }
-        if (m.type === "v4-result") { const f = this.waiters.get(m.id); if (f) { this.waiters.delete(m.id); f(m); } }
+        if (m.type === "reply") { const f = this.waiters.get(m.id); if (f) { this.waiters.delete(m.id); f(m); } }
       };
       this.ws.onerror = () => { clearTimeout(t); reject(new Error(`${this.id}: socket error`)); };
     });
@@ -75,13 +75,13 @@ class Client {
     const id = `${this.id}-${++this.n}`;
     return new Promise((res) => {
       this.waiters.set(id, res);
-      this.send({ type: "v4", id, tool, args });
+      this.send({ type: "request", id, verb: tool, args });
       setTimeout(() => { if (this.waiters.delete(id)) res({ ok: false, reply: { refused: { code: "timeout" } } }); }, 6000);
     });
   }
   of(type: string) { return this.msgs.filter((m) => m.type === type); }
   /** the door's entries this client was sent, numbered */
-  entries() { return this.of("v4-log").flatMap((m) => m.entries.map((e: any, i: number) => ({ seq: m.from + i, ...e }))); }
+  entries() { return this.of("log").flatMap((m) => m.entries.map((e: any, i: number) => ({ seq: m.from + i, ...e }))); }
   says() { return this.entries().filter((e) => e.kind === "say"); }
   get me() { return this.snapshot?.v4?.you as string | undefined; }
   close() { this.ws.close(); }
@@ -275,9 +275,9 @@ try {
     const fw = `${WORLD}-pose`;   // a scratch world for building (the main world's log is being counted above)
     const builder = await joined("alice", fw);
     const ops = (f: (i: number) => any) => Array.from({ length: 60 }, (_, i) => f(i));
-    const c1 = await builder.req("batch", { ops: ops((i) => ({ tool: "create", args: { id: `f${i}`, components: { transform: { pos: [i, 0, 0] } } } })) });
-    const c2 = await builder.req("batch", { ops: ops((i) => ({ tool: "set", args: { id: `f${i}`, component: "transform", value: { pos: [i, 0, 5] }, merge: true } })) });
-    const c3 = await builder.req("batch", { ops: Array.from({ length: 30 }, (_, i) => ({ tool: "delete", args: { id: `f${i}` } })) });
+    const c1 = await builder.req("batch", { ops: ops((i) => ({ verb: "create", args: { id: `f${i}`, components: { transform: { pos: [i, 0, 0] } } } })) });
+    const c2 = await builder.req("batch", { ops: ops((i) => ({ verb: "set", args: { id: `f${i}`, component: "transform", value: { pos: [i, 0, 5] }, merge: true } })) });
+    const c3 = await builder.req("batch", { ops: Array.from({ length: 30 }, (_, i) => ({ verb: "delete", args: { id: `f${i}` } })) });
     check("sixty things built, moved, and half removed, as three batches", c1.ok && c2.ok && c3.ok, JSON.stringify([c1.reply?.refused, c2.reply?.refused, c3.reply?.refused]));
     await sleep(300);
     const late = await joined("latecomer", fw);

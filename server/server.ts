@@ -28,7 +28,7 @@ import { MOD_POWERS } from "../shared/v4/roles.js";
 import { directoryFor, foldName } from "./v4/directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
-// snapshot, pendingSnaps for the renderer's snap-result replies.
+// snapshot, pendingCaptures for the renderer's capture-result replies.
 import { route, avatarRoster } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
@@ -629,21 +629,21 @@ function installJoin(c: Client, w: World) {
 }
 
 /** What a client is told it may do: the role the door gives it (the door admits every write), and the body and spend
- *  switches its role record carries (@world roles:<id>, else the world's default-role; a guest never wears the
+ *  permissions its role record carries (@world roles:<id>, else the world's default-role; a guest never wears the
  *  default). `open` = the world has no owner. */
 function rightsFor(w: World, c: Client) {
-  // research roles S4: rights come from the door alone ({role, rank, switches}, by identity); gen and fly stay as the
-  // client's flags, read off the switches. An operator (WORLD_ADMIN, by account) flies and spends everywhere, as before.
+  // research roles S4: rights come from the door alone ({role, rank, permissions}, by identity); gen and fly stay as the
+  // client's flags, read off the permissions. An operator (WORLD_ADMIN, by account) flies and spends everywhere, as before.
   const op = isOperator(c.account);
   const wc = (w.v4.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
   const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && v?.role === "owner");
-  if (!c.v4id) return { role: "visitor", roleName: "Visitor", rank: 0, switches: [] as string[], gen: op, fly: op, open };
+  if (!c.v4id) return { role: "visitor", roleName: "Visitor", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
   const e = w.v4.rightsOf(c.v4id); const g = w.v4.ghostHere(c.v4id); const m = w.v4.mutedHere(c.v4id);
-  return { role: e.role, roleName: e.name, rank: e.rank, switches: e.switches, ...(c.anonymous ? { guest: true } : {}), gen: op || e.switches.includes("generate"), fly: op || e.switches.includes("fly"), open,
+  return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,
     ...(g ? { ghost: { chosen: !!g.chosen, ...(g.until ? { until: g.until } : {}) } } : {}), ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };
 }
 /** Does this identity hold a power that lets it in past access rules (research: moderators and owners bypass max)? */
-const accessBypass = (w: World, id: string) => { const e = w.v4!.rightsOf(id); return e.role === "owner" || MOD_POWERS.some((k: string) => e.switches.includes(k)); };
+const accessBypass = (w: World, id: string) => { const e = w.v4!.rightsOf(id); return e.role === "owner" || MOD_POWERS.some((k: string) => e.permissions.includes(k)); };
 
 /** The sanctions sweep (research roles S4; PLAN ghost): every couple of seconds, and right after a moderation act, make
  *  each v4 world's live state match the moderator log by the door's clock. Nothing is written when a sanction ends;
@@ -1068,7 +1068,7 @@ const server = Bun.serve({
         case "voice-moderate": {
           // Research roles S4 (finding 1): this muted a typed DISPLAY NAME, kept no record, and was lost on a reconnect.
           // It is now the door's `mute {channels: ['voice']}` (or `unmute`): keyed on the target's IDENTITY, logged in the
-          // moderator log, gated like every person-act (the mute switch, a target ranked below you), and re-applied on
+          // moderator log, gated like every person-act (the mute permission, a target ranked below you), and re-applied on
           // every join while it lasts (sanctionSweep). The SFU's moderator mute (enforced at ingress) is how it applies.
           // The target: msg.v4id (an identity), else the PRESENT person whose name is msg.id (never an absent name, so a
           // name someone typed to dodge or to frame can only ever reach the identity actually standing there).

@@ -34,7 +34,7 @@ const comp = (s, id, c) => s.call("olive", "inspect", { id }).components?.[c];
 const posOf = (s, id) => JSON.stringify(s.call("olive", "inspect", { id }).world?.pos);
 // owner olive, builders bob and ann, visitor vic
 function cast(s) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 const publishCrate = (s, who) => { s.call(who, "create", { id: `${who}-crate`, model: "crate", place: { at: [3, 3] } });
@@ -256,7 +256,7 @@ const cases = [
       s.call("bob", "create", { id: "fat", model: "crate", components: { "lab/blob": "x".repeat(60000) }, place: { at: [0, 0] } });
       const h = s.call("bob", "publish", { from: "fat", name: "fat" }).notes?.find((n) => n.record)?.record;
       const n0 = s.world().entries.length;
-      const r = s.call("bob", "batch", { ops: Array.from({ length: 20 }, (_, i) => ({ tool: "create", args: { from: h, id: `fat-${i}` } })) });
+      const r = s.call("bob", "batch", { ops: Array.from({ length: 20 }, (_, i) => ({ verb: "create", args: { from: h, id: `fat-${i}` } })) });
       const L = s.world().entries.slice(n0); return { r: show(r), newActs: L.filter((e) => e.kind === "act").length, newChanges: L.filter((e) => e.kind === "change").length,
         refusedAct: L.filter((e) => e.kind === "act" && e.body?.refused?.code === "too-big").length }; },
     // never an act that claims success with no result (33 C2); since round-2 R7 the refusal itself IS recorded, as an act

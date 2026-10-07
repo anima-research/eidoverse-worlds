@@ -27,16 +27,16 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
   // request so a long sweep stays inside the door's rate budget (60 entries / 10 s per actor)
   let w = null;
   const call = (tool, args = {}, actor = owner) => { T += 1000; process.env.V4_NOW = String(T); w ??= open(root, name); return request(w, actor, tool, args); };
-  const founded = call("new", { title });
+  const founded = call("create-world", { title });
   if (!founded.ok) throw new Error(`scratch world: new refused: ${JSON.stringify(founded.refused)}`);
   const W = {
     name, root, owner,
     call,
     /** send one planned door request ({tool, args}); extra args (throughLock, dry, expect) ride along. */
-    send: (req, extra = {}, actor = owner) => (req ? call(req.tool, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
+    send: (req, extra = {}, actor = owner) => (req ? call(req.verb, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
     /** several planned requests as ONE gesture (shared/v4/ops.js batch semantics: one act). */
     sendAll: (reqs, extra = {}, actor = owner) => {
-      const flat = reqs.filter(Boolean).flatMap((o) => (o.tool === "batch" ? o.args.ops : [o]));
+      const flat = reqs.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
       if (!flat.length) return { ok: true, noop: true };
       return flat.length === 1 ? W.send(flat[0], extra, actor) : call("batch", { ops: flat, ...extra }, actor);
     },
@@ -74,5 +74,5 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
 /** a request's ops, flattened (a batch's ops, or the one op) */
 export const flat = (x) => {
   const list = Array.isArray(x) ? x : x?.ops ?? (x ? [x] : []);
-  return list.filter(Boolean).flatMap((o) => (o.tool === "batch" ? o.args.ops : [o]));
+  return list.filter(Boolean).flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
 };

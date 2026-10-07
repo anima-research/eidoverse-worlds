@@ -280,7 +280,7 @@ function initPillDrag() {
 
 // ---------------------------------------------------------------- boot
 
-// THE RESTING LINE'S TWO SWITCHES (owner, 10-01: "add it as a pin feature for the reverse-E menu … and have it obey
+// THE RESTING LINE'S TWO PERMISSIONS (owner, 10-01: "add it as a pin feature for the reverse-E menu … and have it obey
 // the 'esc to hide' feature"). PINNED (the default, so nobody who leaves it alone sees a change) = the pill rests
 // bottom-centre; unpinned = no resting pill, but Ctrl/Cmd+K and the rail's search entry still open the lantern —
 // unpinning puts away its resting place, not the command line. QUIET = Esc put the panels away (frames.js

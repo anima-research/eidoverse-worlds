@@ -32,7 +32,7 @@ const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("v4build", {
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "v4.jsonl")));
-const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "new")?.actor;
+const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "create-world")?.actor;
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
@@ -44,9 +44,9 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
-  const bobReq = (tool: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__hints = []; addEventListener('ew-keyhint', (e) => __hints.push(e.detail));
     import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); });` });
@@ -118,7 +118,7 @@ try {
     await key("KeyE"); await key("KeyE"); await key("Period");
     const pose = await evalJson(`import('/lib/build.js').then((m) => m.ghostPose?.() ?? null)`);
     check("GH1 E E . turn it 30° (clockwise from above) and size it ×1.1 while it's in hand", pose && Math.abs(pose.yaw + Math.PI / 6) < 1e-6 && Math.abs(pose.scale - 1.1) < 1e-6, pose);
-    check("GH2 …E didn't switch the tool under it", (await evalJson(`import('/lib/build.js').then((m) => m.getTool())`)) === tool0);
+    check("GH2 …E didn't permission the tool under it", (await evalJson(`import('/lib/build.js').then((m) => m.getTool())`)) === tool0);
     check("GH3 the status line names the keys while it's in hand", await evalJson(`__hints.some((h) => typeof h === 'string' && /turn/.test(h) && /size/.test(h))`), await evalJson(`__hints`));
     const n0 = myActs().length;
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: SX - 120, y: SY + 40 }); await sleep(200);

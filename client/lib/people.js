@@ -10,7 +10,7 @@
 //            width (the people column is 72–260 px), with large chips and no free text required
 //   VR       no popups and no long-presses in a headset (audiopanel.js): a trigger on a row expands an inline strip of
 //            rows under it, choices are rows of chips, and kick and ban take a second trigger on a "confirm" row
-// The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only switches you hold).
+// The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only permissions you hold).
 // The badge: none for a visitor, "guest" for someone without an account, else the role's name (badgeOf).
 import { CONFIG, bus, report } from './base.js';
 import { net, identities, guests, requestV4, v4 } from './net.js';
@@ -21,13 +21,13 @@ let deps = { openConvo: () => {}, presenting: () => false, openModLog: () => {},
 export function initPeople(d) { deps = { ...deps, ...d }; }
 
 const wc = () => v4.st?.entities?.['@world']?.c ?? {};
-/** The person behind a display name here: {display, id, anon, role, name, rank, switches, muted, me}. */
+/** The person behind a display name here: {display, id, anon, role, name, rank, permissions, muted, me}. */
 export function personOf(display) {
   const me = display === CONFIG.name;
   if (me) { const r = net.myRights ?? {};
-    return { display, me, id: net.v4you ?? null, anon: !!r.guest, role: r.role ?? 'visitor', name: r.roleName ?? r.role, rank: r.rank ?? 0, switches: r.switches ?? [], muted: !!r.muted }; }
+    return { display, me, id: net.v4you ?? null, anon: !!r.guest, role: r.role ?? 'visitor', name: r.roleName ?? r.role, rank: r.rank ?? 0, permissions: r.permissions ?? [], muted: !!r.muted }; }
   const id = identities.get(display) ?? null, anon = guests.has(display);
-  const e = id ? R.effectiveOf(wc(), id, { anon }) : { role: 'visitor', name: 'Visitor', rank: 0, switches: [] };
+  const e = id ? R.effectiveOf(wc(), id, { anon }) : { role: 'visitor', name: 'Visitor', rank: 0, permissions: [] };
   return { display, me: false, id, anon, ...e, muted: !!(id && net.modMuted?.[id]) };
 }
 export const myself = () => personOf(CONFIG.name);
@@ -52,8 +52,8 @@ const VERB = { warn: 'Warn', mute: 'Mute', kick: 'Kick', ghost: 'Ghost', ban: 'B
 const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears them on the chosen channels until it ends. They may still whisper to a moderator.',
   kick: "They're removed now and can't come back until it ends.", ghost: "They stay, unseen: they can look and walk, but not act or talk.", ban: "They're removed and kept out until it ends." };
 
-async function run(tool, args, what) {
-  const r = await requestV4(tool, args);
+async function run(verb, args, what) {
+  const r = await requestV4(verb, args);
   if (r?.ok) deps.toast(`${what}: done`, 'info'); else deps.toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   return r;
 }
@@ -129,7 +129,7 @@ function roleMenu(display, surface) {
   const me = myself(), them = personOf(display);
   const roles = R.grantableRoles(wc(), me).filter((r) => r.id !== 'none');
   const pick = (rid) => run('set', { id: '@world', component: `roles:${them.id}`, value: { role: rid } }, `make ${display} ${rid}`);
-  const items = [...roles.map((r) => ({ k: r.id, label: `${r.id === them.role ? '✓ ' : ''}${r.name}` })), ...(me.role === 'owner' || me.switches.includes('grantRoles') ? [{ k: '::can', label: 'Exceptions…' }] : [])];
+  const items = [...roles.map((r) => ({ k: r.id, label: `${r.id === them.role ? '✓ ' : ''}${r.name}` })), ...(me.role === 'owner' || me.permissions.includes('grantRoles') ? [{ k: '::can', label: 'Exceptions…' }] : [])];
   const choose = (k) => (k === '::can' ? openCanForm(display, surface) : pick(k));
   if (surface === 'card') { const r = document.querySelector('.sp-ctx')?.getBoundingClientRect(); contextMenu(r ? r.left + 8 : innerWidth / 2, r ? r.top + 8 : innerHeight / 3, items, choose); return; }
   const host = surface === 'sheet' ? sheet().body : surface.strip;
@@ -189,15 +189,15 @@ export function openForm(verb, display, surface = 'card') {
   else { surface.strip.innerHTML = ''; surface.strip.append(host); }
   return host;
 }
-/** Exceptions… (per-person can): one toggle per switch, three states (role's own / on / off). Owners and grantRoles. */
+/** Exceptions… (per-person can): one toggle per permission, three states (role's own / on / off). Owners and grantRoles. */
 function openCanForm(display, surface) {
   const them = personOf(display); const cur = wc()[`roles:${them.id}`]?.can ?? {};
   const host = document.createElement('div'); host.className = 'pm-form';
   const h = document.createElement('b'); h.textContent = `${display}: exceptions to ${them.name}`; host.append(h);
   const st = { ...cur };
-  for (const k of R.SWITCH_NAMES) {
+  for (const k of R.PERMISSION_NAMES) {
     const r = document.createElement('div'); r.className = 'pm-can';
-    const l = document.createElement('span'); l.textContent = k; l.title = R.SWITCHES[k].text;
+    const l = document.createElement('span'); l.textContent = k; l.title = R.PERMISSIONS[k].text;
     const sel = document.createElement('select'); for (const [v, t] of [['', 'as the role'], ['on', 'on'], ['off', 'off']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
     sel.value = st[k] === true ? 'on' : st[k] === false ? 'off' : ''; sel.onchange = () => { if (!sel.value) delete st[k]; else st[k] = sel.value === 'on'; };
     r.append(l, sel); host.append(r);

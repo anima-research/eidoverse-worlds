@@ -125,12 +125,12 @@ export class WorldClient {
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
-      } else if (msg.type === 'v4-log') {
+      } else if (msg.type === 'log') {
         const r = this.v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
         if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
         const sp = this.screen()?.comp?.stage?.speaker;
         if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
-      } else if (msg.type === 'v4-result' && msg.id === this.inflightId) {
+      } else if (msg.type === 'reply' && msg.id === this.inflightId) {
         const p = this.inflight; this.inflightId = null;
         if (!p) return;
         if (msg.reply?.ok) this.onEcho(p.args);
@@ -197,7 +197,7 @@ export class WorldClient {
     this.sent++;
     this.opts.onSend?.(p.key);
     this.inflightId = `c${++this.reqId}`;
-    this.ws.send(JSON.stringify({ type: 'v4', id: this.inflightId, tool: 'caption', args: p.args }));
+    this.ws.send(JSON.stringify({ type: 'request', id: this.inflightId, verb: 'caption', args: p.args }));
     // no receipt in time: unconfirmed, so resend — the door dedupes
     this.ackTimer = setTimeout(() => {
       this.ackTimer = null;

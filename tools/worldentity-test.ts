@@ -124,7 +124,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const policy = (s: any) => { const { epoch: _e, seq: _s, by: _b, ...p } = s.forecast ?? {}; return canon(p); };
   const before = { weather: st().sky.weather, policy: policy(st().sky) };
   const r = worldPick(st(), 'sky', 'golden', { presets: PRESETS, now: now() });
-  check('a sky pick is ONE door request, the door\'s sky tool', r.errors.length === 0 && r.ops.length === 1 && r.ops[0].tool === 'sky', JSON.stringify(r));
+  check('a sky pick is ONE door request, the door\'s sky tool', r.errors.length === 0 && r.ops.length === 1 && r.ops[0].verb === 'sky', JSON.stringify(r));
   const skyBefore = st().sky;
   const sent = W.sendAll(r.ops);
   const sky = () => worldComponents(st()).components.find((c: any) => c.type === 'Sky');
@@ -150,7 +150,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   const g = () => G.view();
   const pk = (kind: string, v: string) => { const r = worldPick(g(), kind, v, { pal: PAL, now: now() }); const s = G.sendAll(r.ops); if (!s.ok) check(`the door takes the ${kind} pick`, false, JSON.stringify(s.refused)); return r; };
   const shape = pk('shape', 'rugged');
-  check('a ground pick is ONE set @world terrain', shape.ops.length === 1 && shape.ops[0].tool === 'set' && shape.ops[0].args.id === WORLD_ID && shape.ops[0].args.component === 'terrain', JSON.stringify(shape.ops));
+  check('a ground pick is ONE set @world terrain', shape.ops.length === 1 && shape.ops[0].verb === 'set' && shape.ops[0].args.id === WORLD_ID && shape.ops[0].args.component === 'terrain', JSON.stringify(shape.ops));
   check('a shape on a world with no ground grows the panel\'s ground in that shape (the default tint)', g().terrain?.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === PAL.tints.meadow.layer && g().terrain.size === 160, canon(g().terrain));
   pk('tint', 'arid');
   check('…a tint pick changes the colour and keeps the shape', g().terrain.amplitude === PAL.shapes.rugged && g().terrain.layers[0].color === PAL.tints.arid.layer, canon(g().terrain));
@@ -162,11 +162,11 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   pk('plant', 'tufts');
   check('…a planting pick replaces what grows but keeps the height and density dials', g().grass.species === PAL.plantings.tufts.args.species && g().grass.height === PAL.grassHeight.tall && g().grass.density === PAL.grassDensity.lush, canon(g().grass));
   const mow = pk('mow', '');
-  check('…mow is delete @world grass, and clears the field', mow.ops[0]?.tool === 'delete' && mow.ops[0].args.component === 'grass' && g().grass === null, JSON.stringify([mow.ops, g().grass]));
+  check('…mow is delete @world grass, and clears the field', mow.ops[0]?.verb === 'delete' && mow.ops[0].args.component === 'grass' && g().grass === null, JSON.stringify([mow.ops, g().grass]));
   check('the panel\'s args and the World tiles\' are one recipe: terrainArgs = what groundpanel wrote',
     canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: PAL.tints.meadow.layer, repeat: 16 }] })
     && canon(grassArgs(PAL, { ...paletteDefaults(PAL), plant: 'meadow' })) === canon({ ...PAL.plantings.meadow.args, height: PAL.grassHeight.meadow, density: PAL.grassDensity.normal }));
-  check('weather picks are the door\'s weather tool, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ tool: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
+  check('weather picks are the door\'s weather tool, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ verb: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
 }
 
 // ------------------------------------------------------------ 3. edits, undo, the owner gate
@@ -191,10 +191,10 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   };
   const readBack = (addr: string) => fieldAt(worldSchema(st(), { now: now() }), addr)?.value;
   const e1 = edit({ 'sky.hours': 17, 'sky.clouds': 'cirrus', 'sky.exposure': '+=0.25' });
-  check('three sky fields are ONE sky request, and the door takes it', e1.ops.length === 1 && e1.ops[0].tool === 'sky' && e1.one.ok, JSON.stringify([e1.ops, e1.one.refused]));
+  check('three sky fields are ONE sky request, and the door takes it', e1.ops.length === 1 && e1.ops[0].verb === 'sky' && e1.one.ok, JSON.stringify([e1.ops, e1.one.refused]));
   check('…and read back as typed (hours 17 now, on a turning day)', Math.abs(readBack('sky.hours') - 17) < 0.05 && readBack('sky.clouds') === 'cirrus' && readBack('sky.exposure') === 1.25, `${readBack('sky.hours')} ${readBack('sky.clouds')} ${readBack('sky.exposure')}`);
   const e2 = edit({ 'terrain.amplitude': '*=2', 'terrain.color': '#112233', 'grass.density': 1.4, 'weather.state': 'rain' });
-  check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.tool === 'set' ? `set ${o.args.component}` : o.tool).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
+  check('ground, grass and weather edits: one set terrain, one set grass, one weather request', canon(e2.ops.map((o: any) => o.verb === 'set' ? `set ${o.args.component}` : o.verb).sort()) === canon(['set grass', 'set terrain', 'weather']), JSON.stringify(e2.ops));
   // KNOWN BUG (reported 2026-10-06, not fixed here): a multi-field world edit is ONE batch, and the door's batch takes
   // only create/set/delete/place — the `weather` (and `sky`) tool can't ride in it, so the whole edit is refused.
   // inspect.js commits one field per gesture (unaffected); the agent's `edit @world` with two groups is (section 5).
@@ -205,7 +205,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const u2 = undo(e2);
   check('the door\'s undo puts the ground and grass back exactly, and the weather back', u2 && canon(st().terrain) === canon(e2.was.terrain) && canon(st().grass) === canon(e2.was.grass) && (st().sky.weather ?? 'clear') === (e2.was.sky.weather ?? 'clear'), JSON.stringify([st().terrain, st().sky.weather]));
   const e3 = edit({ 'grass.mow': true });
-  check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.tool === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
+  check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.verb === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
   check('grass.mow on a world with nothing growing sends nothing', (() => { const M = scratchWorld('worldentity'); return worldEditOps(M.view(), { 'grass.mow': true }, { now: now() }).ops.length === 0; })());
   const e4 = edit({ 'sky.clock': 'real' });
   check('clock → real time: the hour and rate become read-only and say whose clock it is', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);
@@ -213,7 +213,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   check('…and back to authored hands the parked rated clock back (rate 24)', st().sky.clock === undefined && st().sky.rate === 24 && e5.errors.length === 0 && e5.one.ok, canon(st().sky));
   check('a refused edit says why and sends nothing for it (unknown field, bad enum, bad colour); the good edit beside them still goes', (() => {
     const r = worldEditOps(st(), { 'sky.nope': 1, 'sky.clouds': 'fluffy', 'terrain.color': 'red', 'weather.state': 'rain' }, { now: now() });
-    return r.errors.length === 3 && r.ops.length === 1 && r.ops[0].tool === 'weather';
+    return r.errors.length === 3 && r.ops.length === 1 && r.ops[0].verb === 'weather';
   })());
   const ro = worldSchema(st(), { now: now(), mayShape: false });
   check('the owner gate: for a known non-owner every field is read-only, saying so, and an edit or a pick sends nothing',
@@ -263,7 +263,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   const one = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6 }, dry: true }));
   check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"\}/.test(one) && !/refused/.test(one), one);
   const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'terrain.amplitude': '+=1' }, dry: true }));
-  check('edit @world (dry), two groups: ONE request with the sky tool and set terrain (amplitude 3.6)', /would send batch .*"tool":"sky".*"hours":6.*"component":"terrain".*"amplitude":3\.6/.test(ed), ed);
+  check('edit @world (dry), two groups: ONE request with the sky verb and set terrain (amplitude 3.6)', /would send batch .*"verb":"sky".*"hours":6.*"component":"terrain".*"amplitude":3\.6/.test(ed), ed);
   // KNOWN BUG (reported 2026-10-06): that batch carries the `sky` tool, which the door's batch refuses
   check('…and the door accepts that request (KNOWN BUG: refused, sky can\'t go in a batch)', !/refused|can't go in a batch/.test(ed), ed);
   const bad = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'pos.x': 1 }, dry: true }));

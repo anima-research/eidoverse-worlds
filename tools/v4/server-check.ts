@@ -60,13 +60,13 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
 async function client(port: number, world: string, id: string, extra: any = {}) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const msgs: any[] = []; const waiters = new Map(); let n = 0;
-  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } } };
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } } };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.send(JSON.stringify({ type: "join", world, id, avatar: "", ...extra }));
   for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
   const c = {
     id, ws, msgs, snapshot: msgs.find((m) => m.type === "snapshot"),
-    req: (tool: string, args: any = {}) => new Promise<any>((res) => { const rid = `${id}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "v4", id: rid, tool, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000); }),
+    req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${id}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000); }),
     send: (m: any) => ws.send(JSON.stringify(m)),
     of: (type: string) => msgs.filter((m) => m.type === type),
     close: () => ws.close(),
@@ -79,7 +79,7 @@ function heldBy(c: any) {
   let k = null;
   for (const m of c.msgs) {
     if (m.type === "snapshot" && m.v4?.state) { k = makeV4Client(); k.adopt(JSON.parse(JSON.stringify(m.v4))); }
-    else if (m.type === "v4-log" && k) k.ingest(JSON.parse(JSON.stringify(m.entries)), m.from);
+    else if (m.type === "log" && k) k.ingest(JSON.parse(JSON.stringify(m.entries)), m.from);
   }
   return k;
 }
@@ -130,7 +130,7 @@ const c1 = await bob.req("create", { id: "cup", model: "test/cup.glb", place: { 
 const placed = c1.notes?.find((n) => n.placed)?.placed;
 ok(c1.ok && Math.abs(placed?.restsAt - 0.75) < 0.002 && placed?.on === "tbl", "S2 place ON it: the engine catalogue measured the GLB's top at 0.75 m", c1);
 await sleep(150);
-ok(vic.of("v4-log").length >= 2 && vic.of("log").length === 0, "S2 another client is sent the raw v4 entries (v4-log), and no v1 `log` entries", [vic.of("v4-log").length, vic.of("log").length]);
+ok(vic.of("log").length >= 2 && vic.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S2 another client is sent the raw v4 entries (log), every one a v4 entry (kind, verb, body; never a v1 {verb, args})", vic.of("log").map((m: any) => m.entries?.map((e: any) => e.kind)));
 { const m = heldBy(vic)?.view()?.entities?.cup?.parent; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
   ok(m?.to === "tbl" && Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 in that client's own fold the cup hangs from the table at the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m, loc]); }
 
@@ -139,9 +139,9 @@ const mv = await bob.req("set", { id: "cup", component: "transform", value: { po
 ok(mv.ok === false && mv.refused?.code === "locked" && /throughLock/.test(mv.refused.fix), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
 const headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length;
 bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300);   // an old client's message: the server has no handler for it
-{ const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "v4", id: rid, verb: "remove", args: { id: "cup" } }); });
+{ const vr = await new Promise((res) => { const rid = "raw-1"; const on = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply" && m.id === rid) { bob.ws.removeEventListener("message", on); res(m.reply); } }; bob.ws.addEventListener("message", on); bob.send({ type: "request", id: rid, tool: "remove", args: { id: "cup" } }); });
   ok(vr?.ok === false && readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).length === headBefore && bob.ws.readyState === 1,
-    "S3 an old-style verb (its own message, or a request with no tool) writes nothing: the door has no such tool, and the connection stays up", vr); }
+    "S3 an old-style request (a v1 verb message, or a request in the old {tool} spelling with no verb) writes nothing, and the connection stays up", vr); }
 { const { editOps } = await import("../../shared/editschema.js");
   const r = editOps({ pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: 1, lib: "test/cup.glb", comp: {} }, "cup", { "flags.guard": true });
   ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
@@ -257,10 +257,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)"); await sleep(250);
   ok(vic.of("moderated").length === nK, "CM1 …nobody is told \"Ann removed Kim\" when nobody was removed", vic.of("moderated").slice(nK));
   // CM2 role narration names the person: a role written for someone who never acted here carries their name to clients
-  const nv = vic.of("v4-log").length;
+  const nv = vic.of("log").length;
   ok((await ann.req("set", { id: "@world", component: `roles:${KIM}`, value: { role: "builder" } })).ok, "CM2 (Ann makes the absent Kim a builder)");
-  await wait(() => vic.of("v4-log").length > nv);
-  ok(vic.of("v4-log").slice(nv).some((m) => m.names?.[KIM] === "Kim"), "CM2 the v4-log that carries a role for someone who never acted names them (narration said \"made u-…\")", vic.of("v4-log").slice(nv).map((m) => m.names));
+  await wait(() => vic.of("log").length > nv);
+  ok(vic.of("log").slice(nv).some((m) => m.names?.[KIM] === "Kim"), "CM2 the v4-log that carries a role for someone who never acted names them (narration said \"made u-…\")", vic.of("log").slice(nv).map((m) => m.names));
   // CM3 whois: a name → identity, scoped to this world; the door's role; here or not
   const zed = await client(srv.port, "garden", "Zed", V4); await zed.req("say", { text: "hi, I'm Zed" }); const ZED = zed.snapshot?.v4?.you; zed.close(); await sleep(200);
   const wz = await vic.req("whois", { name: "zed" });
@@ -303,7 +303,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // bounded: a shape refusal quotes what was sent; a megabyte of it mustn't sit in the ring (or go to everyone who asks)
   await vic.req("history", { limit: "x".repeat(200_000) });
   const dbg2 = await new Promise<any>((res) => { const id = "dbg2"; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === id) { vic.ws.removeEventListener("message", on); res(m); } }; vic.ws.addEventListener("message", on); vic.send({ type: "debug", reqId: id, limit: 50 }); setTimeout(() => res({ events: [], timeout: true }), 5000); });
-  const big = dbg2.events?.filter((e: any) => e.kind === "refused" && e.tool === "history").at(-1);
+  const big = dbg2.events?.filter((e: any) => e.kind === "refused" && e.verb === "history").at(-1);
   ok(big && JSON.stringify(big).length < 600 && /…$/.test(big.line), "CM5 a refusal quoting 200 KB is recorded in under 600 bytes", big ? JSON.stringify(big).length : dbg2.events?.slice(-2));
   const wd = await HANDLERS.world_debug(oz, { kinds: ["refused"] }, {} as any, "world_debug");
   ok(/Vic's create vics2 was refused \(rights\)/.test(T(wd)), "CM5 …and the agent's world_debug reads it", T(wd).slice(0, 300));
@@ -332,8 +332,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // CM9 the join and a chat line, without dead weight
   const st0 = ann.snapshot?.state ?? {};
   ok(JSON.stringify(Object.keys(st0).sort()) === '["chatTotal","recentChat"]' && ann.snapshot?.v4?.state?.["@world"], "CM9 a v4-folding joiner's snapshot carries the chat window beside the cut, not a second, v1-shaped copy of the world", Object.keys(st0));
-  const nl = vic.of("v4-log").length; const raw: string[] = []; const on = (ev: any) => { if (String(ev.data).includes('"v4-log"')) raw.push(String(ev.data)); }; vic.ws.addEventListener("message", on);
-  ok((await ann.req("say", { text: "hi" })).ok, "CM9 (Ann says hi)"); await wait(() => vic.of("v4-log").length > nl); vic.ws.removeEventListener("message", on);
+  const nl = vic.of("log").length; const raw: string[] = []; const on = (ev: any) => { if (String(ev.data).includes('"log"')) raw.push(String(ev.data)); }; vic.ws.addEventListener("message", on);
+  ok((await ann.req("say", { text: "hi" })).ok, "CM9 (Ann says hi)"); await wait(() => vic.of("log").length > nl); vic.ws.removeEventListener("message", on);
   const line = raw.find((d) => d.includes('"text":"hi"')) ?? ""; const e0 = JSON.parse(line || "{}").entries?.[0] ?? {};
   ok(line.length > 0 && line.length < 200 && !("sig" in e0) && !("head" in e0) && !("world" in e0) && !("salt" in (e0.body ?? {})), "CM9 a two-character say is under 200 bytes on the wire (488: the chain's world, head, sig and salt rode every line, unread)", [line.length, line]);
   ok(heldBy(vic) && digest(heldBy(vic).st) === digest(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))))), "CM9 …and what Vic folds from the slimmer stream is still the log on disk (digest)"); }
@@ -398,9 +398,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   { const g = await fetch(`http://127.0.0.1:${srv.port}/geom?world=meadow&id=box`, { signal: AbortSignal.timeout(3000) });
     ok(g.status === 200, "S8 an HTTP reader of the world's view (/geom) sees a thing just made (the view is rebuilt for its reader, never stale)", g.status); }
   bv.close();
-  ok(r1.ok && a.of("log").length === 0 && a.of("v4-log").length >= 2, "S8 it gets v4-log and no `log` entries", [a.of("log").length, a.of("v4-log").length]);
+  ok(r1.ok && a.of("log").length >= 2 && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S8 it gets the log stream, v4 entries only", a.of("log").length);
   const c = makeV4Client(); c.adopt(a.snapshot.v4);
-  for (const m of a.of("v4-log")) c.ingest(m.entries, m.from);
+  for (const m of a.of("log")) c.ingest(m.entries, m.from);
   const disk = fold(readLog(fs.readFileSync(path.join(W4, "meadow", "v4.jsonl"))));
   ok(digest(c.st) === digest(disk), "S8 its own fold of the stream = the log on disk (digest)");
   // a client that doesn't read v4 (an old page, an old agent build) is refused, with the reason, and isn't redialed (4005)
@@ -408,7 +408,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && b.ws.readyState !== 3; i++) await sleep(50);
   ok(!b.snapshot && /protocol v4 world/.test(b.of("error").at(-1)?.error ?? "") && b.ws.readyState === 3, "S8 a joiner that doesn't read v4 is refused, told why, and closed", [b.of("error").at(-1), b.ws.readyState]);
   const r2 = await a.req("set", { id: "box", component: "label", value: "after the refusal" }); await sleep(200);
-  ok(r2.ok && a.of("log").length === 0, "S8 …and the world carries on, still sending no `log` entries", a.of("log").length);
+  ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S8 …and the world carries on, still sending only v4 entries", a.of("log").length);
   ok(a.snapshot.v4.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { v4fold: true })).snapshot.v4.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
 // ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
@@ -420,16 +420,16 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const b = await client(srv.port, "pitch", "Bob", V4); await sleep(150); const B = b.snapshot?.v4?.you;
   ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
   await sleep(200);
-  ok(a.of("v4-holds").at(-1)?.holds?.ball?.by === B, "SP1 everyone is told who holds it (v4-holds: presence, never logged)", a.of("v4-holds"));
+  ok(a.of("holds").at(-1)?.holds?.ball?.by === B, "SP1 everyone is told who holds it (v4-holds: presence, never logged)", a.of("holds"));
   const c = await client(srv.port, "pitch", "Cy", V4);
   ok(c.snapshot?.v4?.holds?.ball?.by === B, "SP2 a joiner's cut says who holds what", c.snapshot?.v4?.holds);
   ok(c.snapshot?.v4?.sim?.spec?.engine === "eidosim@0.5.0" && c.snapshot.v4.sim.sim?.epoch, "SP2 …and carries the sim where the door's clock stands (a joiner folds later launches with it)", c.snapshot?.v4?.sim?.spec);
   // the hold record (grabbable, slice 3): which hand rides the same presence message, so every client draws it there
   ok((await b.req("grab", { id: "ball", hand: "left" })).ok, "SP5 Bob moves it to his left hand (presence: nothing logged)"); await sleep(200);
-  ok(a.of("v4-holds").at(-1)?.holds?.ball?.hand === "left" && a.of("v4-holds").at(-1)?.holds?.ball?.by === B, "SP5 …and everyone is told which hand holds it", a.of("v4-holds").at(-1));
-  const n = a.of("v4-log").length; b.close(); await sleep(400);
-  const launched = a.of("v4-log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === "ball");
-  ok(launched.length === 1 && a.of("v4-holds").at(-1)?.holds?.ball === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("v4-holds").at(-1)]);
+  ok(a.of("holds").at(-1)?.holds?.ball?.hand === "left" && a.of("holds").at(-1)?.holds?.ball?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
+  const n = a.of("log").length; b.close(); await sleep(400);
+  const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === "ball");
+  ok(launched.length === 1 && a.of("holds").at(-1)?.holds?.ball === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
   // wait until the door has it at rest: the door's clock is the wall clock made monotonic, and this host's wall clock
   // has been seen to step BACK 1.4 s under load (WSL), which stalls physics time for as long (never reorders it)
   let wr = null; for (let i = 0; i < 20; i++) { await sleep(500); wr = await a.req("wait", {}); if (!Object.keys(wr?.inFlight ?? {}).length) break; }

@@ -1,6 +1,6 @@
 // The v4 door (lab). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
-// PROTOCOL-v4 L7: every state write, from every path (tools, use handlers, undo, put, create-from, rests, the door's
+// PROTOCOL-v4 L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the door's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
 // locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is
 // `changeEntry`, and it takes only what `admit` returned.
@@ -12,7 +12,7 @@ import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
-import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
+import { validate, verbHelp, VERBSPEC } from "./toolspec.js";
 import { dec } from "./names.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
@@ -348,7 +348,7 @@ function surfacesOf(st, id) {
 export const WORK_BUDGET = { units: 350000, ms: 150 };
 const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
 let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
-const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: check {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
+const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
   if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
     refuse("too-costly", `${what} would take more of the door's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
@@ -503,7 +503,7 @@ function supportUnder(st, b, ignore) {
 }
 
 // ---------- rights ----------
-// The ladder, the closed switch list and the effective set live in shared/v4/roles.js (the Sanctioned Society: ranked
+// The ladder, the closed permission list and the effective set live in shared/v4/roles.js (the Sanctioned Society: ranked
 // membership only; banned and ghost are states outside it). Every rank comparison in the door goes through rankOf /
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
 const RANK = R.RANK;
@@ -523,7 +523,7 @@ const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, ano
 /** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
  *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
 const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
-/** Effective rights {role, name, rank, can, switches} (roles.js effectiveOf). */
+/** Effective rights {role, name, rank, can, permissions} (roles.js effectiveOf). */
 const effective = (st, actor, anon = ISANON(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || effective(st, actor).can.fly) : effective(st, actor).can[sw] === true;
 /** Does this identity hold any power that acts on people (mute, kick, ban, pauseScripts)? Opens the moderation log. */
@@ -624,8 +624,8 @@ const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, f
 // must match it.
 let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
-// tools that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
-const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "modlog", "bans"]);
+// verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
+const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans"]);
 const RESERVED = new Set(["system", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -649,7 +649,7 @@ function enter(w, actor) {
   ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
   return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; w.pinTs = saved.pinTs; };
 }
-export function request(w, actor, tool, args = {}) {
+export function request(w, actor, verb, args = {}) {
   const exit = enter(w, actor);
   // ONE clock per request (§2.1: ts is the door's admission time). A wall clock read twice in one request could put a
   // rest's digest (computed where the engine stood at the first read) under a later ts, across a tick boundary, and every
@@ -657,25 +657,25 @@ export function request(w, actor, tool, args = {}) {
   const clock = w.now; const t0 = clock(); w.now = () => t0;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
-    const h = TOOLS[tool];
-    if (h && !w.exists && !["new", "help"].includes(tool)) refuse("no-world", `there is no world called '${w.name}' yet`, `new {title: '…'} founds it (you become its owner); or pick a world that exists`);
+    const h = VERBS[verb];
+    if (h && !w.exists && !["create-world", "help"].includes(verb)) refuse("no-world", `there is no world called '${w.name}' yet`, `create-world {title: '…'} founds it (you become its owner); or pick a world that exists`);
     // §2.4: chain points are signed by the key genesis names (or the latest handoff). A door holding another key would
     // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
-    if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(tool))
+    if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
       refuse("custody", "this door doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
-    if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
+    if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
     // body and what it held were never released)
-    if (w.exists && tool !== "help" && tool !== "leave" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    if (w.exists && tool !== "help" && tool !== "leave" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
+    if (w.exists && verb !== "help" && verb !== "leave" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
+    if (w.exists && verb !== "help" && verb !== "leave" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
     // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
-    // legacy role `none` (a demotion below visitor): outside membership, it holds no switch and no voice; it may look,
+    // legacy role `none` (a demotion below visitor): outside membership, it holds no permission and no voice; it may look,
     // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
-    if (w.exists && !GHOST_OK.has(tool) && tool !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
-      refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${tool}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
+    if (w.exists && !GHOST_OK.has(verb) && verb !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
+      refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${verb}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
     // ghost: only the chosen mode's own toggle (ghost {on}) passes; ghost {who} is a sanction, an act on someone
-    if (w.exists && (!GHOST_OK.has(tool) || (tool === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
+    if (w.exists && (!GHOST_OK.has(verb) || (verb === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
       refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
@@ -683,23 +683,23 @@ export function request(w, actor, tool, args = {}) {
     // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
-    // throughLock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
+    // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
     const { throughLock, expect, ...plain } = args;
     if (throughLock !== undefined && typeof throughLock !== "boolean") refuse("shape", `throughLock is true or false, got ${JSON.stringify(throughLock)}`, "send throughLock: true to act through a lock you may remove");
     THROUGH = throughLock === true;
-    const bad = validate(tool, plain); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); }
+    const bad = validate(verb, plain); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); }
     if (expect !== undefined) expectCheck(w, expect);
-    if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
+    if (verb === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
     const r = h(w, actor, args);
     drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
-    if (r && r.refused && !r.refused.fix) r.refused.fix = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
+    if (r && r.refused && !r.refused.fix) r.refused.fix = verbHelp(verb) ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb";
     return r;
   } catch (e) {
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } // a refusal still updates the door's own ring and throttle (presence, unlogged)
-    if (e instanceof Refusal) { logRefusal(w, actor, tool, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
+    if (e instanceof Refusal) { logRefusal(w, actor, verb, args, e.code); const { code, reason, fix, ...rest } = e; return { ok: false, refused: { code, reason, fix: fix || (VERBSPEC[verb] ? `help {verb: '${verb}'} shows its arguments with examples` : "help lists every verb"), ...pick(rest) } }; }
     throw e;
   } finally { exit(); }
 }
@@ -711,22 +711,22 @@ export function request(w, actor, tool, args = {}) {
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
 // what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
-const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
-function logRefusal(w, actor, tool, args, code) {
+const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
+function logRefusal(w, actor, verb, args, code) {
   try {
-    // a tool the door doesn't have is recorded too (an agent's invented tool is part of what it tried), when it's a name
-    if (!w.exists || !(TOOLS[tool] || /^[a-z][a-z0-9-]{0,31}$/.test(String(tool))) || READ_ONLY.has(tool) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
+    // a verb the door doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
+    if (!w.exists || !(VERBS[verb] || /^[a-z][a-z0-9-]{0,31}$/.test(String(verb))) || READ_ONLY.has(verb) || args?.dry === true || !isIdentity(actor) || RESERVED.has(actor)) return;
     // a body's track is presence: a refused move (a step, an arrival or a teleport) is never recorded. A person's client
     // keeps the track current several times a second and answers a refused step with a teleport; a person indoors, flying
     // or seated wrote a permanent, broadcast refusal every few seconds (review 10-06 S0-3). An ACCEPTED teleport is an act.
-    if (tool === "move") return;
+    if (verb === "move") return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
     if (UNLOGGED.has(code)) return;
     let req = stripDry(args ?? {}); try { checkIJSON(req); } catch { req = { unloggable: "not I-JSON" }; } const j = jcs(req);
     const body = { request: j.length > 2048 ? { truncated: true, bytes: j.length } : req, refused: { code } };
     const miss = (w.unrecorded ??= new Map()); const n = miss.get(actor) ?? 0; if (n) body.unrecorded = n;
     try { rateCheck(w, actor, "act", jcs(body).length + 256); } catch (x) { if (x instanceof Refusal) { miss.set(actor, n + 1); return; } throw x; }
-    w.append(actEntry(w, actor, tool, body)); miss.delete(actor);
+    w.append(actEntry(w, actor, verb, body)); miss.delete(actor);
   } catch { /* logging a refusal never fails the request it records */ }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
@@ -927,20 +927,20 @@ function shapeOneOrRefuse(verb, op, i) {
 //   a thing          build when you make it or made it; editOthers when someone else made it
 //   @world.blueprints:*  build (publish);  @world.assets:*  generate (the v4 landing of the old `asset` spend gate)
 //   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
-//                     bounds, spawn (EDIT_WORLD_SWITCH; off = owner)
-//   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only switches you hold
-//   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a switch
+//                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
+//   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
+//   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a permission
 const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "bounds", "spawn"]);
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
   const base = String(op.comp ?? "").split(":")[0];
   if (base === "blueprints") return "build";
   if (base === "assets") return "generate";
-  if (R.EDIT_WORLD_SWITCH && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "terrain-paint")) return "editWorld";
+  if (R.EDIT_WORLD_PERMISSION && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "terrain-paint")) return "editWorld";
   if (base === "roles") return "grant";
   return "owner";
 };
-/** What `holder` lacks to make this op, or null if they may: "owner", or the switch name. `made` = ids this write
+/** What `holder` lacks to make this op, or null if they may: "owner", or the permission name. `made` = ids this write
  *  creates. A capability's holder (a handler's author, a script's sponsor) is judged by the same rule; for them a
  *  roles:* write needs owner (a script never grants). */
 function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
@@ -954,17 +954,17 @@ function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
   const c = creatorOf(w, op.id); return c && c.rights === holder ? null : "editOthers";
 }
 // the words a refusal uses for what was missing (kept "needs owner" / "needs builder" where those were the words)
-const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} switch`);
+const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} permission`);
 function rights(w, st, s, who, role, op, at, made, pause) {
   const { actor, cap } = who;
-  // a screen's captions are written by the caption tool only (its session, order and generation rules), never set by
+  // a screen's captions are written by the caption request only (its session, order and generation rules), never set by
   // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
   // delete them (CAPTIONS below)
   // an imported world's records (its old bindings, unmapped fields, bans, sim epoch, the old guard) are carried, never
   // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
   // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
   if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
-  if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-tool", `${at} is written by the caption tool, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
+  if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
     if (!(Array.isArray(ids) && ids.includes(actor)) && lacks(w, st, actor, op, made)) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
@@ -973,7 +973,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     // a pause write (only `paused` changes) by a pauseScripts holder needs no edit rights on the thing: keyRights judges it
     if (pause && may(st, actor, "pauseScripts")) return;
     const n = lacks(w, st, actor, op, made); if (!n) { if (needOf(op) === "grant") grantCheck(w, st, s, actor, op, at); return; }
-    refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and switches" : `ask a moderator or an owner for ${n}; help shows your role and switches`, { needs: n });
+    refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and permissions" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
   }
   if (cap.kind === "script") return scriptRights(w, st, cap, op, at, made);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
@@ -1034,8 +1034,8 @@ function seniority(w, st, who, op) {
     refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
 }
 // The grant rule (research §3, server rule 5): a roles:<id> write by someone who isn't an owner needs grantRoles, and
-//   the person must rank below you, before AND after; the role you give must rank below yours; that role's switches,
-//   and any `can: true` (or legacy gen: true), must be switches you hold. Ownership stays an owner's (seniority).
+//   the person must rank below you, before AND after; the role you give must rank below yours; that role's permissions,
+//   and any `can: true` (or legacy gen: true), must be permissions you hold. Ownership stays an owner's (seniority).
 function grantCheck(w, st, s, actor, op, at) {
   if (roleOf(st, actor) === "owner") return;
   const me = effective(st, actor); const target = op.comp.slice(6); const anon = ISANON(target);
@@ -1046,9 +1046,9 @@ function grantCheck(w, st, s, actor, op, at) {
   const after = R.roleIdOf(wc1, target, { anon, owners: true }); const def = R.roleDef(wc1, after);
   if ((def?.rank ?? RANK.none) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
   const extra = op.verb === "set" ? Object.entries(op.value?.can ?? {}).filter(([, x]) => x === true).map(([k]) => k) : [];
-  const give = [...R.SWITCH_NAMES.filter((k) => def?.can?.[k]), ...extra];
+  const give = [...R.PERMISSION_NAMES.filter((k) => def?.can?.[k]), ...extra];
   const missing = give.find((k) => !me.can[k]);
-  if (missing) refuse("rights", `giving ${missing} needs you to hold ${missing} yourself; you don't`, "you can only give switches you hold (ask an owner)", { needs: missing });
+  if (missing) refuse("rights", `giving ${missing} needs you to hold ${missing} yourself; you don't`, "you can only give permissions you hold (ask an owner)", { needs: missing });
 }
 function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   if (!isKeyed(op.comp) || op.verb === "create") return;
@@ -1059,7 +1059,7 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   if (keysMade.has(key)) return; // made earlier in this same write
   const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
-  // roles:<id> is changed under the grant rule (grantCheck: rank and switches), not its creator's: a moderator may
+  // roles:<id> is changed under the grant rule (grantCheck: rank and permissions), not its creator's: a moderator may
   // change the role an owner gave a visitor. A capability never reaches here for roles (lacks: owner).
   if (!cap && op.comp.startsWith("roles:")) return;
   // research §6 (scripts): a pause made by someone who outranks you can be lifted only by them, or at their rank or above
@@ -1122,7 +1122,7 @@ function valueCheck(s, { id, comp, value: v }) {
       // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
       if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
         if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
-  // default-role.can: switches on top of the default role for everyone who holds it that way (what an imported world's
+  // default-role.can: permissions on top of the default role for everyone who holds it that way (what an imported world's
   // grant to everyone, roles['*'].gen in its old log, becomes: can.generate). The same closed list and dependencies as roles:<id>.can
   if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
     if (R.roleDef(wcS, v.role)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can }); if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } }
@@ -1338,11 +1338,11 @@ function changeEntry(w, plan, cause) {
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
-const actEntry = (w, actor, tool, body) => ({ kind: "act", actor, verb: tool, body });
-const actOf = (w, actor, tool, args, extra) => actEntry(w, actor, tool, { request: stripDry(args), ...(extra ?? {}) });
+const actEntry = (w, actor, verb, body) => ({ kind: "act", actor, verb, body });
+const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { request: stripDry(args), ...(extra ?? {}) });
 
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
-function commit(w, actor, tool, args, build) {
+function commit(w, actor, verb, args, build) {
   mintW = w;
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
@@ -1350,7 +1350,7 @@ function commit(w, actor, tool, args, build) {
   const ops = stampMedia(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
-  const actE = actOf(w, actor, tool, sent, ctx.actExtra);
+  const actE = actOf(w, actor, verb, sent, ctx.actExtra);
   w.fits(actE, changeShape(plan, w.entries.length, w)); // both lines fit, or neither is written
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
@@ -1779,7 +1779,7 @@ function warnings(st, ids, strict = false) {
   }
   } catch (e) {
     if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
-    out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the door's time than one request may have; check {id} checks one thing" });
+    out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the door's time than one request may have; lint {id} checks one thing" });
   } finally { WORK.what = was; }
   return out;
 }
@@ -1825,7 +1825,7 @@ function buildUse(ctx, a) {
   }
   const h = e.c.reactions?.[action];
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
-  if (h?.kind === "script") return { script: h.script, action }; // TOOLS.use logs the visitor's act, then activates it
+  if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
   if (h?.kind === "impulse") {
     if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
@@ -1923,9 +1923,9 @@ function scriptRights(w, st, cap, op, at, made) {
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
-  // research S2: the `scripts` switch is the install gate; @world.script-settings.install: 'owner' reads as the built-in roles'
-  // scripts switch off until an owner edits that role (roles.js roleDef)
-  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.script-settings.install)" : "the scripts switch"}; ${said(installer)} is ${role}`, "@world.script-settings.install and the role's scripts switch say who may (the owner sets them)", { needs: "scripts" });
+  // research S2: the `scripts` permission is the install gate; @world.script-settings.install: 'owner' reads as the built-in roles'
+  // scripts permission off until an owner edits that role (roles.js roleDef)
+  if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs ${cfg.install === "owner" ? "owner (@world.script-settings.install)" : "the scripts permission"}; ${said(installer)} is ${role}`, "@world.script-settings.install and the role's scripts permission say who may (the owner sets them)", { needs: "scripts" });
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
@@ -1970,7 +1970,7 @@ function scriptWrites(w, id, key) {
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
   return out;
 }
-// `paused` is a switch, not the script: a write that changes only it (pause, resume) is a "pause write"
+// `paused` is a permission, not the script: a write that changes only it (pause, resume) is a "pause write"
 export const unpaused = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
 const pauseOnly = (v, prev) => v !== undefined && prev !== undefined && jcs(unpaused(v)) === jcs(unpaused(prev));
 // §5 "Two views" (H3), with R's decision on lab 49 F4 (2026-10-06): the sponsor is whose rights admitted the latest write
@@ -2054,7 +2054,7 @@ function activate(w, id, name, ev) {
     return { script: key, id, status, ...extra }; };
   if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
   if (v.paused === true) { const pb = pausedBy(w, id, key); return out("paused", { why: pb ? `paused by ${said(pb.by)} at seq ${pb.at}` : "paused: true" }); }
-  if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill switch)" });
+  if (cfg.run === false) return out("stopped", { why: "@world.script-settings.run is false (the owner's kill permission)" });
   const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
   const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; } // a re-set (a fix) clears the failure count
@@ -2414,7 +2414,7 @@ function buildUndo(ctx, a, w) {
     if (roleOf(ctx.st, ctx.actor) !== "owner") refuse("rights", "rolling back someone's work needs owner", "undo {act} takes back one act, along rank");
     if (!isIdentity(a.actor) || RESERVED.has(a.actor)) refuse("shape", "rollback is undo {actor, since}: actor is a person's identity", "history shows who did what");
     const from = versionSeq(w, a.since, "since");
-    const acts = (X.actsOf.get(a.actor) ?? []).filter((q) => q >= from && X.resultOf.has(q) && !X.undone.has(q) && !["new", "undo", "throw", "drop", "leave"].includes(E[q].verb)).reverse();
+    const acts = (X.actsOf.get(a.actor) ?? []).filter((q) => q >= from && X.resultOf.has(q) && !X.undone.has(q) && !["create-world", "undo", "throw", "drop", "leave"].includes(E[q].verb)).reverse();
     if (!acts.length) refuse("nothing", `${said(a.actor)} has made no change since act ${from} that's still in force`, "");
     if (acts.length > 20 && a.confirm !== true && a.dry !== true) refuse("confirm", `that rolls back ${acts.length} acts by ${said(a.actor)} since act ${from}`, "dry: true lists them; confirm: true does it", { acts: acts.length });
     let st = ctx.st; const all = []; const skippedAll = [], done = [];
@@ -2435,10 +2435,10 @@ function buildUndo(ctx, a, w) {
     return e; };
   const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : othersAct(a.act))
     : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q) && X.resultOf.has(q))
-    : pick((q) => E[q].verb !== "new" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
+    : pick((q) => E[q].verb !== "create-world" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
   if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
     refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
-  if (target.verb === "new") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
+  if (target.verb === "create-world") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
   if (X.undone.has(target.seq)) { let head = target.seq; const chain = []; for (let i = 0; i < 64; i++) { const u = undoneBy(head); if (u === undefined) break; chain.push(u); head = u; }
     const live = head !== target.seq && depthOf(head) % 2 === 0 ? head : null;
     refuse("nothing", `act ${target.seq} was already undone${chain.length ? ` (by ${chain.map((c) => `${depthOf(c) % 2 ? "undo" : "redo"} ${c}`).join(", then ")})` : ""}`,
@@ -2769,7 +2769,7 @@ function pathBlocked(w, st, from, to) {
   return null;
 }
 const presenceFacts = (me) => ({ at: me.at.slice(), hand: handOf(me).map(r3), trackTs: me.ts });
-const PHYSICS_TOOLS = {
+const PHYSICS_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
     const st = w.state(); const B = boundsOf(st);
@@ -2798,7 +2798,7 @@ const PHYSICS_TOOLS = {
     return { ok: true, recorded: false, at: to, ...(carrying.length ? { carrying } : {}) };
   },
   grab(w, actor, a) {
-    if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_TOOLS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
+    if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_VERBS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     const held = w.presence.holds[a.id];
@@ -2919,7 +2919,7 @@ const PHYSICS_TOOLS = {
     const why = !fliesIn(w.state(), a.id) ? (w.state().entities["@world"]?.c["physics-engine"] ? `${a.id} isn't physics {kind: 'dynamic'}, so it doesn't fly: it was set down` : "this world doesn't run physics, so it was set down")
       : g?.throw === 0 ? `${a.id} can't be thrown (its grabbable.throw is 0): it was let go` : g?.release === "return" ? null : undefined;
     if (why !== undefined) {
-      const r = PHYSICS_TOOLS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
+      const r = PHYSICS_VERBS.drop(w, actor, { id: a.id, ...(a.pos !== undefined ? { pos: a.pos } : {}) }, "throw");
       return r.ok && why ? { ...r, notes: [...(r.notes ?? []), { id: a.id, thrown: "set down", why }] } : r;
     }
     return launch(w, actor, a, "throw", g);
@@ -2935,7 +2935,7 @@ const PHYSICS_TOOLS = {
     const sets = !fliesIn(st, a.id) || g?.release === "return" || g?.release === "stay" || (g && w.presence.holds[a.id]?.by === actor && snapTarget(st, a.id, g, a.pos ?? w.presence.holds[a.id].pose.pos).to);
     if (sets) {
       if (a.pos !== undefined) { const me = body(w, actor); const h = holdOf(w, actor, a.id); h.pose.pos = releasePos(me, a.pos); }
-      return PHYSICS_TOOLS.put(w, actor, { id: a.id }, how); }
+      return PHYSICS_VERBS.put(w, actor, { id: a.id }, how); }
     return launch(w, actor, { ...a, v: [0, 0, 0] }, "drop", g);
   },
   // a kick (/punt, an agent's door punt), as a sim intent (design 20, P4: "punt is a sim intent
@@ -3142,7 +3142,7 @@ function releasePos(me, pos) {
   const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `[${pos.map(r3).join(", ")}] is ${r3(d)} m from your hand as the door tracks your body; you can reach ${REACH} m`, "move first, or leave pos out");
   return pos.map(noNeg0);
 }
-function launch(w, actor, a, tool, g = null) {
+function launch(w, actor, a, verb, g = null) {
   const me = body(w, actor); const h = holdOf(w, actor, a.id);
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id);
@@ -3153,12 +3153,12 @@ function launch(w, actor, a, tool, g = null) {
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
   const notes = []; let v = a.v;
-  if (g && g.throw !== 1 && tool === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
+  if (g && g.throw !== 1 && verb === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
-  const act = w.append(actOf(w, actor, tool, a, { handled: h.handled, presence: presenceFacts(me) }));
+  const act = w.append(actOf(w, actor, verb, a, { handled: h.handled, presence: presenceFacts(me) }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
-  delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: tool, seq: act });
+  delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
 // ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
@@ -3215,7 +3215,7 @@ function revokeAfter(w, to) { const P = w.presence, b = P.bodies[to], now = w.no
   for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r.to === to) end(actor, r.cls, () => delete P.reaches[actor]);
   w.presenceDirty = true; return ended; }
 const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, strangers: Object.fromEntries(C.ENFORCED.map((c) => [c, t.strangers[c]])), ...(t.paused ? { paused: true } : {}) }; };
-const BODY_TOOLS = {
+const BODY_VERBS = {
   // L6: the person's own table. `of: <who>` acts on someone else's: closing only, and only if they named you trusted.
   consent(w, actor, a) { const P = w.presence, now = w.now(); expireAsks(w);
     if (a.answer !== undefined) { const k = P.asks?.[a.answer]; if (!k || k.to !== actor) refuse("not-found", `no ask '${a.answer}' waiting for you`, "consent {} lists them");
@@ -3279,7 +3279,7 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
   if (a.reason !== undefined && (typeof a.reason !== "string" || a.reason.length > R.REASON_MAX)) refuse("shape", `reason is text, up to ${R.REASON_MAX} characters`, "");
   return { target: { role: them, rank: tr } };
 }
-/** Lifting a sanction (unban, unmute, unghost): the switch, and the record's rule: an owner, its author, or someone
+/** Lifting a sanction (unban, unmute, unghost): the permission, and the record's rule: an owner, its author, or someone
  *  who outranks its author (strict: unban, unmute) or stands at their rank or above (ghost: "lifted only at that rank or higher"). */
 function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
@@ -3292,16 +3292,16 @@ function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   if (strict ? mine <= theirs : mine < theirs) refuse("rank", `${said(rec.actor)} (${roleOf(st, rec.actor)}) made this ${verb}; only they, an owner${strict ? ", or someone who outranks them" : ", or someone at their rank or above"} may lift it`, `ask ${said(rec.actor)} or an owner`, { by: rec.actor });
   }
 }
-const TOOLS = {
-  ...PHYSICS_TOOLS,
-  ...BODY_TOOLS,
-  new(w, actor, a) {
+const VERBS = {
+  ...PHYSICS_VERBS,
+  ...BODY_VERBS,
+  "create-world"(w, actor, a) {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
     // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
     if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
       if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || Object.keys(f).some((k) => !["world", "head", "name"].includes(k)))
-        refuse("shape", "new {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
+        refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
     // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
     // here in custody) is tier 0; rewind_window is left at its default (1000 change entries).
@@ -3310,23 +3310,23 @@ const TOOLS = {
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
-    changeEntry(w, plan, w.append(actOf(w, actor, "new", a)));
+    changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a)));
     return { ok: true, world: w.name, you: "owner" };
   },
   help(w, actor, a) {
-    if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, fix: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
+    if (a?.verb) return verbHelp(a.verb) ? { ok: true, ...verbHelp(a.verb) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.verb}' yet`, fix: `detailed: ${Object.keys(VERBSPEC).join(", ")}` } };
     const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none"; const eff = st ? effective(st, actor) : null;
-    return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, switches: eff.switches } : {}) },
-      tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
-        world: ["new {title, text?} — found this world if it doesn't exist (you become its owner)"],
+    return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, permissions: eff.permissions } : {}) },
+      verbs: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "lint {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
+        world: ["create-world {title, text?} — found this world if it doesn't exist (you become its owner)"],
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
-          "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
+          "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{verb, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
         people: ["warn {who, reason}", "mute {who, minutes, channels?: ['voice','chat'], reason?} / unmute {who}", "kick {who, minutes?, reason?} (default 10, ≤ 60)", "ban {who, days?, reason?} (≤ 30 days below owner; owners: leave days out for until lifted) / unban {who}",
-          "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your switches (you.switches); act only on ranks below yours"],
+          "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
@@ -3363,7 +3363,7 @@ const TOOLS = {
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
     return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
-  check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
+  lint(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
   history(w, actor, a) {
     // one thing's history, newest first, paged backwards (R 10-04: recent by default, deeper on request): before = the seq
     // to continue from (the reply's `next`), limit = how many acts per page
@@ -3441,7 +3441,7 @@ const TOOLS = {
     return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry. Research roles §5–6: every act on a
-  // person needs its switch and a target ranked strictly below you (never yourself, never your equal, never an owner);
+  // person needs its permission and a target ranked strictly below you (never yourself, never your equal, never an owner);
   // its duration is capped below owner; its record names identities. Expiry is the door's clock (sanction views above).
   warn: (w, actor, a) => { const t = personAct(w, actor, a, "warn", R.WARN_POWERS);
     if (typeof a.reason !== "string" || !a.reason.trim()) refuse("shape", "warn {who, reason}: a warning says why", "e.g. warn {who, reason: 'please keep it friendly'}");
@@ -3523,7 +3523,7 @@ const TOOLS = {
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
   // checked here (to teach early) and again at install (what binds).
   upload(w, actor, a) {
-    if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts switch"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
+    if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts permission"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
     if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS-v4.md");
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
@@ -3552,7 +3552,7 @@ const TOOLS = {
       const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
-  // the sky panel's two tools, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
+  // the sky panel's two verbs, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
   // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
   // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
@@ -3569,8 +3569,8 @@ const TOOLS = {
         if (clockMs() > WORK.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
-          sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.tool];
-        if (!B) refuse("shape", `batch op ${i}: '${o.tool}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
+          sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
+        if (!B) refuse("shape", `batch op ${i}: '${o.verb}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
         const sub = { ...ctx, st };
         let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
         if (!work) { work = cowState(ctx.st); VOLATILE.add(work.entities); }

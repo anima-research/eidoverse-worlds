@@ -153,7 +153,7 @@ const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 140)}`);
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 function cast(s: any) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 const IMG = "store/images/0123456789abcdef.png", AUD = "store/audio/0123456789abcdef.ogg";
@@ -435,11 +435,11 @@ const cases: Case[] = [
       const rx = s.call("olive", "schema", { component: "reactions" }).components?.reactions?.handlers ?? {};
       s.call("olive", "create", { id: "kiosk", components: { transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp", components: { transform: { pos: [2, 0, 0] } } });
       s.call("olive", "batch", { ops: [
-        { tool: "set", args: { id: "kiosk", component: "story", value: { title: "Kiosk", text: "Where the map was." } } },
-        { tool: "set", args: { id: "kiosk", component: "text", value: { text: "MAP" } } },
-        { tool: "set", args: { id: "kiosk", component: "picture", value: { src: IMG, alt: "a map" } } },
-        { tool: "set", args: { id: "kiosk", component: "sound", value: { src: AUD, alt: "a hum" } } },
-        { tool: "set", args: { id: "kiosk", component: "look-at", value: { target: "lamp" } } }] });
+        { verb: "set", args: { id: "kiosk", component: "story", value: { title: "Kiosk", text: "Where the map was." } } },
+        { verb: "set", args: { id: "kiosk", component: "text", value: { text: "MAP" } } },
+        { verb: "set", args: { id: "kiosk", component: "picture", value: { src: IMG, alt: "a map" } } },
+        { verb: "set", args: { id: "kiosk", component: "sound", value: { src: AUD, alt: "a hum" } } },
+        { verb: "set", args: { id: "kiosk", component: "look-at", value: { target: "lamp" } } }] });
       return { names, play: !!rx.play, says: sayLines(s, "kiosk"), vis: sayLines(s, "kiosk", "vic") }; },
     good: (o) => o.names.length === 5 && o.play && o.says?.length === 5 && /^story «Kiosk»/.test(o.says[0]) && /^a sign reading «MAP»/.test(o.says[1]) && /^a picture: «a map»/.test(o.says[2]) && /^a sound, playing \(loops; heard within 12 m\): «a hum»/.test(o.says[3]) && /^turns to face/.test(o.says[4]) && JSON.stringify(o.vis) === JSON.stringify(o.says) },
 ];

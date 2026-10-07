@@ -131,9 +131,9 @@ const f = fieldAt(schema, `comp.${TYPE}`);
 check('an unknown type gets a raw-JSON field in the Components group', f?.t === 'json' && jeq(JSON.parse(f.value), D1), JSON.stringify(f));
 const set = editOps(ent, 'crate', { [`comp.${TYPE}`]: '{"points":"east"}' });
 check('…which saves as ONE set replacing the data wholesale',
-  set.errors.length === 0 && set.ops.length === 1 && jeq(set.ops[0], { tool: 'set', args: { id: 'crate', component: TYPE, value: { points: 'east' } } }), JSON.stringify(set));
+  set.errors.length === 0 && set.ops.length === 1 && jeq(set.ops[0], { verb: 'set', args: { id: 'crate', component: TYPE, value: { points: 'east' } } }), JSON.stringify(set));
 const del = editOps(ent, 'crate', { [`comp.${TYPE}`]: '' });
-check('…and an emptied field removes it (delete)', jeq(del.ops, [{ tool: 'delete', args: { id: 'crate', component: TYPE } }]), JSON.stringify(del));
+check('…and an emptied field removes it (delete)', jeq(del.ops, [{ verb: 'delete', args: { id: 'crate', component: TYPE } }]), JSON.stringify(del));
 {
   // through the real v4 door: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
   // wholesale by the edit, removed by the delete

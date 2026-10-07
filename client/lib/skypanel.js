@@ -370,7 +370,7 @@ export function paintSky(body) {
   commit.textContent = '✓ log to world';
   commit.title = 'share this sky with everyone, permanently';
   commit.onclick = () => {
-    sendOps([{ tool: 'sky', args: gather() }], { what: 'the sky', expect: false });
+    sendOps([{ verb: 'sky', args: gather() }], { what: 'the sky', expect: false });
     commit.classList.remove('dirty');
     commit.textContent = '✓ logged';
     setTimeout(() => { commit.textContent = '✓ log to world'; }, 1200);

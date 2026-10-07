@@ -1,6 +1,6 @@
 // v4edit — edit mode's writes.
 //
-// Every edit is a door REQUEST, the same request an agent sends ({type: 'v4', tool, args}), and the person waits for
+// Every edit is a door REQUEST, the same request an agent sends ({type: 'request', verb: tool, args}), and the person waits for
 // the door's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/v4/refusal.js).
 //
 //   send(req, opts)        one request; on a `locked` refusal by someone who may lift the lock, a centre dialog offers
@@ -49,8 +49,8 @@ export function expectOf(ids, comps, base = null) {
 
 /** The (id, component) pairs a request sets: what a gesture's expect covers. */
 export function writesOf(req) {
-  const ops = req.tool === 'batch' ? req.args.ops : [req];
-  return ops.filter((o) => o.tool === 'set').map((o) => [idOut(o.args.id), o.args.component]);
+  const ops = req.verb === 'batch' ? req.args.ops : [req];
+  return ops.filter((o) => o.verb === 'set').map((o) => [idOut(o.args.id), o.args.component]);
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
@@ -58,7 +58,7 @@ export function writesOf(req) {
 // client-check's visitor case drives a visitor by the role alone); any other role by its build switch (a moderator, a custom role).
 // The door decides either way; this only chooses between the dialog and the refusal.
 export const mayLift = () => { const r = net.myRights; if (!r || r.role === 'visitor' || r.role === 'none') return false;
-  return Array.isArray(r.switches) ? r.switches.includes('build') : ['builder', 'owner'].includes(r.role); };
+  return Array.isArray(r.permissions) ? r.permissions.includes('build') : ['builder', 'owner'].includes(r.role); };
 
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {
@@ -97,9 +97,9 @@ export function send(req, opts = {}) {
   return p;
 }
 const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
-async function sendNow(req, { what = req.tool, revert = null, record = true } = {}) {
+async function sendNow(req, { what = req.verb, revert = null, record = true } = {}) {
   bus.emit('v4-sending', { req, what });
-  let r = await requestV4(req.tool, req.args);
+  let r = await requestV4(req.verb, req.args);
   // A lock (§5, R's dialog): someone who may lift it is asked "This is locked. Move anyway?" —
   //   ✓ through: the SAME request with throughLock: one act, the lock stays on;
   //   ✕ cancel:  nothing is written, and the thing goes back (revert);
@@ -113,14 +113,14 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
     console.info('[v4edit] lock:', refusalText(what, r));
     const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });   // a DOM card isn't drawn in a headset (xrask.js)
     bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
-    if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, throughLock: true }); break; }
+    if (choice === 'through') { r = await requestV4(req.verb, { ...req.args, throughLock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }
     const k = r.refused.lock;
     const u = await requestV4('delete', { id: k, component: 'lock' });
     if (!u.ok) { r = u; what = `unlock ${idOut(k)}`; break; }
     if (Number.isInteger(u.act)) remember(u.act);
-    bus.emit('v4-done', { what: `unlock ${idOut(k)}`, req: { tool: 'delete', args: { id: k, component: 'lock' } }, reply: u });
-    r = await requestV4(req.tool, req.args);
+    bus.emit('v4-done', { what: `unlock ${idOut(k)}`, req: { verb: 'delete', args: { id: k, component: 'lock' } }, reply: u });
+    r = await requestV4(req.verb, req.args);
   }
   if (r.ok) {
     if (record && Number.isInteger(r.act)) remember(r.act);
@@ -151,7 +151,7 @@ export async function undo() {
   await settled();
   const act = undoStack.at(-1);
   if (act === undefined) { flashHint('nothing of yours to undo here'); return { ok: false, refused: { code: 'nothing' } }; }
-  const r = await send({ tool: 'undo', args: { act } }, { what: 'undo', record: false });
+  const r = await send({ verb: 'undo', args: { act } }, { what: 'undo', record: false });
   if (r.ok) { undoStack.pop(); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
   // a refusal that can never change (already undone, or everything changed since) drops it, so the next Ctrl+Z reaches
   // the act before it; a lock or a rate limit leaves it for another try
@@ -162,7 +162,7 @@ export async function redo() {
   await settled();
   const act = redoStack.at(-1);
   if (act === undefined) { flashHint('nothing to redo'); return { ok: false, refused: { code: 'nothing' } }; }
-  const r = await send({ tool: 'undo', args: { act } }, { what: 'redo', record: false });
+  const r = await send({ verb: 'undo', args: { act } }, { what: 'redo', record: false });
   if (r.ok) { redoStack.pop(); undoStack.push(r.act); flashHint('redone'); }
   else if (['nothing', 'conflict'].includes(r.refused?.code)) redoStack.pop();
   return r;
@@ -176,26 +176,26 @@ export function del(ids) {
   const under = (x) => { let p = st.entities[x]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (set.has(p)) return true; p = st.entities[p]?.c.parent?.to; } return false; };
   const go = [...set].filter((x) => st.entities[x] && !under(x));
   if (!go.length) return Promise.resolve({ ok: true, noop: true });
-  const req = go.length === 1 ? { tool: 'delete', args: { id: go[0] } } : { tool: 'batch', args: { ops: go.map((id) => ({ tool: 'delete', args: { id } })) } };
+  const req = go.length === 1 ? { verb: 'delete', args: { id: go[0] } } : { verb: 'batch', args: { ops: go.map((id) => ({ verb: 'delete', args: { id } })) } };
   return send(req, { what: go.length === 1 ? `delete ${idOut(go[0])}` : `delete ${go.length} things` });
 }
 /** Duplicate: create {from: <the thing>} (the door copies it and what's attached to it; 0.5 m along x). */
 export function duplicate(id, at = undefined) {
-  return send({ tool: 'create', args: { from: idIn(id), ...(at ? { at } : {}) } }, { what: `duplicate ${id}` });
+  return send({ verb: 'create', args: { from: idIn(id), ...(at ? { at } : {}) } }, { what: `duplicate ${id}` });
 }
 /** Lock or unlock: `set lock true` / `delete lock` (§5: the plain lock component, both ways). */
 export function lock(id, on) {
-  return send(on ? { tool: 'set', args: { id: idIn(id), component: 'lock', value: true } } : { tool: 'delete', args: { id: idIn(id), component: 'lock' } },
+  return send(on ? { verb: 'set', args: { id: idIn(id), component: 'lock', value: true } } : { verb: 'delete', args: { id: idIn(id), component: 'lock' } },
     { what: on ? `lock ${id}` : `unlock ${id}` });
 }
 /** Save as blueprint: the door's `publish {from, name}` (one root, or several siblings as a group). */
 export function publish(ids, name) {
   const from = ids.length === 1 ? idIn(ids[0]) : ids.map(idIn);
-  return send({ tool: 'publish', args: { from, ...(name ? { name } : {}) } }, { what: `save ${ids.length === 1 ? ids[0] : `${ids.length} things`} as a blueprint` });
+  return send({ verb: 'publish', args: { from, ...(name ? { name } : {}) } }, { what: `save ${ids.length === 1 ? ids[0] : `${ids.length} things`} as a blueprint` });
 }
 /** Place a copy of one of this world's blueprints: create {from: hash, at}. */
 export function copyBlueprint(hash, at) {
-  return send({ tool: 'create', args: { from: hash, ...(at ? { at } : {}) } }, { what: 'place a copy' });
+  return send({ verb: 'create', args: { from: hash, ...(at ? { at } : {}) } }, { what: 'place a copy' });
 }
 /** This world's blueprints, read from the v4 fold (@world blueprints:<hash> → {name, parts}). */
 export function blueprints() {

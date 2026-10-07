@@ -1,7 +1,7 @@
 // server/v4/readmeter.ts — reads are rate-limited per connection (security pass 2 H-A).
 //
 // The door rate-limits what goes INTO the log (writes, per identity). A read writes nothing, so nothing limited it: a
-// spectator (no identity, no login) could loop `check {}` and hold the one thread every world shares. Each connection's
+// spectator (no identity, no login) could loop `lint {}` and hold the one thread every world shares. Each connection's
 // reads (and dry runs, which write nothing either) are metered over a sliding window: how many, and how much of the
 // door's time they took. Past either, the read is refused (code rate) before it reaches the door.
 // n: what an editor's own panels ask in a burst (each change re-reads the inspector and the history) stays far inside it;

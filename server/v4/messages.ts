@@ -1,9 +1,9 @@
 // server/v4/messages.ts — the ws messages that reach a world's door. server.ts consults this table first.
 //
-//   v4      {type: "v4", id, tool, args} → {type: "v4-result", id, tool, ok, reply}, reply = the door's own answer
+//   request {type: "request", id, verb, args} → {type: "reply", id, verb, ok, reply}, reply = the door's own answer
 //           (kept whole under `reply`: a door reply has fields of its own, such as inspect's `id`). Any door request
 //           (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/move/drop/wait, and the
-//           reads look/inspect/measure/find/check/history/schema/help). The asker is stamped from the connection
+//           reads look/inspect/measure/find/lint/history/schema/help). The asker is stamped from the connection
 //           (L4), never read from the payload. Spectators may only read.
 //   world-fork, world-reset
 //           an owner copies the world to a new name, or erases it to zero (archived, founded again by its owners).
@@ -23,7 +23,7 @@ import { readMeter, doorTime } from "./readmeter.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
-const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
+const READS = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
 const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
 const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", imported: "imported name (no account bound yet)" };
 
@@ -59,10 +59,10 @@ function recordRefusal(c: Client): boolean {
 }
 /** What bystanders are told when the door removes someone: who did it, to whom (names, from the directory). Not the
  *  reason (that went to the person, and stays in the moderator log), not an address, not an account. */
-function modLine(w: World, by: string, tool: string, who: string) {
+function modLine(w: World, by: string, verb: string, who: string) {
   const name = directoryFor(WORLDS_DIR).nameOf(who) ?? "someone";
-  return tool === "ban" ? `${by} banned ${name} from this world` : tool === "kick" ? `${by} removed ${name} from this world` : tool === "mute" ? `${by} muted ${name}`
-    : tool === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
+  return verb === "ban" ? `${by} banned ${name} from this world` : verb === "kick" ? `${by} removed ${name} from this world` : verb === "mute" ? `${by} muted ${name}`
+    : verb === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
 }
 /** The identity the door stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
@@ -105,31 +105,31 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
 const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
 const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
-  "v4": ({ c, ws, expel, sweep }, msg) => {
-    // {tool, args}: a door request
+  "request": ({ c, ws, expel, sweep }, msg) => {
+    // {verb, args}: one request to the world's authority
     const w = c.world; if (!w) return;
     const rid = msg.id ?? null;
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
-    const tool = String(msg.tool ?? "");
-    const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
-    if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", fix: "join embodied" } }); return; }
-    const metered = READS.has(tool) || args.dry === true;
+    const verb = String(msg.verb ?? "");
+    const reply = (r: Any) => ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, reply: r }));
+    if (c.spectator && !READS.has(verb)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", fix: "join embodied" } }); return; }
+    const metered = READS.has(verb) || args.dry === true;
     // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
     // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
     // a meter's refusal reaches the flight recorder like the door's (bounded the same way)
-    const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, tool: tool.slice(0, 32), code: no.code, line: `${c.id}'s ${tool.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
+    const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, verb: verb.slice(0, 32), code: no.code, line: `${c.id}'s ${verb.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
     if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
     const mark = metered ? reads.record(c, Date.now()) : null;
-    if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
+    if (verb === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
-    if (tool === "caption") args.gen = c.legGen ?? 0;
+    if (verb === "caption") args.gen = c.legGen ?? 0;
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
       { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
       const spent = busy.record(c, Date.now());
-      const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
-      const r = await w.v4.request(actorOf(c), tool, args);
+      const wasBanned = (verb === "ban" || verb === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
+      const r = await w.v4.request(actorOf(c), verb, args);
       const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
@@ -138,35 +138,35 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       // is read by anyone here, so each line is capped and each connection records at most 20 per 10 s (review 10-06 #1)
       if (r && !r.ok && r.refused && recordRefusal(c)) { const cap = (x: unknown, n: number) => { const t = String(x ?? ""); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
         const id = typeof args.id === "string" ? cap(args.id, 64) : null;
-        w.debug("refused", { who: c.id, tool: cap(tool, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
-          line: cap(`${c.id}'s ${tool}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.fix ? ` — ${r.refused.fix}` : ""}`, 300) }); }
+        w.debug("refused", { who: c.id, verb: cap(verb, 32), ...(id ? { id } : {}), code: cap(r.refused.code, 32),
+          line: cap(`${c.id}'s ${verb}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.fix ? ` — ${r.refused.fix}` : ""}`, 300) }); }
       // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
       // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a
       // notice they dismiss, a mute or a ghost is told to its person; a ghost is never named to bystanders (unseen)
-      if (r?.ok && PERSON_ACTS.has(tool)) { sweep?.(w);
-        const who = String(args.who ?? ""); const notice = tool === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
-          : tool === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
-          : tool === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
+      if (r?.ok && PERSON_ACTS.has(verb)) { sweep?.(w);
+        const who = String(args.who ?? ""); const notice = verb === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
+          : verb === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
+          : verb === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
         if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
       // a guest's mute or ghost also names their address here, and its lift lifts that (R 10-07)
-      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(tool) && typeof args.who === "string" && args.who !== actorOf(c))
-        guestSanctionByAddress(w, actorOf(c), c.id, tool, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
-      if (r?.ok && (tool === "ban" || tool === "kick" || tool === "unban" || tool === "mute" || tool === "unmute") && typeof args.who === "string") {
+      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(verb) && typeof args.who === "string" && args.who !== actorOf(c))
+        guestSanctionByAddress(w, actorOf(c), c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
+      if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = tool === "kick" || tool === "mute" || tool === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
+        const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.v4.live, who);
         const ghostHere = [...w.clients].some((t) => t.v4id === who && w.isGhost(t));   // unseen: never named to bystanders
-        if (happened && !ghostHere) { const text = modLine(w, c.id, tool, who);
-          for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: tool, by: c.id, text })); } catch { /* gone */ } } }
+        if (happened && !ghostHere) { const text = modLine(w, c.id, verb, who);
+          for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
       // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
-      if (r?.ok && tool === "unban" && typeof args.who === "string") { let n = 0;
+      if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
         for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
         if (n) saveGlobalBans(); }
       // a ban or kick the door accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
       // talking and whispering until they chose to leave). A guest has no account to ban, so their ban also names their
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
-      if (r?.ok && (tool === "ban" || tool === "kick")) {
+      if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.v4id === who) {
           // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
@@ -176,8 +176,8 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
             globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
-          const back = r.until ? ` — you may come back ${tool === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
-          expel(w, t, `you were ${tool === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
+          const back = r.until ? ` — you may come back ${verb === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
+          expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
     });

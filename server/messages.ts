@@ -24,12 +24,12 @@ import { actorOf as v4ActorOf, whois } from "./v4/messages.ts";
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { worlds, type World, type Client } from "./world.ts";
-import { pendingSnaps } from "./routes.ts";
+import { pendingCaptures } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
 // ---- whispers: held-in-memory machinery (moved with its only writers) ------
 // join's held-whisper delivery imports these back — one-way, like
-// routes.ts's pendingSnaps.
+// routes.ts's pendingCaptures.
 export const pendingWhispers = new Map<string, unknown[]>();
 /** Held whispers are keyed by the recipient's IDENTITY (their v4 id), never a display name: anyone can join wearing an
  *  absent person's name (security review 10-06 pass 2, H-B: a second "Riannon" received the first one's whisper). */
@@ -113,7 +113,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (v4 && c.v4id) {
       if (v4.ghostHere(c.v4id) || v4.rightsOf(c.v4id).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
       const m = v4.mutedHere(c.v4id, "chat");
-      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.v4id && (() => { const e = v4.rightsOf(o.v4id); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.switches.includes(k)); })());
+      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.v4id && (() => { const e = v4.rightsOf(o.v4id); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
         if (!mod) { ws.send(JSON.stringify({ type: "error", error: `you're muted in this world's chat until ${new Date(m.until).toISOString().slice(11, 16)} UTC — you may whisper to a moderator` })); return; } }
     }
     const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
@@ -379,10 +379,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  "snap-result": ({ c, ws, now, expel }, msg) => {
-    const pending = pendingSnaps.get(msg.id);
+  "capture-result": ({ c, ws, now, expel }, msg) => {
+    const pending = pendingCaptures.get(msg.id);
     if (!pending || !c.renderer) return;
-    pendingSnaps.delete(msg.id);
+    pendingCaptures.delete(msg.id);
     if (typeof msg.dataUrl === "string" && msg.dataUrl.startsWith("data:image/png;base64,")) {
       pending.resolve({ ok: true, png: Buffer.from(msg.dataUrl.slice("data:image/png;base64,".length), "base64") });
     } else {
@@ -397,7 +397,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // v4: the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the door's clock (a ban that ended isn't listed)
     if (c.world.v4) { const e = c.v4id ? c.world.v4.rightsOf(c.v4id) : null;
-      if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.switches.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
+      if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.v4!.sanctions();
     const dir = directoryFor(WORLDS_DIR);
     const list = Object.entries(S).filter(([, x]) => (x as any).ban).map(([, x]) => (x as any).ban).map((m) =>

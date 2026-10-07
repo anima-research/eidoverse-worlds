@@ -30,18 +30,18 @@ async function start(extra = {}) {
 }
 async function sock(port) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
-  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") waiters.get(m.id)?.(m.reply); };
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
     async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true }));
       for (let i = 0; i < 60 && !msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); await sleep(50);
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
-    req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
+    req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb: tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
     async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); for (let i = 0; i < ms / 50; i++) { const hit = msgs.slice(k).find((x) => x.type === wantType || x.type === "error"); if (hit) return hit; await sleep(50); } return null; },
     close: () => ws.close() };
 }
 const logOf = (name) => (fs.existsSync(path.join(W, name, "v4.jsonl")) ? readLog(fs.readFileSync(path.join(W, name, "v4.jsonl"))) : []);
-const founding = (name) => logOf(name).find((e) => e.kind === "act" && e.verb === "new");
+const founding = (name) => logOf(name).find((e) => e.kind === "act" && e.verb === "create-world");
 const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((q) => [q, x[q]])) : x));   // key order is not content
 const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, e.c]));
 

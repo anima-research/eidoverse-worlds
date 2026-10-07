@@ -61,7 +61,7 @@ let hooks = {
   myVoice: () => null,   // { mic, hear } — main.js reads the HUD glyphs' own state (mictoggle.js)
 };
 
-// The participant registry, the asset ledger and the snapshot renderer are INJECTED
+// The participant registry, the asset ledger and the capture renderer are INJECTED
 // for the same reason the hooks above are: this file is the wire, and the wire is the
 // one part of the client that a renderer-less client still needs in full. remotes.js
 // builds three.js bodies, assets.js and capture.js reach the GPU — importing any of
@@ -88,15 +88,15 @@ let forgetBytes = () => {};
 let myReachBag = () => undefined;
 // A client with no renderer must still ANSWER a snap — the asker is blocked on the
 // reply id — so the default is an honest error, not silence.
-let snapshot = async () => ({ error: 'this client has no renderer' });
+let capture = async () => ({ error: 'this client has no renderer' });
 
 export function wireNet(h) {
-  const { participants, forgetBytes: fb, snapshot: snap, myReachBag: rb, toast: tf, ...rest } = h;
+  const { participants, forgetBytes: fb, capture: cap, myReachBag: rb, toast: tf, ...rest } = h;
   if (participants) ({ remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } = participants);
   if (fb) forgetBytes = fb;
   if (rb) myReachBag = rb;
   if (tf) toast = tf;
-  if (snap) snapshot = snap;
+  if (cap) capture = cap;
   hooks = { ...hooks, ...rest };
 }
 
@@ -265,18 +265,18 @@ export function sendJoin() {
   }));
 }
 
-// ---- v4 requests: {type: 'v4', id, tool, args} → {type: 'v4-result', id, ok, reply} (server/v4/messages.ts) ----
+// ---- requests: {type: 'request', id, verb, args} → {type: 'reply', id, ok, reply} (server/v4/messages.ts) ----
 let v4Seq = 0;
 const v4Pending = new Map();   // id → {resolve, timer}
 /** One door request; resolves with the door's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
  *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
-export function requestV4(tool, args = {}, { timeoutMs = 15000 } = {}) {
+export function requestV4(verb, args = {}, { timeoutMs = 15000 } = {}) {
   if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', fix: 'wait for the connection to come back, then try again' } });
   const id = ++v4Seq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${tool}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
+    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
     v4Pending.set(id, { resolve, timer });
-    net.ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
+    net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
 }
 function onV4Result(msg) {
@@ -772,9 +772,9 @@ async function handle(msg) {
       bus.emit('bodydrag', msg);
       break;
 
-    case 'v4-holds':
+    case 'holds':
       // who holds what (the door's presence plane, design 20 P2): v4phys.js draws each held thing in its holder's hand
-      bus.emit('v4-holds', msg.holds ?? {});
+      bus.emit('holds', msg.holds ?? {});
       break;
 
     case 'geom':
@@ -784,14 +784,14 @@ async function handle(msg) {
       bus.emit('lib-geom', msg.geom ?? {});
       break;
 
-    case 'v4-log': onV4Log(msg); break;
-    case 'v4-result': onV4Result(msg); break;
+    case 'log': onV4Log(msg); break;
+    case 'reply': onV4Result(msg); break;
 
-    case 'snap':
+    case 'capture':
       // The reply is the snapshot's to produce and the wire's to send, so a client
       // without a renderer answers with an error instead of going quiet on an id
-      // someone is waiting for. See net_snap.js (wired by main.js).
-      snapshot(msg).then((r) => net.ws?.send(JSON.stringify({ type: 'snap-result', id: msg.id, ...r })));
+      // someone is waiting for. See net_capture.js (wired by main.js).
+      capture(msg).then((r) => net.ws?.send(JSON.stringify({ type: 'capture-result', id: msg.id, ...r })));
       return;
 
     case 'avatar-updated': {
@@ -958,7 +958,7 @@ async function onSnapshot(msg) {
   // State adopts the snapshot FIRST, synchronously: the door's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
   if (!msg.v4?.state) { v4.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
-  v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('v4-holds', msg.v4.holds ?? {});
+  v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); bus.emit('v4-joined'); bus.emit('holds', msg.v4.holds ?? {});
   shadowHydrate(v4.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
 
   hydrating = true; pendingLive = [];

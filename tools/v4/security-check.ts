@@ -57,7 +57,7 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
   ws.onmessage = (ev) => {
     const m = JSON.parse(String(ev.data));
     msgs.push(m);
-    if (m.type === "v4-result") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } }
+    if (m.type === "reply") { const f = waiters.get(m.id); if (f) { waiters.delete(m.id); f(m.reply); } }
   };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.send(JSON.stringify({ type: "join", world, id, avatar: "", ...extra }));
@@ -70,7 +70,7 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
     req: (tool: string, args: any = {}) => new Promise<any>((res) => {
       const rid = `${id}-${++n}`;
       waiters.set(rid, res);
-      ws.send(JSON.stringify({ type: "v4", id: rid, tool, args }));
+      ws.send(JSON.stringify({ type: "request", id: rid, verb: tool, args }));
       setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000);
     }),
     send: (m: any) => ws.send(JSON.stringify(m)),

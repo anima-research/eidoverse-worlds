@@ -44,8 +44,8 @@ console.log("\none drag = one request = one undo step:");
   const r = commitEdit("book", "parent.to", "shelf");
   await H.flush();
   const req = H.sent.at(-1);
-  check("the drop sent ONE request: a batch of set parent {to: shelf} and the local transform", r.ok && H.sent.length === 1 && req.tool === "batch"
-    && req.args.ops.map((o: any) => `${o.tool} ${o.args.component}`).join() === "set parent,set transform" && req.args.ops[0].args.value.to === "shelf", JSON.stringify(H.sent));
+  check("the drop sent ONE request: a batch of set parent {to: shelf} and the local transform", r.ok && H.sent.length === 1 && req.verb === "batch"
+    && req.args.ops.map((o: any) => `${o.verb} ${o.args.component}`).join() === "set parent,set transform" && req.args.ops[0].args.value.to === "shelf", JSON.stringify(H.sent));
   check("…its expect pins what it sets as the drag began (parent absent, the old transform)", Array.isArray(req.args.expect) && req.args.expect.some((x: any) => x.component === "parent" && !("value" in x)) && req.args.expect.some((x: any) => x.component === "transform" && JSON.stringify(x.value) === JSON.stringify(JSON.parse(before).transform)), JSON.stringify(req.args.expect));
   check("the door has it under the shelf, where it stood (and its world size: 0.8 under a ×2 shelf is a local 0.4)", W().book.parent?.to === "shelf" && near(worldPose(W(), "book")!.pos, W0.pos, 2e-3) && Math.abs(worldPose(W(), "book")!.scale - 0.8) < 1e-6 && Math.abs(W().book.scale - 0.4) < 1e-6, JSON.stringify(W().book));
   check("ONE act on my undo stack", V4.stacks().undo.length === 1, JSON.stringify(V4.stacks()));
@@ -83,7 +83,7 @@ console.log("\nunparent (drag to the root zone, the ✕ on Parent, or `unparent`
   await H.flush();
   const req = H.sent.at(-1);
   // the book is scaled 0.8, so the lamp's world size is 0.8 of its own: the world transform carries it
-  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.tool === "batch" && req.args.ops[0].tool === "delete" && req.args.ops[0].args.component === "parent"
+  check("ONE request: delete parent, then its WORLD transform (scale 0.8 kept), one act", r.ok && H.sent.length === 1 && req.verb === "batch" && req.args.ops[0].tool === "delete" && req.args.ops[0].args.component === "parent"
     && near(req.args.ops[1].args.value.pos, W0.pos, 2e-3) && near(req.args.ops[1].args.value.scale, [0.8, 0.8, 0.8], 1e-9), JSON.stringify(H.sent));
   check("the door: a root, same world pose and size", !W().lamp.parent && near(worldPose(W(), "lamp")!.pos, W0.pos, 2e-3) && Math.abs(worldPose(W(), "lamp")!.scale - W0.scale) < 1e-9, JSON.stringify(W().lamp));
   const u = await V4.undo();

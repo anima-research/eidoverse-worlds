@@ -202,7 +202,7 @@ const held = (s: any, id: string) => s.w().presence.holds[id] ?? null;
 const ENG = { engine: "eidosim@0.5.0" };
 // owner olive (the founder), builder bob, visitors vic and ann
 function cast(s: any, sim = false) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["vic", "visitor"], ["ann", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
   if (sim) s.call("olive", "set", { id: "@world", component: "physics-engine", value: ENG });
 }
@@ -505,7 +505,7 @@ const cases: Case[] = [
       const add = ES.inspectSchema(ent, "b1").sections.add.find((a: any) => a.name === "Grabbable");
       const r = ES.addOps(ent, "b1", "Grabbable");
       s.call("olive", "create", { id: "b1", model: "book", place: { at: [0, 0] } });
-      const put = r.ops[0] ? s.call("olive", r.ops[0].tool, r.ops[0].args) : null;   // the op as the panel sends it
+      const put = r.ops[0] ? s.call("olive", r.ops[0].verb, r.ops[0].args) : null;   // the op as the panel sends it
       return { offered: !!add && !add.blocked, ops: r.ops, errors: r.errors, put: show(put), stored: comp(s, "b1", "grabbable") }; },
     good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "visitor" },
   { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the door would (a malformed use)", run(s) {
@@ -528,7 +528,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [2, 2] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "lantern", hand: "left" });
-      const lk = s.call("vic", "look", {}).things ?? []; const ins = s.call("vic", "inspect", { id: "lantern" }); const help = s.call("vic", "help", { tool: "grab" });
+      const lk = s.call("vic", "look", {}).things ?? []; const ins = s.call("vic", "inspect", { id: "lantern" }); const help = s.call("vic", "help", { verb: "grab" });
       return { lantern: lk.find((t: any) => t.id === "lantern")?.grab ?? null, ball: lk.find((t: any) => t.id === "ball")?.grab ?? null, heldIn: ins.heldIn, args: Object.keys(help.args ?? {}) }; },
     good: (o) => /^Take the lantern \(anyone may pick it up;.*use while held: light;.*goes home when let go\)$/.test(o.lantern ?? "") && /^pick up .*anyone may pick it up/.test(o.ball ?? "") && o.heldIn === "left" && ["hand", "grip", "offset"].every((k) => o.args.includes(k)) },
   // ---------------- F: the independent review's findings (each red before its fix) ----------------

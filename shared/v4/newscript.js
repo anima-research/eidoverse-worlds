@@ -65,7 +65,7 @@ export function planNewScript(form, thing = {}) {
   const value = (src) => ({ src, scope: { ids: "self", comps, ...(form?.say ? { say: true } : {}) }, on: trigger === "use" ? ["use"] : [], ...(trigger === "timer" ? { every } : {}) });
   return {
     errors: [], name, action, trigger,
-    upload: { tool: "upload", args: { text } },
+    upload: { verb: "upload", args: { text } },
     install: (src) => [set(form.id, `script:${name}`, value(src)), ...(action ? [set(form.id, "reactions", { [action]: { kind: "script", script: name } }, { merge: true })] : [])],
   };
 }

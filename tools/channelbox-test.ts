@@ -30,7 +30,7 @@ const rnd = (() => { let s = 4242; return () => ((s = (s * 1664525 + 1013904223)
 const LIB = 'eidoverse/assets/models/crate.glb';
 
 // the one transform an edit writes (a set transform's value), or undefined
-const tfOf = (r: any) => flat(r.ops).find((o: any) => o.tool === 'set' && o.args.component === 'transform')?.args.value;
+const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
 const upright = (q: number[]) => Math.abs(q[0]) < 1e-12 && Math.abs(q[2]) < 1e-12;
 // through the real door: seed the record as a fresh thing, send what the edit planned, read the view back
 const W = scratchWorld('channelbox');
@@ -147,8 +147,8 @@ console.log('rotate order: changing it never changes q');
     const ent = withOrder({ lib: LIB, pos: [3, 0, 3], q: q0, yaw: qHeading(q0), actor: 'o', ts: 1 }, from);
     const { r, before, after, res } = doorEdit(ent, { 'rot.order': to });
     const o = flat(r.ops);
-    const want = to === 'XYZ' ? { tool: 'delete', component: 'rotOrder' } : { tool: 'set', component: 'rotOrder', value: to };
-    check(`${from} → ${to}: one set/delete of rotOrder, no transform (the object never moves)`, o.length === 1 && o[0].tool === want.tool && o[0].args.component === ROT_ORDER && (to === 'XYZ' || o[0].args.value === to), JSON.stringify(r.ops));
+    const want = to === 'XYZ' ? { verb: 'delete', component: 'rotOrder' } : { verb: 'set', component: 'rotOrder', value: to };
+    check(`${from} → ${to}: one set/delete of rotOrder, no transform (the object never moves)`, o.length === 1 && o[0].verb === want.verb && o[0].args.component === ROT_ORDER && (to === 'XYZ' || o[0].args.value === to), JSON.stringify(r.ops));
     check(`${from} → ${to}: q is bit-identical after the door writes it`, res.ok && JSON.stringify(after.q) === JSON.stringify(before.q) && after.yaw === before.yaw && (to === 'XYZ' ? after.comp?.rotOrder === undefined : after.comp?.rotOrder === to), JSON.stringify([res.refused, before.q, after.q, after.comp]));
     if (to !== 'quat') {
       const rd = rotOf(after);
@@ -157,7 +157,7 @@ console.log('rotate order: changing it never changes q');
   }
   const ent = { lib: LIB, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'ZXY' }, actor: 'o', ts: 1 };
   check('choosing the order it already has sends nothing', editOps(ent, 'e', { 'rot.order': 'ZXY' }).ops.length === 0);
-  check('XYZ is written as the comp\'s removal (absent means XYZ; nothing writes XYZ)', JSON.stringify(editOps(ent, 'e', { 'rot.order': 'XYZ' }).ops) === JSON.stringify([{ tool: 'delete', args: { id: 'e', component: ROT_ORDER } }]));
+  check('XYZ is written as the comp\'s removal (absent means XYZ; nothing writes XYZ)', JSON.stringify(editOps(ent, 'e', { 'rot.order': 'XYZ' }).ops) === JSON.stringify([{ verb: 'delete', args: { id: 'e', component: ROT_ORDER } }]));
   check('a bad order is refused by name', /one of XYZ XZY YXZ YZX ZXY ZYX quat/.test(editOps(ent, 'e', { 'rot.order': 'xyz' }).errors[0] ?? ''));
   const q = inspectSchema({ ...ent, comp: { rotOrder: 'quat' } }, 'e');
   const card = q.sections.list.find((c: any) => c.type === 'Transform');
@@ -174,7 +174,7 @@ console.log('rotate order: changing it never changes q');
   // step 4: a child's Rotate reads its RELATIVE orientation (the mount's), editable; only a part-socket rider is read-only
   const mounted = inspectSchema({ ...ent, parent: { to: 'cart', yaw: 0.5 } }, 'e');
   check('mounted: Rotate reads the mount\'s relative turn, editable', !fieldAt(mounted, 'rot.y')!.disabled && Math.abs(fieldAt(mounted, 'rot.y')!.value - 0.5) < 1e-9);
-  const riding = inspectSchema({ ...ent, parent: { to: 'cart', slot: 'deck' } }, 'e', { world: { e: ent, cart: { lib: 'cart.glb', pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } } } });
+  const riding = inspectSchema({ ...ent, parent: { to: 'cart', socket: 'deck' } }, 'e', { world: { e: ent, cart: { lib: 'cart.glb', pos: [0, 0, 0], comp: { sockets: { deck: { pos: [0, 1, 0], part: 'plank' } } } } } });
   check('a part-socket rider: Rotate is read-only and names the carrier and part', fieldAt(riding, 'rot.y')!.disabled && /cart/.test(fieldAt(riding, 'rot.y')!.hint) && /plank/.test(fieldAt(riding, 'rot.y')!.hint));
   const swing = inspectSchema({ ...ent, comp: { motion: { type: 'pendulum', amp: 0.3 } } }, 'e');
   check('a whole-entity motion: Rotate is the rest pose, tinted driven', fieldAt(swing, 'rot.x')!.driven === 'motion');

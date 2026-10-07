@@ -43,7 +43,7 @@ import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js'
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
-import { snapshot } from './lib/net_snap.js';
+import { capture } from './lib/net_capture.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, requestV4, sendPose, sendWhisper, sendTyping,
@@ -401,7 +401,7 @@ wireNet({
   myReachBag,
   toast,   // remotes.js — real bodies, real poses
   forgetBytes,    // the asset ledger, which only a client that loads assets has
-  snapshot,       // net_snap.js — the one part of the protocol that needs a renderer
+  capture,        // net_capture.js — the one part of the protocol that needs a renderer
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),

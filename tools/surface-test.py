@@ -23,11 +23,11 @@ def check(name, ok, detail=""):
 NAMES = {}
 def learn(m):
     if m.get("type") == "snapshot": NAMES.update((m.get("v4") or {}).get("names") or {})
-    if m.get("type") == "v4-log": NAMES.update(m.get("names") or {})
+    if m.get("type") == "log": NAMES.update(m.get("names") or {})
 def says_in(events):
     out = []
     for m in events:
-        if m.get("type") != "v4-log": continue
+        if m.get("type") != "log": continue
         for i, e in enumerate(m.get("entries") or []):
             if isinstance(e, dict) and e.get("kind") == "say":
                 out.append({"seq": (m["from"] + i) * 1000, "actor": NAMES.get(e.get("actor"), e.get("actor")), "text": (e.get("body") or {}).get("text")})
@@ -35,7 +35,7 @@ def says_in(events):
 REQ = [0]
 def say_req(text):
     REQ[0] += 1
-    return json.dumps({"type": "v4", "id": f"surf-{REQ[0]}", "tool": "say", "args": {"text": text}})
+    return json.dumps({"type": "request", "id": f"surf-{REQ[0]}", "verb": "say", "args": {"text": text}})
 
 async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
@@ -155,7 +155,7 @@ async def main():
     await vB.send(say_req("aux voice"))
     await asyncio.sleep(0.5)
     said = says_in(ew)
-    err = [m for m in eB if m.get("type") == "error" or (m.get("type") == "v4-result" and not m.get("ok"))]
+    err = [m for m in eB if m.get("type") == "error" or (m.get("type") == "reply" and not m.get("ok"))]
     check("T11 aux say refused (authors nothing)", len(said) == 0 and len(err) >= 1, f"said={len(said)} err={len(err)}")
 
     # T12 (B1): attest round-trip — valid receipt broadcasts `performed`;

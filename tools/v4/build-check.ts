@@ -93,7 +93,7 @@ const code = (r: any) => (r?.ok ? "ok" : r?.refused?.code ?? (r?.crashed ? "cras
 const show = (r: any) => (r?.ok ? "ok" : `${r?.refused?.code ?? "?"}: ${r?.refused?.reason ?? r?.crashed ?? ""}`.slice(0, 160));
 const T0 = (pos: number[], yaw = 0) => ({ pos, q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], scale: [1, 1, 1] });
 function cast(s: any) {
-  s.call("olive", "new", { title: s.name });
+  s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-200, 0, -200], max: [200, 50, 200] } });
   for (const [who, role] of [["bob", "builder"], ["vic", "visitor"], ["ann", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
@@ -136,11 +136,11 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const floorTop = 0.1;   // GRID_DEFAULTS.slabT: the floor's top
       const r: any = {};
       r.book = s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([12, floorTop, 12]), grabbable: { who: "visitor" } } });
-      r.bookWarn = (s.call("olive", "check", { id: "mug" }).warnings ?? []).map((x: any) => `${x.kind}:${x.with ?? x.into ?? x.above ?? ""}`);
+      r.bookWarn = (s.call("olive", "lint", { id: "mug" }).warnings ?? []).map((x: any) => `${x.kind}:${x.with ?? x.into ?? x.above ?? ""}`);
       r.placed = s.call("bob", "create", { id: "crate-2", model: "crate", place: { at: [12.5, 12.5] } });
       r.placedY = s.w().state().entities["crate-2"]?.c.transform?.pos?.[1];
       s.call("olive", "create", { id: "stuck", model: "crate", components: { transform: T0([14, floorTop, 12.5]) } });   // in the east wall
-      r.stuckWarn = (s.call("olive", "check", { id: "stuck" }).warnings ?? []).map((x: any) => `${x.kind}:${x.with ?? ""}`);
+      r.stuckWarn = (s.call("olive", "lint", { id: "stuck" }).warnings ?? []).map((x: any) => `${x.kind}:${x.with ?? ""}`);
       r.book = show(r.book); r.placed = show(r.placed);
       return r; },
     good: (o) => o.book === "ok" && o.bookWarn.length === 0 && o.placed === "ok" && Math.abs(o.placedY - 0.1) < 0.011 && o.stuckWarn.includes("overlap:home") },
@@ -207,7 +207,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const thing = s.w().state().entities.bell.c;
       const plan = NS.planNewScript({ id: "bell", name: "Ring Me!", text: NS.TEMPLATES.use, trigger: "use", comps: NS.TEMPLATE_SCOPE.use.comps, say: NS.TEMPLATE_SCOPE.use.say }, thing);
       if (plan.errors.length) return { errors: plan.errors };
-      const up = s.call("olive", plan.upload.tool, plan.upload.args);
+      const up = s.call("olive", plan.upload.verb, plan.upload.args);
       const ops = plan.install(up.src); const inst = s.call("olive", "batch", { ops });
       const acts = s.w().entries.filter((e: any) => e.kind === "act" && e.verb === "batch").length;
       const use = s.call("vic", "use", { id: "bell" });

@@ -133,7 +133,7 @@ function v1Reactions(rx: any) {
   for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h?.component === "openable" ? { ...h, component: "door" } : h;
   return out;
 }
-// v1's fly and gen grants are the fly and generate switches in v4 (translate-v1 toCan, @4/@7): read back as v1 wrote them
+// v1's fly and gen grants are the fly and generate permissions in v4 (translate-v1 toCan, @4/@7): read back as v1 wrote them
 function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v.can !== "object") return v;
   const { can, ...rest } = v; const { fly, generate, ...left } = can; const out: any = { ...rest };
   if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }

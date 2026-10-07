@@ -40,7 +40,7 @@ const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail
 const LOG = () => path.join(worldsDir, WORLD, "v4.jsonl");
 const entries = () => readLog(fs.readFileSync(LOG()));
 // my identity is the founder's opaque id (round-2 R1): the actor of the world's founding act
-const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "new")?.actor;
+const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "create-world")?.actor;
 // my acts that CHANGED something: a refused request is recorded too (an act carrying {refused}, round-2 R7), and is
 // counted apart (myRefused), so "nothing was written" below means no change, with the attempt on the record
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY() && !e.body?.refused);
@@ -64,14 +64,14 @@ try {
   // ---- a second builder over a plain socket (an agent's view: it still reads the projection) ----
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0;
   let BOB = "";   // bob's identity: the opaque id his snapshot tells him (round-2 R1); a role is granted to it, never to "bob"
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "v4-result") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
-  const bobReq = (tool: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
     window.__refused = []; window.__asked = [];
-    window.__v1sent = []; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m && (m.type === 'verb' || (m.type === 'v4' && typeof m.verb === 'string'))) __v1sent.push(m.verb); } catch {} return send.call(this, d); }; }
+    window.__v1sent = []; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m && m.type === 'verb') __v1sent.push(m.verb); } catch {} return send.call(this, d); }; }
     import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); m.bus.on('v4-lock-asked', (e) => __asked.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
@@ -273,7 +273,7 @@ try {
   { const r0 = await evalJson(`__refused.length`);
     await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor' };
       const t = (await import('/lib/v4edit.js')).compsOf('${crate}').transform;
-      globalThis.__vis = (await import('/lib/v4edit.js')).send({ tool: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
+      globalThis.__vis = (await import('/lib/v4edit.js')).send({ verb: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
       return true; })()`);
     const refusedV = await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'locked'`);
     const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
@@ -290,7 +290,7 @@ try {
   // on the plinth's top. The old code added a world point to a local offset and set it as the local position (so the
   // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
   { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
-    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ tool: "delete", args: { id } })), throughLock: true })).ok, roots);
+    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ verb: "delete", args: { id } })), throughLock: true })).ok, roots);
     // the view must hold still while the test aims (the body may still be settling, and the camera chases it)
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
@@ -608,7 +608,7 @@ try {
     let carlId = "";
     // CP4 (setup) carl visits, speaks and leaves, BEFORE the page reconnects (CP6): a page that never saw him arrive
     { const carl = new WebSocket(BASE.replace("http", "ws") + "/ws"); await new Promise((r, j) => { carl.onopen = r; carl.onerror = j; });
-      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.v4?.you; carl.send(JSON.stringify({ type: "v4", id: 1, tool: "say", args: { text: "carl was here" } })); } };
+      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.v4?.you; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
       carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", v4fold: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
     // CP6 a line typed while reconnecting is queued, then sent (v4 dropped it as 'offline')

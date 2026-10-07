@@ -59,7 +59,7 @@ async function start(extra = {}) {
 /** A socket that can join more than once (C1 needs two joins on ONE socket). */
 async function sock(port, headers = undefined) {
   const ws = headers ? new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers }) : new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
-  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") waiters.get(m.id)?.(m.reply); };
+  ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
   let closed = null; ws.onclose = (e) => { closed = e.code; };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const s = {
@@ -67,7 +67,7 @@ async function sock(port, headers = undefined) {
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true, ...extra }));
       for (let i = 0; i < 60; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null) break; await sleep(50); }
       await sleep(50); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
-    req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
+    req: (tool, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb: tool, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
     raw: (m) => ws.send(JSON.stringify(m)),
     close: () => ws.close(),
   };
@@ -211,12 +211,12 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   await own.req("set", { id: "@world", component: `roles:${you(jf)}`, value: { role: "moderator" } });
   await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } });
   await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", can: { generate: true } } }); await sleep(300);
-  // RS1: your-rights is the door's {role, rank, switches}; the v1 rightsOf merge is gone (a Commons-like stranger builds and generates)
+  // RS1: your-rights is the door's {role, rank, permissions}; the v1 rightsOf merge is gone (a Commons-like stranger builds and generates)
   { const r = (sock) => [...sock.msgs].reverse().find((m) => m.type === "your-rights")?.rights;
     const or = jo.snapshot?.yourRights, fr = r(fern), mr = r(moss);
-    ok(or?.rank === 255 && or.switches?.includes("ban") && or.switches?.includes("fly") && fr?.role === "moderator" && fr.rank === 200 && fr.switches?.includes("mute")
-      && mr?.role === "builder" && mr.switches?.includes("build") && mr.switches?.includes("generate") && mr.gen === true && !mr.switches?.includes("mute"),
-      "RS1 your-rights comes from the door: owner 255 with every switch; moderator 200 with mute; a stranger under default-role {builder, can: {generate}} builds and generates", [or, fr, mr]); }
+    ok(or?.rank === 255 && or.permissions?.includes("ban") && or.permissions?.includes("fly") && fr?.role === "moderator" && fr.rank === 200 && fr.permissions?.includes("mute")
+      && mr?.role === "builder" && mr.permissions?.includes("build") && mr.permissions?.includes("generate") && mr.gen === true && !mr.permissions?.includes("mute"),
+      "RS1 your-rights comes from the door: owner 255 with every permission; moderator 200 with mute; a stranger under default-role {builder, can: {generate}} builds and generates", [or, fr, mr]); }
   // RS2: voice-moderate is the door's identity-keyed, logged mute; a name nobody present answers to mutes nobody
   { const k = own.msgs.length;
     fern.raw({ type: "voice-moderate", id: "Nobody", muted: true }); await sleep(300);
@@ -234,7 +234,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const diag2 = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
     ok(jm2.snapshot?.yourRights?.muted?.channels?.includes("voice") && !(diag1.moderatorMuted ?? []).includes("Moss") && (diag2.moderatorMuted ?? []).includes("Moss"),
       "RS2 a voice mute survives a reconnect: released from the display id while they're gone, re-applied the moment they join, and the person is told", [jm2.snapshot?.yourRights, diag1.moderatorMuted, diag2.moderatorMuted]);
-    // a builder (no mute switch) can't, and an unmute by the moderator lifts it at the SFU
+    // a builder (no mute permission) can't, and an unmute by the moderator lifts it at the SFU
     wren.raw({ type: "voice-moderate", id: "Moss", muted: false }); await sleep(300);
     const still = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? [];
     fern.raw({ type: "voice-moderate", id: "Moss", muted: false }); await sleep(400);
@@ -258,7 +258,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     m4.raw({ type: "pose", pose: { p: [1, 0, 1], r: 0 } }); await sleep(400);
     const framed = own.msgs.slice(gk).some((m) => m.type === "frame" && m.poses && "Moss" in m.poses);
     await own.req("say", { text: "the secret word is heron" }); await sleep(400);
-    const heard = m4.msgs.filter((m) => m.type === "v4-log").flatMap((m) => m.entries).filter((e) => e?.kind === "say");
+    const heard = m4.msgs.filter((m) => m.type === "log").flatMap((m) => m.entries).filter((e) => e?.kind === "say");
     const leak = JSON.stringify(heard).includes("heron");
     const mSay = await m4.req("say", { text: "boo" });
     const rejoin = await sock(S4.port); const jr = await rejoin.join("heath", "Moss", { agentToken: "tok-moss" }); await sleep(300);   // a takeover: the same ghost, fresh snapshot

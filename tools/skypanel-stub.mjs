@@ -7,8 +7,8 @@ export const bus = {
 };
 export const report = (what, e) => { throw new Error(`${what}: ${e}`); };
 export const defsRegistry = async () => ({ skyPresets: {}, skyClocks: {} });
-// v4edit.js: the panel's commit is ONE door request (sendOps([{tool: 'sky', args}])), recorded as [tool, args]
-export const sendOps = async (ops) => { for (const o of [].concat(ops)) S.sent.push([o.tool, o.args]); return { ok: true }; };
+// v4edit.js: the panel's commit is ONE door request (sendOps([{verb: 'sky', args}])), recorded as [tool, args]
+export const sendOps = async (ops) => { for (const o of [].concat(ops)) S.sent.push([o.verb, o.args]); return { ok: true }; };
 export const flashHint = () => {};
 
 export const S = { logged: null, args: {}, previewing: false, impl: 'eidoverse', cloudQuality: 'medium', sent: [] };
