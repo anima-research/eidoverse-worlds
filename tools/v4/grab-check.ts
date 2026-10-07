@@ -252,7 +252,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const n1 = s.entries().length;
       const d = s.call("vic", "drop", { id: "lantern" }); const after = since(s, n1);
       return { g: show(g), lift, d: show(d), after, at: tf(s, "lantern")?.pos, launches: s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").length, carrier: carrier(s) }; },
-    good: (o) => o.g === "ok" && o.lift.includes("sim:lift") && o.d === "ok" && JSON.stringify(o.after) === '["act:put","state:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
+    good: (o) => o.g === "ok" && o.lift.includes("sim:lift") && o.d === "ok" && JSON.stringify(o.after) === '["act:put","change:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
   { id: "G4", what: "a throw in a world with no physics is a drop that says so (a VR hand lets go with its velocity; it was refused and stuck in the hand)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
@@ -322,7 +322,7 @@ const cases: Case[] = [
       const at = tf(s, "torch").pos; s.call("vic", "move", { to: [0, 0, 0.5] }, 1000); s.call("vic", "grab", { id: "torch" }); const n1 = s.entries().length;
       const t = s.call("vic", "throw", { id: "torch", v: [0, 2, 3] });
       return { home, stampNote: c.notes?.some((n: any) => n.field === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
-    good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["act:put","act:return-home","state:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["act:put","act:return-home","state:set"]' && !o.carrier.disagree },
+    good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["act:put","act:return-home","change:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["act:put","act:return-home","change:set"]' && !o.carrier.disagree },
   { id: "R4", what: "returnAfter: unheld that long after a hand moved it, the next request sends it home, once; not while held; an edit's move doesn't count", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
@@ -342,7 +342,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "ball", component: "grabbable", value: { ...comp(s, "ball", "grabbable"), home: { pos: [0, 0, 0], q: [0, 0, 0, 1] } } });
       s.advance(60000); const n3 = s.entries().length; s.call("vic", "look", {});
       return { early, back, first, again, whileHeld, home2, afterEdit: since(s, n3), at: tf(s, "ball").pos }; },
-    good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","state:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
+    good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
   { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to, slot}, the socket's pose); undo takes it back out", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
@@ -376,7 +376,7 @@ const cases: Case[] = [
       const d = s.call("vic", "drop", { id: "key", pos: [0.1, 0.8, 0.1] }); const near = since(s, n0); const par = comp(s, "key", "parent");
       s.call("vic", "grab", { id: "key" }); const n1 = s.entries().length; const f = s.call("vic", "drop", { id: "key", pos: [0.9, 1, 0.9] }); s.call("vic", "wait", {}, 6000);
       return { d: show(d), near, par: par?.slot, f: show(f), far: since(s, n1).slice(0, 2), carrier: carrier(s) }; },
-    good: (o) => o.d === "ok" && JSON.stringify(o.near) === '["act:put","state:batch"]' && o.par === "hook" && o.f === "ok" && JSON.stringify(o.far) === '["act:drop","sim:launch"]' && !o.carrier.disagree },
+    good: (o) => o.d === "ok" && JSON.stringify(o.near) === '["act:put","change:batch"]' && o.par === "hook" && o.f === "ok" && JSON.stringify(o.far) === '["act:drop","sim:launch"]' && !o.carrier.disagree },
   { id: "R8", what: "sockets.accepts/radius are checked: radius 5 and an empty accepts are refused", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", place: { at: [0, 0] } });
       const a = s.call("olive", "set", { id: "rack", component: "sockets", value: { hook: { pos: [0, 1, 0], accepts: ["key"], radius: 5 } } });
@@ -445,7 +445,7 @@ const cases: Case[] = [
       D.settleOrphans?.(w2, ["ann"]); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.actor}:${e.verb}:${e.body?.id}:${L[e.cause]?.verb ?? "-"}`);
       const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
       return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
-    good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["door:return-held:ball:lift", "door:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
+    good: (o) => JSON.stringify(o.acts.sort()) === JSON.stringify(["system:return-held:ball:lift", "system:return-home:torch:lift"]) && o.again === 0 && o.kept && JSON.stringify(o.ball) === "[0,0,0]" && !o.carrier.disagree },
   // ---------------- U: use while held, and the grab / release events (slice 5) ----------------
   { id: "U1", what: "use while held: the holder's use with no action fires grabbable.use's down, with phase up its up (each one act, the act saying held/hand/phase); held: true from someone not holding is refused", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },
@@ -482,7 +482,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0.8, 0, 0.6] });
       s.call("vic", "grab", { id: "flag" }); s.call("vic", "drop", { id: "flag", pos: [0.9, 1, 0.6] });
       s.call("vic", "grab", { id: "flag", hand: "left" }); s.call("vic", "drop", { id: "flag", pos: [0.05, 0.8, 0.05] });
-      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "bhv:flag").map((e: any) => [e.body.on, s.entries()[e.cause]?.verb ?? s.entries()[e.cause]?.kind]);
+      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:flag").map((e: any) => [e.body.on, s.entries()[e.cause]?.verb ?? s.entries()[e.cause]?.kind]);
       return { r: [show(r1), show(r2)], log: comp(s, "flag", "log"), bystander: comp(s, "bystander", "log") ?? null, acts }; },
     good: (o) => o.r.every((x: string) => x === "ok") && JSON.stringify(o.log) === '["grab vic right","release drop","grab vic left","release snap rack/hook"]' && o.bystander === null
       && JSON.stringify(o.acts.map((x: any) => x[0])) === '["grab","release","grab","release"]' && o.acts[1][1] === "put" && o.acts[0][1] !== "put" },
@@ -492,7 +492,7 @@ const cases: Case[] = [
       install(s, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["how"] }, on: ["release"] });
       const bad = install(s, "olive", "ball", "bad", `world.on("grabbed", () => {});\n`, { scope: { ids: "self", comps: ["x"] }, on: ["grabbed"] });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "throw", { id: "ball", v: [0, 2, 2] });
-      const sact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "bhv:ball").at(-1);
+      const sact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
       return { how: comp(s, "board", "how"), cause: s.entries()[sact?.cause]?.verb, bad: code(bad) }; },
     good: (o) => o.how === "throw" && o.cause === "throw" && o.bad === "shape" },
   { id: "U5", what: "the presence tier: a pose carries use {id, hand} while a holder presses (every receiver draws the thing's fx); a malformed use costs only that field", run(s) {
@@ -543,7 +543,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "ban", { who: "vic" });
       const w2 = s.reopen(s.w().presence); T += 100; process.env.V4_NOW = String(T); D.settleOrphans?.(w2, []);
-      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "door").map((e: any) => e.verb);
+      const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => e.verb);
       return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
   { id: "F3", what: "use.up from whoever pressed down is taken after the thing left their hand (taken by someone else): the hose turns off", run(s) { cast(s);

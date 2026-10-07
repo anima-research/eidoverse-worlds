@@ -141,16 +141,16 @@ def governance(data):
         current = rank_at(seq)
         if "fork" in b:
             frm, to = int(b["fork"]["seq"]) + 1, seq - 1
-            state_count = sum(1 for i in range(frm, to + 1) if isinstance(entries[i], dict) and entries[i].get("kind") == "state")
+            change_count = sum(1 for i in range(frm, to + 1) if isinstance(entries[i], dict) and entries[i].get("kind") == "change")
             top = rank_at(frm)
             for f0, rk in branches:
                 if frm <= f0 <= to and lower(rk, top):
                     top = rk
-            ev["orphaned"] = {"from": frm, "to": to, "stateCount": state_count, "window": N}
+            ev["orphaned"] = {"from": frm, "to": to, "stateCount": change_count, "window": N}
             if not lower(rank, top):
                 ev["why"] = "a rewind needs a higher rank than the branch it orphans"; continue
-            if state_count >= N and not every_key(tiers, 0, signed):
-                ev["why"] = "the orphaned branch holds %d state entries, not fewer than the window (%d): that needs every tier-0 key" % (state_count, N); continue
+            if change_count >= N and not every_key(tiers, 0, signed):
+                ev["why"] = "the orphaned branch holds %d change entries, not fewer than the window (%d): that needs every tier-0 key" % (change_count, N); continue
             ev["act"] = "rewind"
         elif "key" not in b:
             ev["act"] = "owners"

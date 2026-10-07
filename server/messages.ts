@@ -65,18 +65,18 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
     const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
-    if (msg.behavior != null) {
+    if (msg.script != null) {
       // one script's own log ring + status — the author's console
-      const b = c.world.bhv.inspect(String(msg.behavior));
+      const b = c.world.scripts.inspect(String(msg.script));
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        behavior: String(msg.behavior),
-        status: b?.status ?? "no such behavior",
+        script: String(msg.script),
+        status: b?.status ?? "no such script",
         events: (b?.ring ?? []).slice(-limit).map((r) => ({ ts: r.ts, kind: "script-log", line: r.line })) }));
       return;
     }
-    if (msg.behaviors) {   // the roster: what runs here, and is it alive
+    if (msg.scripts) {   // the roster: what runs here, and is it alive
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        events: c.world.bhv.list().map((b) => ({ ts: 0, kind: "behavior", ...b })) }));
+        events: c.world.scripts.list().map((b) => ({ ts: 0, kind: "script", ...b })) }));
       return;
     }
     const kinds = Array.isArray(msg.kinds) && msg.kinds.length ? new Set(msg.kinds.map(String)) : null;

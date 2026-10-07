@@ -14,7 +14,7 @@
 //       would refuse, a field in a component the thing hasn't got, a toggle of a number, a push on a spinner); a use
 //       whose component was removed since says so and writes nothing
 //   M   motion: the door takes spin/orbit/path's conventional fields; the evaluator honours an orbit's period; the
-//       importer translates rpm and keeps center/face/period/points instead of parking them in legacy:motion
+//       importer translates rpm and keeps center/face/period/points instead of parking them in imported:motion
 //   H   help text: physics.who and grabbable.who default to visitor (3b3ad8e2), and every place an agent reads says so
 //   P   people: a refusal in a person's words (no code, no tool syntax, things by label); warnings by label
 // @ts-nocheck
@@ -292,15 +292,15 @@ await C("M3", "an orbit's period sets its speed (a 4 s lap turns 90° in 1 s), e
   const rate = sc.groups.find((g: any) => g.group === "motion")?.fields.find((f: any) => f.k === "degPerSec")?.value;
   return [quarter && spin && rate === 90, { o: o.pos, spin, rate }];
 });
-await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/period and a path's points/speed/loop stay in the motion (no legacy:motion); the door takes each", () => {
+await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/period and a path's points/speed/loop stay in the motion (no imported:motion); the door takes each", () => {
   const r = TV1.translate(v1(
     { verb: "spawn", args: { id: "fan", lib: "crate", pos: [0, 0, 0] } }, { verb: "motion", args: { id: "fan", type: "spin", rpm: 3, axis: "y" } },
     { verb: "spawn", args: { id: "boat", lib: "crate", pos: [5, 0, 0] } }, { verb: "motion", args: { id: "boat", type: "orbit", center: [5, 0, 5], radius: 3, period: 20, face: false } },
     { verb: "spawn", args: { id: "cart", lib: "crate", pos: [9, 0, 0] } }, { verb: "motion", args: { id: "cart", type: "path", points: [[9, 0, 0], [9, 0, 6]], speed: 0.5, loop: "pingpong", face: true } }));
-  const v = finalOf(r); const legacy = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("legacy:")).map((k) => `${id}.${k}`));
+  const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`));
   const W = world(); const made = ["fan", "boat", "cart"].map((id) => why(W.call("create", { id, model: "crate", components: { motion: (({ t0, ...m }) => m)(v[id].motion) }, place: { at: [id.length, 0] } })));
   return [r.stats.divergences === 0 && v.fan.motion.degPerSec === 18 && !("rpm" in v.fan.motion) && v.boat.motion.period === 20 && v.boat.motion.face === false && v.boat.motion.center?.[2] === 5
-    && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !legacy.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, legacy, made, div: r.stats.divergences }];
+    && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];
 });
 await C("M5", "the editor: a rate typed on an orbit drops its period (one speed); Add Path starts where the thing stands", () => {
   const ent = { lib: "crate", pos: [3, 0, -2], comp: { motion: { type: "orbit", radius: 1, period: 4 } } };

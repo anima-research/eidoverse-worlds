@@ -1,3 +1,3 @@
-{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
-{"world": "sha256:b156bd1a1b831880101012e8b405385b7d1b0eb298553688fb4d04c79982c0b0", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
-{"world": "sha256:b156bd1a1b831880101012e8b405385b7d1b0eb298553688fb4d04c79982c0b0", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}}
+{"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
+{"world": "sha256:db1b6d596f66cadf9089fc2573ae486d021b0ebc41b20f73fb70c050c16c7489", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"world": "sha256:db1b6d596f66cadf9089fc2573ae486d021b0ebc41b20f73fb70c050c16c7489", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": "create", "body": {"id": "a"}}

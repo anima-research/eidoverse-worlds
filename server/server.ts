@@ -196,7 +196,7 @@ function expel(w: World, target: Client, why: string, until?: number | null) {
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
   // a ghost already left everyone's view (and the scripts' senses) when it became one: never a second leave
-  if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id, target.v4id); }
+  if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.v4id); }
   if (wasEmbodied && target.v4id) w.v4?.departed(target.v4id); // what they held drops into the world (design 20, orphans)
 }
 
@@ -227,7 +227,7 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
 
 registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
-    try { w.bhv.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
+    try { w.scripts.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
   }
 } });
 
@@ -353,7 +353,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // sub underneath it survives renames).
     c.id = (auth ? auth.name : String(msg.id ?? c.id)).slice(0, LIMITS.ID_LEN);
     // Actor names are the log's ink — refuse the ones that forge system
-    // or script authorship ("world" authors grants; "bhv:*" authors
+    // or script authorship ("world" authors grants; "script:*" authors
     // script effects; the behavior loop-guard trusts that prefix), and
     // strip control characters that would corrupt every future reader.
     // (Hesperus finding #3: an unauthenticated join as "world" produced
@@ -362,7 +362,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // M3: format characters (zero-width, bidi overrides) and compatibility forms are how one name passes for another
     c.id = c.id.normalize("NFKC").replace(/\p{Cf}/gu, "").trim();
     // H2: an identity is never a name — a name shaped like one (u-…) would pass for the person who wears it
-    if (!c.id || /^(world|\*|door)$/i.test(c.id) || /^bhv:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
+    if (!c.id || /^(world|\*|system|sim)$/i.test(c.id) || /^script:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
       return null;
@@ -666,8 +666,8 @@ export function sanctionSweep(w: World) {
     const was = c.ghostHidden ?? false;
     if (ghost !== was) {
       c.ghostHidden = ghost;
-      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.bhv.onPresence("leave", c.id, c.v4id); }
-      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, v4id: c.v4id, ...(c.anonymous ? { guest: true } : {}) }, c); w.bhv.onPresence("enter", c.id, c.v4id); }
+      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence("leave", c.id, c.v4id); }
+      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, v4id: c.v4id, ...(c.anonymous ? { guest: true } : {}) }, c); w.scripts.onPresence("enter", c.id, c.v4id); }
     }
     const mine = JSON.stringify([ghost, x?.mute?.until ?? null, x?.mute?.channels ?? null]);
     if (c.sanctionKey !== mine) { const first = c.sanctionKey === undefined; c.sanctionKey = mine;
@@ -792,7 +792,7 @@ const server = Bun.serve({
               try { if (c.v4id && !c.anonymous) c.world.rememberPose(c.v4id, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
-            if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.bhv.onPresence("leave", c.id, c.v4id); }   // a ghost left already
+            if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.v4id); }   // a ghost left already
             if (!c.superseded && c.v4id) c.world.v4?.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
@@ -861,7 +861,7 @@ const server = Bun.serve({
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
-              if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.bhv.onPresence("leave", c.id, c.v4id); }   // a ghost left already
+              if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.v4id); }   // a ghost left already
               if (c.v4id) c.world.v4?.departed(c.v4id);
               reapAuxLegs(c.world, c, "primary traveled");
             }
@@ -884,7 +884,7 @@ const server = Bun.serve({
           if (w.v4) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
           if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.v4id ? { v4id: c.v4id } : {}), ...(w.v4 && c.anonymous ? { guest: true } : {}) }, c);
           if (w.v4) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
-          if (!c.spectator && !c.ghostHidden) w.bhv.onPresence("enter", c.id, c.v4id);   // scripts don't sense a ghost
+          if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.v4id);   // scripts don't sense a ghost
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator && !c.ghostHidden) {   // a ghost gets held whispers when the ghost ends (its next join)

@@ -21,7 +21,7 @@ the door appends your request as an `act` entry and its result as a `state`
 entry caused by it; refused, it answers `{ok: false, refused: {code,
 reason, teach}}` — the `teach` line says how to get what you wanted.
 
-The world itself is **entities carrying components**. A state entry does
+The world itself is **entities carrying components**. A change entry does
 only four things: `create` an entity, `set` one component's value,
 `delete` a component or an entity, or `batch` a flat list of those. The
 fold (`shared/v4/fold.js`) knows nothing about any component's meaning; it
@@ -445,7 +445,7 @@ trigger. `grabbable.who` says who may pick it up (default visitor),
 Flight needs the world to run physics: `set {id: '@world', component:
 'sim', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
 entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and
-the door LOGS where it came to rest (a state entry caused by the launch);
+the door LOGS where it came to rest (a change entry caused by the launch);
 `wait` reports rests. Every client folds the same launch with the same
 engine, so what you see in the air is where it lands, bit for bit
 (spec/PROTOCOL_v2.md). The door stamps each thing's measured shape into
@@ -567,8 +567,8 @@ ripple every resident's reconnect.
 translated once, by an operator, into a new v4 world:
 `WORLDS_DIR=… bun tools/v4/world.ts translate <old world> <new name>`. The
 old log is read, never written. Its entries appear in the new world's
-history as `legacy` acts (`{verb, args, from}`), and fields v4 has no
-component for ride along as `legacy:<name>`. Old runtime scripts are kept
+history as `imported` acts (`{verb, args, from}`), and fields v4 has no
+component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
 `needs-reinstall` (docs/SCRIPTS-v4.md says how to port one).
 
@@ -635,7 +635,7 @@ shallowest first:
 - **`world_history {verbs?, before?, after?, limit?}`** (MCPL) — raw log
   entries. The log is the world's source, so reading it is reading the
   world. Filter by the door's words (`create`, `set`, `delete`, `place`,
-  `use`, `undo`, `say`, `batch`…); a translated world's `legacy` acts match
+  `use`, `undo`, `say`, `batch`…); a translated world's `imported` acts match
   their old verb too. A script's writes carry `cause` (the act that woke
   it) — follow the chain back to a person. `door {tool: "history", args:
   {id}}` reads one thing's own acts, and `inspect` says who last changed
@@ -647,9 +647,9 @@ shallowest first:
   In-memory ring, recent events only, visible to everyone in the world.
   **Check here first** when something doesn't do what you expected. A
   script's own failures go to its status view, next.
-- **`world_debug {behavior: "<entity>/<name>"}`** — ONE script's status
+- **`world_debug {script: "<entity>/<name>"}`** — ONE script's status
   (`active`, `asleep`, `dormant` and why, `paused`…) and its recent
-  activations; `{behaviors: true}` lists every script here.
+  activations; `{scripts: true}` lists every script here.
   `door {tool: "scripts", args: {id}}` gives the same, plus the last lines
   of its `world.log()` console. Components (motion, sockets, reactions)
   are data, not scripts: they never appear in the script roster.

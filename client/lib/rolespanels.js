@@ -67,7 +67,7 @@ async function paintLog(body, { more = false } = {}) {
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the log")}</p>`; return; }
   const recs = (r.records ?? []).filter((x) => !modVerbs.size || modVerbs.has(x.verb) || (modVerbs.has('ban') && x.verb === 'unban') || (modVerbs.has('mute') && x.verb === 'unmute') || (modVerbs.has('ghost') && x.verb === 'unghost'));
   const line = (x) => `<div class="rp-row"><div class="rp-main"><span class="rp-dim">${new Date(x.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span> `
-    + `<b>${esc(x.by ?? nameOf(x.actor))}</b>${x.actor && x.actor !== 'door' ? badge(x.actor) : ''} <span class="rp-verb" data-verb="${esc(x.verb)}">${esc(x.verb === 'role' ? (x.role ? `made ${x.role}` : 'took a role from') : x.verb)}</span> <b>${esc(x.name ?? nameOf(x.who))}</b></div>`
+    + `<b>${esc(x.by ?? nameOf(x.actor))}</b>${x.actor && x.actor !== 'system' ? badge(x.actor) : ''} <span class="rp-verb" data-verb="${esc(x.verb)}">${esc(x.verb === 'role' ? (x.role ? `made ${x.role}` : 'took a role from') : x.verb)}</span> <b>${esc(x.name ?? nameOf(x.who))}</b></div>`
     + `<div class="rp-sub">${[x.reason, x.channels ? x.channels.join(' + ') : null, x.until !== undefined ? `ends ${ends(x.until)}` : null, x.verb === 'auto-cooldown' ? x.why : null].filter(Boolean).map(esc).join(' · ')}</div></div>`;
   const head = `<div class="rp-filters"><input type="search" class="rp-search" placeholder="person (name or u-…)" value="${esc(modWho ? nameOf(modWho) : '')}">`
     + `<div class="pm-chips">${VERB_CHIPS.map(([v, l]) => `<button type="button" class="pm-chip" data-v="${v}" aria-pressed="${modVerbs.has(v)}">${l}</button>`).join('')}</div></div>`;
@@ -199,7 +199,7 @@ function paintAccess(body) {
   const a = wc().access ?? {}, dr = wc()['default-role'] ?? {}; const edit = isOwner();
   const roles = R.rolesOf(wc()).filter((r) => r.id !== 'owner');
   const def = R.roleDef(wc(), dr.role ?? 'visitor');
-  const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.gen) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.gen) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
+  const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
   const sel = (k, opts, v) => `<select data-k="${k}" ${edit ? '' : 'disabled'}>${opts.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   body.innerHTML = `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
     + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'visitor')}</label>`
@@ -235,14 +235,16 @@ function paintPlaces(body) {
     { tool: 'set', args: { id: '@world', component: 'spawn', value: { pos: read('spawn'), ...(body.querySelector('[data-k=radius]').value ? { radius: Number(body.querySelector('[data-k=radius]').value) } : {}) } } },
     { tool: 'set', args: { id: '@world', component: 'bounds', value: { min: read('min'), max: read('max') } } }], label: 'places' }, 'places', () => paintPlaces(body)));
 }
+// what translation carried from an older world: imported:<k>, imported-behavior:<k>, imported-bans:<id>, imported-epoch
+const IMPORTED = /^imported(?:-[a-z]+)?(?::|$)/;
 function paintOld(body) {
   const st = v4.st?.entities ?? {}; const c = wc(); const edit = isOwner();
-  const legacy = Object.keys(c).filter((k) => k.startsWith('legacy:') || k.startsWith('behavior:'));
-  const things = Object.entries(st).filter(([id, e]) => id !== '@world' && Object.keys(e.c ?? {}).some((k) => k.startsWith('legacy:')));
+  const legacy = Object.keys(c).filter((k) => IMPORTED.test(k));
+  const things = Object.entries(st).filter(([id, e]) => id !== '@world' && Object.keys(e.c ?? {}).some((k) => IMPORTED.test(k)));
   body.innerHTML = (!legacy.length && !things.length) ? '<p class="rp-note">nothing carried over from an older world</p>'
     : `<p class="rp-dim">what translation from the old world carried, kept as it was; the old behaviours don't run in v4 (re-install them as scripts)</p>`
-    + legacy.map((k) => `<div class="rp-row"><div class="rp-main"><code>${esc(k)}</code> ${k.startsWith('behavior:') ? '<span class="rp-status" data-s="needs-reinstall">not running yet</span>' : ''}</div>${edit ? `<button type="button" class="rp-btn" data-rm="${esc(k)}">Remove</button>` : ''}</div>`).join('')
-    + (things.length ? `<h4 class="rp-h">Things (${things.length})</h4>` + things.slice(0, 50).map(([id, e]) => `<div class="rp-row"><div class="rp-main"><b>${esc(id)}</b> ${Object.keys(e.c).filter((k) => k.startsWith('legacy:')).map((k) => `<code>${esc(k)}</code>`).join(' ')}</div></div>`).join('') : '')
+    + legacy.map((k) => `<div class="rp-row"><div class="rp-main"><code>${esc(k)}</code> ${k.startsWith('imported-behavior:') ? '<span class="rp-status" data-s="needs-reinstall">not running yet</span>' : ''}</div>${edit ? `<button type="button" class="rp-btn" data-rm="${esc(k)}">Remove</button>` : ''}</div>`).join('')
+    + (things.length ? `<h4 class="rp-h">Things (${things.length})</h4>` + things.slice(0, 50).map(([id, e]) => `<div class="rp-row"><div class="rp-main"><b>${esc(id)}</b> ${Object.keys(e.c).filter((k) => IMPORTED.test(k)).map((k) => `<code>${esc(k)}</code>`).join(' ')}</div></div>`).join('') : '')
     + (edit ? '' : ro());
   body.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = () => act('delete', { id: '@world', component: b.dataset.rm }, `remove ${b.dataset.rm}`, () => paintOld(body)); });
 }

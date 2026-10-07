@@ -6,15 +6,16 @@
 //   - ids, roles and parent targets come back through names.dec (the translator's x-- escapes undone);
 //   - transform → pos / q (+ yaw = q's heading) / scale; a non-uniform scale also rides as scale3 [x,y,z] (R 10-04);
 //   - parent {to, order, slot?} (transform LOCAL to it) → parent {to, slot?, offset, q};
-//   - model → lib; every other component → comp.<name>; legacy:<field> (a field an imported world's translation carried) → that field;
-//   - @world: roles:<id> → roles, default-role → roles['*'], bans:<id> → bans, palette:<k> → assets,
-//     sky/terrain/grass → themselves, legacy:<k> → st[k]. Not shown: sim, epoch, about, bounds, spawn, behavior:<k>.
+//   - model → lib; every other component → comp.<name>; imported:<field> (a field an imported world's translation carried) → that field;
+//   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, palette:<k> → assets,
+//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: sim, imported-epoch, about, bounds, spawn, imported-behavior:<k>.
 import { dec } from "./names.js";
 import { qNorm, qHeading } from "../rot.js";
 
 export const idOut = (id) => dec(id) ?? id;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const HIDDEN_WORLD = new Set(["sim", "epoch", "about", "bounds", "spawn"]);
+const HIDDEN_WORLD = new Set(["sim", "imported-epoch", "about", "bounds", "spawn"]);
+const IMP = "imported:", IMP_BANS = "imported-bans:";
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
 /** One v4 entity's components as the record readers use. */
@@ -32,7 +33,7 @@ export function viewOf(id, c) {
   if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.slot === "string" ? { slot: p.slot } : {}), offset: rec.pos.slice(), q: qn.slice() };
   for (const [k, v] of Object.entries(c)) {
     if (k === "model" || k === "transform" || k === "parent") continue;
-    if (k.startsWith("legacy:")) { rec[idOut(k.slice(7))] = clone(v); continue; }
+    if (k.startsWith(IMP)) { rec[idOut(k.slice(IMP.length))] = clone(v); continue; }
     (rec.comp ??= {})[idOut(k)] = clone(v);
   }
   return rec;
@@ -46,13 +47,13 @@ export function viewState(v4st, { recentChat = [], chatTotal = 0 } = {}) {
     const c = v4st.entities[id].c;
     if (id === "@world") {
       for (const [k, v] of Object.entries(c)) {
-        if (HIDDEN_WORLD.has(k) || k.startsWith("behavior:")) continue;
+        if (HIDDEN_WORLD.has(k) || k.startsWith("imported-behavior:")) continue;
         if (k === "sky" || k === "terrain" || k === "grass") st[k] = clone(v);
         else if (k === "default-role") st.roles["*"] = clone(v);
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
-        else if (k.startsWith("bans:")) st.bans[idOut(k.slice(5))] = clone(v);
+        else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);
         else if (k.startsWith("palette:")) st.assets.push(v && typeof v === "object" && Object.keys(v).length ? clone(v) : idOut(k.slice(8)));
-        else if (k.startsWith("legacy:")) st[idOut(k.slice(7))] = clone(v);
+        else if (k.startsWith(IMP)) st[idOut(k.slice(IMP.length))] = clone(v);
       }
       continue;
     }

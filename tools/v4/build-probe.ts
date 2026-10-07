@@ -105,7 +105,7 @@ try {
     const after = disk();
     check("ST6 …then my Ctrl+Z writes nothing over bob's building, and house-a is still untouched",
       JSON.stringify(after.entities["house-b"].c.structure) === JSON.stringify(theirs) && JSON.stringify(after.entities["house-a"].c.structure) === A0,
-      { written: entries().slice(nE).filter((e) => e.kind === "state").map((e) => e.body?.id), refused: await evalJson(`__refused.slice(-1).map((r) => r.text)`) });
+      { written: entries().slice(nE).filter((e) => e.kind === "change").map((e) => e.body?.id), refused: await evalJson(`__refused.slice(-1).map((r) => r.text)`) });
     const panel = await evalJson(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).filter((t) => /undo building/i.test(t))`);
     check("ST7 the Create panel has no second undo ('undo building edit'): Ctrl+Z is the one undo", Array.isArray(panel) && panel.length === 0, panel);
     await page(`const s = await import('/lib/structure_ui.js'); s.setTool(null); (await import('/lib/build.js')).deselectAll(); return true;`);

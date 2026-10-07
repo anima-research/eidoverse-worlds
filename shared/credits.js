@@ -4,8 +4,8 @@
 //
 //   creditsOf(entries, id, {nameOf}) → [{by, who, did: [{what, n, at}], first, last}], ordered by first contribution
 //
-// What counts: a STATE entry that touches the thing, caused by a building act (create, set, place, turn, delete, batch,
-// undo, …; an imported act by its original verb). A refused act changes nothing and never reaches a state entry, so it
+// What counts: a CHANGE entry that touches the thing, caused by a building act (create, set, place, turn, delete, batch,
+// undo, …; an imported act by its original verb). A refused act changes nothing and never reaches a change entry, so it
 // can't count. Play isn't authorship: a `use` (opening a door 40 times), a grab, a throw, the sim's rests and the
 // door's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
 // not "moved it ×591": the Commons has people with hundreds of imported nudges).
@@ -13,7 +13,7 @@ import { opsOf } from './v4/fold.js';
 
 export const SESSION_MS = 5 * 60 * 1000;
 const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'sculpt', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
-const SYSTEM = new Set(['sim', 'door', 'world']);
+const SYSTEM = new Set(['sim', 'system', 'world']);
 /** The phrase for one change, from one table (the client and the door read the same words). */
 export function phraseOf(op) {
   if (op.verb === 'create') return 'made it';
@@ -38,16 +38,16 @@ const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 export function creditsOf(entries, id, { nameOf = (x) => x } = {}) {
   const bySeq = new Map(); for (const e of entries) if (e && typeof e === 'object' && Number.isInteger(e.seq)) bySeq.set(e.seq, e);
   const at = (i) => bySeq.get(i) ?? entries[i];
-  // the acts that changed this thing: their state entries' ops on it
+  // the acts that changed this thing: their change entries' ops on it
   const caused = new Map();
-  for (const e of entries) { if (!e || e.kind !== 'state') continue;
+  for (const e of entries) { if (!e || e.kind !== 'change') continue;
     const ops = opsQuiet(e).filter((o) => o.id === id); if (!ops.length) continue;
     const k = e.cause; caused.set(k, [...(caused.get(k) ?? []), ...ops]); }
   const people = new Map(); let last = null;
   for (const e of entries) {
     if (!e || e.kind !== 'act') continue;
     const ops = caused.get(e.seq); if (!ops) continue;
-    const verb = e.verb === 'legacy' ? e.body?.verb : e.verb;
+    const verb = e.verb === 'imported' ? e.body?.verb : e.verb;
     if (!BUILDING.has(verb)) continue;
     if (SYSTEM.has(e.actor)) continue;
     const by = e.actor, ts = e.ts ?? at(e.seq)?.ts ?? 0;

@@ -25,7 +25,7 @@ type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: W
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
 const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
-const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", legacy: "imported name (no account bound yet)" };
+const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", imported: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the door's directory, scoped to THIS world: the people present now,
  *  and every identity this world's log, roles or moderator log names. Never the whole directory (a name typed here

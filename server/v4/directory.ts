@@ -19,7 +19,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../../shared/v4/fold.js";
 
-export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "legacy"; since: number; world?: string };
+export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "imported"; since: number; world?: string };
 type File = { v: 1 | 2; ids: Record<string, Entry> };
 
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
@@ -72,12 +72,12 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
       return id;
     },
     /** An identity with no account yet (a name from an imported world's log): holds its roles until an operator binds an account. */
-    legacy(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "legacy", since: now(),  }); },
+    imported(name: string, world: string | null = null): string { return add({ name, subs: [], kind: "imported", since: now(),  }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
     bind(id: string, sub: string) { const e = d.ids[id]; if (!e) throw new Error(`no identity ${id}`);
       const k = e.world ? `${sub}|${e.world}` : sub;
       const prev = byKey.get(k); if (prev && prev !== id) throw new Error(`${sub} already wears ${prev}${e.world ? " in that world" : ""}`);
-      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "legacy") e.kind = kindOfSub(sub); byKey.set(k, id); save(); },
+      if (!e.subs.includes(sub)) e.subs.push(sub); if (e.kind === "imported") e.kind = kindOfSub(sub); byKey.set(k, id); save(); },
     /** the id an account already wears in a world, if any (read-only: the translator plans before it writes) */
     idOfSub: (sub: string, world: string | null = null): string | null => byKey.get(keyOf(sub, world)) ?? null,
     /** add identities planned elsewhere (the translator's, once its log is written); never overwrites one */

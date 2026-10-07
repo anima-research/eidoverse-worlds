@@ -25,7 +25,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(a1 !== a2 && a1 !== ann && d.entry(a1)?.kind === "anon", "D5 with no account, every connection is a fresh identity, never anyone else's", [a1, a2]);
   const bot = d.resolve({ sub: "agent:rowan", name: "Rowan", agent: true });
   ok(d.entry(bot)?.kind === "agent", "D6 an agent's account makes an agent identity");
-  const leg = d.legacy("Bea"); d.bind(leg, "human:discord:333");
+  const leg = d.imported("Bea"); d.bind(leg, "human:discord:333");
   ok(d.resolve({ sub: "human:discord:333", name: "Bea" }) === leg, "D7 binding an account to a legacy identity lets that account wear it");
   let threw = false; try { d.bind(leg, "human:discord:111"); } catch { threw = true; }
   ok(threw, "D8 an account can't wear two identities");
@@ -230,7 +230,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
     { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   translateV1World(path.join(W, "old"), path.join(W, "new"));
   const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
-  const at = Object.keys(w.state().entities["@world"].c).find((k) => k.startsWith("bans:")); const who = at?.slice(5);
+  const at = Object.keys(w.state().entities["@world"].c).find((k) => k.startsWith("imported-bans:")); const who = at?.slice("imported-bans:".length);
   ok(!!who && isBanned(w, who) && w.mod.some((m: any) => m.verb === "ban" && m.who === who && m.reason === "spam"), "XB1 a v1 ban is a ban the door enforces after translation (filed in the moderator log, reason kept)", [at, w.mod]); }
 
 // ---- V: a visitor undoes their own use, under the use's capability (round-2 R11) ----

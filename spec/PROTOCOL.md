@@ -17,7 +17,7 @@ two agree on every conformance log (§11).
 ## 0. The one idea
 
 **A world is its log.** There is no scene file. The log is an append-only,
-totally ordered list of entries; folding its `state` entries from the
+totally ordered list of entries; folding its `change` entries from the
 beginning yields the world, on every implementation, at any time, forever.
 Everything else — checkpoints, the scene a client draws, history panels,
 who made what — is a **view**: derived, disposable, rebuildable from the
@@ -32,7 +32,7 @@ year, gets the same world from the same log:
 2. **Each fact once, as a plain value.** Values are JSON data independent
    of any engine. Nothing derived is stored beside the fact it derives from.
 3. **Nothing changes without a cause on record, and one writer at a time.**
-   Every state entry names the entry that caused it; the world has one
+   Every change entry names the entry that caused it; the world has one
    sequencer, whose signed hash chain lets readers verify it (§12).
 4. **Requests are open; results are closed.** Anyone may invent a request
    word; nobody invents a state word — a new feature is a new component
@@ -64,11 +64,11 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 | field | |
 |---|---|
 | `world` | the world id (§2); required on every entry after genesis |
-| `kind` | `genesis` · `state` · `act` · `sim` · `say` · `purge` · `sequencer` |
+| `kind` | `genesis` · `change` · `act` · `sim` · `say` · `purge` · `sequencer` |
 | `ts` | the door's admission time, integer milliseconds ≥ 0; required after genesis, never decreasing along the log |
-| `actor` | who: an identity, `door`, `world` or `bhv:<entity>` (§6) |
-| `cause` | the seq of the entry that caused this one, `0 ≤ cause < seq`; required on `state` |
-| `verb` | a string: for `state`, one of the four operations (§3) |
+| `actor` | who: an identity, `system`, `sim`, `world` or `script:<entity>` (§6) |
+| `cause` | the seq of the entry that caused this one, `0 ≤ cause < seq`; required on `change` |
+| `verb` | a string: for `change`, one of the four operations (§3) |
 | `body` | an object |
 | `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
 | `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed |
@@ -82,9 +82,9 @@ tolerates a legacy `by` field, which nothing reads.)
 **The kinds.**
 
 - **`genesis`** — entry 0, and only entry 0 (§13).
-- **`state`** — the fold's only input (§3).
+- **`change`** — the fold's only input (§3).
 - **`act`** — a request as it was sent, with its refusal if it was refused.
-  Acts are history: the fold never reads them. A state entry's `cause` is
+  Acts are history: the fold never reads them. A change entry's `cause` is
   usually the act that asked for it.
 - **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
   digest); read only by readers that carry the world's engine
@@ -120,7 +120,7 @@ folded.
 
 ## 3. State operations and their fold semantics (normative)
 
-A `state` entry's `verb` and `body` are one of:
+A `change` entry's `verb` and `body` are one of:
 
 | verb | body | fold |
 |---|---|---|
@@ -158,7 +158,7 @@ All ASCII.
   keyed `:<key>` with a key of `[a-z0-9-]{1,64}` (`roles:u-abc`,
   `script:bell`).
 - `body:<identity>` names a body (§5). It may be the target of an act or a
-  say, but it is never an entity: a state op on it is malformed.
+  say, but it is never an entity: a change op on it is malformed.
 
 ## 4. Components
 
@@ -256,9 +256,9 @@ request moves a copy to a newer version, keeping its own overrides.
 - `actor` is the attribution ink of the permanent record, stamped by the
   door from the authenticated connection, **never read from a request's
   payload**.
-- An actor is an **identity** (§3.1); `door` (the door itself: genesis, its
+- An actor is an **identity** (§3.1); `system` (the authority itself: genesis, its
   own follow-ups such as sending a released thing home); `sim` (the physics
-  engine's digests); `world`; or `bhv:<entity>` (a script installed on that entity, acting with its
+  engine's digests); `world`; or `script:<entity>` (a script installed on that entity, acting with its
   sponsor's rights, §8). Doors MUST refuse a client claiming a reserved
   actor.
 - Display names are a view, kept outside the log. A stranger who takes your
@@ -285,7 +285,7 @@ a rest). Then **one gate, `admit`**, checks those writes, keyed on:
 - the asker's active sanctions (bans, from the moderator log).
 
 Tool-specific checks MAY add to `admit`, never replace it. Accepted, the
-door appends the request as an `act` and its result as one `state` entry
+door appends the request as an `act` and its result as one `change` entry
 caused by it; a refused write is appended as an act carrying its refusal
 (`{code, reason, teach}`) and nothing else is written (refusals that would
 only flood the log, such as rate limits, are answered without an entry). **Every appended entry passes the gate**,
@@ -326,7 +326,7 @@ that key — re-checked at every activation and never wider than the `scope`
 it declares. The visitor whose `use` triggers it adds no rights. A demoted
 sponsor's scripts go dormant; a banned sponsor's are suspended.
 
-Each activation that changes something is one `act` (actor `bhv:<entity>`,
+Each activation that changes something is one `act` (actor `script:<entity>`,
 naming the source hash, sponsor, trigger, clock and seed) plus one
 all-or-nothing batch through the same `admit`. Every cause chain ends at a
 person. **Replay never re-runs code**: the fold reads the batch. An auditor
@@ -421,7 +421,7 @@ argument will be short.
 
 ## 13. Genesis and governance
 
-- **Genesis** (seq 0, `kind: "genesis"`, actor `door`, verb `genesis`):
+- **Genesis** (seq 0, `kind: "genesis"`, actor `system`, verb `genesis`):
   `body {version: 4, minor: 0, nonce, owners: [[<key>…], …], sequencer,
   quorum?, rewind_window?, parent?}`. Exactly those fields within a known
   minor. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
@@ -438,7 +438,7 @@ argument will be short.
   outgoing sequencer or by a quorum of an owner tier. A higher tier may
   **reclaim** a world from the head onward, or **rewind** a lower-ranked
   branch (kept as a record, never folded) while that branch is shorter than
-  `rewind_window` state entries (default 1000); beyond that a rewind needs
+  `rewind_window` change entries (default 1000); beyond that a rewind needs
   every tier-0 key. An empty tier can never act. Moving a world and forking
   it are different: a fork is a new genesis naming its parent. Nothing is
   atomic across worlds.
@@ -449,6 +449,6 @@ The first protocol (an untyped verb log) is retired. An old world's log can
 be translated once, one way, into a new v4 world
 (`bun tools/v4/world.ts translate <old> <new>`); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
-`legacy` (`body {verb, args, from}`) or as a `say`, followed by the state it
-produced; fields with no v4 component ride along as `legacy:<name>`. A
+`imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
+produced; fields with no v4 component ride along as `imported:<name>`. A
 translated world is an ordinary v4 world from then on.

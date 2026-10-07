@@ -128,23 +128,29 @@ function v1Reactions(rx: any) {
   for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h?.component === "openable" ? { ...h, component: "door" } : h;
   return out;
 }
+// v1's fly and gen grants are the fly and generate switches in v4 (translate-v1 toCan, @4/@7): read back as v1 wrote them
+function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v.can !== "object") return v;
+  const { can, ...rest } = v; const { fly, generate, ...left } = can; const out: any = { ...rest };
+  if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }
+const IMP = "imported:", BANS = "imported-bans:", BEHAVIOR = "imported-behavior:";   // what translate-v1 carries (@7)
 function unproject(v4: any) {
   const ents: any = {}, world: any = {};
   for (const [id, comps] of Object.entries<any>(v4)) {
     if (id === "@world") {
       for (const [k, v] of Object.entries<any>(comps)) {
-        if (["sky", "terrain", "grass", "epoch"].includes(k)) world[k] = v;
+        if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
+        else if (k === "imported-epoch") world.epoch = v;
         else if (k.startsWith("palette:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice(8)));
-        else if (k === "default-role") (world.roles ??= {})["*"] = v; // DROPPED: roles['*']
-        else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = v;
-        else if (k.startsWith("bans:")) (world.bans ??= {})[dec(k.slice(5))] = v;
-        else if (k.startsWith("behavior:")) (world.behaviors ??= {})[dec(k.slice(9))] = v;
-        else if (k.startsWith("legacy:") && ["sky", "terrain", "grass", "epoch"].includes(dec(k.slice(7)))) {}   // folded back below
-        else if (k.startsWith("legacy:")) world[dec(k.slice(7))] = v;
+        else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']
+        else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = fromCan(v);
+        else if (k.startsWith(BANS)) (world.bans ??= {})[dec(k.slice(BANS.length))] = v;
+        else if (k.startsWith(BEHAVIOR)) (world.behaviors ??= {})[dec(k.slice(BEHAVIOR.length))] = v;
+        else if (k.startsWith(IMP) && ["sky", "terrain", "grass", "epoch"].includes(dec(k.slice(IMP.length)))) {}   // folded back below
+        else if (k.startsWith(IMP)) world[dec(k.slice(IMP.length))] = v;
         else world[`??${k}`] = v;
       }
-      // a closed component's v1 leftovers ride beside it as legacy:<component> {key: value}: they fold back in
-      for (const c of ["sky", "terrain", "grass", "epoch"]) if (comps[`legacy:${c}`] && world[c] && typeof world[c] === "object") world[c] = { ...world[c], ...comps[`legacy:${c}`] };
+      // a closed component's v1 leftovers ride beside it as imported:<component> {key: value}: they fold back in
+      for (const c of ["sky", "terrain", "grass", "epoch"]) if (comps[`${IMP}${c}`] && world[c] && typeof world[c] === "object") world[c] = { ...world[c], ...comps[`${IMP}${c}`] };
       continue;
     }
     const e: any = {};
@@ -152,14 +158,14 @@ function unproject(v4: any) {
       if (k === "transform") { e.pos = v.pos; e.q = v.q; e.scale = v.scale; }
       else if (k === "model") e.lib = v;
       else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
-      else if (k.startsWith("legacy:") && comps[dec(k.slice(7))] !== undefined && dec(k.slice(7)) !== "parent") {}   // folded back below
-      else if (k.startsWith("legacy:")) e[dec(k.slice(7))] = v;
-      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps["legacy:sockets"]) : v;   // declared (DROPPED comp.door): v4's openable is v1's door
+      else if (k.startsWith(IMP) && comps[dec(k.slice(IMP.length))] !== undefined && dec(k.slice(IMP.length)) !== "parent") {}   // folded back below
+      else if (k.startsWith(IMP)) e[dec(k.slice(IMP.length))] = v;
+      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): v4's openable is v1's door
     }
-    for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith("legacy:") ? dec(k.slice(7)) : null;
+    for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith(IMP) ? dec(k.slice(IMP.length)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }
     // translate-v1@5: a v1 story's practice became a paragraph of its text and its markedEntity its marks (both also in
-    // legacy:story, folded back above): undone here, so the comparison is with what v1 held
+    // imported:story, folded back above): undone here, so the comparison is with what v1 held
     const sty = e.comp?.story; if (sty && typeof sty === "object" && !Array.isArray(sty)) {
       if (typeof sty.practice === "string" && typeof sty.text === "string") { const p = sty.practice.trim(); if (sty.text === p) delete sty.text; else if (sty.text.endsWith(`\n\n${p}`)) sty.text = sty.text.slice(0, -(p.length + 2)); }
       if (typeof sty.markedEntity === "string" && Array.isArray(sty.marks)) delete sty.marks; }
@@ -199,10 +205,10 @@ for (const p of logs.sort()) {
   const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, v4); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
-    else if (e.kind === "state") applyInPlace(v4, opsOf(e), s); }
+    else if (e.kind === "change") applyInPlace(v4, opsOf(e), s); }
   compareAt(k); if (loss) lossy++;
   // the door takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
-  // closed component doesn't define rides beside it as legacy:<component>, so nothing is refused at the first edit)
+  // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
   { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.v4)) for (const [k, v] of Object.entries<any>(comps)) {
       const why = schemaRefusal(k, v); if (why) bad.push(`${id}.${k}: ${why}`); }
     check(`${name}: the door's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }

@@ -2,7 +2,7 @@
 //
 // Every world this server serves is a v4 world (its directory holds v4.jsonl, line 0 a v4 genesis: isV4Dir); World
 // (server/world.ts) holds one V4Log. Writes: every write is a v4 REQUEST through the door (shared/v4/door.js: one
-// `admit`, act + state entries, the ts from this server's clock); request() is the only way in.
+// `admit`, act + change entries, the ts from this server's clock); request() is the only way in.
 //
 // What clients see: every client folds v4 itself. A joiner adopts the door's cut (clientCut) and folds the raw entries
 // it is sent as {type: "v4-log"}. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
@@ -147,7 +147,7 @@ export class V4Log {
     try { this.requestSync(actor, "leave", {}); } catch (err) { console.error(`[world:${this.name}] leave for ${actor}`, err); }
   }
 
-  /** Scripts (research 41): the door's timers on this server's clock (server.ts calls World.bhv.tick once a second). What
+  /** Scripts (research 41): the door's timers on this server's clock (server.ts calls World.scripts.tick once a second). What
    *  they write goes out like any write. */
   tickScripts() {
     if (this.live.state().status !== "ok") return;
@@ -173,7 +173,7 @@ export class V4Log {
     newActors.forEach((a) => this.actors.add(a));
     // a role written for someone who never acted here: clients need their name too, or the narration says "made u-…"
     const named = new Set<string>(newActors);
-    for (const e of fresh) { if (e?.kind !== "state") continue; let ops: Any[] = []; try { ops = opsOf(e); } catch { /* malformed: nothing to name */ }
+    for (const e of fresh) { if (e?.kind !== "change") continue; let ops: Any[] = []; try { ops = opsOf(e); } catch { /* malformed: nothing to name */ }
       for (const o of ops) if (o?.id === "@world" && String(o.comp ?? "").startsWith("roles:")) named.add(String(o.comp).slice(6)); }
     const msg = { type: "v4-log", world: this.name, from, entries: fresh.map(wireEntry), ...(named.size ? { names: this.names(named) } : {}) };
     // a ghost gets every entry (the fold must stay contiguous) but each say's body and speaker emptied
@@ -182,7 +182,7 @@ export class V4Log {
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
     // anything that can change what someone may do: a role, the definitions, the default role, the install setting
-    const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "scripts", "access"].includes(o.comp))); } catch { return false; } };
+    const roles = (e: Any) => { try { return e?.kind === "change" && opsOf(e).some((o: Any) => o.id === "@world" && (String(o.comp ?? "").startsWith("roles:") || ["role-defs", "default-role", "scripts", "access"].includes(o.comp))); } catch { return false; } };
     if (fresh.some(roles)) this.host?.rightsChanged();
   }
   private record(e: ChatLine) {
@@ -217,7 +217,7 @@ export class V4Log {
     const out = new Set<string>([...this.actors, ...Object.keys(this.poses)]);
     for (const k of Object.keys(this.live.state().entities?.["@world"]?.c ?? {})) if (k.startsWith("roles:")) out.add(k.slice(6));
     for (const m of this.live.mod ?? []) if (typeof m?.who === "string") out.add(m.who);
-    for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the door's own (door, world, bhv:…) aren't people
+    for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the system's own (system, world, script:…) aren't people
     return out;
   }
   /** The door's moderator log says this identity is banned here (door.js isBanned): join must refuse it too. */

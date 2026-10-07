@@ -1,7 +1,7 @@
 // server/v4/scripts.ts — a world's scripts inside this server (research 41; shared/v4/door.js "behaviours").
 //
 // Scripts are `script:<name>` components the DOOR runs, each activation one act + one batch through admit. This class
-// is World.bhv: the calls server.ts makes (onPresence, tick, inspect, list), routed to the door:
+// is World.scripts: the calls server.ts makes (onPresence, tick, inspect, list), routed to the door:
 //   tick        the door's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
 //               on the server's 1 s clock (server.ts system "behaviors");
 //   onPresence  enter / leave events, by the person's v4 identity;
@@ -11,7 +11,7 @@
 import type { V4Log } from "./world.ts";
 
 type Any = any;
-/** What World.bhv is. */
+/** What World.scripts is. */
 export interface ScriptHost {
   sync(): void;
   disposeAll(): void;
@@ -32,7 +32,7 @@ export class V4Scripts implements ScriptHost {
     const [ent, name] = String(id).split("/");
     const v = this.v4.scriptsView(ent);
     const s = (v.scripts as Any[]).find((x) => !name || x.script === `script:${name}`);
-    if (!s) { const b = (v.imported as Any[] ?? []).find((x) => x.behavior === `behavior:${name ?? ent}` || x.behavior === `behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
+    if (!s) { const b = (v.imported as Any[] ?? []).find((x) => x.behavior === `imported-behavior:${name ?? ent}` || x.behavior === `imported-behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
     return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}` })) };
   }
   list() {

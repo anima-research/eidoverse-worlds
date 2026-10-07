@@ -99,9 +99,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
   // through_lock
   { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, through_lock: true });
-    const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "state"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
+    const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
     ok(r.ok, "P16 through_lock: true lets a builder (who may remove the lock) act through it", r.refused);
-    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one state entry, no unlock or relock; the lock is still on", E.map((e) => [e.kind, e.verb, e.body?.comp]));
+    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on", E.map((e) => [e.kind, e.verb, e.body?.comp]));
     ok(E[0].kind === "act" && E[0].body.request.through_lock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
   ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, through_lock: true }).ok, "P19 the locker herself acts through it the same way");
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, through_lock: "yes" })) === "shape", "P20 through_lock is a boolean");
@@ -273,7 +273,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const same = (what) => { steps++; const inc = flat(actIndexOf(w)), fresh = flat(actIndexFresh(readLog(fs.readFileSync(dir + "v4.jsonl"))));
     if (inc !== fresh && !firstBad) firstBad = [what, inc.slice(0, 300), fresh.slice(0, 300)]; };
   const step = (actor, tool, args = {}) => { const r = call(actor, tool, args); same(`${actor} ${tool}`); return r; };
-  const purge = (values) => { now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values } }); same("purge"); };
+  const purge = (values) => { now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values } }); same("purge"); };
   const label = () => w.state().entities.crate?.c.label;
   step("rowan", "new", { title: "undo" }); step("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   step("bob", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
@@ -293,7 +293,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // purge: a purged OLD value must never come back through undo (the index has to learn the purge)
   const s1 = step("bob", "set", { id: "crate", component: "label", value: "my phone number" });
   step("bob", "set", { id: "crate", component: "label", value: "public" });
-  purge([{ seq: w.entries.findIndex((e, i) => i > s1.act && e.kind === "state" && e.cause === s1.act) }]);
+  purge([{ seq: w.entries.findIndex((e, i) => i > s1.act && e.kind === "change" && e.cause === s1.act) }]);
   ok(w.state().entities.crate.c.label === "public", "U5 (the purge leaves the current value alone)");
   const u5 = step("bob", "undo", {});
   ok(code(u5) === "conflict" && /purged/.test(u5.refused.skipped?.[0]?.why) && w.state().entities.crate.c.label === "public", "U5 undoing the later label won't restore the purged one", [u5.refused, w.state().entities.crate.c.label]);
@@ -340,7 +340,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const st = w.state(); const copy = d1.after && Object.keys(d1.after).find((k) => st.entities[k]?.c.model === "table" && k !== "tbl");
   const kid = copy && Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === copy);
   ok(d1.ok && copy && kid && !("lock" in st.entities[copy].c) && st.entities[kid].c.model === "crate", "D1 duplicate copies the thing and what's attached to it, as one act (the lock isn't copied)", [d1.refused, copy, kid]);
-  ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.verb === "create").length === 2, "D2 …0.5 m along x, in ONE state entry (two creates)", st.entities[copy]?.c.transform);
+  ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.verb === "create").length === 2, "D2 …0.5 m along x, in ONE change entry (two creates)", st.entities[copy]?.c.transform);
   ok(d1.ok && w.entries[d1.seq].actor === "bob" && w.entries[d1.act].body.request.from === "tbl", "D3 the copy is bob's (the act says what it copied)");
   const d4 = call("bob", "undo", { act: d1.act });
   ok(d4.ok && !w.state().entities[copy] && !w.state().entities[kid], "D4 undoing the duplicate removes both parts", d4.refused);
@@ -392,7 +392,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
   const c2 = makeV4Client(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
-  now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values: [{ seq: from + 1 }] } });
+  now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
   const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
   ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
@@ -805,7 +805,7 @@ const w0 = () => openWorld(root, "tier0");
     const r = translate(old, { foldBuild: v1FoldBuild(), ...DOORKEYS() });
     fs.writeFileSync(root + "worlds/cp-tr.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const hv = request(openWorld(root, "cp-tr"), "ann", "history", { verbs: ["comp"] });
-    ok(hv.ok && hv.entries.length === 1 && hv.entries[0].verb === "legacy" && hv.entries[0].body?.verb === "comp" && hv.entries[0].body?.args?.type === "label", "CP7 a translated v1 entry is found by its v1 verb, its args intact", hv); }
+    ok(hv.ok && hv.entries.length === 1 && hv.entries[0].verb === "imported" && hv.entries[0].body?.verb === "comp" && hv.entries[0].body?.args?.type === "label", "CP7 a translated v1 entry is found by its v1 verb, its args intact", hv); }
   // the spoken trio rides a say (validated, t0 clamped to the utterance window); anything malformed is a plain say
   const now = T + 100;
   const s1 = R("ann", "say", { text: "spoken one", spoken: true, utt: 3, t0: now - 1000 });
@@ -848,15 +848,15 @@ const w0 = () => openWorld(root, "tier0");
   ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
 
 // ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
-// bans:<id>, behavior:<name> or legacy:* and wake readers that no longer mean anything) ----
+// imported-bans:<id>, imported-behavior:<name> or imported:* and wake readers that no longer mean anything) ----
 { const iw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "imported"), actor, tool, args); };
   iw("ann", "new", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-  const tries = [["box", "guard", true], ["box", "legacy:kind", "light"], ["@world", "behavior:x", { src: "store/scripts/x.js" }], ["@world", "bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "epoch", { sim: "eidosim@0.5.0" }]];
+  const tries = [["box", "imported-guard", true], ["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported-epoch", { sim: "eidosim@0.5.0" }]];
   const by = tries.map(([id, component, value]) => code(iw("bob", "set", { id, component, value })));
-  ok(by.every((c) => c === "imported"), "IM1 a builder can't write a guard, a legacy field, an old binding, a bans record or an epoch", by);
-  ok(iw("ann", "set", { id: "box", component: "legacy:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
-  { const d = iw("ann", "delete", { id: "box", component: "legacy:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
+  ok(by.every((c) => c === "imported"), "IM1 a builder can't write an imported guard, an imported field, an old binding, an imported ban or an imported epoch", by);
+  ok(iw("ann", "set", { id: "box", component: "imported:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
+  { const d = iw("ann", "delete", { id: "box", component: "imported:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
 
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

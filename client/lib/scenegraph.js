@@ -336,22 +336,22 @@ let watching = null;       // behavior id whose console is open
 let pollTimer = null;
 
 async function refreshRoster() {
-  const r = await requestDebug({ behaviors: true });
-  behaviorRows = (r.events ?? []).filter((e) => e.kind === 'behavior');
+  const r = await requestDebug({ scripts: true });
+  behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
 }
 
 async function paintScripts() {
   if (!scriptsBody) return;
   const rows = behaviorRows.map((b) => {
     const ok = b.status === 'active' || b.status === 'asleep';
-    return `<div class="who-row sg-bhv" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
+    return `<div class="who-row sg-script" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
       <span class="n">${ok ? '▶' : '⏸'} <b>${esc(b.id)}</b>${b.attach ? ` <span style="color:var(--dim)">on ${esc(b.attach)}</span>` : ''}</span>
       <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : esc(b.status ?? 'paused')}</span></div>`;
   });
 
   let consoleHtml = '';
   if (watching) {
-    const d = await requestDebug({ behavior: watching, limit: 40 });
+    const d = await requestDebug({ script: watching, limit: 40 });
     const lines = (d.events ?? []).map((e) =>
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
@@ -364,12 +364,12 @@ async function paintScripts() {
   scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-v4.md)</div>'}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
-  for (const el of scriptsBody.querySelectorAll('.sg-bhv')) {
+  for (const el of scriptsBody.querySelectorAll('.sg-script')) {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
     const w = String(watching); const i = w.indexOf('/');
-    sendOps(w.startsWith('behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
+    sendOps(w.startsWith('imported-behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);
   });

@@ -338,7 +338,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [3, 0, 0.5] });
       s.call("vic", "grab", { id: "mug" }); s.call("ann", "grab", { id: "ball" });
       const w = s.w(); const save = w.savePresence; let nested: any = null, fired = false; const seen: any = {};
-      // during vic's put: after its state entry is queued, before the request drains its queues
+      // during vic's put: after its change entry is queued, before the request drains its queues
       w.savePresence = () => { save(); if (!fired && w.presence.holds.mug === undefined && w.changedQ?.length) { fired = true;
         seen.before = [...w.changedQ]; nested = D.request(w, "ann", "leave", {}); seen.after = [...(w.changedQ ?? [])]; } };
       const put = s.call("vic", "put", { id: "mug", pos: [0.3, 0, 0.3] }); w.savePresence = save;

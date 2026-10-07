@@ -16,21 +16,21 @@ const verbose = process.argv.includes("--verbose");
 // ---- builders for both formats ----
 // §2.4 + §3d: genesis {version, minor, nonce, owners: tiers of keys, sequencer} (fixed test key and nonce; lab hostile-check)
 const KEY = "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0";
-const GEN = { kind: "genesis", actor: "door", verb: "genesis", body: { version: 4, minor: 0, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
+const GEN = { kind: "genesis", actor: "system", verb: "genesis", body: { version: 4, minor: 0, nonce: "XWVu1u7BpaZTDFSETYiphg", owners: [[KEY]], sequencer: KEY } };
 const WID = worldIdOf(parseLine(JSON.stringify(GEN)));
 const L = (o) => JSON.stringify(o);
 const act = L({ world: WID, kind: "act", ts: 1, actor: "olive", verb: "set", body: {} }); // §2.1: every entry after genesis carries ts
-const st = (verb, body, extra = {}) => L({ world: WID, kind: "state", ts: 1, actor: "olive", cause: 1, verb, body, ...extra });
+const st = (verb, body, extra = {}) => L({ world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, verb, body, ...extra });
 const v4 = (...lines) => [L(GEN), act, ...lines].join("\n") + "\n";
 const bGen = { kind: "genesis", actor: "world", verb: "genesis", args: { v: 4, fold: 1 }, seq: 0 };
-const bst = (seq, verb, args) => ({ kind: "state", actor: "olive", cause: 1, verb, args, seq });
+const bst = (seq, verb, args) => ({ kind: "change", actor: "olive", cause: 1, verb, args, seq });
 const baseText = (text, getBlob = () => { throw new Error("no blob"); }) => base.fold(text.split("\n").filter(Boolean).map((l) => JSON.parse(l)), getBlob);
 const run = (f) => { try { return { ok: true, v: f() }; } catch (e) { return { ok: false, err: `${e.constructor.name}: ${e.message}`.slice(0, 120) }; } };
 const now = (text) => fold(readLog(text));
 const codes = (s) => s.diagnostics.map(([q, c]) => `${q}:${c}`);
 const keys = (o) => (o ? Object.keys(o) : []);
 // a deep batch as raw text (JSON.stringify itself overflows at this depth)
-const deepLine = (n) => `{"world":"${WID}","kind":"state","ts":1,"actor":"olive","cause":1,"verb":"batch","body":{"ops":[` + '{"verb":"batch","ops":['.repeat(n) + '{"verb":"create","id":"deep"}' + "]}".repeat(n) + "]}}";
+const deepLine = (n) => `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"verb":"batch","body":{"ops":[` + '{"verb":"batch","ops":['.repeat(n) + '{"verb":"create","id":"deep"}' + "]}".repeat(n) + "]}}";
 const deepBatch = (n, shape) => { let o = shape === "v4" ? { verb: "create", id: "deep" } : { verb: "create", args: { id: "deep" } };
   for (let k = 0; k < n; k++) o = shape === "v4" ? { verb: "batch", ops: [o] } : { verb: "batch", args: { ops: [o] } }; return o; };
 
@@ -51,7 +51,7 @@ const probes = [
     base: () => run(() => base.fold([bGen, bst(1, "create", { id: "kit", expanded: "h" })], () => [null])), baseBad: (r) => !r.ok,
     now: () => now(v4(st("create", { id: "kit", expanded: "h" }))), nowGood: (s) => codes(s).includes("2:malformed:op-field") && !s.entities.kit },
   { id: "H3f", src: "25d H3", what: "a batch nested 50,000 deep (1.7 MB line)",
-    base: () => run(() => base.fold([bGen, { kind: "state", seq: 1, ...deepBatch(50000, "base") }])), baseBad: (r) => !r.ok,
+    base: () => run(() => base.fold([bGen, { kind: "change", seq: 1, ...deepBatch(50000, "base") }])), baseBad: (r) => !r.ok,
     now: () => now(v4(deepLine(50000))),
     nowGood: (s) => s.status === "ok" && codes(s).some((c) => /^2:malformed:(cap-size|cap-depth|nested-batch)$/.test(c)) && !s.entities.deep },
   { id: "H3g", src: "25d H3", what: "component `__proto__` = {pinned:true}: a pin nobody can see",
@@ -72,7 +72,7 @@ const probes = [
   { id: "E0d", src: "25e §0", what: "a batch nested 20,000 deep: bun folds it, node overflows (readers disagree)",
     base: () => { const f = root + "probe-deep.mjs";
       fs.writeFileSync(f, `import { fold } from "${basePath}"; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { ops: [o] } };
-        try { const s = fold([{ kind: "genesis", verb: "genesis", seq: 0, args: {} }, { kind: "state", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
+        try { const s = fold([{ kind: "genesis", verb: "genesis", seq: 0, args: {} }, { kind: "change", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
       const out = ["bun", "node"].map((r) => Bun.spawnSync([r, f]).stdout.toString().trim()); fs.rmSync(f); return { ok: true, v: { bun: out[0], node: out[1] } }; },
     baseBad: (r) => r.v.bun !== r.v.node,
     now: () => { const f = root + "probe-deep2.mjs"; fs.writeFileSync(root + "probe-deep.jsonl", v4(deepLine(20000)));
@@ -86,7 +86,7 @@ const probes = [
     nowGood: (s) => s.status === "unknown-version" && s.entities === null },
   { id: "H5b", src: "25d H5", what: "a later entry with verb genesis rewrites the version mid-log",
     base: () => run(() => base.fold([bGen, { kind: "timeline", verb: "genesis", seq: 1, args: { fold: 99 } }]).fold), baseBad: (r) => r.ok && r.v === 99,
-    now: () => now(v4(L({ kind: "genesis", actor: "door", verb: "genesis", body: { version: 99, owners: [] } }), st("create", { id: "a" }))),
+    now: () => now(v4(L({ kind: "genesis", actor: "system", verb: "genesis", body: { version: 99, owners: [] } }), st("create", { id: "a" }))),
     nowGood: (s) => s.status === "ok" && s.version === 4 && codes(s).includes("2:malformed:genesis-not-first") && s.entities.a },
   { id: "H5c", src: "PROTOCOL L1", what: "no genesis at entry 0 (genesis only as entry 0 of kind genesis)",
     base: () => run(() => keys(base.fold([bst(0, "create", { id: "a", components: {} })]).entities)), baseBad: (r) => r.ok && r.v.includes("a"),
@@ -103,14 +103,14 @@ const probes = [
     now: () => now(v4(st("create", { id: "victim" }), st("set", { id: "victim", comp: "label", value: "mine" }), st("create", { id: "kit1", expanded: "h" }))),
     nowGood: (s) => s.entities.victim.c.label === "mine" && codes(s).includes("4:malformed:op-field") },
   { id: "M1a", src: "25d M1", what: "pos [1e400, 12345678901234567890, -0] in the log text",
-    base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"state","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"transform","value":{"pos":[1e400,12345678901234567890,-0]}},"seq":2}');
+    base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"transform","value":{"pos":[1e400,12345678901234567890,-0]}},"seq":2}');
       return s.entities.a.c.transform.pos; }), baseBad: (r) => r.ok, // folded to [null, 12345678901234567000, 0]
-    now: () => now(v4(st("create", { id: "a" })) + `{"world":"${WID}","kind":"state","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"a","comp":"transform","value":{"pos":[1e400,12345678901234567890,-0]}}}\n`),
+    now: () => now(v4(st("create", { id: "a" })) + `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"a","comp":"transform","value":{"pos":[1e400,12345678901234567890,-0]}}}\n`),
     nowGood: (s) => codes(s).some((c) => /^3:malformed:ijson-(nonfinite|bigint|negzero)$/.test(c)) && s.entities.a.c.transform === undefined },
   { id: "M1b", src: "25d M1", what: '{"component":"pinned","component":"label"} (duplicate keys)',
-    base: () => run(() => { const s = baseText(L(bGen) + "\n" + L(bst(1, "create", { id: "g", components: {} })) + '\n{"kind":"state","actor":"olive","cause":1,"verb":"set","args":{"id":"g","component":"pinned","component":"label","value":true},"seq":2}');
+    base: () => run(() => { const s = baseText(L(bGen) + "\n" + L(bst(1, "create", { id: "g", components: {} })) + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"g","component":"pinned","component":"label","value":true},"seq":2}');
       return keys(s.entities.g.c); }), baseBad: (r) => r.ok && r.v.length === 1, // one silently chosen; serde would refuse, a stream parser might take the first
-    now: () => now(v4(st("create", { id: "g" })) + `{"world":"${WID}","kind":"state","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"g","comp":"pinned","comp":"label","value":true}}\n`),
+    now: () => now(v4(st("create", { id: "g" })) + `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"g","comp":"pinned","comp":"label","value":true}}\n`),
     nowGood: (s) => codes(s).includes("3:malformed:ijson-dupkey") && keys(s.entities.g.c).length === 0 },
   { id: "M1c", src: "25d M1", what: "seq field disagrees with file order (fold vs stateAt)",
     base: () => run(() => { const e = [bGen, bst(2, "create", { id: "a", components: { n: 1 } }), bst(1, "set", { id: "a", component: "n", value: 2 })];
@@ -136,8 +136,8 @@ const probes = [
     now: () => now(v4(st("create", { id: "a" }), st("set", { id: "a", comp: "x" }))), nowGood: (s) => !("x" in s.entities.a.c) && codes(s).includes("3:noop:set-no-value") },
   { id: "E0e", src: "25e §0", what: "{x:-0, y:NaN, z:1e400} as values (in memory: a translator or tamper)",
     base: () => run(() => base.fold([bGen, bst(1, "create", { id: "a", components: { p: { x: -0, y: NaN, z: Infinity } } })]).entities.a.c.p), baseBad: (r) => r.ok,
-    now: () => fold([parseLine(L(GEN)), parseLine(act), { world: WID, kind: "state", ts: 1, actor: "olive", cause: 1, verb: "create", body: { id: "a" } },
-      { world: WID, kind: "state", ts: 1, actor: "olive", cause: 1, verb: "set", body: { id: "a", comp: "p", value: { x: -0, y: NaN, z: Infinity } } }]),
+    now: () => fold([parseLine(L(GEN)), parseLine(act), { world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, verb: "create", body: { id: "a" } },
+      { world: WID, kind: "change", ts: 1, actor: "olive", cause: 1, verb: "set", body: { id: "a", comp: "p", value: { x: -0, y: NaN, z: Infinity } } }]),
     nowGood: (s) => codes(s).some((c) => /^3:malformed:ijson-(negzero|nonfinite)$/.test(c)) && s.entities.a.c.p === undefined },
   { id: "H4f", src: "25d H4, PROTOCOL §2.3", what: "delete {id:'@world'} (bricks every right)",
     base: () => run(() => keys(base.fold([bGen, bst(1, "create", { id: "@world", components: { "roles:olive": { role: "owner" } } }), bst(2, "delete", { id: "@world" })]).entities)),
@@ -149,10 +149,10 @@ const probes = [
     baseBad: (r) => r.ok && r.v.includes("inner"),
     now: () => now(v4(st("batch", { ops: [{ verb: "batch", ops: [{ verb: "create", id: "inner" }] }] }))), nowGood: (s) => codes(s).includes("2:malformed:nested-batch") && !s.entities.inner },
   { id: "H3j", src: "25d H3, 25e §0", what: "a VALUE holding a `__proto__` key: kept as plain data, never a prototype",
-    base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"state","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"x","value":{"__proto__":{"pinned":true}}},"seq":2}');
+    base: () => run(() => { const s = baseText([bGen, bst(1, "create", { id: "a", components: {} })].map(L).join("\n") + '\n{"kind":"change","actor":"olive","cause":1,"verb":"set","args":{"id":"a","component":"x","value":{"__proto__":{"pinned":true}}},"seq":2}');
       const v = s.entities.a.c.x; return { own: Object.keys(v), inherited: v.pinned }; }),
     baseBad: () => false, // JSON.parse keeps it as an own key; the baseline holds here (25d "tried, held")
-    now: () => now(v4(st("create", { id: "a" })) + `{"world":"${WID}","kind":"state","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"__proto__":{"pinned":true}}}}\n`),
+    now: () => now(v4(st("create", { id: "a" })) + `{"world":"${WID}","kind":"change","ts":1,"actor":"olive","cause":1,"verb":"set","body":{"id":"a","comp":"x","value":{"__proto__":{"pinned":true}}}}\n`),
     nowGood: (s) => JSON.stringify(s.entities.a.c.x) === '{"__proto__":{"pinned":true}}' && s.entities.a.c.x.pinned === undefined, held: true },
   { id: "S23", src: "PROTOCOL §2.3", what: "a state op on `body:<identity>` (bodies are presence)",
     base: () => run(() => keys(base.fold([bGen, bst(1, "create", { id: "body:vic", components: {} })]).entities)), baseBad: (r) => r.ok && r.v.includes("body:vic"),

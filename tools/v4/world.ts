@@ -37,7 +37,7 @@ if (cmd === "found") {
   const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
   const r = translateV1World(path.join(WORLDS_DIR, src), path.join(WORLDS_DIR, dest));
   const after = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
-  console.log(`translated "${src}" (${r.stats.in} old entries) → v4 world "${dest}" (${r.entries} entries, ${r.stats.state} state, `
+  console.log(`translated "${src}" (${r.stats.in} old entries) → v4 world "${dest}" (${r.entries} entries, ${r.stats.change} change, `
     + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
   console.log(`the old log was read, not written: ${before.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs}; ${r.poses} remembered place(s) carried over by identity`);
   // PROTOCOL-v4 §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the

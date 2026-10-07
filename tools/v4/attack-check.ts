@@ -166,7 +166,7 @@ const forgeries = {
   now: (w) => { const L = w.entries; const R = doors.now.sim.restsOf(L)[0]; const i = R.seq; const c = () => JSON.parse(JSON.stringify(L));
     const fold = (X) => doors.now.sim.simFold(X, w.now()).checks; const tv = (e) => (e.body.ops ?? [e.body]).find((o) => o.comp === "transform").value;
     const P1a = c(); tv(P1a[i]).pos = [15, 0, -15]; // there is only one copy now
-    const P1b = c(); P1b[i] = { world: L[i].world, kind: "state", ts: L[i].ts, actor: "sim", cause: R.cause, verb: "set", body: { id: "ball", comp: "transform", value: { ...tv(L[i]), pos: [15, 0, -15] } } };
+    const P1b = c(); P1b[i] = { world: L[i].world, kind: "change", ts: L[i].ts, actor: "sim", cause: R.cause, verb: "set", body: { id: "ball", comp: "transform", value: { ...tv(L[i]), pos: [15, 0, -15] } } };
     const P1c = c(); P1c[i] = { ...P1b[i], actor: "rowan", cause: L[R.cause].cause };
     const caught = (k) => k.disagree.length > 0;
     const P4 = c(); tv(P4[i]).pos = [9, 9, 9];

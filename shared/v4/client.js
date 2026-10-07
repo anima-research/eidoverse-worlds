@@ -88,7 +88,7 @@ export function makeV4Client() {
       if (seq !== v.head + 1) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: `gap ${v.head} → ${seq}` }; }
       if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: e.kind }; }
       let ok = !!(e && typeof e === "object" && !(e instanceof Malformed));
-      if (e?.kind === "state") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; } }
+      if (e?.kind === "change") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; } }
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
       if (ok && folder) { E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; v.simVersion++; }
       if (e?.kind === "say" && typeof e.body?.text === "string") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });

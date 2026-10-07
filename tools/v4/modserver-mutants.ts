@@ -16,7 +16,7 @@ const M: [string, string, string, string, string[]][] = [
   ["a voice mute is re-applied on join", "server/server.ts", "if (w.v4) sanctionSweep(w);   // a voice mute in force is re-applied on join", "if (false) sanctionSweep(w);   // a voice mute in force is re-applied on join", ["RS2"]],
   ["a kick's cooldown at join", "server/server.ts", "      if (k) { const mins = Math.max(1,", "      if (false) { const mins = Math.max(1,", ["RS3"]],
   ["a ghost's frames are withheld", "server/server.ts", "poses: Object.fromEntries(hidden?.size ? [...w.dirty].filter(([id]) => !hidden.has(id)) : w.dirty)", "poses: Object.fromEntries(w.dirty)", ["RS4"]],
-  ["a ghost leaves others' view", "server/server.ts", "if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: \"leave\", id: c.id })); } catch { /* gone */ } } w.bhv.onPresence(\"leave\", c.id, c.v4id); }", "if (ghost) { }", ["RS4"]],
+  ["a ghost leaves others' view", "server/server.ts", "if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: \"leave\", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence(\"leave\", c.id, c.v4id); }", "if (ghost) { }", ["RS4"]],
   ["a ghost reads no chat (the log)", "server/world.ts", "c.ws.send(c.v4id && (S[c.v4id] as any)?.ghost ? g : d);", "c.ws.send(d);", ["RS4"]],
   ["a ghost reads no chat (the window)", "server/server.ts", "state: w.isGhost(c) ? { recentChat: [], chatTotal: 0 } :", "state: false ? { recentChat: [], chatTotal: 0 } :", ["RS4"]],
   ["a ghost isn't listed to joiners", "server/server.ts", "filter(o => o !== c && !o.spectator && !w.isGhost(o))", "filter(o => o !== c && !o.spectator)", ["RS4"]],

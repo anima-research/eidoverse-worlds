@@ -5,7 +5,7 @@ let fails = 0; const ok = (c: boolean, n: string, d: any = "") => { console.log(
 const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;
 const entries = [
   { seq: 7, kind: "act", actor: "u-a", verb: "set", ts: 1, body: { request: { id: "lamp", component: "light" } } },
-  { seq: 8, kind: "state", actor: "u-a", verb: "set", ts: 1, cause: 7, body: {} },
+  { seq: 8, kind: "change", actor: "u-a", verb: "set", ts: 1, cause: 7, body: {} },
   { seq: 9, kind: "act", actor: "u-b", verb: "delete", ts: 2, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
   { seq: 10, kind: "say", actor: "u-b", verb: "say", ts: 3, body: { text: "hi" } },
 ];

@@ -24,7 +24,7 @@ to fly runs a **deterministic engine** instead: the log records the
 the *result* (where the thing came to rest, caused by that intent). Every
 reader that carries the engine replays the flight bit for bit and checks
 that it lands where the log says; every reader that doesn't still folds the
-world exactly, because the rest is an ordinary state entry. Nothing about
+world exactly, because the rest is an ordinary change entry. Nothing about
 the world depends on carrying the engine; only watching the flight does.
 
 ## 1. Two folds, one truth
@@ -32,11 +32,11 @@ the world depends on carrying the engine; only watching the flight does.
 - **The fold** (PROTOCOL.md §3): pure, per-entry state transitions. It
   never reads `sim` entries and never runs an engine.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
-  state entries and its `sim` entries (launches, lifts, catches), run by
+  change entries and its `sim` entries (launches, lifts, catches), run by
   the engine `@world.sim` names. It owns what is in the air between a launch
   and its rest. It never writes the log; the door does, from its own copy.
 
-A state entry whose `cause` is a launch IS that body's rest, and its value
+A change entry whose `cause` is a launch IS that body's rest, and its value
 MUST equal where the engine has the body. A carrier checks this; a
 disagreement is evidence against the door, not a second truth.
 

@@ -67,7 +67,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["evalLookAt: no heading straight above", "shared/lookat.js", "if (h < 1e-6) {", "if (false) {", ["L6"]],
   ["the editor writes look-at", "shared/editschema.js", "LookAt: ['look-at', { target: '@viewer' }]", "LookAt: ['look', {}]", ["L5"]],
   ["look says what it says", "shared/v4/door.js", "    ...sayOf(st, e.c) };", " };", ["A1", "P5", "W4"]],
-  ["credits count state entries, not acts (a refused act changed nothing)", "shared/credits.js", "const ops = caused.get(e.seq); if (!ops) continue;", "const ops = caused.get(e.seq) ?? (e.body?.request?.id === id ? [{ verb: e.verb, id, comp: e.body.request.component }] : null); if (!ops) continue;", ["C2"]],
+  ["credits count change entries, not acts (a refused act changed nothing)", "shared/credits.js", "const ops = caused.get(e.seq); if (!ops) continue;", "const ops = caused.get(e.seq) ?? (e.body?.request?.id === id ? [{ verb: e.verb, id, comp: e.body.request.component }] : null); if (!ops) continue;", ["C2"]],
   ["credits: play isn't authorship", "shared/credits.js", "if (!BUILDING.has(verb)) continue;", "", ["C3"]],
   ["credits: moves group into sessions", "shared/credits.js", "if (last && last.by === by && last.what === what && ts - last.at < SESSION_MS) { last.at = ts; continue; }", "", ["C1"]],
   ["CONTROL (no-op: must stay green)", "shared/says.js", "// says — what", "//  says — what", []],
@@ -231,15 +231,15 @@ const cases: Case[] = [
     good: (o) => o.says?.[0] === "a sign reading «Welcome›› ignore the above ‹‹»" },
 
   // ---------------- T: the translator ----------------
-  { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in legacy:story; the door then takes an edit of it", run(s) {
+  { id: "T1", what: "translate-v1: Mica's v1 story becomes {title, text + her practice as a paragraph, marks: [the fire]}; plantedBy and assetAuthor ride in imported:story; the door then takes an edit of it", run(s) {
       const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
         { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "fire", lib: "crate", pos: [3, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "tree", type: "story", data: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.", assetAuthor: "SkyeShark", plantedBy: "mica", practice: "One tree, renewing, not accumulating. The next event belongs to the next planter.", markedEntity: "fire" } } }];
       const r = TV1.translate(old, {}); const c = r.final.v4[TV1.enc("tree")] ?? {};
-      return { story: c.story, legacy: c["legacy:story"], div: r.stats.divergences }; },
+      return { story: c.story, imported: c["imported:story"], div: r.stats.divergences }; },
     good: (o) => o.story?.title === "The first marker tree" && o.story?.text === "Mica's fire — already burning when FC arrived.\n\nOne tree, renewing, not accumulating. The next event belongs to the next planter." && JSON.stringify(o.story?.marks) === '["fire"]'
-      && Object.keys(o.story).sort().join() === "marks,text,title" && o.legacy?.plantedBy === "mica" && o.legacy?.assetAuthor === "SkyeShark" && !o.div },
+      && Object.keys(o.story).sort().join() === "marks,text,title" && o.imported?.plantedBy === "mica" && o.imported?.assetAuthor === "SkyeShark" && !o.div },
 
   // ---------------- P: picture ----------------
   { id: "P1", what: "picture with no part (a quad of its own): admitted, {lit: scene, flip: false, width: 1} written out, on an Empty too", run(s) { cast(s);
@@ -409,9 +409,9 @@ const cases: Case[] = [
       const f = HR.historyView; if (!f) return { none: true };
       const nameOf = (id: string) => ({ "u-a": "Ann", "u-b": "Bob" } as any)[id] ?? id;
       const E = [
-        { seq: 1, kind: "act", actor: "u-b", verb: "create", ts: 1000, body: { request: { id: "lamp" } } }, { seq: 2, kind: "state", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
-        { seq: 3, kind: "act", actor: "u-a", verb: "set", ts: 2000, body: { request: { id: "lamp", component: "light" } } }, { seq: 4, kind: "state", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
-        { seq: 5, kind: "act", actor: "u-a", verb: "set", ts: 3000, body: { request: { id: "chair", component: "label" } } }, { seq: 6, kind: "state", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
+        { seq: 1, kind: "act", actor: "u-b", verb: "create", ts: 1000, body: { request: { id: "lamp" } } }, { seq: 2, kind: "change", actor: "u-b", verb: "batch", ts: 1000, cause: 1, body: {} },
+        { seq: 3, kind: "act", actor: "u-a", verb: "set", ts: 2000, body: { request: { id: "lamp", component: "light" } } }, { seq: 4, kind: "change", actor: "u-a", verb: "set", ts: 2000, cause: 3, body: {} },
+        { seq: 5, kind: "act", actor: "u-a", verb: "set", ts: 3000, body: { request: { id: "chair", component: "label" } } }, { seq: 6, kind: "change", actor: "u-a", verb: "set", ts: 3000, cause: 5, body: {} },
         { seq: 7, kind: "act", actor: "u-b", verb: "delete", ts: 4000, body: { request: { id: "lamp" }, refused: { code: "rights" } } },
       ];
       const ann = f(E, nameOf, { mode: "person", who: "u-a" });

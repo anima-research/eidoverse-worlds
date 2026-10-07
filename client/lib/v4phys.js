@@ -68,7 +68,7 @@ function startPull(id) {
   const hand = handOf(holds[id].by, holds[id].hand ?? 'right'); const d = hand ? from.distanceTo(hand) : 0;
   pulls.set(id, { from, t0: performance.now(), dur: Math.min(400, Math.max(120, d / 8 * 1000)) });
 }
-// A put (or anything that writes where a held thing is) arrives as a state entry BEFORE the door's holds message says
+// A put (or anything that writes where a held thing is) arrives as a change entry BEFORE the door's holds message says
 // the hand is empty (server order: the log, then presence). From that entry on the fold has it: stop drawing it in the
 // hand, or a frame between the two messages would leave it drawn there after the realizer placed it.
 onWorldChange((ev) => {
@@ -80,7 +80,7 @@ export const holdsNow = () => holds;
 export const myHolds = () => Object.keys(holds).filter((id) => holds[id].by === net.v4you);
 function released(id) {
   // the realizer re-asserts where the log has it on its next change; until the fold or the sim owns it again, the
-  // last drawn pose stays (a put's state entry and a throw's launch both arrive BEFORE this message: server order)
+  // last drawn pose stays (a put's change entry and a throw's launch both arrive BEFORE this message: server order)
   if (!presOwns(id)) suspendCollider(id, false);
 }
 /** A presence id (the people map's key) for a door identity. */

@@ -2951,7 +2951,7 @@ export class WorldAgent {
   /** The world's flight recorder: why things bounced — denied verbs, rejected
    *  shapes, rate limits, and reaction outcomes (fired / skipped / failed).
    *  The log answers "what happened"; this answers "why didn't it". */
-  worldDebug(opts: { limit?: number; kinds?: string[]; behavior?: string; behaviors?: boolean } = {}):
+  worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
       Promise<{ events: any[]; status?: string }> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [] });
     const reqId = `d${++this.histId}`;

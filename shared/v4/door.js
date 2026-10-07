@@ -2,8 +2,8 @@
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
 // PROTOCOL-v4 L7: every state write, from every path (tools, use handlers, undo, put, create-from, rests, the door's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
-// locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a state entry is
-// `stateEntry`, and it takes only what `admit` returned.
+// locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is
+// `changeEntry`, and it takes only what `admit` returned.
 // Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
@@ -82,7 +82,7 @@ const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) :
 export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
 // ---------- storage ----------
-const STATE = Symbol("admitted state write");
+const CHANGE = Symbol("admitted change write");
 export const posAt = (e, i) => { if (e && typeof e === "object") Object.defineProperty(e, "seq", { value: i, enumerable: false, configurable: true }); return e; };
 /**
  * A world over injected storage.
@@ -121,8 +121,8 @@ export function worldOf(io) {
   // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
   w.state = () => { if (cache?.n === entries.length) return cache.st;
     const fresh = entries.slice(cache?.n ?? 0);
-    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["state", "act", "sim", "say"].includes(e.kind))) {
-      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "state") applyInPlace(st, opsOf(e), cache.n + k); });
+    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "act", "sim", "say"].includes(e.kind))) {
+      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
       return (cache = { n: entries.length, st }).st; }
     return (cache = { n: entries.length, st: fold(entries) }).st; };
   // §2.4 chain heads as a view over the log (the lab door doesn't sign them): head(i) = sha256(head(i-1) ‖
@@ -132,7 +132,7 @@ export function worldOf(io) {
       heads[i] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq] ?? null; };
   // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
   const ever = { n: 0, ids: new Set() };
-  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "state") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
+  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
   w.sim = () => simFold(entries, w.now());
   w.stateAt = (seq) => fold(entries, { until: seq });
   // The door re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
@@ -164,7 +164,7 @@ export function worldOf(io) {
     if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§2.4)`, "split it into smaller requests, or put big data in a blob and store its hash");
     throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
-    if (e.kind === "state" && token !== STATE) throw new Error("door bug: a state entry must come from stateEntry (L7: one gate)");
+    if (e.kind === "change" && token !== CHANGE) throw new Error("door bug: a change entry must come from changeEntry (L7: one gate)");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`door bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
@@ -185,7 +185,7 @@ const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks
 function skeleton(e) {
   const { head, sig, ...s } = e;
   if (["act", "say", "sim"].includes(e.kind)) s.body = { commit: bodyCommit(e.body) };
-  else if (e.kind === "state") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
+  else if (e.kind === "change") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
   return s;
 }
 const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
@@ -199,7 +199,7 @@ export function seal(entries, { sign, random } = {}) {
   for (let i = 0; i < entries.length; i++) {
     let e = JSON.parse(JSON.stringify(entries[i])); delete e.head; delete e.sig;
     if (i > 0) {
-      if (e.kind === "state") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
+      if (e.kind === "change") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
         e.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.verb === "set" ? salt({ verb: "set", ...e.body }) : e.body;
         if (e.verb === "set") { const { verb: _v, ...b } = e.body; e.body = b; } }
       else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
@@ -227,7 +227,7 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
-const IMPORTED_ONLY = (comp) => typeof comp === "string" && (comp === "guard" || comp === "epoch" || /^(legacy|behavior|bans):/.test(comp));
+const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
 const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
 // a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values
@@ -533,7 +533,7 @@ export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(w
 export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
-const isBhv = (a) => typeof a === "string" && a.startsWith("bhv:");
+const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 // ---------- sanctions: views over the moderator log (research §5) ----------
 // Every sanction is a record with an optional `until` (the door's clock, ms). Expiry is computed, never written: a view
 // reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the door's clock). Records
@@ -577,18 +577,18 @@ export function sanctionsNow(w) {
     if (b || k || m || g) out[x] = { ...(b ? { ban: b } : {}), ...(k ? { kick: k } : {}), ...(m ? { mute: m } : {}), ...(g ? { ghost: g } : {}) }; }
   return out;
 }
-// Who a state entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
+// Who a change entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
 // differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
 function entryBy(w, e) {
   const c = w.entries[e.cause];
   const by = isE(c) && c.kind === "act" ? c.actor : e.actor;
   // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
-  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && (c.body?.capability?.author || (isBhv(c.actor) && c.body?.sponsor))) || by };
+  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && (c.body?.capability?.author || (isScriptActor(c.actor) && c.body?.sponsor))) || by };
 }
 // The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
 // present after it was last absent. null if it isn't present now. { seq, by, rights }.
-// The state entries that may touch `id`, newest first. A live world (server/v4) keeps an index id → seqs so these
+// The change entries that may touch `id`, newest first. A live world (server/v4) keeps an index id → seqs so these
 // views cost the thing's own history, not the whole log's; without one (the suites) every entry is a candidate.
 function* backward(w, id) {
   if (w.touching) { const a = w.touching(id); for (let k = a.length - 1; k >= 0; k--) yield a[k]; return; }
@@ -596,7 +596,7 @@ function* backward(w, id) {
 }
 export function creatorOf(w, id, comp) {
   let found = null;
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
       if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
@@ -606,7 +606,7 @@ export function creatorOf(w, id, comp) {
 }
 // Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
 export function lastSetterOf(w, id, comp) {
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
       return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
@@ -626,7 +626,7 @@ let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
 // tools that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
 const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "check", "history", "schema", "scripts", "modlog", "bans"]);
-const RESERVED = new Set(["door", "sim", "world"]); // the door's own identities: a request can never be stamped as one
+const RESERVED = new Set(["system", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
 function wire(args) {
@@ -819,7 +819,7 @@ function admit(w, st, who, ops) {
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
   // L6 (33 F1): a launched thing belongs to the engine until it rests. No write may touch it in flight except its rest
   // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.sim) may freeze it (P6, force).
-  const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "door"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
+  const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "system"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
   let s = cowState(st); const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
   const prevOf = new Map(); // script: sets → the key's value just before that op, within this write
@@ -887,7 +887,7 @@ const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const 
 // the things standing that a guest's rights made (a log view, kept incrementally like everIds)
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
-  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "state") continue; let by = null;
+  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let by = null;
     for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (ISANON(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
   let n = 0; for (const id of G.ids) if (st.entities[id]) n++; return n;
 }
@@ -988,7 +988,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     if (rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
   // founding: once, before any state, in a world whose genesis names this door's operator key (founded here)
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
-    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "state")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
+    if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this door founded", ""); }
 }
 // §5 / L7: a KEYED component (`<name>:<key>`, an instance such as library:<hash> or roles:<id>) that exists may be
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
@@ -1011,7 +1011,7 @@ export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.k
 function ownerSince(w, st, x) {
   if (roleOf(st, x, false) !== "owner") return Infinity;
   const comp = `roles:${x}`; let since = -1;
-  for (const i of backward(w, "@world")) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, "@world")) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== "@world" || (o.comp !== undefined && o.comp !== comp)) continue;
       if (o.verb === "set" && o.comp === comp && o.value?.role === "owner") since = i; else return since; } }
@@ -1045,7 +1045,7 @@ function grantCheck(w, st, s, actor, op, at) {
   const wc1 = { ...(wcOf(s) ?? {}) }; if (op.verb === "delete") delete wc1[op.comp]; else wc1[op.comp] = op.value;
   const after = R.roleIdOf(wc1, target, { anon, owners: true }); const def = R.roleDef(wc1, after);
   if ((def?.rank ?? RANK.none) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
-  const extra = op.verb === "set" ? Object.entries(op.value?.can ?? {}).filter(([, x]) => x === true).map(([k]) => k).concat(op.value?.gen === true ? ["generate"] : []) : [];
+  const extra = op.verb === "set" ? Object.entries(op.value?.can ?? {}).filter(([, x]) => x === true).map(([k]) => k) : [];
   const give = [...R.SWITCH_NAMES.filter((k) => def?.can?.[k]), ...extra];
   const missing = give.find((k) => !me.can[k]);
   if (missing) refuse("rights", `giving ${missing} needs you to hold ${missing} yourself; you don't`, "you can only give switches you hold (ask an owner)", { needs: missing });
@@ -1116,12 +1116,16 @@ function valueCheck(s, { id, comp, value: v }) {
   if (id === "@world" && comp.startsWith("roles:") && (!obj || (v.role !== "none" && !R.roleDef(wcS, v.role))))
     refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
   if (id === "@world" && comp.startsWith("roles:") && obj) {
-    for (const k of Object.keys(v)) if (!["role", "can", "note", "gen", "sub"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?}", { didYouMean: guessKey(k, ["role", "can", "note"]) });
+    for (const k of Object.keys(v)) if (!["role", "can", "note", "sub"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?}", { didYouMean: guessKey(k, ["role", "can", "note"]) });
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
     if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
       // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
-      if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...(v.gen === true ? { generate: true } : {}), ...v.can });
+      if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
         if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
+  // default-role.can: switches on top of the default role for everyone who holds it that way (what an imported world's
+  // grant to everyone, roles['*'].gen in its old log, becomes: can.generate). The same closed list and dependencies as roles:<id>.can
+  if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.teach, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
+    if (R.roleDef(wcS, v.role)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can }); if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
   const whoOk = (x, where) => { if (x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
@@ -1322,22 +1326,22 @@ function restCheck(w, cap, after) {
   if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
   if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
 }
-function stateShape(plan, cause, w) {
+function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
   // brute-forced from a guess. Added here, before fits() measures the entry. The fold ignores it.
   const ops = plan.ops.map((o) => (o.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o)); const one = ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } };
-  return { kind: "state", actor: plan.who.actor, cause, ...one };
+  return { kind: "change", actor: plan.who.actor, cause, ...one };
 }
-function stateEntry(w, plan, cause) {
+function changeEntry(w, plan, cause) {
   if (!(plan instanceof Admitted)) throw new Error("door bug: a state write that admit() didn't produce (L7)");
-  const seq = w.append(stateShape(plan, cause, w), STATE);
+  const seq = w.append(changeShape(plan, cause, w), CHANGE);
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
 }
 const actEntry = (w, actor, tool, body) => ({ kind: "act", actor, verb: tool, body });
 const actOf = (w, actor, tool, args, extra) => actEntry(w, actor, tool, { request: stripDry(args), ...(extra ?? {}) });
 
-// A write: build ops against the folded state, admit them, then append the act and its one state entry.
+// A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, tool, args, build) {
   mintW = w;
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
@@ -1347,9 +1351,9 @@ function commit(w, actor, tool, args, build) {
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, tool, sent, ctx.actExtra);
-  w.fits(actE, stateShape(plan, w.entries.length, w)); // both lines fit, or neither is written
+  w.fits(actE, changeShape(plan, w.entries.length, w)); // both lines fit, or neither is written
   const act = w.append(actE);
-  const seq = stateEntry(w, plan, act);
+  const seq = changeEntry(w, plan, act);
   const after = w.state();
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
@@ -1420,7 +1424,7 @@ const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
 function lastTouch(w, id, comp) {
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     for (const o of opsQuiet(e)) { if (o.id !== id) continue;
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) return { seq: i, actor: e.actor }; } }
   return null;
@@ -1430,7 +1434,7 @@ function lastTouch(w, id, comp) {
 export const TOUCH_HORIZON = 200;
 function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   const out = {}; const want = new Set(comps); let seen = 0, oldest = null;
-  for (const i of backward(w, id)) { if (!want.size || seen >= horizon) break; const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { if (!want.size || seen >= horizon) break; const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     seen++; oldest = i;
     for (const o of opsQuiet(e)) { if (o.id !== id) continue;
       const hit = o.verb === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
@@ -1893,7 +1897,7 @@ function offersFor(st, id, actor) {
 // declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
 // rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
-// ONE act (actor bhv:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
+// ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
 // reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
 // Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Door practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
@@ -1955,12 +1959,12 @@ const rtKey = (id, name) => `${id}|${name}`;
 const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });
 const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...line }); if (rt.console.length > 20) rt.console.shift(); w.presenceDirty = true; };
 // how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
-function bhvDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
-  while (isE(e) && isBhv(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
+function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
+  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
   const out = [];
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue; const ops = opsQuiet(e);
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
       if (o.verb === "set" && o.comp === key) out.push({ e, value: o.value });
       else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
@@ -2006,10 +2010,10 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
   let mine = 0, all = 0, bySp = 0;
   const sponsors = new Set(allScripts(st).map((x) => sponsorOf(w, x.id, `script:${x.name}`)?.sponsor).filter(Boolean));
   for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && now - e.ts > 3600000) break;
-    if (!isBhv(e.actor)) continue; all++;
+    if (!isScriptActor(e.actor)) continue; all++;
     const a = e.kind === "act" ? e : w.entries[e.cause];
     if (isE(a) && a.kind === "act" && a.body?.sponsor === sponsor) bySp++;
-    if (e.kind === "act" && e.actor === `bhv:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
+    if (e.kind === "act" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
 // The door's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
@@ -2055,7 +2059,7 @@ function activate(w, id, name, ev) {
   if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
   const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; } // a re-set (a fix) clears the failure count
   if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: `paused after ${rt.fails} failed activations in a row; set it again (a fix, or the same value) to retry` });
-  const depth = 1 + (cause !== undefined ? bhvDepth(w, cause) : 0);
+  const depth = 1 + (cause !== undefined ? scriptDepth(w, cause) : 0);
   if (depth > cfg.depth) return out("refused", { code: "depth", why: `cascade depth ${depth} > ${cfg.depth}` });
   if (!w.scripts) return out("unavailable", { why: "this door has no script sandbox" });
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* below */ }
@@ -2073,7 +2077,7 @@ function activate(w, id, name, ev) {
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
-    name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
+    name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
   if (!dry) { const ms = performance.now() - t0;
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
@@ -2087,20 +2091,20 @@ function activate(w, id, name, ev) {
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.act)) return mark("scope", `${key} doesn't declare bodies: ['${b.act}']`);
   { const why = overBudget(B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
-  if (ops.length) try { plan = admit(w, st, { actor: `bhv:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
+  if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
-  for (const b of res.bodies) { const g = bodyGate(w, `bhv:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
-  const actE = { kind: "act", actor: `bhv:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
+  for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
+  const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       ...(gates.length ? { bodies: gates.map((g) => ({ act: g.act, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
-  const sayE = (t, c) => ({ kind: "say", actor: `bhv:${id}`, cause: c, verb: "say", body: { text: t } });
+  const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
   w.pinTs = now;
   try {
-    try { w.fits(actE, ...(plan ? [stateShape(plan, actSeq, w)] : []), ...res.says.map((t) => sayE(t, actSeq))); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
-    act = w.append(actE); if (plan) state = stateEntry(w, plan, act);
+    try { w.fits(actE, ...(plan ? [changeShape(plan, actSeq, w)] : []), ...res.says.map((t) => sayE(t, actSeq))); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
+    act = w.append(actE); if (plan) state = changeEntry(w, plan, act);
     for (const t of res.says) (w.sayQ ??= []).push(w.append(sayE(t, act)));
   } finally { w.pinTs = null; }
   for (const g of gates) g.deliver();
@@ -2169,8 +2173,8 @@ export function settleOrphans(w, present = []) {
       const g = grabOf(st.entities[id].c);
       if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
       const t = w.state().entities[id].c.transform; if (!t) continue;
-      let plan; try { plan = admit(w, w.state(), { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
-      stateEntry(w, plan, w.append({ kind: "act", actor: "door", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
+      let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
+      changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
       out.push({ id, returned: "where the log had it" });
     }
     if (waiting) out.push({ deferred: waiting, why: `more than ${ORPHANS.lifts} lifted things at once: the rest settle at the next load` });
@@ -2186,7 +2190,7 @@ function orphanLifts(w) {
     if (!isE(e)) return;
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
-    else if (e.kind === "state") for (const o of opsQuiet(e)) {
+    else if (e.kind === "change") for (const o of opsQuiet(e)) {
       if (o.id === "@world" && o.comp === "sim") { lifted.clear(); continue; }
       if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
   });
@@ -2219,7 +2223,7 @@ function drainHeld(w) {
       activate(w, sid, name, { on: kind, id, ...ev, ...(ev.seq !== undefined ? { cause: ev.seq } : sp ? { cause: sp.sponsorAt } : {}) }); } }
   if (w.heldQ) w.heldQ.length = 0;
 }
-// What a request's (or an activation's) entries set off: `changed:<comp>` for a state entry that changes <comp> on an id
+// What a request's (or an activation's) entries set off: `changed:<comp>` for a change entry that changes <comp> on an id
 // in the script's scope; `say` for a say entry. One activation per (script, triggering entry); a script never hears its own.
 function drainScripts(w) {
   let guard = 0;
@@ -2228,12 +2232,12 @@ function drainScripts(w) {
     if (w.changedQ?.length) { const seq = w.changedQ.shift(); const e = w.entries[seq]; if (!isE(e)) continue;
       const watching = scripts.filter((x) => Array.isArray(x.v.on) && x.v.on.some((o) => o.startsWith("changed:"))); if (!watching.length) continue;
       const changed = opsQuiet(e).filter((o) => o.comp !== undefined);
-      for (const { id, name, v } of watching) { if (e.actor === `bhv:${id}`) continue;
+      for (const { id, name, v } of watching) { if (e.actor === `script:${id}`) continue;
         const ids = scopeIds(st, id, v.scope?.ids); const hit = changed.find((o) => ids.includes(o.id) && v.on.includes(`changed:${o.comp}`));
         if (hit) activate(w, id, name, { on: `changed:${hit.comp}`, id: hit.id, comp: hit.comp, by: (isE(w.entries[e.cause]) ? w.entries[e.cause].actor : null) ?? e.actor, seq, cause: seq }); }
       continue; }
     const seq = w.sayQ.shift(); const e = w.entries[seq]; if (!isE(e) || e.kind !== "say") continue;
-    for (const { id, name, v } of scripts) { if (!(Array.isArray(v.on) && v.on.includes("say")) || e.actor === `bhv:${id}`) continue;
+    for (const { id, name, v } of scripts) { if (!(Array.isArray(v.on) && v.on.includes("say")) || e.actor === `script:${id}`) continue;
       activate(w, id, name, { on: "say", by: e.actor, text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: e.body.to } : {}), seq, cause: seq }); }
   }
   if (w.changedQ) w.changedQ.length = 0; if (w.sayQ) w.sayQ.length = 0;
@@ -2265,10 +2269,10 @@ function scriptsOf(w, st, id) {
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
 export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withDoor(w, () => scriptsOf(w, w.state(), id)); }
-// an imported world carries its old bindings as @world behavior:<name> (their old shape, kept as a record). The door never runs them.
+// an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The door never runs them.
 const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
 function importedBehaviours(w, st) {
-  return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
+  return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
     attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: IMPORTED_WHY }));
 }
 
@@ -2276,15 +2280,15 @@ function importedBehaviours(w, st) {
 // A view over the log (L2), built once per world object and advanced per appended entry, so a live world (server/v4,
 // where `w` lives as long as the world is open) pays for each entry once. A purge is retroactive (L1), so a purge entry
 // throws the index away and rebuilds it, as live.ts refolds the state. What it holds:
-//   actsOf    actor → their act seqs, in order          resultOf  act seq → the first state entry it caused
+//   actsOf    actor → their act seqs, in order          resultOf  act seq → the first change entry it caused
 //   undone    act seqs some `undo` act names (body.undoes)
 //   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${op|-}` → a purged set value (as the fold keys it)
-//   states    every state seq, in order                 touch     id → the state seqs that touch it, in order
-//   rests     state seqs that are rests (caused by a sim launch); restAfter: rest seq → the door's follow-up act
+//   changes   every change seq, in order                touch     id → the change seqs that touch it, in order
+//   rests     change seqs that are rests (caused by a sim launch); restAfter: rest seq → the door's follow-up act
 //   lastAct   the latest act that isn't an undo or the door's (for "the latest change was X's")
 // A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request, as before.
 function freshIndex() {
-  return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), states: [], touch: new Map(),
+  return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), changes: [], touch: new Map(),
     rests: [], restAfter: new Map(), lastAct: null };
 }
 function purgeTargets(E, x) { // the fold's own reading of purge entries (fold.js purgesOf), kept for views
@@ -2302,9 +2306,9 @@ function indexEntry(x, E, i) {
     const b = x.purged.has(i) ? null : e.body;
     if (e.verb === "undo" && b && b.undoes !== undefined) x.undone.add(b.undoes);
     if (e.verb === "undo" && b && Array.isArray(b.rollback?.acts)) for (const q of b.rollback.acts) x.undone.add(q);
-    if (e.verb !== "undo" && e.actor !== "door") x.lastAct = i;
-    if (e.actor === "door" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
-  if (e.kind === "state") { x.states.push(i);
+    if (e.verb !== "undo" && e.actor !== "system") x.lastAct = i;
+    if (e.actor === "system" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
+  if (e.kind === "change") { x.changes.push(i);
     if (Number.isInteger(e.cause) && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
     for (const id of new Set(opsQuiet(e).map((o) => o.id))) { let a = x.touch.get(id); if (!a) x.touch.set(id, (a = [])); a.push(i); }
     const c = E[e.cause]; if (isE(c) && c.kind === "sim" && c.verb === "launch") x.rests.push(i); }
@@ -2344,7 +2348,7 @@ export function entityBefore(w, id, seq, x = actIndexOf(w)) {
 function skyValue(prev, verb, args, now) {
   if (!args || typeof args !== "object" || Array.isArray(args)) refuse("shape", `${verb} takes the sky's fields {hours, rate, weather, clouds…}`, "");
   const { dry, ...a } = args;
-  const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "door" }));
+  const out = clone(foldSkyEntry(prev, { verb, args: a, ts: Math.floor(now), seq: 0, actor: "system" }));
   delete out.seq; delete out.by;
   for (const k of ["forecast", "override"]) if (out[k] && typeof out[k] === "object") { delete out[k].seq; delete out[k].by; }
   return out;
@@ -2361,12 +2365,12 @@ function buildUndo(ctx, a, w) {
   const inverseOf = (target, res, now) => {
   const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
   const flat = opsOf(res);
-  // what others wrote since: a thing's own later history (touch), and, for the spatial check, every state entry since
+  // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
   // the result (bounded by what happened after the act, never the log before it)
   const others = (i) => E[i].actor !== target.actor; // later work by anyone but the act's own author stands
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
-  const later = X.states.slice(firstAfter(X.states, res.seq)).filter(others).map((i) => E[i]);
+  const later = X.changes.slice(firstAfter(X.changes, res.seq)).filter(others).map((i) => E[i]);
   const groups = [], skipped = [];
   const keys = new Map();
   const madeHere = new Set(flat.filter((o) => o.verb === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
@@ -2478,7 +2482,7 @@ function sculptInverse(w, ctx, target, res) {
   // a LATER stroke that clamped on these tiles makes the inverse inexact too (40 says "at either time"; this is a third)
   const mine = new Set(opsOf(res).map((o) => `${o.id}|${o.comp}`));
   for (const e of w.entries) if (isE(e) && e.kind === "act" && e.verb === "sculpt" && e.seq > target.seq && e.body?.clamped) {
-    const r = w.entries.find((x) => isE(x) && x.kind === "state" && x.cause === e.seq); if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
+    const r = w.entries.find((x) => isE(x) && x.kind === "change" && x.cause === e.seq); if (r && opsQuiet(r).some((o) => mine.has(`${o.id}|${o.comp}`))) return null; }
   for (const o of opsOf(res)) { const g = ctx.st.entities[o.id]?.c["terrain-grid"]; if (!g || !o.comp?.startsWith("terrain-tile:") || o.verb !== "set") return null;
     const zeros = () => new Array(g.tile ** 2).fill(0); const b = before.entities[o.id]?.c[o.comp]?.mm ?? zeros(), a = o.value.mm, h = ctx.st.entities[o.id]?.c[o.comp]?.mm ?? zeros();
     const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity; const v = h.map((x, k) => x - (a[k] - b[k]));
@@ -2688,13 +2692,13 @@ function settleSim(w) {
     let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
     catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
     w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
-    const rest = stateEntry(w, plan, r.seq);
+    const rest = changeEntry(w, plan, r.seq);
     const st2 = w.state(); const B = boundsOf(st2);
     if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
       // it landed outside the world: lost. The door returns it to where it was picked up, as its own act.
       const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
-      const p2 = admit(w, st2, { actor: "door", cap: { kind: "door", ids: [r.id], comps: ["transform", "parent"] } }, back);
-      stateEntry(w, p2, w.append(actEntry(w, "door", "return-lost", { id: r.id, rest })));
+      const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
+      changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
       continue;
     }
     // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the door's word)
@@ -2702,8 +2706,8 @@ function settleSim(w) {
     if (sup.id === "ground") continue;
     const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
     const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
-    const p3 = admit(w, st2, { actor: "door", cap: { kind: "door", ids: [r.id], comps: ["transform", "parent"] } }, attach);
-    stateEntry(w, p3, w.append(actEntry(w, "door", "settle", { id: r.id, onto: sup.id, rest })));
+    const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
+    changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
   }
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
@@ -2829,7 +2833,7 @@ const PHYSICS_TOOLS = {
     if (dependents.length && !(spec && carried(spec))) {
       const ops = dependents.map((k) => { const b = aabb(st, k); const below = supportUnder(st, b, new Set([k, ...fam, ...descendants(st, k)])); const tk = worldT(st, k);
         return setOp(k, "transform", { ...tk, pos: [tk.pos[0], r3(tk.pos[1] - (b.min[1] - below.y)), tk.pos[2]] }); });
-      plan = admit(w, st, { actor, cap: { kind: "door", ids: dependents, comps: ["transform"] } }, ops);
+      plan = admit(w, st, { actor, cap: { kind: "system", ids: dependents, comps: ["transform"] } }, ops);
     }
     // picking a thing up takes it out of the world's physics (no collider left at its old spot), and that changes the
     // sim, so it goes through the log (Covenant III: presence never feeds the sim otherwise)
@@ -2843,7 +2847,7 @@ const PHYSICS_TOOLS = {
         for (const k of dependents) w.append({ kind: "sim", actor, cause: actOnce(), verb: "launch", body: { id: k, p: worldT(st, k).pos.slice(), yaw: qYaw(worldT(st, k).q), v: [0, 0, 0], handled: [actor] } });
         notes.push({ fell: dependents, why: `they were resting on ${a.id}; picking it up let them fall (physics will log where they land)` });
       } else {
-        stateEntry(w, plan, actOnce());
+        changeEntry(w, plan, actOnce());
         notes.push({ setDown: dependents, why: `they were resting on ${a.id}; with no physics running they were set straight down` });
       }
     }
@@ -2881,7 +2885,7 @@ const PHYSICS_TOOLS = {
       const ops = [setOp(a.id, "parent", { to: snap.to.to, slot: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", slot: { to: snap.to.to, slot: snap.to.slot } }));
-      const seq = stateEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, slot: snap.to.slot, seq: act });
+      const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, slot: snap.to.slot, seq: act });
       return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, slot: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, slot: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
     }
     // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
@@ -2900,7 +2904,7 @@ const PHYSICS_TOOLS = {
     const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
-    const seq = stateEntry(w, plan, act);
+    const seq = changeEntry(w, plan, act);
     delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: stay ? "stay" : how, seq: act });
     return { ok: true, seq, act, settled: { id: a.id, pos }, handled: h.handled, ...(stay ? { release: "stay" } : {}), ...(snap.notes.length ? { notes: snap.notes } : {}) };
   },
@@ -2975,8 +2979,8 @@ const PHYSICS_TOOLS = {
     // where the log last had it; if picking it up took it out of the engine, the door puts it back there, as its own act.
     for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c.sim) { const t = st.entities[id].c.transform;
-        if (t) { const p = admit(w, st, { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
-          stateEntry(w, p, w.append(actEntry(w, "door", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
+        if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
+          changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
     delete w.presence.bodies[actor]; w.savePresence();
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
@@ -3060,26 +3064,26 @@ function snapTarget(st, id, g, p) {
   return out;
 }
 // Home (research §3): where a returning thing goes. A door act (actor door, verb return-home) whose cause is the
-// release, then its state entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
+// release, then its change entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
 // parent that's gone) means it stays where it is.
 function returnPlan(w, st, id, g) {
   const e = st.entities[id]; const hp = g.home.parent;
   if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
   const ops = [...(hp ? [setOp(id, "parent", { order: "a0", ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
-  try { return { plan: admit(w, st, { actor: "door", cap: { kind: "door", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
+  try { return { plan: admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
 function returnHome(w, id, plan, cause) {
-  const act = w.append({ kind: "act", actor: "door", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
-  return { act, seq: stateEntry(w, plan, act) };
+  const act = w.append({ kind: "act", actor: "system", verb: "return-home", ...(cause !== undefined ? { cause } : {}), body: { id } });
+  return { act, seq: changeEntry(w, plan, act) };
 }
 // What moved a thing last, when it was a hand or physics (a settlement, a punt, a rest, the door's follow-up to one):
 // the entry and the release that caused it. An edit, a script or a return isn't one (they don't send it home).
-const HAND_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), DOOR_AFTER = new Set(["settle", "return-lost", "return-held"]);
+const HAND_VERBS = new Set(["put", "drop", "throw", "punt", "leave"]), SYSTEM_AFTER = new Set(["settle", "return-lost", "return-held"]);
 function lastRelease(w, id) {
   const lt = lastTouch(w, id, "transform"); if (!lt) return null;
   const se = w.entries[lt.seq]; const c = w.entries[se?.cause]; if (!isE(c)) return null;
-  const byHand = (c.kind === "act" && (HAND_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "door" && DOOR_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
+  const byHand = (c.kind === "act" && (HAND_VERBS.has(c.verb) && !RESERVED.has(c.actor) || (c.actor === "system" && SYSTEM_AFTER.has(c.verb)))) || (c.kind === "sim" && c.verb === "launch");
   return byHand ? { seq: lt.seq, ts: se.ts, release: c.kind === "sim" ? c.cause : se.cause } : null;
 }
 const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.transform; if (!t || !home) return false;
@@ -3170,7 +3174,7 @@ function coolDown(P, k, now) { const key = `${k.from}>${k.to}:${k.cls}`; const n
 function noteRefusal(w, from, to, cls, now) { const P = w.presence; (P.refusals ??= []).push({ ts: now, from, to, cls }); P.refusals = P.refusals.filter((r) => now - r.ts < 300000);
   const mine = P.refusals.filter((r) => r.from === from && r.cls === cls);
   if (mine.length >= 5 && new Set(mine.map((r) => r.to)).size >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
-    (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "door", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
+    (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "system", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
 // The gate for every act on another body. extra: { cls?, spec?, why?, script?, sponsor? }.
 function bodyGate(w, from, to, act, extra = {}) {
   const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.ACT_CLASS[act];
@@ -3180,10 +3184,10 @@ function bodyGate(w, from, to, act, extra = {}) {
   const result = (verdict, r) => { ringPush(P, { ts: now, from, to, cls, verdict }); w.presenceDirty = true; return r; };
   if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, teach: "ask people first; this lifts by itself" });
   let d = C.decide(P, from, to, cls, now);
-  if (isBhv(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`bhvs:${extra.sponsor}`]?.[cls]) d = C.decide(P, `bhvs:${extra.sponsor}`, to, cls, now);
+  if (isScriptActor(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);
   if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); return result("refused", { ok: false, code: "consent", class: cls, reason: d.why, teach: `${to} isn't taking ${cls} from you; their shield says so (look)` }); }
   if (d.mode === "ask") {
-    if (isBhv(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, teach: `${to} may allow ${from} by name` });
+    if (isScriptActor(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, teach: `${to} may allow ${from} by name` });
     const key = `${from}>${to}:${cls}`; if (P.cool?.[key]?.until > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${to} said no (or didn't answer); you may ask again in ${Math.ceil((P.cool[key].until - now) / 60000)} min`, teach: "the wait doubles each time" });
     if (Object.values(P.asks ?? {}).some((k) => k.from === from && k.to === to)) return result("refused", { ok: false, code: "pending", class: cls, reason: `you already have an ask waiting with ${to}`, teach: "one at a time" });
     if (Object.values(P.asked ?? {}).filter((t) => t.from === from && now - t.ts < 60000).length >= 2) return result("refused", { ok: false, code: "rate", class: cls, reason: "at most 2 asks a minute", teach: "" });
@@ -3299,13 +3303,13 @@ const TOOLS = {
         refuse("shape", "new {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
     // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
     // §2.4 + §3d: {version, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
-    // here in custody) is tier 0; rewind_window is left at its default (1000 state entries).
+    // here in custody) is tier 0; rewind_window is left at its default (1000 change entries).
     const cu = w.custody(); if (!cu) throw new Error("door bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
-    w.append({ kind: "genesis", actor: "door", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
+    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { version: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
-    stateEntry(w, plan, w.append(actOf(w, actor, "new", a)));
+    changeEntry(w, plan, w.append(actOf(w, actor, "new", a)));
     return { ok: true, world: w.name, you: "owner" };
   },
   help(w, actor, a) {
@@ -3366,12 +3370,12 @@ const TOOLS = {
       if (a.verbs !== undefined || a.after !== undefined) refuse("shape", "one thing's history pages back with before only", "leave id out to filter the whole log by verbs, or page it with after");
       const id = String(a.id); const lim = Math.max(1, Math.min(50, a.limit ?? 5)); const before = a.before ?? Infinity; const out = [];
       let next = null;
-      for (const i of backward(w, id)) { if (i >= before) continue; const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+      for (const i of backward(w, id)) { if (i >= before) continue; const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
         const ops = opsTouching(e, id); if (!ops.length) continue;
         if (out.length === lim) { next = out.at(-1).seq; break; }
         const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
-        // an imported act reads as what it was (spawn, place, comp), never "legacy" (batch 2: Credits in History)
-        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "legacy" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
+        // an imported act reads as what it was (spawn, place, comp), never "imported" (batch 2: Credits in History)
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
@@ -3382,7 +3386,7 @@ const TOOLS = {
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
     const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
     const ghost = !!ghostOf(w, actor); // a ghost can't read chat (PLAN 10-06): says leave the page
-    const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
+    const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "imported" && vs.has(e.body?.verb));
     const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === "say");
     const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;
@@ -3421,11 +3425,11 @@ const TOOLS = {
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
       if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
-        // an imported world: the reaction names an old binding (@world behavior:<name>), which the door never runs
+        // an imported world: the reaction names an old binding (@world imported-behavior:<name>), which the door never runs
         // (a binding there, or the handler itself written by the translation: its cause is a `legacy` act)
-        const old = Object.entries(wc).find(([k, b]) => k.startsWith("behavior:") && (k === `behavior:${probe.script}` || b?.attach === a.id));
+        const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
-        if (old || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
+        if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
           refuse("no-runtime", `${a.id}'s '${probe.action}' runs the imported behaviour '${old ? old[0].slice(9) : probe.script}', carried by translation; the door doesn't run the old script API`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists imported behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
@@ -3482,7 +3486,7 @@ const TOOLS = {
   modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
     const lim = Math.max(1, Math.min(200, a.limit ?? 50)); const before = a.before ?? Infinity;
     const rows = w.mod.map((m, i) => ({ ...m, at: i, src: "mod" }));
-    for (let i = 0; i < w.entries.length; i++) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+    for (let i = 0; i < w.entries.length; i++) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
       for (const o of opsQuiet(e)) if (o.id === "@world" && String(o.comp ?? "").startsWith("roles:")) rows.push({ ts: e.ts, actor: entryBy(w, e).by, verb: "role", who: o.comp.slice(6), role: o.verb === "delete" ? null : o.value?.role ?? null, ...(o.value?.can ? { can: o.value.can } : {}), seq: i, src: "log" }); }
     const out = rows.filter((r) => (a.who === undefined || r.who === a.who) && r.ts < before).sort((x, y) => y.ts - x.ts || (y.at ?? y.seq) - (x.at ?? x.seq)).slice(0, lim)
       .map((r) => ({ ...r, by: said(r.actor), name: typeof r.who === "string" ? said(r.who) : undefined, ...(r.until !== undefined ? { inForce: r.until > w.now() } : {}) }));

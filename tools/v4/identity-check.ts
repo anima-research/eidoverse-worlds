@@ -210,13 +210,13 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   const moss = await sock(S4.port); const jm = await moss.join("heath", "Moss", { agentToken: "tok-moss" });
   await own.req("set", { id: "@world", component: `roles:${you(jf)}`, value: { role: "moderator" } });
   await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } });
-  await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", gen: true } }); await sleep(300);
+  await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", can: { generate: true } } }); await sleep(300);
   // RS1: your-rights is the door's {role, rank, switches}; the v1 rightsOf merge is gone (a Commons-like stranger builds and generates)
   { const r = (sock) => [...sock.msgs].reverse().find((m) => m.type === "your-rights")?.rights;
     const or = jo.snapshot?.yourRights, fr = r(fern), mr = r(moss);
     ok(or?.rank === 255 && or.switches?.includes("ban") && or.switches?.includes("fly") && fr?.role === "moderator" && fr.rank === 200 && fr.switches?.includes("mute")
       && mr?.role === "builder" && mr.switches?.includes("build") && mr.switches?.includes("generate") && mr.gen === true && !mr.switches?.includes("mute"),
-      "RS1 your-rights comes from the door: owner 255 with every switch; moderator 200 with mute; a stranger under default-role {builder, gen} builds and generates", [or, fr, mr]); }
+      "RS1 your-rights comes from the door: owner 255 with every switch; moderator 200 with mute; a stranger under default-role {builder, can: {generate}} builds and generates", [or, fr, mr]); }
   // RS2: voice-moderate is the door's identity-keyed, logged mute; a name nobody present answers to mutes nobody
   { const k = own.msgs.length;
     fern.raw({ type: "voice-moderate", id: "Nobody", muted: true }); await sleep(300);

@@ -8,7 +8,7 @@
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import * as eidosim from "../../../shared/sim.js";
 import { applyInPlace, opsOf, emptyState as v4Empty, worldIdOf, VERSION } from "../../../shared/v4/fold.js";
-import { project, enc, diff, stateBody, unNegZero, translatedGenesis } from "./translate-v1.js";
+import { project, enc, actorOf, diff, changeBody, unNegZero, translatedGenesis } from "./translate-v1.js";
 import { simFold, digestOf, ENGINES } from "../../../shared/v4/simlayer.js";
 
 export const TRANSLATOR = "translate-d3@0.2";
@@ -21,7 +21,7 @@ const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && 
 function composed(st, sim, recorded) {
   const out = project(st);
   const w = out["@world"] ?? (out["@world"] = {});
-  delete w.epoch;
+  delete w["imported-epoch"];
   if (st.epoch) w.sim = { engine: st.epoch.sim, build: ENGINES[st.epoch.sim]?.build ?? null, tickMs: st.epoch.tickMs };
   if (!Object.keys(w).length) delete out["@world"];
   // v4 holds the last LOGGED rest pose until her law releases the body (resting or flying again, it's the log's word)
@@ -35,10 +35,10 @@ export function translate(old) {
   const stats = { in: old.length, out: 0, launches: 0, rests: 0, worldDivergences: 0, flightDivergences: 0, first: null, visible: [] };
   const v4 = v4Empty(); let world = null, lastAt = old[0]?.ts ?? 0;
   const push = (e) => { if (e.kind !== "genesis") e = { world, ...e }; const seq = out.length; out.push(e); if (typeof e.ts === "number") lastAt = e.ts;
-    if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "state") applyInPlace(v4, opsOf(e), seq); return seq; };
+    if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const g = old[0]?.verb === "genesis" ? old[0].args : {};
-  push({ kind: "genesis", actor: "door", verb: "genesis", ts: old[0]?.ts ?? 0, body: translatedGenesis(old) }); // §2.4 + §3d (translate-v1.js)
-  push({ kind: "act", actor: "door", verb: "translated", ts: old[0]?.ts ?? 0, body: { from: unNegZero({ ...g, translator: TRANSLATOR }) } });
+  push({ kind: "genesis", actor: "system", verb: "genesis", ts: old[0]?.ts ?? 0, body: translatedGenesis(old) }); // §2.4 + §3d (translate-v1.js)
+  push({ kind: "act", actor: "system", verb: "translated", ts: old[0]?.ts ?? 0, body: { from: unNegZero({ ...g, translator: TRANSLATOR }) } });
   let prev = composed(st, sim, recorded);
   const launchSeq = {}; const restLogged = new Set(); // bodies whose CURRENT flight's rest is logged
   const restTicks = {};
@@ -54,11 +54,11 @@ export function translate(old) {
     const fresh = Object.keys(sim.bodies).filter((id) => sim.bodies[id].resting && launchSeq[id] !== undefined && !restLogged.has(id))
       .sort((a, b) => restTicks[a] - restTicks[b]);
     for (const id of fresh) {
-      // L3: the engine digest is its own sim entry; the rest is a plain state entry caused by the launch
+      // L3: the engine digest is its own sim entry; the rest is a plain change entry caused by the launch
       push({ kind: "sim", actor: "sim", ts, cause: launchSeq[id], verb: "digest", body: { digest: (() => { const sf = simFold(out, ts); return sf.sim ? digestOf(sf.sim) : null; })() } });
       recorded.set(id, sim.bodies[id].p.slice()); restLogged.add(id);
       const now = composed(st, sim, recorded); const ops = diff(prev, now); prev = now;
-      push({ kind: "state", actor: "sim", ts, cause: launchSeq[id], ...stateBody(unNegZero(ops)) });
+      push({ kind: "change", actor: "sim", ts, cause: launchSeq[id], ...changeBody(unNegZero(ops)) });
       stats.rests++;
     }
   };
@@ -76,16 +76,16 @@ export function translate(old) {
     if (sim.epoch) { stepTo(eidosim.tickOf(sim, e.ts)); logRests(e.ts); }
     const wasBody = sim.bodies[e.args?.id];
     foldEntry(st, e); eidosim.simEntry(sim, e, st);
-    const tl = push({ kind: "act", actor: enc(e.actor ?? "door"), ts: e.ts, verb: "legacy", body: unNegZero({ verb: e.verb, args: clone(e.args) ?? null, from: e.seq ?? null }) });
+    const tl = push({ kind: "act", actor: actorOf(e.actor ?? "door"), ts: e.ts, verb: "imported", body: unNegZero({ verb: e.verb, args: clone(e.args) ?? null, from: e.seq ?? null }) });
     const b = sim.bodies[e.args?.id];
     if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: a launch with its exact state
-      launchSeq[e.args.id] = push({ kind: "sim", actor: enc(e.actor ?? "door"), ts: e.ts, cause: tl, verb: "launch", body: unNegZero({ id: enc(e.args.id), p: b.p.slice(), yaw: b.yaw, v: b.v.slice() }) });
+      launchSeq[e.args.id] = push({ kind: "sim", actor: actorOf(e.actor ?? "door"), ts: e.ts, cause: tl, verb: "launch", body: unNegZero({ id: enc(e.args.id), p: b.p.slice(), yaw: b.yaw, v: b.v.slice() }) });
       restLogged.delete(e.args.id); stats.launches++;
     }
     for (const id of [...recorded.keys(), ...Object.keys(launchSeq)]) if (!sim.bodies[id]) { recorded.delete(id); restLogged.delete(id); delete launchSeq[id]; } // released by her law
     const now = composed(st, sim, recorded); const ops = diff(prev, now);
     if (ops.length) {
-      push({ kind: "state", actor: enc(e.actor ?? "door"), ts: e.ts, cause: tl, ...stateBody(unNegZero(ops)) });
+      push({ kind: "change", actor: actorOf(e.actor ?? "door"), ts: e.ts, cause: tl, ...changeBody(unNegZero(ops)) });
       const moved = ops.filter((o) => o.comp === "transform" && e.verb === "terrain");
       if (moved.length) stats.visible.push({ oldSeq: e.seq, verb: e.verb, said: moved.map((o) => `${o.id} → ${JSON.stringify(o.value.pos)}`) });
     }

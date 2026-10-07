@@ -174,14 +174,14 @@ function syncOutlines() {
 let behaviors = [];   // the world's scripts (the door's status view, via world_debug {behaviors}): {id: "<thing>/<name>", attach, status, …}
 /** The door ops that remove one script: script:<name> on its thing, or an imported world's carried behaviour record. */
 const unbindOps = (id) => { const s = String(id); const i = s.indexOf('/');
-  return s.startsWith('behavior:') ? [OP.unset('@world', s)] : i > 0 ? [OP.unset(s.slice(0, i), `script:${s.slice(i + 1)}`)] : []; };
+  return s.startsWith('imported-behavior:') ? [OP.unset('@world', s)] : i > 0 ? [OP.unset(s.slice(0, i), `script:${s.slice(i + 1)}`)] : []; };
 const running = (b) => b.status === 'active' || b.status === 'asleep';
 let shown = false;
 let rosterTimer = 0;
 async function refreshBehaviors() {
   try {
-    const r = await requestDebug({ behaviors: true });
-    behaviors = (r?.events ?? []).filter((e) => e.kind === 'behavior');
+    const r = await requestDebug({ scripts: true });
+    behaviors = (r?.events ?? []).filter((e) => e.kind === 'script');
     repaintAll();
   } catch { /* the roster is a refinement, never a gate */ }
 }
@@ -576,7 +576,7 @@ function inspectorFields() {
   // Scripts: the ones on this thing, and (desktop: it's a card with a source box) a new one (scriptnew.js: upload, then
   // one act). Its own group, so it never folds under the VR-only Add Component rows above.
   if (mine.length || id !== WORLD_ID) f.push({ t: 'group', k: 'behaviors', label: mine.length ? `Scripts (${mine.length})` : 'Scripts', open: isOpen(id, 'behaviors') });
-  if (mine.length) f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
+  if (mine.length) f.push({ t: 'list', k: 'scripts', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
   if (id !== WORLD_ID) f.push({ t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, disabled: !mayScript(),
     hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' });
   f.push({ t: 'btn', k: 'remove', label: 'remove', danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
@@ -695,7 +695,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   switch (action) {
     case 'remove': removeMany([id]); break;
     case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
-    case 'bhv': watchScript(payload); break;   // a script row → the Console, watching it
+    case 'scripts': watchScript(payload); break;   // a script row → the Console, watching it
     case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
       flashHint(`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
@@ -712,7 +712,7 @@ let watchLog = null;           // { status, lines } from the last poll
 async function refreshWatch() {
   if (!watching) { watchLog = null; return; }
   try {
-    const d = await requestDebug({ behavior: watching, limit: 40 });
+    const d = await requestDebug({ script: watching, limit: 40 });
     watchLog = { status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
   } catch { /* a poll that fails keeps the last good tail */ }
 }

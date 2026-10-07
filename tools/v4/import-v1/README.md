@@ -9,7 +9,7 @@ it and nothing at runtime can load it; `tools/v4/nov1-check.ts` (in `bun run tes
 | file | what it is |
 | --- | --- |
 | `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
-| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes a `legacy` act (its verb and args, kept as provenance) and one state entry that brings the v4 fold to the same place, checked after every entry |
+| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes a `legacy` act (its verb and args, kept as provenance) and one change entry that brings the v4 fold to the same place, checked after every entry |
 | `translate-d3.js` | the same for dialect-3 logs (the old deterministic-sim epochs) |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
 | `world.ts` | `translateV1World(src, dest)`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader, maps every old name to a door identity, then writes `dest/v4.jsonl` |

@@ -92,7 +92,7 @@ export class World {
     if (this.debugLog.length > 300) this.debugLog.splice(0, this.debugLog.length - 300);
   }
   /** Runtime scripts: the door runs script:<name> components (server/v4/scripts.ts). */
-  bhv!: ScriptHost;
+  scripts!: ScriptHost;
   /** The world's log: the door over its directory (server/v4/world.ts). Replaced in place by resetV4. */
   v4: V4Log;
   /** The embodied plane: who is connected, poses received since the last stage-frame tick (latest wins; one frame per
@@ -143,8 +143,8 @@ export class World {
     this.openSeq = this.v4.snapSeq + 1;   // past every chat line this world has numbered (v4seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running
     // server-side.
-    this.bhv = new V4Scripts(this.v4);
-    this.bhv.sync();
+    this.scripts = new V4Scripts(this.v4);
+    this.scripts.sync();
     console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, v4 head ${this.v4.head}, `
       + `${Object.keys(this.poses).length} remembered poses`);
   }
@@ -173,10 +173,10 @@ export class World {
    *  the archive directory. */
   resetV4(): string {
     const arch = resetV4(this.v4);
-    this.bhv.disposeAll();   // the old world's scripts stop with it: the fresh world has none
+    this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
     this.v4 = this.openLog();
-    this.bhv = new V4Scripts(this.v4);
-    this.bhv.sync();
+    this.scripts = new V4Scripts(this.v4);
+    this.scripts.sync();
     return arch;
   }
 }

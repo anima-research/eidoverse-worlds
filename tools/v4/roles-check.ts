@@ -57,7 +57,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a who names a role here", "v4/door.js", "if (comp === \"grabbable\" && obj) whoOk(v.who, at);", "", ["S4"]],
   ["undo along rank", "v4/door.js", "if (!eo || me < them) refuse(\"rank\"", "if (!eo) refuse(\"rank\"", ["S5"]],
   ["generate gates the palette", "v4/door.js", "  if (base === \"palette\") return \"generate\";", "  if (base === \"palette\") return \"build\";", ["S6"]],
-  ["default-role gen opens generate to strangers", "v4/roles.js", "if (!entry && !opts.anon && dr?.gen === true) can.generate = true;", "", ["S6"]],
+  ["default-role can opens generate to strangers", "v4/roles.js", "if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickSwitches(dr.can));", "", ["S6"]],
   ["a lock is lifted only by who may edit it", "v4/door.js", "const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: \"delete\", id: k, comp: \"lock\" });", "const mayUnlock = !who.cap;", ["S7"]],
   // S3
   ["person acts need their switch", "v4/door.js", "if (!powers.some((k) => me.can[k])) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["M1", "M4", "M5", "M9"]],
@@ -104,8 +104,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a sanction isn't the ghost's to end", "v4/door.js", "if (!a.on && inForceOf(w, actor, \"ghost\").length) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
   ["the chosen mode", "v4/door.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
   // S5, S6
-  ["translation: v1 fly → can.fly", "../tools/v4/import-v1/translate-v1.js", "return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest;", "return v;", ["T1"]],
-  ["legacy gen reads as generate", "v4/roles.js", "if (entry?.gen === true) can.generate = true;", "", ["T1"]],
+  ["translation: v1 fly/gen → can.fly/can.generate", "../tools/v4/import-v1/translate-v1.js", "return Object.keys(can).length ? { ...rest, can } : rest; };", "return v; };", ["T1"]],
   ["the menu: only below you", "v4/roles.js", "const below = them.rank < me.rank;", "const below = them.rank <= me.rank;", ["P3"]],
   ["the menu: acts follow switches", "v4/roles.js", "if (has(\"ban\")) out.push({ id: \"ban\", label: \"Ban…\" });", "out.push({ id: \"ban\", label: \"Ban…\" });", ["P1"]],
   ["the menu: unmute when muted", "v4/roles.js", "out.push(state.muted ? { id: \"unmute\", label: \"Unmute\" } : { id: \"mute\", label: \"Mute…\" });", "out.push({ id: \"mute\", label: \"Mute…\" });", ["P2"]],
@@ -288,10 +287,10 @@ const cases: Case[] = [
       const a = s.call("mo", "create", { id: "m1", model: "crate", place: { at: [0, 0] } }); const b = s.call("bob", "create", { id: "b1", model: "crate", place: { at: [3, 0] } });
       return { bob: code(s.call("bob", "undo", { act: a.act ?? a.seq })), mo: show(s.call("mo", "undo", { act: b.act ?? b.seq })) }; },
     good: (o) => o.bob === "rank" && o.mo === "ok" },
-  { id: "S6", what: "generate is checked: a builder can't add to the palette; with can.generate they can; default-role gen opens it to strangers, not guests", run(s) { cast(s);
+  { id: "S6", what: "generate is checked: a builder can't add to the palette; with can.generate they can; default-role can.generate opens it to strangers, not guests", run(s) { cast(s);
       const pal = (who: string, k: string) => set(s, who, `palette:${k}`, { name: k, path: `store/${k}.glb` });
       const b0 = pal("bob", "a"); role(s, "bob", { role: "builder", can: { generate: true } }); const b1 = pal("bob", "b");
-      set(s, "olive", "default-role", { role: "builder", gen: true, guests: "builder" });
+      set(s, "olive", "default-role", { role: "builder", can: { generate: true }, guests: "builder" });
       return { b0: code(b0), b1: show(b1), zed: show(pal("zed", "c")), guest: code(pal("guest-2", "d")) }; },
     good: (o) => o.b0 === "rights" && o.b1 === "ok" && o.zed === "ok" && o.guest === "rights" },
   { id: "S7", what: "a lock: acting through it needs the rights to lift it; bob's own cup on bea's locked table moves through_lock only while bob holds editOthers", run(s) { cast(s);
@@ -401,15 +400,18 @@ const cases: Case[] = [
     good: (o) => o.on === "ok" && o.say === "ghost" && o.off === "ok" && o.say2 === "ok" && o.mod === 0 && o.logged === 0 },
 
   // ---------------- T: S5 translation ----------------
-  { id: "T1", what: "translation: a v1 {builder, fly, gen} grant becomes roles:<id> {role, gen, can: {fly}}, and the effective set holds fly and generate", run() {
+  { id: "T1", what: "translation: a v1 {builder, fly, gen} grant becomes roles:<id> {role, can: {fly, generate}}, and the effective set holds fly and generate", run() {
       const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "visitor", fly: false } } });
       const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
-      return { v: w["@world"][key], bo: w["@world"][bo], legacy: Object.keys(w["@world"]).filter((k) => k.startsWith("legacy:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.switches, tag: TV1.TRANSLATOR }; },
-    good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.gen === true && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.legacy.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag?.startsWith("eidoverse/translate-v1@") && +o.tag.split("@")[1] >= 4 },   // @4 brought fly → can.fly; later versions keep it
-  { id: "T2", what: "the Commons (staging's commons-v4, read-only): a stranger is still a builder and now builds and generates by its default-role gen; a guest is a visitor", run() {
-      const f = process.env.V4_COMMONS ?? "/home/claude/eido/staging/worlds/commons-v4/v4.jsonl";
-      if (!fs.existsSync(f)) return { skipped: f };
-      const st = F.fold(F.readLog(fs.readFileSync(f)));
+      return { v: w["@world"][key], bo: w["@world"][bo], imported: Object.keys(w["@world"]).filter((k) => k.startsWith("imported:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.switches, tag: TV1.TRANSLATOR }; },
+    good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.can?.generate === true && !("gen" in o.v) && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.imported.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag?.startsWith("eidoverse/translate-v1@") && +o.tag.split("@")[1] >= 7 },   // @4 brought fly → can.fly, @7 gen → can.generate
+  { id: "T2", what: "the Commons (staging's v1 commons-0927, read-only, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is a visitor", run() {
+      // V4_COMMONS: an already-translated world log; else the v1 Commons translated in process (R 10-07: the Commons is
+      // re-translated from its latest v1 log at merge time, so a saved translation would only test an older importer)
+      const v4f = process.env.V4_COMMONS, v1f = process.env.V1_COMMONS ?? "/home/claude/eido/staging/worlds/commons-0927/log.jsonl";
+      if (!v4f && !fs.existsSync(v1f)) return { skipped: v1f };
+      const st = v4f ? F.fold(F.readLog(fs.readFileSync(v4f)))
+        : F.fold(TV1.translate(fs.readFileSync(v1f, "utf8").split("\n").filter((l: string) => l.trim()).map((l: string) => JSON.parse(l))).out);
       const e = D.effectiveIn?.(st, "u-aaaaaaaaaaaaaaaaaaaa"), g = D.effectiveIn?.(st, "u-bbbbbbbbbbbbbbbbbbbb", { anon: true });
       return { role: D.roleIn(st, "u-aaaaaaaaaaaaaaaaaaaa"), sw: e?.switches, guest: g?.role }; },
     good: (o) => !!o.skipped || (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "visitor") },

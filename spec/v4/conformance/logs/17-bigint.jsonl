@@ -1,9 +1,9 @@
-{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0000"}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0000","comp":"v","value":100000000000000000000}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0993"}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0993","comp":"v","value":9007199254740993}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0992"}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0992","comp":"v","value":9007199254740992}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n120"}}
-{"world":"sha256:e99ef8e3606850d89b84765a613d8f3a925cbea43f8623eb06c4c7e6a8cf18ce","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n120","comp":"v","value":1e20}}
+{"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"create","body":{"id":"n0000"}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"set","body":{"id":"n0000","comp":"v","value":100000000000000000000}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"create","body":{"id":"n0993"}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"set","body":{"id":"n0993","comp":"v","value":9007199254740993}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"create","body":{"id":"n0992"}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"set","body":{"id":"n0992","comp":"v","value":9007199254740992}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"create","body":{"id":"n120"}}
+{"world":"sha256:f1346846d881195771c3acfcf34671bdae97bfc1dce12dd3a1676f4fe51b0a0f","kind":"change","ts":1,"actor":"system","cause":0,"verb":"set","body":{"id":"n120","comp":"v","value":1e20}}

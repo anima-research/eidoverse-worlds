@@ -30,12 +30,12 @@ export function translateV1World(srcDir: string, destDir: string) {
   const isAcct = (k: string) => /^(human|agent|aid1):/.test(k);
   const who = (name: string, { sub }: { sub?: string } = {}) => {
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
-    // local:<name>, as a join there is; anywhere else it's a legacy identity an operator binds (directory.bind)
+    // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
     const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
     const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
     const key = acct ?? `name:${name}`;
     let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this door
-    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "legacy", since: Date.now() }; }
+    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? (/^(agent|aid1):/.test(acct) ? "agent" : "human") : "imported", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
     memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
@@ -60,9 +60,9 @@ export function translateV1World(srcDir: string, destDir: string) {
   dir.put(planned);
   // v1 bans are the moderator's record in v4 (the door reads bans only from v4.mod.jsonl): file each one there, or a
   // translated world quietly unbans everyone (component review, world-settings #3)
-  const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("bans:"));
+  const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
   if (banned.length) { const m = modLogAt(path.join(destDir, "v4.mod.jsonl"));
-    for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "door", verb: "ban", who: k.slice(5), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
+    for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
   // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
   // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
   let poses = 0;

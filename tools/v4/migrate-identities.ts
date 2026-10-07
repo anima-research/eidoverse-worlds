@@ -1,7 +1,7 @@
 // tools/v4/migrate-identities.ts — move an existing engine v4 world from name identities to directory ids (round-2
 // review R1), and seal it (R3). For the worlds founded or translated before b1ec40b1; a fresh translation does this
 // itself. Run with the world's server STOPPED (it holds the old log in memory).
-//   - every actor and every roles:/bans: key that names a person becomes an opaque id from the door directory
+//   - every actor and every roles:/imported-bans: key that names a person becomes an opaque id from the door directory
 //     (<worlds dir>/.v4-directory.json). The account: a reserved agent name -> agent:<slug>; with --trust-names (a
 //     PRIVATE server that runs TRUST_NAMES=1) a bare name -> local:<name>, the account a join there gets; otherwise a
 //     legacy identity an operator binds later. An escaped name (x--…) is read back first. A `sub` in a role value
@@ -24,7 +24,7 @@ import { ENGINE } from "./common.ts";
 
 const apply = process.argv.includes("--apply"), trust = process.argv.includes("--trust-names");
 const dirs = process.argv.slice(2).filter((a) => !a.startsWith("--"));
-const SYSTEM = new Set(["door", "world", "sim"]);
+const SYSTEM = new Set(["system", "world", "sim"]);
 const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
 const agents = agentTokens().names;
 const out: Record<string, unknown>[] = [];
@@ -41,16 +41,16 @@ for (const dir of dirs) {
     const name = dec(k) ?? k;
     const acct = sub ?? (agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : trust ? `local:${name.toLowerCase()}` : undefined);
     const key = acct ?? `name:${name}`; let id = memo.get(key) ?? (acct ? directory.idOfSub(acct) : null);
-    if (!id) { id = mintId(); planned[id] = { name, subs: acct ? [acct] : [], kind: acct?.startsWith("agent:") ? "agent" : acct ? "human" : "legacy", since: Date.now() }; }
+    if (!id) { id = mintId(); planned[id] = { name, subs: acct ? [acct] : [], kind: acct?.startsWith("agent:") ? "agent" : acct ? "human" : "imported", since: Date.now() }; }
     memo.set(key, id); return id; };
   // role values may carry a sub: that person's account, first, so their acts land on the same id
   for (const [c, v] of Object.entries<any>(oldSt.entities["@world"]?.c ?? {})) if (c.startsWith("roles:") && typeof v?.sub === "string") who(c.slice(6), v.sub);
-  const keyOf = (comp: string) => { const m = /^(roles|bans):(.+)$/.exec(comp ?? ""); return m ? `${m[1]}:${who(m[2])}` : comp; };
-  const valOf = (comp: string, v: any) => (/^(roles|bans):/.test(comp ?? "") && v && typeof v === "object" && "sub" in v ? (({ sub, ...r }) => r)(v) : v);
+  const keyOf = (comp: string) => { const m = /^(roles|imported-bans):(.+)$/.exec(comp ?? ""); return m ? `${m[1]}:${who(m[2])}` : comp; };
+  const valOf = (comp: string, v: any) => (/^(roles|imported-bans):/.test(comp ?? "") && v && typeof v === "object" && "sub" in v ? (({ sub, ...r }) => r)(v) : v);
   const op = (o: any) => ({ ...o, ...(o.comp !== undefined ? { comp: keyOf(o.comp) } : {}), ...("value" in o ? { value: valOf(o.comp, o.value) } : {}) });
   const next = old.map((e0: any, i: number) => { const e = JSON.parse(JSON.stringify(e0)); if (i === 0) return e; delete e.head; delete e.sig;
     if (typeof e.actor === "string") e.actor = who(e.actor);
-    if (e.kind === "state") e.body = e.verb === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ verb, ...b }) => b)(op({ verb: e.verb, ...e.body }));
+    if (e.kind === "change") e.body = e.verb === "batch" ? { ...e.body, ops: e.body.ops.map(op) } : (({ verb, ...b }) => b)(op({ verb: e.verb, ...e.body }));
     if (e.kind === "say" && typeof e.body?.to === "string") e.body.to = who(e.body.to);
     if (e.kind === "act" || e.kind === "say" || e.kind === "sim") delete e.body?.salt;   // re-salted by seal
     return e; });

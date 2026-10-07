@@ -130,7 +130,7 @@ Building blocks:
   transition back to rest stamps absolute state into the log** — the log
   stays self-sufficient, never dependent on reconstructing a ride.
 - **`use`** — the universal interact, open to visitors: a *request*, kept
-  in the log as an act, whose *effects* are the state entries it caused.
+  in the log as an act, whose *effects* are the change entries it caused.
 - **`reactions`** — the data half of interaction: an entity's component
   maps use-actions to handlers (`toggle`, `set`, `impulse`, `script`). A
   pendulum `impulse` is closed-form and velocity-matched — pushing against

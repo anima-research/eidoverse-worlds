@@ -315,7 +315,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const first = Number(/#(\d+)/.exec(T(wh))?.[1]);
   const whb = await HANDLERS.world_history(oz, { limit: 2, before: first }, {} as any, "world_history");
   ok(T(whb).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => Number(/#(\d+)/.exec(l)[1]) < first) && /more before #/.test(T(whb)), "CM6 before pages back (it was ignored)", T(whb));
-  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "legacy", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
+  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "imported", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
   // CM7 look speaks door terms: no world_verb, no comp {…}, no dismount
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
   await wait(() => oz.entities.has("bell"));
@@ -508,9 +508,9 @@ srv.proc.kill();
   const srvB = await startServer(ENGINE, W4, OPT, "v4-sk2");
   const c = await client(srvB.port, "crash", "Cy", V4); await sleep(200);
   const L = readLog(fs.readFileSync(path.join(W4, "crash", "v4.jsonl")));
-  const after = L.slice(before).map((e) => `${e.actor === "door" ? "door" : "?"}:${e.kind}:${e.verb}${e.body?.id ? `:${e.body.id}` : ""}`);
+  const after = L.slice(before).map((e) => `${e.actor === "system" ? "system" : "?"}:${e.kind}:${e.verb}${e.body?.id ? `:${e.body.id}` : ""}`);
   const k = heldBy(c); const bodies = Object.keys(k?.sim?.sim?.statics ?? {});   // a thing at rest is a static in the engine (shared/sim.js)
-  ok(after.includes("door:act:return-held:ball") && after.includes("door:act:return-home:torch"), "SK1 after the restart, the door settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
+  ok(after.includes("system:act:return-held:ball") && after.includes("system:act:return-home:torch"), "SK1 after the restart, the door settled both: the ball where the log had it (return-held), the torch home (release: return)", after);
   ok(!Object.keys(c.snapshot?.v4?.holds ?? {}).length && bodies.includes("ball") && bodies.includes("torch"), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.v4?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 

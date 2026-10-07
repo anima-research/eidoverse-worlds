@@ -76,8 +76,8 @@ Refusals show on the card in these same words. (shared/v4/newscript.js plans it;
   read from the log (nothing is stored in the value).
 - A lock binds scripts like everyone; a script never acts through one. A thing in flight can't be written.
 - People are presence. A script's `shove`/`pose` lands only where that body's consent allows it, and a script is a
-  stranger to everyone unless they allow it by name: `consent {allow: "bhv:<thing>", class: "shove"}`, or all of one
-  sponsor's scripts: `consent {allow: "bhvs:<sponsor id>", class: "pose"}`. A script can't ask; an "ask" is a no.
+  stranger to everyone unless they allow it by name: `consent {allow: "script:<thing>", class: "shove"}`, or all of one
+  sponsor's scripts: `consent {allow: "scripts-by:<sponsor id>", class: "pose"}`. A script can't ask; an "ask" is a no.
 
 ## The API (one global, `world`)
 
@@ -113,7 +113,7 @@ Events (`e`): every event has `on`.
   script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
 - `enter` / `leave`: `by`;
-- `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the state entry). It fires for a change to that
+- `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the change entry). It fires for a change to that
   component on any id in the script's scope, by anyone but the script itself;
 - `tick`: nothing more. `wake`: `slept` (seconds asleep).
 
@@ -135,10 +135,10 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
 
 ```text
 812 act    actor=vic        verb=use     body={request: {id: "bell1", action: "ring"}, runs: "script:bell"}
-813 act    actor=bhv:bell1  verb=script  cause=812  body={script, src, sponsor, sponsorAt, on, trigger, event,
-                                                          head, seed, depth, engine, api, reads?, bodies?}
-814 state  actor=bhv:bell1  cause=813    the batch: every write, all or nothing
-815 say    actor=bhv:bell1  cause=813
+813 act    actor=script:bell1  verb=script  cause=812  body={script, src, sponsor, sponsorAt, on, trigger, event,
+                                                         head, seed, depth, engine, api, reads?, bodies?}
+814 change actor=script:bell1  cause=813    the batch: every write, all or nothing
+815 say    actor=script:bell1  cause=813
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/v4/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
@@ -191,7 +191,7 @@ A refused or failed activation writes nothing. Its reason goes to the script's c
 
 ## Translated v1 worlds
 
-A v1 world translated to v4 keeps its bindings as `@world.behavior:<name>`, as a record. v4 never runs them: they were
+A v1 world translated to v4 keeps its bindings as `@world.imported-behavior:<name>`, as a record. v4 never runs them: they were
 written for v1's API (`world.emit`, `world.kv`), with their author's rights and no scope. `scripts` lists each as
 `needs-reinstall`, and a `use` that reaches one says so. To bring one back: rewrite it for this API (`emit(verb)`
 becomes `world.set`/`world.say`; `kv` becomes a component in scope; `world.every` becomes `every` in the component),

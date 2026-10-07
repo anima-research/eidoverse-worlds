@@ -12,7 +12,7 @@ export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the m
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
 // §2.1 + §2.4: `ts` is the door's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
 const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
-const KINDS = new Set(["genesis", "state", "act", "sim", "say", "purge", "sequencer"]);
+const KINDS = new Set(["genesis", "change", "act", "sim", "say", "purge", "sequencer"]);
 const IDENT = "[a-z0-9-]{1,64}";
 // §2.3: entity ids are minted opaque ids or @world. `body:<identity>` is a reference, never an entity.
 const ENTITY = /^(?:[a-z0-9-]{1,64}|@world)$/;
@@ -163,11 +163,11 @@ export function checkEntry(e, seq) {
   if (e.kind !== "genesis" && typeof e.world !== "string") bad("envelope", "world");
   if (e.body === null || typeof e.body !== "object" || Array.isArray(e.body)) bad("envelope", "body not an object");
   if ("for" in e) bad("for-before-keys"); // L4: until identities have keys, `for` is not written at all
-  if (e.kind === "state" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
+  if (e.kind === "change" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
   if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
 }
 const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commit"] }; // `commit` replaces value+salt once purged
-// A state entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
+// A change entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
 export function opsOf(e) {
   const { verb, body } = e;
   if (verb === "batch") {
@@ -243,7 +243,7 @@ export function emptyState() {
   const entities = Object.create(null); entities["@world"] = { born: 0, c: Object.create(null) }; // live from genesis
   return { status: "ok", version: VERSION, worldId: null, entities, diagnostics: [] };
 }
-// entries: what readLog returned, or entry objects. `until`: fold only state entries with seq <= until (purges from
+// entries: what readLog returned, or entry objects. `until`: fold only change entries with seq <= until (purges from
 // the whole log still apply: a purged value is absent at every point in time).
 export function fold(entries, { until = Infinity } = {}) {
   const st = emptyState(); const d = (seq, code, detail = "") => st.diagnostics.push([seq, code, detail]);
@@ -269,7 +269,7 @@ export function fold(entries, { until = Infinity } = {}) {
     lastTs = t; }
   const purged = purgesOf(ok, d);
   for (let seq = 1; seq < ok.length && seq <= until; seq++) {
-    const e = ok[seq]; if (!e || e.kind !== "state") continue;
+    const e = ok[seq]; if (!e || e.kind !== "change") continue;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); continue; } throw x; }
     ops.forEach((op, i) => applyOp(st, seq, op, purged.get(`${seq}:${e.verb === "batch" ? i : "-"}`), d));
   }
@@ -278,7 +278,7 @@ export function fold(entries, { until = Infinity } = {}) {
 // the set op a purge target names, if it sets a roles: value (§3d M11). A target that isn't a set stays the fold's
 // ordinary "purge-target-not-a-value" diagnostic.
 function governanceTarget(e, op) {
-  if (!e || e.kind !== "state" || !e.body || typeof e.body !== "object") return false;
+  if (!e || e.kind !== "change" || !e.body || typeof e.body !== "object") return false;
   const o = e.verb === "batch" ? (Array.isArray(e.body.ops) && Number.isInteger(op) ? e.body.ops[op] : null) : op === undefined ? { verb: e.verb, ...e.body } : null;
   return !!o && typeof o === "object" && o.verb === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
 }
@@ -322,7 +322,7 @@ export function cloneState(st) {
     for (const k of Object.keys(e.c)) c[k] = clone(e.c[k]); entities[id] = { born: e.born, c }; }
   return { ...st, entities, diagnostics: [...st.diagnostics] };
 }
-// Apply ops to a state copy, as a fold of one more state entry would (the door's preview of a write).
+// Apply ops to a state copy, as a fold of one more change entry would (the door's preview of a write).
 export const applyOps = (st, ops, seq = Infinity) => applyInPlace(cloneState(st), ops, seq);
 // A working copy for applying ops one at a time (the door's admit, script elision): it shares every entity with `st`
 // until an op touches it, then copies that one entity (its component map; values are never mutated in place, a set
@@ -338,6 +338,6 @@ export function applyCow(s, ops, seq = Infinity) {
 }
 export function applyInPlace(s, ops, seq = Infinity) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
-  for (const o of ops) applyOp(s, seq, shapeOne(o.verb, o, true, "door"), undefined, d);
+  for (const o of ops) applyOp(s, seq, shapeOne(o.verb, o, true, "system"), undefined, d);
   return s;
 }

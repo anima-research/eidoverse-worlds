@@ -5,7 +5,7 @@
 //           the log). A purge refolds from the log (purge is retroactive by law, L1).
 //   sim     the sim layer as a running folder (simFolder), viewed at the door's clock. The lab simFolded the whole
 //           log on EVERY request (settleSim calls it first).
-//   index   id → seqs of the state entries that touch it, so creatorOf / lastTouch cost a thing's own history.
+//   index   id → seqs of the change entries that touch it, so creatorOf / lastTouch cost a thing's own history.
 //   clock   monotonic: max(wall clock, every ts already written). §2.1 says ts never decreases; a monotonic door
 //           clock also makes "advance the sim for a read, then fold a later entry" equal to folding it first.
 //   presence the door's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
@@ -28,7 +28,7 @@ type Any = any; // the door is JSDoc-typed JS; the server holds it structurally
 const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
 const opsQuiet = (e: Any) => { try { return opsOf(e); } catch { return []; } };
 
-/** Apply one state entry's ops to a COPY of st that shares every entity the entry doesn't touch. */
+/** Apply one change entry's ops to a COPY of st that shares every entity the entry doesn't touch. */
 export function applyShared(st: Any, ops: Any[], seq: number) {
   const entities = Object.create(null);
   for (const id of Object.keys(st.entities)) entities[id] = st.entities[id];
@@ -83,7 +83,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   let st = fold(entries);
   const touching = new Map<string, number[]>();
   const sim = simFolder(entries, { models: opts.simModels ?? {} });
-  const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "state") return;
+  const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "change") return;
     for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = touching.get(id as string); if (!a) touching.set(id as string, (a = [])); a.push(seq); } };
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
   for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s)) sim.feed(s); }
@@ -97,7 +97,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.append = (e: Any, token: Any) => {
     const seq = baseAppend(e, token); const x = entries[seq];
     if (x.kind === "genesis" || x.kind === "purge") st = fold(entries); // genesis starts the world; a purge is retroactive (L1)
-    else if (x.kind === "state") st = applyShared(st, opsOf(x), seq);
+    else if (x.kind === "change") st = applyShared(st, opsOf(x), seq);
     index(seq, x);
     if (st.status === "ok") sim.feed(seq);
     opts.onAppend?.(seq, x);

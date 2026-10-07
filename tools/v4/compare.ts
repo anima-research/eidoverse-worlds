@@ -59,7 +59,7 @@ if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${dri
     [ch.status === "ok" && ch.unsigned_tail === 0 && ch.last_signed === text.trimEnd().split("\n").length - 1, "the chain verifier accepts every head and signature the engine wrote", ch],
     [(() => { const salted = (x: any) => typeof x?.salt === "string" && /^[A-Za-z0-9_-]{22}$/.test(x.salt);
       const L = text.trimEnd().split("\n").slice(1).map((l) => JSON.parse(l));
-      return L.every((e: any) => e.kind === "state" ? (e.verb === "batch" ? e.body.ops : [{ verb: e.verb, ...e.body }]).every((o: any) => o.verb !== "set" || salted(o)) : !["act", "say", "sim"].includes(e.kind) || salted(e.body))
+      return L.every((e: any) => e.kind === "change" ? (e.verb === "batch" ? e.body.ops : [{ verb: e.verb, ...e.body }]).every((o: any) => o.verb !== "set" || salted(o)) : !["act", "say", "sim"].includes(e.kind) || salted(e.body))
         && L.some((e: any) => e.kind === "say"); })(), "every set, and every act/say/sim body, carries a 16-byte salt (§2.4; round-2 R3: chat is most of the personal data)", null],
     [bad.status === "broken", "a value altered after the fact breaks the chain", bad]];
   for (const [okk, what, why] of checks) { console.log(`${okk ? "ok  " : "FAIL"} engine output: ${what}${okk ? "" : " — " + JSON.stringify(why).slice(0, 200)}`); if (!okk) suiteFails++; }

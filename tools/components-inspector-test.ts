@@ -40,7 +40,7 @@ for (const p of logs) {
   const old: any[] = [];
   for (const line of readFileSync(p, 'utf8').split('\n')) { if (!line) continue; try { old.push(JSON.parse(line)); } catch { /* skip */ } }
   let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch { untranslated++; continue; }
-  const st: any = v4Empty(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'state') applyInPlace(st, opsOf(e), seq); });
+  const st: any = v4Empty(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
   for (const [id, e] of Object.entries(viewState(st).entities ?? {})) ents.push([id, e]);
 }
 console.log(`${ents.length} final entities from ${logs.length} logs, translated to v4 (${untranslated} untranslatable)`);

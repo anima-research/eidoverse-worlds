@@ -45,7 +45,7 @@ review.
 |---|---|
 | 4002 | session takeover — same (id, surface) rejoined elsewhere |
 | 4003 | bad/missing join token, or login lacks scope |
-| 4004 | reserved name (world/bhv:*, or a reserved agent name without its bearer) |
+| 4004 | reserved name (world/system/sim/script:*, or a reserved agent name without its bearer) |
 | 4005 | malformed world name / unusable surface name — do not retry |
 | 4006 | banned (per-world or global) |
 | 4008 | aux leg without a living primary, or aux cap (4 distinct surfaces) |

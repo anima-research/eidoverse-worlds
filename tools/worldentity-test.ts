@@ -103,7 +103,7 @@ console.log('1. the alias both ways, through the real door:');
     translated++;
     const s: any = v4Empty();
     r.out.forEach((e: any, seq: number) => {
-      if (e.kind !== 'state') return;
+      if (e.kind !== 'change') return;
       applyInPlace(s, opsOf(e), seq);
       const v = viewState(s);
       states++; if (v.sky || v.terrain || v.grass) worldStates++;

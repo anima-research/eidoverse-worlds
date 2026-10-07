@@ -90,7 +90,7 @@ function playground(name) {
   const after = call(W, "rowan", "set", { id: "ball", component: "transform", value: { pos: [3, 0, 3] } });
   ok(after.ok && JSON.stringify(fold(log(W)).entities.ball.c.transform.pos) === "[3,0,3]", "C at rest it's an ordinary thing again", after);
   const L = log(W); const i = rs[0].seq; const throwAct = L[rs[0].cause].cause; // a reader catches a write that slipped past the door mid-flight
-  const forged = insertAt(L, rs[0].cause + 1, { world: L[1].world, kind: "state", ts: L[rs[0].cause].ts + 200, actor: "rowan", cause: throwAct, verb: "set", body: { id: "ball", comp: "label", value: "mid-air" } });
+  const forged = insertAt(L, rs[0].cause + 1, { world: L[1].world, kind: "change", ts: L[rs[0].cause].ts + 200, actor: "rowan", cause: throwAct, verb: "set", body: { id: "ball", comp: "label", value: "mid-air" } });
   ok(simFold(forged, openWorld(root, W).now()).checks.disagree.some((d) => /in flight/.test(d.why ?? "")), "C a carrier flags any write that touched it in flight", simFold(forged, openWorld(root, W).now()).checks);
 }
 
@@ -255,7 +255,7 @@ function playground(name) {
   ok(simFold(L3, w.now()).checks.disagree.length === 0, "M …while the caught first launch can't change the result (the catch cut it)");
   // a forged rest(A): appended right after the catch, claiming A came to rest where it was caught
   const catchSeq = L.findIndex((e) => e.kind === "sim" && e.verb === "catch");
-  const forged = insertAt(L, catchSeq + 1, { world: L[1].world, kind: "state", ts: L[catchSeq].ts, actor: "sim", cause: t1.seq, verb: "set", body: { id: "ball", comp: "transform", value: { pos: [0, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const forged = insertAt(L, catchSeq + 1, { world: L[1].world, kind: "change", ts: L[catchSeq].ts, actor: "sim", cause: t1.seq, verb: "set", body: { id: "ball", comp: "transform", value: { pos: [0, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const fv = simFold(forged, w.now());
   ok(fv.checks.disagree.some((d) => d.id === "ball"), "M a forged rest(A) after the catch is rejected by carriers", fv.checks);
   const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from "${ENGINE}shared/v4/simlayer.js"; import {fold, readLog} from "${ENGINE}shared/v4/fold.js";
@@ -266,20 +266,20 @@ function playground(name) {
   ok(r1 === r2 && JSON.stringify(j.blind) === JSON.stringify(rs[0]?.at) && j.checks.agree === 1 && !j.checks.disagree.length, "M matched receipt: two processes read the same terminal transform, equal to the logged rest, which the carrier checked against the engine", { r1, r2 });
 }
 
-// N — 25d H2: forged rests (P1a–d). L3: a state entry caused by a sim entry IS a rest, and its value must be the
+// N — 25d H2: forged rests (P1a–d). L3: a change entry caused by a sim entry IS a rest, and its value must be the
 // engine's. There is no second copy (args.sim) left to edit, so every forgery is a forgery of the value itself.
 {
   const W = "pc-a"; const L = log(W); const w = openWorld(root, W); const r0 = rests(L)[0]; const i = r0.seq;
   const honest = simFold(L, w.now()); ok(honest.checks.disagree.length === 0 && honest.checks.agree === 2, "N the honest log: both rests verified", honest.checks);
-  ok(!L.some((e) => e.kind === "state" && "sim" in e.body), "N no state entry carries an engine annotation (L2: args.sim is gone)");
+  ok(!L.some((e) => e.kind === "change" && "sim" in e.body), "N no change entry carries an engine annotation (L2: args.sim is gone)");
   const forge = (f) => { const C = copyOf(L); C[i] = f(C[i]); return simFold(C, w.now()).checks; };
   const tval = (e) => (e.body.ops ?? [e.body]).find((o) => o.comp === "transform").value;
   const P1a = forge((e) => { tval(e).pos = [15, 0, -15]; return e; });
   ok(P1a.disagree.some((d) => d.seq === i), "N P1a/P1d: the rest's value edited (there is no other copy to keep honest) → caught", P1a);
-  const P1b = forge((e) => ({ world: e.world, kind: "state", ts: e.ts, actor: "sim", cause: e.cause, verb: "set", body: { id: "ball", comp: "transform", value: { ...tval(e), pos: [15, 0, -15] } } }));
+  const P1b = forge((e) => ({ world: e.world, kind: "change", ts: e.ts, actor: "sim", cause: e.cause, verb: "set", body: { id: "ball", comp: "transform", value: { ...tval(e), pos: [15, 0, -15] } } }));
   ok(P1b.disagree.some((d) => d.seq === i), "N P1b: a plain set caused by the launch is a rest by definition, and checked → caught", P1b);
   const throwAct = L[r0.cause].cause;
-  const P1c = forge((e) => ({ world: e.world, kind: "state", ts: e.ts, actor: "rowan", cause: throwAct, verb: "set", body: { id: "ball", comp: "transform", value: { ...tval(e), pos: [15, 0, -15] } } }));
+  const P1c = forge((e) => ({ world: e.world, kind: "change", ts: e.ts, actor: "rowan", cause: throwAct, verb: "set", body: { id: "ball", comp: "transform", value: { ...tval(e), pos: [15, 0, -15] } } }));
   ok(P1c.disagree.some((d) => d.seq === i && /not after the launch/.test(d.why)), "N P1c: the thrower's own 'result' of the throw act, while the ball flies → caught", P1c);
   const P1x = forge((e) => ({ ...e, verb: "batch", body: { ops: [{ verb: "set", ...e.body }, { verb: "set", id: "table-1", comp: "transform", value: { pos: [9, 0, 9], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } }));
   ok(P1x.disagree.some((d) => d.id === "table-1"), "N a rest that also moves something the launch didn't throw → caught", P1x);

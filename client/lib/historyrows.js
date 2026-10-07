@@ -5,7 +5,7 @@ import { phraseOf } from '../../shared/credits.js';
 export function worldHistoryRows(entries, nameOf) {
   return entries.filter((e) => e.kind === 'act').reverse().map((e) => {
     const refused = e.body?.refused?.code ?? null, who = nameOf(e.actor);
-    const verb = e.verb === 'legacy' && typeof e.body?.verb === 'string' ? e.body.verb : e.verb;   // an imported act, as what it was
+    const verb = e.verb === 'imported' && typeof e.body?.verb === 'string' ? e.body.verb : e.verb;   // an imported act, as what it was
     const changed = [e.body?.request?.component].filter(Boolean), target = e.body?.request?.id ?? null;
     const what = `${verb}${target ? ` ${target}` : ''}${changed.length ? ` · ${changed.join(', ')}` : ''}`;
     return { seq: e.seq, by: e.actor, who, verb, changed, target, ts: e.ts ?? null, refused,

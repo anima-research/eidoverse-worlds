@@ -1,7 +1,7 @@
 // v1/v2 → v4 translator (lab). Runs the REAL v1 fold (anima/main shared/fold.js, extracted to legacy/) one entry at a
 // time, projects its state into v4 entity/component form, and emits, per old entry:
-//   - the old entry as sent: an `act` (verb "legacy", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
-//   - at most one state entry with the plain results that bring v4 to the same place (cause = that act).
+//   - the old entry as sent: an `act` (verb "imported", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
+//   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
 // grammar refuses is mapped by `enc` (injective, deterministic). After every entry it folds the v4 entry with the v4
 // fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
@@ -25,7 +25,7 @@ import { COMPONENTS } from "../../../shared/v4/catalogue.js";
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
 // v1 took any key in any component; v4's catalogue components are closed (the door refuses an unknown key, L7). A
-// v1 key the v4 component doesn't define (a lamp's `flicker`) goes to legacy:<component> {key: value} beside it: carried,
+// v1 key the v4 component doesn't define (a lamp's `flicker`) goes to imported:<component> {key: value} beside it: carried,
 // never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
 // v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
@@ -34,10 +34,10 @@ function splitUnknown(c) {
   if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
   for (const [k, v] of Object.entries(c)) {
     const name = k.split(":")[0], def = COMPONENTS[name];
-    if (!def?.fields || name === "legacy" || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    if (!def?.fields || name === "imported" || !v || typeof v !== "object" || Array.isArray(v)) continue;
     const extra = Object.keys(v).filter((f) => !(f in def.fields));
     if (!extra.length) continue;
-    const lk = keyed("legacy", dec(k));
+    const lk = keyed("imported", dec(k));
     if (lk in c) continue;   // a v1 top-level field of the same name already holds that slot: leave the component whole
     const keep = { ...v }, left = {};
     for (const f of extra) { left[f] = v[f]; delete keep[f]; }
@@ -45,7 +45,7 @@ function splitUnknown(c) {
   }
 }
 // every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
-// using it). A v1 socket key v4 doesn't define rides in legacy:sockets {<slot>: {key: value}}.
+// using it). A v1 socket key v4 doesn't define rides in imported:sockets {<slot>: {key: value}}.
 function v4Sockets(S, c) {
   if (!S || typeof S !== "object" || Array.isArray(S)) return S;
   const out = {}, left = {};
@@ -55,14 +55,14 @@ function v4Sockets(S, c) {
     out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: pose !== undefined ? { pose } : {} };
     if (Object.keys(rest).length) left[slot] = rest;
   }
-  if (Object.keys(left).length) c[keyed("legacy", "sockets")] = left;
+  if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
   return out;
 }
 function v4Story(v) {
   const out = { ...v };
   if (typeof v.practice === "string" && v.practice.trim()) out.text = (typeof v.text === "string" && v.text ? `${v.text}\n\n` : "") + v.practice.trim();
   if (typeof v.markedEntity === "string" && v.markedEntity) out.marks = [enc(v.markedEntity)];
-  return out; // practice, markedEntity and anything else story doesn't define move to legacy:story (splitUnknown)
+  return out; // practice, markedEntity and anything else story doesn't define move to imported:story (splitUnknown)
 }
 // v1's spin took rpm or degPerSec; v4's is degPerSec (rpm × 6, lossless: the renderer read rpm × 6). degPerSec wins
 // when both were written, as the renderer had it.
@@ -84,7 +84,13 @@ function v4Reactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@6";
+export const TRANSLATOR = "eidoverse/translate-v1@7";
+// @7 (2026-10-07, the conventional-names pass, R's approved table): the output speaks the renamed protocol. A result entry
+// is kind `change` (was `state`); the translating door's own entries are actor `system` (was `door`), and so is a v1 entry
+// whose actor was v1's "door". Everything carried only from translation is one `imported` family: the act verb `imported`
+// (was `legacy`), imported:<k> (was legacy:<k>), imported-behavior:<k> (was behavior:<k>), imported-bans:<id> (was
+// bans:<id>), imported-epoch (was @world epoch). A v1 `gen` grant is can.generate (roles:<id> and default-role alike; the
+// door no longer reads `gen`). Output differs from @6 on every log.
 // @6 (2026-10-07): the two @5s merged (batch 2 and ship-list group A each bumped @4 → @5 in parallel branches).
 // @5 (2026-10-07, batch 2): `story` is a component now ({title, text, marks?}). A v1 story's `practice` (Mica's marker
 // tree: "One tree, renewing, not accumulating…") becomes a paragraph of its text, and `markedEntity` its marks: the
@@ -146,7 +152,10 @@ const PARENT_POSE = new Set(["offset", "yaw", "q"]);
 // who(name, {sub}) → the v4 identity for a v1 person (round-2 review R1): the server passes the door directory's
 // mapping, so actors and role/ban keys become opaque ids and the account (`sub`) leaves the log for the directory.
 // Without one (the pure tests, the sweep), names are escaped as before and `sub` stays in the value.
+// v1's own system actors (v1 vocabulary: the v1 server wrote "door"); in v4 the door's own acts are actor `system`
 const SYSTEM = new Set(["door", "world", "sim"]);
+/** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
+export const actorOf = (a) => (a === "door" ? "system" : enc(a));
 const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
 export function project(st, seen = null, who = null) {
   const out = {};
@@ -167,27 +176,30 @@ export function project(st, seen = null, who = null) {
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is
     for (const [k, v] of Object.entries(e)) {
       if (["pos", "yaw", "q", "scale", "lib", "kind", "color", "intensity", "range", "keep", "day", "comp", "parent", "placer"].includes(k) || ENTITY_SKIP.has(k)) continue;
-      c[keyed("legacy", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
+      c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
     out[enc(id)] = c;
   }
   const w = {};
-  for (const k of ["sky", "terrain", "grass", "epoch"]) if (st[k] != null) w[k] = st[k];
+  for (const k of ["sky", "terrain", "grass"]) if (st[k] != null) w[k] = st[k];
+  if (st.epoch != null) w["imported-epoch"] = st.epoch; // v1 dialect 3's physics epoch: a record, never read live
   // round-2 R8: v1 echoed into the sky value who set it (`by`, a display name) and at which seq: derived, and a person's
   // name inside a value. Dropped; the log says who set the sky (History, inspect's touched).
   if (w.sky && typeof w.sky === "object") { const { seq, by, ...sky } = w.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("palette", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
-  // research roles §translation: v1's `fly` grant is the fly switch (it had been lost to legacy); `gen` stays as written
-  // (the door reads roles:<id>.gen as the generate switch); `caption` stays in legacy until screens carry captioners
-  const flyToCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v)) return v; const { fly, ...rest } = v; return fly === true ? { ...rest, can: { ...(rest.can ?? {}), fly: true } } : rest; };
-  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = v; else w[`roles:${person(k, v)}`] = flyToCan(unsub(v));
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[`bans:${person(k, v)}`] = unsub(v);
+  // research roles §translation: v1's `fly` and `gen` grants are the fly and generate switches, can.fly / can.generate
+  // (@7: gen had stayed as written, read by the door as generate); `caption` stays in imported until screens carry captioners
+  const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
+    const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
+    return Object.keys(can).length ? { ...rest, can } : rest; };
+  for (const [k, v] of Object.entries(st.roles ?? {})) if (k === "*") w["default-role"] = toCan(v); else w[`roles:${person(k, v)}`] = toCan(unsub(v));
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
-  for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;
+  for (const [k, v] of Object.entries(st.behaviors ?? {})) w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v;
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
-  for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("legacy", k)] = v;
+  for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
   for (const c of Object.values(out)) splitUnknown(c);
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
@@ -207,13 +219,13 @@ export function diff(prev, now) {
 export const v4project = (s) => Object.fromEntries(Object.keys(s.entities).map((id) => [id, { ...s.entities[id].c }]));
 export const canon = (o) => JSON.stringify(o, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 // one entry in the §2.4 envelope; the door's re-read discipline applies: what we emit must parse back unchanged
-export const stateBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } });
+export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({ verb, body }))(ops[0]) : { verb: "batch", body: { ops } });
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
 export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who } = {}) {
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
-  const stats = { in: oldEntries.length, out: 0, state: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
+  const stats = { in: oldEntries.length, out: 0, change: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
   let world = null;
   let lastTs = -Infinity; // §2.1: ts never decreases. v1 voice says carry speech time, which can run behind; clamp,
@@ -221,11 +233,11 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const push = (e) => { if (e.kind !== "genesis") e = { world, ...e };
     if (Number.isInteger(e.ts)) { if (e.ts < lastTs) { e.ts = lastTs; stats.tsClamped = (stats.tsClamped ?? 0) + 1; } lastTs = e.ts; }
     const seq = out.length; out.push(e);
-    if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "state") applyInPlace(v4, opsOf(e), seq); return seq; };
+    if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "door", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
-  push({ kind: "act", actor: "door", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
+  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
+  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
   const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);
   let prev = project(v1, seen, who);
@@ -234,12 +246,12 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     stats.verbs[e.verb] = (stats.verbs[e.verb] ?? 0) + 1;
     foldEntry(v1, e);
     const now = project(v1, seen, who);
-    const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : enc(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
+    const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : actorOf(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the door's admission time, carried from the old entry
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
-      : { kind: "act", actor, verb: "legacy", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
+      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const ops = diff(prev, now);
-    if (ops.length) { push({ kind: "state", actor, cause: tl, ...stateBody(unNegZero(ops)), ...(ts !== undefined ? { ts } : {}) }); stats.state++; stats.ops += ops.length; }
+    if (ops.length) { push({ kind: "change", actor, cause: tl, ...changeBody(unNegZero(ops)), ...(ts !== undefined ? { ts } : {}) }); stats.change++; stats.ops += ops.length; }
     if (canon(v4project(v4)) !== canon(now)) { stats.divergences++; if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e.seq, verb: e.verb }; onDivergence?.(e, now, v4project(v4)); } }
     prev = now;
   }

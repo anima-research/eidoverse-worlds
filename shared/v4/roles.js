@@ -133,8 +133,8 @@ export function guestRoleOf(wc) {
 }
 
 /** A person's effective rights: {role, name, rank, can: {<switch>: bool}, switches: [names on]}.
- *  The role's switches, then legacy grants (default-role.gen for those who hold the default role; roles:<id>.gen), then
- *  the per-person `can` (applied last: Discord's member overwrites), then closed over dependencies. Owners hold every
+ *  The role's switches, then the default role's `can` (default-role.can, for those who hold the default role: an imported
+ *  world's grant to everyone), then the per-person `can` (applied last: Discord's member overwrites), then closed over dependencies. Owners hold every
  *  switch whatever `can` says (their column is locked); `can.fly: true` may still give an owner flight when OWNERS_FLY
  *  is off. `none` holds nothing. */
 export function effectiveOf(wc, id, opts = {}) {
@@ -144,8 +144,7 @@ export function effectiveOf(wc, id, opts = {}) {
   if (role === "owner") { if (entry?.can?.fly === true) can.fly = true; }
   else if (role !== "none") {
     const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null;
-    if (!entry && !opts.anon && dr?.gen === true) can.generate = true;
-    if (entry?.gen === true) can.generate = true;
+    if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickSwitches(dr.can));
     if (isObj(entry?.can)) Object.assign(can, pickSwitches(entry.can));
     can = closeOver(can);
   }

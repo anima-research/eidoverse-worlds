@@ -1,8 +1,8 @@
-// The sim layer (design 20, P4–P7): a second fold beside the blind one. It reads the log's state entries (through
+// The sim layer (design 20, P4–P7): a second fold beside the blind one. It reads the log's change entries (through
 // fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.sim names.
 // It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
 //
-// PROTOCOL-v4 L3: a state entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
+// PROTOCOL-v4 L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
 // is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
 // Time: the engine's clock is the envelope's `ts` (§2.1: the door's admission time, the one clock readers trust),
 // never running backwards: an entry without one happens at the latest time stated before it.
@@ -104,7 +104,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
     if (out.sim) advance(clock);
     if (e.kind === "sim" && e.verb === "digest" && out.sim) { const mine = digestOf(out.sim); if (mine !== e.body.digest) disagree({ seq, logged: e.body.digest, mine }); return; }
-    if (e.kind === "state") {
+    if (e.kind === "change") {
       const ops = opsSafe(e);
       const causeE = entries[e.cause];
       const isRest = isEntry(causeE) && causeE.kind === "sim";
@@ -132,7 +132,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
-          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
+          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
         }
         return;
       }
@@ -188,10 +188,10 @@ function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while
 export function restsOf(entries) {
   const out = [];
   entries.forEach((e, seq) => {
-    if (!isEntry(e) || e.kind !== "state") return; const c = entries[e.cause];
+    if (!isEntry(e) || e.kind !== "change") return; const c = entries[e.cause];
     if (!isEntry(c) || c.kind !== "sim" || c.verb !== "launch") return;
     const op = opsSafe(e).find((o) => o.comp === "transform" && o.id === c.body.id);
-    const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "door" && x.body?.rest === seq);
+    const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "system" && x.body?.rest === seq);
     out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor],
       ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) });
   });

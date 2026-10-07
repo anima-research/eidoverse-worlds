@@ -5,7 +5,7 @@ Date: 2026-07-25
 
 *Read this as the July plan it was. Protocol v4 (spec/PROTOCOL.md) has since
 settled some of it: the log is door requests (acts) and their results
-(state entries of `create` / `set` / `delete`), a joiner adopts a cut of the
+(change entries of `create` / `set` / `delete`), a joiner adopts a cut of the
 fold instead of replaying, and a checkpoint is a view whose digest the log
 records. The planes, the performance targets and the storage and loading
 work below are unchanged by that.*  

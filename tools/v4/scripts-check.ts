@@ -56,9 +56,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["say needs scope.say", "door.js", "if (res.says.length && !v.scope?.say) return mark(\"scope\"", "if (false) return mark(\"scope\"", ["B21"]],
   ["create needs scope.create", "door.js", "if (!cap.create) refuse(\"scope\", `${cap.key} doesn't declare create: true`", "if (false) refuse(\"scope\", `${cap.key} doesn't declare create: true`", ["B22"]],
   ["created things stay in the subtree", "door.js", "if (cap?.kind === \"script\") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", "if (false) for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", ["B22"]],
-  ["a script's body effect meets consent", "door.js", "const g = bodyGate(w, `bhv:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
+  ["a script's body effect meets consent", "door.js", "const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
   ["bodies need scope.bodies", "door.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.act)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
-  ["sponsor-wide body allowance", "door.js", "&& C.tableOf(P, to).overrides[`bhvs:${extra.sponsor}`]?.[cls]) d = C.decide(P, `bhvs:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
+  ["sponsor-wide body allowance", "door.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
   ["names replayed from the act", "sandbox.js", "const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null);", "const n = x.name ? x.name(id) ?? null : null;", ["M1"]],
@@ -70,7 +70,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["param keys pass the schema", "door.js", "v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith(\"param.\")));", "", ["P1"]],
   ["changed:<comp> cascades", "door.js", "if (hit) activate(w, id, name, { on: `changed:${hit.comp}`", "if (false) activate(w, id, name, { on: `changed:${hit.comp}`", ["E3", "B8"]],
   ["say events", "door.js", "activate(w, id, name, { on: \"say\", by: e.actor", "void (w, id, name, { on: \"say\", by: e.actor", ["E1"]],
-  ["a script never hears its own say", "door.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `bhv:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
+  ["a script never hears its own say", "door.js", "if (!(Array.isArray(v.on) && v.on.includes(\"say\")) || e.actor === `script:${id}`) continue;", "if (!(Array.isArray(v.on) && v.on.includes(\"say\"))) continue;", ["E1"]],
   ["use of an imported binding says re-install", "door.js", "if (old || (isE(ce) && ce.kind === \"act\" && ce.verb === \"legacy\"))", "if (false)", ["V1"]],
   ["imported behaviours are listed", "door.js", "...(id && id !== \"@world\" ? {} : { imported: importedBehaviours(w, st) })", "...{}", ["V1"]],
   ["UTC inside the sandbox", "sandbox.js", "P.getTimezoneOffset = function getTimezoneOffset() { return 0; };", "", ["D3"]],
@@ -183,7 +183,7 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const st = (s: any, r: any) => (r?.script ? `${r.script.status}${r.script.code ? ` ${r.script.code}` : ""}` : show(r));
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const kinds = (L: any[]) => L.reduce((m: any, e: any) => ((m[e.kind] = (m[e.kind] ?? 0) + 1), m), {});
-const isBhv = (a: any) => typeof a === "string" && a.startsWith("bhv:");
+const isScriptActor = (a: any) => typeof a === "string" && a.startsWith("script:");
 const ZERO = "sha256:" + "0".repeat(64);
 // owner olive (the founder), builders bob and ann, visitor vic
 function cast(s: any, extra: [string, string][] = []) {
@@ -229,7 +229,7 @@ const cases: Case[] = [
       s.call("bob", "set", { id: "kiosk", component: "reactions", value: { promote: { kind: "script", script: "promo" }, hello: { kind: "script", script: "hello" } } });
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
       const promote = s.call("olive", "use", { id: "kiosk", action: "promote" }), hello = s.call("olive", "use", { id: "kiosk", action: "hello" });
-      const act = s.entries().find((e: any) => e.actor === "bhv:kiosk" && e.kind === "act");
+      const act = s.entries().find((e: any) => e.actor === "script:kiosk" && e.kind === "act");
       return { promote: promote.script ? `${promote.script.status} ${promote.script.code}: ${promote.script.why}` : show(promote), mal: comp(s, "@world", "roles:mal") ?? null, hello: hello.script?.status, trigger: act?.body?.trigger?.actor, sponsor: act?.body?.sponsor }; },
     good: (o) => /^refused rights: script:promo's sponsor bob can't change @world\.roles:mal/.test(o.promote) && o.mal === null && o.hello === "ran" && o.trigger === "olive" && o.sponsor === "bob" },
   { id: "B4", what: "41 #5 half an activation: the third of three writes is outside the scope; nothing lands (v1 committed two)", run(s) { cast(s);
@@ -237,8 +237,8 @@ const cases: Case[] = [
       install(s, "bob", "box", "three", onUse(`world.set("self", "a", 1); world.set("self", "b", 2); world.set("self", "c", 3);`), { scope: { ids: "self", comps: ["a", "b"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "three" } } }); const n0 = s.entries().length;
       const r = s.call("vic", "use", { id: "box", action: "go" }); const c = s.w().state().entities.box.c;
-      return { r: st(s, r), a: c.a ?? null, b: c.b ?? null, bhv: s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length }; },
-    good: (o) => o.r === "refused scope" && o.a === null && o.b === null && o.bhv === 0 },
+      return { r: st(s, r), a: c.a ?? null, b: c.b ?? null, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
+    good: (o) => o.r === "refused scope" && o.a === null && o.b === null && o.scripted === 0 },
   { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (elided)", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, shadows: false };
@@ -250,7 +250,7 @@ const cases: Case[] = [
       const other: string[] = [];
       for (let i = 0; i < 2 * 720; i++) { s.advance(5000); for (const x of s.tick() ?? []) { if (x.status === "nothing" || (x.status === "unavailable" && /too busy/.test(x.why))) nothing++; else other.push(`#${i} ${x.id} ${x.status} ${x.code ?? ""} ${x.why ?? ""}`.slice(0, 120)); } }
       const sv = s.call("olive", "scripts", {}).scripts;
-      return { always: show(always), entries2h: s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length, alwaysRanElided: nothing, other, status: sv.map((x: any) => `${x.id}:${x.status}`) }; },
+      return { always: show(always), entries2h: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length, alwaysRanElided: nothing, other, status: sv.map((x: any) => `${x.id}:${x.status}`) }; },
     good: (o) => o.always === "ok" && o.entries2h === 0 && o.alwaysRanElided === 2 * 720 - 1 && o.status.includes("lamp:asleep") && o.status.includes("lamp2:active") },
   { id: "B6", what: "…the heart with a CHANGING value and `always`: the world's hourly budget (set to 60) caps what scripts write each hour", run(s) { cast(s);
       if (!D.tick) return { absent: true };
@@ -261,7 +261,7 @@ const cases: Case[] = [
       install(s, "olive", "heart", "beat2", BEAT("beat2"), { scope: { ids: "self", comps: ["beat2"] }, every: 30, always: true });
       const t0 = T; const why = new Set();
       for (let i = 0; i < 2 * 120; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget") why.add(/world's scripts/.test(r.why) ? "world" : /sponsors here/.test(r.why) ? "sponsor" : "script"); }
-      const hours = [0, 0]; for (const e of s.entries()) if (isBhv(e.actor) && e.ts > t0) hours[Math.min(1, Math.floor((e.ts - t0) / 3600000))]++;
+      const hours = [0, 0]; for (const e of s.entries()) if (isScriptActor(e.actor) && e.ts > t0) hours[Math.min(1, Math.floor((e.ts - t0) / 3600000))]++;
       return { hours, why: [...why].sort() }; },
     good: (o) => o.hours.every((n: number) => n > 50 && n <= 60) && o.why.includes("world") },
   { id: "B6b", what: "§3d M3: each sponsor gets a fair share of the world's hour: bob's chatty timer can't starve olive's script", run(s) { cast(s);
@@ -275,7 +275,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "a", component: "reactions", value: { poke: { kind: "script", script: "kind" } } });
       for (let i = 0; i < 60; i++) { s.advance(5000); s.tick(); } // bob's timer has 5 minutes (two sponsors: 20 entries each of 40)
       const pokes = []; for (let i = 0; i < 3; i++) pokes.push(st(s, s.call("vic", "use", { id: "a", action: "poke" }, 20000)));
-      const L = s.entries(); const by = (sp: string) => L.filter((e: any) => isBhv(e.actor) && (e.kind === "act" ? e.body?.sponsor : L[e.cause]?.body?.sponsor) === sp).length;
+      const L = s.entries(); const by = (sp: string) => L.filter((e: any) => isScriptActor(e.actor) && (e.kind === "act" ? e.body?.sponsor : L[e.cause]?.body?.sponsor) === sp).length;
       return { bob: by("bob"), olive: by("olive"), pokes }; },
     good: (o) => o.bob === 20 && o.pokes.every((p: string) => p === "ran") && o.olive === 6 },
   { id: "B6c", what: "the per-script rate: 6 logged activations a minute per script, then refused (budget) until the minute passes", run(s) { cast(s);
@@ -302,9 +302,9 @@ const cases: Case[] = [
       install(s, "bob", "eb", "pong", `world.on("changed:ping", () => world.set("self", "pong", (world.get("ea", "ping") ?? 0) + 1));\n`, { scope: { ids: ["self", "ea"], comps: ["pong"] }, on: ["changed:ping"] });
       const kick = s.call("bob", "set", { id: "eb", component: "pong", value: 0 });
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null; const sv = s.call("olive", "scripts", {}).scripts ?? [];
-      return { kick: show(kick), bhvActs: s.entries().filter((e: any) => isBhv(e.actor) && e.kind === "act").length, readerMaxDepth: A?.maxDepth, flags: A?.flags.length, reran: A?.reran,
+      return { kick: show(kick), scriptActs: s.entries().filter((e: any) => isScriptActor(e.actor) && e.kind === "act").length, readerMaxDepth: A?.maxDepth, flags: A?.flags.length, reran: A?.reran,
         ninth: sv.flatMap((x: any) => x.last).find((l: any) => l.code === "depth")?.why ?? null }; },
-    good: (o) => o.bhvActs === 8 && o.readerMaxDepth === 8 && o.flags === 0 && o.reran === 8 && /depth 9 > 8/.test(o.ninth) },
+    good: (o) => o.scriptActs === 8 && o.readerMaxDepth === 8 && o.flags === 0 && o.reran === 8 && /depth 9 > 8/.test(o.ninth) },
   { id: "B9", what: "41 #11 lock: a script on a locked statue tries to move it (a capability never acts through a lock)", run(s) { cast(s);
       s.call("bob", "create", { id: "statue", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "statue", "nudge", onUse(`world.set("self", "transform", { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] });`), { scope: { ids: "self", comps: ["transform"] }, on: ["use"] });
@@ -342,7 +342,7 @@ const cases: Case[] = [
       s.call("bob", "set", { id: "lamp", component: "reactions", value: { on: { kind: "script", script: "on" } } });
       const n0 = s.entries().length; const a = s.call("vic", "use", { id: "lamp", action: "on" }); const n1 = s.entries().length; const b = s.call("vic", "use", { id: "lamp", action: "on" });
       return { first: a.script?.status, second: b.script?.status, firstKinds: kinds(s.entries().slice(n0, n1)), secondKinds: kinds(s.entries().slice(n1)) }; },
-    good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"act":2,"state":1}' && JSON.stringify(o.secondKinds) === '{"act":1}' },
+    good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"act":2,"change":1}' && JSON.stringify(o.secondKinds) === '{"act":1}' },
   { id: "B17", what: "install rules: a builder's `always`, a 1 s timer, a visitor's install, and a builder's install after the owner raises it to owner", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } }); const t = onUse(`world.set("self", "a", 1);`);
       const always = install(s, "bob", "box", "a", t, { scope: { ids: "self", comps: ["a"] }, every: 5, always: true }).r;
@@ -454,10 +454,10 @@ const cases: Case[] = [
       const L0 = s.entries(), get = s.w().getBlob, run = SB.runScript;
       const honest = AU.auditScripts(L0, get, { run });
       const copy = () => F.readLog(Buffer.from(L0.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
-      const k = L0.findIndex((e: any) => isBhv(e.actor) && e.kind === "act"); const forged = copy(); forged[k].body.sponsor = "olive";
-      const j = L0.findLastIndex((e: any) => isBhv(e.actor) && e.kind === "state"); const tampered = copy(); tampered[j].body.value.n = (tampered[j].body.value.n + 1) % 6;
-      const lost = copy(); for (const e of lost) if (isBhv(e.actor) && e.kind === "act") delete e.body.reads; // without the recorded reads the re-run can't agree
-      return { acts: honest.acts, reran: honest.reran, honestFlags: honest.flags, reads: L0.filter((e: any) => isBhv(e.actor) && e.kind === "act").map((e: any) => e.body.reads?.near?.[0]?.ids?.join(",") ?? "?"),
+      const k = L0.findIndex((e: any) => isScriptActor(e.actor) && e.kind === "act"); const forged = copy(); forged[k].body.sponsor = "olive";
+      const j = L0.findLastIndex((e: any) => isScriptActor(e.actor) && e.kind === "change"); const tampered = copy(); tampered[j].body.value.n = (tampered[j].body.value.n + 1) % 6;
+      const lost = copy(); for (const e of lost) if (isScriptActor(e.actor) && e.kind === "act") delete e.body.reads; // without the recorded reads the re-run can't agree
+      return { acts: honest.acts, reran: honest.reran, honestFlags: honest.flags, reads: L0.filter((e: any) => isScriptActor(e.actor) && e.kind === "act").map((e: any) => e.body.reads?.near?.[0]?.ids?.join(",") ?? "?"),
         forged: AU.auditScripts(forged, get, { run }).flags.map((x: any) => x.check), tampered: AU.auditScripts(tampered, get, { run }).flags.map((x: any) => `${x.seq}:${x.check}`), lost: AU.auditScripts(lost, get, { run }).flags.map((x: any) => x.check) }; },
     good: (o) => o.acts === 4 && o.reran === 4 && o.honestFlags.length === 0 && JSON.stringify(o.reads) === '["vic","vic","vic",""]' && o.forged.includes("sponsor") && o.tampered.some((x: string) => /:rerun$/.test(x)) && o.lost.includes("rerun") },
   { id: "D2", what: "41 §3.7: an activation's clock is frozen at its act's ts, and Math.random is seeded from its act: the same seed gives the same numbers, another seed others", run(s) { cast(s);
@@ -514,10 +514,10 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const src = s.w().putBlob({ lang: "js", api: 1, text: `world.on("use", (e) => { if (e.args?.ok) { world.set("self", "n", 1); return; } ${body} });\n` });
       const inst = s.call("bob", "set", { id: "box", component: "script:x", value: { src, scope: { ids: "self", comps: ["n"] }, on: ["use"] } });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "x" } } }); const n0 = s.entries().length;
-      const r = s.call("vic", "use", { id: "box", action: "go" }); const bhv = s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length;
+      const r = s.call("vic", "use", { id: "box", action: "go" }); const scripted = s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length;
       const next = s.call("vic", "use", { id: "box", action: "go", args: { ok: true } });
-      return { inst: show(inst), r: st(s, r), bhv, next: st(s, next) }; },
-    good: (o: any) => (want === "syntax" ? o.inst.startsWith("refused syntax") : o.r === `failed ${want}` && o.bhv === 0 && o.next === "ran") })),
+      return { inst: show(inst), r: st(s, r), scripted, next: st(s, next) }; },
+    good: (o: any) => (want === "syntax" ? o.inst.startsWith("refused syntax") : o.r === `failed ${want}` && o.scripted === 0 && o.next === "ran") })),
   // ---------------- I: isolation (a killable sandbox process per activation's VM side) ----------------
   { id: "I1", what: "isolation: a script stuck in a slow native builtin (indexOf on crafted text, a huge BigInt power, out of memory inside Array.fill) is stopped at its deadline and its process killed; the door is back within it, another world answers at once, and the run is counted against its sponsor",
     run(s) { cast(s); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
@@ -634,12 +634,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length }; },
     good: (o) => o.said && o.ms < DUTY0.maxMs + 500 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 },
   // ---------------- U: use → script ----------------
-  { id: "U1", what: "use → script: the visitor's use is their act (with `runs`); the bhv act's cause is that use, its trigger the visitor, its sponsor bob; the batch's cause is the bhv act; the say too", run(s) { cast(s);
+  { id: "U1", what: "use → script: the visitor's use is their act (with `runs`); the script act's cause is that use, its trigger the visitor, its sponsor bob; the batch's cause is the bhv act; the say too", run(s) { cast(s);
       bell(s, "bob"); const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const L = s.entries();
       const use = L[r.act], act = L[r.script?.act], state = L[r.script?.state], say = L.find((e: any) => e.kind === "say" && e.cause === r.script?.act);
       return { use: [use?.actor, use?.verb, use?.body?.runs], act: [act?.actor, act?.verb, act?.cause === r.act, act?.body?.trigger?.actor, act?.body?.sponsor, act?.body?.on, act?.body?.depth],
         state: [state?.actor, state?.cause === r.script?.act, state?.body?.value?.rung], say: say?.body?.text, tsPinned: act?.ts === state?.ts }; },
-    good: (o) => JSON.stringify(o.use) === '["vic","use","script:bell"]' && JSON.stringify(o.act) === '["bhv:bell1","script",true,"vic","bob","use",1]' && JSON.stringify(o.state) === '["bhv:bell1",true,1]' && o.say === "the bell tolls for vic (1)" && o.tsPinned },
+    good: (o) => JSON.stringify(o.use) === '["vic","use","script:bell"]' && JSON.stringify(o.act) === '["script:bell1","script",true,"vic","bob","use",1]' && JSON.stringify(o.state) === '["script:bell1",true,1]' && o.say === "the bell tolls for vic (1)" && o.tsPinned },
   { id: "U2", what: "use → script, dry: the visitor sees what it WOULD write; nothing is logged (41 §3.12's dry run, also `scripts {test}`)", run(s) { cast(s);
       bell(s, "bob"); const n0 = s.entries().length;
       const d = s.call("vic", "use", { id: "bell1", action: "ring", dry: true }); const t = s.call("bob", "scripts", { id: "bell1", script: "bell", test: { on: "use" } });
@@ -651,8 +651,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "parrot", "echo", `world.on("say", (e) => { world.set("self", "heard", { by: e.by, text: e.text, n: (world.get("self", "heard")?.n ?? 0) + 1 }); world.say("squawk: " + e.text); });\n`, { scope: { ids: "self", comps: ["heard"], say: true }, on: ["say"] });
       s.call("vic", "say", { text: "!hello" });
-      const act = s.entries().find((e: any) => e.actor === "bhv:parrot" && e.kind === "act"); const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
-      return { heard: comp(s, "parrot", "heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "bhv:parrot").map((e: any) => e.body.text),
+      const act = s.entries().find((e: any) => e.actor === "script:parrot" && e.kind === "act"); const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
+      return { heard: comp(s, "parrot", "heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
         copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
@@ -670,7 +670,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "path", "lights", `world.on("changed:openable", (e) => world.set("self", "glow", world.get("gate", "openable").open === true));\n`, { scope: { ids: ["self", "gate"], comps: ["glow"] }, on: ["changed:openable"] });
       s.call("vic", "use", { id: "gate", action: "open" }); const lit1 = comp(s, "path", "glow");
       s.call("vic", "use", { id: "gate", action: "open" }); const lit2 = comp(s, "path", "glow");
-      const act = s.entries().findLast((e: any) => e.actor === "bhv:path" && e.kind === "act");
+      const act = s.entries().findLast((e: any) => e.actor === "script:path" && e.kind === "act");
       return { lit1, lit2, on: act?.body?.on, by: act?.body?.trigger?.actor, comp: act?.body?.event?.comp }; },
     good: (o) => o.lit1 === true && o.lit2 === false && o.on === "changed:openable" && o.by === "vic" && o.comp === "openable" },
   { id: "E4", what: "sleep and wake: nobody here → the timer sleeps (0 entries); someone arrives → ONE wake {slept}, then ticks; never a burst", run(s) { cast(s);
@@ -706,11 +706,11 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); const n0 = s.entries().length;
-      const r1 = s.call("vic", "use", { id: "trap", action: "step" }); const bhv1 = s.entries().slice(n0).filter((e: any) => isBhv(e.actor)).length;
-      s.call("vic", "consent", { allow: "bhv:trap", class: "shove" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
-      const act = s.entries().findLast((e: any) => e.actor === "bhv:trap" && e.kind === "act");
-      return { r1: st(s, r1), bhv1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
-    good: (o) => o.r1 === "refused consent" && o.bhv1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"act":"shove","to":"body:vic","consent":"allowed"}]' && o.tumble },
+      const r1 = s.call("vic", "use", { id: "trap", action: "step" }); const scripted1 = s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length;
+      s.call("vic", "consent", { allow: "script:trap", class: "shove" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
+      const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
+      return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
+    good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"act":"shove","to":"body:vic","consent":"allowed"}]' && o.tumble },
   { id: "C2", what: "bodies need scope.bodies: a script that shoves without declaring it is refused (scope), whatever the target allows", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
@@ -718,11 +718,11 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { preset: "performer" });
       return { r: st(s, s.call("vic", "use", { id: "trap", action: "step" })) }; },
     good: (o) => o.r === "refused scope" },
-  { id: "C3", what: "§3d M4: a person may allow a sponsor's behaviours by name (bhvs:<sponsor>): every one of bob's scripts may then pose them; ann's still may not", run(s) { cast(s);
+  { id: "C3", what: "§3d M4: a person may allow a sponsor's behaviours by name (scripts-by:<sponsor>): every one of bob's scripts may then pose them; ann's still may not", run(s) { cast(s);
       for (const [who, id] of [["bob", "pad1"], ["bob", "pad2"], ["ann", "pad3"]]) { s.call(who, "create", { id, model: "crate", place: { at: [0, 0] } });
         install(s, who, id, "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
         s.call(who, "set", { id, component: "reactions", value: { go: { kind: "script", script: "p" } } }); }
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "bhvs:bob", class: "pose" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       return { rs: ["pad1", "pad2", "pad3"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => JSON.stringify(o.rs) === '["ran","ran","refused consent"]' },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
@@ -760,7 +760,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 `, { scope: { ids: "self", comps: ["lighthouse"], say: true }, every: 60, knobs: { text: "all clear" } });
       s.call("vic", "move", { to: [0, 0, 2] });
       for (let i = 0; i < 3; i++) { s.advance(60000); s.tick(); }
-      const says = s.entries().filter((e: any) => e.kind === "say" && isBhv(e.actor)).map((e: any) => e.body.text);
+      const says = s.entries().filter((e: any) => e.kind === "say" && isScriptActor(e.actor)).map((e: any) => e.body.text);
       NAMES.vic = "Vee"; // a rename in the directory afterwards: the audit replays the name the act recorded
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
       return { ring: st(s, ring), motion: comp(s, "bell1", "motion")?.type, rings: comp(s, "bell1", "bellkeeper")?.rings, met: comp(s, "sign", "greeter")?.met, sweeps: comp(s, "lamp1", "lighthouse")?.sweeps, says,
@@ -769,8 +769,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ring === "ran" && o.motion === "pendulum" && o.rings === 1 && o.met === 1 && o.sweeps === 2 && o.audit === "4/4 "
       && o.says.includes("the bell tolls (1) — rung by vic") && o.says.includes("welcome to the meadow, Vic — you are visitor #1") && o.says.includes("all clear — sweep 2, 1 soul(s) in view") },
   // ---------------- V: translated v1 behaviours ----------------
-  { id: "V1", what: "a translated v1 world's behavior:<name> (a v1 binding) never runs; the status view says plainly it needs re-installing as script:<name>", run(s) { cast(s);
-      const set = s.call("olive", "set", { id: "@world", component: "behavior:greeter", value: { src: "store/scripts/0123456789abcdef.js", attach: "bell1", knobs: {}, author: "olive", ts: 1 } });
+  { id: "V1", what: "a translated v1 world's imported-behavior:<name> (a v1 binding) never runs; the status view says plainly it needs re-installing as script:<name>", run(s) { cast(s);
+      const set = s.call("olive", "set", { id: "@world", component: "imported-behavior:greeter", value: { src: "store/scripts/0123456789abcdef.js", attach: "bell1", knobs: {}, author: "olive", ts: 1 } });
       s.call("olive", "create", { id: "bell1", model: "bell", components: { reactions: { ring: { kind: "script", script: "greeter" } } }, place: { at: [0, 0] } });
       const use = s.call("vic", "use", { id: "bell1", action: "ring" });
       const v = s.call("olive", "scripts", {}); return { set: show(set), imported: v.imported, use: code(use), teach: use.refused?.teach }; },
@@ -839,16 +839,16 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
     await sleep(11500); // two 5 s periods on the server's 1 s clock (the first only arms the timer)
     const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "v4.jsonl")));
     const st0 = F.fold(L).entities.bell1?.c ?? {};
-    const tickActs = L.filter((e: any) => e.kind === "act" && e.actor === "bhv:bell1" && e.body?.on === "tick").length;
+    const tickActs = L.filter((e: any) => e.kind === "act" && e.actor === "script:bell1" && e.body?.on === "tick").length;
     const dbg = await new Promise<any>((res) => { const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === "d1") { ann.ws.removeEventListener("message", on); res(m); } };
-      ann.ws.addEventListener("message", on); ann.send({ type: "debug", behaviors: true, reqId: "d1" }); setTimeout(() => res(null), 3000); });
+      ann.ws.addEventListener("message", on); ann.send({ type: "debug", scripts: true, reqId: "d1" }); setTimeout(() => res(null), 3000); });
     const srvLog = fs.readFileSync(logf, "utf8") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : "");
     ann.ws.close(); bob.ws.close();
     return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0.bell?.rung, tickActs, beats: st0.beats, hello: st0.hello === bob.you,
-      sawBhv: bob.msgs.some((m) => m.type === "v4-log" && m.entries.some((e: any) => e.actor === "bhv:bell1" && e.body?.on === "tick")),
+      sawScript: bob.msgs.some((m) => m.type === "v4-log" && m.entries.some((e: any) => e.actor === "script:bell1" && e.body?.on === "tick")),
       roster: dbg?.events?.map((e: any) => `${e.id}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
   } finally { proc.kill(); }
-}, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawBhv
+}, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawScript
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
 
 serverCases.push({ id: "S2", server: true, what: "the server: while a hostile script (indexOf on crafted text) runs in one world, another world's requests keep answering within the deadline; each hostile run is stopped and shows as a failure (time) against its script",
