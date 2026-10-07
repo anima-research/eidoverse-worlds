@@ -12,10 +12,17 @@
 //             and her throw flies and rests where the door says
 //   punt      Ann punts a ball at her feet (the C key's act): it flies, and rests where the door logs it
 //   remote    a thing Bob holds is drawn in Bob's hand on Ann's screen, and follows him when he moves
+//   reach     a hand target on a moving part moves the hand with the part
+//   blend     a pose blended by a signal (param.lean, written through the door) follows it, in the mixer's own weights
+//   anchor    hips (a seat) lands the hips joint on the socket; feet (a standing place) lands the soles on it
+//   swing     a phase-locked pose: the clip's time follows the pendulum's phase; the sitter tilts with the plank
+//   leaveBy   script: W and X don't get you off, the world does (the socket taken away); without it, W does
+//   remote    another person's input (throttle) riding their presence blends their seated body in this client
+//   enter     an approach point and an enter clip: the clip plays with its time locked to the carry onto the seat
 //   errors    no page error and no console.error from the v4 path
 // The owned server runs with SKIP_OPT_SWEEP=1 and a scratch WORLDS_DIR; the world has no sky (the headless-sky
 // rule: no cloud bake in SwiftShader). Teardown (browser, server, scratch) is in finally.
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { launchBrowser, ownedWorld } from '../probe-harness.mjs';
@@ -27,9 +34,16 @@ import { enc } from '../../shared/v4/names.js';
 import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
 import { directoryFor } from '../../server/v4/directory.ts';
 import { restsOf } from '../../shared/v4/simlayer.js';
+import { cycleOf } from '../../client/lib/socksignals.js';
+import { swingGlb } from './probe-swing-glb.mjs';
+import { OPT_DIR } from '../../server/config.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
 const SMALL = 0.3;   // the crate at 0.3 scale (0.75 × 0.6 × 0.45 m): something to carry (its GLB is already loaded and compiled)
+// a swing whose plank is its own part named the way a component key can name it (motion:plank): the probe's own
+// model, written beside the optimised assets for this run only (removed in finally)
+const SWING = `eidoverse/assets/models/v4probe-swing-${process.pid}.glb`;
+const SWING_FILE = join(OPT_DIR, SWING);
 const KEY = 'v4probe';
 const worlds = mkdtempSync(join(tmpdir(), 'v4-client-'));
 const stage = (name, okv, detail) => console.log(`${okv ? 'ok  ' : 'FAIL'} ${name}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 400)}` : ''}`);
@@ -38,7 +52,8 @@ let world = null, b = null, ANN = null, BOB = null;
 try {
   // the world: founded by Ann, a crate already standing in it, Bob a builder
   foundV4(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
-  await warm([MODEL]);
+  mkdirSync(join(SWING_FILE, '..'), { recursive: true }); writeFileSync(SWING_FILE, swingGlb());
+  await warm([MODEL, SWING]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
     // actors are the door directory's opaque ids (one per account, R 10-06): Ann founded it as local:ann; Bob will join
     // this local door by name, so his account is local:bob
@@ -227,6 +242,226 @@ try {
         globalThis.EW.physics.frame(ts + 500); }, LAUNCH('toy3')), 40000).catch(() => null);
       await pg.screenshot({ path: `${shots}/phys-throw-midair.png` }); }
   }
+
+  // ===================================================================== the body at a socket (shared/sockbody.js)
+  // Each stage: Bob builds a small thing through the door (a crate at a fifth of its size, so the body isn't hidden
+  // inside it), Ann sits on it with her own /sit, and what her body does is read off the live skeleton and mixer.
+  const SHOTS = process.env.PROBE_SHOTS;
+  let rid = 10;
+  const door = async (tool, args) => { const id = ++rid; ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
+    for (let i = 0; i < 60; i++) { const m = inbox.find((x) => x.type === 'v4-result' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
+    return { ok: false, refused: { reason: 'no answer' } }; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const ev = (fn, arg) => race(pg.evaluate(fn, arg), 20000);
+  const waitFor = async (fn, arg, ms = 12000) => { const t = Date.now(); let v = null; while (Date.now() - t < ms) { v = await ev(fn, arg).catch(() => null); if (v) return v; await sleep(200); } return v; };
+  const seated = () => ev(() => { const m = globalThis.EW.avatarMounts.get(globalThis.EW.net.myId ?? 'Ann') ?? [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; return m ? `${m.to}/${m.slot}` : null; });
+  const sit = async (arg, want) => { await ev((a) => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: a }), arg); return waitFor(async (w) => { const m = [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; return m && `${m.to}/${m.slot}` === w; }, want, 30000); };
+  const stand = async () => { await ev(() => globalThis.EW.bus.emit('xr:stand')); await sleep(500); };
+  const here = await ev(() => globalThis.EW.me().root.position.toArray());
+  const thing = (id, dx, dz, comps, y = 0) => door('create', { id, model: MODEL, components: { transform: { pos: [here[0] + dx, y, here[2] + dz], scale: [0.2, 0.2, 0.2] }, ...comps } });
+  const realized = (id) => waitFor((i) => !!globalThis.EW.entities.get(i), id);
+  // the screenshots: the follow camera pulls in against the little crates and ends up in the hair, so a shot re-renders
+  // the scene from a camera of the probe's own, after the app's frame (a rAF callback behind the app's), then restores
+  // nothing — the app sets its camera again on its next frame. Pictures only; nothing is asserted from them.
+  const shoot = async (name, offset = [1.3, 0.5, 1.1]) => { if (!SHOTS) return;
+    await ev((o) => { const EW = globalThis.EW; const me = EW.me(); const h = me.vrm.humanoid.getRawBoneNode('hips').getWorldPosition(new EW.THREE.Vector3());
+      EW.__shot = { at: h.toArray(), from: [h.x + o[0], h.y + o[1], h.z + o[2]] };
+      if (!EW.__shotLoop) { EW.__shotLoop = true; const f = () => { const s = EW.__shot; if (s) { const c = EW.camera; c.up.set(0, 1, 0); c.position.set(...s.from); c.lookAt(...s.at); c.updateMatrixWorld();
+        try { EW.renderer.render(EW.scene, c); } catch {} } requestAnimationFrame(f); }; requestAnimationFrame(f); } }, offset);
+    await sleep(2500);
+    await pg.screenshot({ path: `${SHOTS}/${name}.png` });
+    await ev(() => { globalThis.EW.__shot = null; }); };
+
+  // (a) reach: a hand target on a moving PART moves the hand with the part. The probe's swing model: its plank (node
+  //     'plank') swings on a part pendulum (motion:plank); the seat stands still behind it and the left hand's target is
+  //     the plank's near-left corner, riding the plank. Expected target: that corner carried by the plank's own live
+  //     transform (three's localToWorld), independent of the client's reach code. Sampled per rendered FRAME (the seat's
+  //     clock), over more than a whole swing, so a slow headless frame rate can't shrink what it sees.
+  {
+    const AT = [0.25, 0.525, -0.175];
+    const r = await door('create', { id: 'lever', model: SWING, components: { transform: { pos: [here[0] + 1.8, 0.4, here[2]] },
+      'motion:plank': { type: 'pendulum', axis: [0, 0, 1], amp: 0.45, period: 2.4, pivot: [0, 0.3, 0] },
+      sockets: { seat: { pos: [0, 0.2, -0.6], body: { reach: { leftHand: { at: AT, part: 'plank' } } } } } } });
+    if (!r.ok) stage('reach: setup', false, r.refused);
+    await realized('lever');
+    const sat = await sit('lever', 'lever/seat');
+    await waitFor(() => (globalThis.EW.me().reachStatus().leftHand?.weight ?? 0) > 0.98, null, 30000);
+    const samples = []; let last = null; const t0 = Date.now();
+    while (Date.now() - t0 < 60000) {
+      const x = await ev((at) => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); let part = null;
+        EW.entities.get('lever').traverse((o) => { if (!part && o.name === 'plank') part = o; });
+        const b = part?.userData.mbase; if (!part || !b) return { why: 'no part / not animated', part: !!part };
+        const exp = part.localToWorld(new T.Vector3(at[0] - b.pos[0], at[1] - b.pos[1], at[2] - b.pos[2]));
+        const hand = me.vrm.humanoid.getRawBoneNode('leftHand').getWorldPosition(new T.Vector3());
+        return { now: me._seatState?.now, exp: exp.toArray(), hand: hand.toArray(), restQ: b.quat }; }, AT).catch((e) => ({ why: String(e) }));
+      if (x.exp && x.now !== last) { samples.push(x); last = x.now; }
+      if (samples.length >= 10 && samples[samples.length - 1].now - samples[0].now > 2600) break;
+      await sleep(120);
+    }
+    const err = samples.map((x) => Math.hypot(x.hand[0] - x.exp[0], x.hand[1] - x.exp[1], x.hand[2] - x.exp[2]));
+    const xs = samples.map((x) => x.exp[0]);
+    check('reach: seated behind the swing, a hand target on its swinging plank', !!sat && samples.length >= 6, { sat, n: samples.length });
+    check('reach: …the part really moves (the target travels > 15 cm over a swing)', Math.max(...xs) - Math.min(...xs) > 0.15, { range: Math.max(...xs) - Math.min(...xs), n: samples.length });
+    check('reach: …and the hand stays on it through the swing (every frame within 6 cm)', err.length > 0 && Math.max(...err) < 0.06, { err: err.map((e) => +e.toFixed(3)) });
+    await shoot('reach-on-part', [1.1, 0.5, 0.2]);
+    await stand();
+  }
+
+  // (b) a blended pose follows its signal: pose {by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']]}; Bob writes the
+  //     thing's params component through the door, and the mixer's own weights follow
+  {
+    const r = await thing('stool', -1.8, 0, { params: { lean: 0 }, sockets: { seat: { pos: [0, 2.6, 0], body: { anchor: 'hips', pose: { by: 'param.lean', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
+    if (!r.ok) stage('blend: setup', false, r.refused);
+    await realized('stool');
+    const sat = await sit('stool', 'stool/seat');
+    const weights = () => ev(() => { const a = globalThis.EW.me().actions; return { sitchair: +(a.sitchair?.getEffectiveWeight() ?? -1).toFixed(3), sit: +(a.sit?.getEffectiveWeight() ?? -1).toFixed(3) }; });
+    const settle = async (want) => { let w = null; for (let i = 0; i < 30; i++) { await sleep(150); w = await weights(); if (Math.abs(w.sit - want) < 0.03 && Math.abs(w.sitchair - (1 - want)) < 0.03) break; } return w; };
+    const w0 = await settle(0);
+    await door('set', { id: 'stool', component: 'params', value: { lean: 0.25 } });
+    const w1 = await settle(0.25);
+    await door('set', { id: 'stool', component: 'params', value: { lean: 1 } });
+    const w2 = await settle(1);
+    check('blend: lean 0 → all sitchair', !!sat && Math.abs(w0.sitchair - 1) < 0.03 && Math.abs(w0.sit) < 0.03, { sat, w0 });
+    check('blend: lean 0.25 (written through the door) → three quarters sitchair, a quarter sit', Math.abs(w1.sitchair - 0.75) < 0.03 && Math.abs(w1.sit - 0.25) < 0.03, w1);
+    check('blend: lean 1 → all sit', Math.abs(w2.sit - 1) < 0.03 && Math.abs(w2.sitchair) < 0.03, w2);
+    // (e2) anchor hips: the hips joint lands on the socket, wherever the clip puts them
+    const hips = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const s = EW.entities.get('stool'); s.updateWorldMatrix(true, false);
+      return { hips: me.vrm.humanoid.getRawBoneNode('hips').getWorldPosition(new T.Vector3()).toArray(), sock: new T.Vector3(0, 2.6, 0).applyMatrix4(s.matrixWorld).toArray(), root: me.root.position.toArray() }; });
+    check('anchor: hips puts the hips joint on the socket (within 2 cm), not the root', Math.hypot(...hips.hips.map((v, i) => v - hips.sock[i])) < 0.02 && Math.abs(hips.root[1] - hips.sock[1]) > 0.03, hips);
+    await stand();
+  }
+
+  // (c) a phase-locked swing pose follows the pendulum: the swing's plank is a PART swinging on its own part motion
+  //     (motion:plank, the door stamping its t0 so every client agrees on its phase); the seat rides the plank and its
+  //     pose is {clip: 'walk', time: 'phase'}. The clip's time, as a fraction of its length, must equal the pendulum's
+  //     phase at the clock the seat read — computed here from the motion component with the shared closed form
+  {
+    const r = await door('create', { id: 'swing', model: SWING, components: { transform: { pos: [here[0], 0, here[2] + 2.2] },
+      'motion:plank': { type: 'pendulum', axis: [1, 0, 0], amp: 0.5, period: 3, pivot: [0, 1.5, 0] },
+      sockets: { seat: { pos: [0, 0.6, 0], part: 'plank', body: { pose: { clip: 'walk', time: 'phase' } } } } } });
+    if (!r.ok) stage('swing: setup', false, r.refused);
+    await realized('swing');
+    const sat = await sit('swing', 'swing/seat');
+    await sleep(1200);
+    const rows = [];
+    for (let i = 0; i < 8; i++) {
+      // the page's clip time and the clock the seat read this frame's pose at (under load a headless frame can be a
+      // second away from this call); the expected phase from the motion component the page holds, through the shared
+      // closed form here (the probe's own import, not the page's code)
+      const x = await ev(() => { const EW = globalThis.EW; const m = EW.comps.get('swing')?.['motion:plank'];
+        const a = EW.me().actions.walk; const r = EW.me().root; r.updateMatrixWorld();
+        return { m, now: EW.me()._seatState?.now ?? null, clip: a ? a.time / a.getClip().duration : null, w: a?.getEffectiveWeight() ?? null, upZ: +r.matrixWorld.elements[6].toFixed(3) }; });
+      rows.push({ t0: x.m?.t0, now: x.now, clip: x.clip, w: x.w, upZ: x.upZ, want: x.m ? cycleOf(x.m, x.now).phase : null });
+      await sleep(260);
+    }
+    const d = rows.map((x) => { const e = Math.abs(x.clip - x.want); return Math.min(e, 1 - e); });
+    const ups = rows.map((x) => x.upZ);
+    check('swing: the plank\'s part motion carries the door\'s t0 (every client on one clock)', Number.isFinite(rows[0]?.t0), rows[0]);
+    check('swing: seated on the swinging plank, the walk clip holds the body (weight ≈ 1)', !!sat && rows.every((x) => x.w > 0.97), { sat, rows: rows.slice(0, 2) });
+    check('swing: …its time follows the pendulum\'s phase (within 0.03 of a cycle, every sample)', d.every((x) => x < 0.03) && new Set(rows.map((x) => x.want?.toFixed(2))).size > 4, { d: d.map((x) => +x.toFixed(3)), rows });
+    check('swing: …and the sitter tilts with the plank (body up leans fore and aft)', Math.max(...ups) - Math.min(...ups) > 0.2, ups);
+    await shoot('swing-phase', [-1.5, 0.5, 0.6]);
+    await stand();
+  }
+
+  // (d) leaveBy: script — WASD and X don't get you off; the world does (Bob takes the socket away). The control: the
+  //     same seat without leaveBy lets W take you off, so the block isn't a dead key.
+  {
+    const SEAT = { pos: [0, 2.6, 0], body: { leaveBy: 'script' } };
+    const r = await thing('pod', 1.8, 2.2, { sockets: { seat: SEAT } });
+    if (!r.ok) stage('leaveBy: setup', false, r.refused);
+    await realized('pod');
+    const sat = await sit('pod', 'pod/seat');
+    await pg.bringToFront(); await ev(() => document.activeElement?.blur?.());
+    await pg.keyboard.down('KeyW'); await sleep(700); await pg.keyboard.up('KeyW');
+    const afterW = await seated();
+    await pg.keyboard.press('KeyX'); await sleep(500);
+    const afterX = await seated();
+    check('leaveBy script: W held and X pressed, still seated', !!sat && afterW === 'pod/seat' && afterX === 'pod/seat', { sat, afterW, afterX });
+    await door('set', { id: 'pod', component: 'sockets', value: {} });
+    const freed = await waitFor(async () => ![...globalThis.EW.avatarMounts.keys()].includes('Ann') || null, null, 5000);
+    check('leaveBy script: …the world lets go (the socket taken away), and the body is off', !!freed, await seated());
+    await door('set', { id: 'pod', component: 'sockets', value: { seat: { pos: [0, 2.6, 0], body: {} } } });
+    await waitFor(() => !!globalThis.EW.comps.get('pod')?.sockets?.seat, null, 20000);   // the seat is back in her client
+    const again = await sit('pod', 'pod/seat');
+    await sleep(500);
+    await pg.keyboard.down('KeyW'); await sleep(400); await pg.keyboard.up('KeyW'); await sleep(300);
+    const said = await ev(() => document.body.innerText.split('\n').filter((l) => /pod|seat|refused|sit/i.test(l)).slice(-6)).catch(() => null);
+    check('leaveBy (control): the same seat without leaveBy, W takes you off', !!again && (await seated()) === null, { again, now: await seated(), said, sock: await ev(() => globalThis.EW.comps.get('pod')?.sockets ?? null) });
+  }
+
+  // (e) anchor: feet — a standing place on a plinth puts a standing body's soles on the socket. The sole height is
+  //     measured here from Ann standing on the ground first (foot joints above her root), not from the client's anchor code
+  {
+    await sleep(800);
+    const rest = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const h = me.vrm.humanoid;
+      const y = (h.getRawBoneNode('leftFoot').getWorldPosition(new T.Vector3()).y + h.getRawBoneNode('rightFoot').getWorldPosition(new T.Vector3()).y) / 2; return y - me.root.position.y; });
+    const r = await thing('plinth', -1.8, 2.2, { sockets: { top: { pos: [0, 2.0, 0], body: { action: 'stand', anchor: 'feet' } } } });
+    if (!r.ok) stage('anchor: setup', false, r.refused);
+    await realized('plinth');
+    const sat = await sit('plinth', 'plinth/top');
+    await sleep(1200);
+    const at = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const h = me.vrm.humanoid; const s = EW.entities.get('plinth'); s.updateWorldMatrix(true, false);
+      const l = h.getRawBoneNode('leftFoot').getWorldPosition(new T.Vector3()), rr = h.getRawBoneNode('rightFoot').getWorldPosition(new T.Vector3());
+      return { feet: [(l.x + rr.x) / 2, (l.y + rr.y) / 2, (l.z + rr.z) / 2], sock: new T.Vector3(0, 2.0, 0).applyMatrix4(s.matrixWorld).toArray(), clip: EW.myState.clip }; });
+    const said = sat ? null : await ev(() => document.body.innerText.split('\n').filter((l) => /plinth|seat|refused|sit|stand/i.test(l)).slice(-5)).catch(() => null);
+    check('anchor: feet — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
+      !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.comps.get('plinth')?.sockets ?? null) });
+    await shoot('stand-on-plinth', [1.4, 0.2, 1.6]);
+    await stand();
+  }
+  // (f) another person's seat, driven by their input riding presence: Bob's frames say he sits on the cart's seat with
+  //     throttle 0.5 (input.move walk routes it); the seat blends sitchair → sit by throttle. Ann's client runs the same
+  //     driver for him (remotes.js → seatbody.js), so his body there is half and half.
+  {
+    const r = await thing('cart', 0, -2.2, { sockets: { seat: { pos: [0, 2.6, 0], body: { input: { move: 'walk' }, pose: { by: 'throttle', clips: [[0, 'sitchair'], [1, 'sit']] } } } } });
+    if (!r.ok) stage('remote: setup', false, r.refused);
+    await realized('cart');
+    const p = [here[0], 0, here[2] - 2.2];
+    let stop = false;
+    const frames = (async () => { while (!stop) { ws.send(JSON.stringify({ type: 'pose', pose: { p, yaw: 0, speed: 0, clip: 'idle', seat: { to: 'cart', slot: 'seat', in: { throttle: 0.5, steer: 0 } } } })); await sleep(66); } })();
+    const seen = await waitFor(() => { const EW = globalThis.EW; const r = [...EW.remotes.values()].find((x) => x.id === 'Bob');
+      const a = r?.avatar?.actions; const m = EW.avatarMounts.get('Bob');
+      if (!m || !a?.sit || !a?.sitchair) return null;
+      const w = { sit: +a.sit.getEffectiveWeight().toFixed(3), sitchair: +a.sitchair.getEffectiveWeight().toFixed(3), throttle: m.in?.throttle };
+      return Math.abs(w.sit - 0.5) < 0.03 ? w : null; }, null, 15000);
+    const last = seen ?? await ev(() => { const r = [...globalThis.EW.remotes.values()].find((x) => x.id === 'Bob'); const a = r?.avatar?.actions;
+      return { mount: globalThis.EW.avatarMounts.get('Bob') ?? null, sit: a?.sit?.getEffectiveWeight() ?? null, sitchair: a?.sitchair?.getEffectiveWeight() ?? null, kind: r?.avatar?.constructor?.name }; });
+    check('remote: Bob\'s throttle, riding his presence, blends his seated body in Ann\'s client (half sit, half sitchair)', !!seen && Math.abs(seen.sitchair - 0.5) < 0.03 && seen.throttle === 0.5, last);
+    stop = true; await frames;
+    ws.send(JSON.stringify({ type: 'pose', pose: { p, yaw: 0, speed: 0, clip: 'idle' } }));
+  }
+
+  // (g) getting on, warped: a seat with an approach point and an enter clip. Ann is carried to the approach point, then
+  //     the enter clip (stand_to_sit) plays with its time locked to the carry onto the seat, then the seat's pose holds
+  {
+    const now = await ev(() => globalThis.EW.me().root.position.toArray());   // where she stood up last: the bench goes beside her, an ordinary walk away
+    const r = await door('create', { id: 'bench', model: MODEL, components: { transform: { pos: [now[0] + 1.2, 0, now[2] - 1.2], scale: [0.2, 0.2, 0.2] }, sockets: { seat: { pos: [0, 2.6, 0], body: { approach: [0, 0, 0.6, 0], enter: 'stand_to_sit', leave: 'sit_to_stand' } } } } });
+    if (!r.ok) stage('enter: setup', false, r.refused);
+    await realized('bench');
+    await ev(() => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: 'bench seat' }));
+    const trace = [];
+    const t0 = Date.now();
+    while (Date.now() - t0 < 30000) {
+      const x = await ev(() => { const EW = globalThis.EW, me = EW.me(); const st = me._seatState; const a = me.actions.stand_to_sit;
+        // u: how far the carry is at this frame's seat clock (when the enter began, how long it lasts), read off the seat
+        const t = st ? (st.now - st.t0) / 1000 : null; const u = st?.enterAt != null ? (t - st.enterAt) / st.de : null;
+        return st ? { stage: st.stage, t, u: u != null ? +u.toFixed(3) : null, enter: a ? +a.getEffectiveWeight().toFixed(3) : null, et: a ? +(a.time / a.getClip().duration).toFixed(3) : null, root: me.root.position.toArray().map((v) => +v.toFixed(3)), clip: EW.myState.clip } : null; }).catch(() => null);
+      if (x) trace.push(x);
+      if (x && x.stage === 'seated' && trace.some((y) => y.stage === 'enter')) break;   // on, after the enter
+      await sleep(120);
+    }
+    // every frame in the carry: the enter clip holds the body and its time IS the carry's progress (a slow headless
+    // frame rate may land only a frame or two inside the clip's 2.2 s; each one is checked)
+    const mid = trace.filter((x) => x.clip === 'stand_to_sit');
+    check('enter: the enter clip plays while she is carried on (stand_to_sit holds the body, its time locked to the carry)',
+      mid.length >= 1 && mid.every((x) => x.enter > 0.9 && x.u != null && Math.abs(x.et - x.u) < 0.02), trace.slice(0, 14));
+    const order = trace.map((x) => x.stage).filter((v, i, a) => v !== a[i - 1]);
+    check('enter: …in order: brought to the approach point, carried on, seated', JSON.stringify(order) === '["approach","enter","seated"]', order);
+    const end = trace[trace.length - 1];
+    check('enter: …and it ends seated, the seat\'s own pose holding', end?.clip === 'sitchair', end);
+    await stand();
+  }
   ws.close();
   const v4Errors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
   stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);
@@ -237,6 +472,7 @@ try {
   try { await b?.close(); } catch {}
   try { await world?.close(); } catch {}
   rmSync(worlds, { recursive: true, force: true });
+  rmSync(SWING_FILE, { force: true });
 }
 console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a v4 world, sees it, edits it through the door, and hears refusals');
 process.exit(failed ? 1 : 0);

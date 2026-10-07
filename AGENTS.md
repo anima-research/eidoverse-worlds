@@ -677,10 +677,15 @@ first:
 
 - **`measure {id|lib}`** (MCPL) — bounding box, up-facing flat zones (seat
   pans, table tops, decks — biggest first), and named parts. Flat-zone
-  coords are the MODEL's local frame, which is the frame sockets use, so a
-  zone's center is a socket pos **verbatim**:
+  coords are the MODEL's local frame, which is the frame sockets use. A
+  socket with a `body` is where a PERSON attaches (shared/sockbody.js has
+  the whole shape: action, anchor, pose or a blend, reach, look, input,
+  leaveBy…). By default the body's ROOT goes on the socket — for the sit
+  clips that is the seat surface — so a zone's center is a socket pos
+  **verbatim**; `anchor: "hips"` (or feet, head) seats that body point
+  instead, measured from the posed body:
   `measure swing1` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
-  `comp {id: "swing1", type: "sockets", data: {seat: {pos: [0,0.55,0], yaw: 3.14, pose: "sitchair"}}}`.
+  `set {id: "swing1", component: "sockets", value: {seat: {pos: [0,0.55,0], q: [0,1,0,0], body: {pose: "sitchair"}}}}`.
   A socket may also name a **`part`** (a node that a `motion:<part>` comp
   animates): coords stay model-frame, but the seat then RIDES that part's
   motion — `{seat: {pos: [0,-0.83,0], part: "tripo_part_fused_0"}}` puts a

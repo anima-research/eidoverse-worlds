@@ -489,15 +489,8 @@ export function compRefusal(type, data, ent = null) {
 }
 
 /** A socket's body block (shared by the door, the client and the agent): present = a person can attach there by
- *  using it. The shape is the general one (VRChat Station, Roblox Seat, Unreal sockets): the action that attaches
- *  you, the pose you hold, where you're set down when you leave (model frame), who may. A socket without one is an
- *  attachment point for things only (parent {to, slot}). */
-export function bodyOf(sock) {
-  const b = sock && typeof sock === 'object' ? sock.body : null;
-  if (!b || typeof b !== 'object' || Array.isArray(b)) return null;
-  return { action: typeof b.action === 'string' && b.action ? b.action : 'sit', pose: typeof b.pose === 'string' && b.pose ? b.pose : 'sitchair',
-    exit: Array.isArray(b.exit) && b.exit.length === 3 && b.exit.every(Number.isFinite) ? b.exit : null, who: typeof b.who === 'string' ? b.who : null };
-}
+ *  using it. The whole shape and its defaults live in shared/sockbody.js; read here so every consumer has one name. */
+export { bodyOf } from './sockbody.js';
 
 /** A socket's full rotation in its thing's frame (Unreal sockets: a transform, not a heading): a rocket's seat lies
  *  on its back, a bunk lies flat. v1 sockets carried a bare yaw; read the same way here. */

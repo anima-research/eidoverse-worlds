@@ -323,6 +323,17 @@ function applyLookChain(h, qIn, lk, dt) {
 /** C18 receiver: pose a REMOTE body from its wire sample — same look chain, same arm solve, same curls,
  *  in the remote root's frame (== the sender's facing frame). No latch (the wire yaw already carries it),
  *  no eye anchor (the remote stands on its root). `st` = per-remote state { look: Vector3 }. */
+/** My tracked hand's world position this frame (a simulated grip in a probe), or null when it isn't tracked — what a
+ *  socket's reach vr policy compares against its target (shared/sockbody.js reachWins). */
+const _hw = new THREE.Vector3(), _hwO = new THREE.Vector3();
+export function xrHandWorld(side, out = _hw) {
+  if (!isPresenting() && !simGrip[side]) return null;
+  if (simGrip[side]) return out.fromArray(simGrip[side].pos);
+  const g = xrHands()?.[side]?.grip;
+  if (!g) return null;
+  g.getWorldPosition(out);
+  return out.distanceToSquared(xrRig()?.position ?? _hwO) > 1e-4 ? out : null;   // a controller at the rig origin is untracked
+}
 export function applyRemoteXR(av, xr, st, dt) {
   const vrm = av?.vrm, h = vrm?.humanoid;
   if (!h || !xr || !Array.isArray(xr.h) || xr.h.length !== 4) return;
@@ -333,6 +344,7 @@ export function applyRemoteXR(av, xr, st, dt) {
     const torso = torsoCapsule(vrm, h);
     for (const side of ['left', 'right']) {
       const g = xr[side[0]];
+      if (av._seatArms?.[side]) continue;   // a socket's reach holds this hand (its vr policy: seatbody.js decides, the same on every client)
       if (!Array.isArray(g) || g.length !== 7) { relaxArm(vrm, side, dt); continue; }   // a side absent from the wire = lost there too
       fp.set(g[0], g[1], g[2]).applyQuaternion(facingQ).add(rootP);
       fq.set(g[3], g[4], g[5], g[6]).premultiply(facingQ);
@@ -598,6 +610,11 @@ export function tickXRBody(dt) {
     const grip = hands[side]?.grip;
     let ok = false;
     const opts = { dt, head: hmdPos, torso: torsoCap };
+    if (av._seatArms?.[side]) {   // a socket's reach holds this hand (seatbody.js): the tracked hand still rides the wire, unsolved
+      const gp = xrHandWorld(side, gripP);
+      if (gp) { fp.copy(gp).sub(rootP).applyQuaternion(facingInv); wire[side[0]] = [...fp.toArray(), 0, 0, 0, 1].map(r4); }
+      dbg.arms[side] = 'seat'; continue;
+    }
     if (simGrip[side]) { gripP.fromArray(simGrip[side].pos); gripQ.fromArray(simGrip[side].quat); ok = solveArm(vrm, side, gripP, gripQ, opts); }
     else if (grip) {
       grip.matrixWorld.decompose(gripP, gripQ, tmpS);

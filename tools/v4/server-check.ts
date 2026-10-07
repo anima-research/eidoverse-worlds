@@ -214,6 +214,23 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(await saidOnDisk(), "S5d the agent's say reaches a v4 world's log (as a door request, spelled by the agent)");
   const wh = await HANDLERS.world_history(ag, { limit: 20 }, {} as any, "world_history");
   ok(!wh.isError && /Bob: set /.test(wh.content[0].text) && /say "hello, Ann"|hello, Ann/.test(wh.content[0].text), "S5d world_history in a v4 world reads the v4 log (acts and says), not v1's chat-only history", wh.content[0].text.slice(0, 400));
+  // S5e: the agent at a thing's sockets (shared/sockbody.js): look says what each does; sit picks by action/slot, asks
+  // the door (who), and keeps to how the seat lets you go (leaveBy) and whether it takes you from another (fromSeat)
+  ok((await ann.req("create", { id: "carriage", model: "test/table.glb", place: { at: [9, 9] }, components: { sockets: {
+    throne: { pos: [0, 0.5, 0], body: { who: "owner" } },
+    box: { pos: [0.6, 0.5, 0], body: { action: "drive", input: { move: "drive" }, leaveBy: "script" } },
+    rumble: { pos: [-0.6, 0.5, 0], body: { action: "ride", leaveBy: "menu" } } } } })).ok, "S5e (Ann builds a carriage: an owner's throne, a driver's box that holds you, a rumble seat)");
+  for (let i = 0; i < 40 && !ag.entities.get("carriage")?.comp?.sockets; i++) await sleep(50);
+  const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
+  ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
+  const th = await HANDLERS.sit(ag, { on: "carriage", slot: "throne" }, {} as any, "sit");
+  ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e sit on the owner's throne: the door refuses a builder", th.content[0].text);
+  const dv = await HANDLERS.sit(ag, { on: "carriage", action: "drive" }, {} as any, "sit");
+  ok(!dv.isError && ag.mySeat?.slot === "box", "S5e sit {action: 'drive'} picks the driver's box", [dv.content[0].text, ag.mySeat]);
+  const up = await HANDLERS.sit(ag, {}, {} as any, "sit"), wk = await HANDLERS.walk_to(ag, { x: 0, z: 0 }, {} as any, "walk_to");
+  ok(up.isError && wk.isError && ag.mySeat?.slot === "box", "S5e …it holds you (leaveBy script): neither standing up nor walking gets you off", [up.content[0].text, wk.content[0].text]);
+  const hop = await HANDLERS.sit(ag, { on: "carriage", slot: "rumble" }, {} as any, "sit");
+  ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.slot === "box", "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
 // ---- S6: translate a v1 world into a new v4 world ----

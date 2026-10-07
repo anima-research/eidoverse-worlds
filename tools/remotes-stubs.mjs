@@ -35,6 +35,12 @@ export const avatarMounts = new Map();
 export const vrmaShaLoaded = () => null;
 export const pendingMounts = new Map();
 export const mountTransform = () => null;
+// world.js's seat surface (presence seats, v4): remotes.js sets a body's seat from its frames, and seatbody.js reads the
+// thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
+export const setBodySeat = () => {};
+export const comps = new Map();
+export const entities = new Map();
+export const findPart = () => null;
 
 // chat / ui / boot / fp_view
 export const logChat = () => {};
@@ -77,4 +83,5 @@ export const makeAvatar = (id, path) => {
 
 // xrbody.js (VR PR): remotes.js drives a remote's VR pose through these; no-ops here — the lifecycle under test is bodies, not arms
 export const applyRemoteXR = () => {};
+export const xrHandWorld = () => null;   // seatbody.js asks where a tracked hand is (a socket's vr policy): never tracked here
 export const resetFingers = () => {};

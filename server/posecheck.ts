@@ -22,7 +22,7 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   }
   // held pose (bone quats), body pins and reach descriptors ride the same packet and are lerped by
   // every receiver — a NaN anywhere inside them is the same fault. Deep finite-check, bounded depth.
-  for (const k of ["pose", "pins", "reach"]) if (p[k] != null && !finiteDeep(p[k], 0)) return null;
+  for (const k of ["pose", "pins", "reach", "seat"]) if (p[k] != null && !finiteDeep(p[k], 0)) return null;   // seat: its input signals (seat.in) are numbers every receiver blends by
   // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
   // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
   for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];

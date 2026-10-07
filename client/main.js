@@ -14,7 +14,7 @@ import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner } from './lib/world.js';
+import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner, comps } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -34,7 +34,7 @@ import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
-import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
+import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -105,7 +105,7 @@ import {
   rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
-  stepRagdoll, updateMountedMe, updateSeatHint,
+  stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
@@ -568,7 +568,7 @@ registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
+  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) updateMountedMe(dt);  // seated (or being carried off a seat): derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 });
@@ -611,7 +611,7 @@ registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
 bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
-bus.on('xr:stand', () => xrDismountMe());
+bus.on('xr:stand', () => xrDismountMe('menu'));
 bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
 bus.on('xr:select', (id) => sceneSelect(id));
 let _pulseAt = 0;
@@ -841,6 +841,7 @@ globalThis.whyIsItSilent = () => {
 
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, requestV4,
+  avatarMounts, serverNow, comps,   // who sits where (presence), the sequencer's clock the seats' signals read, the component bags
   skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have. A value
   // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
