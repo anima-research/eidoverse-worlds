@@ -21,6 +21,9 @@ import * as C from "./consent.js";
 import * as TR from "./terrain.js";
 import * as SR from "./scriptrules.js";
 import * as R from "./roles.js";
+import { graphemes, cleanText } from "../text.js";
+import { mediaTier, tierWords } from "../mediasrc.js";
+import { saysOf } from "../says.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
@@ -1117,8 +1120,8 @@ function valueCheck(s, { id, comp, value: v }) {
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); } }
-
-  for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
+  mediaCheck(s, id, comp, v, at, obj);
+  for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v);
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
@@ -1129,6 +1132,44 @@ function valueCheck(s, { id, comp, value: v }) {
     if (!Array.isArray(v.mm) || v.mm.length !== g.tile ** 2 || !v.mm.every(Number.isInteger)) refuse("shape", `${at}.mm must be ${g.tile ** 2} integers (millimetres)`, "");
     const lo = -(g.limits?.lower ?? Infinity), hi = g.limits?.raise ?? Infinity;
     if (v.mm.some((n) => n < lo || n > hi)) refuse("bounds", `${at} goes outside the grid's limits (−${g.limits.lower} … +${g.limits.raise} mm)`, "terrain-grid.limits (SL's raise/lower)"); }
+}
+// batch 2 (10-07): pictures, sounds, stories, signs and look-at, beyond their catalogue shape
+const LOOK_WORDS = ["@viewer", "@nearest"];
+const ROTATING = new Set(["pendulum", "spin"]);
+const isLookAt = (k) => k === "look-at" || k.startsWith("look-at:");
+const nodeOf = (k, v) => (k.includes(":") ? k.slice(k.indexOf(":") + 1) : k === "motion" && typeof v?.part === "string" ? v.part : null);   // null = the whole thing
+function mediaCheck(s, id, comp, v, at, obj) {
+  // where a picture's or a sound's bytes may come from (shared/mediasrc.js): this server's store, or an https link to a
+  // public host. Who may FETCH a link is each viewer's browser's question (clientMayFetch); the door refuses what nobody may
+  if ((comp === "picture" || comp === "sound") && obj && v.src !== undefined) { const t = mediaTier(v.src, comp === "picture" ? "image" : "audio");
+    if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.teach); }
+  if (comp === "sound" && obj && isNum(v.near) && isNum(v.radius) && v.near > v.radius) refuse("bounds", `${at}.near (${v.near}) is past radius (${v.radius})`, "near is where it's at full volume; radius is where it goes silent");
+  if (comp === "story" && obj && Array.isArray(v.marks)) { const seen = new Set();
+    for (const m of v.marks) { if (typeof m !== "string") refuse("shape", `${at}.marks holds thing ids (strings)`, "");
+      if (m === id) refuse("loop", `${id}'s story can't mark ${id} itself`, "marks names other things: what this one commemorates");
+      if (seen.has(m)) refuse("shape", `${at}.marks names ${m} twice`, ""); seen.add(m);
+      if (!s.entities[m] || m === "@world") refuse("not-found", `${at}.marks: no thing called '${m}'`, "look lists what's here", { didYouMean: guess(m, Object.keys(s.entities).filter((k) => k !== "@world")) }); } }
+  if (comp === "text" && obj && typeof v.text === "string" && v.text.split("\n").length > 16) refuse("bounds", `${at}.text is ${v.text.split("\n").length} lines; a sign holds at most 16`, "a longer text is a story (Inspect reads it), or several signs");
+  if (isLookAt(comp) && obj) {
+    const T = v.target;
+    if (typeof T === "string" && T.startsWith("@") && !LOOK_WORDS.includes(T)) refuse("shape", `${at}.target '${T}' isn't one of ${LOOK_WORDS.join(", ")}`, "@viewer: each viewer's own eyes; @nearest: whoever is nearest; or a thing's id, or a person's identity (u-…)", { didYouMean: guess(T, LOOK_WORDS) });
+    else if (typeof T === "string" && T.startsWith("@")) { /* @viewer, @nearest */ }
+    else if (typeof T === "string" && /^u-/.test(T)) { if (!isIdentity(T)) refuse("shape", `${at}.target '${T}' isn't an identity`, "who {name} finds a person's identity"); }
+    else if (typeof T === "string") { if (!s.entities[T] || T === "@world") refuse("not-found", `${at}.target: no thing called '${T}'`, "look lists what's here", { didYouMean: guess(T, Object.keys(s.entities).filter((k) => k !== "@world")) });
+      if (T === id || ancestors(s, T).includes(id)) refuse("loop", `${id} can't turn to face ${T === id ? "itself" : `${T}, which rides it`}`, "pick a thing outside it"); }
+    for (const f of ["yaw", "pitch"]) if (v[f] !== undefined) { const lim = f === "yaw" ? 180 : 90;
+      if (!(Array.isArray(v[f]) && v[f].length === 2 && v[f].every((x) => isNum(x) && Math.abs(x) <= lim) && v[f][0] <= v[f][1])) refuse("bounds", `${at}.${f} is [min, max] degrees from rest, each within ±${lim}, min ≤ max`, `e.g. ${f}: [-45, 45]`); }
+    if (Array.isArray(v.offset) && v.offset.some((x) => Math.abs(x) > 50)) refuse("bounds", `${at}.offset is within ±50 m on each axis`, "");
+    for (const f of ["forward", "up"]) if (typeof v[f] === "string" && !["x", "y", "z", "-x", "-y", "-z"].includes(v[f])) refuse("shape", `${at}.${f} is an axis: x|y|z|-x|-y|-z or [x, y, z]`, ""); }
+  // one driver per node (a socket's "one drive per thing", catalogue sockets): a node turned by a rotating motion can't
+  // also turn to face something, and a dynamic thing's rotation is the sim's
+  if ((isLookAt(comp) || comp === "motion" || comp.startsWith("motion:")) && obj) {
+    const e = s.entities[id]; const node = nodeOf(comp, v);
+    if (isLookAt(comp) && e?.c.physics?.kind === "dynamic") refuse("conflict", `${id} is dynamic: physics turns it, so it can't also turn to face something`, "make it static (physics {kind: 'static'}), or put look-at on a part");
+    const mine = isLookAt(comp) ? (k, x) => (k === "motion" || k.startsWith("motion:")) && ROTATING.has(x?.type) : (k) => isLookAt(k);
+    if (!isLookAt(comp) && !ROTATING.has(v.type)) return;
+    for (const [k, x] of Object.entries(e?.c ?? {})) if (k !== comp && mine(k, x) && nodeOf(k, x) === node)
+      refuse("conflict", `${node ? `${id}'s ${node}` : id} already turns by ${isLookAt(k) ? k : `${x.type} (${k})`}; one thing turns a node at a time`, `remove ${k} first, or put ${comp.split(":")[0]} on another part`); }
 }
 // L7 (21:45, research 40 T10): values are checked against their schema at admit. A KNOWN name with an unknown key is
 // refused with a "did you mean": Under the Eves sent terrain {amp: 0}, the engine reads `amplitude`, and the flat world
@@ -1192,10 +1233,19 @@ function schemaCheck(at, comp, v) {
   if (def.byKind) { if (!def.byKind[kind]) refuse("schema", `${at}.kind must be one of ${Object.keys(def.byKind).join(" | ")}, got ${JSON.stringify(v.kind)}`, def.help, { didYouMean: guess(String(v.kind), Object.keys(def.byKind)) });
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
   for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
+  for (const k of def.required ?? []) if (v[k] === undefined) refuse("schema", `${at} needs ${k}`, def.help);
   for (const [k, r] of Object.entries(def.ranges ?? {})) { const x = v[k]; if (x === undefined) continue;
+    // batch 2: a length cap on text (counted in graphemes, as a reader counts: a ZWJ family is 1) and a count cap on lists
+    if (r.maxLen !== undefined || r.maxItems !== undefined) { const n = typeof x === "string" ? graphemes(x) : Array.isArray(x) ? x.length : 0;
+      const cap = typeof x === "string" ? r.maxLen : r.maxItems;
+      if (cap !== undefined && n > cap) refuse("bounds", `${at}.${k} is ${n.toLocaleString("en")} ${typeof x === "string" ? "characters" : "items"}; it must be ≤ ${cap}`, def.help);
+      continue; }
     const bad = (r.min !== undefined && x < r.min) || (r.gt !== undefined && x <= r.gt) || (r.max !== undefined && x > r.max);
     if (bad) refuse("bounds", `${at}.${k} is ${x}; it must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
+  // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
+  for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
+    if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.teach); }
 }
 function handlerCheck(at, act, h) {
   const R = COMPONENTS.reactions; const allowed = [...Object.keys(R.common), ...Object.keys(R.handlers[h.kind]?.args ?? {})];
@@ -1228,7 +1278,7 @@ function commit(w, actor, tool, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = stampHomes(ctx, stampShapes(ctx, build(ctx)));
+  const ops = stampMedia(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, tool, sent, ctx.actExtra);
@@ -1274,6 +1324,24 @@ function stampShapes(ctx, ops) {
   }
   if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the door's measured shape" });
   return out;
+}
+// batch 2: a sound starts on the door's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
+// another file) or the request named no t0, the door sets t0 = now and says so: a reaction, a script, an agent and the
+// editor all start it in step, and no client invents its own clock (as motion.t0). A pause keeps t0; a resume restarts.
+// And a link's reach is said once, when it's written: who will hear or see it (shared/mediasrc.js).
+function stampMedia(ctx, ops) {
+  if (!ops.some((o) => o.verb === "set" && (o.comp === "sound" || o.comp === "picture"))) return ops;
+  return ops.map((o) => {
+    if (o.verb !== "set" || !(o.comp === "sound" || o.comp === "picture") || !o.value || typeof o.value !== "object" || Array.isArray(o.value)) return o;
+    const v = o.value; const prev = ctx.st.entities[o.id]?.c[o.comp];
+    if (typeof v.src === "string" && /^https:/i.test(v.src) && (!prev || prev.src !== v.src)) { const t = mediaTier(v.src, o.comp === "picture" ? "image" : "audio");
+      if (t.tier === "host" || t.tier === "link") ctx.notes.push({ id: o.id, component: o.comp, field: "src", reach: t.tier === "host" ? "everyone" : "opted-in", why: tierWords(t, o.comp === "picture" ? "image" : "audio") }); }
+    if (o.comp !== "sound" || v.playing === false) return o;
+    const p = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : null;
+    if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;
+    const t0 = ctx.w.now(); ctx.notes.push({ id: o.id, component: "sound", field: "t0", kept: t0, why: "stamped by the door: it starts now, for everyone at once" });
+    return { ...o, value: { ...v, t0 } };
+  });
 }
 function touched(ops, st) {
   const out = {};
@@ -1322,7 +1390,7 @@ function needThing(ctx, id) {
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 function resolve(ctx, id, comp, value, prev) {
-  const def = COMPONENTS[comp];
+  const def = COMPONENTS[comp] ?? (comp.startsWith("look-at:") ? COMPONENTS["look-at"] : undefined);   // a part's look-at has the whole one's defaults
   if (comp === "transform") {
     const v = { ...COMPONENTS.transform.defaults, ...(prev ?? {}), ...(value ?? {}) };
     if (value && "yaw" in value) { v.q = yawQ(value.yaw).map((n) => r3(n)); delete v.yaw; ctx.notes.push({ id, component: "transform", field: "yaw", sent: value.yaw, kept: v.q, why: "yaw is a convenience; the log stores q" }); }
@@ -1716,6 +1784,11 @@ function buildUse(ctx, a) {
   // name beside the edit `lock`. A handler names its component and, for an object component, the field it changes.
   if (h?.kind === "set") { const comp = h.component; reactionCap(ctx, a.id, comp, action); ctx.refs.add(a.id);
     return [setOp(a.id, comp, h.field === undefined ? h.value : { ...objOf(e.c[comp]), [h.field]: h.value })]; }
+  // batch 2: play the thing's sound again from the top (a doorbell), playing or not; stampMedia sets t0 = now
+  if (h?.kind === "play") { const cur = e.c.sound;
+    if (!cur || typeof cur !== "object" || Array.isArray(cur)) refuse("no-sound", `${a.id} has no sound to play`, `give it one: set {id: '${a.id}', component: 'sound', value: {src}}`);
+    reactionCap(ctx, a.id, "sound", action); ctx.refs.add(a.id);
+    const { t0, ...rest } = cur; return [setOp(a.id, "sound", { ...rest, playing: true })]; }
   if (h?.kind === "toggle") {
     const { comp, field } = toggleOf(h); ctx.refs.add(a.id);
     if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.teach ?? `someone allowed to may 'use' it with another action first`);
@@ -2498,8 +2571,12 @@ function describe(st, id, live = {}, holds = {}) {
   return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}) };
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}),
+    ...sayOf(st, e.c) };
 }
+// batch 2: what its words and media say (shared/says.js, the same lines mcpl's look prints); things it names by their names
+const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: mintW?.now?.() ?? null });
+  return lines.length ? { says: lines } : {}; };
 
 // ---------- physics (design 20) ----------
 const REACH = 1.5;   // m from your body: arm plus a step
@@ -3172,7 +3249,7 @@ const TOOLS = {
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
     return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
-      derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}) },
+      derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
   measure(w, actor, a) {
@@ -3199,7 +3276,8 @@ const TOOLS = {
         const ops = opsTouching(e, id); if (!ops.length) continue;
         if (out.length === lim) { next = out.at(-1).seq; break; }
         const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
-        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? act.verb : null) ?? ops[0].verb,
+        // an imported act reads as what it was (spawn, place, comp), never "legacy" (batch 2: Credits in History)
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "legacy" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };

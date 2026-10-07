@@ -17,7 +17,8 @@
 // the base the motion composes onto, which is the honest thing to edit.
 
 import * as OP from '../../shared/v4/ops.js';
-import { worldHistoryRows } from './historyrows.js';
+import { worldHistoryRows, historyView, HISTORY_MODES } from './historyrows.js';
+import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
@@ -780,7 +781,7 @@ async function searchLibrary(q) {
 const libModels = () => libHits ?? starterModels().map((m) => ({ ...m, preview: m.path.replace(/\.glb$/, '_preview.jpg') }));
 const libTiles = (pics) => ({ t: 'tiles', k: 'place', value: null, empty: libQ ? `nothing matches "${libQ}"` : 'the library is empty',
   options: libModels().map((m) => ({ v: m.path, label: m.name, ...(pics && m.preview ? { img: `/library/${m.preview}` } : {}),
-    hint: pics ? 'a blueprint of one Model — click, then click the world to place it' : 'a blueprint of one Model — places it 1.5 m ahead of you' })) });
+    hint: `${pics ? 'a blueprint of one Model — click, then click the world to place it' : 'a blueprint of one Model — places it 1.5 m ahead of you'}${m.credits ? `\n${creditLine(m.credits)}` : ''}` })) });
 
 // the transform tools, as the rail draws them (editlayout.js TOOLS) — the same ids build.js setTool takes
 const TRANSFORM_TILES = [
@@ -918,7 +919,9 @@ function buildVRDispatch(action, payload) {
 // the right column's second page (R 10-04, research 56): the selected thing's acts, newest first, or the whole world's
 // with nothing selected — read from the log on demand through the same door request an agent uses (history {id,
 // before}), a page at a time: recent by default, Older… for the deep search. Nothing stored.
-const hist = { key: null, entries: [], next: null, loading: false, id: null };
+// Credits are filter modes here (R 10-07: no third tab, no hand credits): by time, by person, biggest contributors, by
+// what changed (client/lib/historyrows.js historyView). The view's mode is this viewer's, never logged.
+const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null };
 function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
   hist.loading = true;
@@ -932,17 +935,29 @@ function historyFields() {
   const id = worldSel ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(V4.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
-  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; } hist.id = id; histLoad(id); }
+  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; } hist.id = id; histLoad(id); }
   const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (comps.get(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
+  const view = historyView(hist.entries, V4.nameOf, { mode: hist.mode, who: hist.who });
+  const people = historyView(hist.entries, V4.nameOf, { mode: 'top' }).people ?? [];
+  f.push({ t: 'enum', k: 'mode', label: 'show', value: hist.mode, options: HISTORY_MODES.map(([v, label]) => ({ v, label })), hint: 'the same log, seen four ways: who made this what it is (the Credits) is "biggest contributors"' });
+  if (hist.mode === 'person') f.push({ t: 'enum', k: 'who', label: 'person', value: hist.who ?? '', options: [{ v: '', label: '(pick someone)' }, ...people.map((p) => ({ v: p.by, label: `${p.who} (${p.deeds})` }))] });
   if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
-  for (const e of hist.entries) {
+  const row = (e) => {
     const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
     f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? V4.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
-  }
-  if (id && hist.next != null) f.push({ t: 'btn', k: 'older', label: 'Older…', hint: 'read further back in the log (a deeper search, 20 at a time)' });
+  };
+  if (view.mode === 'top') for (const p of view.people) f.push({ t: 'btn', k: `who:${p.by}`, label: `${p.who} — ${p.did.join(' · ') || 'tried'}${p.deeds > 1 ? ` (${p.deeds})` : ''}`, hint: `${p.deeds} change${p.deeds === 1 ? '' : 's'}${p.tried ? `, ${p.tried} refused` : ''} in what's loaded — click for their history` });
+  else if (view.mode === 'kind') for (const g of view.groups) { f.push({ t: 'info', label: '', value: `${g.kind} (${g.rows.length})` }); g.rows.forEach(row); }
+  else view.rows.forEach(row);
+  if (hist.next != null && id) f.push({ t: 'btn', k: 'older', label: 'Older…', hint: 'read further back in the log (a deeper search, 20 at a time); the other views count only what is loaded' });
   return f;
 }
-function historyDispatch(action) { if (action === 'older') histLoad(hist.id, true); }
+function historyDispatch(action, value) {
+  if (action === 'older') histLoad(hist.id, true);
+  else if (action === 'mode') { hist.mode = HISTORY_MODES.some(([v]) => v === value) ? value : 'time'; repaintAll(); }
+  else if (action === 'who') { hist.who = value || null; repaintAll(); }
+  else if (typeof action === 'string' && action.startsWith('who:')) { hist.mode = 'person'; hist.who = action.slice(4); repaintAll(); }
+}
 
 // ---------------------------------------------------------------- mounting
 const PANELS = [

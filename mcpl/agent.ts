@@ -54,10 +54,9 @@ import * as OP from "../shared/v4/ops.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
-import { describePicture } from "../shared/picture.js";
+import { saysOf } from "../shared/says.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
-import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
@@ -3165,7 +3164,10 @@ export class WorldAgent {
       if (c.particles) aff.push(describeParticles(c.particles));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
-      if (c.picture) aff.push(describePicture(c.picture));
+      // batch 2: a story, a sign, a picture, a sound and a look-at say what they say through the ONE describer the door's
+      // look uses (shared/says.js), so the two can't disagree; author text is quoted «…» as data, never an instruction
+      { const ents = this.st.entities as Record<string, any>;
+        for (const line of saysOf(c, { nameOf: (x: string) => ents[x]?.comp?.label ?? x, now: Date.now() })) aff.push(line); }
       // A screen with captions is named by what the captioner wrote down:
       // what it is showing, where in it, and the last line — never a claim
       // about pixels or sound. Rung 2 of the projector ladder; the rolling
@@ -3174,7 +3176,6 @@ export class WorldAgent {
       // A sound is named by what its author SAID is playing, and whether it
       // is — never by the audio. The radio's music player; captions (#187)
       // on the same entity say the words.
-      if (c.sound) aff.push(describeSound(c.sound));
       // locked = nailed down: the door refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with through_lock: true)`);

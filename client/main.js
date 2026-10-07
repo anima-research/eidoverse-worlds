@@ -30,6 +30,8 @@ import './lib/emitters.js';
 import './lib/pictures.js';
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
+import { tickLookAt } from './lib/lookats.js';   // batch 2: look-at, after motion (a bob moves it, then it turns)
+import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text component)
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded,
@@ -565,6 +567,8 @@ const readyPoll = setInterval(() => {
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
+registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
+registerSystem('texts', () => tickTexts());                     // signs that turn to face you
 registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests

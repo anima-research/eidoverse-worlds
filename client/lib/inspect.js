@@ -21,6 +21,7 @@
 // until it retires; that panel also gets the schema groups, rendered by the
 // factory, through the same commit path.
 
+import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
 import { boxOf } from './realize/models.js';
 import { state } from './state.js';
@@ -74,6 +75,8 @@ export function liveFor(id) {
     world: state.st.entities ?? {},
     // the model's own box (the pivot's centre / base snaps)
     box: boxOf(id),
+    // batch 2: this viewer's own choices about a thing's media (mediaprefs.js): never logged
+    mutedForMe: isMineMuted(id), untrusted: allowUntrusted(),
   };
 }
 // The world entity `@world` (design §3, shared/worldentity.js): an alias of

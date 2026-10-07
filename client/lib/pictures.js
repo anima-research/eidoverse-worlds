@@ -28,7 +28,47 @@ import { CONFIG } from './base.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { namedParts } from './parts.js';
 import { toast, flashHint } from './ui.js';
-import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX, PICTURE_STORE } from '../../shared/picture.js';
+import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, PICTURE_STORE, ALT_HINT } from '../../shared/picture.js';
+import { clientMayFetch } from '../../shared/mediasrc.js';
+import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
+
+// Batch 2 (R 10-07):
+//   3. No part = a QUAD of its own (Godot Sprite3D, a Resonite image import): `width` metres wide, its height from the
+//      image's aspect, standing on the thing's origin and facing its front (+Z), readable from behind too (a second
+//      plane turned π, so the back isn't mirrored). Until the image is decoded, a 1:1 plate at 30% stands in, so the
+//      editor's gizmo has something to grab. Cutout transparency (alphaTest 0.5: no sorting, fine in VR). Its world
+//      extent is held to 50 m whatever the transform's scale.
+//   4. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
+//      link only if this viewer turned on "allow untrusted links" — otherwise nothing is fetched (a quad shows its empty
+//      plate). A link is fetched without credentials or a referrer, and decoded at most 2048 px on its long side.
+export const QUAD_MAX_EXTENT = 50;
+export const MAX_TEXTURE_PX = 2048;
+const blocked = new Map();   // id → why this browser didn't fetch it (probes)
+export const _blocked = blocked;
+async function linkTexture(url) {
+  const r = await fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (!r.ok) throw new Error(`${r.status}`);
+  const bmp = await createImageBitmap(await r.blob());
+  const k = Math.min(1, MAX_TEXTURE_PX / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close?.();
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+}
+function quadOf(picture, aspect, tex) {
+  const w = picture.width ?? 1, hgt = w * aspect;
+  const g = new THREE.Group(); g.name = 'picture-quad'; g.userData.pictureQuad = true;
+  const M = picture.lit === 'self' ? THREE.MeshBasicMaterial : THREE.MeshStandardMaterial;
+  const mat = new M(tex ? { map: tex, alphaTest: 0.5, ...(M === THREE.MeshStandardMaterial ? { roughness: 0.9, metalness: 0 } : {}) } : { color: 0x9aa3ad, transparent: true, opacity: 0.3 });
+  const geo = new THREE.PlaneGeometry(w, hgt); geo.translate(0, hgt / 2, 0);
+  const front = new THREE.Mesh(geo, mat), back = new THREE.Mesh(geo, mat);
+  back.rotation.y = Math.PI; front.position.z = 0.001; back.position.z = -0.001;
+  g.add(front, back); g.userData.dispose = () => { geo.dispose(); mat.dispose(); };
+  return g;
+}
+function holdExtent(root, g, picture, aspect) {
+  const s = root.getWorldScale(new THREE.Vector3()); const big = Math.max(picture.width ?? 1, (picture.width ?? 1) * aspect) * Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z));
+  if (big > QUAD_MAX_EXTENT) g.scale.setScalar(QUAD_MAX_EXTENT / big);
+}
 
 // id → { picture, part, original, material } for every picture currently hung
 const hung = new Map();
@@ -49,6 +89,7 @@ const current = (id, r) => revision.get(id) === r;
 const pending = new Map();
 
 async function pictureTexture(picture) {
+  if (/^https:/i.test(picture.src)) return linkTexture(picture.src);
   await primeFiles([picture.src]);
   const bytes = globalThis.Deno.readFileSync(picture.src);
   // glTF UVs are authored in glTF convention (no vertical flip); the shim's
@@ -63,6 +104,7 @@ function takeDown(id) {
   const h = hung.get(id);
   if (!h) return;
   hung.delete(id);
+  if (h.quad) { h.quad.parent?.remove(h.quad); h.quad.userData.dispose?.(); return; }
   // The part may have been re-realized (promote/demote) since we hung on it;
   // only restore if our clone is still what it wears.
   if (h.part.material === h.material) h.part.material = h.original;
@@ -78,6 +120,27 @@ async function hang(id, picture, rev) {
   pending.set(id, picture);
   const root = entities.get(id);
   if (!root) return;
+  const mayFetch = clientMayFetch(picture.src, 'image', allowUntrusted());
+  if (!mayFetch) blocked.set(id, 'untrusted'); else blocked.delete(id);
+  if (!picture.part) {
+    // a quad of its own: the plate first (something to grab), the image when (if) it arrives
+    takeDown(id);
+    const plate = quadOf(picture, 1, null); root.add(plate); holdExtent(root, plate, picture, 1);
+    hung.set(id, { picture, quad: plate, root, aspect: null });
+    pending.delete(id);
+    if (!mayFetch) return;   // an untrusted link without this viewer's opt-in: never fetched
+    let tex;
+    try { tex = await pictureTexture(picture); }
+    catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
+    if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
+    const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;
+    if (picture.flip) { tex.flipY = !tex.flipY; tex.needsUpdate = true; }
+    takeDown(id);
+    const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
+    hung.set(id, { picture, quad: q, root, aspect });
+    return;
+  }
+  if (!mayFetch) { pending.delete(id); return; }
   const part = findPart(root, picture.part);
   if (!part || !part.material) {
     // Legible, once: the comp folds and reads correctly in text tier; there is
@@ -144,7 +207,7 @@ bus.on('entity', ({ id, kind }) => {
     // is gone, and a later spawn of the same id starts from its own comps.
     bump(id);
     const h = hung.get(id);
-    if (h) { hung.delete(id); h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
+    if (h) { hung.delete(id); if (h.quad) h.quad.userData.dispose?.(); else h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
     // the editor's status line is about THIS entity; a later spawn under the
     // same id is another one and opens with no line (Mica, #191 round 2)
     if (kind === 'remove') { pending.delete(id); notes.delete(id); }
@@ -154,7 +217,7 @@ bus.on('entity', ({ id, kind }) => {
     // is issued under a fresh revision.
     const rev = bump(id);
     const h = hung.get(id);
-    if (h) { hung.delete(id); h.material.dispose(); pending.set(id, h.picture); }
+    if (h) { hung.delete(id); if (h.quad) h.quad.userData.dispose?.(); else h.material.dispose(); pending.set(id, h.picture); }
     // Whatever is pending — a bag that never had a part to land on, or one
     // whose load was bumped stale by this very re-realization — is hung
     // again under the fresh revision.
@@ -192,7 +255,7 @@ function pictureKey(data) {
   if (data == null) return 'none';
   const n = normalizePicture(data);
   const p = n.ok ? n.picture : data;
-  return JSON.stringify([p?.src ?? '', p?.part ?? '', p?.look ?? '', p?.lit ?? 'scene', !!p?.flip]);
+  return JSON.stringify([p?.src ?? '', p?.part ?? '', p?.alt ?? '', p?.lit ?? 'scene', !!p?.flip, p?.width ?? 1]);
 }
 
 /** A picture echo for `id`: the line stays only if it was about this very bag. */
@@ -202,6 +265,8 @@ function reconcileNote(id, data) {
 }
 
 bus.on('world-reset', () => clearPictures());
+// the viewer changed what their browser may fetch: every picture is read again under the new rule
+bus.on('media:trust', () => { for (const [id, c] of comps) if (c?.picture) applyFrom(id, c.picture); });
 
 export function clearPictures() {
   pending.clear();
@@ -261,8 +326,8 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         <input data-pe="src" type="text" placeholder="eidoverse/assets/… or store/images/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
         <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
         <button data-pe="pick" title="upload a PNG, JPEG or WebP into the store and use it">upload…</button></label>
-      <label style="display:flex;flex-direction:column;gap:2px">what it shows <span style="color:var(--dim);font-size:11px">(what text-tier residents read; ≤${PICTURE_LOOK_MAX})</span>
-        <textarea data-pe="look" maxlength="${PICTURE_LOOK_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.look ?? '')}</textarea></label>
+      <label style="display:flex;flex-direction:column;gap:2px" title="${esc(ALT_HINT)}">alt text <span style="color:var(--dim);font-size:11px">(what it shows, in words; ≤${PICTURE_ALT_MAX})</span>
+        <textarea data-pe="look" maxlength="${PICTURE_ALT_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.alt ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">lit
           <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
@@ -297,8 +362,8 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       });
       q('hang')?.addEventListener('click', (ev) => {
         const data = { src: q('src').value.trim(), part: q('part').value, lit: q('lit').value, flip: !!q('flip').checked };
-        const look = q('look').value.trim();
-        if (look) data.look = look;
+        const alt = q('look').value.trim();
+        if (alt) data.alt = alt;
         const norm = normalizePicture(data);
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('picture', norm.picture);
@@ -326,6 +391,7 @@ function pickFile(accept) {
   });
 }
 async function uploadThenSet(id, key) {
+  flashHint(`🖼 ${RIGHTS_WARNING}`, 4000);
   const file = await pickFile(PICTURE_ACCEPT); if (!file) return;
   flashHint(`uploading ${esc(file.name)}…`);
   try {

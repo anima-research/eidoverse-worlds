@@ -83,7 +83,10 @@ console.log('a need that requires a choice asks, and sends nothing until answere
 console.log('a need that cannot be met in place is explained (a Model comes from the Library)');
 {
   const empty = { pos: [0, 0, 0], yaw: 0, actor: 'o', ts: 1 };
-  for (const name of ['Collider', 'Sockets', 'Picture']) {
+  // batch 2 (R 10-07): a Picture needs no model any more (no part = a framed picture of its own), so it's offered on an Empty
+  { const entry = addList(empty).find((a: any) => a.name === 'Picture');
+    check('Picture is offered on an Empty (batch 2: a picture of its own needs no model), not blocked', !!entry && !entry.blocked, J(entry)); }
+  for (const name of ['Collider', 'Sockets']) {
     const r = addOps(empty, 'pivot', name);
     check(`add.${name} on an Empty: nothing sent, a reason that names what to do`, r.ops.length === 0 && /needs a model/.test(r.errors[0] ?? '') && /Library/.test(r.errors[0] ?? '') && /pivot has none/.test(r.errors[0] ?? ''), J(r));
     const entry = addList(empty).find((a: any) => a.name === name);

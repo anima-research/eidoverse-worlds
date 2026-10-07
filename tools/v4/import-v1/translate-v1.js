@@ -58,6 +58,12 @@ function v4Sockets(S, c) {
   if (Object.keys(left).length) c[keyed("legacy", "sockets")] = left;
   return out;
 }
+function v4Story(v) {
+  const out = { ...v };
+  if (typeof v.practice === "string" && v.practice.trim()) out.text = (typeof v.text === "string" && v.text ? `${v.text}\n\n` : "") + v.practice.trim();
+  if (typeof v.markedEntity === "string" && v.markedEntity) out.marks = [enc(v.markedEntity)];
+  return out; // practice, markedEntity and anything else story doesn't define move to legacy:story (splitUnknown)
+}
 function v4Reactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
@@ -70,7 +76,11 @@ function v4Reactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@4";
+export const TRANSLATOR = "eidoverse/translate-v1@5";
+// @5 (2026-10-07, batch 2): `story` is a component now ({title, text, marks?}). A v1 story's `practice` (Mica's marker
+// tree: "One tree, renewing, not accumulating…") becomes a paragraph of its text, and `markedEntity` its marks: the
+// words people read stay on the label. Both are also carried in legacy:story beside it (with plantedBy, assetAuthor:
+// who planted it is the log's create; who made the model is the library's credits), so nothing is lost (R10).
 // @4 (2026-10-06, roles S5): a v1 `fly: true` grant becomes roles:<id>.can.fly (it fell into legacy:roles:<id> before).
 // @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
 // translating door's key is the sequencer and the only governance key, in tier 1 (the custodial default: tier 0
@@ -136,6 +146,7 @@ export function project(st, seen = null, who = null) {
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
+    if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = v4Story(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k))) }
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is

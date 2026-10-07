@@ -13,6 +13,8 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
+import { creditsFor } from "../shared/libcredits.js";
+import { libraryCredits } from "./v4/catalogue.ts";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
@@ -960,6 +962,8 @@ const ROUTES: Route[] = [
             // strip the SEO-soup filenames into something a person can read
             name: f.replace(/\.glb$/i, "").replace(/_/g, " ").slice(0, 48),
             preview: hasPrev ? `eidoverse/assets/models/${prev}` : null,
+            // batch 2: who made it and its licence (defs/library/credits.json; a gap says what isn't recorded)
+            credits: creditsFor(libraryCredits(), `eidoverse/assets/models/${f}`),
           };
         });
       // Conjured/delivered objects (the content-addressed store) are catalog
