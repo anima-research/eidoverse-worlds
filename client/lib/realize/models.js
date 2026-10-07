@@ -1074,7 +1074,7 @@ export function reconcileModels() {
   }
 }
 
-/** One thing changed (state.js: said in v4 terms, never as a v1 verb). The fold has already written state. */
+/** One thing changed (state.js: said in v4 terms). The fold has already written state. */
 function onChange({ id, what, comp }) {
   try {
     const ent = state.st.entities[id];

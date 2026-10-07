@@ -995,8 +995,7 @@ const server = Bun.serve({
           // EVERYONE, so it needs moderation rights, not a preference.
           if (!c.world || !relayEnabled()) return;
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          // the door's role for the person's directory identity (it read v1 rights by typed name, and a role the v1
-          // table didn't know, `none`, compared undefined < 2 → false and passed)
+          // the door's role for the person's directory identity, never their typed name
           if (c.world.v4?.roleOf(v4ActorOf(c)) !== "owner") {
             ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
             return;
@@ -1033,7 +1032,6 @@ const server = Bun.serve({
           // OWN keys only: a type such as "__proto__" or "constructor" must
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
-          // a v4 world answers some types itself (server/v4/messages.ts); v1 worlds never consult that table
           // every world is v4: the door's own types first (server/v4/messages.ts), then the room's (presence, voice, chat lanes)
           const h = v4Handler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
           if (h) h({ c, ws, now, expel }, msg);

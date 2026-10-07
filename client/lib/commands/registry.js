@@ -27,7 +27,6 @@ export const COMMANDS = [
   { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
-  { name: 'boom', aliases: ['blast'], listed: false, help: '/boom — a blast where you stand (not in v4 worlds yet)' },
   { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — kick a thing at your feet into flight (C); a person\'s name is the ragdoll shove (their client decides)' },
   { name: 'grab', aliases: ['pickup', 'take'], help: '/grab [thing] — pick up the nearest thing you can carry, or the one named (T)' },

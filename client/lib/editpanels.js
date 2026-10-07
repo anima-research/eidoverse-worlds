@@ -106,7 +106,7 @@ let skyPresets = null, groundPal = null;
 function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
-// the world's display name: v4 keeps it on @world (about.name); a v1 world has only the name in its address
+// the world's display name: @world's about.name, else the name in its address
 const worldName = () => v4.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
@@ -168,7 +168,11 @@ function syncOutlines() {
 // ---------------------------------------------------------------- scripts roster
 // the behavior runtime, for 📜 badges in the tree and the Behaviors group —
 // the same world_debug an agent reads, polled while the panels are up
-let behaviors = [];
+let behaviors = [];   // the world's scripts (the door's status view, via world_debug {behaviors}): {id: "<thing>/<name>", attach, status, …}
+/** The door ops that remove one script: script:<name> on its thing, or an imported world's carried behaviour record. */
+const unbindOps = (id) => { const s = String(id); const i = s.indexOf('/');
+  return s.startsWith('behavior:') ? [OP.unset('@world', s)] : i > 0 ? [OP.unset(s.slice(0, i), `script:${s.slice(i + 1)}`)] : []; };
+const running = (b) => b.status === 'active' || b.status === 'asleep';
 let shown = false;
 let rosterTimer = 0;
 async function refreshBehaviors() {
@@ -455,8 +459,7 @@ function worldFields() {
   return shown;
 }
 
-// who made it. A v1 world stamps the placer; a v4 world keeps no such field (L2: a view, never stored), so ask the
-// door once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
+// who made it: no thing stores it (L2: a view over the log, never stored), so ask the door once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
 // the door's inspect, per thing, re-asked whenever its components change (the key): who made it, and who last changed
 // each component and when (touched: R 10-04, "where a value came from"; within a recent window, beyond = older)
 const inspectCache = new Map();
@@ -546,7 +549,7 @@ function inspectorFields() {
   }
 
   // GROUPS — flags, then every component group the schema declares, then the
-  // raw-JSON floor for types no group speaks for, then behaviors
+  // raw-JSON floor for types no group speaks for, then scripts
   const groupOf = (name) => schema.groups.find((g) => g.group === name);
   const addGroup = (g, key, title) => {
     if (!g) return;
@@ -569,8 +572,8 @@ function inspectorFields() {
 
   const mine = behaviors.filter((b) => b.attach === id);
   if (mine.length) {
-    f.push({ t: 'group', k: 'behaviors', label: `Behaviors (${mine.length})`, open: isOpen(id, 'behaviors') });
-    f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${b.status === 'running' ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'unbind', danger: true }] })) });
+    f.push({ t: 'group', k: 'behaviors', label: `Scripts (${mine.length})`, open: isOpen(id, 'behaviors') });
+    f.push({ t: 'list', k: 'bhv', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
   }
   f.push({ t: 'btn', k: 'remove', label: 'remove', danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
   const shown = filterFields(f, ifilter);
@@ -687,7 +690,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   }
   switch (action) {
     case 'remove': removeMany([id]); break;
-    case 'unbind': V4.sendOps([OP.unset('@world', `behavior:${payload}`)], { what: `unbind ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'bhv': watchScript(payload); break;   // a script row → the Console, watching it
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
   }
@@ -708,11 +711,11 @@ async function refreshWatch() {
   } catch { /* a poll that fails keeps the last good tail */ }
 }
 function consoleFields() {
-  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts bound in this world — behaviors are the scripting tier (AGENTS.md)',
-    rows: behaviors.map((b) => ({ id: b.id, label: `${b.status === 'running' ? '▶' : '⏸'} ${b.id}`,
-      sub: [b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers}⏲` : null, b.status !== 'running' ? (b.status ?? 'paused') : null].filter(Boolean).join(' · '),
+  const f = [{ t: 'list', k: 'cwatch', empty: 'no scripts in this world — a script is a script:<name> component on a thing (docs/SCRIPTS-v4.md)',
+    rows: behaviors.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`,
+      sub: [b.attach ? `on ${b.attach}` : 'world', b.timers ? `${b.timers}⏲` : null, !running(b) ? (b.status ?? 'paused') : null].filter(Boolean).join(' · '),
       active: b.id === watching,
-      actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'unbind', danger: true }] })) }];
+      actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) }];
   if (watching) {
     f.push({ t: 'group', k: 'clog', label: `${watching} — ${watchLog?.status ?? '…'}`, open: true });
     f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: '(console empty — world.log() writes here)' });
@@ -729,7 +732,7 @@ function consoleDispatch(action, payload) {
   switch (action) {
     case 'cwatch': watching = payload === watching ? null : payload; refreshWatch().then(repaintAll); break;
     case 'cgoto': { const b = behaviors.find((x) => x.id === payload); if (b?.attach && entities.has(b.attach)) sceneSelect(b.attach); break; }
-    case 'unbind': V4.sendOps([OP.unset('@world', `behavior:${payload}`)], { what: `unbind ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': V4.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
     case 'fold': break;   // the log header is not a fold
   }
   repaintAll();

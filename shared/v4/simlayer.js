@@ -40,15 +40,15 @@ export function worldPose(st, id, depth = 0) {
   const [a, b, c, d] = pt.q, [e2, f, g, h] = q;
   return { pos: pt.pos.map((n, i) => n + r[i]), q: [d*e2+a*h+b*g-c*f, d*f-a*g+b*h+c*e2, d*g+a*f-b*e2+c*h, d*h-a*e2-b*f-c*g], scale: sc.map((n, i) => n * pt.scale[i]) };
 }
-// The engine sees the world through a v1-shaped view: one entry per modelled thing (its "lib" is its model).
-function v1Entity(st, id, models = MODELS) {
+// The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
+function engineEntity(st, id, models = MODELS) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || e.c.physics?.shape) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   return { pos: t.pos, yaw: yawOf(t.q), lib: e.c.model, scale: t.scale[1] };
 }
 function v1ViewM(st, models = MODELS) {
   const entities = {};
-  for (const id of Object.keys(st.entities)) { const v = v1Entity(st, id, models); if (v) entities[id] = v; }
+  for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
   return { entities, terrain: terr ?? { amplitude: 0 } }; // v4 worlds stand on y = 0 unless they declare terrain
 }

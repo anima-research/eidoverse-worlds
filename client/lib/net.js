@@ -22,12 +22,12 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
-// protocol/v4 slice 3b: in a v4 world this client folds the door's own stream (shared/v4/client.js) and derives the
-// v1 state the realizers draw from it, locally; edit mode sends v4 requests (v4edit.js) and waits for the door.
+// this client folds the door's own stream (shared/v4/client.js) and derives the view the realizers draw from it,
+// locally; edit mode sends door requests (v4edit.js) and waits for the door.
 import { makeV4Client } from '../../shared/v4/client.js';
 import { actorName } from '../../shared/v4/names.js';
 export const v4 = makeV4Client();
-/** Is this client standing in a v4 world (one whose snapshot carried the v4 cut)? */
+/** Is this client in a world (it has adopted the door's cut)? */
 export const isV4 = () => v4.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
@@ -110,8 +110,8 @@ export function wireNet(h) {
 export const identities = new Map();
 export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
 /** Say something in the world (the door's `say`). Resolves with the door's reply. Never silent (Commons audit #6): a
- *  line typed while the connection is down is QUEUED and sent when the world is back (v1 did this; v4 dropped it as
- *  'offline'), and a refused say (the rate limit, a ban, too long) is shown to the person in plain words. */
+ *  line typed while the connection is down is QUEUED and sent when the world is back, and a refused say (the rate
+ *  limit, a ban, too long) is shown to the person in plain words. */
 const sayQueue = [];   // {args, resolve}: says typed while reconnecting, sent in order on the next snapshot
 const SAY_QUEUE_MAX = 20;
 const excerpt = (t) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return `“${s.length > 40 ? `${s.slice(0, 39)}…` : s}”`; };
@@ -249,7 +249,7 @@ export function sendJoin() {
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
     token: CONFIG.token,
-    // a v4 world sends this client its own v4 stream and no compatibility projection (v1 worlds ignore it)
+    // this client folds the world's v4 stream itself (the server refuses a client that doesn't)
     v4fold: true,
   }));
 }
@@ -840,7 +840,7 @@ async function handle(msg) {
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
     case 'moderated':
-      // someone was removed or banned here (or a ban lifted): what everyone else is told, as v1 told them (names only)
+      // someone was removed or banned here (or a ban lifted): what everyone else is told (names only)
       logChat('*', String(msg.text ?? ''));
       break;
 

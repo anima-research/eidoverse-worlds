@@ -1,34 +1,28 @@
 // mods — runtime-loaded client scripts: physics, animation, in-game UI.
 //
-// The trust model, decided deliberately (docs/leases.md §self-animation):
+// The trust model, decided deliberately (docs/MODDING-UI.md):
 //
-//   * A LOCAL mod is a TRUSTED MOD — full access, an in-page ES module with
+//   * A mod is LOCAL and TRUSTED — full access, an in-page ES module with
 //     the whole EW surface (your bones, the scene, door requests, the wire).
 //     It can act as you; loading one is a mod-install decision, like a
 //     browser extension. Stored in IndexedDB, yours alone, survives reloads.
-//   * A WORLD mod is an OFFER: the owner promotes a script to the server
-//     (content-addressed, exact bytes pinned) and every visitor chooses —
-//     per script, or by wildcard for a world they trust. Nothing ever
-//     auto-executes in your page. Consent is keyed to the script's HASH,
-//     so a changed script means a fresh question; a world wildcard is the
-//     deliberate exception ("run whatever this place offers, sight unseen").
+//     (A world doesn't offer client mods: what runs in a world is its own
+//     scripts, on the server, through the door — docs/SCRIPTS-v4.md.)
 //
 // What a mod can DO needs no new machinery: it animates your own body freely
 // (it is you), other bodies by their consent (bodydrag), objects through the
-// door as you would (EW.physics: grab/put/throw/drop/punt; v1's entity leases
-// are gone, a v4 door refuses them), and it may build in-game UI through the
+// door as you would (EW.physics: grab/put/throw/drop/punt), and it may
+// build in-game UI through the
 // same panel primitives the client itself uses. The engine cannot tell a
 // mod's output from anyone else's, which is the point.
 //
 // Contract: a mod is an ES module. Its default export (if any) is called
 // with a context: { name, world, EW, ui, onTick, onDispose }. Ticks are
-// wrapped; five consecutive throws pause the mod loudly (the behavior
-// tier's rule). Disabling runs your onDispose handlers and removes your
+// wrapped; five consecutive throws pause the mod loudly. Disabling runs your onDispose handlers and removes your
 // panels — but a module, once imported, cannot be UNLOADED; a mod that
 // grabbed globals keeps them until reload. Trusted means trusted.
 
 import { bus, CONFIG, report } from './base.js';
-import { behaviors } from './world.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
 import { makeFrame } from './frames.js';
@@ -61,12 +55,6 @@ const putScript = (rec) => tx('readwrite', (s) => s.put(rec));
 const delScript = (name) => tx('readwrite', (s) => s.delete(name));
 
 // world-mod consent, keyed to exact bytes (the src path IS the hash)
-const GRANTS = 'ew-mod-grants';
-const grants = () => { try { return JSON.parse(localStorage.getItem(GRANTS) ?? '{}'); } catch { return {}; } };
-const grant = (key) => { const g = grants(); g[key] = 1; localStorage.setItem(GRANTS, JSON.stringify(g)); };
-const ungrant = (key) => { const g = grants(); delete g[key]; localStorage.setItem(GRANTS, JSON.stringify(g)); };
-const scriptKey = (id, src) => `script:${CONFIG.world}:${id}:${src}`;
-const worldKey = () => `world:${CONFIG.world}`;
 
 // ---------------------------------------------------------------- runtime
 
@@ -135,39 +123,6 @@ export function tickMods(dt, now) {
   }
 }
 
-// ---------------------------------------------------------------- world offers
-
-const offers = () => [...behaviors].filter(([, b]) => b.runtime === 'client');
-
-async function runOffer(id, b) {
-  const runName = `world:${id}`;
-  if (running.has(runName)) return;
-  try {
-    const res = await fetch(`/library/${b.src}`);
-    if (!res.ok) throw new Error(`fetch ${b.src}: ${res.status}`);
-    await runSource(runName, await res.text());
-  } catch (e) { report(`world mod ${id}`, e); toast(`world mod "${id}" failed: ${e.message}`, 'err'); }
-}
-
-/** Consent resolution + autorun — on join and on every roster change. */
-function reconcileOffers({ live = false } = {}) {
-  const g = grants();
-  for (const [id, b] of offers()) {
-    const runName = `world:${id}`;
-    if (running.has(runName)) continue;
-    if (g[scriptKey(id, b.src)] || g[worldKey()]) { runOffer(id, b); continue; }
-    if (live) {
-      logChat('*', `this world offers a mod: "${id}" by ${b.author} — open 🧩 mods to run it`);
-    }
-  }
-  // unbound offers stop running
-  const liveIds = new Set(offers().map(([id]) => `world:${id}`));
-  for (const name of [...running.keys()]) {
-    if (name.startsWith('world:') && !liveIds.has(name)) stopMod(name);
-  }
-  paint?.();
-}
-
 // ---------------------------------------------------------------- the panel
 
 let paint = null;
@@ -194,14 +149,6 @@ export const modsApi = {
   run: (name, source) => runSource(name, source),
   stop: stopMod,
   running: () => [...running.keys()],
-  offers: () => offers().map(([id, b]) => ({ id, src: b.src, author: b.author })),
-  accept: async (id, always = false) => {
-    const b = behaviors.get(id);
-    if (!b) return false;
-    if (always) grant(scriptKey(id, b.src));
-    await runOffer(id, b);
-    return true;
-  },
 };
 
 export function initMods() {
@@ -209,7 +156,6 @@ export function initMods() {
     let editing = null;      // name being edited, '' = new
     const render = async () => {
       const mine = await listScripts();
-      const g = grants();
       // THE LAYOUT (owner, 09-29: "the mod area was a bit of a hot mess"): every entry is one .mod-row —
       // its name, a quiet line saying what it is, and its controls on the right (or under it, when a
       // row carries more than one) — grouped under the pane's captions. No inline button runs in prose,
@@ -222,18 +168,7 @@ export function initMods() {
             <button data-run="${esc(s.name)}">${on ? 'stop' : 'run'}</button>
             <button data-auto="${esc(s.name)}" title="run it every time you arrive">${s.auto ? 'autorun ✓' : 'autorun'}</button>
             <button data-edit="${esc(s.name)}">edit</button>
-            <button data-promote="${esc(s.name)}" title="upload + offer to everyone in this world (owner)">promote</button>
             <button data-del="${esc(s.name)}" title="delete this mod" aria-label="delete">✕</button></div>
-        </div>`;
-      }).join('');
-      const offerRows = offers().map(([id, b]) => {
-        const on = running.has(`world:${id}`);
-        return `<div class="mod-row stacked">
-          <div class="mod-txt"><span class="mod-nm">${esc(id)}</span><span class="mod-note">by ${esc(b.author)}${on ? ' · running' : ''}</span></div>
-          <div class="mod-btns">
-            <button data-orun="${esc(id)}">${on ? 'stop' : 'run once'}</button>
-            <button data-oalways="${esc(id)}">${g[scriptKey(id, b.src)] ? 'trusted ✓' : 'always (this script)'}</button>
-            <button data-osrc="${esc(id)}" title="read the code before trusting it">view</button></div>
         </div>`;
       }).join('');
       body.innerHTML = `
@@ -245,10 +180,6 @@ export function initMods() {
         <div class="mod-note warn">local mods run with full access, as you — load only code you trust</div>
         ${rows || '<div class="mod-note">no local mods yet</div>'}
         <button data-new="1">+ new mod</button>
-        <div class="sec-cap">this world offers</div>
-        <div class="mod-note">scripts this world's owner promoted</div>
-        ${offerRows || '<div class="mod-note">none here</div>'}
-        <button data-wworld="1">${g[worldKey()] ? `trusting everything in "${esc(CONFIG.world)}" ✓ (click to revoke)` : `trust all scripts in "${esc(CONFIG.world)}", now and future`}</button>
         ${editing != null ? `<div class="sec-cap">${editing ? `editing ${esc(editing)}` : 'new mod'}</div>
           <input id="mod-name" placeholder="mod name" value="${esc(editing)}" ${editing ? 'disabled' : ''}>
           <textarea id="mod-src" rows="14" spellcheck="false"></textarea>
@@ -298,51 +229,14 @@ export function initMods() {
           else { const rec = mine2.find((s) => s.name === d.run); if (rec) await runSource(d.run, rec.source); }
           return render();
         }
-        if (d.promote != null) {
-          const rec = mine2.find((s) => s.name === d.promote);
-          if (!rec) return;
-          try {
-            const up = await fetch(`/upload?as=script&token=${encodeURIComponent(CONFIG.token ?? '')}`, {
-              method: 'POST', body: rec.source,
-            }).then((r) => r.json());
-            if (!up.path) throw new Error(up.error ?? 'upload refused');
-            void up;
-            toast(`offering a mod to a world isn't in v4 yet (scripts are a later v4 slice) — "${rec.name}" stays yours`, 'info');
-          } catch (err) { toast(`promote failed: ${err.message}`, 'err'); }
-          return;
-        }
-        if (d.orun != null) {
-          const runName = `world:${d.orun}`;
-          if (running.has(runName)) stopMod(runName);
-          else { const bb = behaviors.get(d.orun); if (bb) await runOffer(d.orun, bb); }
-          return render();
-        }
-        if (d.oalways != null) {
-          const bb = behaviors.get(d.oalways);
-          if (!bb) return;
-          const key = scriptKey(d.oalways, bb.src);
-          if (grants()[key]) ungrant(key); else { grant(key); await runOffer(d.oalways, bb); }
-          return render();
-        }
-        if (d.osrc != null) {
-          const bb = behaviors.get(d.osrc);
-          if (bb) window.open(`/library/${bb.src}`, '_blank');
-          return;
-        }
-        if (d.wworld) {
-          if (grants()[worldKey()]) ungrant(worldKey()); else { grant(worldKey()); reconcileOffers(); }
-          return render();
-        }
       };
     };
     paint = render;
     await render();
   }, { id: 'mods' });
 
-  // autoruns: local mods marked auto, and consented world offers
+  // autoruns: local mods marked auto
   bus.on('hydrated', async () => {
     for (const s of await listScripts()) if (s.auto && !running.has(s.name)) runSource(s.name, s.source);
-    reconcileOffers();
   });
-  bus.on('behavior-roster', ({ live }) => reconcileOffers({ live }));
 }

@@ -227,7 +227,7 @@ const MOTION_TYPE = Object.fromEntries(Object.entries(MOTION).map(([k, v]) => [v
 const MOTION_STAMPS = ['t0', 'cause', 'by'];
 // keys of the record that are not components: who/when the sequencer stamped
 const STAMPS = ['placer', 'born', 'actor', 'ts', 'box'];
-const FLAG = { lock: 'Lock' };   // v1's guard merged into lock (PROTOCOL-v4 §5): no v4 world carries one
+const FLAG = { lock: 'Lock' };   // the old `guard` merged into lock (PROTOCOL-v4 §5): no world carries one
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
@@ -499,5 +499,5 @@ export function compRefusal(type, data, ent = null) {
 export { bodyOf } from './sockbody.js';
 
 /** A socket's full rotation in its thing's frame (Unreal sockets: a transform, not a heading): a rocket's seat lies
- *  on its back, a bunk lies flat. v1 sockets carried a bare yaw; read the same way here. */
+ *  on its back, a bunk lies flat. A socket written with a bare yaw is read the same way. */
 export const socketQ = (sock) => qNorm(sock?.q) ?? qFromYaw(Number.isFinite(sock?.yaw) ? sock.yaw : 0);

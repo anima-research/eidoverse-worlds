@@ -2,8 +2,9 @@
 //
 // A World is one v4 world as this server holds it: its log (server/v4/world.ts V4Log: the door over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
-// persisted). Every world this server serves is a v4 world: a directory that holds only an old (v1) log is refused at
-// open, with the command that translates it (shared/v4/import-v1/, run once by the operator).
+// persisted). Every world this server serves is a v4 world: a directory that holds only an old log (the first
+// protocol's log.jsonl) is refused at open, with the command that translates it (shared/v4/import-v1/, run once by the
+// operator).
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
 // server.ts — waking scripted worlds with the server is boot policy, not world mechanics.
 
@@ -116,7 +117,7 @@ export class World {
 
   constructor(name: string) {
     this.name = name;
-    if (!isV4World(name)) throw new Error(`world "${name}" holds no v4 log here (an old v1 world is translated once: bun tools/v4/world.ts translate <its dir> <a new dir>)`);
+    if (!isV4World(name)) throw new Error(`world "${name}" holds no v4 log here (a world saved by the old protocol is translated once: bun tools/v4/world.ts translate <its name> <a new name>)`);
     this.v4 = this.openLog();
     this.openSeq = this.v4.snapSeq + 1;   // past every chat line this world has numbered (v4seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running

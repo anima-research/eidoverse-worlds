@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { ENGINE, controlNote } from "./common.ts";
 
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
+  ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["hostile", "hostile-check.ts", 2],   // PROTOCOL-v4 §6 proof 1: hostile logs against the strict fold
   ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the door (admit, L7)
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
@@ -16,13 +17,13 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
-  ["sweep", "sweep.ts", 4],             // translators on every local world log + her dialect-3 goldens + pins
+  ["sweep", "sweep.ts", 4],             // the old-world importer (shared/v4/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["door", "door-check.ts", 1],
   ["directory", "directory-check.ts", 1],
   ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
   ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
-  ["server", "server-check.ts", 1],     // slice 2 at the server: real processes, real WebSockets, scratch ports; v1 byte-compared         // slice 2 in process: names, translator stamp, ancestor pins, live = whole-log, catalogue, projection
+  ["server", "server-check.ts", 1],     // the server: real processes, real WebSockets, scratch ports
   ["identity", "identity-check.ts", 1], // who a joiner is: C1-C3, H1, H3-H5 (security review 10-06), one identity per account
   ["fork-reset", "fork-reset-check.ts", 1], // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
