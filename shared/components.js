@@ -264,7 +264,7 @@ function compBag(inst) {
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
   const out = [];
-  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale']);
+  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (record.js), kept through the round trip
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
   // client and replays; design §3) but belongs to the Transform: a valid one is
   // read here, and anything else under that key stays an Annotation below
