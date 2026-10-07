@@ -1140,7 +1140,8 @@ function buildCreate(ctx, a) {
   ctx.refs.add(id); // who made it is the create entry's actor: a view, never a stored `placer` (L2)
   const made = createOps(id, out);
   if (!a.place) return made;
-  const placed = buildPlace({ ...ctx, st: scratch(ctx.st, made) }, { ...a.place, id });
+  admit(ctx.w, ctx.st, { actor: ctx.actor }, made);   // the one gate before place solves (security pass 2 H-A); again on the whole write after
+  const placed = buildPlace({ ...ctx, st: scratch(ctx.st, made) }, { ...a.place, id, __made: true });
   return [...made.filter((o) => !(o.verb === "set" && (o.comp === "transform" || o.comp === "parent"))), ...placed.filter((o) => o.verb === "set")];
 }
 
@@ -1225,6 +1226,10 @@ function buildTurn(ctx, a) {
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
   const m = geomOf(e.c.model); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
+  // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
+  // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
+  if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, "transform", COMPONENTS.transform.defaults)]);   // (the value is a stand-in: these checks don't read it)
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
   const fam = new Set([a.id, ...descendants(st, a.id)]);
   let yaw = a.yaw ?? qYaw(cur.q);
@@ -1236,8 +1241,12 @@ function buildPlace(ctx, a) {
   const lo = [0, 1, 2].map((i) => Math.min(...lc.map((c) => c[i]))), hi = [0, 1, 2].map((i) => Math.max(...lc.map((c) => c[i])));
   const S = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], C = [(hi[0] + lo[0]) / 2, 0, (hi[2] + lo[2]) / 2];
   const half = (y) => { const c = Math.abs(Math.cos(y)), s = Math.abs(Math.sin(y)); const hx = S[0] / 2, hz = S[2] / 2; return [c * hx + s * hz, s * hx + c * hz]; };
-  const free = (x, y, z, yw, ignore) => { const [hx, hz] = half(yw); const box = { min: [x - hx, y, z - hz], max: [x + hx, y + S[1], z + hz] };
-    for (const id of Object.keys(st.entities)) { if (fam.has(id) || ignore.has(id)) continue; if (hits(box, st, id, 0.01)) return id; } return null; };
+  // `local`: what meets the whole region a search tests (its key order kept), so each spot filters that instead of asking
+  const free = (x, y, z, yw, ignore, local = null) => { const [hx, hz] = half(yw); const box = { min: [x - hx, y, z - hz], max: [x + hx, y + S[1], z + hz] };
+    const ix = local && spatial(st);
+    for (const id of local ?? near(st, box.min, box.max)) { if (fam.has(id) || ignore.has(id)) continue;
+      if (local) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; spend(1); }
+      if (hitsIx(st, box, id, 0.01)) return id; } return null; };
   const relaxed = []; let pos, support;
   // a TARGET is aimed at by its bounds centre, never its origin: a library model's origin is wherever its author left it
   // (agent lab, 10-04: "near the desk, facing it" aimed at an origin 2.46 m off the desk and faced air; a swing hung from
@@ -1253,10 +1262,27 @@ function buildPlace(ctx, a) {
     let best = null, lastBlock = null;
     for (let pass = 0; pass < 2; pass++) {
       const [hx, hz] = half(yaw);
-      for (let x = s.min[0] + hx; x <= s.max[0] - hx + 1e-9; x += 0.025) for (let z = s.min[1] + hz; z <= s.max[1] - hz + 1e-9; z += 0.025) {
-        const d = Math.hypot(x - want[0], z - want[1]); if (best && d >= best.d) continue;
-        const bl = free(x, s.y, z, yaw, new Set()); if (!bl) best = { x, z, d }; else lastBlock = bl;
-      }
+      // the 2.5 cm grid as ever (positions by the same running sum), searched nearest-first: ring by ring out from the
+      // cell nearest `want`, stopping once no further ring can hold a nearer cell. The answer is the full scan's (the
+      // nearest free cell, ties to the earlier in its x-then-z order); the work is the cells near the answer, not the
+      // surface's (security pass 2 H-A: a table scaled 20× searched 600 000 cells, each against every thing). Past the
+      // work budget it's refused (too-costly), never minutes of every world's thread.
+      if ((s.max[0] - s.min[0]) / 0.025 > 2e5 || (s.max[1] - s.min[1]) / 0.025 > 2e5) spend(Infinity, `finding room for ${a.id} on ${a.on} (${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m at 2.5 cm)`);
+      const xs = [], zs = []; for (let x = s.min[0] + hx; x <= s.max[0] - hx + 1e-9; x += 0.025) xs.push(x); for (let z = s.min[1] + hz; z <= s.max[1] - hz + 1e-9; z += 0.025) zs.push(z);
+      const nx = xs.length, nz = zs.length; let lastIdx = -1;
+      const nearestIx = (arr, v) => { let lo = 0, hi = arr.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; } return lo > 0 && Math.abs(arr[lo - 1] - v) <= Math.abs(arr[lo] - v) ? lo - 1 : lo; };
+      if (nx && nz) { const ci = nearestIx(xs, want[0]), ck = nearestIx(zs, want[1]); const d0 = Math.hypot(xs[ci] - want[0], zs[ck] - want[1]);
+        WORK.what = `finding room for ${a.id} on ${a.on}`;
+        const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
+        const cell = (i, k) => { const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;
+          if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
+          spend(1);
+          const bl = free(x, s.y, z, yaw, NONE, local); if (!bl) best = { x, z, d, idx }; else if (idx > lastIdx) { lastIdx = idx; lastBlock = bl; } };
+        for (let r = 0, R = Math.max(ci, nx - 1 - ci, ck, nz - 1 - ck); r <= R; r++) {
+          if (best && r * 0.025 * (1 - 1e-6) - d0 > best.d) break;
+          if (r === 0) { cell(ci, ck); continue; }
+          for (const k of [ck - r, ck + r]) if (k >= 0 && k < nz) for (let i = Math.max(0, ci - r); i <= Math.min(nx - 1, ci + r); i++) cell(i, k);
+          for (const i of [ci - r, ci + r]) if (i >= 0 && i < nx) for (let k = Math.max(0, ck - r + 1); k <= Math.min(nz - 1, ck + r - 1); k++) cell(i, k); } }
       if (!best) break; if (a.facing && pass === 0) { yaw = faceYaw([best.x, 0, best.z]); best = null; } else break;
     }
     if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${r3(2 * hx)}×${r3(2 * hz)} m) doesn't fit free on ${a.on}'s level ${s.level} (${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m)${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
