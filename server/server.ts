@@ -48,7 +48,7 @@ import { OPT_DIR, PATCH_DIR } from "./config.ts";
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
-import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
+import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, setSfuDeafened, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 // The resident-visible service chart (amendment 2): every voice-service
 // transition reaches every client of every world, stamped with the
@@ -645,6 +645,9 @@ export function sanctionSweep(w: World) {
     const x = S[c.v4id] as any; const ghost = !!x?.ghost; const voice = ghost || !!x?.mute?.channels?.includes("voice");
     if (voice !== !!c.sfuMuted && (voice || c.sfuMuted !== undefined)) { try { setSfuModeratorMute(w.name, c.id, voice); } catch (err) { console.error(`[world:${w.name}] sfu mute`, err); } }
     c.sfuMuted = voice;
+    // a ghost hears nobody either (R 10-07); deafness overrides the listener's own consent, which they could re-enable
+    if (ghost !== !!c.sfuDeaf && (ghost || c.sfuDeaf !== undefined)) { try { setSfuDeafened(w.name, c.id, ghost); } catch (err) { console.error(`[world:${w.name}] sfu deafen`, err); } }
+    c.sfuDeaf = ghost;
     const was = c.ghostHidden ?? false;
     if (ghost !== was) {
       c.ghostHidden = ghost;
@@ -660,6 +663,9 @@ export function sanctionSweep(w: World) {
   const live = new Set([...w.clients].filter((c) => c.sfuMuted).map((c) => c.id));
   for (const id of [...(w.sfuMutedIds ?? [])]) if (!live.has(id)) { try { setSfuModeratorMute(w.name, id, false); } catch { /* relay gone */ } }
   w.sfuMutedIds = live;
+  const deaf = new Set([...w.clients].filter((c) => c.sfuDeaf).map((c) => c.id));
+  for (const id of [...(w.sfuDeafIds ?? [])]) if (!deaf.has(id)) { try { setSfuDeafened(w.name, id, false); } catch { /* relay gone */ } }
+  w.sfuDeafIds = deaf;
   const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
   const key = JSON.stringify(muted);
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }

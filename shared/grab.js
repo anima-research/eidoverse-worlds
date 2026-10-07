@@ -48,7 +48,7 @@ export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part']
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the door's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
 // Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
-export const DEFAULT_WHO = 'builder';
+export const DEFAULT_WHO = 'visitor';   // R 10-07: "I vote for visitors being able to grab and throw" (a world narrows it per thing with who)
 export const DEFAULTS = Object.freeze({ enabled: true, who: DEFAULT_WHO, steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
   twoHanded: false, throw: 1, release: 'drop', returnAfter: 0, home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
 /** The door's hand reach today (door.js REACH): a range past it is granted as a pull (the thing flies to the hand). */

@@ -221,11 +221,11 @@ const cases: Case[] = [
       s.call("vic", "wait", {}, 8000);
       return { g: show(g), inHand: g.inHandAt, p: show(p), g2: show(g2), t: show(t), flying: t.flying, carrier: carrier(s) }; },
     good: (o) => o.g === "ok" && o.inHand?.[1] === 1.1 && o.p === "ok" && o.g2 === "ok" && o.t === "ok" && o.flying === "ball" && o.carrier.agree >= 1 && !o.carrier.disagree },
-  { id: "M2", what: "…and a dynamic crate with no physics.who is a builder's: a visitor is refused, a builder may", run(s) { cast(s);
+  { id: "M2", what: "…and a dynamic crate with no physics.who is anyone's (R 10-07: visitors grab and throw by default): a visitor may", run(s) { cast(s);
       s.call("olive", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.6] }); s.call("bob", "move", { to: [0.4, 0, 0.6] });
-      return { vic: code(s.call("vic", "grab", { id: "crate" })), bob: show(s.call("bob", "grab", { id: "crate" })) }; },
-    good: (o) => o.vic === "rights" && o.bob === "ok" },
+      return { vic: show(s.call("vic", "grab", { id: "crate" })) }; },
+    good: (o) => o.vic === "ok" },
   { id: "M3", what: "…and the latest grab wins (taken from a holder, who is told)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.4, 0, 0.5] });
@@ -266,8 +266,8 @@ const cases: Case[] = [
       return { plain: code(plain), g: show(s.call("vic", "grab", { id: "ball" })), p: show(s.call("vic", "punt", { id: "ball", power: 3 })) }; },
     good: (o) => o.plain === "not-grabbable" && o.g.startsWith("refused not-grabbable") && o.p === "ok" },
   { id: "G6", what: "who: grabbable.who wins over physics.who for the hand; a punt still asks physics.who", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: {} }, place: { at: [0.5, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "builder" }, grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "builder" } }, place: { at: [0.5, 0] } });
       s.call("vic", "move", { to: [0, 0, -0.5] });
       const punt = s.call("vic", "punt", { id: "ball", power: 3 }); const g = s.call("vic", "grab", { id: "ball" }); s.call("vic", "put", { id: "ball" });
       const k = s.call("vic", "grab", { id: "key" });
@@ -507,7 +507,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "b1", model: "book", place: { at: [0, 0] } });
       const put = r.ops[0] ? s.call("olive", r.ops[0].tool, r.ops[0].args) : null;   // the op as the panel sends it
       return { offered: !!add && !add.blocked, ops: r.ops, errors: r.errors, put: show(put), stored: comp(s, "b1", "grabbable") }; },
-    good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "builder", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "builder" },
+    good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "visitor" },
   { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the door would (a malformed use)", run(s) {
       const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
       const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");

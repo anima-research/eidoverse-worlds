@@ -83,6 +83,8 @@ export class Sfu {
   /** speakers a moderator has silenced: enforced at INGRESS, so a muted
    *  speaker is inaudible to everyone at once and cannot be routed around. */
   private muted = new Set<string>();
+  /** listeners the server has made deaf (a ghost, R 10-07): overrides their own consent, which they could turn back on */
+  private deafened = new Set<string>();
   private forwarded = 0;
 
   /** Legs with tracks added but not yet offered. COALESCED on purpose: adding
@@ -224,6 +226,7 @@ export class Sfu {
   }
 
   private allows(listener: string, speaker: string): boolean {
+    if (this.deafened.has(listener)) return false;
     return this.consent.get(listener)?.get(speaker) === true;   // absent = denied, both levels
   }
 
@@ -482,6 +485,10 @@ export class Sfu {
     if (muted) this.muted.add(speakerId); else this.muted.delete(speakerId);
   }
 
+  setDeafened(listenerId: string, deaf: boolean) {
+    if (deaf) this.deafened.add(listenerId); else this.deafened.delete(listenerId);
+  }
+
   /** Revocation. Local and immediate — no webhook, no credential TTL, no
    *  replay window: the packets stop because the socket is gone. */
   closeLeg(id: string) {
@@ -537,6 +544,7 @@ export class Sfu {
       // load harness that cannot see drops will report exactly that.
       suppressed: { gated: this.gated, capped: this.capped },
       muted: [...this.muted],
+      deafened: [...this.deafened],
       transportErrorsSwallowed: transportErrorsSwallowed(),
     };
   }

@@ -29,7 +29,7 @@ function playground(name) {
   call(name, "rowan", "set", { id: "@world", component: "sim", value: ENG });
   call(name, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
-  call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [2, 0] } });
+  call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "builder" } }, place: { at: [2, 0] } });
   call(name, "rowan", "move", { to: [0, 0, -0.5] });
   return name;
 }

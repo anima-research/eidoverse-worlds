@@ -249,6 +249,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     // RS4: ghost: unseen by others (leave, no frames), no chat (says arrive emptied), and back (arrive) when lifted
     const gk = own.msgs.length;
     const gh = await fern.req("ghost", { who: you(jm4), minutes: 5, reason: "trolling" }); await sleep(500);
+    const deafDiag = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).deafened ?? [];
     const left = own.msgs.slice(gk).some((m) => m.type === "leave" && m.id === "Moss");
     m4.raw({ type: "pose", pose: { p: [1, 0, 1], r: 0 } }); await sleep(400);
     const framed = own.msgs.slice(gk).some((m) => m.type === "frame" && m.poses && "Moss" in m.poses);
@@ -263,6 +264,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     ok(gh.ok && left && !framed && heard.length >= 1 && !leak && mSay.refused?.code === "ghost" && !window.includes("heron") && jr.snapshot?.yourRights?.ghost && !seen(jl),
       "RS4 a ghost is hidden server-side: others get leave and no frames, a late joiner doesn't list them; their log has says emptied, their chat window is empty, and they can't talk", [gh.ok, left, framed, heard.length, leak, mSay.refused?.code, window.slice(0, 80), jr.snapshot?.yourRights?.ghost, seen(jl)]);
     const bk = own.msgs.length; const ug = await fern.req("unghost", { who: you(jm4) }); await sleep(2500);
+    const undeaf = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).deafened ?? [];
+    ok(deafDiag.includes("Moss") && !undeaf.includes("Moss"), "RS4 a ghost hears nobody: deafened at the SFU (overriding their own consent), and hears again when unghosted (R 10-07)", [deafDiag, undeaf]);
     ok(ug.ok && own.msgs.slice(bk).some((m) => m.type === "arrive" && m.id === "Moss"), "RS4 …and unghosting brings them back (arrive)", [ug, own.msgs.slice(bk).map((m) => m.type)]);
     // RS5: warn reaches its person as a notice; a mute is told to its person and the muted badge set goes to everyone
     const wn = await fern.req("warn", { who: you(jm4), reason: "keep it kind" }); await sleep(300);
