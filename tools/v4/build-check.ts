@@ -8,10 +8,10 @@
 //   W   walls (N2): a `structure` building's walls are solid to the door (a body's track, an arrival, a teleport), its
 //       doorways stay walkable, its floor holds things up, and its placeholder model is no longer an invisible crate
 //   N   nested blueprints (N1): a blueprint holding two copies of another places, every time, with fresh ids
-//   K   scripts from the editor (item 3): the requests the editor's "new script" sends (upload → set script:<name>)
-//       run, and the script panel's read (scripts {id}) lists it running
-//   F   founding (item 5): a signed-in person founds a world they own (the server's found path), within a per-account
-//       cap; a guest never founds; an existing world is never taken over
+//   K   scripts from the editor (item 3): the requests the editor's "new script" sends (shared/v4/newscript.js: upload,
+//       then one batch) run, and the script panel's read (scripts {id}) lists it active
+//   (founding a world, item 5, needs a real server: tools/v4/fork-reset-check.ts FD; the editor's gestures:
+//    tools/v4/build-probe.ts, a real browser)
 //   G   guards (green at base too)
 // @ts-nocheck
 import fs from "node:fs";
@@ -32,6 +32,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a doorway is the absence of a box (every wall edge solid)", "shared/structure.js", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(...wallBoxes(edge, ap, g, floorY));", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(edgeSpan(edge.axis, (edge.axis === 0 ? edge.z : edge.x) * g.tile, (edge.axis === 0 ? edge.x : edge.z) * g.tile, (edge.axis === 0 ? edge.x + 1 : edge.z + 1) * g.tile, -g.wallT / 2, g.wallT / 2, floorY, floorY + g.wallH, edge.mat, 'wall'));", ["W1", "W2"]],
   ["floors are surfaces", "shared/v4/door.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
   ["a key already taken falls back (no twins)", "shared/v4/door.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
+  ["a new script never takes over the thing's own use", "shared/v4/newscript.js", "  if (!r.use || mine(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
+  ["a use script gets its reaction", "shared/v4/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
   ["an old record's twin keys each get an id", "shared/v4/door.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
@@ -72,6 +74,8 @@ if (argv.includes("--base")) {
 // ---------------- the door, from a tree ----------------
 const D = await import(TREE + "shared/v4/door.js");
 const L = await import(TREE + "server/v4/live.ts");
+const SB = await import(TREE + "shared/v4/sandbox.js");
+const NS = await import(TREE + "shared/v4/newscript.js").catch(() => null);   // absent at the base commit: the editor had no planner
 const SE = await import(ENGINE + "shared/structure_edit.js");   // the editor's own planner makes the buildings (pure; this checkout's)
 const root = scratch("build");
 let T = 1800000000000, N = 0;
@@ -80,7 +84,7 @@ function open(name: string, o: any = {}) {
   return L.openLive(dir, name, { now: () => Number(process.env.V4_NOW ?? T), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
 }
 function session(o: any = {}) {
-  const name = `w${++N}`; const w = open(name, o);
+  const name = `w${++N}`; const w = open(name, { scripts: SB.SANDBOX, ...o });
   const call = (actor: string, tool: string, args: any = {}, step = 1000) => { T += step; process.env.V4_NOW = String(T);
     try { return D.request(w, actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, w: () => w, call };
@@ -194,6 +198,37 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
       return { keys, placed: show(placed), n: copies.length, riders: copies.filter((x) => st.entities[x].c.parent).length }; },
     good: (o) => Array.isArray(o.keys) && o.keys.length === 3 && new Set(o.keys).size === 3 && o.placed === "ok" && o.n === 3 && o.riders === 2 },
+
+  // ---------------- K: a script from the editor ----------------
+  // the card's requests (shared/v4/newscript.js), as client/lib/scriptnew.js sends them: upload, then ONE batch
+  { id: "K1", what: "the editor's new use-script: upload → one batch (script:<name> + its reaction) → a visitor's use runs it → scripts {id} lists it active", run(s) { cast(s);
+      if (!NS) return { planner: "absent" };
+      s.call("olive", "create", { id: "bell", model: "crate", components: { transform: T0([0, 0, 0]), label: "a bell" } });
+      const thing = s.w().state().entities.bell.c;
+      const plan = NS.planNewScript({ id: "bell", name: "Ring Me!", text: NS.TEMPLATES.use, trigger: "use", comps: NS.TEMPLATE_SCOPE.use.comps, say: NS.TEMPLATE_SCOPE.use.say }, thing);
+      if (plan.errors.length) return { errors: plan.errors };
+      const up = s.call("olive", plan.upload.tool, plan.upload.args);
+      const ops = plan.install(up.src); const inst = s.call("olive", "batch", { ops });
+      const acts = s.w().entries.filter((e: any) => e.kind === "act" && e.verb === "batch").length;
+      const use = s.call("vic", "use", { id: "bell" });
+      const st = s.w().state().entities.bell.c;
+      const view = s.call("vic", "scripts", { id: "bell" });
+      const said = s.w().entries.filter((e: any) => e.kind === "say").map((e: any) => e.body?.text).at(-1) ?? null;
+      return { name: plan.name, action: plan.action, up: show(up), inst: show(inst), acts, use: show(use), ran: use.script?.status ?? null, counter: st.counter ?? null, said,
+        listed: (view.scripts ?? []).map((x: any) => `${x.script}:${x.status}`) }; },
+    good: (o) => o.name === "ring-me" && o.action === "use" && o.up === "ok" && o.inst === "ok" && o.acts === 1 && o.use === "ok" && o.counter?.n === 1 && /used me \(1\)/.test(o.said ?? "") && o.listed.includes("script:ring-me:active") },
+  { id: "K2", what: "a thing whose use already opens a door keeps its reaction: the new script answers its own action, and a timer script needs every ≥ 5", run(s) { cast(s);
+      if (!NS) return { planner: "absent" };
+      s.call("olive", "create", { id: "gate", model: "crate", components: { transform: T0([0, 0, 0]), door: { open: false }, reactions: { use: { kind: "toggle", component: "door" } } } });
+      const thing = s.w().state().entities.gate.c;
+      const plan = NS.planNewScript({ id: "gate", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["counter"], say: true }, thing);
+      const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });
+      const r = s.w().state().entities.gate.c.reactions;
+      const chime = s.call("vic", "use", { id: "gate", action: "chime" });
+      const bad = NS.planNewScript({ id: "gate", name: "tick", text: NS.TEMPLATES.timer, trigger: "timer", every: 2 }, thing);
+      const dup = NS.planNewScript({ id: "gate", name: "chime", text: "x", trigger: "use" }, s.w().state().entities.gate.c);
+      return { action: plan.action, inst: show(inst), kept: r?.use?.kind ?? null, chime: show(chime), ran: chime.script?.status ?? null, bad: bad.errors, dup: dup.errors }; },
+    good: (o) => o.action === "chime" && o.inst === "ok" && o.kept === "toggle" && o.chime === "ok" && o.bad?.length === 1 && o.dup?.length === 1 },
   { id: "G1", what: "guard: re-publishing an edited copy keeps its parts' keys, so update {copy, to} still merges part by part", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
