@@ -17,7 +17,7 @@
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('editworkspace', { serverEnv: { VERB_RATE: '1000' } });
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('editworkspace', { worlds: ['wsbench'], serverEnv: { SKIP_OPT_SWEEP: '1' } });   // joining never founds a world
 const { check, tally } = mkCheck();
 const waitFor = async (expr: string, ms = 6000) => {
   const t0 = Date.now();
