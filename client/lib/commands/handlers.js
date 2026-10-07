@@ -11,9 +11,9 @@
 import { CONFIG, bus, report } from '../base.js';
 import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
-import { entities, roleOf, worldHasOwner } from '../world.js';
+import { entities, worldHasOwner } from '../world.js';
 import {
-  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
+  net, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug, requestV4,
 } from '../net.js';
 import { remotes } from '../remotes.js';
 import { myState, setPosture, flightReport } from '../controller.js';
@@ -64,14 +64,39 @@ register('eyes', (arg) => {
   logChat('*', shut ? 'you close your eyes' : 'you open your eyes');
 });
 
+/** Who a typed name is here, through the world's own lookup (the server's directory, scoped to the people this world
+ *  has seen): {id, name, kind, role, here, banned}[]. Someone present answers from the roster without asking. */
+export async function lookupPerson(name) {
+  const id = identityOf(name);
+  const r = await requestV4('whois', { name: id ?? name });
+  return r?.ok ? r.people ?? [] : null;
+}
+const personLine = (p) => `${p.name}: ${p.role}${p.kind === 'guest' ? ' (a guest)' : p.kind === 'agent' ? ' (an agent)' : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
+/** One identity for a typed name, or a chat line saying why not (nobody / several). */
+async function onePerson(name, what) {
+  const id = identityOf(name); if (id) return id;
+  const ppl = await lookupPerson(name);
+  if (ppl === null) { logChat('*', `couldn't look up ${name} just now — try again`); return null; }
+  if (!ppl.length) { logChat('*', `nobody called "${name}" has been in this world — a ${what} goes to someone it knows`); return null; }
+  if (ppl.length > 1) { logChat('*', `${ppl.length} people here have gone by "${name}": ${ppl.map((p) => `${p.id} (${p.role}${p.here ? ', here' : ''})`).join('; ')} — /${what} <id> picks one`); return null; }
+  return ppl[0].id;
+}
+
 register('role', (arg) => {
-  const who = (arg || '').trim() || CONFIG.name;
-  if (who === CONFIG.name && !worldHasOwner() && net.myRights?.open !== false) {
-    return logChat('*', 'this world is open — everyone here can build');
+  // the DOOR's role (it's what admits writes): your own comes with your rights; anyone else's from the world's lookup,
+  // present or not (by name it used to read v1's role map, keyed by id in v4, so owners read as visitors)
+  const who = (arg || '').trim();
+  if (!who || who === CONFIG.name) {
+    const r = net.myRights;
+    if (!r) return logChat('*', 'not in a world yet');
+    if (!worldHasOwner()) return logChat('*', `you: ${r.role} — this world has no owner, so nobody builds here until someone owns it`);
+    return logChat('*', `you: ${r.role}${r.role === 'visitor' ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
   }
-  const r = who === CONFIG.name ? (roleOf(who) ?? net.myRights) : roleOf(who);
-  if (!r) return logChat('*', `${who} holds no role here (visitor)`);
-  return logChat('*', `${who}: ${r.role}${r.gen ? ' +gen' : ''}`);
+  lookupPerson(who).then((ppl) => {
+    if (ppl === null) return logChat('*', `couldn't look up ${who} just now — try again`);
+    if (!ppl.length) return logChat('*', `nobody called "${who}" has been in this world`);
+    for (const p of ppl) logChat('*', personLine(p));
+  });
 });
 
 register('grant', (arg) => {
@@ -85,23 +110,28 @@ register('grant', (arg) => {
   const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
   const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
   if (!id || (!role && !genFlag && !flyFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]');
+    return logChat('*', 'usage: /grant <name> owner|builder|visitor — or /grant * builder|visitor for everyone who signed in');
   }
   // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
   if (genFlag || flyFlag) return logChat('*', 'gen and fly aren\'t separate grants in v4 worlds: a role is owner, builder or visitor');
-  const who = identityOf(id);
-  if (!who) return logChat('*', `${id} isn't here — a role goes to someone present (their identity, not their name)`);
-  send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value: { role } } }, { what: `make ${id} ${role}` });
+  if (!role) return logChat('*', 'usage: /grant <name> owner|builder|visitor');
+  // * = the world's default role for people who signed in (v1's roles['*']; guests stay visitors unless the world opts in)
+  if (id === '*') {
+    if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
+    send({ tool: 'set', args: { id: '@world', component: 'default-role', value: { role } } }, { what: `make everyone ${role}` });
+    return;
+  }
+  onePerson(id, 'grant').then((who) => { if (who) send({ tool: 'set', args: { id: '@world', component: `roles:${who}`, value: { role } } }, { what: `make ${id} ${role}` }); });
 });
 
-// /kick /ban <name> [reason…] — owner-only, the server enforces (and
-// narrates the act into chat via the log entry it broadcasts back).
+// /kick /ban <name> [reason…] — owner-only, the door enforces; everyone else is told "A removed B" by the server.
+// A kick takes someone out now (they must be here); a ban also reaches someone who has left (the world's lookup).
 function moderate(cmd, arg) {
   const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
   if (!id) return logChat('*', `usage: /${cmd} <name> [reason] — ${cmd === 'kick' ? 'they can rejoin; /ban keeps them out' : 'a kick that sticks — /unban lifts it'}`);
-  const who = identityOf(id);
-  if (!who) return logChat('*', `${id} isn't here — a ${cmd} goes to someone present (their identity, not their name)`);
-  send({ tool: cmd, args: { who, ...(rest.length ? { reason: rest.join(' ') } : {}) } }, { what: `${cmd} ${id}` });
+  const go = (who) => send({ tool: cmd, args: { who, ...(rest.length ? { reason: rest.join(' ') } : {}) } }, { what: `${cmd} ${id}` });
+  if (cmd === 'kick') { const who = identityOf(id); return who ? go(who) : logChat('*', `${id} isn't here to remove — /ban keeps someone away`); }
+  onePerson(id, cmd).then((who) => { if (who) go(who); });
 }
 
 // /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
@@ -148,9 +178,7 @@ register('epoch', (arg) => {
 register('unban', (arg) => {
   const id = (arg || '').trim();
   if (!id) return logChat('*', 'usage: /unban <name>');
-  const who = identityOf(id);
-  if (!who) return logChat('*', `unban needs the person's identity (u-…): ${id} isn't here — the world's ban list shows ids`);
-  send({ tool: 'unban', args: { who } }, { what: `unban ${id}` });
+  onePerson(id, 'unban').then((who) => { if (who) send({ tool: 'unban', args: { who } }, { what: `unban ${id}` }); });
 });
 
 register('bans', () => sendMod('world-bans'));
@@ -295,18 +323,14 @@ register('pushable', (arg) => {
   return logChat('*', `shoves and blasts ${pushable() ? 'CAN' : 'can NOT'} knock you over${v ? '' : ' — /pushable on|off to change'}`);
 });
 
-register('boom', (arg) => {
-  // /boom [power] [radius] — an instantaneous force verb at my feet. The
-  // server gates it at builder rank and bounds the numbers; every pushable
-  // body in radius (mine included — standing at your own blast is on you)
-  // applies its own shove.
-  const nums = (arg || '').trim().split(/\s+/).map(parseFloat).filter(Number.isFinite);
+register('boom', () => {
+  // v1's /boom was a `force` verb; the v4 door has no blast (yet). Unlisted, and it says so rather than sending nothing.
   return logChat('*', 'a blast (/boom) isn\'t in v4 worlds yet: physics pushes are being redesigned for v4');
 });
 
 register('fork', (arg) => {
-  // /fork <new-name> — copy this world, all history included (owner-only,
-  // the server enforces). The reply arrives as a world-forked message.
+  // /fork <new-name> — copy this world as it stands now into a new one (owner-only, the server enforces). Its chat and
+  // history stay here: the copy's founding act names this world. The reply arrives as a world-forked message.
   const to = (arg || '').trim();
   if (!to) return logChat('*', 'usage: /fork <new-name> — copies this world into a new one');
   if (!/^[a-z0-9_-]{1,64}$/i.test(to)) return logChat('*', `"${to}" won't do as a world name — letters, digits, - and _ only`);
@@ -358,7 +382,8 @@ register('use', (arg) => {
   const [id, action] = (arg || '').trim().split(/\s+/);
   if (!id) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
   if (!entities.has(id)) return logChat('*', `nothing here called "${id}"`);
-  send(OP.use(id, action || 'use'), { what: `${action || 'use'} ${id}` });
+  // no action: the door does the thing's one action, or says what it offers (it was sent 'use', which most don't)
+  send(OP.use(id, action || null), { what: action ? `${action} ${id}` : `use ${id}` });
 });
 
 register('sit', (arg) => {

@@ -585,6 +585,51 @@ try {
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
   check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
   check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a door request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
+  // ---- CP: the Commons v1→v4 parity audit (10-06): what a person who isn't in the editor sees ----
+  { const lines = () => evalJson(`[...document.querySelectorAll('#chatlog .line')].map((l) => l.textContent)`);
+    const type = (text: string) => evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
+    const lineLike = (re: string, ms = 5000) => waitFor(`[...document.querySelectorAll('#chatlog .line')].some((l) => ${re}.test(l.textContent))`, ms);
+    // CP1 role narration names people (the setup above made bob a builder: "editbot made u-… builder")
+    check("CP1 the role narration names the person, not their u-… id", await lineLike(`/made bob builder/`, 3000) && !(await lines() as string[]).some((l) => /made u-[a-z2-7]{20}/.test(l)), (await lines() as string[]).filter((l) => /made /.test(l)));
+    // CP2 /role <name> is the door's role (it read v1's role map by name: "bob holds no role here (visitor)")
+    await type("/role bob");
+    check("CP2 /role bob says builder (the door's role)", await lineLike(`/bob: builder/`), (await lines() as string[]).slice(-3));
+    await type("/role");
+    check("CP2 …and /role is mine: owner", await lineLike(`/you: owner/`), (await lines() as string[]).slice(-3));
+    // CP3 /use <thing> with no action does its one action (it sent 'use', which the bell doesn't do)
+    { const r = await page(`const m = await import('/lib/net.js'); return (await m.requestV4('create', { id: 'bell', model: '${CRATE}', components: { reactions: { ring: { kind: 'set', component: 'label', value: 'rung' } } }, place: { at: [4, 4] } })).ok;`);
+      await waitFor(`import('/lib/world.js').then((m) => m.entities.has('bell'))`);
+      await type("/use bell");
+      check("CP3 /use bell rings it: the door did its one action (the label is on the record)", r && await waitDisk(() => disk().entities.bell?.c.label === "rung"), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
+    // CP5 a spoken utterance arriving in two says is one chat line again (the trio was dropped on v4)
+    { await bobReq("say", { text: "the first half", spoken: true, utt: 41 }); await bobReq("say", { text: "and the rest", spoken: true, utt: 41 });
+      check("CP5 a spoken utterance's continuation merges into its line", await lineLike(`/the first half and the rest/`), (await lines() as string[]).slice(-3)); }
+    let carlId = "";
+    // CP4 (setup) carl visits, speaks and leaves, BEFORE the page reconnects (CP6): a page that never saw him arrive
+    { const carl = new WebSocket(BASE.replace("http", "ws") + "/ws"); await new Promise((r, j) => { carl.onopen = r; carl.onerror = j; });
+      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.v4?.you; carl.send(JSON.stringify({ type: "v4", id: 1, tool: "say", args: { text: "carl was here" } })); } };
+      carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", v4fold: true }));
+      await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
+    // CP6 a line typed while reconnecting is queued, then sent (v4 dropped it as 'offline')
+    { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(), true))`);
+      await waitFor(`import('/lib/net.js').then((m) => !m.net.joined)`, 3000);
+      await type("typed while away");
+      check("CP6 typed while disconnected: the page says it's queued", await lineLike(`/queued “typed while away” — reconnecting/`, 3000), (await lines() as string[]).slice(-2));
+      check("CP6 …and it reaches the log once the page is back", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "typed while away"), 20000), (await lines() as string[]).slice(-3)); }
+    // CP4 /ban someone the page never saw: found by name through the world's lookup; everyone is told who, not why
+    { const CARL = carlId;
+      await type("/ban carl being rude");
+      const modf = path.join(worldsDir, WORLD, "v4.mod.jsonl");
+      check("CP4 /ban carl reaches carl, who left (it said \"carl isn't here\")", !!CARL && await waitDisk(() => fs.existsSync(modf) && fs.readFileSync(modf, "utf8").includes(`"who":"${CARL}"`)), (await lines() as string[]).slice(-3));
+      check("CP4 …and the room is told, with names and without the reason", await lineLike(`/editbot banned carl from this world/`) && !(await lines() as string[]).some((l) => /being rude/.test(l)), (await lines() as string[]).slice(-3)); }
+    // CP7 a refused say is shown (the rate limit: the reply was ignored, and the line just didn't appear)
+    { await page(`const m = await import('/lib/net.js'); await Promise.all(Array.from({ length: 24 }, (_, i) => m.say('flood ' + i))); return true;`);
+      check("CP7 a say refused by the rate limit is shown, in words", await lineLike(`/slow down — you've said a lot/`), (await lines() as string[]).slice(-3)); }
+    // CP8 the help sheet and the command bar describe v4 (first-in owners, /grant * visitor closing a world, objects flying with /punt, +gen)
+    { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
+      check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|\+gen|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
+      const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
+      check("CP8 the command bar lists nothing that sends nothing on v4 (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); } }
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
   check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (v4seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

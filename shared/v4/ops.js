@@ -20,7 +20,9 @@ export const unset = (id, component) => ({ tool: "delete", args: { id: E(id), co
 /** remove a thing (and let its children go: the door's rule). */
 export const remove = (id) => ({ tool: "delete", args: { id: E(id) } });
 /** use a thing (its reactions: a swing's push, a door's open). */
-export const use = (id, action = "use", args = null) => ({ tool: "use", args: { id: E(id), action: String(action), ...(args ? { args } : {}) } });
+/** use a thing. With no action the door does the thing's one action, or names what it offers (never 'use' by default:
+ *  a thing that offers 'push' doesn't 'use'). */
+export const use = (id, action = null, args = null) => ({ tool: "use", args: { id: E(id), ...(action != null ? { action: String(action) } : {}), ...(args ? { args } : {}) } });
 /** make a thing. components: {name: value}; the transform is whole (missing parts default). */
 export function create(id, { model = null, transform = {}, components = {}, from = null } = {}) {
   const comps = {}; for (const [k, v] of Object.entries(components)) comps[encName(k)] = v;
