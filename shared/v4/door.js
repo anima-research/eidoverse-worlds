@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
-import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
+import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -434,6 +434,10 @@ export function request(w, actor, tool, args = {}) {
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
     if (w.exists && tool !== "help" && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
     // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
+    // legacy role `none` (a demotion below visitor): outside membership, it holds no switch and no voice; it may look,
+    // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
+    if (w.exists && !GHOST_OK.has(tool) && tool !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
+      refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${tool}`, "an owner or a grantRoles holder can give a role", { needs: "a role" });
     if (w.exists && !GHOST_OK.has(tool) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
       refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
@@ -697,7 +701,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   if (cap.kind === "reaction" && lacks(w, st, cap.author, op, made, { viaCap: true })) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   // a hand's settlement: who may is grabbable.who (grabOf: the one reader, with the physics fallback); a punt is a kick,
   // not a hand, and keeps physics.who (research: "physics.who now means who may punt or push it")
-  if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
+  if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? DEFAULT_WHO;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can punt`, "");
     if (rankOf(st, actor) < whoRank(st, n)) refuse("rights", `only a ${n} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
   else if (cap.kind === "handle") { const g = grabOf(st.entities[op.id]?.c);
@@ -721,12 +725,28 @@ export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.k
 // An owner can't change or remove the role of an owner who has been one longer (the founder, whose ownership is in
 // genesis or the founding grant, is the most senior and can't be demoted by anyone). Without it, a co-owner — or anyone
 // who got owner by mistake — could demote the founder and ban them, and only an operator editing the log could undo it.
-const ownerSince = (w, st, x) => (roleOf(st, x, false) === "owner" ? lastSetterOf(w, "@world", `roles:${x}`)?.seq ?? -1 : Infinity);
+// Seniority is the START of an owner's current unbroken run as owner: the earliest write to roles:<x> after which every
+// write kept it owner (the founding grant is the earliest of all). It read the LAST write, so a junior owner who
+// "re-affirmed" the founder ({role: owner}) reset the founder's seniority to now, then demoted and banned them
+// (top-down review 10-06, S0-1). Writes that keep someone owner never move their seniority.
+function ownerSince(w, st, x) {
+  if (roleOf(st, x, false) !== "owner") return Infinity;
+  const comp = `roles:${x}`; let since = -1;
+  for (const i of backward(w, "@world")) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+    const ops = opsQuiet(e);
+    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== "@world" || (o.comp !== undefined && o.comp !== comp)) continue;
+      if (o.verb === "set" && o.comp === comp && o.value?.role === "owner") since = i; else return since; } }
+  return since;
+}
+/** The most senior owner here (the start of the longest unbroken run as owner; the founder unless they left it), or null. */
+export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = Infinity;
+  for (const k of ownersOf(st)) { const x = k.slice(6), t = ownerSince(w, st, x); if (t < at) { at = t; best = x; } } return best; }
 function seniority(w, st, who, op) {
   if (op.id !== "@world" || !op.comp?.startsWith("roles:") || who.cap) return;
   const target = op.comp.slice(6);
   if (target === who.actor || roleOf(st, target, false) !== "owner") return;
-  if (op.verb === "set" && op.value?.role === "owner") return;   // re-affirming an owner takes nothing from them
+  // a write that keeps them owner is still a write to a more senior owner's entry: refused like any other (it used to
+  // pass as a "re-affirm", and reset their seniority: S0-1). Your own entry, and juniors', remain yours to write.
   if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))
     refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
 }
@@ -2429,7 +2449,7 @@ const PHYSICS_TOOLS = {
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
-    const need = ph.who ?? "builder"; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
+    const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     shaped(e, a.id);

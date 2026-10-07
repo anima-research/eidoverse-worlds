@@ -45,7 +45,11 @@ export const FINGERS = ['fist', 'pinch', 'point', 'flat', 'open', 'trigger'];
 export const RELEASES = ['drop', 'stay', 'return'];
 export const KEYS = ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'pose', 'grips', 'twoHanded', 'throw', 'release', 'returnAfter', 'home', 'fits', 'use', 'prompt', 'fx'];
 export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part'];
-export const DEFAULTS = Object.freeze({ enabled: true, who: 'builder', steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
+// Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
+// the door's punt (review 10-06 finding 5: v1 let visitors punt and carry, rank 0; the grabbable migration chose builder).
+// Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
+export const DEFAULT_WHO = 'builder';
+export const DEFAULTS = Object.freeze({ enabled: true, who: DEFAULT_WHO, steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
   twoHanded: false, throw: 1, release: 'drop', returnAfter: 0, home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
 /** The door's hand reach today (door.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
 export const HAND_REACH = 1.5;
@@ -88,7 +92,7 @@ export function grabOf(c) {
   if (!isObj(c)) return null;
   const v = c.grabbable;
   if (isObj(v)) return v.purged === true && Object.keys(v).length === 1 ? null : fill(v, 'grabbable');   // a purged value is absent, not a grabbable
-  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : 'builder' }, 'physics');
+  if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : DEFAULT_WHO }, 'physics');
   return null;
 }
 function fill(v, source) {

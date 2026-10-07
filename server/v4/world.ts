@@ -24,7 +24,7 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
+import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as doorTick, presenceEvent, scriptsView, settleOrphans } from "../../shared/v4/door.js";
 import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { holdWire } from "../../shared/grab.js";
@@ -243,6 +243,8 @@ export class V4Log {
   ghostHere(actor: string): Any { return ghostOf(this.live, actor); }
   /** Everything in force now, per identity (the sweep that re-applies voice mutes and ghost hiding reads it). */
   sanctions(): Record<string, Any> { return sanctionsNow(this.live); }
+  /** The most senior owner (reset is theirs alone: review 10-06; research §owner-only). */
+  seniorOwner(): string | null { return seniorOwnerOf(this.live); }
   /** @world.access ({join, max?, soft?}) or null. */
   access(): Any { const a = this.live.state().entities?.["@world"]?.c?.access; return a && typeof a === "object" ? a : null; }
   /** Has this identity a roles:<id> here (access.join 'listed')? */

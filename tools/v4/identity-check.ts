@@ -11,7 +11,7 @@
 //   ID  one account is the same identity in every world on the door (per-world ids, review M6, withdrawn: R 10-06)
 //   RS  roles and moderation at the server (research roles S4): your-rights from the door, voice-moderate as the door's
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
-//       mute notices, access (listed / max with the moderator bypass)
+//       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -272,6 +272,14 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     ok(!js.snapshot && /only people with a role/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
       "RS6 access: 'listed' refuses someone with no role here; past max a moderator still gets in, a stranger doesn't", [js.errors, !!jfz.snapshot, jfull.errors]);
     for (const x of [st, fz, full, rejoin, late]) x.close(); }
+  // RS7 (review 10-06): erasing is the most senior owner's; a fork can't run in a loop
+  { await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } }); await sleep(200);
+    const k = wren.msgs.length; wren.raw({ type: "world-reset", name: "heath" }); await sleep(500);
+    const junior = wren.msgs.slice(k).find((m) => m.type === "error" || m.type === "world-reset");
+    const k2 = own.msgs.length; own.raw({ type: "world-fork", to: "heath-copy" }); await sleep(1500); own.raw({ type: "world-fork", to: "heath-copy2" }); await sleep(1500);
+    const forks = own.msgs.slice(k2).filter((m) => m.type === "world-forked" || m.type === "error").map((m) => m.type === "error" ? m.error : `forked ${m.to}`);
+    ok(junior?.type === "error" && /most senior/.test(junior.error) && forks[0] === "forked heath-copy" && /copied .* ago/.test(forks[1] ?? ""),
+      "RS7 a junior owner can't erase the world (the most senior owner's act); a second copy within a minute is refused", [junior, forks]); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 
 // ---- one person, one identity on this door (R 10-06: friends, messages, invites need it; per-world ids withdrawn) ----

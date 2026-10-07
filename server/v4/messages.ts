@@ -72,6 +72,8 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
+const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
+const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
 const V1_VERB = { code: "v1-verb", reason: "a v4 world takes door requests, not v1 verbs", teach: "send {type: 'v4', id, tool, args}; help lists the tools" };
 
 
@@ -143,9 +145,15 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
+    // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
+    // most FORK_PER_HOUR per person, so no owner can stall every world on the door by forking in a loop
+    const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
+    if (now - last < FORK_GAP_MS) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — try again in a minute`);
+    if (mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (at most ${FORK_PER_HOUR})`);
     const to = String(msg.to ?? "").slice(0, 64);
     const r = forkV4(w.v4, to, actorOf(c));
     if (!r.ok) return err(r.err);
+    forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },
@@ -156,6 +164,9 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't erase worlds — join embodied");
     const role = w.v4.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);
+    // erasing is the most senior owner's act (the founder, unless they left ownership): a co-owner made later can't wipe
+    // the world from under the people who made it (review 10-06; research: delete/reset is never a switch)
+    if (w.v4.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetV4(); } catch (e: Any) { return err(`the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);

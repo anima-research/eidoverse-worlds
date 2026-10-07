@@ -100,6 +100,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the menu: acts follow switches", "v4/roles.js", "if (has(\"ban\")) out.push({ id: \"ban\", label: \"Ban…\" });", "out.push({ id: \"ban\", label: \"Ban…\" });", ["P1"]],
   ["the menu: unmute when muted", "v4/roles.js", "out.push(state.muted ? { id: \"unmute\", label: \"Unmute\" } : { id: \"mute\", label: \"Mute…\" });", "out.push({ id: \"mute\", label: \"Mute…\" });", ["P2"]],
   ["badges: guests are guests", "v4/roles.js", "if (p.anon) return { text: \"guest\", tone: \"guest\" };", "", ["P4"]],
+  // the review's findings
+  ["seniority: the start of the unbroken run", "v4/door.js", "if (o.verb === \"set\" && o.comp === comp && o.value?.role === \"owner\") since = i; else return since; } }", "if (o.verb === \"set\" && o.comp === comp && o.value?.role === \"owner\") return i; else return since; } }", ["F5"]],
+  ["seniority: no re-affirm of a senior owner", "v4/door.js", "  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))", "  if (op.value?.role === \"owner\") return;\n  if (ownerSince(w, st, target) <= ownerSince(w, st, who.actor))", ["F1"]],
+  ["none holds no voice and no hands", "v4/door.js", "&& w.state().entities?.[\"@world\"] && roleOf(w.state(), actor) === \"none\")", "&& false)", ["F3"]],
   ["CONTROL (no-op: must stay green)", "v4/roles.js", "// ---------------- the other caps (research §5) ----------------", "// ---------------- the other caps (research §5)  ----------------", []],
 ];
 
@@ -414,7 +418,32 @@ const cases: Case[] = [
     good: (o) => Array.isArray(o) && o.map((x: any) => x.id).join() === "message,rank-line,history" && /moderator; you can't act on equal or higher ranks/.test(o[1].label) && o[1].dim },
   { id: "P4", what: "badges: none for a visitor, 'guest' for someone without an account, the role's name otherwise", run() { const B = RL.badgeOf;
       return { v: B?.({ role: "visitor" }), g: B?.({ role: "builder", anon: true }), o: B?.({ role: "owner", name: "Owner" }), c: B?.({ role: "crew", name: "Crew" }) }; },
-    good: (o) => o.v === null && o.g?.text === "guest" && o.o?.text === "owner" && o.o.tone === "owner" && o.c?.text === "crew" && o.c.tone === "role" }
+    good: (o) => o.v === null && o.g?.text === "guest" && o.o?.text === "owner" && o.o.tone === "owner" && o.c?.text === "crew" && o.c.tone === "role" },
+
+  // ---------------- F: the top-down review's findings (10-06), each red before its fix ----------------
+  { id: "F1", what: "a junior owner can't re-affirm the founder to reset their seniority, then demote and ban them (review S0-1)", run(s) { cast(s);
+      role(s, "jun", { role: "owner" });
+      const reaff = set(s, "jun", "roles:olive", { role: "owner" }), demote = set(s, "jun", "roles:olive", { role: "visitor" }), ban = s.call("jun", "ban", { who: "olive" });
+      const self = set(s, "jun", "roles:jun", { role: "owner", note: "me" }), down = set(s, "olive", "roles:jun", { role: "builder" });
+      return { reaff: code(reaff), demote: code(demote), ban: code(ban), olive: eff(s, "olive")?.role, self: show(self), down: show(down) }; },
+    good: (o) => o.reaff === "rights" && o.demote === "rights" && o.ban === "rights" && o.olive === "owner" && o.self === "ok" && o.down === "ok" },
+  { id: "K4", what: "kept: seniority is the start of an owner's unbroken run: an owner demoted and made owner again is junior from then", run(s) { cast(s);
+      role(s, "a1", { role: "owner" }); role(s, "a2", { role: "owner" });   // a1 senior to a2
+      set(s, "olive", "roles:a1", { role: "builder" }); set(s, "olive", "roles:a1", { role: "owner" });   // a1's run restarts: now junior to a2
+      return { a2demotesA1: show(set(s, "a2", "roles:a1", { role: "builder" })), a1demotesA2: code(set(s, "a1", "roles:a2", { role: "builder" })) }; },
+    good: (o) => o.a2demotesA1 === "ok" || o.a1demotesA2 === "rights" },
+  { id: "F3", what: "role none is below every member: it can't say, use a thing or build (review: none passed say and reaction use)", run(s) { cast(s);
+      s.call("olive", "create", { id: "lamp", model: "table-lamp", components: { reactions: { on: { kind: "toggle", component: "light-on" } } }, place: { at: [0, 0] } });
+      role(s, "nn", { role: "none" });
+      return { say: code(s.call("nn", "say", { text: "hi" })), use: code(s.call("nn", "use", { id: "lamp", action: "on" })), look: show(s.call("nn", "look")), vicSay: show(s.call("vic", "say", { text: "hi" })), vicUse: show(s.call("vic", "use", { id: "lamp", action: "on" })) }; },
+    good: (o) => o.say === "rights" && o.use === "rights" && o.look === "ok" && o.vicSay === "ok" && o.vicUse === "ok" },
+  { id: "F4", what: "an owner in a fresh world generates (the palette) and flies; fly can be granted per person (review: gen/fly came from v1 by name)", run(s) { cast(s);
+      return { pal: show(set(s, "olive", "palette:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.switches.includes("fly"), give: show(role(s, "vic", { role: "visitor", can: { fly: true } })), vic: eff(s, "vic")?.switches }; },
+    good: (o) => o.pal === "ok" && o.fly === true && o.give === "ok" && o.vic?.includes("fly") },
+  { id: "F5", what: "the founder editing their own entry (a note) doesn't make them junior: a co-owner still can't demote them", run(s) { cast(s);
+      role(s, "jun", { role: "owner" }); const note = set(s, "olive", "roles:olive", { role: "owner", note: "founder" });
+      return { note: show(note), demote: code(set(s, "jun", "roles:olive", { role: "visitor" })), olive: eff(s, "olive")?.role }; },
+    good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" }
 ];
 
 // ---------------- run ----------------
