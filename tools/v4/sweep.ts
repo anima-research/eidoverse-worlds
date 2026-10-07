@@ -155,6 +155,11 @@ function unproject(v4: any) {
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith("legacy:") ? dec(k.slice(7)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }
+    // translate-v1@5: a v1 story's practice became a paragraph of its text and its markedEntity its marks (both also in
+    // legacy:story, folded back above): undone here, so the comparison is with what v1 held
+    const sty = e.comp?.story; if (sty && typeof sty === "object" && !Array.isArray(sty)) {
+      if (typeof sty.practice === "string" && typeof sty.text === "string") { const p = sty.practice.trim(); if (sty.text === p) delete sty.text; else if (sty.text.endsWith(`\n\n${p}`)) sty.text = sty.text.slice(0, -(p.length + 2)); }
+      if (typeof sty.markedEntity === "string" && Array.isArray(sty.marks)) delete sty.marks; }
     ents[dec(id)] = e;
   }
   return { ents, world };

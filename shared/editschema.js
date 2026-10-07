@@ -28,8 +28,11 @@ const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
 // the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
 const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
 import * as OP from './v4/ops.js';
-import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
-import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
+import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './picture.js';
+import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
+import { mediaTier, tierWords } from './mediasrc.js';
+import { graphemes } from './text.js';
+import { COMPONENTS as V4C } from './v4/catalogue.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -191,11 +194,24 @@ export function inspectSchema(ent, id, live = {}) {
   // arming: arm, then click a row or the thing in the world. Only shown once a
   // `look` comp exists (add it via + component) so we add no UI to things that
   // don't use it — the field TYPE is the deliverable; this is its demonstrator.
-  if (c.look && typeof c.look === 'object') {
-    groups.push({ group: 'look', label: 'look at', types: ['look'], fields: [
-      { t: 'ref', k: 'target', label: 'target', value: typeof c.look.target === 'string' ? c.look.target : null,
-        hint: 'the entity this one faces — pick a row, or the thing itself in the world' },
-    ] });
+  // look-at (batch 2; the wire name, `look` is one letter off `lock` and the door refuses it): a group per key, its
+  // fields addressed `look-at.<k>` for the whole thing and `look-at.<part>|<k>` for a part's
+  const laKeys = Object.keys(c).filter((k) => (k === 'look-at' || k.startsWith('look-at:')) && isBag(c[k]));
+  if (laKeys.length) {
+    const AX = ['z', 'x', 'y', '-z', '-x', '-y'];
+    const fields = [];
+    for (const key of laKeys) {
+      const la = c[key]; const pre = key === 'look-at' ? '' : `${key.slice(8)}|`; const nm = key === 'look-at' ? '' : `${key.slice(8)} `;
+      const T = typeof la.target === 'string' ? la.target : null;
+      fields.push({ t: 'ref', k: `${pre}target`, label: `${nm}faces`, value: T && !T.startsWith('@') && !/^u-/.test(T) ? T : null, words: { '@viewer': 'the viewer', '@nearest': 'nearest person' }, word: T?.startsWith('@') || /^u-/.test(T ?? '') ? T : null,
+          hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' },
+        { t: 'enum', k: `${pre}target@`, label: `${nm}or`, value: T?.startsWith('@') ? T : '', options: [{ v: '', label: '(a thing)' }, { v: '@viewer', label: 'the viewer' }, { v: '@nearest', label: 'nearest person' }] },
+        { t: 'enum', k: `${pre}mode`, label: `${nm}turns`, value: la.mode === 'aim' ? 'aim' : 'yaw', def: 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] },
+        { t: 'enum', k: `${pre}forward`, label: `${nm}front`, value: typeof la.forward === 'string' ? la.forward : 'z', def: 'z', options: AX.map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' },
+        { t: 'num', k: `${pre}speed`, label: `${nm}speed`, value: la.speed ?? 240, def: 240, step: 30, dp: 0, min: 0, max: 3600, unit: '°/s', hint: '0 = turns at once' },
+        { t: 'num', k: `${pre}range`, label: `${nm}range`, value: la.range ?? 12, def: 12, step: 1, dp: 1, min: 0.1, max: 100, unit: 'm', hint: 'a person further than this: it turns back to rest' });
+    }
+    groups.push({ group: 'look-at', label: 'look at', types: laKeys, fields });
   }
 
   // the `light` group: `light.intensity` is the same address to the panel, the VR quad and the agent's edit tool
@@ -358,17 +374,18 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
-  // picture (shared/picture.js): an image on a named part. Every field edit
-  // merges into the bag and must pass normalizePicture before a verb goes out.
+  // picture (shared/picture.js): an image on a part of its model, or (no part) a framed picture of its own. Every field
+  // edit merges into the bag and must pass normalizePicture before a verb goes out.
   if (c.picture && typeof c.picture === 'object') {
-    const p = c.picture; const parts = live.parts;
-    const partOpts = parts?.length ? [...new Set([...(p.part && !parts.includes(p.part) ? [p.part] : []), ...parts])] : null;
+    const p = c.picture; const parts = live.parts ?? [];
+    const partOpts = [{ v: '', label: '(its own: a framed picture)' }, ...[...new Set([...(p.part && !parts.includes(p.part) ? [p.part] : []), ...parts])].map((v) => ({ v, label: v }))];
+    const tier = mediaTier(p.src, 'image');
     const fields = [
-      partOpts ? { t: 'enum', k: 'part', label: 'part', value: p.part, options: partOpts.map((v) => ({ v, label: v })), hint: 'the named mesh part the image goes on' }
-        : { t: 'text', k: 'part', label: 'part', value: p.part ?? '', hint: 'the GLB node to texture — measure {id} lists them' },
-      { t: 'text', k: 'src', label: 'image', value: p.src ?? '', placeholder: 'eidoverse/assets/… or store/images/…', hint: 'a library path — never a URL' },
-      { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into the store; the path fills in' },
-      { t: 'text', k: 'look', label: 'what it shows', value: p.look ?? '', placeholder: 'what text-tier residents read', hint: `≤${PICTURE_LOOK_MAX} chars; without it they see only the file name` },
+      { t: 'text', k: 'src', label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') },
+      { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
+      { t: 'enum', k: 'part', label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' },
+      ...(p.part ? [] : [{ t: 'num', k: 'width', label: 'width', value: p.width ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, max: 20, unit: 'm', hint: 'its height follows the image' }]),
+      { t: 'text', k: 'alt', label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` },
       { t: 'enum', k: 'lit', label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) },
       { t: 'check', k: 'flip', label: 'flip', value: p.flip === true, hint: 'for a part whose UVs were exported upside down' },
     ];
@@ -379,18 +396,24 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'picture', label: 'picture', types: ['picture'], fields });
   }
 
-  // sound (shared/sound.js): positional audio. Tuning a PLAYING sound keeps its
-  // t0 (nobody's playhead jumps); only play re-stamps it, so everyone seeks together.
+  // sound (shared/sound.js): positional audio, silent past its radius. Tuning a PLAYING sound keeps its t0 (nobody's
+  // playhead jumps); play and restart send no t0, and the door stamps one, so everyone starts together.
   if (c.sound && typeof c.sound === 'object') {
     const d = c.sound; const playing = d.playing !== false;
+    const tier = mediaTier(d.src, 'audio');
+    const rings = isBag(c.reactions) && Object.values(c.reactions).some((h) => h?.kind === 'play');
     const fields = [
-      { t: 'info', label: 'state', value: playing ? '▶ playing' : '⏸ paused' },
-      { t: 'text', k: 'src', label: 'file', value: d.src ?? '', placeholder: 'eidoverse/assets/… or store/audio/…', hint: 'a library path — never a URL' },
-      { t: 'btn', k: 'upload', label: 'upload audio…', client: true, hint: 'MP3, Ogg, WAV, WebM or M4A into the store; the path fills in' },
-      { t: 'text', k: 'look', label: 'what is playing', value: d.look ?? '', placeholder: 'what text-tier residents read', hint: `≤${SOUND_LOOK_MAX} chars` },
+      { t: 'info', label: 'state', value: playing ? (d.loop === false ? '▶ played (one-shot)' : '▶ playing') : '⏸ paused' },
+      { t: 'text', k: 'src', label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') },
+      { t: 'btn', k: 'upload', label: 'upload audio…', client: true, hint: 'MP3, Ogg, WAV, WebM or M4A into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
+      { t: 'text', k: 'alt', label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` },
       { t: 'num', k: 'volume', label: 'volume', value: d.volume ?? 0.8, def: 0.8, step: 0.05, dp: 2, min: 0, max: 1 },
-      { t: 'num', k: 'radius', label: 'radius', value: d.radius ?? 12, def: 12, step: 1, dp: 0, min: 1, max: 200, unit: 'm' },
+      { t: 'num', k: 'pitch', label: 'pitch', value: d.pitch ?? 1, def: 1, step: 0.05, dp: 2, min: 0.5, max: 2, hint: 'playback rate: 2 = an octave up and twice as fast' },
+      { t: 'num', k: 'near', label: 'full volume within', value: d.near ?? 1.5, def: 1.5, step: 0.5, dp: 1, min: 0.1, max: SOUND_MAX_RADIUS, unit: 'm' },
+      { t: 'num', k: 'radius', label: 'silent beyond', value: d.radius ?? 12, def: 12, step: 1, dp: 0, min: 1, max: SOUND_MAX_RADIUS, unit: 'm', hint: 'nobody further than this hears it at all' },
+      { t: 'check', k: 'spatial', label: 'positional', value: d.spatial !== false, hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' },
       { t: 'check', k: 'loop', label: 'loop', value: d.loop !== false },
+      { t: 'check', k: 'rings', label: 'plays when used', value: rings, hint: 'using it plays it again from the top (a doorbell): adds a reaction {ring: {kind: "play"}}' },
     ];
     const n = normalizeSound(d);
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not heard: ${n.why}` });
@@ -398,6 +421,33 @@ export function inspectSchema(ent, id, live = {}) {
     if (playing) fields.push({ t: 'btn', k: 'play', label: 'restart', hint: 'back to the top, for everyone at once' });
     fields.push({ t: 'btn', k: 'silence', label: 'silence', danger: true });
     groups.push({ group: 'sound', label: 'sound', types: ['sound'], fields });
+  }
+
+  // story (batch 2): why it's here, a museum label. Shown on Inspect and read by agents
+  if (isBag(c.story)) {
+    const st = c.story;
+    groups.push({ group: 'story', label: 'story', types: ['story'], fields: [
+      { t: 'text', k: 'title', label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${V4C.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` },
+      { t: 'text', k: 'text', label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${V4C.story.ranges.text.maxLen}` },
+      { t: 'text', k: 'marks', label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' },
+    ] });
+  }
+
+  // text (batch 2): a sign
+  if (isBag(c.text)) {
+    const tx = c.text; const D = V4C.text.defaults;
+    groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
+      { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${V4C.text.ranges.text.maxLen} characters, ≤ 16 lines` },
+      { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
+      { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
+      { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
+      { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color, def: D.color },
+      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'a contrasting edge, so it reads on any background' },
+      { t: 'check', k: 'plate', label: 'background', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
+      ...(Number.isInteger(tx.background) ? [{ t: 'color', k: 'background', label: 'plate colour', value: tx.background }] : []),
+      { t: 'enum', k: 'billboard', label: 'faces', value: tx.billboard ?? D.billboard, def: D.billboard, options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] },
+      { t: 'enum', k: 'lit', label: 'lit', value: tx.lit ?? D.lit, def: D.lit, options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] },
+    ] });
   }
 
   // scripts (v4, research 41): each script:<name> gets an on/off switch, `paused`, like Unity's `enabled`. Flipping it
@@ -417,14 +467,14 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'particles', 'picture', 'sound', ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
   // a picture needs an image and a part, a sound a file. Both are uploads.
-  if (!c.picture && live.parts?.length) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing' });
-  if (!c.sound && live.parts) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (starts paused)' });
+  if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
+  if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
   if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ seat…', client: true, hint: 'click the spot on the thing where a sitter goes' });
   fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (recipe, notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
   groups.push({ group: 'comp', label: `Components (${rest.length})`, fields });
@@ -509,7 +559,11 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
-      case 'LookAt': sec.fields = refs('look'); sec.removable = true; break;
+      case 'LookAt': { const pre = inst.key === 'look-at' ? '' : `${inst.key.slice(8)}|`;
+        sec.fields = refs('look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
+        if (pre) sec.title = `LookAt · ${partLabel(inst.key.slice(8), live.parts)}`; break; }
+      case 'Story': sec.fields = refs('story'); sec.removable = true; break;
+      case 'Text': sec.fields = refs('text'); sec.removable = true; break;
       case 'Pivot': sec.fields = refs('pivot'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
@@ -631,7 +685,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'motion', motion[name])], errors: [] };
   }
   const simple = { Pivot: ['pivot', { pos: Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value : [0, 0, 0] }], Lock: ['lock', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
-    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
+    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look-at', { target: '@viewer' }], Story: ['story', { title: 'Untitled', text: 'Why is this here?' }], Text: ['text', { text: 'Hello' }], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, type, data)], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
   // and it is written with its fields spelled out — the log records the result,
@@ -932,20 +986,29 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'picture': {
         if (k === 'down') { bags.set('picture', null); break; }
-        const b = bag('picture', () => (live.parts?.length ? { part: live.parts[0] } : {})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
-        if (!['part', 'src', 'look', 'lit', 'flip'].includes(k)) { errors.push(`${key}: no such field`); break; }
+        const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
+        if (!['part', 'src', 'alt', 'lit', 'flip', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
         if (k === 'flip') b.flip = bool(raw);
-        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'look') delete b.look; else b[k] = v; }
+        else if (k === 'width') { const n = num(f ?? { value: b.width ?? 1, min: 0.05, max: 20 }, raw); if (n == null) break; b.width = round(n); }
+        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt' || k === 'part') delete b[k]; else b[k] = v; }
         break;
       }
       case 'sound': {
         if (k === 'silence') { bags.set('sound', null); break; }
-        const b = bag('sound', () => ({ playing: false, loop: true, volume: 0.8, radius: 12 })); if (!b) { errors.push('sound: silenced in this same edit'); break; }
-        if (k === 'play') { b.playing = true; b.t0 = live.now ?? Date.now(); }
-        else if (k === 'pause') { b.playing = false; delete b.t0; }
-        else if (k === 'loop') b.loop = bool(raw);
-        else if (k === 'volume' || k === 'radius') { const n = num(f ?? { value: b[k] ?? (k === 'volume' ? 0.8 : 12), min: k === 'volume' ? 0 : 1, max: k === 'volume' ? 1 : 200 }, raw); if (n == null) break; b[k] = round(n); }
-        else if (k === 'src' || k === 'look') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'look') delete b.look; else b[k] = v; }
+        if (k === 'rings') {   // "plays when used": a reaction {ring: {kind: 'play'}}, beside whatever else it reacts to
+          const rx = { ...(comps.get('reactions') ?? (isBag(c.reactions) ? c.reactions : {})) };
+          if (bool(raw)) { if (!Object.values(rx).some((h) => h?.kind === 'play')) rx[rx.ring ? 'play' : 'ring'] = { kind: 'play' }; }
+          else for (const [a, h] of Object.entries(rx)) if (h?.kind === 'play') delete rx[a];
+          comps.set('reactions', Object.keys(rx).length ? rx : null); break; }
+        // a new sound plays (R 10-07: no start-paused; its radius keeps it to its place)
+        const b = bag('sound', () => ({ playing: true, loop: true, volume: 0.8, radius: 12 })); if (!b) { errors.push('sound: silenced in this same edit'); break; }
+        // play and restart send no t0: the door stamps it (shared/v4/door.js stampMedia), on its clock, for everyone
+        if (k === 'play') { b.playing = true; delete b.t0; }
+        else if (k === 'pause') { b.playing = false; }
+        else if (k === 'loop' || k === 'spatial') b[k] = bool(raw);
+        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const lim = { volume: [0, 1, 0.8], radius: [1, SOUND_MAX_RADIUS, 12], near: [0.1, SOUND_MAX_RADIUS, 1.5], pitch: [0.5, 2, 1] }[k];
+          const n = num(f ?? { value: b[k] ?? lim[2], min: lim[0], max: lim[1] }, raw); if (n == null) break; b[k] = round(n); }
+        else if (k === 'src' || k === 'alt') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
       }
@@ -968,16 +1031,30 @@ export function editOps(ent, id, edits, live = {}) {
         const n = f ? num(f, raw) : (Number.isFinite(+raw) ? +raw : (errors.push(`${key}: not a number (${JSON.stringify(raw)})`), null)); if (n == null) break;   // no pivot yet: the first write makes one
         cur['xyz'.indexOf(k)] = round(n, 4); comps.set('pivot', { pos: cur }); break;
       }
-      case 'look': {
-        // the ref field commits the target id, or null to clear it. The whole
-        // `look` comp goes away when its only field is cleared.
-        if (k === 'target') {
-          const next = comps.get('look') ?? { ...c.look };
-          if (raw == null || raw === '') { delete next.target; }
-          else { next.target = String(raw); }
-          comps.set('look', Object.keys(next).length ? next : null);
-        }
-        break;
+      case 'look-at': {
+        // look-at.<k> (the whole thing) or look-at.<part>|<k>; target@ is the chips (@viewer, @nearest)
+        const bar = k.lastIndexOf('|'); const part = bar >= 0 ? k.slice(0, bar) : null; const fk = bar >= 0 ? k.slice(bar + 1) : k;
+        const ck = part ? `look-at:${part}` : 'look-at';
+        const next = { ...(comps.get(ck) ?? (isBag(c[ck]) ? c[ck] : {})) };
+        if (fk === 'target' || fk === 'target@') { if (raw == null || raw === '') { if (fk === 'target') { comps.set(ck, null); break; } else break; } next.target = String(raw); }
+        else if (fk === 'mode' || fk === 'forward' || fk === 'up') next[fk] = String(raw);
+        else if (fk === 'speed' || fk === 'range') { const n = num(f ?? { value: next[fk] ?? (fk === 'speed' ? 240 : 12), min: fk === 'speed' ? 0 : 0.1, max: fk === 'speed' ? 3600 : 100 }, raw); if (n == null) break; next[fk] = round(n); }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set(ck, next); break;
+      }
+      case 'story': case 'text': {
+        const next = { ...(comps.get(group) ?? (isBag(c[group]) ? c[group] : {})) };
+        if (group === 'story' && k === 'marks') { const ids = String(raw ?? '').split(/[\s,]+/).filter(Boolean); if (ids.length) next.marks = ids; else delete next.marks; }
+        else if (k === 'title' || k === 'text') next[k] = String(raw ?? '');
+        else if (group === 'text' && (k === 'size' || k === 'width')) { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
+        else if (group === 'text' && (k === 'color' || k === 'background')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
+        else if (group === 'text' && k === 'plate') { if (bool(raw)) next.background = Number.isInteger(next.background) ? next.background : 0x202020; else delete next.background; }
+        else if (group === 'text' && k === 'outline') next.outline = bool(raw);
+        else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);
+        else { errors.push(`${key}: no such field`); break; }
+        // the door's rules, here first (the same catalogue): a refusal is a hint before any round-trip
+        const lim = V4C[group].ranges; for (const [fk, r] of Object.entries(lim)) if (typeof next[fk] === 'string' && r.maxLen && graphemes(next[fk]) > r.maxLen) errors.push(`${group}.${fk}: ${graphemes(next[fk])} characters; at most ${r.maxLen}`);
+        comps.set(group, next); break;
       }
       case 'script': {   // the switch: only {paused}, merged (needs no knowledge of the script; adopts nothing)
         if (!isBag(c[`script:${k}`])) { errors.push(`${key}: no script:${k} on ${id}`); break; }

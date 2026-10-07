@@ -144,20 +144,36 @@ const DEFS = [
       lifetime: { t: 'num', unit: 's', default: null, presetDefault: true, max: 30 }, area: { t: 'json', default: null }, texture: { t: 'asset', default: null },
       quality: { t: 'choice', options: ['auto', 'high', 'med', 'low'], default: 'auto' } },
     fallback: { visual: 'an unknown preset draws nothing', text: 'described by preset' } },
-  { name: 'Picture', category: 'Rendering', needs: ['Model'], summary: 'an image on a named part',
-    params: { src: { t: 'asset', default: null, required: true }, part: { t: 'text', default: null, required: true }, description: { t: 'text', default: null, wire: 'look' },
+  // batch 2 (10-07): v2 of Picture and Sound (new hashes, L5): a picture needs no model (no part = a quad of its own),
+  // `look` became `alt`; a sound is silent at radius (cap 100), with near, pitch and spatial
+  { name: 'Picture', category: 'Rendering', summary: 'an image: on a part of its model, or a framed picture of its own',
+    params: { src: { t: 'asset', default: null, required: true, hint: 'store/images/…, eidoverse/assets/…, or an https link' }, part: { t: 'text', default: null, hint: 'absent = a picture of its own (a quad facing its front)' },
+      width: { t: 'num', unit: 'm', default: 1, min: 0.01, max: 20 }, alt: { t: 'text', default: null, max: 200, hint: 'Alternative text: describes this for people who can\'t see it, and for agents' },
       lit: { t: 'choice', options: ['scene', 'self'], default: 'scene' }, flip: { t: 'bool', default: false } },
     fallback: { visual: 'nothing hung', text: 'not shown: <why>' } },
-  { name: 'Sound', category: 'Audio', summary: 'positional audio',
-    params: { src: { t: 'asset', default: null, required: true }, playing: { t: 'bool', default: true }, loop: { t: 'bool', default: true }, volume: { t: 'num', default: 0.8, min: 0, max: 1 },
-      radius: { t: 'num', unit: 'm', default: 12, min: 1, max: 200, hint: 'where the falloff stops, not where it goes silent' }, t0: { t: 'num', default: null, hint: 'shared playhead start (stamped by play)' },
-      description: { t: 'text', default: null, wire: 'look' } },
+  { name: 'Sound', category: 'Audio', summary: 'positional audio, silent past its radius',
+    params: { src: { t: 'asset', default: null, required: true, hint: 'store/audio/…, eidoverse/assets/…, or an https link' }, playing: { t: 'bool', default: true }, loop: { t: 'bool', default: true }, volume: { t: 'num', default: 0.8, min: 0, max: 1 },
+      pitch: { t: 'num', default: 1, min: 0.5, max: 2 }, near: { t: 'num', unit: 'm', default: 1.5, min: 0.01, max: 100, hint: 'full volume inside it' },
+      radius: { t: 'num', unit: 'm', default: 12, min: 1, max: 100, hint: 'silent at and beyond it' }, spatial: { t: 'bool', default: true, hint: 'off: heard evenly inside radius, no panning' },
+      t0: { t: 'num', default: null, hint: 'shared playhead start (stamped by the door)' },
+      alt: { t: 'text', default: null, max: 200, hint: 'Alternative text: describes this for people who can\'t hear it, and for agents' } },
     fallback: { visual: 'silent', text: 'not heard: <why>' } },
+  { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
+    params: { title: { t: 'text', default: null, required: true, max: 80 }, text: { t: 'text', default: null, required: true, max: 1000 }, marks: { t: 'list', of: 'ref', default: null, hint: 'what it marks or commemorates (≤ 8)' } },
+    fallback: { text: 'story «<title>»' } },
+  { name: 'Text', category: 'Rendering', summary: 'words in the world: a sign',
+    params: { text: { t: 'text', default: null, required: true, max: 400 }, size: { t: 'num', unit: 'm', default: 0.15, min: 0.02, max: 2 }, width: { t: 'num', unit: 'm', default: 2, min: 0.1, max: 10 },
+      align: { t: 'choice', options: ['left', 'center', 'right'], default: 'center' }, color: { t: 'color', default: 0xffffff }, outline: { t: 'bool', default: true },
+      background: { t: 'color', default: null }, billboard: { t: 'choice', options: ['off', 'yaw', 'full'], default: 'off' }, lit: { t: 'choice', options: ['self', 'scene'], default: 'self' } },
+    fallback: { visual: 'a placeholder plate', text: 'a sign reading «<text>»' } },
   { name: 'Structure', category: 'Building', summary: 'walls, floors, doors and windows on a grid',
     params: { plan: { t: 'json', default: { levels: [] } } },
     fallback: { visual: 'the anchor crate', text: 'a building' }, note: 'rides a hidden anchor model today; ignores motion, mount and hidden' },
-  { name: 'LookAt', category: 'Interaction', summary: 'faces another entity (no realizer yet)',
-    params: { target: { t: 'ref', default: null } }, fallback: { text: 'components: look' } },
+  { name: 'LookAt', category: 'Interaction', summary: 'turns to face something: a thing, the viewer, whoever is nearest',
+    params: { target: { t: 'ref', default: null, required: true }, mode: { t: 'choice', options: ['yaw', 'aim'], default: 'yaw' }, forward: { t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: 'z' },
+      up: { t: 'choice', options: ['x', 'y', 'z', '-x', '-y', '-z'], default: 'y' }, yaw: { t: 'json', default: null }, pitch: { t: 'json', default: null },
+      speed: { t: 'num', unit: '°/s', default: 240, min: 0, max: 3600 }, range: { t: 'num', unit: 'm', default: 12, min: 0.01, max: 100 }, offset: { t: 'vec3', default: [0, 0, 0] } },
+    fallback: { visual: 'stays at rest', text: 'turns to face <target>' } },
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },
   { name: 'Label', category: 'Core', summary: 'a display name people see', params: { text: { t: 'text', default: '', max: 80 } }, fallback: { text: 'the label' } },
@@ -314,7 +330,9 @@ export function componentsOf(ent) {
     if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
     const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'], grabbable: ['Grabbable', 'spec'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
-    if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
+    if ((key === 'look-at' || key.startsWith('look-at:')) && isBag(data)) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
+    if (key === 'story' && isBag(data)) { out.push({ type: 'Story', key, params: { ...data } }); continue; }
+    if (key === 'text' && isBag(data)) { out.push({ type: 'Text', key, params: { ...data } }); continue; }
     if (key === 'stage' && data && typeof data === 'object' && !Array.isArray(data)) { out.push({ type: 'Stage', key, params: { ...data } }); continue; }
     if ((key === 'particles' || key === 'picture' || key === 'sound') && data && typeof data === 'object' && !Array.isArray(data)) {
       const type = { particles: 'Particles', picture: 'Picture', sound: 'Sound' }[key];
@@ -381,7 +399,9 @@ export function entityOf({ components, stamps = {} }) {
       case 'Reactions': comp[inst.key ?? 'reactions'] = p.actions; break;
       case 'Structure': comp[inst.key ?? 'structure'] = p.plan; break;
       case 'Captions': comp[inst.key ?? 'captions'] = p.feed; break;
-      case 'LookAt': comp[inst.key ?? 'look'] = { ...p }; break;
+      case 'LookAt': comp[inst.key ?? 'look-at'] = { ...p }; break;
+      case 'Story': comp[inst.key ?? 'story'] = { ...p }; break;
+      case 'Text': comp[inst.key ?? 'text'] = { ...p }; break;
       case 'Stage': comp[inst.key ?? 'stage'] = { ...p }; break;
       case 'Particles': case 'Picture': case 'Sound': {
         const rec = RECORDS[inst.type]; const bag = {};

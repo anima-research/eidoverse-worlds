@@ -27,13 +27,19 @@
 // playing (≤200 chars) and that sentence, with playing/paused, is what
 // look() carries. Nothing about the waveform is ever claimed.
 
+import { mediaTier } from './mediasrc.js';
+import { graphemes, graphemeList, quoted } from './text.js';
+
 export const SOUND_DIR = 'eidoverse/assets/';
 export const SOUND_STORE = 'store/audio/';
 export const SOUND_DIRS = Object.freeze([SOUND_DIR, SOUND_STORE]);
 const AUDIO_EXT = /\.(mp3|ogg|opus|wav|webm|m4a)$/i;
-export const SOUND_LOOK_MAX = 200;
-export const SOUND_DEFAULTS = Object.freeze({ playing: true, loop: true, volume: 0.8, radius: 12 });
-const KNOWN_KEYS = new Set(['src', 'playing', 'loop', 'volume', 'radius', 't0', 'look']);
+export const SOUND_ALT_MAX = 200;
+export const SOUND_LOOK_MAX = SOUND_ALT_MAX;   // the old name, for callers not yet renamed
+export const SOUND_MAX_RADIUS = 100;
+// R 10-07: a placed sound plays (no start-paused); distance is what keeps it from covering the world
+export const SOUND_DEFAULTS = Object.freeze({ playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true });
+const KNOWN_KEYS = new Set(['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'alt']);
 
 /** Is `src` an allowed sound source? Same rule as pictures (shared/picture.js):
  *  library-relative under one of SOUND_DIRS, an audio extension, no scheme,
@@ -56,52 +62,73 @@ const num = (v, lo, hi, dflt) => {
   return v == null || !Number.isFinite(n) ? dflt : Math.min(hi, Math.max(lo, n));
 };
 
+// THE FALLOFF (batch 2, R 10-07: "silent at radius"). BasisVR's voice curve (BasisVoiceAcoustics.cs, developer @ eac8e38):
+// an inverse-distance law held at 1 inside near, times (1 − t)² over the last 5% of the range, so it reaches exactly 0 AT
+// radius. Web Audio's own `inverse` model CLAMPS at maxDistance instead: a 12 m radio was still heard at about 9% (−21 dB)
+// everywhere past 12 m, across the whole world. The panner keeps only the direction (rolloff 0); this gain is applied in
+// the tick (client/lib/sounds.js), so what you hear is silent where the editor's sphere says.
+export const TAPER_START = 0.95;
+/** The distance gain at d metres from a sound: 1 inside near, inverse beyond, 0 at radius and past it. */
+export function gainAt(d, near = SOUND_DEFAULTS.near, radius = SOUND_DEFAULTS.radius) {
+  if (!(d >= 0)) return 0;
+  if (d >= radius) return 0;
+  const inv = near / Math.max(d, near);
+  const t0 = TAPER_START * radius;
+  if (d <= t0) return inv;
+  const t = (d - t0) / (radius - t0);
+  return inv * (1 - t) * (1 - t);
+}
+
 /** Validate an authored bag. `ok:false` carries WHY; `ok:true` carries the
- *  normalized sound plus notes for anything coerced. */
+ *  normalized sound plus notes for anything coerced. src may be an https link: `tier` says who may fetch it
+ *  (shared/mediasrc.js). */
 export function normalizeSound(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, radius?, t0?, look?}' };
+    return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}' };
   }
-  if (!allowedSoundSrc(data.src)) {
-    return {
-      ok: false,
-      why: `src ${JSON.stringify(data.src ?? null)} is not an allowed sound source — a library-relative ` +
-        `.mp3/.ogg/.opus/.wav/.webm/.m4a under ${SOUND_DIR} or ${SOUND_STORE} (no URLs: sounds are placed assets, not fetches)`,
-    };
-  }
+  const tier = mediaTier(data.src, 'audio');
+  if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.teach}` };
   const notes = [];
   const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
+  const radius = num(data.radius, 1, SOUND_MAX_RADIUS, SOUND_DEFAULTS.radius);
   const sound = {
     src: data.src,
     playing: data.playing !== false,
     loop: data.loop !== false,
     volume: num(data.volume, 0, 1, SOUND_DEFAULTS.volume),
-    radius: num(data.radius, 1, 200, SOUND_DEFAULTS.radius),
+    pitch: num(data.pitch, 0.5, 2, SOUND_DEFAULTS.pitch),
+    near: Math.min(radius, num(data.near, 0.01, SOUND_MAX_RADIUS, SOUND_DEFAULTS.near)),
+    radius,
+    spatial: data.spatial !== false,
   };
   if (data.t0 != null) {
     const t0 = Number(data.t0);
     if (Number.isFinite(t0) && t0 > 0) sound.t0 = t0;
     else notes.push('t0 is not an epoch-ms number — ignored; listeners will not agree on the playhead');
-  } else if (sound.playing) notes.push('no t0 — every client starts from the top and late joiners drift; stamp Date.now() when you start it');
-  if (data.look != null) {
-    const look = String(data.look).replace(/\s+/g, ' ').trim();
-    if (look.length > SOUND_LOOK_MAX) { notes.push(`look clipped to ${SOUND_LOOK_MAX} chars`); sound.look = look.slice(0, SOUND_LOOK_MAX); }
-    else if (look) sound.look = look;
+  } else if (sound.playing) notes.push('no t0 — the door stamps one when it starts; without it each client starts from the top');
+  if (data.alt != null) {
+    const alt = String(data.alt).replace(/\s+/g, ' ').trim();
+    if (graphemes(alt) > SOUND_ALT_MAX) { notes.push(`alt clipped to ${SOUND_ALT_MAX} characters`); sound.alt = graphemeList(alt).slice(0, SOUND_ALT_MAX).join(''); }
+    else if (alt) sound.alt = alt;
   }
-  if (!sound.look) notes.push('no look line — text-tier residents will see only the file name; say what is playing');
-  return { ok: true, sound, notes };
+  if (!sound.alt) notes.push('no alt text — agents and people who can\'t hear it get only the file name; say what is playing');
+  return { ok: true, sound, tier, notes };
 }
 
-/** The one line look() carries for a sound — the same string on every
- *  client, from the same bag. Says what the author said is playing, and
- *  whether it is; never claims anything about the audio itself. */
-export function describeSound(data) {
+/** The one line look() carries for a sound — the same string on the door, in mcpl and in every client, from the same
+ *  bag. Says what the author said is playing (quoted, as data), whether it is, and how far it carries; never claims
+ *  anything about the audio. `now` (ms) lets a one-shot say how long ago it was started. */
+export function describeSound(data, now = null) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a sound (malformed declaration)';
-  const file = typeof data.src === 'string' ? data.src.split('/').pop() : null;
-  const look = typeof data.look === 'string' && data.look.trim() ? data.look.replace(/\s+/g, ' ').trim().slice(0, SOUND_LOOK_MAX) : null;
-  const ok = allowedSoundSrc(data.src);
-  const state = data.playing === false ? 'paused' : 'playing';
+  const file = typeof data.src === 'string' ? (/^https:/i.test(data.src) ? (() => { try { return new URL(data.src).hostname; } catch { return 'a link'; } })() : data.src.split('/').pop()) : null;
+  const alt = typeof data.alt === 'string' && data.alt.trim() ? data.alt : null;
+  const ok = mediaTier(data.src, 'audio').tier !== 'bad';
+  const radius = num(data.radius, 1, SOUND_MAX_RADIUS, SOUND_DEFAULTS.radius);
+  let state;
+  if (data.playing === false) state = 'paused';
+  else if (data.loop === false) state = Number.isFinite(data.t0) && Number.isFinite(now) ? `last played ${Math.max(0, Math.round((now - data.t0) / 1000))} s ago (one-shot)` : 'a one-shot';
+  else state = `playing (loops; heard within ${+radius.toFixed(1)} m)`;
   const tail = ok ? '' : ' (not heard: invalid declaration)';
-  return look ? `a sound, ${state}: ${look}${tail}` : `a sound, ${state} (${file ?? 'no file'})${tail}`;
+  return alt ? `a sound, ${state}: ${quoted(alt, SOUND_ALT_MAX)}${tail}` : `a sound, ${state} (${file ?? 'no file'})${tail}`;
 }
