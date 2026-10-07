@@ -237,10 +237,10 @@ const cases: Case[] = [
       return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-119"],
         unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0 }; },
     good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.batch === "ok" && o.made && o.unchecked > 0 && o.batchMs <= 2 * o.bound },
-  { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 60 in 10 s, or 1.5 s of the door's time, then refused (rate) until the window moves", run() {
+  { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 300 in 10 s, or 1.5 s of the door's time, then refused (rate) until the window moves", run() {
       if (!RM) return { missing: true };
       const m = RM.readMeter(); const a = {}, b = {}; let t = 1000; const out: any = {};
-      for (let i = 0; i < 60; i++) { if (m.check(a, t)) return { refusedEarly: i }; m.record(a, t); }
+      for (let i = 0; i < RM.READ.n; i++) { if (m.check(a, t)) return { refusedEarly: i }; m.record(a, t); }
       out.sixtyFirst = m.check(a, t)?.code ?? "ok"; out.later = m.check(a, t + 10_001)?.code ?? "ok";
       const k = m.record(b, t); k.ms = 1600; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
       return out; },

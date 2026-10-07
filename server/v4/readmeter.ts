@@ -4,7 +4,9 @@
 // spectator (no identity, no login) could loop `check {}` and hold the one thread every world shares. Each connection's
 // reads (and dry runs, which write nothing either) are metered over a sliding window: how many, and how much of the
 // door's time they took. Past either, the read is refused (code rate) before it reaches the door.
-export const READ = { n: 60, ms: 1500, window: 10_000 };
+// n: what an editor's own panels ask in a burst (each change re-reads the inspector and the history) stays far inside it;
+// ms is what protects the thread
+export const READ = { n: 300, ms: 1500, window: 10_000 };
 
 /** The door's own time for one request's reply (server/v4/world.ts requestSync sets it; never sent to anyone). */
 export const doorTime = new WeakMap<object, number>();
