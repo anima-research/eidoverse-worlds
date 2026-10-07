@@ -382,6 +382,7 @@ export function inspectSchema(ent, id, live = {}) {
     const tier = mediaTier(p.src, 'image');
     const fields = [
       { t: 'text', k: 'src', label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') },
+      ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t see this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
       { t: 'enum', k: 'part', label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' },
       ...(p.part ? [] : [{ t: 'num', k: 'width', label: 'width', value: p.width ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, max: 20, unit: 'm', hint: 'its height follows the image' }]),
@@ -413,6 +414,9 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'num', k: 'radius', label: 'silent beyond', value: d.radius ?? 12, def: 12, step: 1, dp: 0, min: 1, max: SOUND_MAX_RADIUS, unit: 'm', hint: 'nobody further than this hears it at all' },
       { t: 'check', k: 'spatial', label: 'positional', value: d.spatial !== false, hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' },
       { t: 'check', k: 'loop', label: 'loop', value: d.loop !== false },
+      // this viewer's own (client: never a value on the wire): a sound you never want to hear here again
+      ...(live.mutedForMe !== undefined ? [{ t: 'check', k: 'mute', label: 'mute for me', value: !!live.mutedForMe, client: true, hint: 'only you stop hearing it; nobody else is affected, and nothing is recorded' }] : []),
+      ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t hear this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'check', k: 'rings', label: 'plays when used', value: rings, hint: 'using it plays it again from the top (a doorbell): adds a reaction {ring: {kind: "play"}}' },
     ];
     const n = normalizeSound(d);

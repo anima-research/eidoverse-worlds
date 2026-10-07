@@ -12,11 +12,20 @@
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "../libfile.ts";
 import { summarizeGlb } from "../geometry.ts";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, readFileSync } from "node:fs";
+import { creditsFor } from "../../shared/libcredits.js";
 import { join, relative } from "node:path";
-import { OPT_DIR, LIBRARY_DIR } from "../config.ts";
+import { OPT_DIR, LIBRARY_DIR, ROOT } from "../config.ts";
 
-export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][] };
+export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][]; credits?: Record<string, unknown> | null };
+// batch 2: who made each shipped asset (defs/library/credits.json, from the library's own CREDITS.md): the door's
+// inspect says it beside the model (derived.asset), /library-models beside each row
+let CREDITS: Record<string, any> | null = null;
+export function libraryCredits(): Record<string, any> {
+  if (CREDITS) return CREDITS;
+  try { CREDITS = JSON.parse(readFileSync(join(ROOT, "defs", "library", "credits.json"), "utf8")); } catch { CREDITS = {}; }
+  return CREDITS!;
+}
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const cache = new Map<string, Entry>();
 const pending = new Map<string, Promise<void>>();
@@ -87,7 +96,9 @@ export const ENGINE_CATALOGUE = {
   get version() { return version; },
   get(name: string): Entry | undefined {
     if (!isLibPath(name)) return undefined;
-    return cache.get(name) ?? { label: name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first)
+    const e = cache.get(name) ?? { label: name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first)
+    if (e.credits === undefined) e.credits = creditsFor(libraryCredits(), name);
+    return e;
   },
   list(q: string): [string, Entry][] {
     const ql = String(q ?? "").toLowerCase();

@@ -1,12 +1,14 @@
 // Rows for the editor's History (and, later, its Credits facet): pure, so they can be tested without a browser.
 // A refused write is on the record as an act whose body carries refused {code} (door.js logRefusal, R7): it reads as
 // an attempt, never as a deed (Commons parity audit, 10-06: "refused acts print as done").
+import { phraseOf } from '../../shared/credits.js';
 export function worldHistoryRows(entries, nameOf) {
   return entries.filter((e) => e.kind === 'act').reverse().map((e) => {
     const refused = e.body?.refused?.code ?? null, who = nameOf(e.actor);
+    const verb = e.verb === 'legacy' && typeof e.body?.verb === 'string' ? e.body.verb : e.verb;   // an imported act, as what it was
     const changed = [e.body?.request?.component].filter(Boolean), target = e.body?.request?.id ?? null;
-    const what = `${e.verb}${target ? ` ${target}` : ''}${changed.length ? ` · ${changed.join(', ')}` : ''}`;
-    return { seq: e.seq, by: e.actor, who, verb: e.verb, changed, target, ts: e.ts ?? null, refused,
+    const what = `${verb}${target ? ` ${target}` : ''}${changed.length ? ` · ${changed.join(', ')}` : ''}`;
+    return { seq: e.seq, by: e.actor, who, verb, changed, target, ts: e.ts ?? null, refused,
       text: refused ? `${who} tried ${what} — refused (${refused}); nothing changed` : `${who} · ${what}` };
   });
 }
@@ -24,8 +26,11 @@ export function historyView(list, nameOf, { mode = 'time', who = null } = {}) {
   if (mode === 'person') return { mode, rows: rows.filter((r) => r.by === who) };
   if (mode === 'top' || mode === 'person-list') {
     const people = new Map();
-    for (const r of rows) { const p = people.get(r.by) ?? { by: r.by, who: r.who ?? nameOf(r.by), deeds: 0, tried: 0, last: r.ts ?? null };
-      if (r.refused) p.tried++; else p.deeds++; people.set(r.by, p); }
+    for (const r of rows) { const p = people.get(r.by) ?? { by: r.by, who: r.who ?? nameOf(r.by), deeds: 0, tried: 0, last: r.ts ?? null, did: [] };
+      if (r.refused) p.tried++; else { p.deeds++;   // what they did, in the Credits words (shared/credits.js)
+        for (const c of r.changed?.length ? r.changed : [null]) { const what = c === '(created)' ? 'made it' : c === '(deleted)' ? 'took it away' : c ? phraseOf({ verb: 'set', comp: c }) : r.verb;
+          if (!p.did.includes(what)) p.did.push(what); } }
+      people.set(r.by, p); }
     return { mode, rows, people: [...people.values()].sort((a, b) => b.deeds - a.deeds || String(a.who).localeCompare(String(b.who))) };
   }
   if (mode === 'kind') {

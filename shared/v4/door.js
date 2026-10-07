@@ -3249,7 +3249,7 @@ const TOOLS = {
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
     return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
-      derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}) },
+      derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
   measure(w, actor, a) {
@@ -3276,7 +3276,8 @@ const TOOLS = {
         const ops = opsTouching(e, id); if (!ops.length) continue;
         if (out.length === lim) { next = out.at(-1).seq; break; }
         const act = Number.isInteger(e.cause) ? w.entries[e.cause] : null;
-        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? act.verb : null) ?? ops[0].verb,
+        // an imported act reads as what it was (spawn, place, comp), never "legacy" (batch 2: Credits in History)
+        out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "legacy" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };

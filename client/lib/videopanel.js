@@ -16,6 +16,7 @@ import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEB
 import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
 import { registerXRPanel } from './xrpanels.js';
+import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)
@@ -78,6 +79,8 @@ function videoFields() {
     pick('foliage', FOLIAGE_MODES, getFoliageMode(), 'textured transparency'),
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
     { t: 'check', k: 'msaa', label: 'antialiasing (on reload)', value: msaaOn },
+    // batch 2 (R 10-07): the safety row rides the same VR quad (the desk has its own 🛡 safety section, below)
+    { t: 'check', k: 'untrusted', label: `🛡 ${UNTRUSTED_WORDS.label.toLowerCase()}`, value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
   ];
 }
 function videoDispatch(k, v) {
@@ -88,6 +91,7 @@ function videoDispatch(k, v) {
   else if (k === 'foliage') setFoliageMode(v);
   else if (k === 'detail') setAvatarDetail(v);
   else if (k === 'msaa') lsSet(PREF_MSAA, v ? '1' : '0');
+  else if (k === 'untrusted') setAllowUntrusted(!!v);
   else return;
   bus.emit('xr:repaint');
 }
@@ -170,4 +174,15 @@ export function initVideoPanel() {
       '4× MSAA smooths edges; off measured about +10 fps on a 2× screen (core.js §22n). Set when the renderer is built, so it applies on reload.',
       msaaOn, (on, row) => { lsSet(PREF_MSAA, on ? '1' : '0'); needsReload(row); }));
   }, { id: 'video', host: 'settings' });
+  // 🛡 safety (batch 2, R 10-07): what this browser may fetch from other websites. One row, off by default: VRChat's
+  // "Allow Untrusted URLs" (Comfort & Safety). Its own section so it can't be mistaken for a graphics dial.
+  makeSection('🛡 safety', (body) => {
+    if (body.dataset.init) return;
+    body.dataset.init = '1';
+    body.appendChild(checkRow(UNTRUSTED_WORDS.label, UNTRUSTED_WORDS.hint, allowUntrusted(), (on) => {
+      setAllowUntrusted(on); flashHint(on ? '🛡 links from any site play for you now' : '🛡 only this server\'s files and trusted hosts play for you');
+    }));
+    const p = document.createElement('div'); p.className = 'row wide'; p.style.cssText = 'font-size:11px;color:var(--dim);line-height:1.4';
+    p.textContent = UNTRUSTED_WORDS.hint; body.appendChild(p);
+  }, { id: 'safety', host: 'settings' });
 }

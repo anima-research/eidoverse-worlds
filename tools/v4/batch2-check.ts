@@ -127,6 +127,7 @@ const LA = await import(TREE + "shared/lookat.js").catch(none);
 const CR = await import(TREE + "shared/credits.js").catch(none);
 const HR = await import(TREE + "client/lib/historyrows.js").catch(none);
 const TV1 = await import(TREE + "tools/v4/import-v1/translate-v1.js");
+(globalThis as any).__LC = await import(TREE + "shared/libcredits.js").catch(none);
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("b2");
 
@@ -409,6 +410,15 @@ const cases: Case[] = [
       const top = f(E, nameOf, { mode: "top" });
       return { ann: ann.rows.map((r: any) => r.seq), top: top.people?.map((p: any) => [p.who, p.deeds]), refusedDeed: top.people?.some((p: any) => p.who === "Bob" && p.deeds !== 1) }; },
     good: (o) => !o.none && JSON.stringify(o.ann) === "[5,3]" && JSON.stringify(o.top) === '[["Ann",2],["Bob",1]]' && !o.refusedDeed },
+
+  { id: "C5", what: "library per-asset credits (defs/library/credits.json, from the library's CREDITS.md): the crow names its generator and who rigged it; claude_suit is digi's, CC-BY; a model with no entry gets the models/ default and says what isn't recorded; every entry says where it comes from", run() {
+      const LC = (globalThis as any).__LC; const t = (() => { try { return JSON.parse(fs.readFileSync(TREE + "defs/library/credits.json", "utf8")); } catch { return null; } })();
+      if (!LC?.creditsFor || !t) return { none: true };
+      const crow = LC.creditsFor(t, "eidoverse/assets/models/crow_bird_animated_corvid_raven_black_cawing_flying_walking.glb");
+      const suit = LC.creditsFor(t, "eidoverse/assets/vrms/claude_suit.vrm"); const palm = LC.creditsFor(t, "eidoverse/assets/models/palm_date_tree_tropical_deseert_oasis_plant.glb");
+      const bases = Object.entries(t).filter(([k]) => !k.startsWith("_")).every(([, v]: any) => typeof v.basis === "string" && /CREDITS\.md/.test(v.basis));
+      return { crowRoles: crow?.authors?.map((a: any) => a.role), suit: [suit?.authors?.[0]?.name, suit?.license], palm: [palm?.from, palm?.license, !!palm?.gap, palm?.authors?.length], bases }; },
+    good: (o) => !o.none && o.crowRoles?.[0] === "generated-with" && o.crowRoles.length === 4 && o.suit[0] === "digi" && /CC-BY/.test(o.suit[1]) && o.palm[0] === "eidoverse/assets/models/" && o.palm[1] === "CC0-1.0" && o.palm[2] && o.palm[3] === 0 && o.bases },
 
   // ---------------- A: what an agent reads ----------------
   { id: "A1", what: "help's schema knows story, text, picture, sound and look-at (with their fields), the play handler, and look carries a says line for each", run(s) { cast(s);

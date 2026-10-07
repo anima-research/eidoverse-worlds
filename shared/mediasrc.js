@@ -18,7 +18,7 @@
 //
 // RESOLVING A PAGE. youtube.com/watch?… is a web page, not audio. VRChat runs yt-dlp on each viewer's computer; a
 // browser can't, and the official players are cross-origin frames whose sound can't reach Web Audio (so they can't be
-// positional). In v1 a link plays when it IS media (an .mp3, an .ogg, a radio stream, a VRCDN or Vimeo progressive file):
+// positional). For now a link plays when it IS media (an .mp3, an .ogg, a radio stream, a VRCDN or Vimeo progressive file):
 // a page link is admitted (it's on the allowlist) and the browser says it can't play pages yet. Resolving pages is a
 // server-side resolver plus a proxy (Mozilla Hubs' reticulum media_resolver + CORS proxy), which R decides on.
 import { allowedPictureSrc } from './picture.js';

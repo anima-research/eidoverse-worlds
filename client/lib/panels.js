@@ -640,7 +640,12 @@ function fieldDOM(f, edit, ro = {}) {
       break;
     }
     case 'text': {
-      const inp = el('input', 'sp-text');
+      // multiline (a story's text, a sign's words; batch 2): a textarea, committed when it loses focus or on Ctrl+Enter
+      const inp = f.multiline ? el('textarea', 'sp-text sp-textarea') : el('input', 'sp-text');
+      if (f.multiline) { inp.rows = 4; inp.style.cssText = 'width:100%;min-height:4.5em;resize:vertical;font:inherit;font-size:12px';
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { inp.blur(); e.stopPropagation(); } else if (e.key !== 'Escape') e.stopPropagation(); });   // keys: jsonCommit
+        inp.title = withKeys(f.hint, 'jsonCommit'); }
+      else if (f.hint) inp.title = f.hint;
       let base = f.value ?? '';   // what Esc restores — the CURRENT value, refreshed by update() (the closure's f is the value at build time)
       inp.value = base;
       inp.disabled = !!f.disabled;
