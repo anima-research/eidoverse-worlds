@@ -1870,7 +1870,7 @@ function buildUse(ctx, a) {
 const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== PURGED ? v : {});
 // toggle's defaults: an openable's `open` (component `openable`, field `open`); a named component with no field toggles
 // the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
-const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (h.component === undefined ? "open" : undefined) }; };
+const toggleOf = (h) => { const comp = h.component ?? "openable"; return { comp, field: h.field ?? (comp === "openable" ? "open" : undefined) }; };   // toggling an openable opens/closes it, named or not (10-07 merge)
 const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
 // the sockets a person can attach to: the thing's own, else its model's
 const bodySockets = (st, id) => { const e = st.entities[id]; const S = e?.c.sockets ?? modelOf(e?.c.model)?.sockets ?? {};

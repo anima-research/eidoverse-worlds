@@ -219,7 +219,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
     good: (o) => o.name === "ring-me" && o.action === "use" && o.up === "ok" && o.inst === "ok" && o.acts === 1 && o.use === "ok" && o.counter?.n === 1 && /used me \(1\)/.test(o.said ?? "") && o.listed.includes("script:ring-me:active") },
   { id: "K2", what: "a thing whose use already opens a door keeps its reaction: the new script answers its own action, and a timer script needs every ≥ 5", run(s) { cast(s);
       if (!NS) return { planner: "absent" };
-      s.call("olive", "create", { id: "gate", model: "crate", components: { transform: T0([0, 0, 0]), door: { open: false }, reactions: { use: { kind: "toggle", component: "door" } } } });
+      s.call("olive", "create", { id: "gate", model: "crate", components: { transform: T0([0, 0, 0]), openable: { open: false }, reactions: { use: { kind: "toggle", component: "openable" } } } });
       const thing = s.w().state().entities.gate.c;
       const plan = NS.planNewScript({ id: "gate", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["counter"], say: true }, thing);
       const up = s.call("olive", "upload", plan.upload.args); const inst = s.call("olive", "batch", { ops: plan.install(up.src) });

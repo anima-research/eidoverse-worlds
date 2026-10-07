@@ -245,9 +245,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const T = (r: any) => r?.content?.[0]?.text ?? "";
   // CM1 a kick: bystanders are told who removed whom (names), never the reason; the person removed is told the reason
   const kim = await client(srv.port, "garden", "Kim", V4); await sleep(150); const KIM = kim.snapshot?.v4?.you;
-  const nB = vic.of("moderated").length;
+  const nB = vic.of("moderated").length; const nS = spec.of("moderated").length;
   ok((await ann.req("kick", { who: KIM, reason: "the secret reason" })).ok, "CM1 (Ann kicks Kim, with a reason)");
-  await wait(() => vic.of("moderated").length > nB && kim.of("error").length);
+  await wait(() => vic.of("moderated").length > nB && spec.of("moderated").length > nS && kim.of("error").length);   // both bystanders, not just vic (raced under load, 10-07)
   const ml = vic.of("moderated").at(-1);
   ok(ml?.text === "Ann removed Kim from this world" && spec.of("moderated").at(-1)?.text === ml?.text, "CM1 bystanders see \"Ann removed Kim\" (v1 showed it; v4 told nobody)", vic.of("moderated").slice(nB));
   ok(!/secret/.test(JSON.stringify([...vic.msgs, ...ann.msgs, ...spec.msgs].filter((m) => m.type === "moderated"))) && /secret reason/.test(kim.of("error").at(-1)?.error ?? "") && !kim.of("moderated").length,

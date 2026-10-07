@@ -291,8 +291,9 @@ const cases: Case[] = [
       return { t0: comp(s, "radio", "sound")?.t0, now: s.now(), note: (r.notes ?? []).some((n: any) => n.field === "t0") }; },
     good: (o) => o.t0 === o.now && o.note },
   { id: "S3", what: "pause, then a toggle of playing: t0 advances (a resume starts it again, in step); a volume change while playing keeps t0", run(s) { cast(s);
-      s.call("olive", "create", { id: "radio", components: { reactions: { power: { kind: "toggle", component: "sound", field: "playing" } }, transform: { pos: [0, 0, 0] } } });
+      s.call("olive", "create", { id: "radio", components: { transform: { pos: [0, 0, 0] } } });
       s.call("olive", "set", { id: "radio", component: "sound", value: { src: AUD } }); const t1 = comp(s, "radio", "sound").t0;
+      s.call("olive", "set", { id: "radio", component: "reactions", value: { power: { kind: "toggle", component: "sound", field: "playing" } } });   // a reaction names a component the thing has (ship list A: checked at write)
       s.call("olive", "set", { id: "radio", component: "sound", value: { volume: 0.3 }, merge: true }); const tv = comp(s, "radio", "sound").t0;
       s.call("vic", "use", { id: "radio", action: "power" }); const paused = comp(s, "radio", "sound");
       s.call("vic", "use", { id: "radio", action: "power" }, 2000); const t2 = comp(s, "radio", "sound").t0;
@@ -399,10 +400,10 @@ const cases: Case[] = [
       return { r: code(r), who: people?.map((p: any) => p.by) }; },
     good: (o) => o.r === "rights" && JSON.stringify(o.who) === '["bob"]' },
   { id: "C3", what: "creditsOf: opening a door five times (use) is play, not authorship: vic isn't credited", run(s) { cast(s);
-      s.call("bob", "create", { id: "gate", model: "door", components: { door: { open: false }, reactions: { open: { kind: "toggle" } } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false }, reactions: { open: { kind: "toggle" } } }, place: { at: [0, 0] } });
       for (let i = 0; i < 5; i++) s.call("vic", "use", { id: "gate", action: "open" }, 1000);
       const people = CR.creditsOf?.(s.entries(), "gate") ?? null;
-      return { opened: comp(s, "gate", "door")?.open, who: people?.map((p: any) => p.by) }; },
+      return { opened: comp(s, "gate", "openable")?.open, who: people?.map((p: any) => p.by) }; },
     good: (o) => o.opened === true && JSON.stringify(o.who) === '["bob"]' },
   { id: "C4", what: "History's filter modes (client/lib/historyrows.js): by person keeps one person's rows; biggest contributors ranks by deeds; a refused row is never a deed", run() {
       const f = HR.historyView; if (!f) return { none: true };

@@ -30,6 +30,7 @@ const KEEP = new Set(["R7", "O0"]);
 
 // ---------------- the mutation and control drivers (they re-run this file as child processes) ----------------
 const MUTANTS: [string, string, string, string, string[]][] = [
+  ["a named openable toggles open", "shared/v4/door.js", "field: h.field ?? (comp === \"openable\" ? \"open\" : undefined)", "field: h.field ?? (h.component === undefined ? \"open\" : undefined)", ["R3b"]],
   ["toggle's default is openable", "shared/v4/door.js", "const comp = h.component ?? \"openable\";", "const comp = h.component ?? \"door\";", ["O3", "R3"]],
   ["openable: angle or slide", "shared/v4/door.js", "if (v.angle !== undefined && v.slide !== undefined) refuse(", "if (false) refuse(", ["O2"]],
   ["openable: slide bounds", "shared/v4/door.js", "if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse(", "if (false) refuse(", ["O2"]],
@@ -232,6 +233,13 @@ await C("R3", "a toggle on a plain crate (no openable) is refused when it's writ
   W.call("use", { id: "crate" }, "vic");
   const c = W.state().entities.crate.c;
   return [!r.ok && /openable/.test(r.refused.reason + r.refused.teach) && !c.door && !c.openable, { r: why(r), comps: Object.keys(c) }];
+});
+await C("R3b", "a toggle naming the openable without a field opens and closes it (the Commons' {component: 'openable'} form, merge 10-07)", () => {
+  const W = world(); W.call("create", { id: "gate", model: "crate", components: { openable: { open: false } }, place: { at: [0, 0] } });
+  const r = W.call("set", { id: "gate", component: "reactions", value: { use: { kind: "toggle", component: "openable" } } });
+  W.call("use", { id: "gate" }, "vic"); const open1 = W.state().entities.gate.c.openable?.open;
+  W.call("use", { id: "gate" }, "vic"); const open2 = W.state().entities.gate.c.openable?.open;
+  return [r.ok && open1 === true && open2 === false, { r: why(r), open1, open2 }];
 });
 await C("R4", "a toggle of a number (light.intensity) is refused when written, saying a toggle flips true/false; of a true/false field (light.shadows), taken", () => {
   const W = world(); W.call("create", { id: "lamp", model: "table-lamp", components: { light: { intensity: 4 } }, place: { at: [0, 0] } });

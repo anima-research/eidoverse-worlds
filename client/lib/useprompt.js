@@ -42,7 +42,7 @@ export function usable() {
   const action = Object.keys(rx).find((k) => !rx[k]?.who) ?? Object.keys(rx)[0];
   const h = rx[action] ?? {};
   const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;
-  const field = h.kind === 'toggle' ? (h.field ?? (h.component === undefined ? 'open' : undefined)) : undefined;
+  const field = h.kind === 'toggle' ? (h.field ?? ((h.component ?? 'openable') === 'openable' ? 'open' : undefined)) : undefined;   // same rule as the door's toggleOf
   const cur = comp && field && isBag(bag[comp]) ? bag[comp][field] === true : null;
   // a door that's open says "close" (ProximityPrompt's ActionText follows the state)
   const verb = comp === 'openable' && field === 'open' ? (cur ? 'close' : 'open') : action;
