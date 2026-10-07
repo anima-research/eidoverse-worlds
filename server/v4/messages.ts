@@ -90,13 +90,15 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (typeof msg.verb === "string") { w.debug("v4-v1-verb", { who: c.id, verb: msg.verb }); reply({ ok: false, refused: V1_VERB }); return; }
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     const metered = READS.has(tool) || args.dry === true;
-    let mark: { ms: number } | null = null;
-    { const no = (metered ? reads.check(c, Date.now()) : null) ?? busy.check(c, Date.now()); if (no) { reply({ ok: false, refused: no }); return; } }
-    if (metered) mark = reads.record(c, Date.now());
-    const spent = busy.record(c, Date.now());
+    // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
+    // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
+    if (metered) { const no = reads.check(c, Date.now()); if (no) { reply({ ok: false, refused: no }); return; } }
+    const mark = metered ? reads.record(c, Date.now()) : null;
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
+      { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { reply({ ok: false, refused: no }); return; } }
+      const spent = busy.record(c, Date.now());
       const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4!.live, String(args.who)) : false;
       const r = await w.v4!.request(actorOf(c), tool, args);
       const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;

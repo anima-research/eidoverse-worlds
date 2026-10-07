@@ -575,7 +575,9 @@ export function request(w, actor, tool, args = {}) {
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
-    // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them
+    // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
+    // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
+    // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it

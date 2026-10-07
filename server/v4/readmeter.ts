@@ -15,9 +15,9 @@ export function readMeter(limits = READ) {
   const recent = (who: object, now: number) => { const a = (seen.get(who) ?? []).filter((m) => now - m.t < limits.window); seen.set(who, a); return a; };
   return {
     /** null when this connection may read now, else the refusal to send */
-    check(who: object, now: number) {
+    check(who: object, now: number, { timeOnly = false } = {}) {   // timeOnly: the count was checked as it arrived
       const a = recent(who, now); const ms = a.reduce((s, m) => s + m.ms, 0);
-      if (a.length >= limits.n) return { code: "rate", reason: `this connection has made ${a.length} reads in ${limits.window / 1000} s (at most ${limits.n})`, teach: "slow down: a read answers until something changes (the world's updates arrive on their own)" };
+      if (!timeOnly && a.length >= limits.n) return { code: "rate", reason: `this connection has made ${a.length} reads in ${limits.window / 1000} s (at most ${limits.n})`, teach: "slow down: a read answers until something changes (the world's updates arrive on their own)" };
       if (ms >= limits.ms) return { code: "rate", reason: `this connection's ${limits.n === Infinity ? "requests" : "reads"} took ${Math.round(ms)} ms of the server's time in ${limits.window / 1000} s (at most ${limits.ms}; every world shares it)`, teach: "ask about less at once (check {id}, look {limit}), and less often" };
       return null;
     },
