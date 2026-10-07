@@ -123,6 +123,29 @@ export const CAP = {
   channelsStreaming: "channels.streaming",
 } as const;
 
+// ---- where a publish lands (MCPL RFC-011) ---------------------------------
+
+/**
+ * The world channel's publish target (RFC-011 `capabilities.publish`): a
+ * world has no threads inside it, so a publish is said aloud in the world
+ * itself or not at all. It is per-channel descriptor data — not a
+ * capability path, and no advertisement shorthand implies it.
+ */
+export const PUBLISH_TARGET = { target: "root" } as const;
+
+/**
+ * Why a channels/publish naming a place (RFC-011 `threadId`) can't be
+ * honored, or undefined when it can. Absent: a legacy caller, answered as
+ * before. `null`: the world itself. Anything else names a thread the world
+ * doesn't have, and is refused before anything is said.
+ */
+export function publishTargetRefusal(threadId: unknown): string | undefined {
+  if (threadId === undefined || threadId === null) return undefined;
+  return typeof threadId === "string"
+    ? `the world channel has no threads (thread "${threadId}" requested); publish with threadId null`
+    : `invalid threadId ${JSON.stringify(threadId)}: expected null for the world channel`;
+}
+
 /**
  * Does a granted path cover the capability being exercised?
  *

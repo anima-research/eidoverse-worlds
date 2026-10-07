@@ -36,6 +36,7 @@ import {
 import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
+import { PUBLISH_TARGET, publishTargetRefusal } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
@@ -1097,7 +1098,8 @@ class Session {
       // it must be open from the first breath.
       initiallyOpen: true,
       metadata: { epoch: this.epoch, ...(this.foundedHere ? { created: true } : {}) },   // RFC-005 §3.2.3d/§3.2.7
-
+      // RFC-011: where a publish lands — the world itself (see declaration.ts).
+      capabilities: { publish: PUBLISH_TARGET },
     } as ChannelDescriptor];
   }
 
@@ -1106,18 +1108,26 @@ class Session {
     try { await this.conn.sendRequest(method.CHANNELS_REGISTER, params); } catch { /* non-MCPL host: tools still work */ }
   }
 
-  private handlePublish(params: ChannelsPublishParams): ChannelsPublishResult & { error?: string } {
+  private handlePublish(
+    params: ChannelsPublishParams & { threadId?: unknown },
+  ): ChannelsPublishResult & { error?: string; threadId?: null; reason?: string } {
     // §3.2.3 cutoff: a publish naming a channel we are no longer attached to
     // is answered, not dropped — the host learns the boundary. (The verb
     // returns a result rather than throwing, so the honest signal rides here;
     // the caller maps it to -32023.)
     if (params.channelId !== this.channelId) return { delivered: false, error: `unknown channel: ${params.channelId}` };
+    // RFC-011: a publish naming a thread is refused before anything is said
+    // (a result with no message, not an error: nothing was said). null is the
+    // world itself, echoed back; absent is a legacy caller, answered as before.
+    const refusal = publishTargetRefusal(params.threadId);
+    if (refusal) return { delivered: false, reason: refusal };
+    const targeted = params.threadId === null;
     const text = (params.content ?? [])
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text).join("\n").trim();
-    if (!text) return { delivered: false };
+    if (!text) return { delivered: false, ...(targeted ? { reason: "no text content; nothing was said" } : {}) };
     this.agent.say(text.slice(0, 4000));
-    return { delivered: true };
+    return { delivered: true, ...(targeted ? { threadId: null } : {}) };
   }
 
   // Vision is the world's own API: the sequencer routes /snap to whatever
