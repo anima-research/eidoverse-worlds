@@ -189,7 +189,7 @@ export function newBuilding(ev) {
   const id = `house-${Math.floor(hit.x)}_${Math.floor(hit.z)}`;
   sendOps([OP.create(id, { model: 'eidoverse/assets/models/crate_large_red.glb', transform: { pos: [Math.round(hit.x), 0, Math.round(hit.z)] },
     components: { structure: emptyStructure() } })], { what: 'a new building', expect: false });
-  editing = id;
+  editing = id; selectedId = id;   // the new building is the one the tools edit now (until something else is selected)
   setTimeout(refreshGrid, 120);
 }
 
