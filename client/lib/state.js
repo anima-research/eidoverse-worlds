@@ -171,6 +171,9 @@ function refreshMyRights() {
   if (!rightsSink) return;
   const cur = rightsSink();
   if (!cur) return;                          // not joined; nothing to refresh
+  // a v4 world's rights are the DOOR's (switches, by identity) and the server pushes them on every change (research
+  // roles S4): recomputing v1's rule here, by display name, overwrote them (a moderator read as builder for a moment)
+  if (Array.isArray(cur.switches)) return;
   const live = rightsIn(state.st, CONFIG.name);
   // WORLD_ADMIN is an environment fact the fold cannot see, so a recompute
   // would strip an admin's flight. The snapshot said so; keep it.

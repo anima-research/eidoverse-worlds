@@ -466,10 +466,15 @@ export async function saveScreenshot() {
 /** The bus subscriptions — called once from main's boot sequence. The
  *  register() table above filled at import; this turns it on. */
 export function initCommands() {
+  let saidRights = null;
   bus.on('your-rights', (r) => {
-    // only worth a line when the world actually restricts — open worlds stay silent
+    // only worth a line when the world actually restricts — open worlds stay silent — and only when what you may do
+    // changed (a v4 server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
+    const key = JSON.stringify([r.role, r.roleName, r.switches ?? null, r.gen, r.fly, !!r.ghost, !!r.muted]);
+    if (key === saidRights) return; saidRights = key;
     if (!r.open && r.role !== 'owner') {
-      logChat('*', `this world has an owner — you are a ${r.role}${r.gen ? ' +gen' : ''} here`);
+      const extra = Array.isArray(r.switches) ? '' : r.gen ? ' +gen' : '';
+      logChat('*', `this world has an owner — you are ${/^[aeiou]/i.test(r.roleName ?? r.role) ? 'an' : 'a'} ${(r.roleName ?? r.role).toLowerCase()}${extra} here${r.ghost ? ' (a ghost: unseen)' : ''}`);
     }
   });
 

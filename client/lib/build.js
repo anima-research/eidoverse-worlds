@@ -71,7 +71,10 @@ claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own 
  * vanishes is worse than one that is refused out loud.
  */
 export const mayEdit = () => {
-  const role = net.myRights?.role;
+  const r = net.myRights; const role = r?.role;
+  // a v4 world says what you may do as switches (research roles S4): build, whatever the role is called (a moderator,
+  // a custom role); a v1 world and an older server still say only the role
+  if (Array.isArray(r?.switches)) return r.switches.includes('build');
   return role === undefined || ['builder', 'owner'].includes(role);
 };
 

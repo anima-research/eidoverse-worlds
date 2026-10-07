@@ -54,7 +54,7 @@ export function writesOf(req) {
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
-export const mayLift = () => ['builder', 'owner'].includes(net.myRights?.role);
+export const mayLift = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
 
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {

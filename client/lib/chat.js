@@ -36,6 +36,9 @@ export const recentChat = () => recent.slice();
 let onWhisper = () => {};
 let onTyping = () => {};
 let getPeople = () => [];
+// the person menu and badges (client/lib/people.js), injected by main.js: a static import here would close the
+// chat → people → net → chat cycle. Absent (a page without it), rows are plain and the menu is Message alone.
+let personUi = null;
 
 let filter = 'all';                 // 'all' | 'mentions' | 'system' | 'w:<name>'
 let lastWhisperFrom = null;         // who /r replies to
@@ -749,11 +752,50 @@ function initSidePane() {
     // roster event — per-row handlers would be discarded seconds later. Skips
     // your own row: there is no whispering yourself.
     const list = sideEl('list');
+    const nameOf = (row) => row?.dataset?.name ?? null;
     list?.addEventListener('dblclick', (e) => {
       const row = e.target?.closest?.('.who-row');
       if (!row || row.classList.contains('self')) return;
-      const name = row.querySelector('.n')?.textContent?.trim();
+      const name = nameOf(row);
       if (name) openConvo(name);
+    });
+    // THE PERSON MENU (research roles S6): one light list, one menu per person, built by people.js from
+    // roles.js personActions — desktop right-click (and the keyboard's menu key), a phone's long-press (500 ms) opens a
+    // bottom sheet, and in a headset a trigger on a row expands an inline strip under it (no popups in VR).
+    // a touch long-press is ALSO the browser's own gesture: around 500 ms Chrome cancels the pointer and fires contextmenu.
+    // That contextmenu (from touch, or during our own pending press) is the phone's long-press: the sheet, never the
+    // desktop menu; whichever comes first opens it (opening twice is harmless).
+    list?.addEventListener('contextmenu', (e) => {
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self')) return;
+      e.preventDefault();
+      const touch = e.pointerType === 'touch' || e.pointerType === 'pen' || !!press || touchAt > performance.now() - 1500;
+      if (press) { clearTimeout(press.t); press = null; }
+      if (touch) personUi.sheetFor(nameOf(row)); else personUi.menuAt(nameOf(row), e.clientX, e.clientY);
+    });
+    list?.addEventListener('keydown', (e) => {
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self')) return;
+      if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) { e.preventDefault(); e.stopPropagation(); const r = row.getBoundingClientRect(); personUi.menuAt(nameOf(row), r.left + 12, r.bottom); }
+    });
+    let press = null, touchAt = -1e9;
+    list?.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') touchAt = performance.now();
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self') || e.pointerType === 'mouse') return;
+      const name = nameOf(row), x = e.clientX, y = e.clientY;
+      press = { x, y, name, t0: e.timeStamp, t: setTimeout(() => { press = null; personUi.sheetFor(name); }, LONG_PRESS_MS) };
+    });
+    // a release or a real move abandons the press; a pointercancel doesn't (Chrome sends one at its own long-press,
+    // which is this very gesture, and its contextmenu follows, above; a scroll has already moved the finger past 10 px)
+    const unpress = (e) => { if (!press || e.type === 'pointercancel') return; if (e.type === 'pointermove' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
+      // held long enough by the events' own clock: a long-press even when a busy page ran the timer late (the phone probe)
+      const held = e.type === 'pointerup' && e.timeStamp - press.t0 >= LONG_PRESS_MS, name = press.name;
+      clearTimeout(press.t); press = null; if (held) personUi.sheetFor(name); };
+    for (const ev of ['pointerup', 'pointercancel', 'pointermove']) list?.addEventListener(ev, unpress);
+    list?.addEventListener('click', (e) => {
+      if (!personUi?.presenting?.()) return;
+      if (e.target?.closest?.('.pm-strip')) return;   // a press inside the open strip is the strip's
+      const row = e.target?.closest?.('.who-row'); if (!row || row.classList.contains('self')) return;
+      const name = nameOf(row);
+      stripName = stripName === name ? null : name; paintSide(true);
     });
   const grip = sideEl('grip');
   grip?.addEventListener('pointerdown', (e) => {
@@ -817,25 +859,36 @@ function applySide() {
   if (head) { head.dataset.chev = chev; head.title = 'hide people here'; }
   paintSide();
 }
-function paintSide() {
+const LONG_PRESS_MS = 500;
+let stripName = null;   // the person whose inline action strip is open (VR), or null
+function paintSide(force = false) {
   const side = sideEl('side');
   if (!side || !sideSt.open) return;
+  // an open strip holds a form someone is filling in: the 2 s repaint mustn't wipe it (a roster change still does)
+  if (stripName && !force && sideEl('list')?.querySelector('.pm-strip')?.childElementCount) return;
   const people = getPeople();
   const others = people.filter((p) => !p.me).length;
   sideEl('head').textContent =
     others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
-  sideEl('list').innerHTML = people.length
+  const html = people.length
       // A BUTTON, not a div. _contentClaims (frames.js:80) exempts only
       // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface — so a
       // <div> row was swallowed by root's pointerdown and the dblclick never
       // fired. R, 2026-09-11: "the Chat panel treats names in the roster as a
       // grab-and-move-the-pane surface". The ∃ menu's .mrow is a <button> for
       // exactly this reason; this now matches that vocabulary.
-      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}">
+      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}" data-name="${esc(p.id)}"${p.me || !personUi ? '' : ' aria-haspopup="menu"'}>
           <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
-          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
-          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>`).join('')
+          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>${personUi ? personUi.badgeHtml(p.id, esc) : ''}${personUi?.muted?.(p.id) ? '<span class="who-muted" title="muted by a moderator" aria-label="muted">⊘</span>' : ''}
+          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>${stripName === p.id && personUi ? '<div class="pm-strip" data-for="' + esc(p.id) + '"></div>' : ''}`).join('')
     : '<div class="who-empty">nobody yet</div>';
+  // only when it changed: the 2 s repaint used to rebuild the list every time, which reset hover and keyboard focus on
+  // the rows and detached the row under a pointer mid-press (a right-click or long-press could land on a dead node)
+  const listEl = sideEl('list');
+  if (listEl._html === html && !force) return;
+  listEl.innerHTML = html; listEl._html = html;
+  const strip = stripName && listEl.querySelector('.pm-strip');
+  if (strip) personUi.stripFor(stripName, strip);
 }
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -933,7 +986,8 @@ function sizeInput() {
 }
 function setInput(v) { if (!inputEl) return; inputEl.value = v; sizeInput(); }
 
-export function initChat({ send, whisper, typing, people }) {
+export function initChat({ send, whisper, typing, people, person }) {
+  personUi = person ?? null;
   onSend = send;
   onWhisper = whisper ?? (() => {});
   onTyping = typing ?? (() => {});

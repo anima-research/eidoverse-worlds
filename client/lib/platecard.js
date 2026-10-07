@@ -60,6 +60,11 @@ export function initPlates(deps) {
     const b = e.target.closest?.('button[data-act]');
     if (!b || !cardFor) return;
     if (b.dataset.act === 'dm') { const who = cardFor; close(); d.openConvo?.(who); }
+    // ⋯ (research roles S6): the person menu. Desktop: the house context menu under the button; a phone: the bottom
+    // sheet; VR: its rows open INSIDE the card (no popups in a headset), the strip people.js draws
+    if (b.dataset.act === 'more') { const who = cardFor; e.stopPropagation();
+      if (vr) { let s = card.querySelector('.pm-strip'); if (s) { s.remove(); sig = ''; return; } s = document.createElement('div'); card.append(s); d.personStrip?.(who, s); sig = 'strip'; return; }
+      const r = b.getBoundingClientRect(); d.personMenu?.(who, r.left, r.bottom + 4); }
   });
   addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
@@ -280,7 +285,7 @@ function paint() {
   const pres = r.presence ?? 'present';
   const known = typeof r.mic === 'boolean' || typeof r.hear === 'boolean';
   const s = [pres, r.mic, r.hear, dist == null ? '' : Math.round(dist), !!r.xrOn, !!r.agent].join('|');
-  if (s === sig) return;
+  if (s === sig || sig === 'strip') return;   // an open ⋯ strip holds a choice in progress: don't repaint it away
   sig = s;
   const rows = [];
   if (known) {
@@ -302,7 +307,7 @@ function paint() {
     + (pres !== 'present' ? `<span class="pc-pres" data-presence="${esc(pres)}">${esc(pres)}</span>` : '')
     + (where ? `<span class="pc-where">${esc(where)}</span>` : '') + `</div>`
     + rows.join('')
-    + `<div class="pc-btns"><button type="button" data-act="dm">message</button></div>`;
+    + `<div class="pc-btns"><button type="button" data-act="dm">message</button>${d.personMenu ? '<button type="button" class="pc-more" data-act="more" aria-haspopup="menu" title="more">⋯</button>' : ''}</div>`;
   card.setAttribute('aria-label', `${r.id} — voice and actions`);
 }
 

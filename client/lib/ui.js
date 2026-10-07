@@ -326,8 +326,29 @@ export function settingsFrame() {
  *  The api is the accordion's: `box` (#sec-<id>, the pane, .open while chosen) holds `body`; `head`
  *  is the tab button (#sec-<id>-tab); toggle(true) chooses it, toggle(false) folds the pane away,
  *  toggle() flips. */
+// Moderation (research roles S7) and World Settings (S8): tabbed frames like settings, each with its own dock entry.
+// Moderation's entry exists only while you hold a moderation power (setDockEntry); World Settings is everyone's
+// (owners edit, everyone reads). Each thing lives in exactly one place (research §7).
+let moderationFrameApi = null, worldSettingsFrameApi = null;
+export function moderationFrame() {
+  if (!moderationFrameApi) moderationFrameApi = tabbedFrame('moderation', { title: 'moderation', x: 70, y: 60, w: 360, h: 360, minW: 240, hidden: true });
+  return moderationFrameApi;
+}
+export function worldSettingsFrame() {
+  if (!worldSettingsFrameApi) worldSettingsFrameApi = tabbedFrame('world-settings', { title: 'world settings', x: 90, y: 80, w: Math.min(600, innerWidth - 24), h: 440, minW: 260, hidden: true });   // wide enough for the four built-in roles' columns
+  return worldSettingsFrameApi;
+}
+/** Add (on) or remove (off) a dock entry after boot: the Moderation entry follows your switches (your-rights). */
+export function setDockEntry(entry, on) {
+  const has = dockEntries.some((e) => e.id === entry.id);
+  // pinOnce: pinned the first time this person sees the entry (as the search entry was), then their unpin is theirs
+  if (on && entry.pinOnce) { try { const k = `ew-dock-${entry.id}-seen`; if (!localStorage.getItem(k)) { localStorage.setItem(k, '1'); pins.add(entry.id); savePins(); } } catch {} }
+  if (on && !has) { const at = dockEntries.findIndex((e) => e.last); dockEntries.splice(at < 0 ? dockEntries.length : at, 0, entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
+  else if (!on && has) { dockEntries = dockEntries.filter((e) => e.id !== entry.id); el?.dock?.querySelector(`button[data-toggles="${entry.id}"]`)?.remove(); getFrame(entry.id)?.hide?.(); paintDock(); }
+}
+const HOSTS = { settings: () => settingsFrame(), moderation: () => moderationFrame(), 'world-settings': () => worldSettingsFrame() };
 export function makeSection(title, onOpen, { id = '', host: hostName = 'world' } = {}) {
-  const hostFrame = hostName === 'settings' ? settingsFrame() : panelFrame();
+  const hostFrame = (HOSTS[hostName] ?? panelFrame)();
   const box = document.createElement('div');
   box.className = 'sec';
   box.setAttribute('role', 'tabpanel');
@@ -528,7 +549,7 @@ const SEARCH_ENTRY = { id: 'search', icon: 'magnifying-glass', label: 'Search & 
 addEventListener('lantern', () => paintDock());
 // every rail button's tooltip: its name, and its key where the action registry knows one ("Chat · Enter",
 // "Debug · F3") — read from actions.js at paint time, so a key table merged in later (main.js) shows up
-const DOCK_NAME = { search: 'Search & commands', edit: 'Builder mode' };
+const DOCK_NAME = { search: 'Search & commands', edit: 'Builder mode', moderation: 'Moderation', 'world-settings': 'World settings' };
 function dockTitle(entry, suffix = '') {
   const name = DOCK_NAME[entry.id] ?? (entry.id.charAt(0).toUpperCase() + entry.id.slice(1));
   const key = entry.id === 'search' ? CHORD : getAction(`panel:${entry.id}`)?.key;
