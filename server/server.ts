@@ -127,7 +127,7 @@ wireBehaviorGate((w, author, verb, args, authorSub) => {
   const bodyWhy = bodyRefusal((w as unknown as World).state, { id: author }, verb, args);
   if (bodyWhy) return bodyWhy;
   const rights = rightsOf((w as unknown as World).state, author, authorSub);
-  if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
+  if ((ROLE_RANK[rights.role] ?? -1) < needs.rank || (needs.gen && !rights.gen)) {   // an unknown role (`none`) is no rights
     return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
   }
   // a guarded thing refuses scripts by their AUTHOR's standing, and a locked
@@ -1079,8 +1079,9 @@ const server = Bun.serve({
           // EVERYONE, so it needs moderation rights, not a preference.
           if (!c.world || !relayEnabled()) return;
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          const rights = rightsOf(c.world.state, c.id, c.sub);
-          if (ROLE_RANK[rights.role] < 2) {
+          // the door's role for the person's directory identity (it read v1 rights by typed name, and a role the v1
+          // table didn't know, `none`, compared undefined < 2 → false and passed)
+          if (c.world.v4?.roleOf(v4ActorOf(c)) !== "owner") {
             ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
             return;
           }

@@ -32,7 +32,7 @@ const mint = (over = {}) => { const now = Math.floor(Date.now() / 1000);
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/v4/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
@@ -125,7 +125,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
 { // the founder (local:ann) can't reach the public door; make a world whose owner is an agent account we can prove
   const fo = tool(["found", "meadow", "--owner", "agent:token:rowan"]);
   ok(fo.code === 0, "(H setup) found meadow owned by the Rowan enrolment", fo.out);
-  const S3 = await start({ TRUST_NAMES: "" });
+  const S3 = await start({ TRUST_NAMES: "", VOICE_TRANSPORT: "sfu" });   // voice on: the voice-moderate gate is tested here
   const own = await sock(S3.port); const jo = await own.join("meadow", "Rowan", { agentToken: "tok-rowan" });
   ok(jo.snapshot?.yourRights?.role === "owner", "(H setup) Rowan owns meadow", jo.snapshot?.yourRights);
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H setup) meadow's default role: builder");
@@ -158,6 +158,21 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const drags = own.msgs.slice(k).filter((m) => m.type === "drag").map((m) => m.pos[0]);
     ok(!!jm.snapshot && JSON.stringify(drags) === "[2]", "a visitor's live drag isn't relayed; a builder's is (the door's role for their identity)", [drags, jm.errors]);
     moss.close(); }
+  // muting someone for EVERYONE is the owner's (it read v1 rights by typed name, and a role the v1 table didn't know,
+  // `none`, compared undefined < 2 → false: it passed). A listed visitor and an unlisted stranger under default-role
+  // none both try; the owner's own mute is the control that the gate is reachable at all.
+  { await own.req("set", { id: "@world", component: "default-role", value: { role: "none" } });
+    const fern = await sock(S3.port); const jf = await fern.join("meadow", "Fern", { agentToken: "tok-fern" });
+    const vis = await sock(S3.port); const jv = await vis.join("meadow", "Moss", { agentToken: "tok-moss" });
+    const k = own.msgs.length;
+    fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true }); await sleep(300);
+    const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
+    const all = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    ok(jf.snapshot?.yourRights?.role === "none" && jv.snapshot?.yourRights?.role === "visitor" && byOthers.length === 0 && all.length === 1,
+      "voice-moderate (mute for everyone) is the owner's alone: a 'none' stranger and a visitor are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+    await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+    fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
   ok(!!je.snapshot, "H4 …in that world only", je.errors);
   for (const s of [own, wren, again, elsewhere]) s.close(); S3.proc.kill(); }
