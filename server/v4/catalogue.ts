@@ -16,7 +16,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { OPT_DIR, LIBRARY_DIR } from "../config.ts";
 
-export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[] };
+export type Entry = { label: string; size?: number[]; box?: number[][]; surfaces: { y: number; x?: number[]; z?: number[] }[]; solids?: number[][][] };
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const cache = new Map<string, Entry>();
 const pending = new Map<string, Promise<void>>();
@@ -29,17 +29,20 @@ async function measure(lib: string): Promise<void> {
   let entry: Entry = { label, surfaces: [] };
   try {
     const file = resolveLibFile(lib);
-    const sum = file ? await summarizeGlb(file) : null;
+    const sum = file ? await summarizeGlb(file, { solids: true }) : null;
     const bb = sum?.bbox;
     if (bb && [...bb.min, ...bb.max].every(Number.isFinite)) {
       const box = [bb.min.map(r3), bb.max.map(r3)];
       const surfaces = (sum!.topSurfaces ?? []).filter((s) => s.area >= MIN_ZONE && [s.y, ...s.x, ...s.z].every(Number.isFinite))
         .map((s) => ({ y: r3(s.y), x: s.x.map(r3), z: s.z.map(r3) })).sort((a, b) => a.y - b.y);
-      entry = { label, box, size: box[1].map((v, i) => r3(v - box[0][i])), surfaces };
+      // its solid parts (server/v4/solids.ts): a building's walls, floor and roof with its rooms open, so a body walks in
+      // through the door and a thing can be put down inside (review 10-06 S0-3); absent, the box is the solid
+      entry = { label, box, size: box[1].map((v, i) => r3(v - box[0][i])), surfaces, ...(sum!.solids ? { solids: sum!.solids } : {}) };
     }
   } catch { /* unmeasured: named, not sized */ }
-  cache.set(lib, entry);
+  cache.set(lib, entry); version++;
 }
+let version = 0;   // bumped by every measurement: the door's spatial index is valid for one version of what's measured
 
 /** Make every lib in `libs` answerable synchronously. */
 export async function warm(libs: Iterable<unknown>): Promise<void> {
@@ -81,6 +84,7 @@ function libraryListing(): string[] {
 
 /** The door's catalogue interface (shared/v4/door.js: get / list). */
 export const ENGINE_CATALOGUE = {
+  get version() { return version; },
   get(name: string): Entry | undefined {
     if (!isLibPath(name)) return undefined;
     return cache.get(name) ?? { label: name.split("/").pop()!, surfaces: [] }; // cold: named, not sized (warm first)

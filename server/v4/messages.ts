@@ -16,6 +16,7 @@ import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "../moderation.t
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "../config.ts";
 import { isBanned } from "../../shared/v4/door.js";
+import { readMeter, doorTime } from "./readmeter.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string) => void };
 type Any = any;
@@ -40,6 +41,11 @@ export function whois(w: World, args: Any) {
     .map((id) => ({ id, name: here.get(id) ?? dir.nameOf(id) ?? id, kind: KIND_WORD[dir.entry(id)?.kind ?? ""] ?? "unknown", role: v4.roleOf(id), here: here.has(id), banned: isBanned(v4.live, id) }));
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
+const reads = readMeter(); // per connection: reads and dry runs, by count and door time (security pass 2 H-A)
+// …and every request by door time: a refused step or write is cheap now, but nothing else bounds how much of the shared
+// thread one connection's stream of them takes (a guest is a fresh identity per connection, so the door's per-identity
+// rate doesn't either). 3 s of 10 is far past any person's or agent's real use.
+const busy = readMeter({ n: Infinity, ms: 3000, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
 /** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */
 function recordRefusal(c: Client): boolean {
@@ -76,14 +82,24 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const tool = String(msg.tool ?? "");
     const reply = (r: Any) => ws.send(JSON.stringify({ type: "v4-result", id: rid, tool, ok: r.ok === true, reply: r }));
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
+    const metered = READS.has(tool) || args.dry === true;
+    // reads are counted as they arrive (a burst is counted before any of it runs); time is checked when each request is
+    // about to run, so requests queued behind a slow one can't all be admitted before the meter sees what they cost
+    // a meter's refusal reaches the flight recorder like the door's (bounded the same way)
+    const metered_no = (no: Any) => { if (recordRefusal(c)) w.debug("refused", { who: c.id, tool: tool.slice(0, 32), code: no.code, line: `${c.id}'s ${tool.slice(0, 32)} was refused (${no.code}): ${no.reason}`.slice(0, 300) }); reply({ ok: false, refused: no }); };
+    if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
+    const mark = metered ? reads.record(c, Date.now()) : null;
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
     if (tool === "caption") args.gen = c.legGen ?? 0;
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
+      { const no = (metered ? reads.check(c, Date.now(), { timeOnly: true }) : null) ?? busy.check(c, Date.now()); if (no) { metered_no(no); return; } }
+      const spent = busy.record(c, Date.now());
       const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4.live, String(args.who)) : false;
       const r = await w.v4.request(actorOf(c), tool, args);
+      const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)

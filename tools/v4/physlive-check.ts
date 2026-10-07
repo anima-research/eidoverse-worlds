@@ -179,7 +179,7 @@ function playground(clock = "pinned") {
   ok(L().length === n0, "W3 …and neither refusal is written to the log (a person's client sends steps several times a second)", L().slice(n0).map((e) => [e.kind, e.verb, e.body?.refused]));
   const x = live(); x.call("rowan", "new", { title: "w" }); x.call("rowan", "create", { id: "wall", model: "wall", place: { at: [0, 0] } });
   const n1 = x.L().length;
-  ok(code(x.call("rowan", "move", { to: [0, 0, 0] })) === "solid" && x.L().length === n1 + 1, "W4 a refused ARRIVAL is still on the record (an act, R7)", x.L().slice(n1).map((e) => [e.kind, e.verb]));
+  ok(code(x.call("rowan", "move", { to: [0, 0, 0] })) === "solid" && x.L().length === n1, "W4 a refused ARRIVAL isn't on the record either (a body's track is presence; review 10-06 S0-3)", x.L().slice(n1).map((e) => [e.kind, e.verb]));
 }
 
 // ---- Q: one clock per request ----

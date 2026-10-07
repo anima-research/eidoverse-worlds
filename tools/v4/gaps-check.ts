@@ -107,9 +107,10 @@ const cases = [
       const arrive = s.call("vic", "move", { to: [0, 0, 0.4] });
       const ok8 = s.call("vic", "move", { to: [0.5, 0, 8] }); const tp = s.call("vic", "move", { to: [0, 0, 0.4], teleport: true });
       const L = s.world().entries; const all = L.filter((e) => e.kind === "act" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
-      // round-2 R7: a refused request is recorded too (an act carrying {refused: {code}}), so the two refused arrivals are there
-      return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused?.code === "spawn").length, recorded: acts[0]?.body?.presence ?? null }; },
-    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 2 && o.refusedActs === 2 && !!o.recorded },
+      // round-2 R7 recorded refused requests, but a body's track is presence: a refused move (arrival and teleport included)
+      // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s). The accepted arrivals are acts.
+      return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused).length, recorded: acts[0]?.body?.presence ?? null }; },
+    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 2 && o.refusedActs === 0 && !!o.recorded },
   { id: "G2d", guard: true, what: "walking at a plausible speed while carrying still works, and the put records the presence it used", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
