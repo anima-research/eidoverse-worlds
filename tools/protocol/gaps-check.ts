@@ -24,8 +24,8 @@ let T = 1800000000000;
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
   // every call advances the authority's clock by `step` ms (default 100: a fast client)
-  const call = (actor, tool, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return d.request(d.openWorld(d.root, name), actor, tool, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } };
+  const call = (actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return d.request(d.openWorld(d.root, name), actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } };
   return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
 }
 const ok = (r) => r?.ok === true, refused = (r) => r?.ok === false, code = (r) => r?.refused?.code;

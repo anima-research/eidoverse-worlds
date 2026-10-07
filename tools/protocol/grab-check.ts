@@ -184,8 +184,8 @@ function install(s: any, who: string, id: string, name: string, text: string, va
   const u = s.call(who, "upload", { text }); return s.call(who, "set", { id, component: `script:${name}`, value: { src: u.src ?? ZERO, ...value } }); }
 function session(o: any = {}) {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name, o));
-  const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return D.request(W(), actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   // walk the authority's track there: steps of at most 3.5 m, a second apart (a first move is an arrival)
   const walk = (actor: string, to: number[]) => { for (let i = 0; i < 40; i++) { const at = W().presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });
     const d = Math.hypot(to[0] - at[0], to[2] - at[2]); if (d < 1e-9) return { ok: true }; const k = Math.min(1, 3.5 / d);

@@ -12,7 +12,7 @@ const root = scratch("phys");
 let T = 1800000000000, fails = 0, passes = 0;
 const fresh = (name) => { for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${root}worlds/${f}`, { force: true }); return name; };
 const at = (ms) => { T += ms; process.env.PROTOCOL_NOW = String(T); };
-function call(world, actor, tool, args = {}, step = 100) { at(step); return request(openWorld(root, world), actor, tool, args); }
+function call(world, actor, verb, args = {}, step = 100) { at(step); return request(openWorld(root, world), actor, verb, args); }
 function ok(cond, what, detail) { if (cond) passes++; else { fails++; console.log("FAIL", what, detail !== undefined ? JSON.stringify(detail).slice(0, 400) : ""); } }
 const log = (world) => openWorld(root, world).entries;
 const view = (world) => { const w = openWorld(root, world); return simFold(w.entries, w.now()); };

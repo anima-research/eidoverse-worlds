@@ -47,7 +47,7 @@ export function actionFor(reactions, name) {
 
 /** Plan a new script. form: {id, name, text, trigger: 'use'|'timer', every?, comps?: string[], say?: boolean}; `thing`
  *  is the thing's components as the viewer sees them (for its reactions and its existing scripts).
- *  Returns {errors: [...]} or {name, action, upload: {tool, args}, install(src) → the batch's ops}. */
+ *  Returns {errors: [...]} or {name, action, upload: {verb, args}, install(src) → the batch's ops}. */
 export function planNewScript(form, thing = {}) {
   const errors = [];
   const name = scriptName(form?.name);

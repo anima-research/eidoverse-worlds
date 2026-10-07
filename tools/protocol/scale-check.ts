@@ -62,7 +62,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["look walks the children map", "shared/protocol/authority.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
   ["capacity.things", "shared/protocol/authority.js", "if (after > before && after > cap.things) refuse(\"full\"", "if (false) refuse(\"full\"", ["C1", "C2"]],
   ["capacity.guestThings, all guests together", "shared/protocol/authority.js", "if (g + made > cap.guestThings) refuse(\"full\"", "if (false) refuse(\"full\"", ["C3"]],
-  ["a refused move is never logged", "shared/protocol/authority.js", "    if (tool === \"move\") return;", "    if (tool === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
+  ["a refused move is never logged", "shared/protocol/authority.js", "    if (verb === \"move\") return;", "    if (verb === \"move\" && args?.teleport !== true && w.presence.bodies[actor]) return;", ["I1"]],
   ["solids: an enclosed cell is solid", "server/solids.ts", "const solid = (c: number) => occ[c] === 1 || out[c] === 0;", "const solid = (c: number) => occ[c] === 1;", ["I3"]],
   ["solids: cells merge only where their bounds line up", "server/solids.ts", "while (i1 + 1 < nx && free(i1 + 1, j, k) && same(idx(i1 + 1, j, k), s0, 1) && same(idx(i1 + 1, j, k), s0, 2)) i1++;", "while (i1 + 1 < nx && free(i1 + 1, j, k)) i1++;", ["I2"]],
   ["the catalogue measures solids", "server/modelcatalogue.ts", "...(sum!.solids ? { solids: sum!.solids } : {})", "", ["I4"]],
@@ -433,7 +433,7 @@ if (argv.includes("--control")) {
 function scenario() {
   // (and log positions: a refused move is no longer recorded, so the seqs after one shift by design)
   const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause"].includes(k) ? undefined : v)));
-  const c = (who: string, tool: string, args: any = {}, step = 200) => { const r = s.call(who, tool, args, step); out.push([who, tool, strip(r)]); return r; };
+  const c = (who: string, verb: string, args: any = {}, step = 200) => { const r = s.call(who, verb, args, step); out.push([who, verb, strip(r)]); return r; };
   cast(s); c("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
   fill(s, 100, (i) => [(i % 10) * 2.5 - 12, 0, Math.floor(i / 10) * 2.5 - 12]);
   for (let i = 0; i < 100; i += 7) c("olive", "set", { id: `c-${i}`, component: "transform", value: { pos: [(i % 10) * 2.5 - 12, 0, Math.floor(i / 10) * 2.5 - 12], q: [0, Math.sin(i / 10), 0, Math.cos(i / 10)], scale: [1, 1 + (i % 3) * 0.5, 1] } }, 2000);

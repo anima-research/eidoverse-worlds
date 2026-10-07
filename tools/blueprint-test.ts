@@ -306,7 +306,7 @@ console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcp
   const ag: any = new WorldAgent({ name: 'eye' });
   const sync = () => { ag.st = W.view(); ag.replica = { st: W.state(), active: true }; ag.reconcileFromFold(); };
   sync();
-  ag.door = async (tool: string, args: any) => { const r = W.call(tool, args); sync(); return r; };
+  ag.door = async (verb: string, args: any) => { const r = W.call(verb, args); sync(); return r; };
   ag.pos = { x: 0, y: 0, z: 0 }; ag.yaw = 0; ag.heightAt = () => 0;
   const txt = (r: any) => r.content.map((c: any) => c.text).join('\n');
   const list = txt(await HANDLERS.blueprints(ag, {}));

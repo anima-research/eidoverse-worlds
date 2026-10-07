@@ -52,7 +52,7 @@ import {
 import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
 // may I build here: the build switch (the door's, v4), else the role (an older server); unknown = no (strict)
-const mayBuildStrict = () => (Array.isArray(net.myRights?.switches) ? net.myRights.switches.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
+const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
 import { initPalette } from './lib/catalog.js';
 import { initConjure } from './lib/generate.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default

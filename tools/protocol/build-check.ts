@@ -85,8 +85,8 @@ function open(name: string, o: any = {}) {
 }
 function session(o: any = {}) {
   const name = `w${++N}`; const w = open(name, { scripts: SB.SANDBOX, ...o });
-  const call = (actor: string, tool: string, args: any = {}, step = 1000) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return D.request(w, actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 1000) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return D.request(w, actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, w: () => w, call };
 }
 const code = (r: any) => (r?.ok ? "ok" : r?.refused?.code ?? (r?.crashed ? "crashed" : "?"));

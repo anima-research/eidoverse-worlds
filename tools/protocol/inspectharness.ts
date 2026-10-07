@@ -28,7 +28,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
     /** settle the async sends (sendRequest answers at once; the lock dialog is a promise) */
     flush: () => new Promise((r) => setTimeout(r, 10)),
     /** someone else writes (another person at the authority) */
-    other(tool, args, who = "bob") { const r = W.call(tool, args, who); if (!r.ok) throw new Error(`H.other: ${who}'s ${tool} refused: ${JSON.stringify(r.refused)}`); H.sync(); return r; },
+    other(verb, args, who = "bob") { const r = W.call(verb, args, who); if (!r.ok) throw new Error(`H.other: ${who}'s ${verb} refused: ${JSON.stringify(r.refused)}`); H.sync(); return r; },
   };
   plugin({
     name: "inspect-harness",
@@ -51,7 +51,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
             export const net = { myId: H.actor, myRights: { role: 'owner' } };
             export const replica = H.v4; export const replicaActive = () => true;
             export const sendDrag = (...a) => { H.drags.push(a); };
-            export const sendRequest = async (tool, args) => { H.sent.push({ tool, args: JSON.parse(JSON.stringify(args ?? {})) }); const r = H.W.call(tool, args, H.actor); H.sync(); return r; };
+            export const sendRequest = async (verb, args) => { H.sent.push({ verb, args: JSON.parse(JSON.stringify(args ?? {})) }); const r = H.W.call(verb, args, H.actor); H.sync(); return r; };
             ${noop(["requestDebug", "requestHistory", "say", "sendAnim", "sendBodyDrag", "sendLease", "sendRelayCredRequest", "sendTyping", "sendVoiceConsent"])}`,
           panels: `export const SCRUB_SPEEDS = {}; ${noop(["renderDOM", "getScrubFeel", "hitRegion", "makeSchemaFrame", "renderCanvas", "resolveDelta", "setScrubFeel"])}`,
           ui: `const H = globalThis.__ih; export const flashHint = (t) => H.hints.push(t); export const toast = (t) => H.toasts.push(t); export const escapeHtml = (s) => String(s); export const isOverlayOpen = () => false;

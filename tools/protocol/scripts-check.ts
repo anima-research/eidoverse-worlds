@@ -173,8 +173,8 @@ function openWorld(name: string, o: any = {}) {
 let T = 1800000000000, N = 0;
 function session(o: any = {}) {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name, o));
-  const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return D.request(W(), actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: W, advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); }, tick: () => (D.tick ? D.tick(W()) : null),
     logPath: path.join(root, "worlds", `${name}.jsonl`), entries: () => W().entries };
 }

@@ -11,7 +11,7 @@
 //
 // The world speaks protocol v4 (shared/protocol/authority.js): a join says `v4fold: true`,
 // the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
-// write is a door request {type: "request", id, verb: tool, args} answered by `v4-result`,
+// write is a request {type: "request", id, verb, args} answered by `reply`,
 // and what the door wrote reaches every client as `v4-log` entries. A world is
 // founded by its operator (bun tools/protocol/world.ts found); joining never founds one.
 // Against a running server, the worlds WORLD, WORLD-hist, WORLD-noise,
@@ -71,11 +71,11 @@ class Client {
   }
   send(o: unknown) { this.ws.send(JSON.stringify(o)); }
   /** one door request, answered by its v4-result ({ok, reply}) */
-  req(tool: string, args: unknown = {}): Promise<any> {
+  req(verb: string, args: unknown = {}): Promise<any> {
     const id = `${this.id}-${++this.n}`;
     return new Promise((res) => {
       this.waiters.set(id, res);
-      this.send({ type: "request", id, verb: tool, args });
+      this.send({ type: "request", id, verb, args });
       setTimeout(() => { if (this.waiters.delete(id)) res({ ok: false, reply: { refused: { code: "timeout" } } }); }, 6000);
     });
   }
@@ -253,7 +253,7 @@ try {
 
   // --- refusals
   const bad = await alice.req("obliterate", { everything: true });
-  check("an unknown door tool is refused, to the asker, by name", bad.ok === false && bad.reply?.refused?.code === "unknown-tool", JSON.stringify(bad.reply));
+  check("an unknown verb is refused, to the asker, by name", bad.ok === false && bad.reply?.refused?.code === "unknown-verb", JSON.stringify(bad.reply));
   alice.send({ type: "verb", verb: "spawn", args: { id: "old", lib: "x.glb", pos: [0, 0, 0] } });
   await sleep(250);
   const bobSees = await bob.req("create", { id: "bobs", components: { transform: { pos: [0, 0, 0] } } });

@@ -67,10 +67,10 @@ async function client(port: number, world: string, id: string, extra: any = {}) 
     ws,
     msgs,
     snapshot: msgs.find((m) => m.type === "snapshot"),
-    req: (tool: string, args: any = {}) => new Promise<any>((res) => {
+    req: (verb: string, args: any = {}) => new Promise<any>((res) => {
       const rid = `${id}-${++n}`;
       waiters.set(rid, res);
-      ws.send(JSON.stringify({ type: "request", id: rid, verb: tool, args }));
+      ws.send(JSON.stringify({ type: "request", id: rid, verb, args }));
       setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 6000);
     }),
     send: (m: any) => ws.send(JSON.stringify(m)),

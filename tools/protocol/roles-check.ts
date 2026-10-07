@@ -71,7 +71,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a mute's channels are the union", "protocol/authority.js", "const channels = [...new Set(a.flatMap((m) => m.channels ?? [\"voice\", \"chat\"]))];", "const channels = strongest(a).channels ?? [\"voice\", \"chat\"];", ["V1b"]],
   ["a lift needs rights over every record", "protocol/authority.js", "for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {", "for (const rec of (Array.isArray(recs) ? recs.slice(-1) : recs ? [recs] : [])) {", ["V2"]],
   ["nobody lifts their own", "protocol/authority.js", "if (a.who === actor) refuse(\"rank\", `you can't lift a ${verb} on yourself`", "if (false) refuse(\"rank\", `you can't lift a ${verb} on yourself`", ["V5"]],
-  ["ghost {who} is not the chosen mode", "protocol/authority.js", "|| (tool === \"ghost\" && args?.who !== undefined && args.who !== actor)", "", ["V4"]],
+  ["ghost {who} is not the chosen mode", "protocol/authority.js", "|| (verb === \"ghost\" && args?.who !== undefined && args.who !== actor)", "", ["V4"]],
   ["leave passes the kick gate", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor))", "if (w.exists && tool !== \"help\" && kickOf(w, actor))", ["K5"]],
   ["a muted refusal isn't logged", "protocol/authority.js", "\"kicked\", \"ghost\", \"muted\"]);", "\"kicked\", \"ghost\"]);", ["V7"]],
   ["look hides a ghost", "protocol/authority.js", ".filter(([id]) => id === actor || !ghostOf(w, id))", "", ["V8"]],
@@ -183,8 +183,8 @@ function openWorld(name: string, o: any = {}) {
 let T = 1800000000000, N = 0;
 function session() {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return D.request(W(), actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: W, advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); }, entries: () => W().entries, now: () => T };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;

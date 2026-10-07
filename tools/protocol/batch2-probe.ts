@@ -36,7 +36,7 @@ const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail
 const disk = () => fold(readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl"))));
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
-const req = (tool: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${tool}', ${JSON.stringify(args)});`);
+const req = (verb: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${verb}', ${JSON.stringify(args)});`);
 
 // every https request the page makes: caught before it leaves (CDP Fetch), recorded, failed
 const outside: string[] = [];

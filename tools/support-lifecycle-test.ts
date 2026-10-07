@@ -113,7 +113,7 @@ const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 /** The scene's old authoring words, as v4 door requests (the world speaks v4: every write is a door request). A
  *  v4 "moving platform" is any motion component; v4 has no `path` motion, so a path becomes a bob, which moves it all
  *  the same. Requests go out in order on one socket and the door answers them in order. */
-const doorOf = (v: string, a: any): { tool: string; args: any }[] => {
+const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
   const tf = (x: any) => ({ ...(x.pos ? { pos: x.pos } : {}), ...(typeof x.yaw === "number" ? { q: qFromYaw(x.yaw) } : {}) });
   switch (v) {
     case "spawn": return [{ verb: "create", args: { id: a.id, model: a.lib, components: { transform: tf(a) } } }];
@@ -137,7 +137,7 @@ function hand(world: string, name: string) {
       const m = JSON.parse(String(e.data));
       if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
       if (m.type === "snapshot") res({
-        verb: (v: string, a: any) => { for (const r of doorOf(v, a)) ws.send(JSON.stringify({ type: "request", id: `${name}-${++n}`, ...r })); },
+        verb: (v: string, a: any) => { for (const r of requestsOf(v, a)) ws.send(JSON.stringify({ type: "request", id: `${name}-${++n}`, ...r })); },
         send: (o: any) => ws.send(JSON.stringify(o)),
         close: () => ws.close(),
       });

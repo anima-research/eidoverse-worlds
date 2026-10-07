@@ -16,8 +16,8 @@ const doors = { baseline: B ? { ...(await import(B + "authority.js")), sim: awai
 let T = 1800000000000;
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
-  const call = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T);
-    try { return d.request(d.openWorld(d.root, name), actor, tool, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 120) }; } };
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T);
+    try { return d.request(d.openWorld(d.root, name), actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 120) }; } };
   return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
 }
 const ok = (r) => r?.ok === true, crashed = (r) => !!r?.crashed, refused = (r) => r?.ok === false;

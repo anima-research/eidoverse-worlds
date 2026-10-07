@@ -29,7 +29,7 @@ function live(clock = "pinned") {
   const dir = `${root}w${++N}/`; fs.mkdirSync(dir, { recursive: true });
   let now = 1800000000000;
   const w = openLive(dir, `w${N}`, { now: () => (clock === "ticking" ? ++now : now), custodyFile: `${root}custody.json`, nameOf: () => null, kindOf: () => "human" });   // lab names are known people (roles:<key> asks the directory)
-  const call = (actor, tool, args = {}, step = 100) => { now += step; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
   const L = () => readLog(fs.readFileSync(dir + "world.jsonl"));
   // walk there the way the authority tracks a body: steps of at most 3.5 m, a second apart
   const walk = (actor, to) => { for (let i = 0; i < 40; i++) { const at = w.presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });

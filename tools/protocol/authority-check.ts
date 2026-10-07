@@ -69,7 +69,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. v4 adds:
 // it binds what's attached to it too; throughLock: true lets whoever may remove it act through it.
 { const name = "locks";
-  const call = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, tool, args); };
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   const W = () => openWorld(root, name);
   call("olive", "create-world", { title: "locks" });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -137,7 +137,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("olive", "set", { id: "gate", component: "lock", value: true });
     ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the authority (v1: use stays open)"); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
-    const hc = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, tool, args); };
+    const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     hc("olive", "create", { id: "tbl", model: "table", place: { at: [0, 1] } });
     hc("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "builder" } }, place: { on: "tbl" } });
@@ -164,7 +164,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(f.sign.lock === true && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
     fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
-    const tc = (actor, tool, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, tool, args); };
+    const tc = (actor, verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, verb, args); };
     ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §5)"); }
 }
 
@@ -173,7 +173,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // or an agent, so it says the name as the person spells it, and carries the id as a field for whoever needs to match it.
 { const name = "names";
   const R = enc("Riannon");
-  const call = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, tool, args); };
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   call(R, "create-world", { title: "names" });
   call(R, "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   call(R, "create", { id: "statue", model: "crate", place: { at: [0, 2] } });
@@ -222,7 +222,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 9, ts: 10, actor: "ann", verb: "mount", args: { id: "stray", to: "nowhere", offset: [0, 5, 0] } }];      // its carrier doesn't exist
   const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
-  const tc = (tool, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", tool, args); };
+  const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
   ok(!r.stats.divergences && r.final.v4.box.parent?.order === "a0" && !("offset" in r.final.v4.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.v4.box.parent);
   ok(JSON.stringify(r.final.v4.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.v4.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.v4.bell.parent.socket === "perch",
     "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.v4.box.transform, r.final.v4.bell.transform, r.final.v4.bell.parent]);
@@ -240,7 +240,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- L: live world vs whole-log re-read ----
 { const dir = root + "live/"; T += 1000; let now = T;
   const w = openLive(dir, "live", { kindOf: LABKIND, now: () => now, simModels: MODELS });
-  const call = (actor, tool, args = {}, step = 100) => { now += step; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
   const same = (what) => {
     const L = readLog(fs.readFileSync(dir + "world.jsonl")); const whole = fold(L);
     ok(digest(w.state()) === digest(whole), `L ${what}: incremental state = a whole-log fold`, [digest(w.state()), digest(whole)]);
@@ -269,12 +269,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- U: the act index (research 37, slice 3 #5): undo and wait without scanning the log ----
 { const dir = root + "undo/"; let now = T + 3000;
   const w = openLive(dir, "undo", { kindOf: LABKIND, now: () => now });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   const flat = (x) => JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => !["entries", "bad", "pt"].includes(k)).map(([k, v]) => [k, v instanceof Map ? [...v].sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : v instanceof Set ? [...v].sort() : v])));
   let steps = 0, firstBad = null;
   const same = (what) => { steps++; const inc = flat(actIndexOf(w)), fresh = flat(actIndexFresh(readLog(fs.readFileSync(dir + "world.jsonl"))));
     if (inc !== fresh && !firstBad) firstBad = [what, inc.slice(0, 300), fresh.slice(0, 300)]; };
-  const step = (actor, tool, args = {}) => { const r = call(actor, tool, args); same(`${actor} ${tool}`); return r; };
+  const step = (actor, verb, args = {}) => { const r = call(actor, verb, args); same(`${actor} ${verb}`); return r; };
   const purge = (values) => { now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values } }); same("purge"); };
   const label = () => w.state().entities.crate?.c.label;
   step("rowan", "create-world", { title: "undo" }); step("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -316,7 +316,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- E: expect (§3a: a gesture settles as one act with expect on its starting values), duplicate, redo ----
 { const dir = root + "expect/"; let now = T + 6000;
   const w = openLive(dir, "expect", { kindOf: LABKIND, now: () => now });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   const n = () => w.entries.length;
   call("ann", "create-world", { title: "expect" }); call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
@@ -363,12 +363,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
   c.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
   let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
-  const step = (what, actor, tool, args) => { const from = w.entries.length; const r = call(actor, tool, args);
+  const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
     const before = c.view(); const k = c.ingest(fresh, from); steps++;
     if (k.resync) return { r, k };
@@ -403,7 +403,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };
   let now = T + 5000; const w = openLive(root + "cat/", "cat", { kindOf: LABKIND, now: () => now, catalogue: cat });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "cat" });
   ok(call("ann", "create", { id: "desk", model: "lib/desk.glb", place: { at: [0, 0] } }).ok, "C1 an off-centre model is placed");
   const d = w.state().entities.desk.c.transform.pos;
@@ -424,7 +424,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       "lib/gate.glb": { label: "frame", box: [[4, 0, -0.1], [6, 2.2, 0.1]], size: [2, 2.2, 0.2], solids: [[[4, 0, -0.1], [4.1, 2.2, 0.1]], [[5.9, 0, -0.1], [6, 2.2, 0.1]], [[4, 2.1, -0.1], [6, 2.2, 0.1]]], surfaces: [] },
       "lib/seat.glb": { label: "seat", box: [[-0.3, 0, -0.15], [0.3, 0.05, 0.15]], size: [0.6, 0.05, 0.3], surfaces: [] } } as any)[n], list: () => [] };
   let now2 = T + 9000; const w2 = openLive(root + "cat2/", "cat2", { kindOf: LABKIND, now: () => now2, catalogue: cat2 });
-  const c2 = (actor, tool, args = {}) => { now2 += 100; return request(w2, actor, tool, args); };
+  const c2 = (actor, verb, args = {}) => { now2 += 100; return request(w2, actor, verb, args); };
   c2("ann", "create-world", { title: "cat2" });
   c2("ann", "create", { id: "far", model: "lib/far.glb", place: { at: [0, 0] } });
   const fb = (() => { const t = w2.state().entities.far.c.transform; return [t.pos[0] + 2.6, t.pos[2]]; })();   // its body's centre in the world
@@ -445,7 +445,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());
-  const step = (actor, tool, args) => { now += 100; const r = request(w, actor, tool, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
+  const step = (actor, verb, args) => { now += 100; const r = request(w, actor, verb, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
     has: (id, what, comp) => d.things.some((c) => c.id === id && c.what === what && (comp === undefined || c.comp === comp)) }; };
   step("ann", "create-world", { title: "vdiff" });
   const v1 = step("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
@@ -484,7 +484,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // the planner's ops: a set's value / a delete of the component
   const val = (r) => r.ops[0]?.verb === "set" ? r.ops[0].args.value : r.ops[0]?.verb === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
-  const pw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "pivots"), actor, tool, args); };
+  const pw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "pivots"), actor, verb, args); };
   pw("ann", "create-world", { title: "pivots" });
   pw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the authority takes a pivot {pos: [x,y,z]}");
@@ -523,7 +523,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
-{ const tw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "turns"), actor, tool, args); };
+{ const tw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "turns"), actor, verb, args); };
   const qm = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
   const aa = (x, y, z, deg) => { const h = deg * Math.PI / 360; return [x * Math.sin(h), y * Math.sin(h), z * Math.sin(h), Math.cos(h)]; };
   const same = (a, b) => Math.abs(Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]) - 1) < 1e-6;
@@ -547,7 +547,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(tw("ann", "turn", { id: "plank", axis: "sideways", deg: 10 })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, space: "screen" })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, about: "pivot" })) === "shape", "TN6 a bad axis, space, or about-pivot without one is refused, naming the fix"); }
 
 // ---- UR: undo after a redo, and an undo that says what it undid (agent lab round 2, Hazel #1) ----
-{ const uw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "undoredo"), actor, tool, args); };
+{ const uw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "undoredo"), actor, verb, args); };
   const px = () => openWorld(root, "undoredo").state().entities.box?.c.transform.pos[0];
   uw("ann", "create-world", { title: "undoredo" });
   uw("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -564,7 +564,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(again.refused?.code === "nothing" && /already undone \(by undo \d+, then redo \d+, then undo \d+\)/.test(again.refused.reason), "UR5 undo {act} of something already undone names the chain", again.refused); }
 
 // ---- HG: a hung thing swings from the underside of what's above it, and everyone reads the same hinge (Rowan) ----
-{ const hw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "hinge"), actor, tool, args); };
+{ const hw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "hinge"), actor, verb, args); };
   const { evalWholeMotion, qApply } = await import("../../client/lib/motioneval.js");
   hw("ann", "create-world", { title: "hinge" });
   hw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -587,7 +587,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- SW: a push re-expresses the swing at the push instant, as v1's pendulumImpulse does (v4-vs-v1 review 10-06 #5):
 // no jump at the push, and pushing in rhythm builds. v4 kept the old phase with a new t0 and halved amp (a snap). ----
-{ const sw = (actor, tool, args = {}) => { process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "swingpush"), actor, tool, args); };
+{ const sw = (actor, verb, args = {}) => { process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "swingpush"), actor, verb, args); };
   const { pendulumTheta } = await import("../../client/lib/motioneval.js");
   T += 100; sw("ann", "create-world", { title: "swingpush" });
   T += 100; sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -627,7 +627,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- DU: disk practice (platforms review 10-06 #5): a torn last line is cut at open, not kept as a malformed entry
 // forever; a blob whose bytes don't match its name is rewritten, not skipped forever ----
-{ const du = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "durable"), actor, tool, args); };
+{ const du = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "durable"), actor, verb, args); };
   du("ann", "create-world", { title: "durable" });
   du("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const lp = root + "worlds/durable.jsonl"; const n0 = openWorld(root, "durable").entries.length;
@@ -647,7 +647,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 { const { warningText } = await import("../../shared/protocol/refusal.js");
   ok(warningText({ id: "box", kind: "out-of-bounds", bounds: { min: [-20, 0, -20], max: [20, 12, 20] } }) === "box is outside the world's bounds (x -20…20, y 0…12, z -20…20 m)", "WT1 out-of-bounds says which bounds");
   ok(warningText({ id: "cup", kind: "overlap", with: "x--5269616e6e6f6e", by: 0.1 }) === "cup overlaps Riannon by 0.1 m", "WT2 an overlap reads as a sentence, names decoded");
-  const ww = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "warnwords"), actor, tool, args); };
+  const ww = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "warnwords"), actor, verb, args); };
   ww("ann", "create-world", { title: "warnwords" });
   const far = ww("ann", "create", { id: "far", model: "crate", components: { transform: { pos: [500, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   ok((far.warnings ?? []).some((w) => w.kind === "out-of-bounds" && w.bounds?.max), "WT3 the authority's out-of-bounds warning carries the bounds", far.warnings);
@@ -660,7 +660,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- HS: where a value came from, and one thing's history (R 10-04: recent by default, deeper on request) ----
 { const { enc } = await import("../../shared/protocol/names.js");
-  const hw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "histw"), actor, tool, args); };
+  const hw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "histw"), actor, verb, args); };
   hw("ann", "create-world", { title: "histw" });
   hw("ann", "set", { id: "@world", component: "roles:" + enc("Rowan"), value: { role: "builder" } });
   hw("ann", "create", { id: "box", model: "crate", components: { label: "box", transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -684,7 +684,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- H7 (review F3, 2026-10-05): an id is never reused by a NEW thing, but undo brings back the same thing ----
 { let now = T + 40000; const w = openLive(root + "h7/", "h7", { kindOf: LABKIND, now: () => now });
-  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "h7" }); call("ann", "create", { id: "desk", model: "table", place: { at: [0, 3] } });
   call("ann", "create", { id: "mug", model: "crate", place: { on: "desk" } });
   const del = call("ann", "delete", { id: "desk" });
@@ -706,7 +706,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(L({ kind: "spot", angle: 2 }).refused?.code === "bounds", "LT2 a cone wider than a hemisphere (half-angle > π/2) is refused");
   ok(L({ kind: "point", color: 0x1000000 }).refused?.code === "bounds", "LT2 a color past 0xffffff is refused"); }
 // SK: sockets — a named attachment point; with body, a person attaches by using it (chair, swing, saddle, car seat)
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, tool, args) => request(openWorld(root, "sockets"), actor, tool, args);
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "sockets"), actor, verb, args);
   R("ann", "create-world", { title: "sockets" });
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
@@ -741,7 +741,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.input?.move === "drive" && att.reach?.leftHand?.vr === "near" && att.fromSeat === true && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the body does there", att); }
 const w0 = () => openWorld(root, "tier0");
 // T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier0"), "ann", tool, args);
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (verb, args) => request(openWorld(root, "tier0"), "ann", verb, args);
   R("create-world", { title: "tier0" }); R("create", { id: "hearth", model: "crate" });
   const S = (id, comp, value) => R("set", { id, component: comp, value }).refused?.code;
   ok(S("@world", "terrain", { kind: "noise", segments: 100000 }) === "bounds", "T0a terrain segments past 512 (10^10 vertices on every client) is refused");
@@ -759,7 +759,7 @@ const w0 = () => openWorld(root, "tier0");
   const q = w0().state().entities.hearth?.c.transform?.q;
   ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the authority and the renderer then agree)", q); }
 // T1 (component review, tier 1): components say what they are, where they go, and nothing the renderer reads is refused
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier1"), "ann", tool, args);
+{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (verb, args) => request(openWorld(root, "tier1"), "ann", verb, args);
   R("create-world", { title: "tier1" }); R("create", { id: "chair", model: "crate" });
   const S = (id, comp, value) => R("set", { id, component: comp, value });
   for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["blueprints:foo", { name: "f" }], ["sky", { hours: 7 }]])
@@ -771,7 +771,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");
   ok(S("chair", "particles", { preset: "fire", texture: "../../etc/x.png" }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 // CP (Commons v1→v4 parity audit, 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
-{ const R = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, tool, args); };
+{ const R = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, verb, args); };
   R("ann", "create-world", { title: "cp" });
   R("ann", "create", { id: "rock", model: "crate" });
   const u0 = R("ann", "use", { id: "rock" });
@@ -825,7 +825,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
 // the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
-{ const cw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "captions"), actor, tool, args); };
+{ const cw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "captions"), actor, verb, args); };
   cw("ann", "create-world", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
   const sess = "2026-10-07T00:00:00.000Z-abc123";
@@ -851,7 +851,7 @@ const w0 = () => openWorld(root, "tier0");
 
 // ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
 // imported-bans:<id>, imported-behavior:<name> or imported:* and wake readers that no longer mean anything) ----
-{ const iw = (actor, tool, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imported"), actor, tool, args); };
+{ const iw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imported"), actor, verb, args); };
   iw("ann", "create-world", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
   const tries = [["box", "imported-guard", true], ["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported-epoch", { sim: "eidosim@0.5.0" }]];
@@ -860,5 +860,5 @@ const w0 = () => openWorld(root, "tier0");
   ok(iw("ann", "set", { id: "box", component: "imported:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
   { const d = iw("ann", "delete", { id: "box", component: "imported:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
 
-console.log(`[door-check] ${pass} passed, ${fail} failed`);
+console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

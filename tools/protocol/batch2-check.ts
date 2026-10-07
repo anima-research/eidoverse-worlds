@@ -145,8 +145,8 @@ function openWorld(name: string) {
 let T = 1800000000000, N = 0;
 function session() {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, tool: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
-    try { return D.request(W(), actor, tool, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+    try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: W, now: () => T, entries: () => W().entries };
 }
 const code = (r: any) => r?.refused?.code;

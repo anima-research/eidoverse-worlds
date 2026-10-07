@@ -33,7 +33,7 @@ import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
-const now = () => Number(process.env.PROTOCOL_NOW ?? Date.now()) + 500;   // the door's clock (scratchdoor steps it per request)
+const now = () => Number(process.env.PROTOCOL_NOW ?? Date.now()) + 500;   // the authority's clock (scratchworld steps it per request)
 const ROOT = join(import.meta.dir, '..');
 const PRESETS = JSON.parse(readFileSync(join(ROOT, 'defs/sky/_presets.json'), 'utf8'));
 const PAL = JSON.parse(readFileSync(join(ROOT, 'defs/ground/_palette.json'), 'utf8'));
@@ -61,7 +61,7 @@ console.log('1. the alias both ways, through the real door:');
   const bad: string[] = [];
   let n = 0;
   const refusals: string[] = [];
-  const step = (tool: string, args: any) => { const r = W.call(tool, args); n++; if (!r.ok) { refusals.push(`${tool} ${JSON.stringify(args).slice(0, 50)}: ${r.refused?.reason}`); return; } const b = aliasBad(W.view()); if (b) bad.push(`${tool} ${JSON.stringify(args).slice(0, 60)}: ${b}`); };
+  const step = (verb: string, args: any) => { const r = W.call(verb, args); n++; if (!r.ok) { refusals.push(`${verb} ${JSON.stringify(args).slice(0, 50)}: ${r.refused?.reason}`); return; } const b = aliasBad(W.view()); if (b) bad.push(`${verb} ${JSON.stringify(args).slice(0, 60)}: ${b}`); };
   check('an empty world is an entity with no components (and round-trips to the view\'s nulls)', worldComponents(W.view()).components.length === 0 && aliasBad(W.view()) === null);
   step('weather', { weather: 'rain' });                                          // weather before any sky: the door makes a sky of it
   step('sky', { hours: 8, rate: 24, clouds: 'cumulus', exposure: 0.8 });
@@ -166,7 +166,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   check('the panel\'s args and the World tiles\' are one recipe: terrainArgs = what groundpanel wrote',
     canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: PAL.tints.meadow.layer, repeat: 16 }] })
     && canon(grassArgs(PAL, { ...paletteDefaults(PAL), plant: 'meadow' })) === canon({ ...PAL.plantings.meadow.args, height: PAL.grassHeight.meadow, density: PAL.grassDensity.normal }));
-  check('weather picks are the door\'s weather tool, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ verb: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
+  check('weather picks are the authority\'s weather verb, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ verb: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
 }
 
 // ------------------------------------------------------------ 3. edits, undo, the owner gate
@@ -256,7 +256,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   // the agent's world is the v4 view; its door is this scratch world's real door (dry runs answered by the door itself)
   const sync = () => { A.st = W.view(); A.reconcileFromFold(); };
   sync();
-  A.door = async (tool: string, args: any) => W.call(tool, args);
+  A.door = async (verb: string, args: any) => W.call(verb, args);
   const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
   const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
   check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));

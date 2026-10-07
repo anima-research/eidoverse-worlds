@@ -140,7 +140,7 @@ try {
   // fingers and arms on the normalized rig. Angles in degrees, distances in metres.
   if (XR) stage('grab: (the desktop grab stages are skipped in an XR boot)', true);
   if ((!ONLY.length || ONLY.includes('grab')) && !XR) {
-    let gid = 500; const gdoor = async (tool, args) => { const id = ++gid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+    let gid = 500; const gdoor = async (verb, args) => { const id = ++gid; ws.send(JSON.stringify({ type: 'request', id, verb, args }));
       for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: false, refused: { reason: 'no answer' } }; };
     const gsleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -299,7 +299,7 @@ try {
   // grip is read back in the world and the error corrected (twice), so the probe never assumes the mapping. Headless XR
   // ticks slowly (SwiftShader, both eyes): every step waits on session frames, never on the clock.
   if (XR) {
-    let xid = 800; const xdoor = async (tool, args) => { const id = ++xid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+    let xid = 800; const xdoor = async (verb, args) => { const id = ++xid; ws.send(JSON.stringify({ type: 'request', id, verb, args }));
       for (let i = 0; i < 80; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
       return { ok: false, refused: { reason: 'no answer' } }; };
     const xsleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -440,7 +440,7 @@ try {
       const box = []; s.onmessage = (ev) => box.push(JSON.parse(String(ev.data)));
       s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, v4fold: true }));
       for (let i = 0; i < 60 && !box.some((m) => m.type === 'snapshot'); i++) await rs(100);
-      let n = 0; const req = async (tool, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+      let n = 0; const req = async (verb, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'request', id, verb, args }));
         for (let i = 0; i < 80; i++) { const m = box.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await rs(100); } return { ok: false, refused: { reason: 'no answer' } }; };
       await settle();   // their body compiles on this page now: wait it out once, before anything is clicked
       return { req, you: box.find((m) => m.type === 'snapshot')?.v4?.you, close: () => s.close() }; };
@@ -463,7 +463,7 @@ try {
     const closeMenus = () => race(pg.evaluate(() => { document.querySelector('.sp-ctx')?.remove(); const s = document.getElementById('person-sheet'); if (s) { s.hidden = true; s.classList.remove('open'); } document.getElementById('person-form')?.remove(); }));
     const click = async (sel, opts) => { await pg.locator(sel, opts).first().click(); };   // settled once per arrival, not per click
     const dockHas = (id) => race(pg.evaluate((id) => { const b = document.querySelector(`button[data-toggles="${id}"]`); return !!b && !b.hidden; }, id));
-    const pageDoor = (tool, args) => race(pg.evaluate(({ tool, args }) => import('/lib/net.js').then((m) => m.sendRequest(tool, args)), { tool, args }), 20000);
+    const pageDoor = (verb, args) => race(pg.evaluate(({ verb, args }) => import('/lib/net.js').then((m) => m.sendRequest(verb, args)), { verb, args }), 20000);
 
     if (ONLY.includes('roles')) {   // ---------------- Ann's page (the owner)
       const cal = await sock('Cal');
@@ -604,9 +604,9 @@ try {
   check('rocket: …and standing up makes the body upright again', stood != null && stood > 0.999, stood);
   stage('physics: frame cost of thingphysics so far (reported)', true, await race(pg.evaluate(() => globalThis.EW.physics.body())).catch(() => null));
   // ---- physics (design 20 on the client) ----
-  { let n = 1000; const bobReq = (tool, args) => new Promise((res) => { const id = ++n; const t = setTimeout(() => res({ ok: false, refused: { code: 'timeout' } }), 8000);
+  { let n = 1000; const bobReq = (verb, args) => new Promise((res) => { const id = ++n; const t = setTimeout(() => res({ ok: false, refused: { code: 'timeout' } }), 8000);
       const h = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === 'reply' && m.id === id) { clearTimeout(t); ws.removeEventListener('message', h); res(m.reply); } };
-      ws.addEventListener('message', h); ws.send(JSON.stringify({ type: 'request', id, verb: tool, args })); });
+      ws.addEventListener('message', h); ws.send(JSON.stringify({ type: 'request', id, verb, args })); });
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const LOGF = join(worlds, 'garden', 'world.jsonl'); const rests = () => restsOf(readLog(readFileSync(LOGF)));
     const shots = process.env.PROBE_SHOTS;
@@ -726,7 +726,7 @@ try {
   // inside it), Ann sits on it with her own /sit, and what her body does is read off the live skeleton and mixer.
   const SHOTS = process.env.PROBE_SHOTS;
   let rid = 10;
-  const door = async (tool, args) => { const id = ++rid; ws.send(JSON.stringify({ type: 'request', id, verb: tool, args }));
+  const door = async (verb, args) => { const id = ++rid; ws.send(JSON.stringify({ type: 'request', id, verb, args }));
     for (let i = 0; i < 60; i++) { const m = inbox.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await new Promise((r) => setTimeout(r, 100)); }
     return { ok: false, refused: { reason: 'no answer' } }; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

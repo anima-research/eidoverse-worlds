@@ -27,10 +27,10 @@ let worldN = 0;
 export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start = 1_800_000_000_000 } = {}) {
   const root = scratch(tag); const name = `w${++worldN}`;
   let T = start, w = null;
-  const call = (tool, args = {}, at = null) => {
+  const call = (verb, args = {}, at = null) => {
     T = at ?? T + 1000; process.env.PROTOCOL_NOW = String(T);
     w ??= Object.assign(openWorld(root, name), { catalogue: ANY_MODEL });
-    return request(w, owner, tool, args);
+    return request(w, owner, verb, args);
   };
   const founded = call("create-world", { title: tag });
   if (!founded.ok) throw new Error(`agentOnDoor: new refused: ${JSON.stringify(founded.refused)}`);
@@ -59,8 +59,8 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
       await sync(false);
     },
     /** one door request (at `at`, door time), then the agent's next view of it (live unless {live: false}) */
-    act: async (tool: string, args: any, { who = "someone", at = null as number | null, live = true } = {}) => {
-      const r = call(tool, args, at);
+    act: async (verb: string, args: any, { who = "someone", at = null as number | null, live = true } = {}) => {
+      const r = call(verb, args, at);
       await sync(live, who, T);
       return r;
     },

@@ -1,7 +1,7 @@
 // tools/protocol/scratchworld.ts — a scratch v4 world behind the real authority, for the planner tests (tools/*-test.ts) that
 // check the RESULT of an edit: seed the records a test reads (view form), send the planner's requests, read the
 // v4 state back as the view the planners read (shared/protocol/view.js viewState). Same pattern as tools/protocol/authority-check.ts:
-// request(openWorld(root, name), actor, tool, args), a `new` first to found the world (its founder is its owner).
+// request(openWorld(root, name), actor, verb, args), a `create-world` first to found the world (its founder is its owner).
 // @ts-nocheck
 import { scratch } from "./common.ts";
 import { request, LAB_CATALOGUE } from "../../shared/protocol/authority.js";
@@ -26,13 +26,13 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
   // one world object for the scratch world's life (its state is kept incrementally); the authority's clock steps a second per
   // request so a long sweep stays inside the authority's rate budget (60 entries / 10 s per actor)
   let w = null;
-  const call = (tool, args = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); w ??= open(root, name); return request(w, actor, tool, args); };
+  const call = (verb, args = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); w ??= open(root, name); return request(w, actor, verb, args); };
   const founded = call("create-world", { title });
   if (!founded.ok) throw new Error(`scratch world: new refused: ${JSON.stringify(founded.refused)}`);
   const W = {
     name, root, owner,
     call,
-    /** send one planned request ({tool, args}); extra args (throughLock, dry, expect) ride along. */
+    /** send one planned request ({verb, args}); extra args (throughLock, dry, expect) ride along. */
     send: (req, extra = {}, actor = owner) => (req ? call(req.verb, { ...req.args, ...extra }, actor) : { ok: true, noop: true }),
     /** several planned requests as ONE gesture (shared/protocol/requests.js batch semantics: one act). */
     sendAll: (reqs, extra = {}, actor = owner) => {
