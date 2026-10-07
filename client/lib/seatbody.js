@@ -20,7 +20,7 @@ import { xrHandWorld } from './xrbody.js';
 const D2R = Math.PI / 180;
 // a neck turns about this far whatever a socket allows (the socket's look narrows it, never widens it)
 const NECK = { yaw: [-110, 110], pitch: [-60, 70] };
-const EASE_ON = 0.35, WALK = 1.4;
+const EASE_ON = 0.35, WALK = 1.4, ENTER_WAIT = 2;
 const smooth = (u) => u * u * (3 - 2 * u);
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -106,18 +106,22 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
   if (st.sig !== sig) { st.sig = sig; releaseLimbs(av, st); av.setSeatHold(body.hold); }
 
   st.now = nowMs;   // the clock this frame's pose was read at (a probe compares the closed forms at exactly this time)
+  // the enter and leave clips load as soon as the body heads for the seat; the enter waits for its clip (up to
+  // ENTER_WAIT s at the approach point), so the carry and the clip start together
   const enterAction = body.enter ? av.ensureClip(body.enter) : null;
-  const de = body.enter ? (enterAction ? enterAction.getClip().duration : 1.2) : EASE_ON;
+  if (body.leave) av.ensureClip(body.leave);
+  const de = st.de = body.enter ? (enterAction ? enterAction.getClip().duration : 1.2) : EASE_ON;
   const t = st.instant ? Infinity : Math.max(0, (nowMs - st.t0) / 1000);
+  if (st.enterAt == null && t >= st.da && (!body.enter || enterAction || t - st.da > ENTER_WAIT)) st.enterAt = Number.isFinite(t) ? t : 0;
   const pos = new THREE.Vector3(), q = new THREE.Quaternion();
   let stage = 'seated';
-  if (t < st.da) {
-    const u = smooth(t / st.da);
-    pos.copy(st.from).lerp(st.A, u); q.copy(st.fromQ).slerp(st.AQ, u);
-    av.setSeatBlend([['walk', 1]]);
+  if (t < st.da || st.enterAt == null) {
+    const u = st.da ? smooth(Math.min(1, t / st.da)) : 1;
+    pos.copy(st.from).lerp(st.A ?? st.from, u); q.copy(st.fromQ).slerp(st.AQ ?? st.fromQ, u);
+    av.setSeatBlend([[t < st.da ? 'walk' : 'idle', 1]]);
     stage = 'approach';
-  } else if (t < st.da + de) {
-    const u = (t - st.da) / de;
+  } else if (t < st.enterAt + de) {
+    const u = (t - st.enterAt) / de;
     pos.copy(st.A ?? st.from).lerp(_p, smooth(u)); q.copy(st.AQ ?? st.fromQ).slerp(_q.fromArray(sw.q), smooth(u));
     if (body.enter) av.setSeatBlend([[body.enter, 1]], u); else av.setSeatBlend(ev.clips, ev.time === 'phase' ? signals.phase : null);
     stage = 'enter';
@@ -125,6 +129,7 @@ export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, 
     pos.copy(_p); q.fromArray(sw.q);
     av.setSeatBlend(ev.clips, ev.time === 'phase' ? signals.phase : null);
   }
+  st.stage = stage;
   av.postureSlot = body.clip;   // the plate reads posture from it (seated plates hang lower)
 
   // ---- the head: where the occupant looks (their aim, from presence), within the socket's limits and a neck's

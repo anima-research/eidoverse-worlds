@@ -268,8 +268,9 @@ try {
     const at = await ev(() => { const EW = globalThis.EW, T = EW.THREE; const me = EW.me(); const h = me.vrm.humanoid; const s = EW.entities.get('plinth'); s.updateWorldMatrix(true, false);
       const l = h.getRawBoneNode('leftFoot').getWorldPosition(new T.Vector3()), rr = h.getRawBoneNode('rightFoot').getWorldPosition(new T.Vector3());
       return { feet: [(l.x + rr.x) / 2, (l.y + rr.y) / 2, (l.z + rr.z) / 2], sock: new T.Vector3(0, 2.0, 0).applyMatrix4(s.matrixWorld).toArray(), clip: EW.myState.clip }; });
+    const said = sat ? null : await ev(() => document.body.innerText.split('\n').filter((l) => /plinth|seat|refused|sit|stand/i.test(l)).slice(-5)).catch(() => null);
     check('anchor: feet (a standing place) — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
-      !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { rest, at });
+      !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.comps.get('plinth')?.sockets ?? null) });
     await shoot('stand-on-plinth');
     await stand();
   }
@@ -307,15 +308,20 @@ try {
     const t0 = Date.now();
     while (Date.now() - t0 < 9000) {
       const x = await ev(() => { const EW = globalThis.EW, me = EW.me(); const st = me._seatState; const a = me.actions.stand_to_sit;
-        return st ? { t: st.now - st.t0, enter: a ? +a.getEffectiveWeight().toFixed(3) : null, et: a ? +(a.time / a.getClip().duration).toFixed(3) : null, root: me.root.position.toArray().map((v) => +v.toFixed(3)), clip: EW.myState.clip } : null; }).catch(() => null);
+        // u: how far the carry is at this frame's seat clock (when the enter began, how long it lasts), read off the seat
+        const t = st ? (st.now - st.t0) / 1000 : null; const u = st?.enterAt != null ? (t - st.enterAt) / st.de : null;
+        return st ? { stage: st.stage, t, u: u != null ? +u.toFixed(3) : null, enter: a ? +a.getEffectiveWeight().toFixed(3) : null, et: a ? +(a.time / a.getClip().duration).toFixed(3) : null, root: me.root.position.toArray().map((v) => +v.toFixed(3)), clip: EW.myState.clip } : null; }).catch(() => null);
       if (x) trace.push(x);
-      if (x && x.clip === 'sitchair' && trace.some((y) => y.clip === 'stand_to_sit')) break;   // on, after the enter
+      if (x && x.stage === 'seated' && trace.some((y) => y.stage === 'enter')) break;   // on, after the enter
       await sleep(120);
     }
-    const mid = trace.filter((x) => x.clip === 'stand_to_sit' && x.enter > 0.9);
-    const ets = mid.map((x) => x.et);
-    check('enter: the enter clip plays while she is carried on (stand_to_sit holds the body, its time rising with the carry)',
-      mid.length >= 2 && ets.every((v, i) => i === 0 || v >= ets[i - 1]) && ets[ets.length - 1] - ets[0] > 0.2, trace.slice(0, 12));
+    // every frame in the carry: the enter clip holds the body and its time IS the carry's progress (a slow headless
+    // frame rate may land only a frame or two inside the clip's 2.2 s; each one is checked)
+    const mid = trace.filter((x) => x.clip === 'stand_to_sit');
+    check('enter: the enter clip plays while she is carried on (stand_to_sit holds the body, its time locked to the carry)',
+      mid.length >= 1 && mid.every((x) => x.enter > 0.9 && x.u != null && Math.abs(x.et - x.u) < 0.02), trace.slice(0, 14));
+    const order = trace.map((x) => x.stage).filter((v, i, a) => v !== a[i - 1]);
+    check('enter: …in order: brought to the approach point, carried on, seated', JSON.stringify(order) === '["approach","enter","seated"]', order);
     const end = trace[trace.length - 1];
     check('enter: …and it ends seated, the seat\'s own pose holding', end?.clip === 'sitchair', end);
     await stand();
