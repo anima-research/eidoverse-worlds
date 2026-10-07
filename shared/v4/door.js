@@ -192,7 +192,10 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
 const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
-const scratch = (st, ops) => applyOps(st, ops);
+// a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values
+// are never mutated in place, as a live world's states already share them). A deep copy per preview made a batch of 50
+// creates copy a 2 000-thing world 100 times (review 10-06 S0-2).
+const scratch = (st, ops) => { const s = applyCow(cowState(st), ops); if (VOLATILE.has(st.entities)) VOLATILE.add(s.entities); return s; };
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "thing";
 
 // ---------- math (yaw-only rotation is enough for placement in this lab; q is stored whole) ----------
@@ -1570,8 +1573,13 @@ function presentOf(w) { const out = new Map();
   for (const p of w.present?.() ?? []) if (p && typeof p.id === "string" && !out.has(p.id)) out.set(p.id, Array.isArray(p.at) && p.at.length === 3 && p.at.every(Number.isFinite) ? p.at : null);
   return out; }
 const scriptMemo = new WeakMap();
-function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out = [];
-  for (const [id, e] of Object.entries(st.entities)) for (const [k, v] of Object.entries(e.c)) if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) out.push({ id, name: k.slice(7), v });
+// per state, from each entity's own list (cached on its entity object: a write's next state re-reads only what it touched;
+// review 10-06 S0-2, every write re-scanned every component of every thing)
+const scriptsOfEnt = new WeakMap();
+function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out = []; const vol = VOLATILE.has(st.entities);
+  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; let mine = vol ? null : scriptsOfEnt.get(e);
+    if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
+    for (const x of mine.list) out.push(x); }
   scriptMemo.set(st, out); return out; }
 // budgets (door practice, stated in @world.scripts; §3d M3): per script per minute; per world per hour; each sponsor a fair
 // share of the world's hour, so one builder's chatty scripts can't starve everyone else's (and spreading a script over
@@ -2818,11 +2826,14 @@ const TOOLS = {
     const st = w.state(); const ids = Object.keys(st.entities).filter((k) => k !== "@world" && !st.entities[k].c.parent);
     const lim = a.limit ?? 40;
     const live = livePoses(w.sim());
-    const tree = (id, d) => [{ ...describe(st, id, live, w.presence.holds), depth: d }, ...Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === id).flatMap((k) => tree(k, d + 1))];
-    const all = ids.flatMap((id) => tree(id, 0));
+    // the tree in the same order as ever, through the index's children map; only what's shown is described (review 10-06:
+    // a child scan per node and a description of every thing made look O(N²) on a big world)
+    const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };
+    ids.forEach((id) => tree(id, 0));
+    const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
     const P = w.presence; const bodies = Object.entries(P.bodies).map(([id, b]) => ({ id, at: b.at, shield: shieldOf(P, id),
       ...(b.poseBy ? { posedBy: b.poseBy } : {}), ...(b.draggedBy ? { draggedBy: b.draggedBy } : {}), touchedBy: Object.entries(P.reaches ?? {}).filter(([, r]) => r.to === id).map(([k]) => k) }));
-    return { ok: true, things: all.slice(0, lim), ...(all.length > lim ? { truncated: true, total: all.length } : {}), bodies };
+    return { ok: true, things: all.slice(0, lim), ...(total > lim ? { truncated: true, total } : {}), bodies };
   },
   inspect(w, actor, a) {
     const st = w.state(); const e = st.entities[a.id];
@@ -2973,15 +2984,21 @@ const TOOLS = {
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
   batch(w, actor, a) {
     return commit(w, actor, "batch", a, (ctx) => {
-      const all = []; let st = ctx.st;
+      // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
+      // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
+      // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
+      const all = []; let st = ctx.st; let work = null;
+      const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
       (a.ops ?? []).forEach((o, i) => {
+        if (clockMs() > WORK.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with v1's merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.tool];
         if (!B) refuse("shape", `batch op ${i}: '${o.tool}' can't go in a batch`, "batch takes create, set, delete, place, sky, weather");
         const sub = { ...ctx, st };
         let ops; try { ops = B(sub, o.args ?? {}); } catch (e) { if (e instanceof Refusal) { e.op = i; } throw e; }
-        all.push(...ops); st = scratch(st, ops); sub.refs.forEach((r) => ctx.refs.add(r));
+        if (!work) { work = cowState(ctx.st); VOLATILE.add(work.entities); }
+        all.push(...ops); st = applyCow(work, ops); forget(st); sub.refs.forEach((r) => ctx.refs.add(r));
         if (sub.cap) ctx.cap = sub.cap;
       });
       return all;
