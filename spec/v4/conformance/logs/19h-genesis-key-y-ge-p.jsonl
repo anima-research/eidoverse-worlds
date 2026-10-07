@@ -1,3 +1,0 @@
-{"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"version": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:7v_______________________________________38"}}
-{"world": "sha256:6a682c35c265d4d11ccd2aaeb50736626a04caacc03aaed915b28a4a787df7aa", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
-{"world": "sha256:6a682c35c265d4d11ccd2aaeb50736626a04caacc03aaed915b28a4a787df7aa", "kind": "change", "ts": 1, "actor": "system", "cause": 1, "verb": "create", "body": {"id": "a"}}

@@ -31,7 +31,7 @@ import { globalBans, saveGlobalBans } from "./moderation.ts";
 // join's held-whisper delivery imports these back — one-way, like
 // routes.ts's pendingCaptures.
 export const pendingWhispers = new Map<string, unknown[]>();
-/** Held whispers are keyed by the recipient's IDENTITY (their v4 id), never a display name: anyone can join wearing an
+/** Held whispers are keyed by the recipient's IDENTITY (their actor id), never a display name: anyone can join wearing an
  *  absent person's name (security review 10-06 pass 2, H-B: a second "Riannon" received the first one's whisper). */
 export const whisperKey = (world: string, recipientId: string) => `${world}\u0000${recipientId}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
@@ -107,13 +107,13 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
     const text = String(msg.text ?? "").slice(0, LIMITS.WHISPER_LEN);
     if (!to || !text) return;
-    // a v4 world's sanctions reach whispers too (research roles §5): a ghost or a role-less person doesn't talk, and a
+    // a world's sanctions reach whispers too (research roles §5): a ghost or a role-less person doesn't talk, and a
     // chat mute leaves only whispers to someone holding a moderation power (so they can ask why); a ghost isn't sent any
     const log = c.world.log;
-    if (log && c.v4id) {
-      if (log.ghostHere(c.v4id) || log.rightsOf(c.v4id).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
-      const m = log.mutedHere(c.v4id, "chat");
-      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.v4id && (() => { const e = log.rightsOf(o.v4id); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
+    if (log && c.actorId) {
+      if (log.ghostHere(c.actorId) || log.rightsOf(c.actorId).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
+      const m = log.mutedHere(c.actorId, "chat");
+      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.actorId && (() => { const e = log.rightsOf(o.actorId); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
         if (!mod) { ws.send(JSON.stringify({ type: "error", error: `you're muted in this world's chat until ${new Date(m.until).toISOString().slice(11, 16)} UTC — you may whisper to a moderator` })); return; } }
     }
     const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
@@ -396,7 +396,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world) return;
     // v4: the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
-    if (c.world.log) { const e = c.v4id ? c.world.log.rightsOf(c.v4id) : null;
+    if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
       if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.log!.sanctions();
     const dir = directoryFor(WORLDS_DIR);

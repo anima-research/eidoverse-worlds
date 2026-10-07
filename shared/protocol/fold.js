@@ -1,12 +1,16 @@
-// The v4 fold (PROTOCOL-v4 §1 L1, §2.3, §2.4). It knows nothing about any component type: it creates entities,
+// The fold (PROTOCOL §1 L1, §2.3, §2.4). It knows nothing about any component type: it creates entities,
 // replaces component values, deletes components and entities. It reads only the entry: never a blob, never the authority.
 // It is total: a malformed entry shapes nothing and is named in diagnostics, never in the world. A version it
 // doesn't implement gives "unknown version" and no world.
-// Ported from the v4 lab (code/v4-lab/fold.js @ 11db981). Engine changes: sha256 comes from ./hash.js (sync, no
+// Ported from the protocol lab (the protocol lab's fold.js @ 11db981). Engine changes: sha256 comes from ./hash.js (sync, no
 // node: imports) so the browser imports this file as-is. Nothing else differs; the conformance suite (Python
 // reference reader vs this file) is tools/protocol/compare.ts.
 import { sha256 } from "./hash.js";
 
+// §2.4: genesis says which log this is and which protocol reads it, in upstream's established shape: {dialect:
+// "eidoverse-log", v: N}. v 1–2 was the first world log, 3 the deterministic-sim amendment, 4 this protocol (spec/PROTOCOL.md,
+// "Version history"). The number lives there and nowhere else.
+export const DIALECT = "eidoverse-log";
 export const VERSION = 4;
 export const MINORS = new Set([0]); // §3d H6: a reader that doesn't know the minor refuses the world (L1: no world)
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
@@ -193,10 +197,10 @@ export function shapeOne(verb, b, inner, where) {
 }
 
 // ---------- genesis (§2.4; §3d C1, H5, H6) ----------
-// body {version: 4, minor, nonce, rewind_window?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
+// body {dialect: "eidoverse-log", v: 4, minor, nonce, rewind_window?, parent?, owners: [[<key>…], …], quorum?, sequencer}. A malformed
 // genesis means "no world"; an unknown minor means "unknown version". The minor is read before the shape, so a later
 // minor may add fields; within a known minor the fields are exact (a typo such as `rewind_n` is not a default).
-const GENESIS_FIELDS = new Set(["version", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
+const GENESIS_FIELDS = new Set(["dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"]);
 // canonical unpadded base64url (one spelling per byte string), or null
 export function b64uDecode(s) {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
@@ -241,7 +245,7 @@ export function checkGenesis(b) {
 // ---------- the fold ----------
 export function emptyState() {
   const entities = Object.create(null); entities["@world"] = { born: 0, c: Object.create(null) }; // live from genesis
-  return { status: "ok", version: VERSION, worldId: null, entities, diagnostics: [] };
+  return { status: "ok", v: VERSION, worldId: null, entities, diagnostics: [] };
 }
 // entries: what readLog returned, or entry objects. `until`: fold only change entries with seq <= until (purges from
 // the whole log still apply: a purged value is absent at every point in time).
@@ -253,8 +257,8 @@ export function fold(entries, { until = Infinity } = {}) {
   });
   const g = ok[0];
   if (!g || g.kind !== "genesis") { d(0, "no-genesis", g ? `entry 0 kind=${g.kind}` : "entry 0 missing or malformed"); return { ...st, status: "no-world", entities: null }; }
-  if (g.body.version !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.version)); return { ...st, status: "unknown-version", entities: null, version: g.body.version }; }
-  try { if (checkGenesis(g.body) === "unknown-minor") { d(0, "unknown-minor", JSON.stringify(g.body.minor)); return { ...st, status: "unknown-version", entities: null, version: g.body.version }; } }
+  if (g.body.dialect !== DIALECT || g.body.v !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.dialect === DIALECT ? g.body.v : g.body.dialect) ?? "missing"); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; }
+  try { if (checkGenesis(g.body) === "unknown-minor") { d(0, "unknown-minor", JSON.stringify(g.body.minor)); return { ...st, status: "unknown-version", entities: null, v: g.body.v }; } }
   catch (x) { if (!(x instanceof Malformed)) throw x; d(0, "malformed:" + x.code, x.detail); return { ...st, status: "no-world", entities: null }; }
   st.worldId = worldIdOf(g);
   for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;

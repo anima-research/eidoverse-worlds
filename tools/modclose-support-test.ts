@@ -67,9 +67,9 @@ warden.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m)
 const wardenReq = async (verb: string, args: any) => { const id = `w${++rq}`; warden.send(JSON.stringify({ type: "request", id, verb, args }));
   for (let i = 0; i < 60 && !results.has(id); i++) await sleep(50); return results.get(id); };
 /** a person's directory identity, as their arrival announced it (moderation names identities, never typed names) */
-const idOf = (name: string) => seen.find((m) => m.type === "arrive" && m.id === name)?.v4id;
+const idOf = (name: string) => seen.find((m) => m.type === "arrive" && m.id === name)?.actorId;
 await new Promise<void>((res, rej) => {
-  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm", v4fold: true })); res(); };
+  warden.onopen = () => { warden.send(JSON.stringify({ type: "join", world: WORLD, id: "warden", avatar: "eidoverse/assets/vrms/claude.vrm", replica: true })); res(); };
   warden.onerror = () => rej(new Error("warden failed to connect — is the scratch server up?"));
 });
 await sleep(400);

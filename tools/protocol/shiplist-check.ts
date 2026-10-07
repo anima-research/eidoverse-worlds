@@ -132,7 +132,7 @@ const world = (tag = "ship") => SD.scratchWorld(tag);
 // a v1 log (the importer's input): genesis, then entries as the old server wrote them
 const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
   ...entries.map((e, i) => ({ seq: i + 1, ts: 10 + i, actor: "olive", ...e }))];
-const finalOf = (r: any) => r.final.v4;
+const finalOf = (r: any) => r.final.translated;
 
 // ---- O: openable ----
 await C("O0", "the door model is still in the lab models (the asset keeps its name)", () => !!LAB.MODELS?.door);
@@ -333,8 +333,8 @@ await C("P2", "a warning for a person names things by label (an agent's still by
 });
 await C("P3", "the client shows a person the plain words and the authority's warnings (edit sends), and a moderator's warning on the XR quad in a headset", () => {
   const src = (f: string) => { try { return fs.readFileSync(path.join(T, f), "utf8"); } catch { return ""; } };
-  const v4e = src("client/lib/editwrites.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
-  return [/toast\(text, 'warn'/.test(v4e) && /const text = plain\(what, r\)/.test(v4e) && /showWarnings\(what, r\)/.test(v4e) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('v4-warned'/.test(xr),
+  const editSrc = src("client/lib/editwrites.js"), ppl = src("client/lib/people.js"), xr = src("client/lib/xrask.js");
+  return [/toast\(text, 'warn'/.test(editSrc) && /const text = plain\(what, r\)/.test(editSrc) && /showWarnings\(what, r\)/.test(editSrc) && /xrActive\(\)\s*\n?\s*\? chooseXR/.test(ppl) && /bus\.on\('edit-warned'/.test(xr),
     "(the browser stages in tools/protocol/shiplist-probe.ts watch these happen)"];
 });
 

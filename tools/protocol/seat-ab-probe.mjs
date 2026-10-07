@@ -2,7 +2,7 @@
 // usage (one Chrome, under the guard):  perf-guard.sh -t 300 -- bun tools/protocol/seat-ab-probe.mjs [shot.png]
 // The seat is the Commons crate seat (commons-0927 snapshot, entity 0febbb4b: crate_large_red at scale 0.3997, socket
 // {pos [0.343, 1.954, -0.375], yaw 2.09}), written the way the v1→v4 translator writes it ({pos, q, body: {}}), in a
-// scratch v4 world. Ann sits with her own /sit; the probe prints one line, `AB {...}`: her root's world position and
+// scratch world. Ann sits with her own /sit; the probe prints one line, `AB {...}`: her root's world position and
 // rotation, her hips joint, and the socket's world point. Run it at two commits and compare the lines: a change that
 // leaves existing seats alone prints the same numbers. Self-contained on purpose (it runs unchanged at older commits).
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -16,13 +16,13 @@ import { ENGINE_CATALOGUE, warm } from '../../server/modelcatalogue.ts';
 import { directoryFor } from '../../server/directory.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
-const KEY = 'v4seatab';
+const KEY = 'seatab';
 const SHOT = process.argv[2] ?? null;
 const qY = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
-const worlds = mkdtempSync(join(tmpdir(), 'v4-seatab-'));
+const worlds = mkdtempSync(join(tmpdir(), 'seatab-'));
 let world = null, b = null, code = 1;
 try {
-  foundWorld(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
+  foundWorld(join(worlds, 'garden'), 'garden', 'Ann', 'a test garden');
   await warm([MODEL]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
     const ANN = directoryFor(worlds).idOfSub('local:ann');

@@ -1,4 +1,4 @@
-// shared/protocol/roles.js — who may do what in a v4 world (RESEARCH-roles-moderation-2026-10-06; PLAN decisions 10-06).
+// shared/protocol/roles.js — who may do what in a world (RESEARCH-roles-moderation-2026-10-06; PLAN decisions 10-06).
 // Pure data and pure functions: the authority (shared/protocol/authority.js) reads them to admit writes, the server reads them through
 // the authority to tell a client its rights, and the client reads them to draw badges, menus and the roles grid. No state
 // of its own, no clock, no imports: a browser and bun import the same file.

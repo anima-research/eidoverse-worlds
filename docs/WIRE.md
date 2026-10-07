@@ -1,7 +1,7 @@
 # The eidoverse live-wire protocol — inventory freeze v0
 
 Status: **as-built inventory**, first frozen 2026-08-22 (branch
-`overhaul/rimward`), revised for protocol v4. This is the surface a new
+`overhaul/rimward`), revised for the protocol. This is the surface a new
 client builds against. It documents what the wire IS today, quirks included
 — it does not yet rule on what it SHOULD be. Companion to `spec/PROTOCOL.md`,
 which owns the *log* (entry shape, the fold, the authority and its gate); this
@@ -72,7 +72,7 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, v4fold}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `v4fold: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, replica}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
 | `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `v4-result`. There is no other write path. |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
@@ -168,7 +168,7 @@ Reach travels inside presence pose bags (`pose.reach`, relayed opaquely —
 see the amended spec/PROTOCOL.md §5).
 
 Wire additions since the v0 freeze (each flagged in its commit):
-physics (PROTOCOL_v2): `snapshot.v4.sim` (the sim layer's cut: what flies,
+physics (PROTOCOL_v2): `snapshot.cut.sim` (the sim layer's cut: what flies,
 from which launch, adopted by joiners) ·
 `/defs` (the def registry, charter §3 — instance content as data, slice 2) ·
 `/tick` (heartbeat gauges, charter §4 — per-system runs/worst-ms/errors,

@@ -1,7 +1,7 @@
 # The eidoverse world protocol, v4
 
 **License: CC0 1.0 (public domain).** This document and the conformance
-suite beside it (`v4/conformance/`) may be implemented, copied, and modified
+suite beside it (`conformance/`) may be implemented, copied, and modified
 by anyone, from any codebase, under any license, without permission or
 attribution. The reference implementation in this repository is separately
 licensed (AGPL); *the contract is free*. SMTP being free is what made the
@@ -11,7 +11,7 @@ Status: v4.0, normative for logs whose genesis says `version: 4, minor: 0`.
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
 file it. The reference fold is `shared/protocol/fold.js`; a second reader, written
-in Python from this document alone, is `v4/conformance/v4read.py`, and the
+in Python from this document alone, is `conformance/reader.py`, and the
 two agree on every conformance log (§11).
 
 ## 0. The one idea
@@ -332,7 +332,7 @@ all-or-nothing batch through the same `admit`. Every cause chain ends at a
 person. **Replay never re-runs code**: the fold reads the batch. An auditor
 may re-run the source with the recorded event, clock, seed and presence
 reads and compare. The reference API, limits and determinism rules are
-`docs/SCRIPTS-v4.md`.
+`docs/SCRIPTS.md`.
 
 ## 9. Conventions
 
@@ -372,15 +372,15 @@ so every runtime gets the same bits.
 
 ## 11. Conformance
 
-`v4/conformance/` holds the suite:
+`conformance/` holds the suite:
 
 - `EXAMPLE-01.jsonl` folds to status `ok` and digest
   `80a9ef2d5b8ee340e811d6b3068d65b480c6d0e1643e0e1e6b4ab961c317b581`.
 - `logs/` — hostile logs (duplicate keys, `-0`, big integers, surrogates,
   nested batches, bad names, purges of purges, bad genesis shapes…), each
   with the status, digest and diagnostic codes a conforming reader gives.
-- `v4read.py` — the reference reader, written from this document;
-  `test_v4read.py` its tests. `chain.py` and `test_chain.py` — the chain,
+- `reader.py` — the reference reader, written from this document;
+  `test_reader.py` its tests. `chain.py` and `test_chain.py` — the chain,
   signatures and purge (§12). `ed25519/` — the key vectors (§13).
 
 `bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
@@ -399,7 +399,7 @@ argument will be short.
   `salt` (base64url, ≥ 16 random bytes). The fold ignores `salt` and
   `commit`.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
-  Ed25519 over UTF-8 `"eidoverse-v4-head:<world id>:<seq>:<head hex>"`, by
+  Ed25519 over UTF-8 `"eidoverse-head:<world id>:<seq>:<head hex>"`, by
   the sequencer key named in genesis (or the latest handoff). The authority signs
   at least every write it commits. A client SHOULD remember the last `(seq,
   head)` it saw for each world and check that the log extends it on its next
@@ -446,9 +446,9 @@ argument will be short.
 ## 14. Worlds from the first protocol
 
 The first protocol (an untyped verb log) is retired. An old world's log can
-be translated once, one way, into a new v4 world
+be translated once, one way, into a new world
 (`bun tools/protocol/world.ts translate <old> <new>`); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no v4 component ride along as `imported:<name>`. A
-translated world is an ordinary v4 world from then on.
+translated world is an ordinary world from then on.

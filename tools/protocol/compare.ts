@@ -1,12 +1,12 @@
-// The JS fold (shared/protocol/fold.js) against the Python reference reader (spec/v4/conformance/v4read.py, written from
-// PROTOCOL-v4 alone) on every conformance log: status, digest, and diagnostic codes. Ported from
-// code/v4-lab/conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_v4read.py,
+// The JS fold (shared/protocol/fold.js) against the Python reference reader (spec/conformance/reader.py, written from
+// PROTOCOL alone) on every conformance log: status, digest, and diagnostic codes. Ported from
+// the protocol lab's conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_reader.py,
 // test_chain.py; the latter needs python3 `cryptography`). usage: bun tools/protocol/compare.ts  (exit 1 on any difference)
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
 import { ENGINE } from "./common.ts";
 
-const here = ENGINE + "spec/v4/conformance/";
+const here = ENGINE + "spec/conformance/";
 const py = (args: string[]) => Bun.spawnSync(["python3", "-B", ...args], { cwd: here, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
 const files = ["EXAMPLE-01.jsonl", ...fs.readdirSync(here + "logs").sort().map((f) => "logs/" + f)];
 // Where §2.3/§2.4 (normative) and the reference reader disagree, the JS fold follows the spec; list each here.
@@ -16,7 +16,7 @@ let diffs = 0;
 for (const f of files) {
   const raw = fs.readFileSync(here + f);
   const js = fold(readLog(raw)); const jsOut: any = { status: js.status, digest: js.status === "ok" ? digest(js) : null, codes: js.diagnostics.map(([s, c]: any) => `${s}:${c}`) };
-  const p = JSON.parse(py([here + "v4read.py", here + f, "--json"]).stdout.toString());
+  const p = JSON.parse(py([here + "reader.py", here + f, "--json"]).stdout.toString());
   const pyOut: any = { status: p.status, digest: p.digest, codes: p.diagnostics.map(([s, c]: any) => `${s}:${c}`) };
   const same = (k: string) => JSON.stringify(jsOut[k]) === JSON.stringify(pyOut[k]);
   const okAll = same("status") && same("digest") && same("codes");
@@ -29,28 +29,28 @@ for (const f of files) {
 }
 console.log(`${files.length} logs, ${diffs} unexplained differences`);
 
-// the reference reader's own suites. test_v4read.py regenerates logs/ from its builders: they must come out byte-identical
+// the reference reader's own suites. test_reader.py regenerates logs/ from its builders: they must come out byte-identical
 const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
 let suiteFails = 0;
-for (const t of ["test_v4read.py", "test_chain.py"]) {
+for (const t of ["test_reader.py", "test_chain.py"]) {
   const r = py([t]); const out = (r.stdout.toString() + r.stderr.toString()).trim().split("\n");
   console.log(`${r.exitCode === 0 ? "ok  " : "FAIL"} python ${t}: ${out.find((l) => /^\d+\/\d+ passed/.test(l)) ?? out.at(-1)}`);
   if (r.exitCode !== 0) { suiteFails++; console.log(out.slice(-8).join("\n")); }
 }
 const drift = files.filter((f) => fs.readFileSync(here + f, "utf8") !== before.get(f));
-if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
+if (drift.length) { suiteFails++; console.log(`FAIL test_reader.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
 // The engine's OWN output against the spec's readers (review F1, 2026-10-05: the conformance run checked the lab's
 // logs but never what this server writes). Found a world through the engine authority, write a few kinds of request, then
 // the reference reader must say ok with 0 malformed, the Python chain verifier must accept every head and signature,
 // and a value altered after the fact must break the chain.
 { const { openLive } = await import("../../server/livehost.ts"); const { request } = await import("../../shared/protocol/authority.js");
   const os = await import("node:os"); const path = await import("node:path");
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "v4-engine-conf-")); let T = 1800000000000;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "engine-conf-")); let T = 1800000000000;
   const w: any = openLive(path.join(tmp, "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json") });
   const rs = [["create-world", { title: "conf" }], ["create", { id: "tbl", model: "table", place: { at: [0, 2] } }], ["set", { id: "tbl", component: "label", value: "probe-value" }],
     ["say", { text: "hello" }], ["delete", { id: "tbl" }], ["undo", {}]].map(([t, a]: any) => request(w, "ann", t, a));
   const log = path.join(tmp, "w", "world.jsonl"); const text = fs.readFileSync(log, "utf8");
-  const rd = JSON.parse(py([here + "v4read.py", log, "--json"]).stdout.toString());
+  const rd = JSON.parse(py([here + "reader.py", log, "--json"]).stdout.toString());
   const ch = JSON.parse(py([here + "chain.py", "verify", log]).stdout.toString());
   fs.writeFileSync(log + ".t", text.replace("probe-value", "probe-valuf")); const bad = JSON.parse(py([here + "chain.py", "verify", log + ".t"]).stdout.toString());
   const checks: [boolean, string, unknown][] = [

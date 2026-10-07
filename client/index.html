@@ -2070,9 +2070,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
     globalThis.__ewEarlySocket = stash;
-    // v4fold: a v4 world sends this page its own v4 stream (protocol/v4 slice 3b; net.js sendJoin says the same, and
+    // replica: a world sends this page its own log stream (protocol/v4 slice 3b; net.js sendJoin says the same, and
     // a v1 world ignores it)
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, replica: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path

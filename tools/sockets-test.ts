@@ -1,4 +1,4 @@
-// sockets-test — the attach-point component, through the inspector's planner and the real door (scratch v4 world).
+// sockets-test — the attach-point component, through the inspector's planner and the real door (scratch world).
 // A socket is a named attachment point with a WHOLE rotation (Unreal sockets); with `body` a person attaches by using
 // it (VRChat Station, Roblox Seat). usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/sockets-test.ts
 import { inspectSchema, editOps } from '../shared/editschema.js';

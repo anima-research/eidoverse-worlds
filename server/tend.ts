@@ -7,7 +7,7 @@ const reqs: { verb: string; args?: Record<string, unknown> }[] = reqPath ? await
 
 const ws = new WebSocket(`ws://127.0.0.1:${process.env.PORT ?? 8940}/ws`);
 // JOIN_TOKEN env rides along: a tokened box (the VPS) refuses bare joins
-ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "claude", v4fold: true,
+ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: "claude", replica: true,
   ...(process.env.JOIN_TOKEN ? { token: process.env.JOIN_TOKEN } : {}) }));
 let answered = 0, failed = 0;
 ws.onmessage = (ev) => {

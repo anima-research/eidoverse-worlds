@@ -1,9 +1,9 @@
-// chatbridge-test — the Discord chat bridge (tools/chatbridge) against an owned scratch v4 world, Discord played by
+// chatbridge-test — the Discord chat bridge (tools/chatbridge) against an owned scratch world, Discord played by
 // the bridge's own DRY_RUN (stdin lines "Name: text" are Discord messages; world lines print as "→ discord [who]").
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/chatbridge-test.ts
 //
-// The world speaks protocol v4: the bridge must join with v4fold, read chat from the v4-log stream's `say` entries
+// The world speaks the protocol: the bridge must join with replica, read chat from the log stream's `say` entries
 // (actors are opaque ids, named by the stream), and speak through a door `say` request.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +26,7 @@ const join_ = (id: string) => new Promise<{ ws: WebSocket; msgs: any[] }>((res, 
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`); const msgs: any[] = [];
   const t = setTimeout(() => rej(new Error(`${id} join timed out`)), 8000);
   ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); msgs.push(m); if (m.type === "snapshot") { clearTimeout(t); res({ ws, msgs }); } if (m.type === "error") { clearTimeout(t); rej(new Error(m.error)); } };
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", id, v4fold: true }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", id, replica: true }));
 });
 const say = (c: { ws: WebSocket }, text: string) => c.ws.send(JSON.stringify({ type: "request", id: `t-${Math.random()}`, verb: "say", args: { text } }));
 
@@ -47,8 +47,8 @@ bridge.stdin.write("Ann: hi from discord\n"); bridge.stdin.flush();
 for (let i = 0; i < 40 && !(/→ discord \[alice\]/.test(out) && saysIn(alice.msgs).some((x) => x.actor === "discord")); i++) await sleep(100);
 await sleep(500);   // room for a wrongly echoed line to show up
 
-console.log("\nchatbridge — world ⇄ Discord (DRY_RUN) on a v4 world\n");
-check('the bridge joins (v4fold) embodied, as "discord"', /joined "commons" as discord/.test(out), out.slice(-300));
+console.log("\nchatbridge — world ⇄ Discord (DRY_RUN) on a world\n");
+check('the bridge joins (replica) embodied, as "discord"', /joined "commons" as discord/.test(out), out.slice(-300));
 check("a world say reaches Discord, attributed to its speaker's display name (not the opaque id)", /→ discord \[alice\]: hello from the world/.test(out), out.slice(-300));
 check("history from before the join is not mirrored", !/before the bridge/.test(out));
 check("a Discord line enters the world as the bridge's door say, attributed inside the text", saysIn(alice.msgs).some((x) => x.actor === "discord" && x.text === "Ann: hi from discord"), JSON.stringify(saysIn(alice.msgs)));

@@ -808,7 +808,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 ];
 
 // ---------------- S: the real server ----------------
-const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
+const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
   const W4 = path.join(root, "srv"); fs.mkdirSync(W4, { recursive: true });
   const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" };
   const f = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env });
@@ -823,9 +823,9 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
     const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-      ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", v4fold: true }));
+      ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
       for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
-      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.v4?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
+      return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });
@@ -867,7 +867,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
         ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", v4fold: true }));
+        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
         for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
         return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "request", id: rid, verb, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");

@@ -23,7 +23,7 @@ Two planes with different consistency needs:
   format; there is no scene file. Every client folds it with the same strict
   reader, and late joiners adopt a cut of the fold and continue from there,
   so join cost tracks the size of the world, not the length of its history.
-  The protocol is `spec/PROTOCOL.md` (protocol v4, CC0).
+  The protocol is `spec/PROTOCOL.md` (the protocol, CC0).
 - **Presence (embodied plane).** Avatar transforms, animation intent, gaze,
   poses, ragdoll — high-frequency, ephemeral, lossy-tolerant, never persisted.
   Streamed ~15Hz and interpolated.
@@ -67,12 +67,12 @@ builder's guide.
 
 ## Layout
 
-- `server/` — the Bun/TS sequencer (WS, per-world v4 logs, presence relay, asset serving; `server/` hosts the door)
+- `server/` — the Bun/TS sequencer (WS, per-world logs, presence relay, asset serving; `server/` hosts the door)
 - `shared/protocol/` — the protocol core every runtime shares: the door, the fold, the component catalogue, the script sandbox
 - `client/` — the browser client (`lib/` is the module graph; `main.js` is boot + frame loop)
 - `mcpl/` — the agent frontend: door requests in, tiered perception out
 - `tools/` — smoke tests, a boot benchmark, load test, asset converters, the voice bot
-- `spec/` — the protocol (CC0) and its conformance suite (`spec/v4/conformance/`)
+- `spec/` — the protocol (CC0) and its conformance suite (`spec/conformance/`)
 - `DESIGN.md`, `SCALING_AND_SNAPSHOT_PLAN.md` — design notes; `docs/` — contracts and references
 
 ## Status

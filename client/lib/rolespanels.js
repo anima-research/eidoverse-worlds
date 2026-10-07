@@ -263,7 +263,7 @@ export function initRolesPanels() {
   let t = 0; const repaint = () => { clearTimeout(t); t = setTimeout(() => {
     for (const s of ws) if (s.isOpen && !s.body.contains(document.activeElement)) PAINT[s.key]?.(s.body);
     if (sections.bans?.isOpen) paintBans(sections.bans.body); }, 150); };
-  bus.on('v4-applied', repaint);
+  bus.on('log-applied', repaint);
   bus.on('your-rights', () => { syncModeration(); repaint(); });
   bus.on('roster', () => { if (sections.bans?.isOpen) paintBans(sections.bans.body); });
   syncModeration();

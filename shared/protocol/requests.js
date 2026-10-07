@@ -1,9 +1,9 @@
-// shared/protocol/requests.js — the authority requests an edit plans, in v4 terms.
+// shared/protocol/requests.js — the authority requests an edit plans, in the protocol's terms.
 // Every planner (editschema, hierarchy, blueprint, the client's gestures, the agent's tools) builds these, and every
 // sender sends them as they are: {verb, args}, one per change, or one `batch` for one gesture (= one act = one undo).
 // Ids and component names arrive as the VIEW shows them (shared/protocol/view.js decodes the translator's x-- escapes)
 // and are encoded here, once. A transform is always written whole ({pos, q, scale}); for a child it is LOCAL to its
-// parent (PROTOCOL-v4 §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
+// parent (PROTOCOL §2.3), exactly what the view shows as the child's pos/q/scale. Pure; browser, server, agent.
 import { socketQ } from '../components.js';
 import { enc, encName } from "./names.js";
 import { qNorm, qFromYaw, qWithHeading } from "../rot.js";

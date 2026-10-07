@@ -384,7 +384,7 @@ export function initSceneGraph() {
     paintScene();
   }, { id: 'scene' });
 
-  // research roles §7: in a v4 world this tab is retired. v4 scripts live in Moderation › Scripts (and on the
+  // research roles §7: in a world this tab is retired. v4 scripts live in Moderation › Scripts (and on the
   // Inspector's script card); an imported world's old bindings, which v4 never runs, live in World Settings › Old world. One place each.
   bus.on('hydrated', () => { if (replica.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
   scriptsApi = makeSection('📜 scripts', async (body) => {

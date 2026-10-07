@@ -9,7 +9,7 @@
 // and the card stays open with what you typed. Esc or Cancel closes it; nothing is written until Create.
 //
 //   openNewScript(id) → Promise<{ok, id, name} | {ok: false}>
-import * as V4 from './editwrites.js';
+import * as Edits from './editwrites.js';
 import { net } from './net.js';
 import { refusalText } from '../../shared/protocol/refusal.js';
 import { planNewScript, TEMPLATES, TEMPLATE_SCOPE } from '../../shared/protocol/newscript.js';
@@ -47,7 +47,7 @@ export function openNewScript(id) {
       <label>it may change <input type="text" class="sn-comps" placeholder="components on this thing, comma-separated"></label>
       <label><input type="checkbox" class="sn-say"> it may speak in chat</label>
       <textarea class="sn-src" spellcheck="false" aria-label="the script's source"></textarea>
-      <div class="sn-hint">JavaScript, run on the server with your rights and no more (docs/SCRIPTS-v4.md). world.on('use' | 'tick', fn), world.get / world.set on this thing, world.say, world.log (its console).</div>
+      <div class="sn-hint">JavaScript, run on the server with your rights and no more (docs/SCRIPTS.md). world.on('use' | 'tick', fn), world.get / world.set on this thing, world.say, world.log (its console).</div>
       <div class="sn-err" role="status"></div>
       <div class="sn-btns"><button type="button" class="sn-no">Cancel</button><button type="button" class="sn-ok">Create</button></div></div>`;
     const $ = (s) => root.querySelector(s);
@@ -65,14 +65,14 @@ export function openNewScript(id) {
     function finish(v) { if (open?.root !== root) return; open = null; removeEventListener('keydown', onKey, true); root.remove(); resolve(v); }
     async function create() {
       if (okB.disabled) return;
-      const thing = V4.compsOf(id) ?? {};
+      const thing = Edits.compsOf(id) ?? {};
       const plan = planNewScript({ id, name: name.value, text: src.value, trigger: trig(), every: Number(every.value), comps: comps.value.split(','), say: say.checked }, thing);
       if (plan.errors.length) { err.textContent = plan.errors.join('\n'); return; }
       okB.disabled = true; err.textContent = 'uploading…';
       try {
-        const up = await V4.send(plan.upload, { what: `upload the script '${plan.name}'`, record: false });
+        const up = await Edits.send(plan.upload, { what: `upload the script '${plan.name}'`, record: false });
         if (!up.ok) { err.textContent = refusalText(`upload the script '${plan.name}'`, up); return; }
-        const r = await V4.sendOps(plan.install(up.src), { what: `script '${plan.name}' on ${id}` });
+        const r = await Edits.sendOps(plan.install(up.src), { what: `script '${plan.name}' on ${id}` });
         if (!r.ok) { err.textContent = refusalText(`script '${plan.name}' on ${id}`, r); return; }
         finish({ ok: true, id, name: plan.name, action: plan.action });
       } finally { okB.disabled = false; }

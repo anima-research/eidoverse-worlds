@@ -1,6 +1,6 @@
 // component-needs-test — Add Component with needs, and Remove with dependants
 // (design §3, step 3): shared/editschema.js addOps / removeOps / editOps
-// and the Add Component list, through the real door (a scratch v4 world,
+// and the Add Component list, through the real door (a scratch world,
 // tools/protocol/scratchworld.ts).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/component-needs-test.ts
@@ -44,7 +44,7 @@ console.log('a need with one sensible default is added for you, as real door ops
   const d = door(swing, r.ops);
   // KNOWN BUG (reported 2026-10-06, not fixed here): the recipe writes v1's handler {push: {impulse: 0.35}}; the v4
   // door's reactions take {<action>: {kind: 'toggle'|'set'|'impulse', …}} and refuse a handler with no kind
-  // ("reactions.push: no handler kind 'undefined'"), so Add Component ▸ Reactions is refused in every v4 world.
+  // ("reactions.push: no handler kind 'undefined'"), so Add Component ▸ Reactions is refused in every world.
   check('…the door takes the recipe as ONE request (KNOWN BUG: v1 handler shape refused)', d.res.ok, J(d.res.refused));
   check('…written: the thing now has both, and the need is met (rides on the KNOWN BUG above)', d.after.comp?.motion?.type === 'pendulum' && !!d.after.comp?.reactions?.push && needMet('Pendulum', d.after), J(d.after?.comp));
   const use = d.W.call('use', { id: 's', action: 'push' });

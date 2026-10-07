@@ -4,7 +4,7 @@
 //   world WS (embodied "discord") ── `say` entries of the log stream ──▶ Discord channel
 //   Discord channel ── messages ──▶ a door `say` request {text: "author: …"}
 //
-// The world speaks protocol v4: the join says `v4fold: true` (a client that
+// The world speaks the protocol: the join says `replica: true` (a client that
 // doesn't is refused), chat arrives as `say` entries in the `log` stream
 // (actors are opaque ids; the stream's `names` and the snapshot's v4.names say
 // who they are), and a say is a door request {type: "request", id, verb: "say",
@@ -173,7 +173,7 @@ function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
   worldWs = ws;
   ws.onopen = () =>
-    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, v4fold: true }));
+    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => {
     joined = false;
     log("world socket closed — reconnecting in 1.5s");
@@ -189,13 +189,13 @@ function connectWorld() {
     }
     if (msg.type === "snapshot") {
       joined = true;
-      myId = msg.v4?.you ?? null;
-      Object.assign(names, msg.v4?.names ?? {});
+      myId = msg.cut?.you ?? null;
+      Object.assign(names, msg.cut?.names ?? {});
       // live lines only: the channel is a window, not an archive. Everything at
       // or before the snapshot's head is history (a reconnect replays none of
       // it); the head, not a remembered high-water mark, so a reset world (a
       // fresh, shorter log) isn't muted until it outgrows the old one
-      lastSeq = Number.isInteger(msg.v4?.head) ? msg.v4.head : lastSeq;
+      lastSeq = Number.isInteger(msg.cut?.head) ? msg.cut.head : lastSeq;
       log(`joined "${msg.world}" as ${msg.you} (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       pumpWorld().catch((e) => log(`world pump error: ${e.message}`));
       return;

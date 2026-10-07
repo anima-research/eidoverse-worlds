@@ -1,5 +1,5 @@
-// Ported from the v4 lab (code/v4-lab, 2026-10-05) unchanged.
-// Sculpt (PROTOCOL-v4 §3b; research 40 §6). Ground = a base (the `terrain` value) + integer-millimetre deltas in keyed
+// Ported from the protocol lab (the protocol lab, 2026-10-05) unchanged.
+// Sculpt (PROTOCOL §3b; research 40 §6). Ground = a base (the `terrain` value) + integer-millimetre deltas in keyed
 // tiles `terrain-tile:<i>-<j>` {mm: [tile² ints, row-major]} on a grid `terrain-grid` {spacing, tile, origin, extent,
 // limits: {raise, lower}}. Tiles partition samples (no shared edges). An absent tile is all zero. This file is pure:
 // it turns a stroke and the tiles AT HEAD into whole new tile values. The authority admits them like any write.

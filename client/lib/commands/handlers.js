@@ -172,7 +172,7 @@ register('punt', (arg) => {
   }
   puntThing(arg);
 });
-// carrying (v4 worlds: requests; T and C are the keys)
+// carrying (worlds: requests; T and C are the keys)
 register('grab', (arg) => grab((arg || '').trim() || undefined));
 register('put', (arg) => put((arg || '').trim() || undefined));
 register('drop', (arg) => drop((arg || '').trim() || undefined));

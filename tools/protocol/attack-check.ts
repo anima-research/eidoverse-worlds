@@ -1,6 +1,6 @@
-// PROTOCOL-v4 §6 proofs 2 and 3: every 25d H1 / H2 / H4 attack, run as the SAME requests through the baseline door
+// PROTOCOL §6 proofs 2 and 3: every 25d H1 / H2 / H4 attack, run as the SAME requests through the baseline door
 // (lab commit 4f62913, the control arm: only with PROTOCOL_LAB, see common.ts) and through today's door. Each must succeed
-// on the baseline and be refused (or harmless) now. Ported from code/v4-lab/attack-check.js @ 11db981; only paths
+// on the baseline and be refused (or harmless) now. Ported from the protocol lab's attack-check.js @ 11db981; only paths
 // and the optional control changed. usage: bun tools/protocol/attack-check.ts
 // @ts-nocheck — lab code, kept as written
 import fs from "node:fs";
@@ -40,7 +40,7 @@ const attacks = [
       s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       return { attack: s.call("bob", "delete", { id: "statue", component: "model" }) }; },
     baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "locked" },
-  // H1c was "pin bypass: set motion {type:'spin'} on a pinned thing", refused by the lab's pin. PROTOCOL-v4 §5 gave
+  // H1c was "pin bypass: set motion {type:'spin'} on a pinned thing", refused by the lab's pin. PROTOCOL §5 gave
   // `lock` v1's exact meaning, and v1's matrix (tools/locktest.ts) keeps motion open on a locked thing: a motion
   // animates it in place (v4's are pendulum/spin/bob), it doesn't relocate it. So this is a guard now: it must work.
   { id: "H1c", guard: true, what: "motion {type:'spin'} on a locked thing stays open, as in v1's lock matrix (§5; the lab's pin refused it)", run(s) { cast(s);

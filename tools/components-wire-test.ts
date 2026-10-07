@@ -5,9 +5,9 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/components-wire-test.ts
 //
 // Each tier is the REAL module; no server process, no browser:
-//   3. the browser   client/lib/realize/models.js over tools/lod-client-stub.mjs, fed the views a v4 client folds
-//                    from a scratch v4 world behind the real door (tools/protocol/scratchworld.ts)
-//   5. inspector     shared/editschema.js — reads either spelling, writes new on edit, through the v4 door
+//   3. the browser   client/lib/realize/models.js over tools/lod-client-stub.mjs, fed the views a client folds
+//                    from a scratch world behind the real door (tools/protocol/scratchworld.ts)
+//   5. inspector     shared/editschema.js — reads either spelling, writes new on edit, through the authority
 // (Protocol v1 removed, 2026-10-07: tiers 1 (the v1 fold), 2 (server/verbs.ts) and 4 (the agent's v1 applyEntry
 //  reader) went with it; tier 3 was ported to the v4 feed. Its v1-only checks were dropped: the spawn verb's legacy
 //  `collide`, light-verb lights, a re-spawn over an id as a wholesale replace, and cargo mount/dismount verbs.)
@@ -54,7 +54,7 @@ const S: any = await import('../client/lib/state.js');
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.(); M.drainPromoteTail?.(); await sleep(15); } };
 {
-  // the world as a v4 client holds it: a scratch v4 world behind the real door; the realizer is fed the views a
+  // the world as a client holds it: a scratch world behind the real door; the realizer is fed the views a
   // client's own fold reaches (hydrate the cut's view, then applyView after every door write)
   const W = scratchWorld('compwire3');
   W.seed({
@@ -150,10 +150,10 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
 }
 
 // ---- 5. the inspector ----------------------------------------------------------
-// v4 port (2026-10-06): editOps plans door requests; what an edit DOES is checked through the real v4 door on a
+// v4 port (2026-10-06): editOps plans door requests; what an edit DOES is checked through the real authority on a
 // scratch world (tools/protocol/scratchworld.ts). Light-verb lights are gone from the planner (a v4 lamp is a thing with a
 // light component), so the "old light-verb light keeps the light verb" checks are dropped.
-console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit, through the v4 door)');
+console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit, through the authority)');
 {
   const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
   const { scratchWorld } = await import('./protocol/scratchworld.ts');
@@ -176,7 +176,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
   check('…editing it writes ONE set light, merged into the bag, important/day stored only when not default',
     opsOf(le.r) === JSON.stringify([{ verb: 'set', args: { id: 'x', component: 'light', value: { color: 0x00ff00, intensity: 24, day: false } } }]), opsOf(le.r));
   check('…and through the door the lamp is lit that way (important cleared, burns at noon)', le.res.ok && le.after.comp.light.color === 0x00ff00 && le.after.comp.light.intensity === 24 && le.after.comp.light.day === false && !le.after.comp.light.important, JSON.stringify([le.res.refused, le.after.comp]));
-  // a lamp translated from v1 can carry a key the v4 door's light schema doesn't know (v1 accepted unknown keys; the
+  // a lamp translated from v1 can carry a key the authority's light schema doesn't know (v1 accepted unknown keys; the
   // translator keeps them). The planner keeps it in the bag (it never drops what it doesn't understand)…
   const odd = { ...lamp, comp: { light: { ...lamp.comp.light, flicker: 1 } } };
   const oe = ed(odd, { 'light.intensity': 24 });
@@ -189,7 +189,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
       { seq: 2, ts: 3, actor: 'r', verb: 'comp', args: { id: 'x', type: 'light', data: odd.comp.light } }], { foldBuild: v1FoldBuild() });
     // the translator now carries a key the v4 component doesn't define BESIDE it (imported:light {flicker}), so the lamp
     // itself is an ordinary v4 lamp: the planner's edit of it goes through the closed door
-    const tx = tr.final.v4.x;
+    const tx = tr.final.translated.x;
     check('…(a v1 lamp with flicker translates with flicker carried as imported:light {flicker}, not inside light)', tx?.['imported:light']?.flicker === 1 && !('flicker' in (tx?.light ?? {})), JSON.stringify(tx));
     const tlamp = { ...lamp, comp: { ...lamp.comp, light: tx.light } };
     const W = scratchWorld('compwire').seed({ x: tlamp });

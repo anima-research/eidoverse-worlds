@@ -58,7 +58,7 @@ function open(joinMsg: Record<string, unknown>, cookie = ""): Promise<Sock> {
   return new Promise((resolve) => {
     const ws = new WebSocket(WS_URL, cookie ? ({ headers: { cookie } } as any) : undefined);
     const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", v4fold: true, ...joinMsg }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", replica: true, ...joinMsg }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       s.msgs.push(m);

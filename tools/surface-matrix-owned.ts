@@ -54,7 +54,7 @@ try {
     owned = await new Promise<boolean>((res) => {
       const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
       const t = setTimeout(() => { ws.close(); res(false); }, 1500);
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true, v4fold: true }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true, replica: true }));
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data));
         clearTimeout(t);
         if (m.type === "snapshot") { ws.close(); res(true); }

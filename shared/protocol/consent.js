@@ -1,5 +1,5 @@
-// Ported from the v4 lab (code/v4-lab, 2026-10-05) unchanged.
-// Body consent (PROTOCOL-v4 L6 as revised 21:45; research 42 §4). PRESENCE ONLY: nothing here is ever appended to a
+// Ported from the protocol lab (the protocol lab, 2026-10-05) unchanged.
+// Body consent (PROTOCOL L6 as revised 21:45; research 42 §4). PRESENCE ONLY: nothing here is ever appended to a
 // log or written to world state. The authority keeps one table per body in its presence plane, refuses before delivery,
 // and the target's client has the final word (the lab has no clients; `inbox` stands in for delivery).
 //   classes: near, follow, touch (social points), intimate (intimate points), pose, shove, move, voice

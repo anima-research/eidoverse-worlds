@@ -32,7 +32,7 @@ import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
-import * as V4 from './editwrites.js';   // protocol/v4 slice 3b: a v4 world's component edits are requests
+import * as Edits from './editwrites.js';   // protocol/v4 slice 3b: a world's component edits are requests
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -117,7 +117,7 @@ export function commitEdit(id, key, value, opts = {}) {
   if (id === WORLD_ID) {   // no live preview: a world field commits on release, one request, one undo step
     if (opts.live) return { ok: true, live: true };
     const { ops, errors } = planEdit(id, key, value);
-    if (ops.length) V4.sendOps(ops, { what: `${key} of the world`, expect: false });
+    if (ops.length) Edits.sendOps(ops, { what: `${key} of the world`, expect: false });
     return { ok: !errors.length, errors, ops };
   }
   const rec = foldRecord(id);
@@ -126,12 +126,12 @@ export function commitEdit(id, key, value, opts = {}) {
   const dot = key.indexOf('.');
   const group = key.slice(0, dot), k = key.slice(dot + 1);
   const live = !!opts.live;
-  if (live && (!gesture || gesture.id !== id)) gesture = { id, v4: V4.compsOf(id) };
+  if (live && (!gesture || gesture.id !== id)) gesture = { id, comps: Edits.compsOf(id) };
   for (const h of handlers.get(group) ?? []) {
     try { if (h(id, obj, k, value, opts)) { if (!live) gesture = null; return { ok: true, handled: true }; } } catch (e) { console.warn(`[inspect] ${group} handler`, e); }
   }
   if (live) return { ok: true, live: true };
-  const baseComps = gesture?.id === id ? gesture.v4 : null;   // the components before the drag began
+  const baseComps = gesture?.id === id ? gesture.comps : null;   // the components before the drag began
   gesture = null;
   // planEdit holds the two seam rules: the panel's steppers speak WIRE units (a deg field commits radians) while
   // editOps' contract — a model's — is the FACE, converted once there (review B1: amp/phase/socket yaw landed at 1/57th);
@@ -139,7 +139,7 @@ export function commitEdit(id, key, value, opts = {}) {
   const { ops, errors, euler, asks } = planEdit(id, key, value);
   // one edit is ONE request (a batch when it took several ops): one act, one Ctrl+Z, and it waits for the authority;
   // expect names what it changes as this viewer saw it (a scrubbed field: as the scrub began)
-  if (ops.length) V4.sendOps(ops, { what: `${key} of ${id}`, base: baseComps ? { [id]: baseComps } : null, revert: () => V4.revertPose(id) });
+  if (ops.length) Edits.sendOps(ops, { what: `${key} of ${id}`, base: baseComps ? { [id]: baseComps } : null, revert: () => Edits.revertPose(id) });
   if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
   return { ok: !errors.length, errors, ops, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };
 }

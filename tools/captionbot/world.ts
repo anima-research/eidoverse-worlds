@@ -81,13 +81,13 @@ export class WorldClient {
   private lastSentAt = 0;
   private halted: string | null = null;
   private titled = false;
-  private v4 = makeReplica();
+  private replica = makeReplica();
   private reqId = 0;
   private inflightId: string | null = null;
   session: string;
   n = 0;
   sent = 0; acked = 0; refused = 0; overflow = 0;
-  /** this connection's identity (the snapshot's v4.you): what the screen's captioners must list */
+  /** this connection's identity (the snapshot's cut.you): what the screen's captioners must list */
   you: string | null = null;
   onReceipt: ((args: Args) => void) | null = null;
 
@@ -103,7 +103,7 @@ export class WorldClient {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', v4fold: true, ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
+      ws.send(JSON.stringify({ type: 'join', world: this.opts.world, id: this.opts.actor, avatar: '', replica: true, ...(this.opts.agent === false ? {} : { agent: true }), token: this.opts.token, ...(this.opts.agentToken ? { agentToken: this.opts.agentToken } : {}) }));
     };
     ws.onclose = () => {
       this.open = false;
@@ -117,16 +117,16 @@ export class WorldClient {
       const msg = JSON.parse(String(ev.data));
       if (msg.type === 'snapshot') {
         this.open = true;
-        if (msg.v4?.state) this.v4.adopt(msg.v4);
+        if (msg.cut?.state) this.replica.adopt(msg.cut);
         const ent = this.screen();
         this.stageSpeaker = ent?.comp?.stage?.speaker;
-        const me = msg.v4?.you; this.you = me ?? null; const listed = Array.isArray(ent?.comp?.captioners?.ids) && ent.comp.captioners.ids.includes(me);
+        const me = msg.cut?.you; this.you = me ?? null; const listed = Array.isArray(ent?.comp?.captioners?.ids) && ent.comp.captioners.ids.includes(me);
         this.log(`joined "${this.opts.world}" as ${this.opts.actor} (${me ?? '?'}, ${msg.yourRights?.role ?? '?'}${listed ? `, a captioner of ${this.opts.screenId}` : `, NOT one of ${this.opts.screenId}'s captioners — ask whoever may edit it: set {id: "${this.opts.screenId}", component: "captioners", value: {ids: ["${me}"]}}`}); screen ${this.opts.screenId} ${ent ? 'present' : 'NOT PRESENT — place it first'}`);
         this.schedule();
       } else if (msg.type === 'error') {
         this.onError(String(msg.error ?? ''));
       } else if (msg.type === 'log') {
-        const r = this.v4.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
+        const r = this.replica.ingest(msg.entries ?? [], msg.from ?? -1, msg.names);
         if (r.resync) { this.ws?.close(); return; }   // a gap: rejoin for a fresh cut (onclose reconnects)
         const sp = this.screen()?.comp?.stage?.speaker;
         if (sp !== this.stageSpeaker) { this.stageSpeaker = sp; this.log(`stage cue: speaker = ${sp ?? '(none)'}`); }
@@ -140,7 +140,7 @@ export class WorldClient {
   }
 
   /** The screen as this client's fold holds it (the view record), or null. */
-  private screen(): any { return this.v4.active ? (this.v4.view()?.entities?.[this.opts.screenId] ?? null) : null; }
+  private screen(): any { return this.replica.active ? (this.replica.view()?.entities?.[this.opts.screenId] ?? null) : null; }
 
   /** The operator's stage cue, if any. */
   speaker(): string | undefined { return this.stageSpeaker; }

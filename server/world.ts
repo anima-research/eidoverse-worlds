@@ -1,8 +1,8 @@
 // eidoverse-worlds sequencer — the world itself.
 //
-// A World is one v4 world as this server holds it: its log (server/worldlog.ts WorldLog: the authority over the world's
+// A World is one world as this server holds it: its log (server/worldlog.ts WorldLog: the authority over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
-// persisted). Every world this server serves is a v4 world: a directory that holds only an old log (the first
+// persisted). Every world this server serves is a world: a directory that holds only an old log (the first
 // protocol's log.jsonl) is refused at open, with the command that translates it (tools/protocol/import-v1/, run once by the
 // operator).
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
@@ -32,7 +32,7 @@ export function wireRights(rights: typeof onRightsChanged) { onRightsChanged = r
 // ------------------------------------------------------------------- clients
 
 export type Client = {
-  id: string;          // participant's display name in this world (their identity is v4id, from the authority directory)
+  id: string;          // participant's display name in this world (their identity is actorId, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;
   /** latest pose, forwarded to late joiners so they see everyone immediately.
@@ -64,8 +64,8 @@ export type Client = {
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
   anonymous?: boolean; // no account: a guest (capped at visitor; named as one)
-  v4id?: string;      // a v4 world's actor: this connection's opaque id from the authority directory (server/directory.ts)
-  v4fold?: boolean;    // the client said it folds the v4 stream itself (every current client does; one that doesn't is refused at join)
+  actorId?: string;      // a world's actor: this connection's opaque id from the authority directory (server/directory.ts)
+  replica?: boolean;    // the client said it folds the log stream itself (every current client does; one that doesn't is refused at join)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
@@ -75,7 +75,7 @@ export type Client = {
 
 // --------------------------------------------------------------- the world
 
-/** One v4 world: its log and the embodied plane in flight. */
+/** One world: its log and the embodied plane in flight. */
 export class World {
   name: string;
   /** The runtime's flight recorder — the "why didn't it work" surface.
@@ -121,24 +121,24 @@ export class World {
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
   sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
-  isGhost(c: Client): boolean { return !!(this.log && c.v4id && this.log.ghostHere(c.v4id)); }
-  /** The hooks a v4 log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
+  isGhost(c: Client): boolean { return !!(this.log && c.actorId && this.log.ghostHere(c.actorId)); }
+  /** The hooks a log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
    *  is sent the log with every say emptied (it can't read chat). */
   private logHost(log: WorldLog) {
     return {
       broadcast: (msg: unknown) => this.broadcast(msg),
       broadcastLog: (msg: unknown, ghostMsg: unknown) => { const d = JSON.stringify(msg), g = JSON.stringify(ghostMsg);
         const S = log.sanctions();   // once per broadcast, not a moderator-log scan per client (review 10-07)
-        for (const c of this.clients) { try { c.ws.send(c.v4id && (S[c.v4id] as any)?.ghost ? g : d); } catch { /* gone */ } } },
+        for (const c of this.clients) { try { c.ws.send(c.actorId && (S[c.actorId] as any)?.ghost ? g : d); } catch { /* gone */ } } },
       rightsChanged: () => onRightsChanged(this),
       debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
-      present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world" && !log.ghostHere(c.v4id)).map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
+      present: () => [...this.clients].filter((c) => !c.spectator && c.actorId && (c.surface ?? "world") === "world" && !log.ghostHere(c.actorId)).map((c) => ({ id: c.actorId!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
     };
   }
 
   constructor(name: string) {
     this.name = name;
-    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no v4 log here (a world saved by the old protocol is translated once: bun tools/protocol/world.ts translate <its name> <a new name>)`);
+    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no log here (a world saved by the old protocol is translated once: bun tools/protocol/world.ts translate <its name> <a new name>)`);
     this.log = this.openLog();
     this.openSeq = this.log.snapSeq + 1;   // past every chat line this world has numbered (seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running

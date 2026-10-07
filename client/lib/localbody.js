@@ -263,7 +263,7 @@ function nearestSeat(arg, reach) {
  *  from anywhere). When nothing is in reach but a seat exists further out,
  *  SAY so — the silent ground-sit fallback read as "sitting is broken" to
  *  anyone standing four meters from a swing they could name but not see.
- *  In a v4 world the authority is asked first (`use {id, action, args: {slot}}`):
+ *  In a world the authority is asked first (`use {id, action, args: {slot}}`):
  *  it checks who may and answers with what the body does; nothing is logged.
  *  Already seated, I may move straight to a socket that allows it (fromSeat). */
 let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes every earlier answer stale

@@ -48,7 +48,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function human(name: string): Promise<{ ws: WebSocket; send: (m: any) => void; close: () => void }> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "snapshot") res({

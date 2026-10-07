@@ -1,5 +1,5 @@
 // tools/protocol/inspectharness.ts — the client's edit path (client/lib/inspect.js → editwrites.js) headless, against the REAL
-// door on a scratch v4 world (tools/protocol/scratchworld.ts). Import this BEFORE importing client/lib/inspect.js: it
+// door on a scratch world (tools/protocol/scratchworld.ts). Import this BEFORE importing client/lib/inspect.js: it
 // registers the Bun plugin that stubs the page around them. What is real: inspect.js, editwrites.js (send, expect, the
 // lock dialog's three answers, undo/redo by act), the shared planners, the authority. What is stubbed, from client/lib:
 //   net.js     sendRequest → the scratch world, as the signed-in person `actor`; replica.st = the authority's v4 state (kept in
@@ -23,8 +23,8 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
   W.call("set", { id: "@world", component: "roles:bob", value: { role: "builder" } });   // the "someone else" of H.other
   const H = globalThis.__ih = {
     W, actor, sent: [], toasts: [], hints: [], asked: [], drags: [], choose: "cancel",
-    entities: new Map(), state: { st: viewState(W.state()) }, v4: { st: W.state() },
-    sync() { H.state.st = viewState(W.state()); H.v4.st = W.state(); },
+    entities: new Map(), state: { st: viewState(W.state()) }, replica: { st: W.state() },
+    sync() { H.state.st = viewState(W.state()); H.replica.st = W.state(); },
     /** settle the async sends (sendRequest answers at once; the lock dialog is a promise) */
     flush: () => new Promise((r) => setTimeout(r, 10)),
     /** someone else writes (another person at the authority) */
@@ -49,7 +49,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
           state: `export const state = globalThis.__ih.state; export const onWorldChange = () => () => {}; ${noop(["applyView", "foldLive", "hydrate", "reset"])}`,
           net: `const H = globalThis.__ih;
             export const net = { myId: H.actor, myRights: { role: 'owner' } };
-            export const replica = H.v4; export const replicaActive = () => true;
+            export const replica = H.replica; export const replicaActive = () => true;
             export const sendDrag = (...a) => { H.drags.push(a); };
             export const sendRequest = async (verb, args) => { H.sent.push({ verb, args: JSON.parse(JSON.stringify(args ?? {})) }); const r = H.W.call(verb, args, H.actor); H.sync(); return r; };
             ${noop(["requestDebug", "requestHistory", "say", "sendAnim", "sendBodyDrag", "sendLease", "sendRelayCredRequest", "sendTyping", "sendVoiceConsent"])}`,

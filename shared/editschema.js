@@ -102,7 +102,7 @@ export function inspectSchema(ent, id, live = {}) {
   const mounted = !!ent.parent;
   const locked = !!c.lock;
   // a lock doesn't make the pose read-only here: the authority refuses the move, and a person (or agent) who may lift the lock
-  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL-v4 §5). Same for every surface.
+  // is asked "This is locked. Move anyway?" — or answers it with throughLock (PROTOCOL §5). Same for every surface.
   // the pose the channel box shows and edits: a child's is LOCAL to its parent
   // (design §3) — the mount's offset and relative q, as the renderer realizes
   // it — never the fold's pre-mount pos, which nothing draws while it rides
@@ -887,7 +887,7 @@ export function editOps(ent, id, edits, live = {}) {
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
-    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` in v4 (PROTOCOL-v4 §5): set flags.lock'); continue; }   // an old habit, taught
+    if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` in v4 (PROTOCOL §5): set flags.lock'); continue; }   // an old habit, taught
     if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
     if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); continue; }

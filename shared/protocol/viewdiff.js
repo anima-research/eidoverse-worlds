@@ -1,4 +1,4 @@
-// shared/protocol/viewdiff.js — what changed between two world views (view.js viewState), said in v4 terms (slice 3c).
+// shared/protocol/viewdiff.js — what changed between two world views (view.js viewState), said in the protocol's terms (slice 3c).
 // The renderer's realizers and the agent's caches react to these. Pure.
 //   diffView(prev, next) → { things: [{id, what, comp?}], world: [key] }
 //     what: 'gone'   the thing left the world

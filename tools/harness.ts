@@ -28,7 +28,7 @@ export function freePort(from: number, tries = 40): number {
   throw new Error(`no free port in ${from}..${from + tries}`);
 }
 
-/** Found v4 worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005
+/** Found worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005
  *  §3.2.7, security review 10-06 H3: a name with no world behind it is refused), so a test that joins one founds it
  *  first, the way an operator does: `bun tools/protocol/world.ts found <name> --owner <who>`. `owner` is the name the owner
  *  joins with (on a TRUST_NAMES=1 server that typed name IS the founder's account local:<name>). */
@@ -40,13 +40,13 @@ export function foundWorlds(worldsDir: string, names: string[], owner = "owner")
   }
 }
 
-/** The chat lines in a socket's received messages: `say` entries of the `v4-log` stream (actors are opaque ids; the
+/** The chat lines in a socket's received messages: `say` entries of the `log` stream (actors are opaque ids; the
  *  stream's `names` and the snapshot's v4.names say who they are). {seq, actor (display name), by (id), text, body}. */
 export function saysIn(msgs: any[]) {
   const names: Record<string, string> = {};
   const out: { seq: number; actor: string; by: string; text: string; body: any }[] = [];
   for (const m of msgs) {
-    if (m?.type === "snapshot" && m.v4?.names) Object.assign(names, m.v4.names);
+    if (m?.type === "snapshot" && m.cut?.names) Object.assign(names, m.cut.names);
     if (m?.type !== "log") continue;
     if (m.names) Object.assign(names, m.names);
     (m.entries ?? []).forEach((e: any, i: number) => {
@@ -100,7 +100,7 @@ type ScratchOptions = {
   // Tests may seed a log before boot or instrument asset I/O in the child.
   prepare?: (scratch: string) => void | Promise<void>;
   preload?: string;
-  /** v4 worlds to found before boot (joining never founds one); `owner` founds them (default "owner"). */
+  /** worlds to found before boot (joining never founds one); `owner` founds them (default "owner"). */
   worlds?: string[];
   owner?: string;
 };

@@ -1,17 +1,17 @@
-// shared/protocol/replica.js — a v4 world as a CLIENT holds it (slice 3b). Pure; the browser (client/lib/net.js) and the
+// shared/protocol/replica.js — a world as a CLIENT holds it (slice 3b). Pure; the browser (client/lib/net.js) and the
 // suites (tools/protocol/authority-check.ts) run the same code.
 //
-// The client folds v4 itself, from the server's own v4 stream:
+// The client folds the log itself, from the server's own log stream:
 //   adopt(snap)        the join snapshot's v4 part: {state: stateView(fold), head, worldId, mine?}, the fold as the
 //                      server holds it at `head` (a client can't refold the whole log on join; it adopts a cut);
 //   ingest(entries, from, held)
-//                      the `v4-log` message: the raw entries the authority just wrote, folded with the fold's own ops
+//                      the `log` message: the raw entries the authority just wrote, folded with the fold's own ops
 //                      (opsOf + applyInPlace, the strict reader's code). A gap, a purge (retroactive by law, L1) or a
 //                      genesis means this client can't continue its cut: it asks for a fresh snapshot (`resync`).
 //
 // What the renderer reads (slice 3c): the VIEW of this fold (view.js viewState), recomputed from the fold itself,
 // so there's nothing held beside it to drift; client/lib/state.js diffs successive views and tells the realizers
-// what changed, in v4 terms. `say` entries come back as chat lines ({seq, ts, actor, text,
+// what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, text,
 // to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
 import { simFolder, simCutOf } from "./simlayer.js";

@@ -1,10 +1,10 @@
-// thingphysics — physics in a v4 world, on the client (design 20: notes/eidoverse/v4-research/20-physics-in-v4-design.md).
+// thingphysics — physics in a world, on the client (design 20: notes/eidoverse/v4-research/20-physics-in-v4-design.md).
 //
 // Nothing here simulates for anyone else and nothing is streamed: every act is a REQUEST, and every client draws
 // the same truth.
 //
 //   carrying   grab / put / throw / drop / punt are requests (shared/protocol/authority.js). Who holds what is the authority's
-//              presence plane (`v4-holds`, never logged); every client draws a held thing in its holder's hand, so it
+//              presence plane (`holds`, never logged); every client draws a held thing in its holder's hand, so it
 //              follows the hand for everyone (a remote's hand is their avatar's hand bone, driven by their own pose
 //              stream: desktop or VR alike), and the holder's own hand is where its release pose is sent from.
 //   flights    a launch (throw, drop, punt, a grab that let what rested on it fall) is a `sim` entry in the log. This
@@ -50,7 +50,7 @@ let presenting = () => false;
 export const bindPresenting = (fn) => { presenting = fn; };
 
 // ---------------------------------------------------------------- who holds what (the authority's presence plane)
-let holds = {};     // id -> the authority's hold record: { by: v4 identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
+let holds = {};     // id -> the authority's hold record: { by: identity, hand?, grip? | offset?, second? } (shared/grab.js holdWire)
 const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
 bus.on('holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
@@ -84,9 +84,9 @@ function released(id) {
   if (!presOwns(id)) suspendCollider(id, false);
 }
 /** A presence id (the people map's key) for an identity the authority stamps. */
-function presenceIdOf(v4id) {
-  if (v4id === net.you) return null;               // me
-  for (const [pid, vid] of identities) if (vid === v4id) return pid;
+function presenceIdOf(actorId) {
+  if (actorId === net.you) return null;               // me
+  for (const [pid, vid] of identities) if (vid === actorId) return pid;
   return undefined;
 }
 
@@ -96,7 +96,7 @@ const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
-bus.on('v4-joined', () => { arrived = false; trackedAt = null; holds = {}; });
+bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; });
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
   if (!replica.active || !net.joined) return false;
@@ -142,12 +142,12 @@ function tickTrack(now) {
 
 // ---------------------------------------------------------------- the hand
 const _hp = new THREE.Vector3(), _fw = new THREE.Vector3();
-const avatarOf = (v4id) => { const pid = presenceIdOf(v4id); return pid === null ? hooks?.me() : pid ? remotes.get(pid)?.avatar : null; };
+const avatarOf = (actorId) => { const pid = presenceIdOf(actorId); return pid === null ? hooks?.me() : pid ? remotes.get(pid)?.avatar : null; };
 /** Is this holder's body tracked (a headset: their own hands hold it)? */
-function tracked(v4id) { const pid = presenceIdOf(v4id); if (pid === null) return presenting(); const r = pid ? remotes.get(pid) : null; return !!(r?.xrSample || r?.lastPose?.xr); }
+function tracked(actorId) { const pid = presenceIdOf(actorId); if (pid === null) return presenting(); const r = pid ? remotes.get(pid) : null; return !!(r?.xrSample || r?.lastPose?.xr); }
 /** Where a holder's hand is in the world: their avatar's hand bone (left or right), else in front of their chest. */
-function handOf(v4id, side = 'right', out = _hp) {
-  const av = avatarOf(v4id);
+function handOf(actorId, side = 'right', out = _hp) {
+  const av = avatarOf(actorId);
   // the RAW bone: the skinned skeleton the person sees. (The normalized rig is a proxy; on a cloned avatar it can be
   // another body's — the browser probe saw Bob's box drawn in Ann's hand through it.)
   const bone = av?.vrm?.humanoid?.getRawBoneNode?.(`${side}Hand`) ?? av?.vrm?.humanoid?.getNormalizedBoneNode?.(`${side}Hand`);
@@ -164,8 +164,8 @@ function handOf(v4id, side = 'right', out = _hp) {
 const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3();
 const _px = new THREE.Vector3(), _py = new THREE.Vector3(), _pz = new THREE.Vector3(), _pm = new THREE.Matrix4();
 const PALM_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);   // grip frame in a T-pose hand bone
-function palmOf(v4id, side, out) {
-  const av = avatarOf(v4id); const H = av?.vrm?.humanoid; if (!H) return null;
+function palmOf(actorId, side, out) {
+  const av = avatarOf(actorId); const H = av?.vrm?.humanoid; if (!H) return null;
   const raw = (n) => H.getRawBoneNode?.(n) ?? null;
   const hand = raw(`${side}Hand`); if (!hand) return null;
   hand.updateWorldMatrix(true, true); hand.getWorldPosition(_pa);
@@ -383,7 +383,7 @@ const atFeet = (p, f) => { const dh = Math.hypot(p[0] - f[0], p[2] - f[2]), dy =
 
 /** Pick something up: the named thing, or the nearest you can reach. */
 export async function grab(name) {
-  if (!replica.active) return say('carrying works in v4 worlds');
+  if (!replica.active) return say('carrying works in worlds');
   const id = name || nearest(inHand, grabbableIds(), prioOf);
   if (!id) return say('nothing here you can pick up within reach (things with a grabbable component)');
   await track(true);
@@ -440,7 +440,7 @@ export async function release(v = [0, 0, 0], name) {
 }
 /** /punt [thing] [power]: kick the named thing, or the nearest at your feet, through it from where you stand. */
 export async function punt(arg) {
-  if (!replica.active) return say('punting works in v4 worlds');
+  if (!replica.active) return say('punting works in worlds');
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((x) => !/^[\d.]+$/.test(x));
   const power = Math.min(20, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || PUNT_POWER));
@@ -603,7 +603,7 @@ export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, r
   heldAt: (id) => { const h = holds[id], obj = entities.get(id); if (!h || !obj) return null; obj.updateWorldMatrix(true, false);
     const at = heldPose(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
   /** probe surface: the palm frame a holder's hand gives ({p, q} world arrays), and the hold pose a body wears */
-  palm: (v4id, side = 'right') => { const o = palmOf(v4id ?? net.you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
+  palm: (actorId, side = 'right') => { const o = palmOf(actorId ?? net.you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
   track: () => track(true), request: (verb, args) => sendRequest(verb, args), frame: (wall) => frame(wall),
   /** the canonical fold's flights: id -> the launch seq it flies from */
   launched: () => Object.fromEntries(Object.entries(replica.sim?.launched ?? {}).map(([id, l]) => [id, l.seq])),

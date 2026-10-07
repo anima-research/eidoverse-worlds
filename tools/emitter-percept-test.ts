@@ -16,7 +16,7 @@
 process.env.EW_EMITTER_COALESCE_SEC = "0.25";
 const WINDOW = 250;
 const { WorldAgent } = await import("../mcpl/agent.ts");
-const { agentOnDoor } = await import("./agent-v4.ts");
+const { agentOnDoor } = await import("./agent-scratch.ts");
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -27,7 +27,7 @@ function check(name: string, ok: boolean, detail = "") {
 const T0 = 1_754_000_000_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// The world is a scratch v4 door (tools/agent-v4.ts), every write a door request at door time T0 (the coalescing
+// The world is a scratch authority (tools/agent-scratch.ts), every write a door request at door time T0 (the coalescing
 // window is the agent's, not the door's); the agent takes the next view of its own fold after each, live or not.
 async function rig(name = "emitters", at: [number, number] = [0, 0]) {
   const ag = new WorldAgent({ name });

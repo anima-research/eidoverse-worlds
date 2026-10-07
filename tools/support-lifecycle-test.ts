@@ -110,7 +110,7 @@ async function geom(lib: string) {
 const bandCentre = (t: any) => [(t.x[0] + t.x[1]) / 2, (t.z[0] + t.z[1]) / 2];
 const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 
-/** The scene's old authoring words, as v4 door requests (the world speaks v4: every write is a door request). A
+/** The scene's old authoring words, as authority requests (the world speaks the protocol: every write is a door request). A
  *  v4 "moving platform" is any motion component; v4 has no `path` motion, so a path becomes a bob, which moves it all
  *  the same. Requests go out in order on one socket and the door answers them in order. */
 const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
@@ -123,7 +123,7 @@ const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
       : [{ verb: "delete", args: { id: a.id, component: "motion" } }];
     case "mount": return [{ verb: "set", args: { id: a.id, component: "parent", value: { to: a.to } } }];
     case "dismount": return [{ verb: "delete", args: { id: a.id, component: "parent" } }, { verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
-    default: throw new Error(`no v4 door request for '${v}'`);
+    default: throw new Error(`no authority request for '${v}'`);
   }
 };
 /** A bare socket: authors the scene (the world's founder and owner) and plays the dragger's hand. */
@@ -132,7 +132,7 @@ function hand(world: string, name: string) {
   return new Promise<any>((res) => {
     const ws = new WebSocket(`${URL_}?name=${name}`);
     let n = 0;
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
@@ -301,7 +301,7 @@ try {
     h.close(); ag.close?.();
   }
 
-  // ---- 6. (v1: an id removed and respawned as a different lib mid-/geom-fetch kept its OWN geometry. A v4 door
+  // ---- 6. (v1: an id removed and respawned as a different lib mid-/geom-fetch kept its OWN geometry. A door
   // never reuses an id — "'swap' existed before in this world; an id is never reused" — so the race has no subject;
   // syncSupport's lib re-check stays as defence.)
 

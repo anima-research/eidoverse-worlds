@@ -1,12 +1,12 @@
 // blueprint-test — design §3 "Blueprints", §7 step 6a: the record, its hash,
-// the copy link as pure functions, and blueprints through the v4 door.
+// the copy link as pure functions, and blueprints through the authority.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/blueprint-test.ts
 //
 // 1. the hash      key order and prose (note) never move it; meaning does
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
-// 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch v4 world
+// 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch world
 //    (tools/protocol/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
 // 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
 //

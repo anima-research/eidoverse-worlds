@@ -97,7 +97,7 @@ const REC = stub.server.recipe as string;
 const enc = encodeURIComponent(REC);
 const lib = (id: string) => `eidoverse/assets/models/${id}.glb`;
 const GEOM = { bbox: { size: [1, 1, 1], center: [0, 0.5, 0] } };   // diag 1.73 → R ≈ 86.9m, auto edge ≈ 39m, halved ≈ 19.5m
-// the world: a scratch v4 door; the realizer is fed the views a v4 client's own fold reaches after each write
+// the world: a scratch authority; the realizer is fed the views a client's own fold reaches after each write
 const W = scratchWorld('lodclient');
 const door = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
 /** Place an entity on the z axis, `z` metres from the camera at the origin.

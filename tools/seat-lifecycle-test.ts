@@ -135,7 +135,7 @@ try {
   // OUR scratch WORLDS_DIR or nothing below is inspecting our child
   watcher = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
   await new Promise<void>((res, rej) => {
-    watcher!.onopen = () => { watcher!.send(JSON.stringify({ type: "join", world: "seatlab", id: "watcher", token: DOOR, v4fold: true })); res(); };
+    watcher!.onopen = () => { watcher!.send(JSON.stringify({ type: "join", world: "seatlab", id: "watcher", token: DOOR, replica: true })); res(); };
     watcher!.onerror = () => rej(new Error("watcher ws failed"));
   });
   watcher.onmessage = (ev) => { try { const m = JSON.parse(String(ev.data)); if (m.type === "avatar-profile-updated") watcherEvents.push(m); } catch { /* not ours */ } };
@@ -222,8 +222,8 @@ try {
   const legacy = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
   // the seat-profile correction keys on a socket that authors its support plane: seatAnchor "surface" (client
-  // seatcore.js socketAnchor, world.js). KNOWN GAP (2026-10-07): the v4 door's sockets schema has no seatAnchor (a socket
-  // takes pos, q, part, body, accepts, radius), so this seat can't be authored on a v4 world and every check below that
+  // seatcore.js socketAnchor, world.js). KNOWN GAP (2026-10-07): the authority's sockets schema has no seatAnchor (a socket
+  // takes pos, q, part, body, accepts, radius), so this seat can't be authored on a world and every check below that
   // sits on seatS stays red until the schema carries it (or the anchor moves into body).
   const surface = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL, seatS: { pos: [0, 1, 0], seatAnchor: "surface", body: { action: "sit", pose: "sitchair" } } } });
   check("…and a seat that authors its support plane (seatAnchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));

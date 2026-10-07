@@ -157,7 +157,7 @@ check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6);
 // one drives the agent's REAL rights path and asks the REAL flightAllowed() --
 // the function every flight verb actually calls.
 //
-// Protocol v4: the live path is the server's `your-rights` message, re-sent to
+// The protocol: the live path is the server's `your-rights` message, re-sent to
 // every client whenever a role changes (server.ts rightsFor over the door's
 // roles record: who wins between a person's own record and the world's
 // default-role is the SERVER's rule, answered whole -- the agent never merges a

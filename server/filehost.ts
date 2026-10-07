@@ -1,4 +1,4 @@
-// server/filehost.ts — a v4 world on disk: the storage half of the lab's openWorld (code/v4-lab/authority.js @ 11db981),
+// server/filehost.ts — a world on disk: the storage half of the lab's openWorld (the protocol lab's authority.js @ 11db981),
 // split out so shared/protocol/authority.js stays pure. Same layout as the lab: <root>/worlds/<name>.jsonl (the log),
 // <root>/worlds/<name>.presence.json (the presence plane, a file only because a test process may call once per
 // request) and <root>/store/sha256-<hex>.json (blobs, §2.2: named by full hash, stored once, verified on read).

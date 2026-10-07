@@ -2,9 +2,9 @@
 //   bun tools/protocol/sweep.ts                  # every distinct log.jsonl under the checkout's parent directory
 //   PROTOCOL_WORLDS=<dir>[:<dir>…] bun tools/protocol/sweep.ts
 // Required, for every distinct world log found:
-//   - translate-v1: 0 divergences (the v4 fold agrees with the projection of the engine's own fold after EVERY
+//   - translate-v1: 0 divergences (the fold agrees with the projection of the engine's own fold after EVERY
 //     entry — the translator checks this itself);
-//   - the written v4 log, re-read from text by the strict reader alone: status ok, 0 malformed, and its fold equals
+//   - the written log, re-read from text by the strict reader alone: status ok, 0 malformed, and its fold equals
 //     the translator's final projection;
 //   - the projection loses nothing: an independent inverse (v4 components → old field names), compared with the
 //     REAL engine fold, entry by entry (every 250th past 2,000 entries), aligned by act. Only representation is
@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
-import { readLog, fold as v4fold, opsOf, applyInPlace, emptyState as v4Empty } from "../../shared/protocol/fold.js";
+import { readLog, fold as replica, opsOf, applyInPlace, emptyState as v4Empty } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/protocol/simlayer.js";
@@ -63,7 +63,7 @@ for (const name of Object.keys(golden)) {
   check(`${name}: 0 divergences (world ${r.stats.worldDivergences}, flight ${r.stats.flightDivergences})`, !r.stats.worldDivergences && !r.stats.flightDivergences, JSON.stringify(r.stats.first));
   check(`${name}: every punt a launch, every launch a rest`, r.stats.launches > 0 && r.stats.launches === r.stats.rests, `${r.stats.launches}/${r.stats.rests}`);
   check(`${name}: deterministic`, sha256(text(r.out)) === sha256(text(r2.out)));
-  const back = v4fold(readLog(text(r.out)));
+  const back = replica(readLog(text(r.out)));
   check(`${name}: strict read-back ok, 0 malformed`, back.status === "ok" && !back.diagnostics.some(([, k]: any) => k.startsWith("malformed")), JSON.stringify(back.diagnostics.filter(([, k]: any) => k.startsWith("malformed")).slice(0, 3)));
   const where = Object.entries(s0.bodies).every(([id, b]: [string, any]) => c(back.entities?.[id]?.c.transform.pos) === c(b.p));
   check(`${name}: with no engine at all, everything rests where hers rests`, where);
@@ -83,15 +83,15 @@ const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED
 // else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
 // parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").
 const POSE = new Set(["offset", "yaw", "q"]);
-// v1's parent.slot is v4's parent.socket: shared/hierarchy.js (the renderer's reading) speaks v4
-const asV4Parent = (e: any) => (e?.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e);
-const v1Shim = (ents: any) => (ents ? Object.fromEntries(Object.entries<any>(ents).map(([k, e]) => [k, asV4Parent(e)])) : ents);   // per call: the v1 fold mutates its state in place
+// v1's parent.slot is v4's parent.socket: shared/hierarchy.js (the renderer's reading) speaks the protocol
+const asSocketParent = (e: any) => (e?.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e);
+const v1Shim = (ents: any) => (ents ? Object.fromEntries(Object.entries<any>(ents).map(([k, e]) => [k, asSocketParent(e)])) : ents);   // per call: the v1 fold mutates its state in place
 function oldNorm(st: any) {
   const ents: any = {}; let shim: any = null;
   for (const [id, e0] of Object.entries<any>(st.entities ?? {})) {
     const e: any = {};
     for (const [k, v] of Object.entries<any>(e0)) if (!DROP_ENTITY.includes(k)) e[k] = v;
-    const L = e0.parent ? localOf(asV4Parent(e0), (shim ??= v1Shim(st.entities))) : null;   // hierarchy.js reads v4's parent.socket
+    const L = e0.parent ? localOf(asSocketParent(e0), (shim ??= v1Shim(st.entities))) : null;   // hierarchy.js reads parent.socket
     if (L?.mounted) { e.pos = L.pos; e.q = L.q ?? yq(L.yaw); delete e.yaw; }
     if (e.parent && typeof e.parent.to === "string") e.parent = Object.fromEntries(Object.entries<any>(e.parent).filter(([k]) => !POSE.has(k)));
     if (e.comp && "guard" in e.comp) { const { guard, ...cc } = e.comp; e.comp = cc; if (guard && !cc.lock) e.comp.lock = true; }
@@ -198,13 +198,13 @@ for (const p of logs.sort()) {
   const L = parse(raw); const name = p.replace(path.resolve(ENGINE, "..") + "/", "");
   let r: any; try { r = translateV1(L); } catch (e: any) { check(`${name}: translates without throwing`, false, e.message); continue; }
   total++; entries += L.length; divergences += r.stats.divergences; renamed += r.stats.renamed ?? 0; clamped += r.stats.tsClamped ?? 0;
-  guards += r.stats.guards; if (r.stats.guards) guardWorlds++; mounted += Object.values<any>(r.final.v4).filter((c) => c.parent).length; mountVerbs += r.stats.verbs.mount ?? 0;
+  guards += r.stats.guards; if (r.stats.guards) guardWorlds++; mounted += Object.values<any>(r.final.translated).filter((c) => c.parent).length; mountVerbs += r.stats.verbs.mount ?? 0;
   check(`${name} (${L.length}): 0 divergences`, !r.stats.divergences, JSON.stringify(r.stats.firstDivergence));
-  const back = v4fold(readLog(text(r.out)));
+  const back = replica(readLog(text(r.out)));
   const m = back.diagnostics.filter(([, k]: any) => k.startsWith("malformed")); malformed += m.length;
   check(`${name}: strict read-back ok, 0 malformed`, back.status === "ok" && !m.length, JSON.stringify(m.slice(0, 3)));
   check(`${name}: the read-back fold equals the translator's final projection`, back.status === "ok" && c(Object.fromEntries(Object.keys(back.entities).map((id) => [id, back.entities[id].c]))) === c(r.final.v1));
-  // the inverse, aligned by act: the k-th act/say in the v4 log is the k-th non-genesis old entry
+  // the inverse, aligned by act: the k-th act/say in the log is the k-th non-genesis old entry
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
   const v1 = v1Empty(); const v4 = v4Empty(); let k = -1, loss: any = null;
   const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, v4); if (x) loss = { oldSeq: body[i].seq, ...x }; };
@@ -214,7 +214,7 @@ for (const p of logs.sort()) {
   compareAt(k); if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
-  { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.v4)) for (const [k, v] of Object.entries<any>(comps)) {
+  { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.translated)) for (const [k, v] of Object.entries<any>(comps)) {
       const why = schemaRefusal(k, v); if (why) bad.push(`${id}.${k}: ${why}`); }
     check(`${name}: the authority's catalogue takes every translated component as it is`, !bad.length, bad.slice(0, 4)); }
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));

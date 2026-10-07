@@ -1,7 +1,7 @@
-// tools/protocol/client-probe.mjs — TODAY's client (headless Chromium) visiting a v4 world (protocol/v4 slice 2).
+// tools/protocol/client-probe.mjs — TODAY's client (headless Chromium) visiting a world (protocol/v4 slice 2).
 // usage (one Chrome, under the guard):  perf-guard.sh -t 240 -- bun tools/protocol/client-probe.mjs
 // What it shows, each as a stage line printed green or red:
-//   boot      the client boots into a v4 world (founded by tools/protocol/world.ts in a scratch WORLDS_DIR) and finishes
+//   boot      the client boots into a world (founded by tools/protocol/world.ts in a scratch WORLDS_DIR) and finishes
 //   see       a thing created through the authority BEFORE the visit is realized (the snapshot's projection)
 //   live      a thing another person creates through the authority WHILE it watches is realized (projected v1 verbs)
 //   spot      a spot light set through the authority lights a spot slot with its cone, shining down the thing's -Z
@@ -60,16 +60,16 @@ const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
 const SMALL = 0.3;   // the crate at 0.3 scale (0.75 × 0.6 × 0.45 m): something to carry (its GLB is already loaded and compiled)
 // a swing whose plank is its own part named the way a component key can name it (motion:plank): the probe's own
 // model, written beside the optimised assets for this run only (removed in finally)
-const SWING = `eidoverse/assets/models/v4probe-swing-${process.pid}.glb`;
+const SWING = `eidoverse/assets/models/probe-swing-${process.pid}.glb`;
 const SWING_FILE = join(OPT_DIR, SWING);
-const KEY = 'v4probe';
-const worlds = mkdtempSync(join(tmpdir(), 'v4-client-'));
+const KEY = 'clientprobe';
+const worlds = mkdtempSync(join(tmpdir(), 'client-probe-'));
 const stage = (name, okv, detail) => console.log(`${okv ? 'ok  ' : 'FAIL'} ${name}${detail !== undefined ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 400)}` : ''}`);
 let failed = 0; const check = (n, v, d) => { if (!v) failed++; stage(n, v, d); return v; };
 let world = null, b = null, ANN = null, BOB = null;
 try {
   // the world: founded by Ann, a crate already standing in it, Bob a builder
-  foundWorld(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
+  foundWorld(join(worlds, 'garden'), 'garden', 'Ann', 'a test garden');
   mkdirSync(join(SWING_FILE, '..'), { recursive: true }); writeFileSync(SWING_FILE, swingGlb());
   await warm([MODEL, SWING]);
   { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
@@ -116,7 +116,7 @@ try {
     const gone = await race(pg.evaluate(() => { const sp = document.getElementById('splash'); return !sp || sp.classList.contains('gone'); })).catch(() => false);
     if (ready && gone) break; await new Promise((r) => setTimeout(r, 250)); }
   const net = await race(pg.evaluate(() => ({ joined: !!globalThis.EW?.net?.joined, you: globalThis.EW?.net?.myId, role: globalThis.EW?.net?.myRights?.role })));
-  if (!check(`boot: the client finishes booting into the v4 world, as its ${AS === 'Ann' ? 'owner' : 'visitor'}`, !!ready && net.joined && net.role === (AS === 'Ann' ? 'owner' : 'visitor'), { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-5) })) throw new Error('boot gate failed');
+  if (!check(`boot: the client finishes booting into the world, as its ${AS === 'Ann' ? 'owner' : 'visitor'}`, !!ready && net.joined && net.role === (AS === 'Ann' ? 'owner' : 'visitor'), { ready, net, errors: errors.slice(0, 3), tail: logs.slice(-5) })) throw new Error('boot gate failed');
   // see
   let seen = false; for (let i = 0; i < 40 && !seen; i++) { seen = (await ents()).includes('crate-before'); if (!seen) await new Promise((r) => setTimeout(r, 250)); }
   check('see: the crate created through the authority before the visit is realized', seen, await ents());
@@ -125,7 +125,7 @@ try {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const inbox = []; ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
   // Bob wears a body with finger bones (the default claude.vrm has none), so the grab stages can read a grip's finger preset
-  ws.send(JSON.stringify({ type: 'join', world: 'garden', id: 'Bob', avatar: process.env.PROBE_BOB_AVATAR ?? 'tigerbee', token: KEY, v4fold: true }));
+  ws.send(JSON.stringify({ type: 'join', world: 'garden', id: 'Bob', avatar: process.env.PROBE_BOB_AVATAR ?? 'tigerbee', token: KEY, replica: true }));
   for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'snapshot'); i++) await new Promise((r) => setTimeout(r, 100));
   ws.send(JSON.stringify({ type: 'request', id: 1, verb: 'create', args: { id: 'crate-live', model: MODEL, place: { near: 'crate-before' } } }));
   for (let i = 0; i < 40 && !inbox.some((m) => m.type === 'reply'); i++) await new Promise((r) => setTimeout(r, 100));
@@ -438,12 +438,12 @@ try {
     // another person over their own socket (the authority's requests, as Bob's)
     const sock = async (name) => { const s = new WebSocket(world.origin.replace('http', 'ws') + '/ws'); await new Promise((r, j) => { s.onopen = r; s.onerror = j; });
       const box = []; s.onmessage = (ev) => box.push(JSON.parse(String(ev.data)));
-      s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, v4fold: true }));
+      s.send(JSON.stringify({ type: 'join', world: 'garden', id: name, avatar: '', token: KEY, replica: true }));
       for (let i = 0; i < 60 && !box.some((m) => m.type === 'snapshot'); i++) await rs(100);
       let n = 0; const req = async (verb, args) => { const id = `${name}${++n}`; s.send(JSON.stringify({ type: 'request', id, verb, args }));
         for (let i = 0; i < 80; i++) { const m = box.find((x) => x.type === 'reply' && x.id === id); if (m) return m.reply ?? m; await rs(100); } return { ok: false, refused: { reason: 'no answer' } }; };
       await settle();   // their body compiles on this page now: wait it out once, before anything is clicked
-      return { req, you: box.find((m) => m.type === 'snapshot')?.v4?.you, close: () => s.close() }; };
+      return { req, you: box.find((m) => m.type === 'snapshot')?.cut?.you, close: () => s.close() }; };
     const openPeople = async () => { await rwait(() => !!document.querySelector('.chat-who'), null, 15000);
       if (!(await race(pg.evaluate(() => !document.querySelector('.chat-side')?.classList.contains('closed'))).catch(() => false))) { await settle(); await pg.locator('.chat-who').first().click(); }
       return rwait(() => document.querySelector('.who-row[data-name="Bob"]') && document.querySelectorAll('.chat-side-list .who-row').length >= 3, null, 20000); };
@@ -567,7 +567,7 @@ try {
       const EW = globalThis.EW; const r0 = await EW.sendRequest('delete', { id: 'no-such-thing-probe' });
       const h = await EW.sendRequest('history', { limit: 30 });
       const { worldHistoryRows } = await import(new URL('lib/historyrows.js', location.href).href);
-      return { refusedReply: !r0?.ok, rows: worldHistoryRows(h.entries, EW.V4?.nameOf ?? ((x) => x)).slice(0, 4) };
+      return { refusedReply: !r0?.ok, rows: worldHistoryRows(h.entries, ((x) => x)).slice(0, 4) };
     }), 20000).catch((e) => ({ err: String(e) }));
     const tried = rows?.rows?.find((x) => x.target === 'no-such-thing-probe');
     check('history: a refused attempt reads "tried … refused", not as done', rows?.refusedReply && tried?.refused && /tried .* refused/.test(tried.text), rows);
@@ -942,9 +942,9 @@ try {
   }
   }   // !SKIP_REST
   ws.close();
-  const v4Errors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
+  const pathErrors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
   stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);
-  check('errors: no page error, and no console.error mentioning the v4 path', !errors.some((e) => /pageerror|TypeError|ReferenceError/.test(e)) && !v4Errors.length, errors.slice(0, 6));
+  check('errors: no page error, and no console.error mentioning the v4 path', !errors.some((e) => /pageerror|TypeError|ReferenceError/.test(e)) && !pathErrors.length, errors.slice(0, 6));
 } catch (e) {
   failed++; stage('probe', false, String(e?.stack ?? e).slice(0, 600));
 } finally {
@@ -953,5 +953,5 @@ try {
   rmSync(worlds, { recursive: true, force: true });
   rmSync(SWING_FILE, { force: true });
 }
-console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a v4 world, sees it, edits it through the authority, and hears refusals');
+console.log(failed ? `client-probe: ${failed} failed` : 'client-probe: today\'s client boots into a world, sees it, edits it through the authority, and hears refusals');
 process.exit(failed ? 1 : 0);

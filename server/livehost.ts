@@ -1,4 +1,4 @@
-// server/livehost.ts — a v4 world as a running server holds it: the authority (shared/protocol/authority.js) over one directory, with
+// server/livehost.ts — a world as a running server holds it: the authority (shared/protocol/authority.js) over one directory, with
 // every view the authority reads kept INCREMENTALLY (research 35, slice-2 #5):
 //   state   the strict fold, advanced per appended entry (copy-on-write: only the entities an entry touches are
 //           copied, so a held state never changes under its holder, and a write costs the world's touched part, not
@@ -15,7 +15,8 @@
 // the request returns: the authority has already re-read it with the strict reader.
 import fs from "node:fs";
 import path from "node:path";
-import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed } from "../shared/protocol/fold.js";
+import { custodyFileIn } from "./keyfiles.ts";
+import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
@@ -39,13 +40,13 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 }
 
 export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
-  /** the authority's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
+  /** the authority's governance keys file (§2.4); default <worlds dir>/.custody.json, shared by every world in it */ custodyFile?: string;
   /** id → display name (the authority directory, server/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
   /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/protocol/sandbox.js; null = none) */ scripts?: Any;
   /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
 
-/** Open (or prepare to found) the v4 world stored in `dir`. */
+/** Open (or prepare to found) the world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const logPath = path.join(dir, "world.jsonl");
   const blobDir = path.join(dir, "blobs");
@@ -73,7 +74,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
-    custody: custodyAt(opts.custodyFile ?? path.join(path.dirname(dir), ".v4-custody.json")),
+    custody: custodyAt(opts.custodyFile ?? custodyFileIn(path.dirname(dir))),
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
     kindOf: opts.kindOf ?? ((id: string) => directoryFor(path.dirname(dir)).entry(id)?.kind ?? null),
     ...modLogAt(path.join(dir, "world.mod.jsonl")),
@@ -106,14 +107,25 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   return w;
 }
 
-/** Is `dir` a v4 world? Its log exists and line 0 is a v4 genesis (§2.4: the fold version is stated there). */
-export function isWorldDir(dir: string): boolean {
-  const p = path.join(dir, "world.jsonl");
-  if (!fs.existsSync(p)) return false;
+/** Line 0 of the log at `p`, read (only the first 64 KiB is looked at), or null. */
+function genesisAt(p: string): any {
+  if (!fs.existsSync(p)) return null;
   try {
     const fd = fs.openSync(p, "r"); const buf = Buffer.alloc(1 << 16); const n = fs.readSync(fd, buf, 0, buf.length, 0); fs.closeSync(fd);
-    const first = buf.subarray(0, n).toString("utf8").split("\n")[0];
-    const [g] = readLog(first);
-    return isE(g) && g.kind === "genesis" && g.body?.version === 4;
-  } catch { return false; }
+    const [g] = readLog(buf.subarray(0, n).toString("utf8").split("\n")[0]);
+    return isE(g) && g.kind === "genesis" ? g : null;
+  } catch { return null; }
+}
+/** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
+ *  (§2.4: the protocol's number is stated there and nowhere else). */
+export function isWorldDir(dir: string): boolean {
+  const g = genesisAt(path.join(dir, "world.jsonl"));
+  return !!g && g.body?.dialect === DIALECT && g.body?.v === VERSION;
+}
+/** A log of this protocol's family (an entry-kind genesis) that this server can't read: saved before the 2026-10-07
+ *  names pass (an older file name, or a genesis that stated its number in its own field). Refounded, or re-translated
+ *  from its original log; never opened. */
+export function isPreNamesDir(dir: string): boolean {
+  if (isWorldDir(dir) || !fs.existsSync(dir)) return false;
+  try { return fs.readdirSync(dir).some((f) => f.endsWith(".jsonl") && !!genesisAt(path.join(dir, f))); } catch { return false; }
 }

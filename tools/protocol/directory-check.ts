@@ -4,14 +4,16 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, isMinted } from "../../server/directory.ts";
+import { directoryAt, directoryFor, isMinted } from "../../server/directory.ts";
+import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
+import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../../server/livehost.ts";
 import { request, actIndexOf, isBanned } from "../../shared/protocol/authority.js";
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, what: string, why?: unknown) => { if (c) pass++; else { fail++; console.log(`  FAIL ${what}${why === undefined ? "" : ` — ${JSON.stringify(why).slice(0, 300)}`}`); } };
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "v4-dir-"));
-const file = path.join(tmp, "worlds", ".v4-directory.json");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dir-check-"));
+const file = path.join(tmp, "worlds", ".directory.json");
 
 // ---- D: the directory itself ----
 { const d = directoryAt(file);
@@ -170,7 +172,7 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(q(ann, "undo", { act: last }).ok, "U9 …an owner still can (owners settle it)");
   ok(q(bob, "undo", { acts: 3 }).refused?.code === "unknown-arg", "U10 a typo'd undo argument is refused, not a silent undo of your latest act (R10)"); }
 
-// ---- W: the sky panel in a v4 world (it couldn't write at all: fromv1 had no 'sky' / 'weather') ----
+// ---- W: the sky panel in a world (it couldn't write at all: fromv1 had no 'sky' / 'weather') ----
 { let T = 1800000000000; const d = directoryAt(file); const { worldEditOps } = await import("../../shared/worldentity.js");
   const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:w1", name: "Wyn" }), vis = d.resolve({ sub: "human:discord:w2", name: "Val" });
@@ -245,6 +247,23 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   ok(back.ok && w.state().entities.gate.c.openable.open === false, "V2 …and can undo that, under the same handler (not builder rank)", back.refused);
   request(w, vis, "use", { id: "gate", action: "open" }); request(w, own, "delete", { id: "gate", component: "reactions" });
   ok(request(w, vis, "undo", {}).refused?.code === "rights", "V3 with the handler gone, the capability is gone: the visitor's undo is refused on rank (asked again now, not at use time)"); }
+
+// ---- K: the shared key files' names (the 2026-10-07 names pass: the number left their names) ----
+// A worlds dir that holds only the old names is renamed once, the first time the path is asked for, so a local world keeps
+// its sequencer key and its people their identities. Both names present: the current file wins, the old one stays put.
+{ const wd = path.join(tmp, "oldnames"); fs.mkdirSync(wd, { recursive: true });
+  const oldDir = path.join(wd, OLD_NAMES[DIRECTORY_FILE]), oldCust = path.join(wd, OLD_NAMES[CUSTODY_FILE]);
+  const before = directoryAt(oldDir); const kim = before.resolve({ sub: "human:discord:kim", name: "Kim" });
+  const seqBefore = custodyAt(oldCust).sequencer();
+  const id = directoryFor(wd).resolve({ sub: "human:discord:kim", name: "Kim" });
+  ok(id === kim, "K1 a directory left under its old name is the one the server opens: the same account, the same identity", [id, kim]);
+  ok(fs.existsSync(path.join(wd, DIRECTORY_FILE)) && !fs.existsSync(oldDir), "K2 …renamed once, to the current name", fs.readdirSync(wd));
+  ok(custodyAt(custodyFileIn(wd)).sequencer() === seqBefore && !fs.existsSync(oldCust), "K3 the governance keys keep their sequencer key through the rename", fs.readdirSync(wd));
+  const both = path.join(tmp, "bothnames"); fs.mkdirSync(both);
+  const cur = custodyAt(path.join(both, CUSTODY_FILE)).sequencer(), stale = custodyAt(path.join(both, OLD_NAMES[CUSTODY_FILE])).sequencer();
+  ok(custodyAt(custodyFileIn(both)).sequencer() === cur && cur !== stale && fs.existsSync(path.join(both, OLD_NAMES[CUSTODY_FILE])), "K4 both names present: the current file wins and the old one is left alone, never merged");
+  const fresh = path.join(tmp, "fresh"); fs.mkdirSync(fresh);
+  ok(custodyFileIn(fresh) === path.join(fresh, CUSTODY_FILE) && fs.readdirSync(fresh).length === 0, "K5 a fresh worlds dir: the current name, and nothing created by asking", fs.readdirSync(fresh)); }
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);

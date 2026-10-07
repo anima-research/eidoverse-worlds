@@ -64,7 +64,7 @@ async function sock(port, headers = undefined) {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const s = {
     msgs, get closed() { return closed; },
-    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true, ...extra }));
+    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
       for (let i = 0; i < 60; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null) break; await sleep(50); }
       await sleep(50); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
@@ -73,7 +73,7 @@ async function sock(port, headers = undefined) {
   };
   return s;
 }
-const you = (j) => j.snapshot?.v4?.you;
+const you = (j) => j.snapshot?.cut?.you;
 
 // ---- C3: a bare name in WORLD_ADMIN refuses to boot (accounts only) ----
 { const s = await start({ WORLD_ADMIN: "Riannon" });
@@ -156,7 +156,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H4g teardown) back to guests-as-visitors");
   { const rb = await own.req("set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     ok(rb.refused?.code === "shape" && /identity/.test(rb.refused.reason ?? ""), "T1c roles:<key> must be someone the directory knows (roles:bob matched nobody, silently)", rb.refused);
-    ok((await own.req("set", { id: "@world", component: `roles:${jw.snapshot.v4.you}`, value: { role: "builder" } })).ok, "T1c …a known person's identity is taken"); }
+    ok((await own.req("set", { id: "@world", component: `roles:${jw.snapshot.cut.you}`, value: { role: "builder" } })).ok, "T1c …a known person's identity is taken"); }
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");
@@ -169,7 +169,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(ban.ok && g.closed != null, "H4 a door ban removes the banned guest at once", [ban, g.closed]);
   const again = await sock(S3.port); const ja2 = await again.join("meadow", "someone-new");
   ok(!ja2.snapshot && /banned/.test(ja2.errors.join(" ")), "H4 the banned guest reconnecting as a fresh guest is refused (their connection is named)", ja2.errors);
-  // world-bans reads the authority's moderation record (it read v1 state.bans: a v4 world always said "nobody is banned")
+  // world-bans reads the authority's moderation record (it read v1 state.bans: a world always said "nobody is banned")
   { const k = own.msgs.length; own.raw({ type: "world-bans" }); await sleep(300);
     const t = own.msgs.slice(k).find((m) => m.type === "mod")?.text ?? "";
     ok(/banned from "meadow" \(1\)/.test(t) && /test/.test(t), "world-bans lists the authority's bans (who, and why)", t); }
@@ -225,7 +225,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const note = own.msgs.slice(k).find((m) => m.type === "voice-moderated");
     const log = await fern.req("modlog", { who: you(jm) });
     const diag = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
-    ok(none && note?.v4id === you(jm) && note.muted === true && log.ok && log.records?.[0]?.verb === "mute" && log.records[0].who === you(jm) && JSON.stringify(log.records[0].channels) === '["voice"]'
+    ok(none && note?.actorId === you(jm) && note.muted === true && log.ok && log.records?.[0]?.verb === "mute" && log.records[0].who === you(jm) && JSON.stringify(log.records[0].channels) === '["voice"]'
       && (diag.moderatorMuted ?? []).includes("Moss"), "RS2 voice-moderate mutes the IDENTITY standing there (logged in the moderator log, applied at the SFU); a name nobody here answers to mutes nobody",
       [none, note, log.records?.[0], diag.moderatorMuted]);
     // …and it survives a reconnect (re-applied on join, keyed on the identity)
@@ -368,16 +368,16 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const late = await sock(S5.port); const jl = await late.join("moor", "Fern", { agentToken: "tok-fern" });
     const G = rights(j4).ghost;
     ok(gh.ok && !!j4.snapshot && !!G && !G.chosen && G.until > t0 && G.until <= t0 + 24 * 3600_000 + 60_000
-      && !own.msgs.slice(k).some((m) => m.type === "arrive" && m.v4id === you(j4)) && !(jl.snapshot?.present ?? []).some((x) => x.v4id === you(j4) || x.id === j4.snapshot?.you),
+      && !own.msgs.slice(k).some((m) => m.type === "arrive" && m.actorId === you(j4)) && !(jl.snapshot?.present ?? []).some((x) => x.actorId === you(j4) || x.id === j4.snapshot?.you),
       "GG3 a guest's ghost holds against the next guest from the address (at most a day), unseen from their first moment", [gh.ok, G, own.msgs.slice(k).filter((m) => m.type === "arrive")]);
     // GG4: unghosting lifts the address record
     const ug = await own.req("unghost", { who: you(j4) }); g4.close(); await sleep(300);
     const [g5, j5] = await guest("drifter5");
     ok(ug.ok && !!j5.snapshot && !rights(j5).ghost, "GG4 an unghost lifts the address record too", [ug, rights(j5)]);
     // GG5: the voice control's mute (voice-moderate) is a mute like any other: it carries, and its unmute lifts it
-    own.raw({ type: "voice-moderate", v4id: you(j5), muted: true, minutes: 5 }); await sleep(400); g5.close(); await sleep(300);
+    own.raw({ type: "voice-moderate", actorId: you(j5), muted: true, minutes: 5 }); await sleep(400); g5.close(); await sleep(300);
     const [g6, j6] = await guest("drifter6");
-    own.raw({ type: "voice-moderate", v4id: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
+    own.raw({ type: "voice-moderate", actorId: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
     const [g7, j7] = await guest("drifter7");
     ok(JSON.stringify(rights(j6).muted?.channels) === '["voice"]' && !rights(j7).muted, "GG5 a voice-control mute carries by address (voice only), and its unmute lifts it", [rights(j6).muted, rights(j7).muted]);
     for (const x of [moss, late, g7]) x.close(); }

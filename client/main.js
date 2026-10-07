@@ -443,7 +443,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
-// physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
+// physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 // reach descriptors resolve against the same bodies everyone renders; my own

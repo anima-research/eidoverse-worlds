@@ -1,9 +1,9 @@
-// tools/protocol/client-check.ts — slice 3b in a real browser: edit mode in a v4 world sends v4 requests, folds v4 and
+// tools/protocol/client-check.ts — slice 3b in a real browser: edit mode in a world sends requests, folds the log and
 // waits for the authority. One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench: scratch port,
 // scratch WORLDS_DIR, its own profile; never 8968/8970). Run it under the house guards:
 //   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/client-check.ts      (test:v4's `client` suite does this)
 //
-//   B   boot: the page knows it's in a v4 world; its own fold of the v4 stream = the log on disk (digest)
+//   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
@@ -28,7 +28,7 @@ const ME = "editbot", WORLD = "edit4";
 process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the account local:editbot (server/config.ts)
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
-const { cdp, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench("v4client", {
+const { cdp, evalJson, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "client check"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -64,7 +64,7 @@ try {
   // ---- a second builder over a plain socket (an agent's view: it still reads the projection) ----
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0;
   let BOB = "";   // bob's identity: the opaque id his snapshot tells him (round-2 R1); a role is granted to it, never to "bob"
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.v4?.you) BOB = m.v4.you; };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.cut?.you) BOB = m.cut.you; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
@@ -72,14 +72,14 @@ try {
     window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
     window.__refused = []; window.__asked = [];
     window.__v1sent = []; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m && m.type === 'verb') __v1sent.push(m.verb); } catch {} return send.call(this, d); }; }
-    import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); m.bus.on('v4-lock-asked', (e) => __asked.push(e)); });` });
+    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-lock-asked', (e) => __asked.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
-  check("B1 the page knows it's in a v4 world (it adopted the v4 cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", v4fold: true })); await sleep(500);   // v4fold: a v4 world speaks only to clients that read v4 (3c)
+  check("B1 the page knows it's in a world (it adopted the v4 cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(500);   // replica: a world speaks only to clients that read v4 (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));
@@ -562,7 +562,7 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
-  // ---- GR: the ground panel writes in a v4 world (R 10-06: ground & grass panels broken). It sent v1 'terrain'/'grass'
+  // ---- GR: the ground panel writes in a world (R 10-06: ground & grass panels broken). It sent v1 'terrain'/'grass'
   // verbs, which fromv1 had no spelling for, so the page refused them itself and nothing reached the authority. ----
   { const st4 = () => fold(entries());
     const gpanel = `const d = document.createElement('div'); document.body.appendChild(d); (await import('/lib/groundpanel.js')).paintGround(d); window.__gp = d;
@@ -580,12 +580,12 @@ try {
     await evalJson(`(window.__gp.remove(), true)`); }
 
   // ---- the page's own fold, at the end ----
-  check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st))`), digest(disk())]);
-  check("B4 what the page drew is the view of its own fold: v4 entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.replica.st)); return n.replica.stats.ingested > 10 && n.replica.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.replica.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.replica.stats, diff: d.diffView(s.state.st, r.viewState(n.replica.st)) }))`));
+  check("B3 the page's fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st))`), digest(disk())]);
+  check("B4 what the page drew is the view of its own fold: entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.replica.st)); return n.replica.stats.ingested > 10 && n.replica.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.replica.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.replica.stats, diff: d.diffView(s.state.st, r.viewState(n.replica.st)) }))`));
   // a UI verb path (the chat box sends through net.js sendVerb('say')), driven for real so B5 has a subject
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
-  check("B5a the chat box's line (a UI verb) reaches the v4 log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
-  check("B5 the page sent no v1 verb to the v4 world, all run long: every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
+  check("B5a the chat box's line (a UI verb) reaches the log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
+  check("B5 the page sent no v1 verb to the world, all run long: every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
   // ---- CP: the Commons v1→v4 parity audit (10-06): what a person who isn't in the editor sees ----
   { const lines = () => evalJson(`[...document.querySelectorAll('#chatlog .line')].map((l) => l.textContent)`);
     const type = (text: string) => evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
@@ -608,8 +608,8 @@ try {
     let carlId = "";
     // CP4 (setup) carl visits, speaks and leaves, BEFORE the page reconnects (CP6): a page that never saw him arrive
     { const carl = new WebSocket(BASE.replace("http", "ws") + "/ws"); await new Promise((r, j) => { carl.onopen = r; carl.onerror = j; });
-      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.v4?.you; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
-      carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", v4fold: true }));
+      carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.cut?.you; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
+      carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", replica: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
     // CP6 a line typed while reconnecting is queued, then sent (v4 dropped it as 'offline')
     { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(), true))`);
@@ -653,7 +653,7 @@ try {
       const r = await page(`const m = await import('/lib/net.js'); return await Promise.race([m.say('after removal'), new Promise((res) => setTimeout(() => res('pending'), 3000))]);`);
       check("CP10 a say after removal answers at once, in words, and isn't queued", r?.ok === false && await lineLike(`/“after removal” wasn't sent: not connected/`, 2000) && !(await lines() as string[]).some((l) => /queued “after removal”/.test(l)), { r, last: (await lines() as string[]).slice(-2) }); } }
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
-  check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
+  check("N1 no '[state] seq gap' noise: the v1 numbering a client derives is sparse by design (seq×1000+k), and the log stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }

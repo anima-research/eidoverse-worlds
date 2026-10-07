@@ -78,7 +78,7 @@ console.log('1. the alias both ways, through the real door:');
   // KNOWN BUG (reported 2026-10-06, a door/catalogue mismatch, not fixed here): a weather pick under a forecast is a
   // manual override; the door's own skyValue (shared/forecast.js foldSkyEntry) writes sky.override, and the door's sky
   // schema (shared/protocol/componentspec.js) has no `override` key, so the door refuses its own value: "unknown key 'override'".
-  // The Build tab's weather tile and weather.state are refused in any v4 world with a forecast.
+  // The Build tab's weather tile and weather.state are refused in any world with a forecast.
   check('the door takes every request of the synthetic world (KNOWN BUG: a weather under a forecast is refused)', refusals.length === 0, refusals.join(' | '));
   check(`the alias round-trips exactly after every request of a synthetic world (${n} states)`, bad.length === 0, bad.join(' | '));
   const W2 = scratchWorld('worldentity');

@@ -32,7 +32,7 @@ catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); }
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
 export const sandboxAvailable = () => (Q ? true : unavailable);
 
-// The whole script-facing API, in one place (docs: docs/SCRIPTS-v4.md). Runs inside the VM before the source.
+// The whole script-facing API, in one place (docs: docs/SCRIPTS.md). Runs inside the VM before the source.
 const PRELUDE = String.raw`"use strict";
 (() => {
   const host = globalThis.__host; delete globalThis.__host;

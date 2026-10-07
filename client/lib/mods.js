@@ -7,7 +7,7 @@
 //     It can act as you; loading one is a mod-install decision, like a
 //     browser extension. Stored in IndexedDB, yours alone, survives reloads.
 //     (A world doesn't offer client mods: what runs in a world is its own
-//     scripts, on the server, through the door — docs/SCRIPTS-v4.md.)
+//     scripts, on the server, through the door — docs/SCRIPTS.md.)
 //
 // What a mod can DO needs no new machinery: it animates your own body freely
 // (it is you), other bodies by their consent (bodydrag), objects through the

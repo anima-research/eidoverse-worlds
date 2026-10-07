@@ -10,9 +10,9 @@
 //
 // Exit 0 = all gates pass. Gates are printed at the end.
 //
-// The world must exist (a v4 world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
-// joining never founds one). Every connection joins with v4fold (the world speaks protocol v4): chat is read from
-// the snapshot's chat window (state.recentChat) and the v4-log stream's `say` entries, and a say is a door request.
+// The world must exist (a world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
+// joining never founds one). Every connection joins with replica (the world speaks the protocol): chat is read from
+// the snapshot's chat window (state.recentChat) and the log stream's `say` entries, and a say is a door request.
 
 const URL = process.env.URL ?? "ws://127.0.0.1:8940/ws";
 const TOKEN = process.env.TOKEN ?? "";
@@ -39,7 +39,7 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
     const ws = new WebSocket(URL);
     const s: Spec = { ws, joinMs: -1, frames: 0, gaps: 0, lastSeq: -1, lat: [], says: new Set(), openAt: performance.now(), snapAt: 0 };
     const to = setTimeout(() => reject(new Error(`${id}: join timeout`)), 30_000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, v4fold: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") {

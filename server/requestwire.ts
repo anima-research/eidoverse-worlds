@@ -37,7 +37,7 @@ export function whois(w: World, args: Any) {
   const q = typeof args?.name === "string" ? args.name.trim() : typeof args?.id === "string" ? args.id.trim() : "";
   if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", fix: "the name someone goes by here, as their nameplate shows it" } };
   const log = w.log!; const dir = directoryFor(WORLDS_DIR);
-  const here = new Map<string, string>(); for (const c of w.clients) if (c.v4id && !c.spectator) here.set(c.v4id, c.id);
+  const here = new Map<string, string>(); for (const c of w.clients) if (c.actorId && !c.spectator) here.set(c.actorId, c.id);
   const known = new Set<string>([...here.keys(), ...log.knownIds()]);
   const want = foldName(q);
   if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
@@ -65,15 +65,15 @@ function modLine(w: World, by: string, verb: string, who: string) {
     : verb === "unmute" ? `${by} unmuted ${name}` : `${by} lifted the ban on ${name}`;
 }
 /** The identity the authority stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
- *  connection without one (it never joined a v4 world) has no identity here: a request from it is a server bug. */
+ *  connection without one (it never joined a world) has no identity here: a request from it is a server bug. */
 /** Presence messages a ghost or a role-less person doesn't send (they'd show them, or act on someone), and the one a
  *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
-  const w = c.world; if (!w?.log || !c.v4id || !QUIET.has(type)) return false;
+  const w = c.world; if (!w?.log || !c.actorId || !QUIET.has(type)) return false;
   // ghostHidden is the sweep's own flag (set at join and on every change): no moderator-log scan per typing packet
-  if (c.ghostHidden || w.log.roleOf(c.v4id) === "none") return true;
-  return type === "caption" && !!w.log.mutedHere(c.v4id);
+  if (c.ghostHidden || w.log.roleOf(c.actorId) === "none") return true;
+  return type === "caption" && !!w.log.mutedHere(c.actorId);
 }
 /** A guest has no account: a fresh connection is a fresh identity, so a mute or ghost on one would be shed by
  *  reconnecting (R 10-07). When a mute or ghost lands on a guest present here, it is also filed against their
@@ -83,19 +83,19 @@ export function gagged(c: Client, type: string): boolean {
 export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string) {
   const kind = verb === "mute" || verb === "unmute" ? "mute" : verb === "ghost" || verb === "unghost" ? "ghost" : null;
   if (!kind || !w.log) return;
-  const addrs = [...new Set([...w.clients].filter((t) => t.v4id === who && t.anonymous && t.addr).map((t) => t.addr as string))];
+  const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
   if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }
   const now = kind === "mute" ? w.log.mutedHere(who) : w.log.ghostHere(who);   // in force now (a mute: every channel muted)
   if (!now || now.chosen) return;
   for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until: now.until ?? null,
     ...(kind === "mute" ? { channels: now.channels } : {}), ...(reason ? { reason: reason.slice(0, 280) } : {}) });
 }
-export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };
+export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`); return c.actorId; };
 
 /** Run fn after this client's earlier requests (their warm-ups are async); never let a throw break the queue. */
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   const tail = (c.verbQueue ?? Promise.resolve()).then(fn).catch((err) => {
-    console.error(`[ws] v4 request from ${c.id} failed server-side:`, err);
+    console.error(`[ws] request from ${c.id} failed server-side:`, err);
     try { ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* gone */ }
   });
   c.verbQueue = tail;
@@ -148,16 +148,16 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         const who = String(args.who ?? ""); const notice = verb === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
           : verb === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
           : verb === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
-        if (notice) for (const t of w.clients) if (t.v4id === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
+        if (notice) for (const t of w.clients) if (t.actorId === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
       // a guest's mute or ghost also names their address here, and its lift lifts that (R 10-07)
       if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(verb) && typeof args.who === "string" && args.who !== actorOf(c))
         guestSanctionByAddress(w, actorOf(c), c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
-        const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.v4id === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
-        const ghostHere = [...w.clients].some((t) => t.v4id === who && w.isGhost(t));   // unseen: never named to bystanders
+        const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
+        const ghostHere = [...w.clients].some((t) => t.actorId === who && w.isGhost(t));   // unseen: never named to bystanders
         if (happened && !ghostHere) { const text = modLine(w, c.id, verb, who);
-          for (const t of w.clients) if (t.v4id !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
+          for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
       // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
       if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
@@ -168,7 +168,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
       if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);
-        for (const t of [...w.clients]) if (t.v4id === who) {
+        for (const t of [...w.clients]) if (t.actorId === who) {
           // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
           // also name its connection's address in this world, or reconnecting would shed them (review 10-07)
           if (t.anonymous && t.addr) {

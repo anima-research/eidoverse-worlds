@@ -2,7 +2,7 @@
 // server-check.ts). usage: bun tools/protocol/authority-check.ts
 //   N   names.js: one encoding for actors, ids and components; the lab's `0abc` / `n0abc` collision is gone
 //   T   the engine translator's own name, and the v1 fold build it stamps
-//   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, throughLock, the gameplay lock inside
+//   P   locks (PROTOCOL §5): v1's matrix (tools/locktest.ts), ancestors, throughLock, the gameplay lock inside
 //       its own component, and v1 lock/guard through the translator
 //   U   the act index (undo, wait): equals a fresh build after every request; entityBefore equals the fold at every
 //       seq; a later write, a purge and a new act each change undo's answer the way a full scan would
@@ -59,12 +59,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { seq: 3, ts: 4, actor: "Riannon", verb: "comp", args: { id: "lamp_1", type: "n0abc", data: 2 } }];
   const r = translate(old, { foldBuild: v1FoldBuild() });
   ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 0, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
-  const c = r.final.v4[enc("lamp_1")];
+  const c = r.final.translated[enc("lamp_1")];
   ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
-  ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.v4["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
+  ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("tools/protocol/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
-// ---- P: locks (PROTOCOL-v4 §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
+// ---- P: locks (PROTOCOL §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
 // v1: a lock refuses everything that would MOVE, REPLACE or REMOVE the thing, for everyone, its locker included;
 // everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. v4 adds:
 // it binds what's attached to it too; throughLock: true lets whoever may remove it act through it.
@@ -159,7 +159,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       { seq: 5, ts: 6, actor: "ann", verb: "spawn", args: { id: "both", lib: "crate", pos: [5, 0, 1] } },
       { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: true } },
       { seq: 7, ts: 8, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: null } }];
-    const r = translate(old, DOORKEYS()); const f = r.final.v4;
+    const r = translate(old, DOORKEYS()); const f = r.final.translated;
     ok(f.statue.lock === true && !r.stats.divergences, "P38 a v1 lock translates to `lock` unchanged (the identity)", f.statue);
     ok(f.sign.lock === true && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
@@ -223,13 +223,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
   const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
-  ok(!r.stats.divergences && r.final.v4.box.parent?.order === "a0" && !("offset" in r.final.v4.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.v4.box.parent);
-  ok(JSON.stringify(r.final.v4.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.v4.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.v4.bell.parent.socket === "perch",
-    "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.v4.box.transform, r.final.v4.bell.transform, r.final.v4.bell.parent]);
+  ok(!r.stats.divergences && r.final.translated.box.parent?.order === "a0" && !("offset" in r.final.translated.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.translated.box.parent);
+  ok(JSON.stringify(r.final.translated.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.translated.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.translated.bell.parent.socket === "perch",
+    "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.translated.box.transform, r.final.translated.bell.transform, r.final.translated.bell.parent]);
   const near = (a, b) => a && b && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
-  // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks v4's `socket`
-  const v1asV4 = Object.fromEntries(Object.entries(v1.entities).map(([k, e]) => [k, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e]));
-  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1asV4, id);
+  // v1's mount names its socket `slot`; shared/hierarchy.js (the renderer's reading) speaks the protocol's `socket`
+  const v1Translated = Object.fromEntries(Object.entries(v1.entities).map(([k, e]) => [k, e.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e]));
+  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1Translated, id);
     ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the authority sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
   const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
   const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
@@ -384,7 +384,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   step("del", "ann", "delete", { id: "tbl", throughLock: true });
   step("undo", "ann", "undo", {});
   step("publish", "ann", "publish", { from: "tbl", name: "table set" });
-  ok(!bad, `K1 after each of ${steps} requests the client's v4 fold = the server's (digest), and its view = the server's`, bad);
+  ok(!bad, `K1 after each of ${steps} requests the client's fold = the server's (digest), and its view = the server's`, bad);
   ok(sky.k.changed && sky.d.world.includes("sky") && !sky.d.things.length, "K2 the sky arrives as a world change (the v1 path had to re-draw everything for it)", sky.d);
   ok(!said.k.changed && said.k.says.length === 1 && said.k.says[0].text === "hi" && said.k.says[0].actor === "ann", "K7 a say comes back as a chat line, and changes no state", said.k);
   const re = c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1);
@@ -441,7 +441,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const swp = (() => { const e = w2.state().entities.sw; if (!e) return null; const s = w2.state(); const g = s.entities.gate.c.transform; return [g.pos[0] + e.c.transform.pos[0], g.pos[2] + e.c.transform.pos[2]]; })();
   ok(sw.ok && swp && Math.abs(swp[0] - (gt[0] + 5)) < 0.05, "C12 hang from an off-origin frame: the seat hangs under the beam's middle, not the frame's origin", { swp, beamMid: gt[0] + 5, r: sw.refused }); }
 
-// ---- V: what changed, said in v4 terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
+// ---- V: what changed, said in the protocol's terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());

@@ -2,11 +2,11 @@
 // fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.physics-engine names.
 // It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
 //
-// PROTOCOL-v4 L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
+// PROTOCOL L3: a change entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
 // is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
 // Time: the engine's clock is the envelope's `ts` (§2.1: the authority's admission time, the one clock readers trust),
 // never running backwards: an entry without one happens at the latest time stated before it.
-// Ported from the v4 lab (code/v4-lab/simlayer.js @ 11db981). Engine changes: no node: imports (the browser imports
+// Ported from the protocol lab (the protocol lab's simlayer.js @ 11db981). Engine changes: no node: imports (the browser imports
 // this file); the engine is ../sim.js (byte-identical to the lab's legacy/shared/sim.js), and its build hash is a
 // pinned constant instead of a read of the files at import time — tools/protocol/run.ts recomputes it from the files and
 // fails if they changed without a new engine name (Covenant II).
@@ -50,7 +50,7 @@ function engineViewM(st, models = MODELS) {
   const entities = {};
   for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
-  return { entities, terrain: terr ?? { amplitude: 0 } }; // v4 worlds stand on y = 0 unless they declare terrain
+  return { entities, terrain: terr ?? { amplitude: 0 } }; // worlds stand on y = 0 unless they declare terrain
 }
 const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise

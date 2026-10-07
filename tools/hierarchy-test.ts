@@ -1,12 +1,12 @@
 // hierarchy-test — the scene tree as a pure function of the world view (design §3
 // "Children", §5 "Hierarchy"; shared/hierarchy.js), checked against the REAL
-// door (a scratch v4 world, tools/protocol/scratchworld.ts, read back through
+// door (a scratch world, tools/protocol/scratchworld.ts, read back through
 // shared/protocol/view.js viewState) and against three.js composing Object3Ds the
 // way the renderer does.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-test.ts
 //
-// 1. tree building from a v4 world's view (nesting, folds, the filter opening a
+// 1. tree building from a world's view (nesting, folds, the filter opening a
 //    folded path, a hand-written loop showing both members as roots)
 // 2. cycle refusal (the pure rule, parentOps, editOps and the door's `set parent`)
 // 3. local ⇄ world: parent in place / unparent keep the world pose, through
@@ -36,7 +36,7 @@ const LIB = 'eidoverse/assets/models/table_oak_round.glb';
 const tfOf = (r: any) => flat(r.ops).find((o: any) => o.verb === 'set' && o.args.component === 'transform')?.args.value;
 
 // ---------------------------------------------------------------- 1. the tree
-console.log('tree building from a v4 world\'s view');
+console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
     table: { lib: LIB, pos: [0, 0, 0] },

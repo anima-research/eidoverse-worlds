@@ -1,6 +1,6 @@
 // shared/protocol/newscript.js — the editor's "new script" (ship list 10-07: the editor couldn't make a script; nothing in the
 // client called `upload`). A person fills in a small card (a name, what starts it, the source); this plans the SAME two
-// requests an agent sends (docs/SCRIPTS-v4.md, "the loop"):
+// requests an agent sends (docs/SCRIPTS.md, "the loop"):
 //   1. upload {text}                                     → {src}   (not an act: a blob in the world's store)
 //   2. one batch (one act, one Ctrl+Z):
 //        set {id, component: 'script:<name>', value: {src, scope, on, every?}}

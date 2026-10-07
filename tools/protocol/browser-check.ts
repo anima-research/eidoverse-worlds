@@ -46,7 +46,7 @@ const work = async (base: string, texts: { cottage: string }) => {
 };
 
 const texts = {
-  cottage: fs.readFileSync(ENGINE + "spec/v4/fixtures/lab-cottage.jsonl", "utf8"),
+  cottage: fs.readFileSync(ENGINE + "spec/conformance/lab-cottage.jsonl", "utf8"),
 };
 const here = await work("file://" + ENGINE.replace(/\/$/, ""), texts);
 

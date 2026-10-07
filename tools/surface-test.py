@@ -16,7 +16,7 @@ def check(name, ok, detail=""):
     print(("  ✓ " if ok else "  ✗ ") + name + (f"  [{detail}]" if detail and not ok else ""))
     passed, failed = passed + (1 if ok else 0), failed + (0 if ok else 1)
 
-# The world speaks protocol v4: a join says v4fold (an embodied client that doesn't is refused), a say is a door
+# The world speaks the protocol: a join says replica (an embodied client that doesn't is refused), a say is a door
 # request answered by reply, and chat reaches clients as `say` entries of the log stream (actors are opaque
 # ids; the stream's `names` and the snapshot's v4.names say who). A say's chat number — what an attest names — is
 # its log position × 1000 (server/worldlog.ts sayLine).
@@ -39,7 +39,7 @@ def say_req(text):
 
 async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
-    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "v4fold": True}
+    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "replica": True}
     if surface: msg["surface"] = surface
     if agent_token: msg["agentToken"] = agent_token
     await ws.send(json.dumps(msg))

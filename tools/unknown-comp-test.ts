@@ -1,20 +1,20 @@
 // unknown-comp-test — what today's engine does with a component type it does
 // not know (the baseline docs/COMPONENTS-TODAY.md states under "An unknown
-// component", on protocol v4).
+// component", on the protocol).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/unknown-comp-test.ts
 //
 // Four tiers, each the REAL module, no server process, no browser:
-//   1. the door      shared/protocol/authority.js on a scratch v4 world (tools/protocol/scratchworld.ts): a set of an unknown type is
+//   1. the door      shared/protocol/authority.js on a scratch world (tools/protocol/scratchworld.ts): a set of an unknown type is
 //                    accepted, with a note that the door knows no evaluator for it
 //   2. the fold      the door's state as the view a client reads (view.js viewState): kept verbatim, replaced
 //                    wholesale, removed by delete {id, component}
 //   3. the browser   client/lib/realize/models.js + state.js + the real bus, over tools/lod-client-stub.mjs's cone
-//                    (no renderer, no network), fed the views a v4 client folds (hydrate the cut's view, then
+//                    (no renderer, no network), fed the views a client folds (hydrate the cut's view, then
 //                    applyView after each write): the bag is mirrored and announced, nobody claims it, nothing is
 //                    reported; motion.js's frame loop skips it
 //   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set`; the edit's ops go through the
-//                    real v4 door on a scratch world and are read back
+//                    real authority on a scratch world and are read back
 // (Ported to v4 2026-10-07: tiers 1–3 pinned the v1 runtime's verbs.ts/fold.js/foldLive path, gone with protocol v1.
 //  The v1-only shape rules they pinned, a 32-char type name truncated and an 8 KB comp refused, have no v4 subject.)
 import { plugin } from 'bun';
@@ -61,7 +61,7 @@ const D2 = { points: 'south' };
 const LIB = 'eidoverse/assets/models/crate_large_red.glb';
 
 // ---- 1. the door -------------------------------------------------------------
-console.log('\n1. the door (shared/protocol/authority.js, a scratch v4 world)');
+console.log('\n1. the door (shared/protocol/authority.js, a scratch world)');
 const W = scratchWorld('unknowncomp').seed({ crate: { lib: LIB, pos: [1, 0, 1] } });
 const r0 = W.call('set', { id: 'crate', component: TYPE, value: D1 });
 check('an unknown type is accepted: the set is not refused', r0.ok === true, JSON.stringify(r0.refused));
@@ -135,10 +135,10 @@ check('…which saves as ONE set replacing the data wholesale',
 const del = editOps(ent, 'crate', { [`comp.${TYPE}`]: '' });
 check('…and an emptied field removes it (delete)', jeq(del.ops, [{ verb: 'delete', args: { id: 'crate', component: TYPE } }]), JSON.stringify(del));
 {
-  // through the real v4 door: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
+  // through the real authority: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
   // wholesale by the edit, removed by the delete
   const W = scratchWorld('unknowncomp').seed({ crate: ent });
-  check('the v4 door keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
+  check('the authority keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
   const r1 = W.send(set.ops[0]);
   check('…the edit replaces it wholesale (no merge with the old keys), and the door says it knows no evaluator for it',
     r1.ok && jeq(W.rec('crate').comp?.[TYPE], { points: 'east' }) && (r1.notes ?? []).some((n: any) => n.component === TYPE && /isn't a component/.test(n.why)), JSON.stringify([r1.refused, r1.notes, W.rec('crate').comp]));

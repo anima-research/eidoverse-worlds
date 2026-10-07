@@ -206,6 +206,6 @@ redaction policy lives with the log, not the URI); multihash beyond the
 against antra-tess's review: variants are distinct identities (§1a), media
 lives in the reference envelope (§2a), the closed verb set is named as the
 protocol dependency it is (§4), and resolvers get a security clause (§6a).
-Revised 2026-10-06 for protocol v4: the additions are components, not new
+Revised 2026-10-06 for the protocol: the additions are components, not new
 verbs, so the old protocol dependency is gone. Where this draft and reality
 disagree, reality was there first.*

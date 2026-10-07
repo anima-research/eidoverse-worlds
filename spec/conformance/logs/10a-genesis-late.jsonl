@@ -1,0 +1,2 @@
+{"world": "sha256:f39d7e442c2b3ef3be1cd02b04550c07f584bc903ade4afa1ea8d19389907ce1", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"kind": "genesis", "actor": "system", "verb": "genesis", "body": {"dialect": "eidoverse-log", "v": 4, "minor": 0, "nonce": "XWVu1u7BpaZTDFSETYiphg", "owners": [["ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0"]], "sequencer": "ed25519:rRoIPhqlc8rDxC1GZlfHOe1IBJYWQ8MDNg9QuZzMsic"}}

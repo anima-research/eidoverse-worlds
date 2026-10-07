@@ -1,13 +1,13 @@
 // Show voice bot: gives the world's agent performers audible voices.
 //
-//   world WS (spectator "voice") ── `say` entries (v4-log) by configured speakers ──▶
+//   world WS (spectator "voice") ── `say` entries (log) by configured speakers ──▶
 //   ElevenLabs streaming TTS ──▶ Discord voice channel (@discordjs/voice)
 //
 // Humans in the channel just talk; this bot only voices the models.
 // Captions need nothing extra — every say is already in-world chat + log.
 //
-// The world speaks protocol v4: the join says `v4fold: true` (a client that
-// doesn't is refused), and chat arrives as `say` entries in the `v4-log`
+// The world speaks the protocol: the join says `replica: true` (a client that
+// doesn't is refused), and chat arrives as `say` entries in the `log`
 // stream. Their actors are opaque ids; the stream's `names` (and the
 // snapshot's v4.names) say who they are, and SPEAKERS / voices.json name
 // speakers by that display name.
@@ -136,14 +136,14 @@ let head = -1;                             // the log's head at join: lines at o
 
 function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN, v4fold: true }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => { log("world socket closed — reconnecting"); setTimeout(connectWorld, 1500); };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data));
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
     if (msg.type === "snapshot") {
-      Object.assign(names, msg.v4?.names ?? {});
-      head = Number.isInteger(msg.v4?.head) ? msg.v4.head : -1;
+      Object.assign(names, msg.cut?.names ?? {});
+      head = Number.isInteger(msg.cut?.head) ? msg.cut.head : -1;
       log(`watching world "${WORLD_NAME}" as spectator (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       return;
     }

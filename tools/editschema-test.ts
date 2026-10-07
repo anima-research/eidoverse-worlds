@@ -157,7 +157,7 @@ console.log("\ndescribeSchema reads like an inspector:");
   const t = describeSchema(inspectSchema(lamp, "lamp"));
   check("names dotted addresses with values and units", /light\.intensity = 20/.test(t) && /light\.range = 6 m/.test(t) && /pos\.y = 2 m/.test(t));
   check("says how to edit", /edit \{id, set:/.test(t));
-  check("names what each group writes in v4 terms (set <component>), not a v1 verb", /light \(light\.\* → set light\)/.test(t) && /\(pos\.\* → set transform\)/.test(t) && !/→ (place|mount|comp|light)\)/.test(t), t.split("\n").filter((l) => /→/.test(l)).join(" || "));
+  check("names what each group writes in the protocol's terms (set <component>), not a v1 verb", /light \(light\.\* → set light\)/.test(t) && /\(pos\.\* → set transform\)/.test(t) && !/→ (place|mount|comp|light)\)/.test(t), t.split("\n").filter((l) => /→/.test(l)).join(" || "));
   const t2 = describeSchema(inspectSchema(cargo, "k"));
   check("a child says its frame and its parent", /frame: local to its parent, truck/.test(t2) && /parent\.to = truck/.test(t2));
   // a read-only field in v4: a rider on a carrier's MOVING PART socket (its pose is baked at the part's phase)
@@ -170,7 +170,7 @@ console.log("\ndescribeSchema reads like an inspector:");
   check("parseEntry passes numbers and refuses garbage", parseEntry(4, 0) === 4 && parseEntry("x", 0) === null);
 }
 
-console.log("\nguard is merged into lock (PROTOCOL-v4 §5): an old habit is taught, never silently turned into a lock:");
+console.log("\nguard is merged into lock (PROTOCOL §5): an old habit is taught, never silently turned into a lock:");
 {
   const g = editOps({ pos: [0, 0, 0], comp: {} }, "crate", { "flags.guard": true });
   check("flags.guard is refused, naming flags.lock; nothing sent", g.ops.length === 0 && /merged into `lock`/.test(g.errors[0] ?? "") && /flags\.lock/.test(g.errors[0] ?? ""), JSON.stringify(g));

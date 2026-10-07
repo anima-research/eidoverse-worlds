@@ -124,7 +124,7 @@ export function pickSky(sky, preset) {
 }
 
 /** One world change as its request (v4): the sky and weather are the authority's `sky`/`weather` tools (they stamp the
- *  clock: PROTOCOL-v4 sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
+ *  clock: PROTOCOL sky tools), the ground and grass are @world's `terrain`/`grass` components; mow removes grass. */
 const skyOp = (args) => ({ verb: 'sky', args });
 const weatherOp = (weather) => ({ verb: 'weather', args: { weather } });
 const terrainOp = (args) => OP.set(WORLD_ID, 'terrain', args);

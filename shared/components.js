@@ -248,7 +248,7 @@ const MOTION_TYPE = Object.fromEntries(Object.entries(MOTION).map(([k, v]) => [v
 const MOTION_STAMPS = ['t0', 'cause', 'by'];
 // keys of the record that are not components: who/when the sequencer stamped
 const STAMPS = ['placer', 'born', 'actor', 'ts', 'box'];
-const FLAG = { lock: 'Lock' };   // the old `guard` merged into lock (PROTOCOL-v4 §5): no world carries one
+const FLAG = { lock: 'Lock' };   // the old `guard` merged into lock (PROTOCOL §5): no world carries one
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));

@@ -50,7 +50,7 @@ try {
   // live: an agent-like socket creates and removes a thing through the authority
   ws = new WebSocket(ORIGIN.replace('http', 'ws') + '/ws'); const inbox = [];
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; }); ws.onmessage = (ev) => inbox.push(JSON.parse(String(ev.data)));
-  ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', v4fold: true }));
+  ws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'fable', avatar: '', replica: true }));
   for (let i = 0; i < 60 && !inbox.some((m) => m.type === 'snapshot' || m.type === 'error'); i++) await sleep(100);
   const req = (id, verb, args) => { ws.send(JSON.stringify({ type: 'request', id, verb, args })); };
   const LIVE = `nov1-live-${Date.now().toString(36)}`;   // the authority never reuses an id: a fresh one each run

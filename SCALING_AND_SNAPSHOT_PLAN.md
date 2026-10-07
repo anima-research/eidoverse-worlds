@@ -1,9 +1,9 @@
 # Eidoverse Worlds — Scaling, Snapshot, and Performance Plan
 
-Status: proposed (2026-07); predates protocol v4  
+Status: proposed (2026-07); predates the protocol  
 Date: 2026-07-25  
 
-*Read this as the July plan it was. Protocol v4 (spec/PROTOCOL.md) has since
+*Read this as the July plan it was. The protocol (spec/PROTOCOL.md) has since
 settled some of it: the log is door requests (acts) and their results
 (change entries of `create` / `set` / `delete`), a joiner adopts a cut of the
 fold instead of replaying, and a checkpoint is a view whose digest the log

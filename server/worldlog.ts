@@ -1,10 +1,10 @@
 // server/worldlog.ts — a world's log as this server holds it: the authority over the world's directory.
 //
-// Every world this server serves is a v4 world (its directory holds world.jsonl, line 0 a v4 genesis: isWorldDir); World
+// Every world this server serves is a world (its directory holds world.jsonl, line 0 a genesis: isWorldDir); World
 // (server/world.ts) holds one WorldLog. Writes: every write is a v4 REQUEST through the authority (shared/protocol/authority.js: one
 // `admit`, act + change entries, the ts from this server's clock); request() is the only way in.
 //
-// What clients see: every client folds v4 itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
+// What clients see: every client folds the log itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
 // it is sent as {type: "log"}. `state` is the VIEW of the fold (shared/protocol/view.js viewState) plus the chat window,
 // for this server's own readers (/geom, model warm-up, the chat window); it is rebuilt by its next reader after a
 // write. Chat lines (say entries) are numbered seq × 1000 in the window and in readHistory.
@@ -21,7 +21,7 @@ import { viewState } from "../shared/protocol/view.js";
 import { holdWire } from "../shared/grab.js";
 import { hear } from "../shared/chatwindow.js";
 import { dec } from "../shared/protocol/names.js";
-import { openLive, isWorldDir } from "./livehost.ts";
+import { openLive, isWorldDir, isPreNamesDir } from "./livehost.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
 
 type Any = any;
@@ -41,15 +41,17 @@ export function wireEntry(e: Any) {
   if ((rest.kind === "say" || rest.kind === "act") && rest.body && typeof rest.body === "object" && !Array.isArray(rest.body) && "salt" in rest.body) { const { salt: _t, ...b } = rest.body; rest.body = b; }
   return rest;
 }
-/** Does this world's directory hold a v4 log? (Decided once, when the world is first opened.) */
+/** Does this world's directory hold a log? (Decided once, when the world is first opened.) */
 export function isWorldSaved(name: string): boolean { return isWorldDir(path.join(WORLDS_DIR, name)); }
+/** Does it hold a log saved before the 2026-10-07 names pass (livehost isPreNamesDir)? */
+export function isPreNamesSaved(name: string): boolean { return isPreNamesDir(path.join(WORLDS_DIR, name)); }
 
 /** What a WorldLog needs from the World around it (injected: this file never imports world.ts). */
 export type LogHost = {
   broadcast(msg: unknown): void;           // every client in the world
   rightsChanged(): void;                   // tell every client its rights again
   debug(kind: string, detail: Record<string, unknown>): void;
-  /** who is here (embodied, not spectating): their v4 identity and last known position. Scripts' timers sleep when this
+  /** who is here (embodied, not spectating): their identity and last known position. Scripts' timers sleep when this
    *  is empty, and world.near(r) reads it (research 41 §3.5, §3.8) */
   present?(): { id: string; at: number[] | null }[];
   /** the log stream: `msg` to everyone, `ghostMsg` (says emptied) to a ghost (PLAN 10-06: a ghost can't read chat) */
@@ -65,7 +67,7 @@ export class WorldLog {
   /** the last 256 says (the attest handler's lookup: a voice leg's receipt names one by seq) */
   recentSays: ChatLine[] = [];
   poses: Record<string, unknown> = {};
-  /** The chat lines, newest last (readHistory's source; the v4 log itself is the authority's `history`). */
+  /** The chat lines, newest last (readHistory's source; the log itself is the authority's `history`). */
   private hist: ChatLine[] = [];
   private dir: string;
   private posesPath: string;
@@ -87,7 +89,7 @@ export class WorldLog {
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
     catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
     const st = this.live.state();
-    if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the authority will refuse writes`);
+    if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
     const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
@@ -116,7 +118,7 @@ export class WorldLog {
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
   get snapSeq(): number { return this.head * 1000 + 999; }
 
-  /** One v4 request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
+  /** One request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
    *  the authority can measure it; the authority call itself is synchronous. */
   async request(actor: string, verb: string, args: Record<string, unknown> = {}) {
     await warm(modelsIn(args));
@@ -153,7 +155,7 @@ export class WorldLog {
     const from = this.live.entries.length;
     try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
   }
-  /** Someone arrived or left: scripts that listen for enter / leave hear it (by their v4 identity). */
+  /** Someone arrived or left: scripts that listen for enter / leave hear it (by their identity). */
   presenceScripts(kind: "enter" | "leave", who: string) {
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
@@ -162,7 +164,7 @@ export class WorldLog {
   /** The authority's status view of every script here (debug panel, world_debug {behaviors}). */
   scriptsView(id?: string) { return scriptsView(this.live, id); }
 
-  /** Send what the authority just wrote: the raw v4 entries, to every client (they all fold v4). Chat lines go into the
+  /** Send what the authority just wrote: the raw entries, to every client (they all fold the log). Chat lines go into the
    *  window; the view goes stale for its next reader; a role change re-sends everyone's rights. */
   private stale = false;
   private afterWrite(from: number) {
@@ -236,7 +238,7 @@ export class WorldLog {
   access(): Any { const a = this.live.state().entities?.["@world"]?.c?.access; return a && typeof a === "object" ? a : null; }
   /** Has this identity a roles:<id> here (access.join 'listed')? */
   listedHere(actor: string): boolean { return !!this.live.state().entities?.["@world"]?.c?.[`roles:${actor}`]; }
-  /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/protocol/replica.js stateView), its head,
+  /** Slice 3b: what a client that folds the log adopts at join: the fold itself (shared/protocol/replica.js stateView), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
@@ -249,13 +251,13 @@ export class WorldLog {
     try { fs.mkdirSync(this.dir, { recursive: true }); atomicWrite(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
   }
   /** What the snapshot says about this world's protocol (agents read it to route their tools). */
-  info() { return { version: 4, head: this.head, worldId: this.live.worldId, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
+  info() { return { dialect: DIALECT, v: VERSION, head: this.head, worldId: this.live.worldId, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
 }
 
 // ---- founding and translating (tools/protocol/world.ts is the command line) ----
-import { opsOf } from "../shared/protocol/fold.js";
+import { opsOf, DIALECT, VERSION } from "../shared/protocol/fold.js";
 
-/** Found a new v4 world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
+/** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
 export function foundWorld(dir: string, name: string, owner: string, title?: string, now?: () => number) {
   if (fs.existsSync(path.join(dir, "world.jsonl")) || fs.existsSync(path.join(dir, "log.jsonl"))) throw new Error(`${dir} already holds a world`);
   fs.mkdirSync(dir, { recursive: true });

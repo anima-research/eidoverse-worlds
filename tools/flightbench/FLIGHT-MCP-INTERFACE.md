@@ -153,7 +153,7 @@ and you are a glider.
 
 *Run on the first protocol's behavior sandbox (since removed with that
 protocol); the reason it fails holds unchanged for v4 scripts
-(docs/SCRIPTS-v4.md).*
+(docs/SCRIPTS.md).*
 
 Janus asked whether agents can already script multiple actions, and suggested
 reusing the existing sandbox before inventing a flight-specific tool. I did.

@@ -1,4 +1,4 @@
-// voicebot-test — the show voice bot (tools/voicebot) hears a v4 world: DRY_RUN, no Discord, no TTS key. With a voices
+// voicebot-test — the show voice bot (tools/voicebot) hears a world: DRY_RUN, no Discord, no TTS key. With a voices
 // file that maps nobody, every line it would voice logs `no voice for "<speaker>"`, which is the receipt that the line
 // reached the synth step, under the speaker's display name, filtered by SPEAKERS.
 //
@@ -25,7 +25,7 @@ const join_ = (id: string) => new Promise<WebSocket>((res, rej) => {
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
   const t = setTimeout(() => rej(new Error(`${id} join timed out`)), 8000);
   ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.type === "snapshot") { clearTimeout(t); res(ws); } if (m.type === "error") { clearTimeout(t); rej(new Error(m.error)); } };
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", id, v4fold: true }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", id, replica: true }));
 });
 const say = (ws: WebSocket, text: string) => ws.send(JSON.stringify({ type: "request", id: `t-${Math.random()}`, verb: "say", args: { text } }));
 
@@ -46,7 +46,7 @@ say(alice, "alice is");
 for (let i = 0; i < 40 && !/no voice for "alice"/.test(out); i++) await sleep(100);
 await sleep(400);
 
-console.log("\nvoicebot — hearing a v4 world (DRY_RUN)\n");
+console.log("\nvoicebot — hearing a world (DRY_RUN)\n");
 check("the bot joins as a spectator that reads v4", /watching world "commons" as spectator/.test(out), out.slice(-300));
 check("a configured speaker's live line reaches the synth step, by display name", (out.match(/no voice for "alice"/g) ?? []).length === 1, out.slice(-400));
 check("history from before the join is not voiced", !/history/.test(out));

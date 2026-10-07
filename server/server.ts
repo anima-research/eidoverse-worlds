@@ -18,11 +18,12 @@ import { accountAgeRefusal } from "./accountage.ts";
 import { isOperator } from "./operators.ts";
 import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
-// The world itself (a v4 log + the embodied plane) and the registry. The boot
+// The world itself (a log + the embodied plane) and the registry. The boot
 // sweep below stays HERE: waking scripted worlds with the server is boot
 // policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights } from "./world.ts";
-import { isWorldSaved } from "./worldlog.ts";
+import { isWorldSaved, isPreNamesSaved } from "./worldlog.ts";
+import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
 import { MOD_POWERS } from "../shared/protocol/roles.js";
 import { directoryFor, foldName } from "./directory.ts";
@@ -189,15 +190,15 @@ function expel(w: World, target: Client, why: string, until?: number | null) {
   // handler's copy could never fire and the legs died silently
   retireAuxLeg(w, target);
   if (wasEmbodied) reapAuxLegs(w, target, "primary removed by moderation");
-  if (wasEmbodied && target.lastPose && target.v4id && !target.anonymous) w.rememberPose(target.v4id, target.lastPose); // they may be back (remembered by identity, never by name)
+  if (wasEmbodied && target.lastPose && target.actorId && !target.anonymous) w.rememberPose(target.actorId, target.lastPose); // they may be back (remembered by identity, never by name)
   target.superseded = true;   // the close path must not double-handle this body
   w.clients.delete(target);
   clients.delete(target.ws);
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
   // a ghost already left everyone's view (and the scripts' senses) when it became one: never a second leave
-  if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.v4id); }
-  if (wasEmbodied && target.v4id) w.log?.departed(target.v4id); // what they held drops into the world (design 20, orphans)
+  if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.actorId); }
+  if (wasEmbodied && target.actorId) w.log?.departed(target.actorId); // what they held drops into the world (design 20, orphans)
 }
 
 // Operator-log census: people are people, eyes are eyes.
@@ -246,6 +247,10 @@ registerSystem({ name: "defs-watch", everyMs: 1000, fn: () => {
   }
   defsFp = fp;
 } });
+
+// Boot: the worlds dir's shared key files under their current names (a dir saved before the 2026-10-07 names pass has
+// them renamed once, server/keyfiles.ts), before any world or join reads them.
+try { custodyFileIn(WORLDS_DIR); directoryFileIn(WORLDS_DIR); } catch (err) { console.error("[boot] key files", err); }
 
 // Boot sweep: worlds load lazily on first touch, but a world with scripts
 // must wake WITH the server, not with its first visitor — otherwise a
@@ -331,12 +336,13 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       return null;
     }
     // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
-    // world behind it is refused, and only a v4 world is served (the old protocol has no runtime here: an old log is
-    // translated once, by the operator, into a new v4 world).
+    // world behind it is refused, and only a world is served (the old protocol has no runtime here: an old log is
+    // translated once, by the operator, into a new world).
     if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in the old format: it is translated once, by the operator
-      // a log saved before the 2026-10-07 names pass (v4.jsonl: kind state, actor door…) is refounded, or re-translated
+      // a log saved before the 2026-10-07 names pass (an older file name, kind state, actor door, its number in its own
+      // genesis field…) is refounded, or re-translated
       // from its original log (the Commons); its old spelling isn't read
-      const preNames = existsSync(join(WORLDS_DIR, wname, "v4.jsonl"));
+      const preNames = isPreNamesSaved(wname);
       ws.send(JSON.stringify({ type: "error", error: preNames ? `"${wname}" was saved before this server's protocol names changed (2026-10-07) — its operator refounds it, or re-translates it from its original log`
         : `"${wname}" is saved in an old format this server no longer opens — its operator translates it once (bun tools/protocol/world.ts translate)` }));
       c.ws.close?.(4005, "old-format world");
@@ -351,7 +357,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // C1 (security review 10-06): what this join proves is decided from THIS join's own credentials. Nothing a previous
     // join on this socket proved carries over (a token presented once used to make every later join on the socket
     // "verified", so a second join could wear any agent's name).
-    c.tokenVerified = false; c.auxBound = false; c.v4id = undefined;
+    c.tokenVerified = false; c.auxBound = false; c.actorId = undefined;
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).
@@ -457,10 +463,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         c.id = n;
       }
     }
-    // A v4 world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
+    // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
-    c.v4id = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
+    c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
@@ -470,7 +476,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     {
       // by ACCOUNT, or a guest by its hashed address while that ban lasts (H4); an operator is never locked out
       const gb = findBan(globalBans, c.account, c.addr);
-      const ban = gb ?? findBan(globalBans, c.account, c.addr, Date.now(), w.name) ?? (c.v4id && w.log!.bannedHere(c.v4id) ? { by: "a moderator" } as any : null);
+      const ban = gb ?? findBan(globalBans, c.account, c.addr, Date.now(), w.name) ?? (c.actorId && w.log!.bannedHere(c.actorId) ? { by: "a moderator" } as any : null);
       if (ban && !isOperator(c.account)) {
         console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "from this server" : "here"}`);
         ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` }));
@@ -481,15 +487,15 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // research roles S4: a kick's cooldown bars rejoining until it ends (the record's until), and @world.access decides
     // who may come in (anyone / signed-in / listed, accounts at least `minAccountDays` old, and at most `max` at once);
     // moderators and owners always get in
-    if (w.log && c.v4id && !isOperator(c.account)) {
-      const k = w.log.kickedHere(c.v4id);
+    if (w.log && c.actorId && !isOperator(c.account)) {
+      const k = w.log.kickedHere(c.actorId);
       if (k) { const mins = Math.max(1, Math.ceil((k.until - Date.now()) / 60000));
         ws.send(JSON.stringify({ type: "error", error: `you were removed from "${w.name}" and may come back in ${mins} min${k.reason ? ` — ${k.reason}` : ""}`, until: k.until }));
         c.ws.close?.(4006, "kicked"); return null; }
       const acc = w.log.access();
-      if (acc && !accessBypass(w, c.v4id)) {
-        const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.v4id !== c.v4id).length;
-        const why = acc.join === "signed-in" && c.anonymous ? `"${w.name}" is for signed-in people` : acc.join === "listed" && !w.log.listedHere(c.v4id) ? `"${w.name}" admits only people with a role here` :
+      if (acc && !accessBypass(w, c.actorId)) {
+        const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
+        const why = acc.join === "signed-in" && c.anonymous ? `"${w.name}" is for signed-in people` : acc.join === "listed" && !w.log.listedHere(c.actorId) ? `"${w.name}" admits only people with a role here` :
           accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays, account: c.account, anonymous: !!c.anonymous, now: Date.now() }) ??
           (Number.isInteger(acc.max) && !c.spectator && (c.surface ?? "world") === "world" && here >= acc.max ? `"${w.name}" is full (${acc.max} at once)` : null);
         if (why) { ws.send(JSON.stringify({ type: "error", error: why })); c.ws.close?.(4005, "access"); return null; }
@@ -500,9 +506,9 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       if (c.anonymous && c.addr && !c.spectator && (c.surface ?? "world") === "world") {
         let carried = 0;
         for (const s of addrSanctionsFor(w.name, c.addr)) {
-          if (s.kind === "mute" ? w.log.mutedHere(c.v4id) : w.log.ghostHere(c.v4id)) continue;
-          w.log.live.appendMod({ actor: s.actor, verb: s.kind, who: c.v4id, ...(s.kind === "mute" ? { channels: s.channels ?? ["voice", "chat"] } : {}), until: s.until, ...(s.reason ? { reason: s.reason } : {}), carried: "address" });
-          if (!s.ids.includes(c.v4id)) s.ids.push(c.v4id); carried++;
+          if (s.kind === "mute" ? w.log.mutedHere(c.actorId) : w.log.ghostHere(c.actorId)) continue;
+          w.log.live.appendMod({ actor: s.actor, verb: s.kind, who: c.actorId, ...(s.kind === "mute" ? { channels: s.channels ?? ["voice", "chat"] } : {}), until: s.until, ...(s.reason ? { reason: s.reason } : {}), carried: "address" });
+          if (!s.ids.includes(c.actorId)) s.ids.push(c.actorId); carried++;
         }
         if (carried) { saveAddrSanctions(); console.log(`[world:${w.name}] a guest's ${carried} sanction(s) carried to ${c.id} by address`); }
       }
@@ -641,8 +647,8 @@ function rightsFor(w: World, c: Client) {
   const op = isOperator(c.account);
   const wc = (w.log.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
   const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && v?.role === "owner");
-  if (!c.v4id) return { role: "visitor", roleName: "Visitor", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
-  const e = w.log.rightsOf(c.v4id); const g = w.log.ghostHere(c.v4id); const m = w.log.mutedHere(c.v4id);
+  if (!c.actorId) return { role: "visitor", roleName: "Visitor", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
+  const e = w.log.rightsOf(c.actorId); const g = w.log.ghostHere(c.actorId); const m = w.log.mutedHere(c.actorId);
   return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,
     ...(g ? { ghost: { chosen: !!g.chosen, ...(g.until ? { until: g.until } : {}) } } : {}), ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };
 }
@@ -650,7 +656,7 @@ function rightsFor(w: World, c: Client) {
 const accessBypass = (w: World, id: string) => { const e = w.log!.rightsOf(id); return e.role === "owner" || MOD_POWERS.some((k: string) => e.permissions.includes(k)); };
 
 /** The sanctions sweep (research roles S4; PLAN ghost): every couple of seconds, and right after a moderation act, make
- *  each v4 world's live state match the moderator log by the authority's clock. Nothing is written when a sanction ends;
+ *  each world's live state match the moderator log by the authority's clock. Nothing is written when a sanction ends;
  *  this is what notices. Per connection it keeps what it last applied, so it acts only on a change:
  *   - voice: the SFU's moderator mute (enforced at ingress) is on while a voice mute is in force, or while a ghost;
  *   - ghost: a ghost's body leaves everyone else's view (leave), and comes back (arrive) when the ghost ends;
@@ -660,8 +666,8 @@ export function sanctionSweep(w: World) {
   if (!w.log) return;
   const S = w.log.sanctions();   // one pass over the moderator log per world per sweep (review 10-07: it was one per client)
   for (const c of [...w.clients]) {
-    if (c.spectator || (c.surface ?? "world") !== "world" || !c.v4id) continue;
-    const x = S[c.v4id] as any; const ghost = !!x?.ghost; const voice = ghost || !!x?.mute?.channels?.includes("voice");
+    if (c.spectator || (c.surface ?? "world") !== "world" || !c.actorId) continue;
+    const x = S[c.actorId] as any; const ghost = !!x?.ghost; const voice = ghost || !!x?.mute?.channels?.includes("voice");
     if (voice !== !!c.sfuMuted && (voice || c.sfuMuted !== undefined)) { try { setSfuModeratorMute(w.name, c.id, voice); } catch (err) { console.error(`[world:${w.name}] sfu mute`, err); } }
     c.sfuMuted = voice;
     // a ghost hears nobody either (R 10-07); deafness overrides the listener's own consent, which they could re-enable
@@ -670,8 +676,8 @@ export function sanctionSweep(w: World) {
     const was = c.ghostHidden ?? false;
     if (ghost !== was) {
       c.ghostHidden = ghost;
-      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence("leave", c.id, c.v4id); }
-      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, v4id: c.v4id, ...(c.anonymous ? { guest: true } : {}) }, c); w.scripts.onPresence("enter", c.id, c.v4id); }
+      if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: "leave", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence("leave", c.id, c.actorId); }
+      else { w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, actorId: c.actorId, ...(c.anonymous ? { guest: true } : {}) }, c); w.scripts.onPresence("enter", c.id, c.actorId); }
     }
     const mine = JSON.stringify([ghost, x?.mute?.until ?? null, x?.mute?.channels ?? null]);
     if (c.sanctionKey !== mine) { const first = c.sanctionKey === undefined; c.sanctionKey = mine;
@@ -689,10 +695,10 @@ export function sanctionSweep(w: World) {
   const key = JSON.stringify(muted);
   if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
 }
-registerSystem({ name: "v4-sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); } } } });
+registerSystem({ name: "sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); } } } });
 
 function buildSnapshot(w: World, c: Client) {
-    // snapshot = the authority's cut of the world (the joiner folds it, then the v4-log stream) + who's present now
+    // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
       world: w.name,
@@ -708,8 +714,8 @@ function buildSnapshot(w: World, c: Client) {
         .map(x => ({ surface: x.surface, gen: x.gen })),
       recording: RECORD,
       // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
-      // advances with the `v4-log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
-      v4: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
+      // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
+      cut: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
       // chat isn't world state: the window of recent lines, how many came before it, and the chat cursor (seq × 1000)
       // a history page continues from
       state: w.isGhost(c) ? { recentChat: [], chatTotal: 0 } : { recentChat: w.state.recentChat ?? [], chatTotal: w.state.chatTotal ?? 0 },   // a ghost reads no chat (PLAN 10-06)
@@ -720,14 +726,14 @@ function buildSnapshot(w: World, c: Client) {
       // what YOU may do here, as of now (a role change re-sends it: your-rights)
       yourRights: rightsFor(w, c),
       // wake where you fell asleep — the world's memory of your body
-      restore: c.spectator || !c.v4id ? null : (w.poses[c.v4id] ?? null),   // by identity: a name is anyone's to wear
+      restore: c.spectator || !c.actorId ? null : (w.poses[c.actorId] ?? null),   // by identity: a name is anyone's to wear
       present: [...w.clients].filter(o => o !== c && !o.spectator && !w.isGhost(o)).map(o => ({   // a ghost is unseen
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
         id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
-        // a v4 world: the identity the log and roles know them by (granting a role names this id, never a name)
-        ...(o.v4id ? { v4id: o.v4id } : {}),
+        // a world: the identity the log and roles know them by (granting a role names this id, never a name)
+        ...(o.actorId ? { actorId: o.actorId } : {}),
         ...(w.log && o.anonymous ? { guest: true } : {}),   // no account: the people list's 'guest' badge (research roles S6)
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
@@ -793,11 +799,11 @@ const server = Bun.serve({
           if (!c.superseded) retireAuxLeg(c.world, c);
           if (!c.spectator) {
             if (!c.superseded) {
-              try { if (c.v4id && !c.anonymous) c.world.rememberPose(c.v4id, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
+              try { if (c.actorId && !c.anonymous) c.world.rememberPose(c.actorId, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
-            if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.v4id); }   // a ghost left already
-            if (!c.superseded && c.v4id) c.world.log?.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
+            if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.actorId); }   // a ghost left already
+            if (!c.superseded && c.actorId) c.world.log?.departed(c.actorId); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
             // identity, and takeover means re-arrival, not departure).
@@ -865,37 +871,37 @@ const server = Bun.serve({
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
-              if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.v4id); }   // a ghost left already
-              if (c.v4id) c.world.log?.departed(c.v4id);
+              if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.actorId); }   // a ghost left already
+              if (c.actorId) c.world.log?.departed(c.actorId);
               reapAuxLegs(c.world, c, "primary traveled");
             }
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
-          // slice 3c: a v4 world speaks only v4. A client that doesn't fold it (an old page, an old agent build) is refused
+          // slice 3c: a world speaks only v4. A client that doesn't fold it (an old page, an old agent build) is refused
           // with the reason; 4005 = a refused join, which clients know not to redial
           // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
-          if (w.log && msg.v4fold !== true && (c.surface ?? "world") === "world") {
-            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" is a protocol v4 world, and this client doesn't read v4 — reload the page for the current client, or update the agent` }));
+          if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
+            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" is a protocol world, and this client doesn't read v4 — reload the page for the current client, or update the agent` }));
             ws.close(4005, "this client doesn't read v4");
             clients.delete(ws);
             return;
           }
-          c.v4fold = msg.v4fold === true;
+          c.replica = msg.replica === true;
           installJoin(c, w);
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (w.log) { c.ghostHidden = w.isGhost(c); }   // a ghost arrives unseen (PLAN 10-06); the sweep shows them when it ends
-          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.v4id ? { v4id: c.v4id } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
+          if (!c.spectator && !c.ghostHidden) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
           if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
-          if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.v4id);   // scripts don't sense a ghost
+          if (!c.spectator && !c.ghostHidden) w.scripts.onPresence("enter", c.id, c.actorId);   // scripts don't sense a ghost
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator && !c.ghostHidden) {   // a ghost gets held whispers when the ghost ends (its next join)
-            const held = c.v4id ? pendingWhispers.get(whisperKey(w.name, c.v4id)) : undefined;
+            const held = c.actorId ? pendingWhispers.get(whisperKey(w.name, c.actorId)) : undefined;
             if (held?.length) {
               for (const m of held) ws.send(JSON.stringify(m));
-              pendingWhispers.delete(whisperKey(w.name, c.v4id!));
+              pendingWhispers.delete(whisperKey(w.name, c.actorId!));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }
           }
@@ -1074,12 +1080,12 @@ const server = Bun.serve({
           // It is now the authority's `mute {channels: ['voice']}` (or `unmute`): keyed on the target's IDENTITY, logged in the
           // moderator log, gated like every person-act (the mute permission, a target ranked below you), and re-applied on
           // every join while it lasts (sanctionSweep). The SFU's moderator mute (enforced at ingress) is how it applies.
-          // The target: msg.v4id (an identity), else the PRESENT person whose name is msg.id (never an absent name, so a
+          // The target: msg.actorId (an identity), else the PRESENT person whose name is msg.id (never an absent name, so a
           // name someone typed to dodge or to frame can only ever reach the identity actually standing there).
           if (!c.world?.log) return;
           if (c.spectator || (c.surface ?? "world") !== "world") return;
           const w = c.world;
-          const target = typeof msg.v4id === "string" ? msg.v4id : [...w.clients].find((t) => t.id === String(msg.id ?? "") && (t.surface ?? "world") === "world" && !t.spectator)?.v4id;
+          const target = typeof msg.actorId === "string" ? msg.actorId : [...w.clients].find((t) => t.id === String(msg.id ?? "") && (t.surface ?? "world") === "world" && !t.spectator)?.actorId;
           if (!target) { ws.send(JSON.stringify({ type: "error", error: "nobody here by that name to mute" })); return; }
           const muted = msg.muted === true;
           const minutes = typeof msg.minutes === "number" ? msg.minutes : 60;
@@ -1091,10 +1097,10 @@ const server = Bun.serve({
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
               guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
-              if (muted) for (const t of w.clients) if (t.v4id === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
+              if (muted) for (const t of w.clients) if (t.actorId === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
-              const name = [...w.clients].find((t) => t.v4id === target)?.id ?? target;
-              const note = JSON.stringify({ type: "voice-moderated", id: name, v4id: target, muted, by: c.id, ...(muted ? { until: r.until } : {}) });
+              const name = [...w.clients].find((t) => t.actorId === target)?.id ?? target;
+              const note = JSON.stringify({ type: "voice-moderated", id: name, actorId: target, muted, by: c.id, ...(muted ? { until: r.until } : {}) });
               for (const t of w.clients) { try { t.ws.send(note); } catch { /* gone */ } }
               console.log(`[world:${w.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${name} (${target}) for everyone`);
             });
@@ -1184,7 +1190,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
       // client that also vanished during the restart window woke at its
       // PREVIOUS remembered spot instead of where it stood.
       for (const c of w.clients) {
-        if (!c.spectator && !c.superseded && c.lastPose && c.v4id && !c.anonymous) w.rememberPose(c.v4id, c.lastPose);
+        if (!c.spectator && !c.superseded && c.lastPose && c.actorId && !c.anonymous) w.rememberPose(c.actorId, c.lastPose);
       }
     }
     process.exit(0);

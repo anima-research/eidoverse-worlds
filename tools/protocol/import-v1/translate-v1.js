@@ -9,7 +9,7 @@
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/protocol/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
-import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "../../../shared/protocol/fold.js";
+import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
@@ -114,7 +114,7 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // the nonce is derived from the source and one fixed key stands in for both.
 export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { version: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
+  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -258,6 +258,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: project(v1, null, who), v4: v4project(v4) } };
+  return { out, stats, final: { v1: project(v1, null, who), translated: v4project(v4) } };
 }
 

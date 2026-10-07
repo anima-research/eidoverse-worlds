@@ -419,16 +419,16 @@ export class WorldAgent {
    *  and it is directly comparable with what the world hands out. */
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
-  /** The world's protocol facts, from the snapshot (version 4, its head and world id). Building tools route through
+  /** The world's protocol facts, from the snapshot ({dialect, v} from genesis, its head and world id). Building tools route through
    *  request()/sendOps() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
-  v4: { version: number; head: number; worldId: string } | null = null;
+  cut: { dialect: string; v: number; head: number; worldId: string } | null = null;
   /** The world's own fold, from the join cut and the authority's `log` stream (shared/protocol/replica.js). */
   private replica: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
   private spelling: Promise<unknown> = Promise.resolve();
-  /** v4fold: this body folds the world's v4 stream itself (the server refuses a client that doesn't). */
+  /** replica: this body folds the world's log stream itself (the server refuses a client that doesn't). */
   private joinMsg() {
-    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, v4fold: true,
+    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, agent: true, replica: true,
       token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken };
   }
   private pendingRequests = new Map<string, (m: any) => void>();
@@ -695,7 +695,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
-            this.v4 = msg.v4 ?? null;
+            this.cut = msg.cut ?? null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -728,11 +728,11 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
-            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.v4id === "string") this.actorIds.set(p.id, p.v4id); }
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
-            if (!(msg as any).v4?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
-            this.replica = makeReplica(); this.replica.adopt((msg as any).v4);
+            if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
+            this.replica = makeReplica(); this.replica.adopt((msg as any).cut);
             this.st.recentChat = structuredClone(msg.state?.recentChat ?? []);
             this.st.chatTotal = msg.state?.chatTotal ?? 0;
             for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
@@ -887,7 +887,7 @@ export class WorldAgent {
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
             this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
-            if (typeof msg.v4id === "string") this.actorIds.set(msg.id, msg.v4id);
+            if (typeof msg.actorId === "string") this.actorIds.set(msg.id, msg.actorId);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
@@ -1241,7 +1241,7 @@ export class WorldAgent {
   blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
     return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
   }
-  /** This world's blueprints from the v4 fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
+  /** This world's blueprints from the fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
   /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every
    *  part; the copy is the part whose parent isn't of the same copy */
   copyLine(id: string): string | null {
@@ -1304,7 +1304,7 @@ export class WorldAgent {
     }
   }
 
-  /** A v4 world: take the next view of this body's own v4 fold, and act on what changed (said in v4 terms,
+  /** A world: take the next view of this body's own fold, and act on what changed (said in the protocol's terms,
    *  shared/protocol/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
   private async applyView(live: boolean, actor: string | null, ts: number | null) {
     const prev = this.st as any;
@@ -2526,10 +2526,10 @@ export class WorldAgent {
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
-  /** present people's v4 identities, by display name (their arrival carries it) */
+  /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
-   *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
+   *  was answered (its log arrived first), so a follow-up plans against that write. `extra` rides the request
    *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
     const req: any = OP.batch(ops);

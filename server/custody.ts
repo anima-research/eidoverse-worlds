@@ -1,7 +1,7 @@
-// server/custody.ts — the authority's governance keys (PROTOCOL-v4 §2.4, §3d C1), held outside every log.
+// server/custody.ts — the authority's governance keys (PROTOCOL §2.4, §3d C1), held outside every log.
 // One sequencer key per keys file, and one key per identity that founds a world through this server, so two worlds one
 // person founds here carry the same keys and only genesis's nonce tells them apart. Keys never enter a log; the file
-// is written 0600. Same layout and key encoding as the lab's custody (code/v4-lab/authority.js custodyOf).
+// is written 0600. Same layout and key encoding as the lab's custody (the protocol lab's authority.js custodyOf).
 import { appendDurable, readLogBytes } from "./durable.ts";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,7 +25,7 @@ export function custodyAt(file: string) {
      *  stolen writing key isn't also the only override (round-2 review R4). */
     operator(): string { if (!c.operator) { c.operator = mk(); save(); } return c.operator.pub; },
     keyOf(who: string, make = false): string | null { if (!c.holders[who] && make) { c.holders[who] = mk(); save(); } return c.holders[who]?.pub ?? null; },
-    /** §2.4 chain point: base64url Ed25519 over msg ("eidoverse-v4-head:<world id>:<seq>:<head hex>") by the sequencer key. */
+    /** §2.4 chain point: base64url Ed25519 over msg ("eidoverse-head:<world id>:<seq>:<head hex>") by the sequencer key. */
     sign(msg: string): string {
       if (!c.sequencer) { c.sequencer = mk(); save(); }
       const key = crypto.createPrivateKey({ key: Buffer.from(c.sequencer.priv, "base64"), format: "der", type: "pkcs8" });

@@ -41,10 +41,10 @@ async function freePort(): Promise<number> {
 
 const worldsDir = mkdtempSync(join(tmpdir(), "worlds-route-"));
 // on disk: two real worlds, one dir with no log (never a world), one junk name
-foundWorlds(worldsDir, ["commons", "annex"]);   // two v4 worlds (a world.jsonl whose line 0 is a v4 genesis)
+foundWorlds(worldsDir, ["commons", "annex"]);   // two worlds (a world.jsonl whose line 0 is a genesis)
 mkdirSync(join(worldsDir, "logless"), { recursive: true });
 // an OLD world: a v1 log and no v4 one. The server serves only v4, so it isn't listed (it's translated once by the
-// operator into a new v4 world: bun tools/protocol/world.ts translate)
+// operator into a new world: bun tools/protocol/world.ts translate)
 mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
 writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
 mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });
@@ -80,7 +80,7 @@ function joinBody(port: number, world: string, id: string, extra: Record<string,
   return new Promise((res, rej) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const t = setTimeout(() => rej(new Error(`join ${id}@${world} timed out`)), 8000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", v4fold: true, ...extra }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") { clearTimeout(t); res(ws); }

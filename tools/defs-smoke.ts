@@ -174,7 +174,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
       close: () => { try { dws.close(); } catch { /* fine */ } },
     };
     let n = 0;
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "", v4fold: true }));
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "", replica: true }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolveP(self);

@@ -237,12 +237,12 @@ try {
   const seen = [], names = {};
   obs = new WebSocket(`ws://127.0.0.1:${SEQ_PORT}/ws`);
   const obsJoined = new Promise((resolve) => {
-    obs.onopen = () => obs.send(JSON.stringify({ type: "join", world: "commons", id: "observer", token: JOIN, v4fold: true }));
+    obs.onopen = () => obs.send(JSON.stringify({ type: "join", world: "commons", id: "observer", token: JOIN, replica: true }));
     obs.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolve(true);
-      // chat is the v4-log stream's say entries; their actors are opaque ids, named by the stream
-      if (m.type === "snapshot") Object.assign(names, m.v4?.names ?? {});
+      // chat is the log stream's say entries; their actors are opaque ids, named by the stream
+      if (m.type === "snapshot") Object.assign(names, m.cut?.names ?? {});
       if (m.type === "log") { Object.assign(names, m.names ?? {});
         for (const e of m.entries ?? []) if (e?.kind === "say") seen.push({ who: names[e.actor] ?? e.actor, text: e.body?.text }); }
     };

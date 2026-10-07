@@ -69,8 +69,8 @@ check("describe: malformed", describePicture(null) === "a picture (malformed dec
 check("describe never mentions pixels/colours (it carries the author's claim only)", !/pixel|colour|color/.test(describePicture({ src: GOOD, part: "p", alt: "x" })));
 
 console.log("— 2. perception —");
-// the agent's v4 path: a scratch v4 door, its cut adopted, and the next view taken after every write (tools/agent-v4.ts)
-const { agentOnDoor } = await import("./agent-v4.ts");
+// the agent's v4 path: a scratch authority, its cut adopted, and the next view taken after every write (tools/agent-scratch.ts)
+const { agentOnDoor } = await import("./agent-scratch.ts");
 const ag = new WorldAgent({ name: "reader" });
 const { seed, act } = agentOnDoor(ag, "picture");
 await seed({ console: { lib: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] } });
