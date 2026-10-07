@@ -226,7 +226,7 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
 
 export async function snapshotTool(ag: ToolAgent, view = "first", at?: string) {
   try {
-    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}${at ? `&at=${encodeURIComponent(at)}` : ""}`);
+    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}${at ? `&at=${encodeURIComponent(at)}` : ""}`, { headers: ag.readHeaders });
     if (!r.ok) return { content: [{ type: "text", text: `no view available: ${(await r.text()).slice(0, 200)}` }] };
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     return { content: [{ type: "image", data: b64, mimeType: "image/png" }] };
@@ -718,7 +718,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // here so an agent learns "may I?" from the map rather than from a
       // refused travel.
       let r: Response;
-      try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
+      try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000), headers: ag.readHeaders }); }
       catch (e) { return { content: [{ type: "text", text: `worlds: the sequencer did not answer (${(e as Error).message})` }], isError: true }; }
       if (!r.ok) return { content: [{ type: "text", text: `worlds: sequencer answered ${r.status}` }], isError: true };
       const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };

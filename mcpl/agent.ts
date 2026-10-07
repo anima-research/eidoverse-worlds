@@ -446,6 +446,9 @@ export class WorldAgent {
     this.agentToken = opts.agentToken ?? process.env.AGENT_TOKEN ?? "";
   }
 
+  /** The key this body joined with, as the Bearer header the world's state reads take (/snap, /worlds, /geom?world:
+   *  behind the same door as a join). */
+  get readHeaders(): Record<string, string> { const k = this.agentToken || process.env.WORLD_TOKEN || ""; return k ? { authorization: `Bearer ${k}` } : {}; }
   get httpBase(): string {
     // Proper URL surgery, not string surgery: a WORLD_URL carrying a query
     // string (…/ws?token=…) used to defeat the old `/\/ws$/` replace and

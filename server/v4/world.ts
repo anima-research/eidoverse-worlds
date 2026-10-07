@@ -204,9 +204,10 @@ export class V4Log {
   /** The role the door gives this identity (the door is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
-   *  names (a name lookup — messages.ts whois — is scoped to these, never the whole directory). */
+   *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
+   *  messages.ts whois, a whisper held for someone absent — is scoped to these, never the whole directory. */
   knownIds(): Set<string> {
-    const out = new Set<string>(this.actors);
+    const out = new Set<string>([...this.actors, ...Object.keys(this.poses)]);
     for (const k of Object.keys(this.live.state().entities?.["@world"]?.c ?? {})) if (k.startsWith("roles:")) out.add(k.slice(6));
     for (const m of this.live.mod ?? []) if (typeof m?.who === "string") out.add(m.who);
     for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the door's own (door, world, bhv:…) aren't people

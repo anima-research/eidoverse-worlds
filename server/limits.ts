@@ -35,6 +35,10 @@ export const LIMITS = {
   BC_RING: env("EW_BC_RING", 40),                  // crash breadcrumbs kept
   WHISPER_HOLD: env("EW_WHISPER_HOLD", 20),        // held whispers per absent recipient
 
+  // one websocket message, whole: past it the socket closes (Bun's default was 16 MB; security review 10-06 pass 2,
+  // M-A). The door's own cap on one log line is 1 MiB; a request that writes one fits with room for its envelope.
+  WS_MESSAGE_BYTES: env("EW_WS_MESSAGE_BYTES", 2 * 1024 * 1024),
+
   // receipts
   ATTEST_FRESH_MS: env("EW_ATTEST_FRESH_MS", 300_000),
 } as const;

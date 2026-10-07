@@ -48,6 +48,18 @@ const knownWorld = (name: string) => {
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
   return worldDirs.has(name) && hasWorldLog(name);
 };
+/** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
+ *  JOIN_TOKEN they need a key a join would take (the door key, an agent token, an aid1 credential) as a Bearer header,
+ *  or a signed-in session cookie from this page (security review 10-06 pass 2, L-C). An open box (no JOIN_TOKEN) is open. */
+function mayRead(req: Request): boolean {
+  if (!JOIN_TOKEN) return true;
+  const auth = req.headers.get("authorization") ?? "";
+  const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  return !!(key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || aid1JoinIdentity(key)))
+    || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
+}
+const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
+
 /** A world's directory holds its log, v4.jsonl. */
 const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
@@ -543,7 +555,7 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/geom",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
       // Geometry as DATA, for beings who perceive by reading. Three tiers:
       //   /geom?lib=<path>           one asset: bbox, flat zones, named parts
       //   /geom?world=W&id=<entity>  that asset + the entity's world transform
@@ -561,6 +573,7 @@ const ROUTES: Route[] = [
         const sum = await summarizeGlb(file);
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
+      if (!mayRead(req)) return unauthorized();
       // read-only: answer for LOADED or on-disk worlds, never create one
       if (!/^[a-z0-9_-]{1,64}$/i.test(wname)
         || (!worlds.has(wname) && !hasWorldLog(wname))) {
@@ -637,7 +650,8 @@ const ROUTES: Route[] = [
   },
   {
     match: (u) => u.pathname === "/snap",
-    handler: async ({ url }) => {
+    handler: async ({ req, url }) => {
+      if (!mayRead(req)) return unauthorized();
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
@@ -650,12 +664,13 @@ const ROUTES: Route[] = [
   {
     // Discovery for travel: which worlds this sequencer fronts, and who is
     // embodied where. Union of LOADED worlds and on-disk worlds with a log —
-    // never creates one (getWorld is not called). Same trust level as the
-    // world log: public reads. Presence names are the same ids every join
-    // snapshot already hands out; spectators and renderers appear as nothing
-    // here exactly as they do in-world.
+    // never creates one (getWorld is not called). Behind the same door as a
+    // join (mayRead). Presence names are the same ids every join snapshot
+    // already hands out; spectators and renderers appear as nothing here
+    // exactly as they do in-world.
     match: (u) => u.pathname === "/worlds",
-    handler: () => {
+    handler: ({ req }) => {
+      if (!mayRead(req)) return unauthorized();
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {

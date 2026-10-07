@@ -186,7 +186,7 @@ function expel(w: World, target: Client, why: string) {
   // handler's copy could never fire and the legs died silently
   retireAuxLeg(w, target);
   if (wasEmbodied) reapAuxLegs(w, target, "primary removed by moderation");
-  if (wasEmbodied && target.lastPose) w.rememberPose(target.id, target.lastPose); // they may be back
+  if (wasEmbodied && target.lastPose && target.v4id && !target.anonymous) w.rememberPose(target.v4id, target.lastPose); // they may be back (remembered by identity, never by name)
   target.superseded = true;   // the close path must not double-handle this body
   w.clients.delete(target);
   clients.delete(target.ws);
@@ -631,7 +631,7 @@ function buildSnapshot(w: World, c: Client) {
       // what YOU may do here, as of now (a role change re-sends it: your-rights)
       yourRights: rightsFor(w, c),
       // wake where you fell asleep — the world's memory of your body
-      restore: c.spectator ? null : (w.poses[c.id] ?? null),
+      restore: c.spectator || !c.v4id ? null : (w.poses[c.v4id] ?? null),   // by identity: a name is anyone's to wear
       present: [...w.clients].filter(o => o !== c && !o.spectator).map(o => ({
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
@@ -659,6 +659,7 @@ const server = Bun.serve({
     return route(req, srv);
   },
   websocket: {
+    maxPayloadLength: LIMITS.WS_MESSAGE_BYTES,
     // House rule 3 applies to EVERY ws callback, not just message: an
     // uncaught throw out of open/close exits the process the same way (the
     // 4f82250 crash loop), and close reaches disk (a departure's drop → the door,
@@ -702,7 +703,7 @@ const server = Bun.serve({
           if (!c.superseded) retireAuxLeg(c.world, c);
           if (!c.spectator) {
             if (!c.superseded) {
-              try { c.world.rememberPose(c.id, c.lastPose); } // sleep where you stood
+              try { if (c.v4id && !c.anonymous) c.world.rememberPose(c.v4id, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
             c.world.broadcast({ type: "leave", id: c.id });
@@ -801,10 +802,10 @@ const server = Bun.serve({
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator) {
-            const held = pendingWhispers.get(whisperKey(w.name, c.id));
+            const held = c.v4id ? pendingWhispers.get(whisperKey(w.name, c.v4id)) : undefined;
             if (held?.length) {
               for (const m of held) ws.send(JSON.stringify(m));
-              pendingWhispers.delete(whisperKey(w.name, c.id));
+              pendingWhispers.delete(whisperKey(w.name, c.v4id!));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }
           }
@@ -1096,7 +1097,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
       // client that also vanished during the restart window woke at its
       // PREVIOUS remembered spot instead of where it stood.
       for (const c of w.clients) {
-        if (!c.spectator && !c.superseded && c.lastPose) w.rememberPose(c.id, c.lastPose);
+        if (!c.spectator && !c.superseded && c.lastPose && c.v4id && !c.anonymous) w.rememberPose(c.v4id, c.lastPose);
       }
     }
     process.exit(0);
