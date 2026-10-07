@@ -20,6 +20,7 @@ import * as OP from '../../shared/v4/ops.js';
 import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
+import { chooseXR, xrActive } from './xrask.js';
 import { flashHint, toast } from './ui.js';
 
 export { isV4 };
@@ -94,7 +95,7 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
     const verb = lockVerb(req);
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
     console.info('[v4edit] lock:', refusalText(what, r));
-    const choice = await chooseCenter({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });
+    const choice = await (xrActive() ? chooseXR : chooseCenter)({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });   // a DOM card isn't drawn in a headset (xrask.js)
     bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, through_lock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }

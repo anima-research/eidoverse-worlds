@@ -110,6 +110,7 @@ import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initXRKeyboard } from './lib/xrkeyboard.js';
+import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
 import { initLantern } from './lib/lantern.js';
@@ -165,6 +166,7 @@ const chatApi = initChat({
 initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
 initEmoteBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
+initXRAsk();        // the lock question and refusals, on a quad in VR (the centre card is DOM-only)
 initWorldQuad();
 initVRPanel();
 settingsFrame();               // exists (hidden) so the ∃ menu can open it
