@@ -487,6 +487,15 @@ const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
 // make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
 // An identity with no account (io.kindOf → "anon") gets less. A say's text is at most 8 KiB (the Commons' longest real
 // line is 4.5 KB). Refused requests are logged (R7) inside the same byte budget.
+// The spoken-say trio (v1 server/verbs.ts, kept for v4 by the Commons audit, agents #4): display metadata for a voice
+// that already performed as captions. Only inside the protocol (spoken: true and a non-negative safe-integer utt); t0 is
+// a reorder key on every client, so it's clamped to a bounded utterance window ending now. Anything else: all three
+// dropped, and the say is an ordinary say.
+const MAX_UTTER_MS = 300_000;
+function spokenOf(a, now) {
+  if (a.spoken !== true || !Number.isSafeInteger(a.utt) || a.utt < 0) return {};
+  return { spoken: true, utt: a.utt, ...(typeof a.t0 === "number" && Number.isFinite(a.t0) ? { t0: Math.round(Math.min(now, Math.max(now - MAX_UTTER_MS, a.t0))) } : {}) };
+}
 const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? JSON.stringify(e).length;
@@ -1189,7 +1198,12 @@ function reactionCap(ctx, id, comp, action) {
 function buildUse(ctx, a) {
   const e = ctx.st.entities[a.id]; if (!e) refuse("not-found", `no '${a.id}'`, "", { didYouMean: guess(a.id, Object.keys(ctx.st.entities)) });
   const offers = actionsOf(ctx.st, a.id);
-  const action = a.action ?? offers[0];
+  // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
+  // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
+  if (a.action == null && !offers.length) refuse("no-action", `${a.id} has nothing to use: it offers no actions`, "inspect shows what a thing offers; a builder gives it reactions, or a seat (a socket with a body block)");
+  const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
+  if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });
+  const action = a.action ?? mine[0] ?? offers[0];   // none you may do: the first, so the refusal says why
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
@@ -2356,7 +2370,7 @@ const TOOLS = {
     if (a?.tool) return toolHelp(a.tool) ? { ok: true, ...toolHelp(a.tool) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.tool}' yet`, teach: `detailed: ${Object.keys(TOOLSPEC).join(", ")}` } };
     const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none";
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role },
-      tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?}", "schema {component?}"],
+      tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
         world: ["new {title, text?} — found this world if it doesn't exist (you become its owner)"],
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
@@ -2401,6 +2415,7 @@ const TOOLS = {
     // one thing's history, newest first, paged backwards (R 10-04: recent by default, deeper on request): before = the seq
     // to continue from (the reply's `next`), limit = how many acts per page
     if (a.id != null) {
+      if (a.verbs !== undefined || a.after !== undefined) refuse("shape", "one thing's history pages back with before only", "leave id out to filter the whole log by verbs, or page it with after");
       const id = String(a.id); const lim = Math.max(1, Math.min(50, a.limit ?? 5)); const before = a.before ?? Infinity; const out = [];
       let next = null;
       for (const i of backward(w, id)) { if (i >= before) continue; const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
@@ -2412,7 +2427,17 @@ const TOOLS = {
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
     }
-    const from = Math.max(0, w.entries.length - (a.limit ?? 12)); return { ok: true, entries: w.entries.slice(from).map((e, k) => [e, from + k]).map(([e, seq]) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code }) }; },
+    // the whole world's log, a page at a time (Commons audit, agents #3: `verbs` and `before` reached nobody). verbs
+    // matches an entry's verb or kind, and a translated act's v1 verb (its body names it); before/after page by seq
+    if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — a translated v1 entry matches its v1 verb too ('comp', 'mount')");
+    if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
+    const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
+    const match = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "legacy" && vs.has(e.body?.verb));
+    const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
+    const out = []; let more = false;
+    if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
+    else { for (let i = Math.min(w.entries.length, a.before ?? Infinity) - 1; i >= 0; i--) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } out.reverse(); }
+    return { ok: true, entries: out, ...(more ? a.after !== undefined ? { next: out.at(-1).seq, more: "send after: next for newer" } : { next: out[0].seq, more: "send before: next for older" } : {}) }; },
   schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
@@ -2453,7 +2478,7 @@ const TOOLS = {
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
-    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
+    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
   // ---- scripts (research 41) ----
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are

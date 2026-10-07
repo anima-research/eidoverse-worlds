@@ -698,7 +698,10 @@ function buildSnapshot(w: World, c: Client) {
       ...(w.v4 ? { v4: { ...w.v4.info(), ...(c.v4fold ? w.v4.clientCut(v4ActorOf(c)) : {}) } } : {}),
       // The world as it is, then only what has happened since. A joiner's
       // cost is now the size of the WORLD, not the length of its history.
-      state: jp.state,
+      // a client that folds v4 draws the view of ITS OWN fold of the cut above, and reads only the chat window here
+      // (client/lib/net.js onSnapshot, mcpl/agent.ts): the whole v1-shaped view rode along unread, 47 of the Commons'
+      // 71 KB (Commons audit #8)
+      state: w.v4 && c.v4fold ? { recentChat: (jp.state as any).recentChat ?? [], chatTotal: (jp.state as any).chatTotal ?? 0 } : jp.state,
       throughSeq: jp.throughSeq,
       entries: jp.tail,
       // dialect 3: the sim fold's cut, adopted by the joiner (absent

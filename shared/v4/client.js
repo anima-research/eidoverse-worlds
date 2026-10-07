@@ -21,6 +21,8 @@ import { viewState } from "./record.js";
 import { dec, learnNames, actorName } from "./names.js";
 
 const idOut = (s) => dec(s) ?? s;
+/** A say's spoken trio (the door validated it at admission; this is a reader's own guard): display metadata only. */
+export const spokenOf = (b) => (b?.spoken === true && Number.isSafeInteger(b.utt) ? { spoken: true, utt: b.utt, ...(Number.isFinite(b.t0) ? { t0: b.t0 } : {}) } : {});
 
 /** The fold as plain JSON (server side): {id: {born, c: {comp: {v: value} | {purged: true}}}}, the digest's own
  *  wrapping (§2.4), so a purged value can't be mistaken for a value. */
@@ -90,7 +92,7 @@ export function makeV4Client() {
       if (e?.kind === "state") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; } }
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
       if (ok && folder) { E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; v.simVersion++; }
-      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}) });
+      if (e?.kind === "say") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });
       if (e?.kind === "act" && actor === null) actor = v.nameOf(e.actor);
       if (Number.isInteger(e?.ts)) ts = e.ts;
       v.head = seq; v.stats.ingested++;

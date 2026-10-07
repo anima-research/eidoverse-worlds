@@ -778,5 +778,58 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { preset: "fire", texture: "eidoverse/assets/particle_textures/flame.png" }).ok, "T1e particles.texture (in AGENTS.md's own example) is taken");
   ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");
   ok(S("chair", "particles", { preset: "fire", texture: "../../etc/x.png" }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
+// CP (Commons v1→v4 parity audit, 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
+{ const R = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "cp"), actor, tool, args); };
+  R("ann", "new", { title: "cp" });
+  R("ann", "create", { id: "rock", model: "crate" });
+  const u0 = R("ann", "use", { id: "rock" });
+  ok(u0.refused?.code === "no-action" && !/undefined/.test(JSON.stringify(u0)) && /nothing to use/.test(u0.refused.reason), "CP1 use with no action on a thing that offers nothing says so (not \"doesn't 'undefined'\")", u0);
+  R("ann", "create", { id: "gate", model: "crate", components: { door: { open: false }, reactions: { open: { kind: "toggle" } } } });
+  const u1 = R("ann", "use", { id: "gate" });
+  ok(u1.ok && openWorld(root, "cp").state().entities.gate.c.door.open === true, "CP2 …on a thing with one action, it does that action", u1);
+  R("ann", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle" }, knock: { kind: "set", component: "label", value: "knocked" } } });
+  const u2 = R("ann", "use", { id: "gate" });
+  ok(u2.refused?.code === "no-action" && /open, knock/.test(u2.refused.teach) && !/undefined/.test(JSON.stringify(u2)), "CP3 …on a thing with several, it asks which, naming them", u2);
+  R("ann", "create", { id: "hatch", model: "crate", components: { door: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "door", field: "locked", value: true, who: "owner" } } } });
+  const u3 = R("vic", "use", { id: "hatch" });
+  ok(u3.ok && openWorld(root, "cp").state().entities.hatch.c.door.open === true, "CP3 …\"one action\" is one the asker may do: a visitor's bare use opens the hatch (its owner-only bolt isn't a choice for them)", u3);
+  for (let i = 0; i < 6; i++) R("ann", "set", { id: "rock", component: "label", value: `r${i}` });
+  R("ann", "say", { text: "hello" }); R("vic", "create", { id: "nope", model: "crate" });   // vic: a visitor's refused attempt, on the record
+  const all = R("ann", "history", { limit: 200 }).entries;
+  const h1 = R("ann", "history", { verbs: ["say"], limit: 5 });
+  ok(h1.ok && h1.entries.length === 1 && h1.entries[0].kind === "say" && h1.entries[0].body?.text === "hello", "CP4 history {verbs} filters the whole log (it reached nobody: only limit was read)", h1);
+  const p1 = R("ann", "history", { verbs: ["set"], limit: 3 }); const p2 = R("ann", "history", { verbs: ["set"], limit: 3, before: p1.next });
+  ok(p1.entries.length === 3 && p1.next === p1.entries[0].seq && p2.entries.length === 3 && p2.entries.at(-1).seq < p1.entries[0].seq && p2.entries.every((e) => e.verb === "set"),
+    "CP5 history {before} pages back through the whole log, oldest first within a page, with next", [p1.entries.map((e) => e.seq), p1.next, p2.entries.map((e) => e.seq)]);
+  const a1 = R("ann", "history", { after: all[0].seq, limit: 2 });
+  ok(a1.entries.length === 2 && a1.entries[0].seq > all[0].seq && a1.next === a1.entries[1].seq, "CP5 …and {after} forward", a1);
+  ok(R("ann", "history", { verbs: [], limit: 5 }).entries?.length === 5, "CP5 verbs: [] is no filter (it matched nothing)");
+  ok(R("ann", "history", { verbs: "say" }).refused?.code === "shape" && R("ann", "history", { id: "rock", verbs: ["set"] }).refused?.code === "shape", "CP5 a malformed verbs, or verbs on one thing's history, is refused, not ignored");
+  const ref = R("ann", "history", { verbs: ["create"], limit: 10 }).entries.find((e) => e.actor === "vic");
+  ok(ref?.body?.refused?.code === "rights", "CP6 a refused attempt reads as refused in history (its body says so)", ref);
+  // a translated world: a v1 entry is an act `legacy` naming its v1 verb; verbs: ['comp'] finds it
+  { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+      { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "lamp_1", lib: "crate", pos: [1, 0, 1] } },
+      { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "lamp_1", type: "label", data: "old" } },
+      { seq: 3, ts: 4, actor: "ann", verb: "say", args: { text: "from v1" } }];
+    const r = translate(old, { foldBuild: v1FoldBuild(), ...DOORKEYS() });
+    fs.writeFileSync(root + "worlds/cp-tr.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const hv = request(openWorld(root, "cp-tr"), "ann", "history", { verbs: ["comp"] });
+    ok(hv.ok && hv.entries.length === 1 && hv.entries[0].verb === "legacy" && hv.entries[0].body?.verb === "comp" && hv.entries[0].body?.args?.type === "label", "CP7 a translated v1 entry is found by its v1 verb, its args intact", hv); }
+  // the spoken trio rides a say (validated, t0 clamped to the utterance window); anything malformed is a plain say
+  const now = T + 100;
+  const s1 = R("ann", "say", { text: "spoken one", spoken: true, utt: 3, t0: now - 1000 });
+  const s2 = R("ann", "say", { text: "late t0", spoken: true, utt: 4, t0: now - 10_000_000 });
+  const s3 = R("ann", "say", { text: "bad utt", spoken: true, utt: -1, t0: now });
+  const s4 = R("ann", "say", { text: "no spoken", utt: 5 });
+  const s5 = R("ann", "say", { text: "future t0", spoken: true, utt: 6, t0: now + 10_000_000 });
+  const E = openWorld(root, "cp").entries; const b = (r) => E[r.seq]?.body;
+  ok(s1.ok && b(s1).spoken === true && b(s1).utt === 3 && b(s1).t0 === now - 1000, "CP8 a spoken say keeps spoken/utt/t0 (they were dropped on v4)", b(s1));
+  ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
+  ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
+  ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);
+  const k = makeV4Client(); k.adopt({ state: stateView(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
+  const got = k.ingest([E[s1.seq]], s1.seq).says[0];
+  ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

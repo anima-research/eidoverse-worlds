@@ -25,6 +25,7 @@ import { markPhase } from './boot.js';
 // protocol/v4 slice 3b: in a v4 world this client folds the door's own stream (shared/v4/client.js) and derives the
 // v1 state the realizers draw from it, locally; edit mode sends v4 requests (v4edit.js) and waits for the door.
 import { makeV4Client } from '../../shared/v4/client.js';
+import { actorName } from '../../shared/v4/names.js';
 export const v4 = makeV4Client();
 /** Is this client standing in a v4 world (one whose snapshot carried the v4 cut)? */
 export const isV4 = () => v4.active;
@@ -108,8 +109,43 @@ export function wireNet(h) {
  *  name (round-2 R1/R2; security review 10-06 H2). */
 export const identities = new Map();
 export const identityOf = (name) => (name === CONFIG.name ? net.v4you ?? null : identities.get(name) ?? null);
-/** Say something in the world (the door's `say`). */
-export const say = (text, extra = {}) => requestV4('say', { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) });
+/** Say something in the world (the door's `say`). Resolves with the door's reply. Never silent (Commons audit #6): a
+ *  line typed while the connection is down is QUEUED and sent when the world is back (v1 did this; v4 dropped it as
+ *  'offline'), and a refused say (the rate limit, a ban, too long) is shown to the person in plain words. */
+const sayQueue = [];   // {args, resolve}: says typed while reconnecting, sent in order on the next snapshot
+const SAY_QUEUE_MAX = 20;
+const excerpt = (t) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return `“${s.length > 40 ? `${s.slice(0, 39)}…` : s}”`; };
+export function sayRefusalWords(r, text) {
+  const x = r?.refused ?? {}; const q = excerpt(text);
+  switch (x.code) {
+    case 'rate': return `slow down — you've said a lot in the last few seconds, so ${q} wasn't sent. Try again in a moment.`;
+    case 'banned': return `${q} wasn't sent: you're banned from this world.`;
+    case 'too-big': return `${q} is too long to send — ${x.reason ?? 'split it into shorter messages'}.`;
+    case 'timeout': return `the world didn't confirm ${q} — it may still arrive; look before sending it again.`;
+    case 'offline': return `${q} wasn't sent: not connected to the world.`;
+    default: return `${q} wasn't sent: ${x.reason ?? x.code ?? 'the world refused it'}${x.teach ? ` (${x.teach})` : ''}.`;
+  }
+}
+function sendSay(args) {
+  return requestV4('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
+}
+export function say(text, extra = {}) {
+  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
+  if (net.joined && net.ws?.readyState === 1) return sendSay(args);
+  // removed, taken over, or refused at the door: nothing will reconnect, so nothing is queued (it would wait forever)
+  if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
+  logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
+  return new Promise((resolve) => sayQueue.push({ args, resolve }));
+}
+/** The connection won't come back (a kick, a ban, a takeover, a refused join): what was queued is told so, not kept. */
+function failSays() {
+  while (sayQueue.length) { const { args, resolve } = sayQueue.shift(); const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } };
+    logChat('*', sayRefusalWords(r, args.text)); resolve(r); }
+}
+/** Send what was typed while the connection was down, in order (called once the snapshot has landed). */
+function flushSays() {
+  while (sayQueue.length && net.joined && net.ws?.readyState === 1) { const { args, resolve } = sayQueue.shift(); sendSay(args).then(resolve); }
+}
 /** A one-off animation — sent once, relayed to everyone, never logged. */
 export function sendAnim(data) {
   if (net.joined && net.ws?.readyState === 1) {
@@ -246,7 +282,8 @@ function onV4Log(msg) {
   // a chat line: into the window (the shared rule, no v1 fold), then the live causes (bubbles, voice, chat log).
   // Numbered v4seq × 1000, as the server numbers it in its window and history.
   for (const x of r.says) {
-    const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}) } };
+    // the spoken trio (validated at the door) rides along: chat merges a spoken utterance and places it by t0
+    const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: 'say', args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
     hear(shadowState.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });
     if (hydrating) pendingLive.push(e);
     else if (e.seq > lastSeq) { lastSeq = e.seq; bus.emit('live-entry', e); noteSpeaking(e.actor); }
@@ -257,15 +294,17 @@ function onV4Log(msg) {
 /** Say in chat who changed someone's standing here (the role and ban maps), as the world's own narration. */
 function narrate(d, actor) {
   const who = actor === 'world' || !actor ? 'the world' : actor; const st = shadowState.st;
+  // people by name (the directory's, sent beside the entries), never their u-… id (Commons audit #1); '*' is everyone
+  const person = (id) => (id === '*' ? 'everyone without a role' : actorName(id));
   for (const id of d?.ids?.roles ?? []) {
     const rec = st.roles?.[id];
-    if (!rec) { logChat('*', `${who} took away ${id}'s role here`); continue; }
+    if (!rec) { logChat('*', `${who} took away ${person(id)}'s role here`); continue; }
     const bits = [rec.role, rec.gen != null ? (rec.gen ? '+gen' : '-gen') : null].filter(Boolean);
-    logChat('*', `${who} made ${id} ${bits.join(' ')}`);
+    logChat('*', `${who} made ${person(id)} ${bits.join(' ')}`);
   }
   for (const id of d?.ids?.bans ?? []) {
     const rec = st.bans?.[id];
-    logChat('*', rec ? `${who} banned ${id}${rec.reason ? ` — ${rec.reason}` : ''}` : `${who} lifted the ban on ${id}`);
+    logChat('*', rec ? `${who} banned ${person(id)}${rec.reason ? ` — ${rec.reason}` : ''}` : `${who} lifted the ban on ${person(id)}`);
   }
 }
 
@@ -481,6 +520,7 @@ function wireSocket(ws) {
     if (ev.code === 4002) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast(`"${CONFIG.name}" is connected in another tab. This one has yielded — reload to take over.`, 'warn', 60000);
       return;
     }
@@ -491,6 +531,7 @@ function wireSocket(ws) {
     if (ev.code === 4006) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
       return;
     }
@@ -499,6 +540,7 @@ function wireSocket(ws) {
     if (ev.code === 4005) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       toast(`"${CONFIG.world}" is not a valid world name — check the link that brought you here`, 'warn', 60000);
       return;
     }
@@ -508,6 +550,7 @@ function wireSocket(ws) {
     if (ev.code === 4003) {
       net.status = 'rejected';
       bus.emit('net', net);
+      failSays();
       // If we entered verified, this refusal means the session died
       // server-side (TTL lapsed mid-visit). The cached identity is stale —
       // drop it and go back through the login rather than asking for a key
@@ -810,6 +853,10 @@ async function handle(msg) {
       // where the person is looking when they issue the command.
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
+    case 'moderated':
+      // someone was removed or banned here (or a ban lifted): what everyone else is told, as v1 told them (names only)
+      logChat('*', String(msg.text ?? ''));
+      break;
 
     case 'error':
       // the world tells us it has no voice relay only when we try to use one —
@@ -952,4 +999,5 @@ async function onSnapshot(msg) {
   bus.emit('hydrated');
   bus.emit('roster');
   hooks.onSnapshotDone();
+  flushSays();   // what was typed while we were away, now that the world is back (after its chat window, so it reads in order)
 }

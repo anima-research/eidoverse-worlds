@@ -16,7 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold, digest } from "../../shared/v4/fold.js";
-import { makeV4Client } from "../../shared/v4/client.js";
+import { makeV4Client, stateFromView } from "../../shared/v4/client.js";
+import { viewState } from "../../shared/v4/record.js";
 import { enc } from "../../shared/v4/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
 
@@ -233,6 +234,108 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.slot === "box", "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
+// (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)
+// ---- CM: the Commons v1→v4 parity audit (10-06): moderation people can see, names not ids, a name → identity lookup,
+// refusals in the flight recorder, the agent's history and look in door terms, a join and a chat line without dead weight ----
+{ const { HANDLERS, historyLine } = await import("../../mcpl/tools.ts");
+  const { WorldAgent } = await import("../../mcpl/agent.ts");
+  const wait = async (f: () => any, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (f()) return true; await sleep(50); } return false; };
+  const T = (r: any) => r?.content?.[0]?.text ?? "";
+  // CM1 a kick: bystanders are told who removed whom (names), never the reason; the person removed is told the reason
+  const kim = await client(srv.port, "garden", "Kim", V4); await sleep(150); const KIM = kim.snapshot?.v4?.you;
+  const nB = vic.of("moderated").length;
+  ok((await ann.req("kick", { who: KIM, reason: "the secret reason" })).ok, "CM1 (Ann kicks Kim, with a reason)");
+  await wait(() => vic.of("moderated").length > nB && kim.of("error").length);
+  const ml = vic.of("moderated").at(-1);
+  ok(ml?.text === "Ann removed Kim from this world" && spec.of("moderated").at(-1)?.text === ml?.text, "CM1 bystanders see \"Ann removed Kim\" (v1 showed it; v4 told nobody)", vic.of("moderated").slice(nB));
+  ok(!/secret/.test(JSON.stringify([...vic.msgs, ...ann.msgs, ...spec.msgs].filter((m) => m.type === "moderated"))) && /secret reason/.test(kim.of("error").at(-1)?.error ?? "") && !kim.of("moderated").length,
+    "CM1 …not the reason (that's the person's, and the moderator log's); the person removed gets it, and no bystander line", kim.of("error").at(-1));
+  // …and a kick the door accepts for someone who isn't here (a raw id: the agent skips whois for one) tells nobody anything
+  const nK = vic.of("moderated").length;
+  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)"); await sleep(250);
+  ok(vic.of("moderated").length === nK, "CM1 …nobody is told \"Ann removed Kim\" when nobody was removed", vic.of("moderated").slice(nK));
+  // CM2 role narration names the person: a role written for someone who never acted here carries their name to clients
+  const nv = vic.of("v4-log").length;
+  ok((await ann.req("set", { id: "@world", component: `roles:${KIM}`, value: { role: "builder" } })).ok, "CM2 (Ann makes the absent Kim a builder)");
+  await wait(() => vic.of("v4-log").length > nv);
+  ok(vic.of("v4-log").slice(nv).some((m) => m.names?.[KIM] === "Kim"), "CM2 the v4-log that carries a role for someone who never acted names them (narration said \"made u-…\")", vic.of("v4-log").slice(nv).map((m) => m.names));
+  // CM3 whois: a name → identity, scoped to this world; the door's role; here or not
+  const zed = await client(srv.port, "garden", "Zed", V4); await zed.req("say", { text: "hi, I'm Zed" }); const ZED = zed.snapshot?.v4?.you; zed.close(); await sleep(200);
+  const wz = await vic.req("whois", { name: "zed" });
+  ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && wz.people[0].kind === "person" && !JSON.stringify(wz).includes("local:"),
+    "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
+  const wa = await vic.req("whois", { name: "Ann" }), wk = await vic.req("whois", { name: KIM });
+  ok(wa.people?.[0]?.role === "owner" && wa.people[0].here === true && wk.people?.[0]?.name === "Kim" && wk.people[0].role === "builder", "CM3 …the door's role (an owner reads as owner, not v1's visitor), and an identity works as the name", [wa, wk]);
+  const ww = await vic.req("whois", { name: "Watcher" });
+  ok(ww.ok && ww.people.length === 0 && /has been in this world/.test(ww.note ?? ""), "CM3 …scoped to this world: a spectator who never acted here, in the door's directory all the same, isn't found", ww);
+  ok((await spec.req("whois", { name: "Ann" })).ok, "CM3 …a spectator may ask (it's a read)");
+  ok((await vic.req("whois", { name: "🙂" })).refused?.code === "shape", "CM3 …a name with no letters or digits is refused (it folded to \"\" and matched everyone whose name did too)");
+  ok(tool(["found", "elsewhere", "--owner", "Una"]).code === 0, "CM3 (a second world, founded by Una, who has never been in this one)");
+  { const una = await client(srv.port, "elsewhere", "Una", V4); await una.req("say", { text: "only here" }); una.close(); }
+  const wu = await vic.req("whois", { name: "Una" });
+  ok(wu.ok && wu.people.length === 0, "CM3 …someone who acted only in another world on this door isn't found from this one", wu);
+  // CM4 an agent owner bans an absent person by name, and lifts it; bystanders are told; a kick of someone absent says so
+  const oz: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Oz", world: "garden", avatar: "" });
+  await oz.connect(); for (let i = 0; i < 40 && !oz.v4c?.active; i++) await sleep(50);
+  ok((await ann.req("set", { id: "@world", component: `roles:${oz.v4c?.you}`, value: { role: "owner" } })).ok, "CM4 (Ann makes the agent Oz an owner)");
+  const nb2 = vic.of("moderated").length;
+  const ban = await HANDLERS.ban(oz, { id: "Zed", reason: "test" }, {} as any, "ban");
+  ok(!ban.isError && /done/.test(T(ban)), "CM4 the agent bans Zed, who isn't here, by name (it needed a u-… id it had no way to find)", T(ban));
+  const back = await client(srv.port, "garden", "Zed", V4);
+  ok(!back.snapshot && back.of("error").some((m) => /banned/.test(m.error)), "CM4 …and Zed can't come back", back.msgs.map((m) => m.type)); back.close();
+  await wait(() => vic.of("moderated").length > nb2);
+  ok(vic.of("moderated").at(-1)?.text === "Oz banned Zed from this world", "CM4 …bystanders were told", vic.of("moderated").slice(nb2));
+  const wi = HANDLERS.whois ? await HANDLERS.whois(oz, { name: "zed" }, {} as any, "whois") : { isError: true, content: [{ type: "text", text: "(no whois tool)" }] };
+  ok(!wi.isError && new RegExp(`${ZED}: person, visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
+  const kk = await HANDLERS.kick(oz, { id: "Zed" }, {} as any, "kick");
+  ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
+  const ub = await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban");
+  ok(!ub.isError && await wait(() => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed")), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
+  ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
+  // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the door's reason
+  await vic.req("create", { id: "vics2", model: "test/cup.glb" });
+  const dbg = await new Promise<any>((res) => { const id = "dbg1"; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === id) { vic.ws.removeEventListener("message", on); res(m); } }; vic.ws.addEventListener("message", on); vic.send({ type: "debug", reqId: id, limit: 50 }); setTimeout(() => res({ events: [], timeout: true }), 5000); });
+  const rv = dbg.events?.filter((e: any) => e.kind === "refused" && e.who === "Vic" && e.code === "rights").at(-1);
+  ok(rv && /Vic's create vics2 was refused \(rights\)/.test(rv.line), "CM5 a refused request is in the flight recorder, in words (world_debug only had v4-v1-verb lines)", dbg.events?.slice(-3));
+  // bounded: a shape refusal quotes what was sent; a megabyte of it mustn't sit in the ring (or go to everyone who asks)
+  await vic.req("history", { limit: "x".repeat(200_000) });
+  const dbg2 = await new Promise<any>((res) => { const id = "dbg2"; const on = (ev: any) => { const m = JSON.parse(String(ev.data)); if (m.type === "debug" && m.reqId === id) { vic.ws.removeEventListener("message", on); res(m); } }; vic.ws.addEventListener("message", on); vic.send({ type: "debug", reqId: id, limit: 50 }); setTimeout(() => res({ events: [], timeout: true }), 5000); });
+  const big = dbg2.events?.filter((e: any) => e.kind === "refused" && e.tool === "history").at(-1);
+  ok(big && JSON.stringify(big).length < 600 && /…$/.test(big.line), "CM5 a refusal quoting 200 KB is recorded in under 600 bytes", big ? JSON.stringify(big).length : dbg2.events?.slice(-2));
+  const wd = await HANDLERS.world_debug(oz, { kinds: ["refused"] }, {} as any, "world_debug");
+  ok(/Vic's create vics2 was refused \(rights\)/.test(T(wd)), "CM5 …and the agent's world_debug reads it", T(wd).slice(0, 300));
+  // CM6 the agent's history: verbs and before reach the door; a refused attempt reads REFUSED; a v1 entry its own verb
+  const wh = await HANDLERS.world_history(oz, { verbs: ["say"], limit: 3 }, {} as any, "world_history");
+  ok(!wh.isError && /Zed: say "hi, I'm Zed"/.test(T(wh)) && T(wh).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => / say /.test(l)), "CM6 world_history {verbs: ['say']} returns only says (verbs never reached the door)", T(wh));
+  const whc = await HANDLERS.world_history(oz, { verbs: ["create"], limit: 50 }, {} as any, "world_history");
+  ok(/Vic: tried create .*REFUSED \(rights\); nothing changed/.test(T(whc)) && !/Vic: create /.test(T(whc)), "CM6 a refused create reads as refused, not as a create", T(whc).slice(-500));
+  const first = Number(/#(\d+)/.exec(T(wh))?.[1]);
+  const whb = await HANDLERS.world_history(oz, { limit: 2, before: first }, {} as any, "world_history");
+  ok(T(whb).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => Number(/#(\d+)/.exec(l)[1]) < first) && /more before #/.test(T(whb)), "CM6 before pages back (it was ignored)", T(whb));
+  ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "legacy", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (from the v1 log, #4)`, "CM6 a translated entry prints its v1 verb and args, not `legacy {}`");
+  // CM7 look speaks door terms: no world_verb, no comp {…}, no dismount
+  ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
+  await wait(() => oz.entities.has("bell"));
+  const lk = oz.look();
+  ok(!/world_verb|comp \{|dismount|mount \{/.test(lk) && /door \{tool: "use"/.test(lk) && /sit \{on: id/.test(lk) && /through_lock/.test(lk), "CM7 look teaches the door's use, the sit tool and how a lock is lifted (it taught world_verb, which is gone)", lk.split("\n").filter((l) => /bell|use a thing|locked/.test(l)));
+  // CM8 the agent's say: a spoken say keeps its trio on disk; a refused say is an error, not "said"
+  const sp = await HANDLERS.say(oz, { text: "spoken line", spoken: true, utt: 11 }, {} as any, "say");
+  await sleep(200);
+  const spk = readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))).filter((e: any) => e.kind === "say" && e.body?.text === "spoken line").at(-1);
+  ok(!sp.isError && spk?.body?.spoken === true && spk.body.utt === 11, "CM8 the agent's spoken say reaches the log with spoken/utt (dropped on v4)", spk?.body);
+  let lastSay: any = null; for (let i = 0; i < 25 && !lastSay?.isError; i++) lastSay = await HANDLERS.say(oz, { text: `flood ${i}` }, {} as any, "say");
+  ok(lastSay?.isError && /rate|too many|slow/i.test(T(lastSay)), "CM8 a say refused by the rate limit comes back as an error in words (it said \"said\")", T(lastSay));
+  oz.close();
+  // CM9 the join and a chat line, without dead weight
+  const st0 = ann.snapshot?.state ?? {};
+  ok(JSON.stringify(Object.keys(st0).sort()) === '["chatTotal","recentChat"]' && ann.snapshot?.v4?.state?.["@world"], "CM9 a v4-folding joiner's snapshot carries the chat window beside the cut, not a second, v1-shaped copy of the world", Object.keys(st0));
+  const nl = vic.of("v4-log").length; const raw: string[] = []; const on = (ev: any) => { if (String(ev.data).includes('"v4-log"')) raw.push(String(ev.data)); }; vic.ws.addEventListener("message", on);
+  ok((await ann.req("say", { text: "hi" })).ok, "CM9 (Ann says hi)"); await wait(() => vic.of("v4-log").length > nl); vic.ws.removeEventListener("message", on);
+  const line = raw.find((d) => d.includes('"text":"hi"')) ?? ""; const e0 = JSON.parse(line || "{}").entries?.[0] ?? {};
+  ok(line.length > 0 && line.length < 200 && !("sig" in e0) && !("head" in e0) && !("world" in e0) && !("salt" in (e0.body ?? {})), "CM9 a two-character say is under 200 bytes on the wire (488: the chain's world, head, sig and salt rode every line, unread)", [line.length, line]);
+  ok(heldBy(vic) && digest(heldBy(vic).st) === digest(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl"))))), "CM9 …and what Vic folds from the slimmer stream is still the log on disk (digest)"); }
+
 // ---- S6: translate a v1 world into a new v4 world ----
 { // an old (v1) world's log, as one arrives for translation: the server has no v1 runtime, so it's written as a file
   // (the same verbs the old client sent: a grant, a spawn, a comp, a mount by offset and by socket, a say)
@@ -267,7 +370,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
   const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
     return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, slot: e.parent?.slot }]; }));
-  ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neu.snapshot.state)), "S6 the v4 copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neu.snapshot.state)]);
+  const neuView = viewState(stateFromView(neu.snapshot.v4.state));   // what the page draws: the view of its own fold of the cut
+  ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neuView)), "S6 the v4 copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
   const v4c = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl")))).entities;
   ok(JSON.stringify(v4c[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", slot: "seat" }) && JSON.stringify(v4c[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
     "S6 a translated mount is in the door's shape: transform local to the parent (here the socket's pos), parent {to, order, slot}", [v4c[enc("mug_1")].c.parent, v4c[enc("mug_1")].c.transform]);

@@ -114,7 +114,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const roles = Object.entries(fresh.entities["@world"].c).filter(([k, v]) => k.startsWith("roles:") && v.role === "owner").length;
   ok(roles === 2, "RS5 both owners are still owners", fresh.entities["@world"].c);
   const again = await sock(S.port); const ja = await again.join("src", "Ann");
-  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.state?.entities ?? {}).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
+  ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.v4?.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
   const w2 = await again.req("create", { id: "new-crate", model: MODEL });
   // the fresh world's scripts run (the server's tick and arrivals reach THIS world's script host, not the archived one's)
   const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "greet", { last: e.by }); });' });

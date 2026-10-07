@@ -25,7 +25,7 @@ import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
 import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView } from "../../shared/v4/door.js";
-import { clientCutOf } from "../../shared/v4/client.js";
+import { clientCutOf, spokenOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
@@ -35,6 +35,15 @@ import { ENGINE_CATALOGUE, warm, modelsIn } from "./catalogue.ts";
 type Any = any;
 const idOut = (s: string) => dec(s) ?? s;
 
+/** An entry as clients are sent it: without the chain fields (world, head, sig) and an act/say body's salt. Clients
+ *  adopt a cut at join and fold ops; nothing reads those fields, and on a two-character say they were 380 of its 488
+ *  bytes (Commons audit #8). The log on disk keeps them, and the door's history serves them whole. */
+export function wireEntry(e: Any) {
+  if (!e || typeof e !== "object") return e;
+  const { world: _w, head: _h, sig: _s, ...rest } = e;
+  if ((rest.kind === "say" || rest.kind === "act") && rest.body && typeof rest.body === "object" && !Array.isArray(rest.body) && "salt" in rest.body) { const { salt: _t, ...b } = rest.body; rest.body = b; }
+  return rest;
+}
 /** Does this world's directory hold a v4 log? (Decided once, when the world is first opened.) */
 export function isV4World(name: string): boolean { return isV4Dir(path.join(WORLDS_DIR, name)); }
 
@@ -96,7 +105,7 @@ export class V4Log {
   /** One say entry: into the chat window and readHistory, as {seq: v4seq × 1000, verb: "say", …}. */
   private sayLine(e: Any): LogEntry {
     const who = (x: string) => directoryFor(WORLDS_DIR).nameOf(x) ?? idOut(x);
-    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}) } } as LogEntry;
+    return { seq: e.seq * 1000, ts: e.ts, actor: who(String(e.actor)), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: who(String(e.body.to)) } : {}), ...spokenOf(e.body) } } as LogEntry;
   }
   private hearSay(e: Any) {
     const line = this.sayLine(e);
@@ -160,7 +169,11 @@ export class V4Log {
     const fresh = this.live.entries.slice(from);
     const newActors = [...new Set(fresh.map((e: Any) => e?.actor).filter((a: Any) => typeof a === "string" && !this.actors.has(a)))] as string[];
     newActors.forEach((a) => this.actors.add(a));
-    this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh, ...(newActors.length ? { names: this.names(newActors) } : {}) });
+    // a role written for someone who never acted here: clients need their name too, or the narration says "made u-…"
+    const named = new Set<string>(newActors);
+    for (const e of fresh) { if (e?.kind !== "state") continue; let ops: Any[] = []; try { ops = opsOf(e); } catch { /* malformed: nothing to name */ }
+      for (const o of ops) if (o?.id === "@world" && String(o.comp ?? "").startsWith("roles:")) named.add(String(o.comp).slice(6)); }
+    this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh.map(wireEntry), ...(named.size ? { names: this.names(named) } : {}) });
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
     const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
@@ -198,6 +211,15 @@ export class V4Log {
   /** The role the DOOR gives this identity (the door is what admits writes; v1's own default for strangers is builder,
    *  the door's is visitor, so a client must be told the door's). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
+  /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
+   *  names (a name lookup — messages.ts whois — is scoped to these, never the whole directory). */
+  knownIds(): Set<string> {
+    const out = new Set<string>(this.actors);
+    for (const k of Object.keys(this.live.state().entities?.["@world"]?.c ?? {})) if (k.startsWith("roles:")) out.add(k.slice(6));
+    for (const m of this.live.mod ?? []) if (typeof m?.who === "string") out.add(m.who);
+    for (const id of [...out]) if (!/^u-[a-z2-7]{20}$/.test(id)) out.delete(id);   // the door's own (door, world, bhv:…) aren't people
+    return out;
+  }
   /** The door's moderator log says this identity is banned here (door.js isBanned): join must refuse it too. */
   bannedHere(actor: string): boolean { return isBanned(this.live, actor); }
   /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
