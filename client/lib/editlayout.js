@@ -40,7 +40,7 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
   { id: 'select', icon: 'mousePointer2', key: 'Q', title: 'select (Q) — click picks, a drag never moves' },
   { id: 'move', icon: 'move', key: 'G', title: 'move (G) — drag moves; Shift+drag raises · G again or right-click: world / object axes' },
   { id: 'rotate', icon: 'rotateCw', key: 'E', title: 'rotate (E) — drag turns about up · E again or right-click: world / object axes' },
-  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes; the handles stretch one axis (a world)' },
+  { id: 'scale', icon: 'scale3d', key: 'R', title: 'scale (R) — drag sizes; the handles stretch one axis' },
   { id: 'pivot', icon: 'locateFixed', key: 'P', title: 'pivot (P) — drag where it turns and scales from; it snaps to the model\'s centre, base, corners and faces. The thing never moves' },
 ];
 

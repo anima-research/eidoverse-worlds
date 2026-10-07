@@ -32,7 +32,7 @@ import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
-import * as Edits from './editwrites.js';   // slice 3b: a world's component edits are requests
+import * as Edits from './editwrites.js';   // slice 3b: component edits are requests
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it

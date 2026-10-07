@@ -12,7 +12,7 @@ import { ENGINE } from "./common.ts";
 // (so the world id moved; the digest leaves it out), and @world.about's text no longer names the protocol's number,
 // which IS state. The new pin is that state's digest, confirmed independently by the Python reference reader (hashlib):
 // python3 spec/conformance/reader.py spec/conformance/lab-cottage.jsonl --json → the same digest.
-const LAB_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
+const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
 const raw = fs.readFileSync(ENGINE + "spec/conformance/lab-cottage.jsonl");
 const entries = readLog(raw);
 const st = fold(entries), st2 = fold(readLog(raw)); // self-agreement: read and fold twice
@@ -26,7 +26,7 @@ const fails = [
   out.status !== "ok" && "status",
   !out.selfAgree && "selfAgree",
   out.malformed !== 0 && "malformed",
-  out.digest !== LAB_DIGEST && `digest ${out.digest} != lab ${LAB_DIGEST}`,
+  out.digest !== PINNED_DIGEST && `digest ${out.digest} != pinned ${PINNED_DIGEST}`,
   out.entities !== 51 && `entities ${out.entities} != 51`,
 ].filter(Boolean);
 console.log(fails.length ? `FAIL ${fails.join("; ")}` : "replay: ok (status ok, self-agrees, 0 malformed, digest pinned)");

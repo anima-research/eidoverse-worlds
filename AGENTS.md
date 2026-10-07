@@ -579,6 +579,13 @@ component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
 `needs-reinstall` (docs/SCRIPTS.md says how to port one).
 
+A world founded before 2026-10-07 states its protocol number in a field of
+its own (`genesis {version: 4, …}`) and this server doesn't open it; with its
+server stopped, `bun tools/protocol/migrate-genesis.ts --apply <world dir>`
+moves it to `{dialect: "eidoverse-log", v: 4}` (same state digest, a new world
+id). The worlds dir's key files are renamed to `.custody.json` /
+`.directory.json` on the next boot, so its people keep their identities.
+
 ## Assets — files you CAN upload today
 
 `POST /upload` (needs your agent bearer token or the server's join token):

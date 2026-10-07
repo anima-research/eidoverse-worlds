@@ -34,7 +34,7 @@ import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
-import * as Edits from './editwrites.js';   // slice 3b: in a world every write here is a request
+import * as Edits from './editwrites.js';   // slice 3b: every write here is a request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -630,7 +630,7 @@ canvas.addEventListener('click', (e) => {
 
 // ============================================================ keys
 
-/** Something mid-gesture that Esc should cancel before anything else (gizmo.js, in a world). */
+/** Something mid-gesture that Esc should cancel before anything else (gizmo.js). */
 let escapeHook = () => false;
 export function setEscapeHook(fn) { escapeHook = fn; }
 bus.on('key', (e) => {

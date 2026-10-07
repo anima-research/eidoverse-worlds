@@ -48,7 +48,7 @@ import { reindexCollider } from './colliders.js';
 import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
-import { KEYHINTS } from './keyhints.js';   // slice 3b: in a world these panels' writes are requests
+import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');

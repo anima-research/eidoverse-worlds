@@ -5,7 +5,7 @@
 // Checks, each computed in the page AND here, then compared:
 //   1. every shared/protocol module a client runs imports (fold, hash, catalogue, toolspec, simlayer, door, names, record, …);
 //   2. the page hashes with the portable sync sha256 (no Bun there), and agrees with bun's native hasher;
-//   3. the lab cottage folds to the lab's digest;
+//   3. the lab cottage folds to its pinned digest;
 //   4. the authority, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
 // usage: bun tools/protocol/browser-check.ts   (CHROME=<path> to pick a browser build)
 import fs from "node:fs";
@@ -13,7 +13,9 @@ import { chromium } from "playwright";
 import { ENGINE } from "./common.ts";
 import { sha256 } from "../../shared/protocol/hash.js";
 
-const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b";
+// the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
+// was confirmed independently)
+const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
 const MODS = ["fold", "hash", "componentspec", "labmodels", "verbspec", "simlayer", "authority", "names", "view", "replica", "requests", "refusal"];
 
 // the work, as one function that runs unchanged in bun and in the page (only the import base differs)
@@ -85,7 +87,7 @@ try {
   const cmp: [string, any, any][] = [["sha256('abc')", here.abc, there.abc], ["cottage digest", here.cottage, there.cottage],
     ["door results", JSON.stringify(here.door.results), JSON.stringify(there.door.results)], ["door log", here.door.log, there.door.log]];
   for (const [k, a, b] of cmp) { console.log(`${a === b ? "same" : "DIFF"} ${k.padEnd(16)} bun ${String(a).slice(0, 64)}${a === b ? "" : `  page ${String(b).slice(0, 64)}`}`); if (a !== b) fails.push(`${k} differs`); }
-  if (here.cottage !== LAB_DIGEST) fails.push("cottage digest is not the lab's");
+  if (here.cottage !== PINNED_DIGEST) fails.push("cottage digest is not the pinned one");
   if (here.door.n < 8 || !here.door.results.includes("ok")) fails.push(`the authority scenario wrote too little (${here.door.n} lines)`);
   console.log(`door: ${here.door.results.join(", ")} (${here.door.n} lines)`);
 } catch (e: any) { fails.push(`probe: ${e.message}`); }
