@@ -1776,18 +1776,29 @@ export function tick(w) {
  *  leave's refusal is: a return-held act (cause: the lift) writing where the log last had it, which seats it in the
  *  engine again, or, for a grabbable that returns, a return-home. `present` = identities connected now (none, at
  *  load). Returns what it settled. */
+// Bounded (security pass 2 M-C): it runs at world load on the thread every world shares, so at most ORPHANS.holders
+// holders are settled as leave settles them and ORPHANS.lifts lifts returned; any holds past that simply end (presence),
+// and what the log still has lifted is settled at the next load. The result says how many waited ({deferred}).
+export const ORPHANS = { holders: 16, lifts: 64 };
 export function settleOrphans(w, present = []) {
   if (!w.exists || w.state().status !== "ok") return [];
   const here = new Set(present); const out = [];
-  for (const who of [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h.by))]) if (!here.has(who)) {
+  const holders = [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h?.by))].filter((who) => !here.has(who));
+  if (holders.length > ORPHANS.holders) { const late = new Set(holders.slice(ORPHANS.holders));
+    for (const [id, h] of Object.entries(w.presence.holds)) if (late.has(h?.by)) delete w.presence.holds[id];
+    for (const who of late) delete w.presence.bodies[who];
+    out.push({ deferred: late.size, why: `more than ${ORPHANS.holders} holders at once: their holds ended; what the log still has lifted settles at the next load` }); }
+  for (const who of holders.slice(0, ORPHANS.holders)) {
     const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
     // a holder the door won't take requests from now (banned since): the hold just ends (presence), and what the log
     // lifted is settled below by the door, as leave's own refusal is (review 10-06)
     if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
   withDoor(w, () => {
     const st = w.state(); if (!st.entities["@world"]?.c.sim) return;
+    let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
       if (w.presence.holds[id] || !st.entities[id]) continue;
+      if (settled++ >= ORPHANS.lifts) { waiting++; continue; }
       const g = grabOf(st.entities[id].c);
       if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
       const t = w.state().entities[id].c.transform; if (!t) continue;
@@ -1795,6 +1806,7 @@ export function settleOrphans(w, present = []) {
       stateEntry(w, plan, w.append({ kind: "act", actor: "door", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
       out.push({ id, returned: "where the log had it" });
     }
+    if (waiting) out.push({ deferred: waiting, why: `more than ${ORPHANS.lifts} lifted things at once: the rest settle at the next load` });
   });
   if (out.length) w.savePresence();
   return out;
