@@ -7,6 +7,8 @@
 //       still on the event for the console
 //   W   a write the door warns about (it floats) shows the warning to the person, by label
 //   V   in a headset (renderer.xr presenting, emulated), a moderator's warning rides the XR quad, not the DOM card
+//   E   the editor: the Inspector's Openable card (its rows; a hinge button writes the pivot), and Add Component finds
+//       Openable by 'door' and adding it makes the thing usable
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -113,6 +115,35 @@ try {
   check("V3 OK answers it", await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`));
   });
 
+  // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
+  await stage("E", async () => {
+  const insp = `document.querySelector('[data-frame="inspector"]')`;
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await waitFor(`document.body.classList.contains('edit-mode')`);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('gate'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'gate')`);
+  // a card is its header row (div.sp-f-group holding the .sp-group button) and the rows after it, up to the next header
+  // row (panels.js)
+  const card = `(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Openable/.test(g.textContent)); if (!h) return null; const box = document.createElement('div');
+    for (let n = h.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) box.append(n.cloneNode(true)); box.__live = h; return box; })()`;
+  const cardBtn = (re: string) => `(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Openable/.test(g.textContent));
+    for (let n = h?.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) { const b = [...(n.matches('button') ? [n] : []), ...n.querySelectorAll('button')].find((b) => ${re}.test(b.textContent)); if (b) { b.click(); return true; } } return false; })()`;
+  check("E1 the Inspector shows an Openable card with its rows (open, locked, opens by, turns, hinge axis, takes)", await waitFor(`(() => { const c = ${card}; if (!c) return false; const L = [...c.querySelectorAll('.sp-label')].map((l) => l.textContent); return ['open', 'locked', 'opens by', 'turns', 'hinge axis', 'takes'].every((x) => L.includes(x)); })()`, 6000),
+    { rows: await evalJson(`[...(${card}?.querySelectorAll('.sp-label') ?? [])].map((l) => l.textContent)`), groups: await evalJson(`[...(${insp}?.querySelectorAll('.sp-group') ?? [])].map((g) => g.textContent.slice(0, 60))`), sel: await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected())`) });
+  const clicked = await evalJson(cardBtn("/hinge on its right edge/"));
+  check("E2 'hinge on its right edge' puts its pivot on the +x edge of its box (one act)", clicked && await waitDisk(() => (disk().entities.gate?.c.pivot?.pos?.[0] ?? -1) > 0.2), { clicked, pivot: disk().entities.gate?.c.pivot });
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('box1'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'box1')`); await sleep(400);
+  await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);
+  await waitFor(`!!document.querySelector('.sp-pop-search')`);
+  const all = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
+  await evalJson(`(() => { const i = document.querySelector('.sp-pop-search'); i.value = 'door'; i.dispatchEvent(new Event('input')); return true; })()`);
+  const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
+  check("E3 Add Component offers Path and no LookAt (what the door takes), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && !all?.some((t: string) => /LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
+  await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
+  check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[shiplist-probe] ${tally.passed} passed, ${tally.failed} failed`);
