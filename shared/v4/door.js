@@ -395,7 +395,7 @@ export function request(w, actor, tool, args = {}) {
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    w.changedQ = []; w.sayQ = [];
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
     if (h && w.exists) { settleSim(w); returnDue(w); expireAsks(w); }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
@@ -407,6 +407,7 @@ export function request(w, actor, tool, args = {}) {
     if (expect !== undefined) expectCheck(w, expect);
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
+    drainHeld(w);    // grab / release (grabbable): scripts whose scope covers the thing hear who took it, how it was let go
     drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
@@ -1284,7 +1285,7 @@ function offersFor(st, id, actor) {
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c.scripts; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
-const SCRIPT_EVENTS = ["use", "say", "enter", "leave"];
+const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
 const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
@@ -1518,6 +1519,21 @@ export function presenceEvent(w, kind, who) {
     drainScripts(w);
     return ran;
   });
+}
+// grab and release (grabbable; research grab §3): every script whose scope covers the thing and lists the event hears
+// it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
+// when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
+// is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
+// snap), slot? and to? (release), seq (the act) when logged.
+const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
+function drainHeld(w) {
+  let guard = 0;
+  while (w.heldQ?.length && guard++ < 64) { const { kind, id, ev } = w.heldQ.shift(); const st = w.state();
+    for (const { id: sid, name, v } of allScripts(st)) {
+      if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;
+      const sp = sponsorOf(w, sid, `script:${name}`);
+      activate(w, sid, name, { on: kind, id, ...ev, ...(ev.seq !== undefined ? { cause: ev.seq } : sp ? { cause: sp.sponsorAt } : {}) }); } }
+  if (w.heldQ) w.heldQ.length = 0;
 }
 // What a request's (or an activation's) entries set off: `changed:<comp>` for a state entry that changes <comp> on an id
 // in the script's scope; `say` for a say entry. One activation per (script, triggering entry); a script never hears its own.
@@ -2113,6 +2129,7 @@ const PHYSICS_TOOLS = {
     const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
     w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };
     w.savePresence();
+    heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
     return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
   },
   // P3: putting something down is a settlement: a claim the door checks like any write, then logs as a plain result.
@@ -2126,7 +2143,7 @@ const PHYSICS_TOOLS = {
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
       if (ret.plan) { rateCheck(w, actor); const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "return" }));
-        const back = returnHome(w, a.id, ret.plan, act); delete w.presence.holds[a.id]; w.savePresence();
+        const back = returnHome(w, a.id, ret.plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "return", seq: act });
         return { ok: true, act, seq: back.seq, settled: { id: a.id, home: g.home }, handled: h.handled, release: "return", notes: [{ id: a.id, why: "its grabbable.release is return: it went home" }] }; }
     }
     // a socket that accepts it, within that socket's radius of where it's let go (Resonite Snapper, XRI Socket)
@@ -2136,7 +2153,7 @@ const PHYSICS_TOOLS = {
       const ops = [setOp(a.id, "parent", { to: snap.to.to, slot: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", slot: { to: snap.to.to, slot: snap.to.slot } }));
-      const seq = stateEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence();
+      const seq = stateEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, slot: snap.to.slot, seq: act });
       return { ok: true, seq, act, settled: { id: a.id, in: snap.to.to, slot: snap.to.slot }, handled: h.handled, release: "snap", notes: [{ id: a.id, snapped: { to: snap.to.to, slot: snap.to.slot }, why: `it fits ${snap.to.to}'s ${snap.to.slot} socket (accepts ${snap.to.sock.accepts.join(", ")})` }, ...snap.notes] };
     }
     // stay: where the hand let go (a put with no pos), and never called floating (the builder said it hangs there)
@@ -2156,7 +2173,7 @@ const PHYSICS_TOOLS = {
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = stateEntry(w, plan, act);
-    delete w.presence.holds[a.id]; w.savePresence();
+    delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: stay ? "stay" : how, seq: act });
     return { ok: true, seq, act, settled: { id: a.id, pos }, handled: h.handled, ...(stay ? { release: "stay" } : {}), ...(snap.notes.length ? { notes: snap.notes } : {}) };
   },
   // research §Decisions 1: what flies is a dynamic thing in a world that runs physics. Anything else let go is set
@@ -2407,7 +2424,7 @@ function launch(w, actor, a, tool, g = null) {
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, tool, a, { handled: h.handled, presence: presenceFacts(me) }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
-  delete w.presence.holds[a.id]; w.savePresence();
+  delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: tool, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
 // ---------- body consent (L6 as revised 21:45; research 42). Presence only: none of this is ever appended. ----------
@@ -2594,6 +2611,19 @@ const TOOLS = {
   publish: (w, actor, a) => commit(w, actor, "publish", a, (ctx) => buildPublish(ctx, a, w)),
   update: (w, actor, a) => commit(w, actor, "update", a, (ctx) => buildUpdate(ctx, a, w)),
   use(w, actor, a) {
+    // use while held (grabbable.use; research grab §3): the holder's use with no action fires the thing's own: its down,
+    // or its up with args.phase 'up' (a hose turns on, then off: each one act). The request is logged as sent; the act
+    // and the script's event say it was held, in which hand, and which phase. Rapid or continuous effects while pressed
+    // (a muzzle flash, a spray) are presence, never a stream of acts: grabbable.fx, drawn by every client.
+    const hold = w.presence.holds[a.id]; const holding = hold?.by === actor; let held = null; const sent = a;
+    if (a.args?.held === true && !holding) refuse("not-holding", `you aren't holding ${a.id}`, `grab {id: '${a.id}'} first, or leave held out`);
+    if (holding) {
+      const g = grabOf(w.state().entities[a.id]?.c); const phase = a.args?.phase === "up" ? "up" : "down";
+      held = { held: true, hand: hold.hand ?? "right", phase };
+      if (a.action === undefined && g?.use) { const action = phase === "up" ? g.use.up : g.use.down;
+        if (!action) return { ok: true, recorded: false, held, note: `${a.id} does nothing on use ${phase} (its grabbable.use names no ${phase})` };
+        a = { ...a, action }; }
+    }
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
     if (probe.presence) return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
@@ -2606,12 +2636,12 @@ const TOOLS = {
         if (v1 || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
           refuse("no-runtime", `${a.id}'s '${probe.action}' runs the v1 behaviour '${v1 ? v1[0].slice(9) : probe.script}', carried by translation; v4 doesn't run v1 source`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists v1 behaviours as needs-reinstall`);
         refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
-      const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}) };
+      const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
-      rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", a, { runs: key }));
-      return { ok: true, act, recorded: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
+      rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", sent, { runs: key, ...(held ? { held, action: probe.action } : {}) }));
+      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
     }
-    return commit(w, actor, "use", a, (ctx) => buildUse(ctx, a));
+    return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry
   ban(w, actor, a) { if (roleOf(w.state(), actor) !== "owner") refuse("rights", "banning needs owner", ""); if (!isIdentity(a.who)) refuse("shape", "ban {who}", "");

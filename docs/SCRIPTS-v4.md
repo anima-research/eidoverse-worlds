@@ -43,7 +43,7 @@ world.on("use", (e) => {
     "say": false,                    // may write say entries
     "bodies": []                     // "shove", "pose": effects on people, each only where that person's consent allows
   },
-  "on": ["use"],                     // use | say | enter | leave | changed:<comp>
+  "on": ["use"],                     // use | say | enter | leave | grab | release | changed:<comp>
   "every": 30,                       // optional timer in seconds (≥ 5): delivers tick, and wake after sleeping
   "always": false,                   // run timers with nobody present (owner only: it costs the host while nobody benefits)
   "knobs": {"note": "…"},            // parameters, ≤ 4 KiB, read as world.knobs
@@ -76,7 +76,7 @@ world.on("use", (e) => {
 | `world.script` | its key, `"script:<name>"` |
 | `world.knobs` | its knobs (frozen) |
 | `world.now` | the activation's clock in ms (= `Date.now()`) |
-| `world.on(event, fn)` | `fn(e)` runs for `event`: `"use"`, `"tick"`, `"wake"`, `"say"`, `"enter"`, `"leave"`, `"changed:<comp>"` |
+| `world.on(event, fn)` | `fn(e)` runs for `event`: `"use"`, `"tick"`, `"wake"`, `"say"`, `"enter"`, `"leave"`, `"grab"`, `"release"`, `"changed:<comp>"` |
 | `world.get(id, comp?)` | a copy of a component's value (or of all of them), or `null`; `"self"` works as an id |
 | `world.children(id)` | the ids parented to it (≤ 1000) |
 | `world.ids()` | every id in the world (≤ 1000, sorted) |
@@ -92,7 +92,14 @@ world.on("use", (e) => {
 | `world.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged) |
 
 Events (`e`): every event has `on`.
-- `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent);
+- `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent); used while held (a `grabbable`'s use
+  button), also `held: true`, `hand` and `phase` (`"down"` or `"up"`);
+- `grab`: `by`, `id` (the thing), `hand`, `grip?`, `seq?` (the grab's act, when the sim had to be told). A grab is
+  presence: like `enter`, its activation's cause is the entry that made the script's sponsor when the grab itself isn't
+  logged;
+- `release`: `by`, `id`, `how` (`put`, `drop`, `throw`, `stay`, `return` or `snap`), `to?` and `slot?` (the socket it
+  snapped into), `seq` (the settlement's act, which is the activation's cause). `grab` and `release` reach every
+  script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
 - `enter` / `leave`: `by`;
 - `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the state entry). It fires for a change to that
@@ -102,6 +109,16 @@ Events (`e`): every event has `on`.
 Reads see the world as the activation found it, plus its own writes so far. Writes are **proposals**: nothing lands
 until the activation ends, and then all of them land together, or none (one refused write refuses the activation:
 never two out of three). Writes that change nothing are dropped; an activation left with nothing writes nothing.
+
+## Use while held: what's an act, what's presence
+
+A `grabbable` thing's use button (desktop left click, the phone's action button, the VR trigger) sends `use {id, args:
+{held: true, hand, phase}}` when it's pressed and again when it's let go: `use.down` and `use.up` are one act each.
+That is for **discrete state changes**: a hose turns on, then off; a lamp lights; a gun's magazine empties by one.
+**Continuous or rapid cosmetic effects while held and pressed** (a muzzle flash, a hose's spray, a beam) are never a
+stream of logged acts. They are presence: the holder's pose carries `use {id, hand}` while the button is down (unlogged,
+broadcast like an emote), and every client draws the thing's own `grabbable.fx` from its component data for as long as
+it rides. A script that counts shots counts presses (`use.down`), within the rate above; it never sees a frame.
 
 ## What an activation is, in the log
 

@@ -31,6 +31,7 @@ import { v4, net, requestV4, identities } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
+import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf } from '../../shared/sim.js';
 import { onWorldChange } from './state.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, HAND_REACH } from '../../shared/grab.js';
@@ -344,6 +345,7 @@ function frame(wall) {
   const now = performance.now();
   drawFlights(wall ?? serverNow(), now);
   drawHeld();
+  drawPressFx();
   tickTrack(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
@@ -445,6 +447,55 @@ export async function punt(arg) {
   return r;
 }
 
+// ---------------------------------------------------------------- use while held (grabbable.use; research grab §3-4)
+// The use button while you hold a thing: a door request per press and per release (use.down, use.up: each one act; a
+// hose turns on, then off), and, while it's pressed, presence (pose.use) every client draws the thing's fx from. Desktop:
+// the left mouse button while holding something usable (outside edit mode); phone: a button that appears while you do;
+// VR: the trigger (xr.js calls useHeld). Rapid effects are never a stream of acts: the door rate-limits acts on purpose.
+const usable = () => myHolds().find((id) => grabOf(compsOf(id))?.use) ?? null;
+let pressing = null;   // the id my use is held down on
+/** Press (phase 'down') or release ('up') the use of what I hold. Returns the door's reply, or null if nothing to use. */
+export async function useHeld(phase = 'down', name) {
+  const id = name || (phase === 'up' ? pressing : usable()); if (!id) return null;
+  const h = holds[id]; const g = grabOf(compsOf(id));
+  const st = hooks?.myState?.();
+  if (phase === 'down') { pressing = id; if (st && g?.fx) st.useHeld = { id, hand: h?.hand ?? 'right' }; }
+  else { if (pressing === id) pressing = null; if (st?.useHeld?.id === id) st.useHeld = null; }
+  if (!g?.use || !(phase === 'down' ? g.use.down : g.use.up)) return { ok: true, recorded: false, note: `nothing happens on use ${phase}` };
+  const r = await requestV4('use', { id, args: { held: true, hand: h?.hand ?? 'right', phase } });
+  return r?.ok ? r : refused('use', r);
+}
+// every holder pressing use on what they hold, from presence (mine: myState; theirs: the latest sample of their pose)
+function drawPressFx() {
+  for (const [id, h] of Object.entries(holds)) {
+    const g = grabOf(compsOf(id)); if (!g?.fx) { setPressFx(id, null); continue; }
+    const pid = presenceIdOf(h.by);
+    const use = pid === null ? hooks?.myState?.()?.useHeld : pid ? remotes.get(pid)?.buf?.at(-1)?.use : null;
+    setPressFx(id, use?.id === id ? g.fx : null);
+  }
+  for (const id of fxIds) if (!holds[id]) setPressFx(id, null);
+  fxIds = new Set(Object.keys(holds));
+}
+let fxIds = new Set();
+if (typeof document !== 'undefined') {
+  // capture phase: while I hold something usable, the left button is its use, not a look-drag
+  addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target?.tagName !== 'CANVAS' || hooks?.editing?.() || !v4.active || !usable()) return;
+    e.stopImmediatePropagation(); e.preventDefault(); void useHeld('down');
+  }, true);
+  addEventListener('mouseup', (e) => { if (e.button === 0 && pressing) void useHeld('up'); }, true);
+  // the phone's action button: shown while I hold something usable, labelled with what it does
+  let btn = null;
+  const sync = () => { const box = document.getElementById('touchbtns'); if (!box || !document.body.classList.contains('touch')) return;
+    const id = usable(); const g = id ? grabOf(compsOf(id)) : null;
+    if (!btn) { btn = document.createElement('button'); btn.className = 'panel usebtn'; btn.style.display = 'none';
+      btn.addEventListener('pointerdown', (e) => { e.preventDefault(); void useHeld('down'); });
+      btn.addEventListener('pointerup', () => { if (pressing) void useHeld('up'); }); btn.addEventListener('pointercancel', () => { if (pressing) void useHeld('up'); });
+      box.prepend(btn); }
+    btn.style.display = id ? '' : 'none'; if (g) btn.textContent = g.use.down ?? g.use.up; };
+  bus.on('v4-holds', () => setTimeout(sync, 0));
+}
+
 // ---------------------------------------------------------------- keys: T take/put · C throw/punt
 const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
@@ -459,7 +510,9 @@ bus.on('key', (e) => {
 });
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same door requests the keys send. */
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, holds: holdsNow, mine: myHolds, shown: simShown,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, holds: holdsNow, mine: myHolds, shown: simShown,
+  /** the held things whose fx this client is drawing now (grabbable's presence tier) */
+  fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
   grabbable: (id) => grabOf(compsOf(id)),
   /** probe surface: where a held thing should be drawn now (heldPose, fresh) beside where it is drawn */
