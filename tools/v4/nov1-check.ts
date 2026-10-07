@@ -37,6 +37,7 @@ const UNRELATED = [
   ["shared/blueprint.js", /blueprint|v1 = an original|nested cop/, "the blueprint RECORD format's version (kind eido.blueprint, v: 1)"],
   ["client/lib/seatcore.js", /SEAT_METHOD/, "a seat-measuring method's name"],
   ["shared/v4/scriptrules.js", /upload cap|\(v1\)/, "a limit's provenance: the old sandbox's cap, kept as the number"],
+  ["shared/sim.js", /semantics whole/, "the engine's hashed source (EIDOSIM_BUILD covers its bytes): rewording a comment renames the engine, so these two wait for its next real change"],
   ["server/store-variants.ts", /LOD v1|v1 contract/, "the geometry-LOD contract's version"],
   ["server/optimize.ts", /./, "glTF / encoder format versions"],
   ["server/sfuguard.ts", /./, "a dependency's API version"],

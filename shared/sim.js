@@ -435,7 +435,7 @@ export function simEntry(sim, entry, st) {
       // epoch entry whose `sim` is literally null ENDS the sim epoch. The
       // sequencer released every live body into the fold first (the same
       // epoch-release places a re-epoch commits) and folds the barrier; from
-      // here nothing simulates: placed things stay where the log puts them. With no epoch to leave this is
+      // here the log keeps v1 semantics whole. With no epoch to leave this is
       // inert (the sequencer refuses it pre-log; a replay is total). A MISSING
       // or malformed `sim` is not an exit — it shapes nothing, as ever.
       if (!sim.epoch) return;
@@ -476,7 +476,7 @@ export function simEntry(sim, entry, st) {
     }
     return;
   }
-  if (!sim.epoch || sim.epoch.foreign) return;   // with no engine running, things stay where the log puts them
+  if (!sim.epoch || sim.epoch.foreign) return;   // pre-epoch logs keep v1 semantics whole
   const v3 = lawOf(sim.epoch.sim) >= 3;
   if (entry.verb === 'terrain' && sim.epoch.sim !== V1) {
     // the ground moved wholesale: adopt the new law and release EVERY body
