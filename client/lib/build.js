@@ -332,7 +332,7 @@ export function cancelGhost() {
 }
 
 // Turn and size the thing in hand BEFORE the click (review 10-07: the ghost always landed at yaw 0, scale 1). The keys
-// are v1's and the seat tool's: Q / E turn (15°, Shift 1°), , / . size (×1.1, Shift ×1.01), clamped as the scale tool
+// are the old protocol's editor's and the seat tool's: Q / E turn (15°, Shift 1°), , / . size (×1.1, Shift ×1.01), clamped as the scale tool
 // clamps. Roblox's R / T and Godot GridMap's S / D rotate a held piece the same way, by key while the mouse aims; here
 // R is the scale tool and D walks, so the keys a builder already has in their fingers in THIS editor win.
 const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1.1, GHOST_SIZE_FINE = 1.01;
