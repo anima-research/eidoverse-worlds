@@ -32,6 +32,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
+import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
@@ -316,6 +317,31 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'sockets', label: 'sockets', types: ['sockets'], fields });
   }
 
+  // grabbable (shared/grab.js): the common fields as rows, read with their defaults; grips, home and fx through its JSON
+  // hatch below. Every edit is checked by the same checkGrabbable the door refuses with.
+  if (c.grabbable && typeof c.grabbable === 'object') {
+    const g = grabOf({ grabbable: c.grabbable }) ?? grabOf({ grabbable: {} }); const raw = c.grabbable;
+    const opts = (list) => list.map((v) => ({ v, label: v }));
+    const grips = Object.keys(g.grips);
+    groups.push({ group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
+      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'off: not now (a dynamic ball stays kickable)' },
+      { t: 'enum', k: 'who', label: 'who may', value: g.who, def: GRAB_DEFAULTS.who, options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) },
+      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'off: nobody takes it from whoever holds it (owners still may)' },
+      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'from the hand; past 1.5 m it flies to you' },
+      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'wins over lower when several are in reach (the key, not the table)' },
+      { t: 'enum', k: 'hold', label: 'hold', value: g.hold, def: GRAB_DEFAULTS.hold, options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) },
+      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'how a body without tracked hands holds it' },
+      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'a second hand on a secondary grip steers it; off, a second hand takes it over' },
+      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: '× the release velocity; 0 = it can only be dropped' },
+      { t: 'enum', k: 'release', label: 'let go', value: g.release, def: GRAB_DEFAULTS.release, options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) },
+      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: '0 = never; unheld that long, it goes home' },
+      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'keywords: a socket whose accepts shares one takes it when let go nearby' },
+      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'a reactions action: what the use button fires while held (down / up for press and release)' },
+      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'up to 40 characters' },
+      { t: 'info', label: 'grips', value: grips.length ? grips.join(', ') : 'none: held where it is grabbed (edit grips in the JSON below)' },
+    ] });
+  }
+
   if (c.particles && typeof c.particles === 'object') {
     const p = c.particles; const o = p.origin ?? [0, 0, 0];
     const presets = PARTICLE_PRESETS.includes(p.preset) ? PARTICLE_PRESETS : [...PARTICLE_PRESETS, p.preset ?? '?'];
@@ -386,7 +412,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'particles', 'picture', 'sound', ...mk,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'particles', 'picture', 'sound', ...mk,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -474,6 +500,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
+      case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
       case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
@@ -611,6 +638,14 @@ function addOwnOps(ent, id, name, value) {
     const shape = value === 'box' ? 'box' : value == null || value === '' || value === 'exact' ? 'exact' : null;
     if (!shape) return { ops: [], errors: ['a collider shape is "exact" or "box"'] };
     return { ops: [OP.set(id, 'collider', { shape })], errors: [] };
+  }
+  // write-new-on-edit, the way a Light is added: its fields spelled out from shared/grab.js DEFAULTS (the data, never a
+  // copy of it), so a later change of the engine's defaults can't change this thing. The ones that are absent by
+  // meaning (no grips, no home, no use, size-chosen pose) stay absent.
+  if (name === 'Grabbable') {
+    if (c.grabbable != null) return { ops: [], errors: [`${id} already has grabbable`] };
+    const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(([, v]) => v !== null && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)));
+    return { ops: [OP.set(id, 'grabbable', spec)], errors: [] };
   }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] }; return { ops: [OP.set(id, type, {})], errors: [] }; }
   return { ops: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
@@ -862,6 +897,20 @@ export function editOps(ent, id, edits, live = {}) {
           if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
         else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); break; }
         comps.set('sockets', next);
+        break;
+      }
+      case 'grabbable': {
+        const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
+        if (['enabled', 'steal', 'twoHanded'].includes(k)) next[k] = bool(raw);
+        else if (['range', 'priority', 'throw', 'returnAfter'].includes(k)) { const n = num(f, raw); if (n == null) break; next[k] = k === 'priority' ? Math.round(n) : round(n); }
+        else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
+        else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
+        else if (k === 'use') { const [d, u] = String(raw ?? '').split('/').map((x) => x.trim()); if (!d && !u) delete next.use; else next.use = u ? { ...(d ? { down: d } : {}), up: u } : d; }
+        else if (k === 'prompt') { const v = String(raw ?? '').trim(); if (v) next.prompt = v; else delete next.prompt; }
+        else next[k] = raw;
+        const bad = checkGrabbable(next);
+        if (bad) { errors.push(`grabbable.${k}: ${bad.reason}${bad.teach ? ` — ${bad.teach}` : ''}`); break; }
+        comps.set('grabbable', next);
         break;
       }
       case 'particles': {

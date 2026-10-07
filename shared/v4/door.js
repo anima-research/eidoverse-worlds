@@ -9,7 +9,7 @@
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
-import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk } from "../grab.js";
+import { grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
@@ -1950,9 +1950,10 @@ function buildDuplicate(ctx, a) {
 
 // ---------- reads ----------
 function describe(st, id, live = {}, holds = {}) {
-  const e = st.entities[id]; const t = worldT(st, id);
-  return { id, name: e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id, at: t.pos.map((n) => Math.round(n * 100) / 100),
-    ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100) } : {}),
+  const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
+  return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
+    ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
+    ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
     ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}) };
 }
 
@@ -2551,8 +2552,8 @@ const TOOLS = {
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
-        body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?}", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
+        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {

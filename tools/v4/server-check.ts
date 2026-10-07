@@ -223,6 +223,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   for (let i = 0; i < 40 && !ag.entities.get("carriage")?.comp?.sockets; i++) await sleep(50);
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*drives it.*lets you go only when the world does/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box drives and holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage/.test(l)));
+  // grabbable (slice 5): look says what a hand may do with a thing, the door's own reading (shared/grab.js describeGrab)
+  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
+  for (let i = 0; i < 40 && !ag.entities.get("lantern")?.comp?.grabbable; i++) await sleep(50);
+  const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
+  ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*door grab \{id: "lantern"\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
   const th = await HANDLERS.sit(ag, { on: "carriage", slot: "throne" }, {} as any, "sit");
   ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e sit on the owner's throne: the door refuses a builder", th.content[0].text);
   const dv = await HANDLERS.sit(ag, { on: "carriage", action: "drive" }, {} as any, "sit");

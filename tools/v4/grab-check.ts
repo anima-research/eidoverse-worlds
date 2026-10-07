@@ -17,6 +17,8 @@
 //   H   the hold record (slice 3): hand, grip or offset, a second hand; what every client is told
 //   O   a host that stopped while someone held a thing: settled at load as leave settles it
 //   U   use while held (down/up, each one act), the grab and release script events, the presence tier (pose.use)
+//   I   the inspector's Grabbable card: Add Component writes the defaults out of the data; the card's edits are checked
+//   A   what an agent reads: look, inspect and help
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -88,6 +90,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["only scripts whose scope covers the thing", "v4/door.js", "if (!(Array.isArray(v.on) && v.on.includes(kind)) || !scopeIds(st, sid, v.scope?.ids).includes(id)) continue;", "if (!(Array.isArray(v.on) && v.on.includes(kind))) continue;", ["U3"]],
   ["a release says how", "v4/door.js", "heldEvent(w, \"release\", a.id, { by: actor, how: stay ? \"stay\" : how, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"put\", seq: act });", ["U3"]],
   ["a throw's release says throw", "v4/door.js", "heldEvent(w, \"release\", a.id, { by: actor, how: tool, seq: act });", "heldEvent(w, \"release\", a.id, { by: actor, how: \"drop\", seq: act });", ["U4"]],
+  ["the inspector adds grabbable with its defaults spelled out", "editschema.js", "const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", "const spec = {} ?? Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(", ["I1"]],
+  ["the card's edits are checked as the door checks them", "editschema.js", "const bad = checkGrabbable(next);\n        if (bad)", "const bad = null;\n        if (bad)", ["I2"]],
+  ["look says what a hand may do with it", "v4/door.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
   ["CONTROL (no-op: must stay green)", "grab.js", "// ---------------------------------------------------------------- reading", "// ----------------------------------------------------------------  reading", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -148,6 +153,7 @@ const F = await import(TREE + "shared/v4/fold.js");
 const SL = await import(TREE + "shared/v4/simlayer.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
 const SB = await import(TREE + "shared/v4/sandbox.js");
+const ES = await import(TREE + "shared/editschema.js");
 const PC = await import(TREE + "server/posecheck.ts").catch(() => import(ENGINE + "server/posecheck.ts"));
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("grab");
@@ -484,6 +490,31 @@ const cases: Case[] = [
       const a = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", hand: "left" } }); const b = PC.sanePose({ p: [0, 0, 0], use: { id: "hose", n: 3 } }); const c = PC.sanePose({ p: [0, 0, 0], use: "hose" });
       return { a: a?.use ?? null, b: b ? ("use" in b ? b.use : "dropped") : null, c: c ? ("use" in c ? c.use : "dropped") : null }; },
     good: (o) => JSON.stringify(o.a) === '{"id":"hose","hand":"left"}' && o.b === "dropped" && o.c === "dropped" },
+  // ---------------- I: the inspector's Grabbable card (shared/editschema.js, shared/components.js) ----------------
+  { id: "I1", what: "Add Component › Grabbable writes the component with its defaults spelled out from shared/grab.js (the data), and the door takes that value as it is", run(s) { cast(s);
+      const ent = { lib: "book", pos: [0, 0, 0], comp: {} };
+      const add = ES.inspectSchema(ent, "b1").sections.add.find((a: any) => a.name === "Grabbable");
+      const r = ES.addOps(ent, "b1", "Grabbable");
+      s.call("olive", "create", { id: "b1", model: "book", place: { at: [0, 0] } });
+      const put = r.ops[0] ? s.call("olive", r.ops[0].tool, r.ops[0].args) : null;   // the op as the panel sends it
+      return { offered: !!add && !add.blocked, ops: r.ops, errors: r.errors, put: show(put), stored: comp(s, "b1", "grabbable") }; },
+    good: (o) => o.offered && o.ops.length === 1 && JSON.stringify(o.ops[0].args?.value) === JSON.stringify({ enabled: true, who: "builder", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }) && o.put === "ok" && o.stored?.who === "builder" },
+  { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the door would (a malformed use)", run(s) {
+      const ent = { lib: "book", pos: [0, 0, 0], comp: { grabbable: { who: "builder" } } };
+      const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");
+      const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.pose": "torch" });
+      const bad = ES.editOps(ent, "b1", { "grabbable.use": "not an action!" });
+      return { card: card?.fields ?? null, value: ok1.ops.find((o: any) => o.args?.component === "grabbable")?.args?.value ?? ok1.ops, errors: ok1.errors, bad: bad.errors }; },
+    good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
+      && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, pose: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
+  // ---------------- A: what an agent reads ----------------
+  { id: "A1", what: "look and inspect say what a hand may do with a thing (and in which hand it's held); help names the hand and grip arguments", run(s) { cast(s);
+      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [2, 2] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "lantern", hand: "left" });
+      const lk = s.call("vic", "look", {}).things ?? []; const ins = s.call("vic", "inspect", { id: "lantern" }); const help = s.call("vic", "help", { tool: "grab" });
+      return { lantern: lk.find((t: any) => t.id === "lantern")?.grab ?? null, ball: lk.find((t: any) => t.id === "ball")?.grab ?? null, heldIn: ins.heldIn, args: Object.keys(help.args ?? {}) }; },
+    good: (o) => /^Take the lantern \(anyone may pick it up;.*use while held: light;.*goes home when let go\)$/.test(o.lantern ?? "") && /^pick up .*anyone may pick it up/.test(o.ball ?? "") && o.heldIn === "left" && ["hand", "grip", "offset"].every((k) => o.args.includes(k)) },
 ];
 
 // ---------------- run ----------------

@@ -126,6 +126,11 @@ const DEFS = [
   { name: 'Sockets', category: 'Interaction', needs: ['Model'], summary: 'attachment points: a person attaches by using one (a chair, a swing, a saddle); things attach by parent',
     params: { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, part?, body?: {action, pose, exit, who}}' } },
     seat: { bodyDefault: [0, 0.5, 0], cargoDefault: [0, 0, 0], pose: 'sitchair' }, fallback: { text: 'attach points: <slots>' } },
+  // grabbable (shared/grab.js; research RESEARCH-grab-2026-10-06): its own component, apart from physics. The spec is the
+  // component's whole value; the inspector's card edits its fields, and its JSON hatch reaches grips, home and fx
+  { name: 'Grabbable', category: 'Interaction', needs: ['Model'], summary: 'it can be picked up and carried: who may, how it is held (grips), where it goes when let go, what using it while held does',
+    params: { spec: { t: 'json', default: {}, hint: '{who, enabled, steal, range, priority, hold, pose, grips, twoHanded, throw, release, returnAfter, home, fits, use, prompt, fx}' } },
+    fallback: { text: 'can be picked up' }, note: 'wire: the grabbable component; a dynamic thing with no grabbable is carryable by physics.who (the migration fallback)' },
   { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
     params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
     fallback: { text: 'on <to>' } },
@@ -307,7 +312,7 @@ export function componentsOf(ent) {
     // (none in the corpus) and stays an Annotation, so its bytes still return.
     if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
     if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
-    const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'] };
+    const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'], grabbable: ['Grabbable', 'spec'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
     if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
     if (key === 'stage' && data && typeof data === 'object' && !Array.isArray(data)) { out.push({ type: 'Stage', key, params: { ...data } }); continue; }
@@ -372,6 +377,7 @@ export function entityOf({ components, stamps = {} }) {
         break;
       }
       case 'Sockets': comp[inst.key ?? 'sockets'] = p.slots; break;
+      case 'Grabbable': comp[inst.key ?? 'grabbable'] = p.spec; break;
       case 'Reactions': comp[inst.key ?? 'reactions'] = p.actions; break;
       case 'Structure': comp[inst.key ?? 'structure'] = p.plan; break;
       case 'Captions': comp[inst.key ?? 'captions'] = p.feed; break;
