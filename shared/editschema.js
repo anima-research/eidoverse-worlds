@@ -44,6 +44,9 @@ import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
 export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
+// a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
+// tools/v4/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
+const rateOf = (m, def) => (Number.isFinite(m.degPerSec) ? m.degPerSec : Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m.rpm) ? m.rpm * 6 : def);
 export const PARTICLE_PRESETS = ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'];
 const round = (v, dp = 3) => +(+v).toFixed(dp);
 
@@ -263,12 +266,12 @@ export function inspectSchema(ent, id, live = {}) {
           fields.push({ t: 'num', k: k('damp'), label: `${P}damp`, value: m.damp ?? 0, def: 0, step: 0.01, dp: 3, min: 0, softMax: 2, hint: '0 swings forever; friction is opt-in' });
           break;
         case 'spin':
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6, def: 36, step: 5, dp: 1, unit: '°/s' });
+          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 36), def: 36, step: 5, dp: 1, unit: '°/s' });
           fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
           break;
         case 'orbit':
           fields.push({ t: 'num', k: k('radius'), label: `${P}radius`, value: m.radius ?? 1, def: 1, step: 0.1, dp: 2, min: 0, unit: 'm' });
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: m.degPerSec ?? 12, def: 12, step: 5, dp: 1, unit: '°/s' });
+          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 12), def: 12, step: 5, dp: 1, unit: '°/s', hint: 'degrees a second (a lap of 30 s is 12°/s)' });
           fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
           break;
         case 'bob':
@@ -329,6 +332,29 @@ export function inspectSchema(ent, id, live = {}) {
     }
     fields.push({ t: 'btn', k: 'add', label: '+ seat here', hint: 'click the spot on the thing where a sitter goes', client: true });
     groups.push({ group: 'sockets', label: 'sockets', types: ['sockets'], fields });
+  }
+
+  // openable (R 10-07; shared/v4/catalogue.js): open and locked are its state; it turns `angle` about its pivot (or slides
+  // `slide` in its own frame) over `time`. The hinge buttons put the pivot on an edge of the model's own box (live.box).
+  if (isBag(c.openable)) {
+    const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box;
+    const fields = [
+      { t: 'check', k: 'open', label: 'open', value: o.open === true, hint: 'its state now; anyone using it flips this (its reactions)' },
+      { t: 'check', k: 'locked', label: 'locked', value: o.locked === true, hint: "bars opening while on (an open handler with unless: 'locked'); the edit lock is the Lock component" },
+      { t: 'enum', k: 'by', label: 'opens by', value: slides ? 'slide' : 'turn', def: 'turn', options: [['turn', 'turning about its pivot (a hinge)'], ['slide', 'sliding']].map(([v, label]) => ({ v, label })) },
+    ];
+    if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, min: -10, max: 10, unit: 'm', hint: 'how far it moves when open, in its own frame' }));
+    else {
+      fields.push({ t: 'num', k: 'angle', label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, def: Math.PI / 2, step: 15, deg: true, min: -Math.PI, max: Math.PI, hint: 'how far it turns when open; negative turns the other way' });
+      fields.push({ t: 'enum', k: 'axis', label: 'hinge axis', value: axisName(o, 'y'), def: 'y', options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' });
+      if (Array.isArray(box) && !o.part) {
+        fields.push({ t: 'btn', k: 'hingeL', label: 'hinge on its left edge', hint: 'puts its pivot on the -x edge of its box (it turns about the pivot)' });
+        fields.push({ t: 'btn', k: 'hingeR', label: 'hinge on its right edge', hint: 'puts its pivot on the +x edge of its box' });
+      }
+    }
+    fields.push({ t: 'num', k: 'time', label: 'takes', value: Number.isFinite(o.time) ? o.time : 1, def: 1, step: 0.1, dp: 2, min: 0, max: 10, unit: 's', hint: 'seconds to open or close' });
+    if (o.part) fields.push({ t: 'info', label: 'moves', value: `the part ${o.part} (about the part's own origin)` });
+    groups.push({ group: 'openable', label: 'openable', types: ['openable'], fields });
   }
 
   // grabbable (shared/grab.js): the common fields as rows, read with their defaults; grips, home and fx through its JSON
@@ -499,6 +525,9 @@ const WIRE_BLOCKED = {
   Parent: () => 'give it a parent: drag its row onto another in the Hierarchy, or pick one in this card',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
+// not offered by Add Component: what the door refuses today. LookAt writes `look`, a near-miss of `lock` (batch 2 is
+// renaming it look-at). tools/v4/shiplist-check.ts R1 sends every offered entry to the real door: all must be accepted.
+const NOT_OFFERED = new Set(['LookAt']);
 /** A library path as the inspector header shows it: the file stem, first three words. */
 export const libLabel = (lib) => String(lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ');
 // A node name a generator made (tripo_part_fused_0, mesh_12, Cube.003, a uuid)
@@ -560,6 +589,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
+      case 'Openable': sec.fields = refs('openable'); sec.removable = true; break;
       case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
@@ -597,7 +627,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // needs (design §3): an entry whose need has one sensible default says what
   // it brings; one that needs a choice says it will ask; one whose need cannot
   // be met in place (a Model: placed from the Library) is blocked, saying why
-  const add = addable(components, { unmet: true, met: (n) => needMet(n, ent) }).filter((a) => a.name !== 'Label' && a.name !== 'Hidden')
+  const add = addable(components, { unmet: true, met: (n) => needMet(n, ent) }).filter((a) => a.name !== 'Label' && a.name !== 'Hidden' && !NOT_OFFERED.has(a.name))
     .map((a) => {
       const plan = a.unmet ? planNeeds(ent, id, a.name) : null;
       const needsWhy = plan?.choice && !plan.choice.options.length ? plan.choice.prompt : null;
@@ -681,7 +711,9 @@ export function addOps(ent, id, name, value) {
 }
 function addOwnOps(ent, id, name, value) {
   const c = ent?.comp ?? {};
-  const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };
+  // a path's points are in its parent's frame (as the renderer reads them): it starts where it stands and goes 2 m on
+  const p0 = (Array.isArray(ent?.parent?.offset) ? ent.parent.offset : Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0]).map((v) => round(+v || 0, 4));
+  const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
   if (motion[name]) {
     const part = typeof value === 'string' && value.trim() ? value.trim() : null;
     if (part) { const key = `motion:${part}`; if (c[key]) return { ops: [], errors: [`${id} already has a motion on ${part}`] }; return { ops: [OP.set(id, key, motion[name])], errors: [] }; }
@@ -713,6 +745,14 @@ function addOwnOps(ent, id, name, value) {
     const spec = Object.fromEntries(Object.entries(GRAB_DEFAULTS).filter(([, v]) => v !== null && !(Array.isArray(v) && !v.length) && !(typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)));
     return { ops: [OP.set(id, 'grabbable', spec)], errors: [] };
   }
+  // an Openable is usable at once: its state written out (write-new-on-edit, like a Light) and an `open` action that flips
+  // it, barred while locked (one undo step). A thing that already has an `open` action keeps its own.
+  if (name === 'Openable') {
+    if (c.openable != null) return { ops: [], errors: [`${id} already opens`] };
+    const rx = isBag(c.reactions) ? c.reactions : {};
+    return { ops: [OP.set(id, 'openable', { open: false, locked: false, angle: round(Math.PI / 2, 6), time: 1 }),
+      ...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };
+  }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] }; return { ops: [OP.set(id, type, {})], errors: [] }; }
   return { ops: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
@@ -742,6 +782,11 @@ export function removeOps(ent, id, key, value) {
 function removeOwnOps(ent, id, key) {
   const c = ent?.comp ?? {};
   if (key === 'motion' && c.motion) return { ops: [OP.unset(id, 'motion')], errors: [] };
+  if (key === 'openable' && c.openable != null && isBag(c.reactions)) {
+    const keep = Object.fromEntries(Object.entries(c.reactions).filter(([, h]) => !((h?.kind === 'toggle' && (h.component ?? 'openable') === 'openable') || (h?.kind === 'set' && h.component === 'openable'))));
+    const rx = Object.keys(keep).length === Object.keys(c.reactions).length ? [] : [Object.keys(keep).length ? OP.set(id, 'reactions', keep) : OP.unset(id, 'reactions')];
+    return { ops: [...rx, OP.unset(id, 'openable')], errors: [] };
+  }
   if (key === 'captions') return { ops: [], errors: ['captions are written by the caption verb only'] };
   if (c[key] != null) return { ops: [OP.unset(id, key)], errors: [] };
   return { ops: [], errors: [`${id} has no component at ${key}`] };
@@ -917,7 +962,7 @@ export function editOps(ent, id, edits, live = {}) {
         }
         else if (param === 'loop') next.loop = raw;
         else if (f.t === 'check') next[param] = bool(raw);
-        else { const n = num(f, raw); if (n == null) break; next[param] = round(n, 4); if (param === 'degPerSec') delete next.rpm; if (param === 'amp') delete next.amplitude; }
+        else { const n = num(f, raw); if (n == null) break; next[param] = round(n, 4); if (param === 'degPerSec') { delete next.rpm; delete next.period; } if (param === 'amp') delete next.amplitude; }
         motions.set(mkey, next);
         break;
       }
@@ -963,6 +1008,19 @@ export function editOps(ent, id, edits, live = {}) {
           if (Math.abs(q[3]) > 1 - 1e-12) delete cur.q; else cur.q = q; }
         else { errors.push(`sockets.${slot}|${what}: not a socket field (pos|0..2, rot|0..2, body, action, anchor, pose, leaveBy, who, fromSeat, enter, leave, input|move, input|look, look|yaw|0..1, look|pitch|0..1, look|up, reach, hold, poses, sync, approach, exit)`); break; }
         comps.set('sockets', next);
+        break;
+      }
+      case 'openable': {
+        const next = comps.get('openable') ?? JSON.parse(JSON.stringify(c.openable ?? {}));
+        if (k === 'hingeL' || k === 'hingeR') { const box = live.box; if (!Array.isArray(box)) { errors.push(`${key}: its box isn't known yet`); break; }
+          comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4), round(box[0][1], 4), round((box[0][2] + box[1][2]) / 2, 4)] }); break; }
+        if (k === 'open' || k === 'locked') next[k] = bool(raw);
+        else if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
+        else if (k === 'axis') { if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
+        else if (k.startsWith('slide|')) { const n = num(f, raw); if (n == null) break; next.slide = [...(Array.isArray(next.slide) ? next.slide : [0, 0, 0])]; next.slide[+k.slice(6)] = round(n, 4); }
+        else if (k === 'angle' || k === 'time') { const n = num(f, raw); if (n == null) break; next[k] = round(n, 6); }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set('openable', next);
         break;
       }
       case 'grabbable': {

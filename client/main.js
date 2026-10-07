@@ -32,10 +32,12 @@ import { tickSounds } from './lib/sounds.js';   // the sound comp: positional au
 import { tickMotion } from './lib/motion.js';
 import { tickLookAt } from './lib/lookats.js';   // batch 2: look-at, after motion (a bob moves it, then it turns)
 import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text component)
+import { tickOpenables } from './lib/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook, setFolded,
+  setRightsHook, setMeHook, setFolded, photoMode,
 } from './lib/controller.js';
+import { initUsePrompt } from './lib/useprompt.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
@@ -443,6 +445,7 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a v4 world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 initV4Phys({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({
@@ -569,6 +572,7 @@ registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, p
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
 registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
 registerSystem('texts', () => tickTexts());                     // signs that turn to face you
+registerSystem('openable', () => tickOpenables());           // doors, gates and lids tween to their state
 registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests

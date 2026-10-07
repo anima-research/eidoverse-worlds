@@ -149,7 +149,7 @@ const cases = [
       const L = s.world().entries; return { thrown, stopped: stopped ? show(stopped) : null, code: code(stopped), vicActs: L.filter((e) => e.kind === "act" && e.actor === "vic").length }; },
     baseBad: (o) => o.thrown === 40, nowGood: (o) => o.thrown < 40 && o.code === "rate" && o.vicActs <= 60 },
   { id: "G3d", guard: true, what: "a visitor's `use` counts against the visitor, not the handler's author", run(s) { cast(s);
-      s.call("bob", "create", { id: "door", model: "door", place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "door", field: "open" } } });
+      s.call("bob", "create", { id: "door", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
       const uses = Array.from({ length: 61 }, () => s.call("vic", "use", { id: "door", action: "open" }, 50));
       return { accepted: uses.filter(ok).length, last: uses.at(-1), bob: s.call("bob", "set", { id: "door", component: "label", value: "front" }, 50) }; },
     nowGood: (o) => o.accepted === 60 && code(o.last) === "rate" && ok(o.bob) },

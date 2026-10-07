@@ -218,5 +218,8 @@ function openCanForm(display, surface) {
 }
 
 // a warning is a notice you dismiss (research roles §5); the house centred card, kept until pressed
-bus.on('warned', (m) => { import('./confirmcenter.js').then(({ confirmCenter }) => confirmCenter({ title: `${m.by} warned you`, body: String(m.reason ?? ''), ok: 'I understand', cancel: 'Close' })).catch((e) => report('warned', e)); });
+// a DOM card isn't drawn in a headset (review 10-07 N6): in VR the same notice rides the XR quad (xrask.js), until pressed
+bus.on('warned', (m) => { import('./xrask.js').then(({ xrActive, chooseXR }) => (xrActive()
+  ? chooseXR({ title: `${m.by} warned you`, body: String(m.reason ?? ''), choices: [{ v: 'ok', label: 'I understand' }], cancel: 'ok' })
+  : import('./confirmcenter.js').then(({ confirmCenter }) => confirmCenter({ title: `${m.by} warned you`, body: String(m.reason ?? ''), ok: 'I understand', cancel: 'Close' })))).catch((e) => report('warned', e)); });
 export { closeContextMenu };

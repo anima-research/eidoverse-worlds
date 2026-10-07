@@ -13,7 +13,8 @@ import { mayLeave } from '../../shared/sockbody.js';
 import { driveSeat, releaseSeat } from './seatbody.js';
 import { serverNow } from './remotes.js';
 import { requestV4 } from './net.js';
-import { refusalText } from '../../shared/v4/refusal.js';
+import { plain } from './plainwords.js';
+import { usePromptHint } from './useprompt.js';
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { mergePose } from '../../shared/humanoid.js';
@@ -287,7 +288,7 @@ export function trySitOn(arg, slot = null) {
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
   requestV4('use', { id: best.id, action: best.body.action, args: { slot: best.slot } }).then((r) => {
-    if (r?.ok) take(); else logChat('*', refusalText(`${best.body.action} ${best.id}`, r));
+    if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
   });
   return true;
 }
@@ -306,6 +307,7 @@ export function updateSeatHint(dt) {
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? '<kbd>X</kbd> get up · <kbd>WASD</kbd> drive' : '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off')
       : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? '<kbd>Space</kbd> or <kbd>X</kbd> get up' : '<kbd>X</kbd> get up'; }
   else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+  if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
   setAmbientHint(hint);
 }
 

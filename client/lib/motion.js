@@ -12,8 +12,8 @@
 //
 // Types:
 //   pendulum {axis, pivot, amp, period, phase, damp, maxAmp, t0}   — swings
-//   spin     {axis?, pivot?, degPerSec|rpm, phase?, t0}            — windmills, carousels
-//   orbit    {center, radius, degPerSec, phase?, face?, t0}        — ferries, birds
+//   spin     {axis?, pivot?, degPerSec|period, phase?, t0}         — windmills, carousels
+//   orbit    {center?, radius, degPerSec|period, phase?, face?, t0} — ferries, birds (rateOf: the one reading)
 //   bob      {axis?, amp, period, phase?, t0}                      — hover, buoys
 //   path     {points, speed|duration, loop?: 'loop'|'pingpong'|'once', face?, t0}
 //
@@ -40,7 +40,7 @@ import { serverNow } from './remotes.js';
 // `amplitude`, missing t0) lives there too; this file is what remains:
 // applying evaluated transforms to THREE objects, and the part-frame
 // machinery only a renderer with a loaded model can have.
-import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta } from './motioneval.js';
+import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
 
 const _q = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
@@ -80,7 +80,7 @@ function evalPart(m, t, obj, pbase) {
       rotatePartAtPivot(obj, pbase, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 0, 0], pendulumTheta(m, t));
       return true;
     case 'spin': {
-      const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;
+      const rate = rateOf(m, 36);
       rotatePartAtPivot(obj, pbase, axisOf(m, [0, 1, 0]), m.pivot ?? [0, 0, 0],
         (m.phase ?? 0) + (rate * Math.PI / 180) * t);
       return true;
@@ -94,7 +94,7 @@ function evalPart(m, t, obj, pbase) {
     case 'orbit': {
       const c = m.center ?? pbase.pos;
       const r = m.radius ?? 1;
-      const a = (m.phase ?? 0) + ((m.degPerSec ?? 12) * Math.PI / 180) * t;
+      const a = (m.phase ?? 0) + (rateOf(m, 12) * Math.PI / 180) * t;
       obj.position.set(c[0] + r * Math.sin(a), (c[1] ?? pbase.pos[1]), c[2] + r * Math.cos(a));
       if (m.face !== false) obj.rotation.set(0, a + Math.PI / 2, 0);
       return true;

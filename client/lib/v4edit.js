@@ -19,6 +19,7 @@ import { entities } from './world.js';
 import * as OP from '../../shared/v4/ops.js';
 import { enc, dec, actorName } from '../../shared/v4/names.js';
 import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
+import { plain, warnPlain } from './plainwords.js';
 import { chooseCenter } from './confirmcenter.js';
 import { chooseXR, xrActive } from './xrask.js';
 import { flashHint, toast } from './ui.js';
@@ -67,11 +68,22 @@ export function revertPose(id) {
   sendDrag(id, [o.position.x, o.position.y, o.position.z], yaw, [q.x, q.y, q.z, q.w]);
 }
 
-/** Show a refusal: the same words an agent's tool returns. */
+/** Show a refusal in a person's words (plainwords.js: no code, no tool syntax, things by their labels). The door's whole
+ *  answer, as an agent's tool returns it, goes to the console and rides the event as agentText. */
 export function showRefusal(what, r) {
-  const text = refusalText(what, r);
+  const text = plain(what, r), agentText = refusalText(what, r);
+  console.info('[v4edit] refused:', agentText);
   toast(text, 'warn', 9000);
-  bus.emit('v4-refused', { what, refused: r.refused, text });
+  bus.emit('v4-refused', { what, refused: r.refused, text, agentText });
+  return text;
+}
+/** Show the door's warnings on a write that went through (it overlaps, it floats…): they were only ever shown to agents. */
+export function showWarnings(what, r) {
+  const ws = Array.isArray(r?.warnings) ? r.warnings.filter((w) => w && w.kind !== 'unchecked') : [];
+  if (!ws.length) return null;
+  const text = `Done, but ${ws.slice(0, 3).map(warnPlain).join('; ')}${ws.length > 3 ? ` (and ${ws.length - 3} more)` : ''}`;
+  toast(text, 'info', 7000);
+  bus.emit('v4-warned', { what, warnings: ws, text });
   return text;
 }
 
@@ -113,6 +125,7 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
   if (r.ok) {
     if (record && Number.isInteger(r.act)) remember(r.act);
     bus.emit('v4-done', { what, req, reply: r });
+    showWarnings(what, r);
   } else {
     try { revert?.(); } catch (e) { console.warn('[v4edit] revert', e); }
     if (cancelled) { flashHint('cancelled — nothing written'); bus.emit('v4-cancelled', { what, refused: r.refused }); }

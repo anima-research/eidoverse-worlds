@@ -33,6 +33,7 @@ import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf } from '../../shared/sim.js';
 import { onWorldChange } from './state.js';
+import { plain } from './plainwords.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
 const REACH = 1.5, HAND_Y = 1.1;                  // the door's: a hand reaches 1.5 m from feet + 1.1 m (door.js)
@@ -356,7 +357,7 @@ function frame(wall) {
 
 // ---------------------------------------------------------------- acts (door requests)
 const say = (t) => logChat('*', t);
-const refused = (what, r) => { const x = r?.refused; say(`${what}: ${x?.reason ?? 'the door said no'}${x?.teach ? ` (${x.teach})` : ''}`); bus.emit('v4phys-refused', { tool: what, refused: x }); return r; };
+const refused = (what, r) => { const x = r?.refused; say(plain(what, r)); bus.emit('v4phys-refused', { tool: what, refused: x }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the door's own reader, so a dynamic thing with no grabbable
 // counts, as at the door); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)

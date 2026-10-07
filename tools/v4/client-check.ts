@@ -154,7 +154,8 @@ try {
   check("C1 Ctrl+Z on something bob changed since is refused", await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'conflict'`), await evalJson(`__refused.at(-1)`));
   const shown = await evalJson(`__refused.at(-1)`);
   check("C2 …nothing written, bob's move stands", myActs().length === n0 && disk().entities[crate].c.transform.pos[2] === moved.pos[2] + 2);
-  check("C3 …and the person reads the agents' words (shared/v4/refusal.js), naming who", shown?.text === refusalText("undo", { refused: shown?.refused }) && /bob changed it since/.test(JSON.stringify(shown?.refused?.skipped)), shown);
+  // ship list 10-07: a person reads plain words (no code, no tool syntax: plainRefusal); the agents' words ride along as agentText
+  check("C3 …and the person reads it in plain words (the agents' words kept beside them), naming who", /^Couldn't undo/.test(shown?.text ?? "") && !/\(conflict\)/.test(shown?.text ?? "") && shown?.agentText === refusalText("undo", { refused: shown?.refused }) && /bob changed it since/.test(JSON.stringify(shown?.refused?.skipped)), shown);
 
   // ---- X: Esc mid-drag writes nothing ----
   n0 = myActs().length; const here = disk().entities[crate].c.transform.pos;
@@ -276,7 +277,7 @@ try {
       return true; })()`);
     const refusedV = await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'locked'`);
     const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
-    check("V1 a visitor's move of a locked thing: the refusal, in the agents' words, and no dialog", refusedV && !dialogV && (await evalJson(`__refused.at(-1).text`))?.startsWith(`move ${crate} refused by the door (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
+    check("V1 a visitor's move of a locked thing: the refusal, in a person's words (the agents' beside them), and no dialog", refusedV && !dialogV && /^Couldn't move/.test(await evalJson(`__refused.at(-1).text`)) && (await evalJson(`__refused.at(-1).agentText`))?.startsWith(`move ${crate} refused by the door (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
     if (dialogV) await dlgClick("Cancel");
     await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'visitor' }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V2 …and its Hierarchy lock icons can't be clicked", await waitFor(`${lockBtn(crate)}?.disabled === true`), await evalJson(`${lockBtn(crate)}?.outerHTML ?? null`));

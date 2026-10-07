@@ -235,7 +235,8 @@ The ones you'll reach for:
 | `parent` | `{to, slot?}`: it rides another thing (at one of its sockets, with `slot`) |
 | `pivot` | `{pos}`: where it turns and scales from |
 | `light` | `{kind: point\|spot, color, intensity, range, shadows, keep, day}` — a light ON anything: model + light = a lamp |
-| `motion` | `{type: pendulum\|spin\|orbit\|bob, axis, amp, period, damp, phase}`; the door stamps `t0` |
+| `motion` | `{type: pendulum\|spin\|orbit\|bob\|path, …}`: spin `degPerSec` or `period`; orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the door stamps `t0` |
+| `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `sockets` | named attachment points; with `body`, a place a person can sit, ride, stand (below) |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `lock` | `true`: nobody may move, replace or delete it (below) |
@@ -256,10 +257,12 @@ name (`light@2`), never a new reading of an old one.
 
 **Reactions** are the data half of interaction. Each handler names its
 `kind`, may add `who` (`builder` | `owner`) and `teach` (shown when
-refused):
+refused). A handler is checked when you write it: what it would write must
+be a write the door takes, and a field it changes must be inside a
+component the thing already has (people use it with E, near it):
 
-- `toggle {component?, field?, unless?}` — flip a field (a door's `open`,
-  barred while `locked`);
+- `toggle {component?, field?, unless?}` — flip a true/false field (with
+  neither, an `openable`'s `open`, barred while `locked`);
 - `set {component, field?, value}` — set a value;
 - `impulse {strength? | angular?}` — push a hinged or swinging thing;
 - `script {script}` — hand the action to `script:<name>` on the same thing.
@@ -436,7 +439,7 @@ volleys one in the air beside you); it is never `kick`, which is
 moderation's remove-a-person. Humans have T (pick up / put down), C (throw
 / punt), the left button to use what they hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
-trigger. `grabbable.who` says who may pick it up (default builder),
+trigger. `grabbable.who` says who may pick it up (default visitor),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:

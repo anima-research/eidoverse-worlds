@@ -64,6 +64,13 @@ function v4Story(v) {
   if (typeof v.markedEntity === "string" && v.markedEntity) out.marks = [enc(v.markedEntity)];
   return out; // practice, markedEntity and anything else story doesn't define move to legacy:story (splitUnknown)
 }
+// v1's spin took rpm or degPerSec; v4's is degPerSec (rpm × 6, lossless: the renderer read rpm × 6). degPerSec wins
+// when both were written, as the renderer had it.
+function v4Motion(m) {
+  if (!m || typeof m !== "object" || Array.isArray(m) || !("rpm" in m)) return m;
+  const { rpm, ...rest } = m;
+  return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
+}
 function v4Reactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
@@ -71,16 +78,22 @@ function v4Reactions(rx) {
     if (h && typeof h === "object" && h.kind == null && typeof h.impulse === "number") {
       const { impulse, ...rest } = h;
       out[k] = { ...rest, kind: "impulse", angular: impulse };
-    } else out[k] = h;
+    } else if (h && typeof h === "object" && h.component === "door") out[k] = { ...h, component: "openable" };
+    else out[k] = h;
   }
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@5";
+export const TRANSLATOR = "eidoverse/translate-v1@6";
+// @6 (2026-10-07): the two @5s merged (batch 2 and ship-list group A each bumped @4 → @5 in parallel branches).
 // @5 (2026-10-07, batch 2): `story` is a component now ({title, text, marks?}). A v1 story's `practice` (Mica's marker
 // tree: "One tree, renewing, not accumulating…") becomes a paragraph of its text, and `markedEntity` its marks: the
 // words people read stay on the label. Both are also carried in legacy:story beside it (with plantedBy, assetAuthor:
 // who planted it is the log's create; who made the model is the library's credits), so nothing is lost (R10).
+// @5 (2026-10-07, ship list): a v1 `door` component is v4's `openable` (R 10-07: the behaviour's name, not the asset's), and
+// a reaction naming component 'door' names 'openable'; a spin's `rpm` is degPerSec (rpm × 6), the rate the door takes. Orbit
+// center/face/period and path points/speed/duration/loop are the door's own motion fields now, so they stay in the
+// motion (they were parked in legacy:motion, which nothing reads). Output differs from @4 on any log with these.
 // @4 (2026-10-06, roles S5): a v1 `fly: true` grant becomes roles:<id>.can.fly (it fell into legacy:roles:<id> before).
 // @3 (2026-10-05, review F1): genesis on §2.4 + §3d, as the lab's translator writes it. A v1 world has no keys: the
 // translating door's key is the sequencer and the only governance key, in tier 1 (the custodial default: tier 0
@@ -112,6 +125,8 @@ export const DROPPED = {
   "placer": "who placed it: a view over the log in v4 (L2: no stored derived values); the old value survives in the old entry",
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3)",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock: true, which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
+  "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
+  "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the door's one name for it",
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
@@ -144,7 +159,7 @@ export function project(st, seen = null, who = null) {
     c.transform = t;
     if (e.lib !== undefined) c.model = e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : k === "motion" || k.startsWith("motion:") ? v4Motion(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = v4Story(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
