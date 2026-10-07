@@ -740,6 +740,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     && bad({ s: { pos: [0, 1, 0], body: { pose: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } } } }) === "shape" && bad({ s: { pos: [0, 1, 0], body: { enter: 42 } } }) === "shape", "SK7 enums, ranges, signals and clip names");
   ok(bad({ a: { pos: [0, 1, 0], body: { input: { move: "drive" } } }, b: { pos: [1, 1, 0], body: { input: { move: "drive" } } } }) === "shape", "SK8 at most one drive per thing");
   const att = R("bob", "use", { id: "horse", action: "ride" }).attach;
+  // SK9: a part's motion runs on the door's clock too (a seat locked to its phase needs every client to agree on it)
+  const pm = R("ann", "create", { id: "swingset", model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 }, motion: { type: "pendulum", amp: 0.1, period: 2 } } });
+  const pmc = R("ann", "inspect", { id: "swingset" });
+  ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SK9 the door stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
   ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.input?.move === "drive" && att.reach?.leftHand?.vr === "near" && att.fromSeat === true && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the body does there", att); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

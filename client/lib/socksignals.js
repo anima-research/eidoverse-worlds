@@ -4,7 +4,8 @@
 //   speed  m/s   how fast the thing (its whole-motion transform) is moving
 //   turn   rad/s how fast it is turning about its up axis (+ = counter-clockwise seen from above)
 //   phase  0..1  where the motion that carries the socket is in its cycle (a swing's period, a wheel's turn, a path's run)
-//   swing  -1..1 a pendulum's normalised angle (θ/amp, damping included); cos of the cycle for spins, orbits and bobs
+//   swing  -1..1 cos(2π·phase): a pendulum's normalised angle (θ/amp, damping included), a bob's normalised offset
+//                (a still swing — amp 0, or damped out — reads 0, and its phase stops: nothing pumps on a swing at rest)
 //   throttle, steer          -1..1  the occupant's movement input (input.move drive|walk), riding their presence
 //   aimYaw, aimPitch         rad    where the occupant looks, relative to the socket's forward (riding presence)
 //   param.<name>             the thing's `params` component (scripts write it)
@@ -35,15 +36,26 @@ export function carrierMotion(comp, sock) {
   return w?.type && typeof w.part !== 'string' ? { m: w, part: false } : null;
 }
 
-/** phase (0..1) and swing (-1..1) of one motion at nowMs. */
+/** A pendulum or bob whose swing is below this (rad, or m for a bob) is still: its phase stops advancing, so a seat
+ *  locked to it doesn't pump a body on a swing that isn't swinging (amp 0, or damped out). */
+export const STILL = 0.01;
+
+/** phase (0..1) and swing (-1..1) of one motion at nowMs. One meaning for every cyclic motion: phase 0 is the cycle's
+ *  positive extreme and swing = cos(2π·phase) — scaled, for a damped pendulum, by how much of its swing is left. A
+ *  pendulum (θ = amp·cos) and a bob (offset = amp·sin) are therefore both at phase 0 at their positive end. A still
+ *  oscillator (amplitude below STILL) reads the phase it came to rest at, and swing 0. */
 export function cycleOf(m, nowMs) {
   if (!m?.type) return { phase: 0, swing: 0 };
   const t = since(m, nowMs);
   switch (m.type) {
     case 'pendulum': {
-      const a = (TAU / (m.period ?? 3.5)) * t + (m.phase ?? 0);
-      const amp = ampOf(m);
-      return { phase: frac(a / TAU), swing: amp ? Math.exp(-(m.damp ?? 0) * t) * Math.cos(a) : 0 };
+      const w0 = TAU / (m.period ?? 3.5), damp = m.damp ?? 0, amp = Math.abs(ampOf(m));
+      if (amp < STILL) return { phase: frac((m.phase ?? 0) / TAU), swing: 0 };
+      // damped out: the phase stops where the swing fell below STILL (the same instant on every client)
+      const tStill = damp > 0 ? Math.log(amp / STILL) / damp : Infinity;
+      if (t >= tStill) return { phase: frac((w0 * tStill + (m.phase ?? 0)) / TAU), swing: 0 };
+      const a = w0 * t + (m.phase ?? 0);
+      return { phase: frac(a / TAU), swing: Math.sign(ampOf(m)) * Math.exp(-damp * t) * Math.cos(a) };
     }
     case 'spin': {
       const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;
@@ -55,8 +67,9 @@ export function cycleOf(m, nowMs) {
       return { phase: frac(a / TAU), swing: Math.cos(a) };
     }
     case 'bob': {
+      if (Math.abs(ampOf(m, 0.3)) < STILL) return { phase: frac(((m.phase ?? 0) - Math.PI / 2) / TAU), swing: 0 };
       const a = (TAU / (m.period ?? 4)) * t + (m.phase ?? 0);
-      return { phase: frac(a / TAU), swing: Math.sin(a) };
+      return { phase: frac((a - Math.PI / 2) / TAU), swing: Math.sin(a) };   // offset = amp·sin(a): its positive end is a = π/2
     }
     case 'path': {
       const pts = m.points; if (!Array.isArray(pts) || pts.length < 2) return { phase: 0, swing: 0 };

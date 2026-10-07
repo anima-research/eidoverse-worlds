@@ -139,6 +139,14 @@ c = cycleOf(pend, 1000);
 check('…half a period in, phase 0.5 and swing -1 (the far end)', near1(c.phase, 0.5) && near1(c.swing, -1), c);
 check('…damping shrinks swing with time', near1(cycleOf({ ...pend, damp: 0.5 }, 2000).swing, Math.exp(-1)));
 check('spin: phase is the turn fraction', near1(cycleOf({ type: 'spin', degPerSec: 90, t0: 0 }, 1000).phase, 0.25));
+// a swing at rest doesn't pump: amp 0, or damped out, holds its phase and reads swing 0 (the same on every client)
+const still0 = cycleOf({ ...pend, amp: 0 }, 700), still1 = cycleOf({ ...pend, amp: 0 }, 1900);
+check('a pendulum at amp 0 is still: its phase doesn\'t advance, swing 0', still0.phase === still1.phase && still0.swing === 0 && still1.swing === 0, [still0, still1]);
+const damped = { ...pend, damp: 1 };   // 0.5 rad decays below 0.01 at t = ln(50) ≈ 3.9 s
+const d1 = cycleOf(damped, 3000), d2 = cycleOf(damped, 5000), d3 = cycleOf(damped, 9000);
+check('a damped pendulum swings, then comes to rest: its phase stops where the swing fell still', Math.abs(d1.swing) > 0 && d2.phase === d3.phase && d2.swing === 0 && !near1(d1.phase, d2.phase), [d1, d2, d3]);
+check('one meaning of phase: 0 is the positive extreme for a pendulum (θ = amp·cos) AND a bob (offset = amp·sin)', near1(cycleOf({ type: 'bob', amp: 0.3, period: 4, t0: 0 }, 1000).phase, 0)
+  && near1(cycleOf({ type: 'bob', amp: 0.3, period: 4, t0: 0 }, 1000).swing, 1) && near1(cycleOf(pend, 0).phase, 0) && near1(cycleOf(pend, 0).swing, 1));
 const orb = travelOf({ pos: [0, 0, 0], yaw: 0 }, { type: 'orbit', radius: 2, degPerSec: 36, center: [0, 0, 0], t0: 0 }, 5000);
 check('speed and turn of an orbit: 2πr/period m/s, its angular rate', near1(orb.speed, 2 * Math.PI * 2 / 10, 1e-3) && near1(orb.turn, 36 * Math.PI / 180, 1e-3), orb);
 const sg = socketSignals({ comp: { 'motion:plank': pend, params: { lean: 0.3, junk: 'x' } }, sock: { part: 'plank' }, base: { pos: [0, 0, 0], yaw: 0 }, nowMs: 500, input: { throttle: 4, steer: -0.5, aimYaw: 0.2 } });

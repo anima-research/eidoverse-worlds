@@ -817,6 +817,10 @@ function resolve(ctx, id, comp, value, prev) {
   if (!COMPONENTS[comp] && !comp.includes(":")) ctx.notes.push({ id, component: comp, why: `'${comp}' isn't a component this world's engine knows: it is kept (and will be preserved), but nothing will draw or run it`, didYouMean: guess(comp, Object.keys(COMPONENTS)) });
   if (comp === "motion" && value && typeof value === "object") { const v = { ...(value.type === "pendulum" ? PENDULUM : {}), ...value }; delete v.pivot;
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the door" }); } return v; }
+  // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
+  // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
+  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value) && value.t0 === undefined) {
+    const v = { ...value, t0: ctx.w.now() }; ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the door" }); return v; }
   if (def?.defaults && value && typeof value === "object" && !Array.isArray(value)) {
     const filled = Object.keys(def.defaults).filter((k) => !(k in value));
     if (filled.length) ctx.notes.push({ id, component: comp, filled, why: "defaults written out so the engine can't change them later" });

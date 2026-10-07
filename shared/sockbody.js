@@ -132,8 +132,7 @@ export function choosePose(body, choices = []) {
 export function mayLeave(body, kind) {
   if (!body) return true;
   if (kind === 'script') return true;
-  const lb = body.leaveBy;
-  if (lb === 'script') return false;
+  const lb = body.leaveBy;   // 'script' falls through every branch below: nothing the occupant does lets go
   if (kind === 'move') return lb === 'any' && body.input.move === 'none';
   if (kind === 'jump') return lb === 'any' || lb === 'jump';
   return lb !== 'script';   // menu: the explicit get-up works for any, jump and menu
