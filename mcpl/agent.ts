@@ -420,9 +420,9 @@ export class WorldAgent {
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
   /** The world's protocol facts, from the snapshot (version 4, its head and world id). Building tools route through
-   *  door()/verbV4() and WAIT for the door's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
+   *  request()/verbV4() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
   v4: { version: number; head: number; worldId: string } | null = null;
-  /** The world's own fold, from the join cut and the door's `v4-log` stream (shared/v4/client.js). */
+  /** The world's own fold, from the join cut and the authority's `log` stream (shared/v4/client.js). */
   private v4c: any = null;
   /** The last building verb's turn: each is spelled after the one before it is answered. */
   private spelling: Promise<unknown> = Promise.resolve();
@@ -568,7 +568,7 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] support seam on ${id} — ${why}`);
   }
 
-  /** A build act (spawn/place/light/remove) near this body counts as activity. */
+  /** A build act (create/place/light/remove) near this body counts as activity. */
   private noteBuild(actor: string | undefined, pos: number[] | undefined | null) {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
@@ -2515,26 +2515,26 @@ export class WorldAgent {
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
-  /** One request to the world's door, answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
+  /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
    *  fix}}. */
-  door(verb: string, args: Record<string, unknown> = {}): Promise<any> {
+  request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the door did not answer within 8 s" } }); }, 8000);
-      this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the door's answer had no reply" } }); });
+      const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
+      this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
   /** present people's v4 identities, by display name (their arrival carries it) */
   v4ids = new Map<string, string>();
-  /** A gesture's door ops (shared/v4/ops.js) as ONE request — one act, the door's answer — sent after the previous one
+  /** A gesture's ops (shared/v4/ops.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its v4-log arrived first), so a follow-up plans against that write. `extra` rides the request
    *  (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
   async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
     const req: any = OP.batch(ops);
     if (!req) return { ok: true, noop: true };
-    const turn = this.spelling.then(() => this.door(req.verb, { ...req.args, ...extra }));
+    const turn = this.spelling.then(() => this.request(req.verb, { ...req.args, ...extra }));
     this.spelling = turn.catch(() => null);
     return turn;
   }
@@ -2622,7 +2622,7 @@ export class WorldAgent {
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
     // a door request like every other write. The spoken trio rides it (the door validates it again and clamps t0)
-    return this.door("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
+    return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
@@ -3150,11 +3150,11 @@ export class WorldAgent {
         const on = new Map([...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => [m.slot ?? "", rid]));
         const lines = Object.entries<any>(c.sockets).map(([slot, s]) => { const b = bodyOf(s); return b ? `${describeBody(slot, b)}${on.has(slot) ? ` — ${on.get(slot)} is on it` : ""}` : null; }).filter(Boolean);
         const things = Object.keys(c.sockets).filter((k) => !bodyOf(c.sockets[k]));
-        if (lines.length) aff.push(`use it (sit {on: "${e.id}", slot}): ${lines.join(" · ")}`);
+        if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       // what a hand may do with it (shared/grab.js: the door's own reader, so a dynamic thing with no grabbable counts)
-      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — door grab {id: "${e.id}"}`); }
+      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${e.id}"}}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that
       // owns it — "emitting fire", not a sprite inventory and not a bare
@@ -3178,8 +3178,8 @@ export class WorldAgent {
       // on the same entity say the words.
       // locked = nailed down: the door refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
-      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: door {tool: "delete", args: {id, component: "lock"}}; or act through it with throughLock: true)`);
-      if (c.hidden === true) aff.push(`hidden (not drawn; door {tool: "delete", args: {id, component: "hidden"}} shows it)`);
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: act {verb: "delete", args: {id, component: "lock"}}; or act through it with throughLock: true)`);
+      if (c.hidden === true) aff.push(`hidden (not drawn; act {verb: "delete", args: {id, component: "hidden"}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
       const copy = c["copy-of"] ? this.copyLineV4(e.id) : null;
@@ -3215,7 +3215,7 @@ export class WorldAgent {
       }
     }
     if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
-      L.push(`  (use a thing: door {tool: "use", args: {id, action?}} · sit or ride: sit {on: id, slot?} — both open to everyone; sit with no \`on\`, or walking, gets you up)`);
+      L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
     }
 
     const unread = this.inbox.slice(this.inboxCursor);

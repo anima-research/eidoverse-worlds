@@ -215,30 +215,30 @@ try {
     avatar: "eidoverse/assets/vrms/claude.vrm", agentToken: namedToken ?? "" });
   await ag.connect();
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
-  const built = await ag.door("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] } } });
+  const built = await ag.request("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] } } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
   // a v4 seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
   const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
-  const legacy = await ag.door("set", { id: "crate1", component: "sockets", value: { seatL } });
+  const legacy = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
   // the seat-profile correction keys on a socket that authors its support plane: seatAnchor "surface" (client
   // seatcore.js socketAnchor, world.js). KNOWN GAP (2026-10-07): the v4 door's sockets schema has no seatAnchor (a socket
   // takes pos, q, part, body, accepts, radius), so this seat can't be authored on a v4 world and every check below that
   // sits on seatS stays red until the schema carries it (or the anchor moves into body).
-  const surface = await ag.door("set", { id: "crate1", component: "sockets", value: { seatL, seatS: { pos: [0, 1, 0], seatAnchor: "surface", body: { action: "sit", pose: "sitchair" } } } });
+  const surface = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL, seatS: { pos: [0, 1, 0], seatAnchor: "surface", body: { action: "sit", pose: "sitchair" } } } });
   check("…and a seat that authors its support plane (seatAnchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
   await sleep(600);
 
-  await HANDLERS.sit(ag as any, { on: "crate1", slot: "seatL" }, {} as any, "sit");
+  await HANDLERS.attach(ag as any, { to: "crate1", socket: "seatL" }, {} as any, "attach");
   {
     const line = await until(() => { const l = ag!.look(); return /seated on crate1/.test(l) ? l : null; });
     check("legacy socket: seated, byte-identical composition (y = socket)", !!line && /ground height 1\.00m/.test(line ?? ""), line?.split("\n")[0]);
     check("legacy socket: declared, never silent", /seat approximate: legacy socket/.test(line ?? ""), line?.split("\n")[0]);
   }
 
-  await HANDLERS.sit(ag as any, {}, {} as any, "sit");   // sit with no `on`: get off
+  await HANDLERS.detach(ag as any, {}, {} as any, "detach");   // get off
   await sleep(400);
-  await HANDLERS.sit(ag as any, { on: "crate1", slot: "seatS" }, {} as any, "sit");
+  await HANDLERS.attach(ag as any, { to: "crate1", socket: "seatS" }, {} as any, "attach");
   {
     const line = await until(() => { const l = ag!.look(); return /seated on crate1/.test(l) ? l : null; });
     check("surface socket + proposed profile: still approximate, reason names the countersign",
@@ -283,7 +283,7 @@ try {
       avatar: "eidoverse/assets/vrms/seatprobe.vrm" });
     await probeAg.connect();
     await sleep(400);
-    await HANDLERS.sit(probeAg as any, { on: "crate1", slot: "seatS" }, {} as any, "sit");
+    await HANDLERS.attach(probeAg as any, { to: "crate1", socket: "seatS" }, {} as any, "attach");
     const seated = await until(() => { const l = probeAg!.look(); return /ground height 0\.79m/.test(l) ? l : null; }, 12000);
     check("probebot seats corrected under its accepted profile", !!seated, probeAg.look().split("\n")[0]);
 
@@ -324,7 +324,7 @@ try {
 
   console.log("dismount stamping unchanged (#18/#98 neighborhood)");
   {
-    await HANDLERS.sit(ag as any, {}, {} as any, "sit");
+    await HANDLERS.detach(ag as any, {}, {} as any, "detach");
     // the check reads the HEADER line only: probebot is still seated nearby,
     // legitimately declaring its stale seat in the People section
     const header = await until(() => { const h = ag!.look().split("\n")[0]; return !/seated on/.test(h) ? h : null; });

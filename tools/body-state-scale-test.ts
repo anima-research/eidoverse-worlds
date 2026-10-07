@@ -91,7 +91,7 @@ async function ownerAt(peer: any, scale: unknown, wireScale: number | undefined,
 
 try {
   const peer = await agent("scale-peer");
-  await call(peer, "walk_to", { x: 1.6, z: 4 });
+  await call(peer, "move", { to: [1.6, 0, 4] });
   await ownerAt(peer, 1, undefined);
 
   // ---- the wire at default: absence, byte for byte ----

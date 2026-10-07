@@ -22,7 +22,7 @@ const near=(a:number[],b:number[],e=1e-5)=>a&&b&&Math.hypot(...a.map((v,i)=>v-b[
 async function until(f:()=>boolean){const end=Date.now()+5000;while(!f()){if(Date.now()>end)throw new Error('presence timeout');await h.sleep(20);}}
 try{
  await a.connect();await b.connect();
- await call(a,'walk_to',{x:-.45,z:0});await call(b,'walk_to',{x:.45,z:0});
+ await call(a,'move',{to:[-.45,0,0]});await call(b,'move',{to:[.45,0,0]});
  await call(a,'face',{x:.45,z:0});await call(b,'face',{x:-.45,z:0});a.tick();b.tick();
  await until(()=>Math.abs((a.people.get(b.name)?.pose?.yaw??0)+Math.PI/2)<1e-9);
  check('clip phase survives owner/server/peer presence',Number.isFinite(a.people.get(b.name)?.pose?.clipTime));

@@ -181,21 +181,21 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await ag.connect(); for (let i = 0; i < 40 && !ag.v4; i++) await sleep(50);
   ok(ag.v4?.version === 4, "S5 the MCPL agent learns from its snapshot that this is a v4 world", ag.v4);
   ag.verb = () => { throw new Error("a v4 world's building tool must not fire-and-forget"); };
-  const sp = await HANDLERS.spawn(ag, { lib: "test/cup.glb", x: 2, z: 2, id: "agentcup" }, {} as any, "spawn");
-  ok(!sp.isError && /accepted/.test(sp.content[0].text), "S5 the agent's spawn waits for the door and says it was accepted", sp.content[0].text);
+  const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "agentcup" }, {} as any, "create");
+  ok(!sp.isError && /created \[agentcup\]/.test(sp.content[0].text), "S5 the agent's create waits for the authority and says what it made", sp.content[0].text);
   const rm = await HANDLERS.remove(ag, { id: "cup" }, {} as any, "remove");
   ok(rm.isError && /locked/.test(rm.content[0].text), "S5 the agent's remove of a locked thing comes back as an error naming the lock (PARITY (d)1)", rm.content[0].text);
-  const dr = await HANDLERS.door(ag, { tool: "place", args: { id: "agentcup", on: "tbl" } }, {} as any, "door");
-  ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the door tool exposes the v4 vocabulary (relational place)", dr.content[0].text.slice(0, 200));
-  const un0 = await HANDLERS.door(ag, { tool: "undo", args: {} }, {} as any, "door");
+  const dr = await HANDLERS.act(ag, { verb: "place", args: { id: "agentcup", on: "tbl" } }, {} as any, "act");
+  ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the act tool exposes the v4 vocabulary (relational place)", dr.content[0].text.slice(0, 200));
+  const un0 = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
   ok(un0.isError && /locked/.test(un0.content[0].text), "S5 undoing that place is refused now (the inverse goes through admit: the table is locked)", un0.content[0].text.slice(0, 200));
-  await HANDLERS.door(ag, { tool: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "door");
-  const un = await HANDLERS.door(ag, { tool: "undo", args: {} }, {} as any, "door");
+  await HANDLERS.act(ag, { verb: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "act");
+  const un = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
   // slice 3c: the agent folds the v4 stream itself (joined v4fold), never the v1 projection
   ok(ag.v4c?.active === true && ag.entities.has("agentcup"), "S5b the agent folds the door's own stream, and sees what it made there", [ag.v4c?.active, [...ag.entities.keys()]]);
-  const mk = await HANDLERS.door(ag, { tool: "create", args: { id: "plank", model: "test/table.glb", place: { at: [6, 6] } } }, {} as any, "door");
-  const sc = await HANDLERS.door(ag, { tool: "set", args: { id: "plank", component: "transform", value: { pos: [6, 0, 6], q: [0, 0, 0, 1], scale: [2, 1, 0.5] } } }, {} as any, "door");
+  const mk = await HANDLERS.act(ag, { verb: "create", args: { id: "plank", model: "test/table.glb", place: { at: [6, 6] } } }, {} as any, "act");
+  const sc = await HANDLERS.act(ag, { verb: "set", args: { id: "plank", component: "transform", value: { pos: [6, 0, 6], q: [0, 0, 0, 1], scale: [2, 1, 0.5] } } }, {} as any, "act");
   ok(!mk.isError && !sc.isError, "S5b (the agent makes a plank and stretches it)", [mk.content[0].text.slice(0, 160), sc.content[0].text.slice(0, 160)]);
   for (let i = 0; i < 40 && JSON.stringify(ag.entities.get("plank")?.scale3) !== "[2,1,0.5]"; i++) await sleep(50);
   ok(JSON.stringify(ag.entities.get("plank")?.scale3) === "[2,1,0.5]", "S5b a stretched thing stays stretched in what the agent holds (the v1 replay flattened it)", ag.entities.get("plank"));
@@ -225,14 +225,14 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
   for (let i = 0; i < 40 && !ag.entities.get("lantern")?.comp?.grabbable; i++) await sleep(50);
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
-  ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*door grab \{id: "lantern"\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
-  const th = await HANDLERS.sit(ag, { on: "carriage", slot: "throne" }, {} as any, "sit");
-  ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e sit on the owner's throne: the door refuses a builder", th.content[0].text);
-  const dv = await HANDLERS.sit(ag, { on: "carriage", action: "drive" }, {} as any, "sit");
-  ok(!dv.isError && ag.mySeat?.slot === "box", "S5e sit {action: 'drive'} picks the driver's box", [dv.content[0].text, ag.mySeat]);
-  const up = await HANDLERS.sit(ag, {}, {} as any, "sit"), wk = await HANDLERS.walk_to(ag, { x: 0, z: 0 }, {} as any, "walk_to");
-  ok(up.isError && wk.isError && ag.mySeat?.slot === "box", "S5e …it holds you (leaveBy script): neither standing up nor walking gets you off", [up.content[0].text, wk.content[0].text]);
-  const hop = await HANDLERS.sit(ag, { on: "carriage", slot: "rumble" }, {} as any, "sit");
+  ok(/lantern[^\n]*Take the lantern \(anyone may pick it up;[^\n]*use while held: light;[^\n]*goes home when let go\)[^\n]*act \{verb: "grab", args: \{id: "lantern"\}\}/.test(lk2), "S5g look says a grabbable thing can be picked up, by whom, what using it does and where it goes", lk2.split("\n").filter((l) => /lantern/.test(l)));
+  const th = await HANDLERS.attach(ag, { to: "carriage", socket: "throne" }, {} as any, "attach");
+  ok(th.isError && /rights/.test(th.content[0].text) && !ag.mySeat, "S5e attach to the owner's throne: the authority refuses a builder", th.content[0].text);
+  const dv = await HANDLERS.attach(ag, { to: "carriage", action: "drive" }, {} as any, "attach");
+  ok(!dv.isError && ag.mySeat?.slot === "box", "S5e attach {action: 'drive'} picks the driver's box", [dv.content[0].text, ag.mySeat]);
+  const up = await HANDLERS.detach(ag, {}, {} as any, "detach"), wk = await HANDLERS.move(ag, { to: [0, 0, 0] }, {} as any, "move");
+  ok(up.isError && wk.isError && ag.mySeat?.slot === "box", "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
+  const hop = await HANDLERS.attach(ag, { to: "carriage", socket: "rumble" }, {} as any, "attach");
   ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.mySeat?.slot === "box", "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
   ag.close(); }
 
@@ -281,7 +281,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await oz.connect(); for (let i = 0; i < 40 && !oz.v4c?.active; i++) await sleep(50);
   ok((await ann.req("set", { id: "@world", component: `roles:${oz.v4c?.you}`, value: { role: "owner" } })).ok, "CM4 (Ann makes the agent Oz an owner)");
   const nb2 = vic.of("moderated").length;
-  const ban = await HANDLERS.ban(oz, { id: "Zed", reason: "test" }, {} as any, "ban");
+  const ban = await HANDLERS.ban(oz, { who: "Zed", reason: "test" }, {} as any, "ban");
   ok(!ban.isError && /done/.test(T(ban)), "CM4 the agent bans Zed, who isn't here, by name (it needed a u-… id it had no way to find)", T(ban));
   const back = await client(srv.port, "garden", "Zed", V4);
   ok(!back.snapshot && back.of("error").some((m) => /banned/.test(m.error)), "CM4 …and Zed can't come back", back.msgs.map((m) => m.type)); back.close();
@@ -289,11 +289,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(vic.of("moderated").at(-1)?.text === "Oz banned Zed from this world", "CM4 …bystanders were told", vic.of("moderated").slice(nb2));
   const wi = HANDLERS.whois ? await HANDLERS.whois(oz, { name: "zed" }, {} as any, "whois") : { isError: true, content: [{ type: "text", text: "(no whois tool)" }] };
   ok(!wi.isError && new RegExp(`${ZED}: person, visitor here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
-  const kk = await HANDLERS.kick(oz, { id: "Zed" }, {} as any, "kick");
+  const kk = await HANDLERS.kick(oz, { who: "Zed" }, {} as any, "kick");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
-  const ub = await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban");
+  const ub = await HANDLERS.unban(oz, { who: "Zed" }, {} as any, "unban");
   ok(!ub.isError && await wait(() => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed")), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
-  const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { id: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.unban(oz, { who: "Zed" }, {} as any, "unban")).isError, "CM4 (Oz unbans Zed again)"); await sleep(250);
   ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the door's reason
   await vic.req("create", { id: "vics2", model: "test/cup.glb" });
@@ -320,7 +320,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");
   await wait(() => oz.entities.has("bell"));
   const lk = oz.look();
-  ok(!/world_verb|comp \{|dismount|mount \{/.test(lk) && /door \{tool: "use"/.test(lk) && /sit \{on: id/.test(lk) && /throughLock/.test(lk), "CM7 look teaches the door's use, the sit tool and how a lock is lifted (it taught world_verb, which is gone)", lk.split("\n").filter((l) => /bell|use a thing|locked/.test(l)));
+  ok(!/world_verb|comp \{|dismount|mount \{/.test(lk) && /act \{verb: "use"/.test(lk) && /attach \{to: id/.test(lk) && /throughLock/.test(lk), "CM7 look teaches act {verb: use}, the attach tool and how a lock is lifted (it taught world_verb, which is gone)", lk.split("\n").filter((l) => /bell|use a thing|locked/.test(l)));
   // CM8 the agent's say: a spoken say keeps its trio on disk; a refused say is an error, not "said"
   const sp = await HANDLERS.say(oz, { text: "spoken line", spoken: true, utt: 11 }, {} as any, "say");
   await sleep(200);
