@@ -27,6 +27,7 @@ import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { V4Log, isV4World, resetV4 } from "./v4/world.ts";
+import { V4Scripts, type ScriptHost } from "./v4/scripts.ts";
 import { leaseRefusal } from "./rights.ts";
 
 /** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
@@ -437,8 +438,9 @@ export class World {
     this.debugLog.push({ ts: Date.now(), kind, ...detail });
     if (this.debugLog.length > 300) this.debugLog.splice(0, this.debugLog.length - 300);
   }
-  /** Runtime-script host — sandboxes, budgets, per-behavior log rings. */
-  bhv!: BehaviorHost;
+  /** Runtime-script host — sandboxes, budgets, per-behavior log rings. A v1 world's is server/behaviors.ts (v1 bindings,
+   *  v1 verbs); a v4 world's is server/v4/scripts.ts (the door runs script:<name>; no v1 BehaviorHost is ever built). */
+  bhv!: ScriptHost;
   private log: WorldLog;
   private session: WorldSession;
   /** A v4 world (protocol/v4, slice 2): its log is a V4Log, every write a v4 request (server/v4/). null for every
@@ -473,13 +475,15 @@ export class World {
         broadcast: (msg) => this.session.broadcast(msg),
         rightsChanged: () => v4Rights(this),
         debug: (kind, detail) => this.debug(kind, detail),
+        present: () => [...this.clients].filter((c) => !c.spectator && c.v4id && (c.surface ?? "world") === "world").map((c) => ({ id: c.v4id!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null })),
       });
     } else this.log = new WorldLog(name);
     this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
     this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
     // nobody connected (timers), which is the point of running server-side.
-    this.bhv = new BehaviorHost(this);
+    // A v4 world's scripts are the door's (server/v4/scripts.ts); v1's BehaviorHost would write v1 entries its log refuses.
+    this.bhv = this.v4 ? new V4Scripts(this.v4) : new BehaviorHost(this);
     this.bhv.sync();
     const total = this.snapSeq + 1 + this.entries.length;
     console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, `
@@ -547,6 +551,7 @@ export class World {
    *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. */
   resetV4(): string {
     const arch = resetV4(this.v4!);
+    this.bhv.disposeAll();   // the old world's scripts stop with it: the fresh world has none
     const v4 = new V4Log(this.name);
     this.v4 = v4;
     this.log = v4 as unknown as WorldLog;
@@ -555,6 +560,8 @@ export class World {
       rightsChanged: () => v4Rights(this),
       debug: (kind, detail) => this.debug(kind, detail),
     });
+    this.bhv = new V4Scripts(v4);
+    this.bhv.sync();
     return arch;
   }
   reset(): string {

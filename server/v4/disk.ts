@@ -10,8 +10,10 @@ import { readLog, jcs, sha256 } from "../../shared/v4/fold.js";
 import { worldOf, posAt } from "../../shared/v4/door.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
+import { SANDBOX } from "../../shared/v4/sandbox.js";
 
-export type OpenOpts = { now?: () => number };
+/** scripts: the sandbox (default: QuickJS, shared/v4/sandbox.js); null = a door with none (activations say unavailable) */
+export type OpenOpts = { now?: () => number; scripts?: unknown; present?: () => { id: string; at: number[] | null }[] };
 
 /** The lab clock: V4_NOW pins wall time so physics tests are repeatable. A real door passes its own clock. */
 const envClock = () => (process.env.V4_NOW ? Number(process.env.V4_NOW) : Date.now());
@@ -35,6 +37,7 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   return worldOf({
     name, entries, getBlob, putBlob,
     now: opts.now ?? envClock,
+    scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: fs.existsSync(presPath) ? JSON.parse(fs.readFileSync(presPath, "utf8")) : { bodies: {}, holds: {} },
     savePresence: (p: object) => { fs.mkdirSync(path.dirname(presPath), { recursive: true }); fs.writeFileSync(presPath, JSON.stringify(p)); },

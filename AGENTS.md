@@ -512,6 +512,12 @@ digests.
 
 ### 2. Runtime scripts — code that lives IN the world (Layer 2, live)
 
+**In a v4 world** (protocol v4: its snapshot says `v4`), scripts are `script:<name>` components the door runs, on
+their sponsor's rights narrowed to a declared scope, each activation one act plus one all-or-nothing batch:
+`upload {text}`, then `set {id, component: "script:<name>", value: {src, scope, on}}`, then a reactions handler
+`{kind: "script", script: "<name>"}`. The whole API and its limits: **docs/SCRIPTS-v4.md**. What follows here
+(`behavior`, `world.emit`, `world.kv`) is v1's, and a v4 world doesn't run it.
+
 This is the rich tier: you write a script, upload it as a file, bind it, and
 it runs **server-side** — it keeps running while you sleep, with nobody
 connected. The ferry keeps its schedule; the bell answers whoever rings it.

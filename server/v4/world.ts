@@ -24,7 +24,7 @@ import { agentTokens } from "../auth.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, seal, actIndexOf, roleIn, isBanned } from "../../shared/v4/door.js";
+import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView } from "../../shared/v4/door.js";
 import { stateView } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { hear } from "../../shared/chatwindow.js";
@@ -43,6 +43,9 @@ export type V4Host = {
   broadcast(msg: unknown): void;           // every client in the world
   rightsChanged(): void;                   // tell every client its rights again
   debug(kind: string, detail: Record<string, unknown>): void;
+  /** who is here (embodied, not spectating): their v4 identity and last known position. Scripts' timers sleep when this
+   *  is empty, and world.near(r) reads it (research 41 §3.5, §3.8) */
+  present?(): { id: string; at: number[] | null }[];
 };
 
 export class V4Log {
@@ -73,7 +76,7 @@ export class V4Log {
     this.name = name;
     this.dir = path.join(WORLDS_DIR, name);
     this.posesPath = path.join(this.dir, "poses.json");
-    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE });
+    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [] });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] v4 log folds to '${st.status}': the door will refuse writes`);
@@ -112,6 +115,22 @@ export class V4Log {
     if (this.live.entries.length > from) this.afterWrite(from);
     return r;
   }
+
+  /** Scripts (research 41): the door's timers on this server's clock (server.ts calls World.bhv.tick once a second). What
+   *  they write goes out like any write. */
+  tickScripts() {
+    if (this.live.state().status !== "ok") return;
+    const from = this.live.entries.length;
+    try { doorTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+  }
+  /** Someone arrived or left: scripts that listen for enter / leave hear it (by their v4 identity). */
+  presenceScripts(kind: "enter" | "leave", who: string) {
+    if (this.live.state().status !== "ok") return;
+    const from = this.live.entries.length;
+    try { presenceEvent(this.live, kind, who); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+  }
+  /** The door's status view of every script here (debug panel, world_debug {behaviors}). */
+  scriptsView(id?: string) { return scriptsView(this.live, id); }
 
   /** Send what the door just wrote: the raw v4 entries, to every client (they all fold v4). Chat lines go into the
    *  window; the view goes stale for its next reader; a role change re-sends everyone's rights. */

@@ -21,6 +21,7 @@ import { simFolder } from "../../shared/v4/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { directoryFor } from "./directory.ts";
+import { SANDBOX } from "../../shared/v4/sandbox.js";
 
 type Any = any; // the door is JSDoc-typed JS; the server holds it structurally
 
@@ -40,7 +41,9 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
 export type LiveOpts = { now?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
   /** the door's governance keys file (§2.4); default <worlds dir>/.v4-custody.json, shared by every world in it */ custodyFile?: string;
   /** id → display name (the door directory, server/v4/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
-  /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null };
+  /** id → human|agent|anon|legacy (the directory); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
+  /** the script sandbox (default QuickJS, shared/v4/sandbox.js; null = none) */ scripts?: Any;
+  /** who is connected beyond the door's own bodies: [{id, at}] (server/v4/world.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[] };
 
 /** Open (or prepare to found) the v4 world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
@@ -67,6 +70,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
 
   const w: Any = worldOf({
     name, entries, getBlob, putBlob, now, catalogue: opts.catalogue,
+    scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},
     custody: custodyAt(opts.custodyFile ?? path.join(path.dirname(dir), ".v4-custody.json")),

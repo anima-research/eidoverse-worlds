@@ -16,6 +16,7 @@ import { foldSkyEntry } from "../forecast.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./terrain.js";
+import * as SR from "./scriptrules.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
@@ -60,6 +61,11 @@ export function worldOf(io) {
   w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
   w.nameOf = io.nameOf ?? null; // id → display name (the door's directory, §2.3); null = old escaped ids only
   w.now = io.now;
+  // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/v4/sandbox.js), never imported
+  // here (browsers import this file). No sandbox: scripts install, and every activation says "unavailable".
+  w.scripts = io.scripts ?? null;
+  // who is present beyond the door's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
+  w.present = io.present ?? null;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
   w.presence = io.presence ?? { bodies: {}, holds: {} };
   w.savePresence = () => io.savePresence?.(w.presence);
@@ -97,7 +103,7 @@ export function worldOf(io) {
   // genesis is a chain point {head, sig} (genesis can't be: the world id is the hash of genesis itself). head(i) is
   // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
   const render = (e, seq, chained = false) => {
-    const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.nextTs() };
+    const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.pinTs ?? w.nextTs() };
     // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
     // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
     // body carries 16 random bytes (round-2 review R3). Readers take bodies by field, so the salt is invisible to them.
@@ -379,7 +385,7 @@ export function request(w, actor, tool, args = {}) {
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the door won't write to a log its own reader refuses");
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
-    w.changedQ = [];
+    w.changedQ = []; w.sayQ = [];
     if (h && w.exists) { settleSim(w); expireAsks(w); }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
@@ -391,6 +397,7 @@ export function request(w, actor, tool, args = {}) {
     if (expect !== undefined) expectCheck(w, expect);
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
+    drainScripts(w); // what the request's own entries trigger (changed:<comp>, say), after them, each its own activation
     if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; }
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
     return r;
@@ -545,6 +552,7 @@ function admit(w, st, who, ops) {
     s = applyOps(s, [op]); norm.push(op);
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
+  for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:")) installCheck(w, st, s, who, op); // 41 §3.14: at install
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -579,6 +587,7 @@ const rankNeeded = (op) => (op.id !== "@world" ? "builder" : op.comp?.startsWith
 function rights(w, st, s, who, role, op, at) {
   const { actor, cap } = who; const need = rankNeeded(op);
   if (!cap) { if (RANK[role] < RANK[need]) refuse("rights", `changing ${at} needs ${need}; you are ${role}`, `ask the world's owner for ${need} rights (say {text, to: <owner>}); help shows your role`); return; }
+  if (cap.kind === "script") return scriptRights(st, cap, op, at, need);
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
   if (cap.kind === "reaction" && RANK[roleOf(st, cap.author)] < RANK[need]) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   if (cap.kind === "handle") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
@@ -656,6 +665,7 @@ function valueCheck(s, { id, comp, value: v }) {
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'door', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
+      if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); } }
   if (comp.startsWith("roles:") && (!obj || RANK[v.role] === undefined)) refuse("shape", `${at} must be {role: owner|builder|visitor|none}`, "");
   for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
@@ -695,15 +705,25 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
+// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit
+const nearMiss = (name) => Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the door takes as it is (sweep). */
 export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v); return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
 function schemaCheck(at, comp, v) {
   const name = comp.split(":")[0], def = COMPONENTS[name];
+  // `param.<name>`: a number a script writes into a component for something else to read (seat poses that blend by
+  // signals). Any object component may carry them at its top level; the rest of the value is checked as usual.
+  if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith("param."))) {
+    for (const k of Object.keys(v)) if (k.startsWith("param.")) {
+      if (!SR.isParamKey(k)) refuse("shape", `${at}: '${k}' isn't a parameter name`, "param.<name>: a letter, then letters, digits, _ or -, up to 32 (e.g. param.lean)");
+      if (!isNum(v[k])) refuse("shape", `${at}.${k} is a number (a signal), got ${JSON.stringify(v[k]).slice(0, 40)}`, "a script writes it with world.param(id, component, name, number)"); }
+    v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("param.")));
+  }
   // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
   // it's a near-miss of a registered name: that's a typo (ligth, transform@2), and it would be a new name forever (L5)
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (L2), never stored`, "inspect {id} → derived.madeBy");
-  if (!def) { if (!name.includes("/")) { const near = Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
+  if (!def) { if (!name.includes("/")) { const near = nearMiss(name);
       if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${name}')`, { didYouMean: near }); }
     return; }
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
@@ -1125,7 +1145,7 @@ function buildUse(ctx, a) {
   }
   const h = e.c.reactions?.[action];
   if (h?.who && RANK[roleOf(ctx.st, ctx.actor)] < RANK[h.who]) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
-  if (h?.kind === "script") refuse("no-runtime", `${a.id}'s '${action}' runs script:${h.script}, and scripts don't run in v4 worlds yet`, "behaviours on v4 worlds are a later slice (PROTOCOL-v4 L4); the thing's other actions still work");
+  if (h?.kind === "script") return { script: h.script, action }; // TOOLS.use logs the visitor's act, then activates it
   if (h?.kind === "impulse") {
     if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
@@ -1180,6 +1200,262 @@ function offersFor(st, id, actor) {
     else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });
     else can.push(act); }
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
+}
+
+// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, code/v4-lab/door.js @ 2300bae, on a real sandbox) ----------
+// A script is a keyed component `script:<name>` naming a source blob ({lang: "js", api, text}, by its sha256 name) and a
+// declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
+// a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
+// rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
+// ONE act (actor bhv:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
+// reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
+// Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Door practice: timers
+// sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
+// cascade depth, and a pause after repeated failures.
+const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
+const scriptsCfg = (st) => { const c = st.entities["@world"]?.c.scripts; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
+const BODY_EFFECTS = ["shove", "pose"];
+const SCRIPT_EVENTS = ["use", "say", "enter", "leave"];
+const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [id, ...descendants(st, id)] : Array.isArray(ids) ? ids.map((x) => (x === "self" ? id : x)) : []);
+const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
+const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
+function scriptRights(st, cap, op, at, need) {
+  if (op.verb === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
+  else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
+    if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
+      refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install (41 §3.5)"); }
+  const r = roleOf(st, cap.sponsor);
+  if (RANK[r] < RANK[need]) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${need})`, "dormant: a behaviour has its sponsor's rights now, never more (L4). An owner may adopt it: adopt {id, script}");
+}
+// At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
+// rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
+// timer floor, `always` only by an owner, the world's script count.
+function installCheck(w, st, s, who, op) {
+  const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
+  const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
+  if (RANK[role] < RANK[cfg.install]) refuse("rights", `installing a script here needs ${cfg.install}; ${said(installer)} is ${role}`, "@world.scripts.install says who may (the owner sets it)");
+  if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
+  let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
+  if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
+  if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
+  const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install (41 §3.12): reviewers must see what runs");
+  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS-v4.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
+  const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
+  if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
+    refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
+  if (!Array.isArray(sc.comps) || sc.comps.length > 16 || !sc.comps.every((c) => typeof c === "string" && isComponent(sampleOf(c)))) refuse("shape", `${at}.scope.comps must be up to 16 component names ('name:*' for keyed)`, COMPONENTS.script.help);
+  if (sc.bodies !== undefined && (!Array.isArray(sc.bodies) || sc.bodies.some((b) => !BODY_EFFECTS.includes(b)))) refuse("shape", `${at}.scope.bodies may name ${BODY_EFFECTS.join(", ")}`, "each lands only where that body's consent allows it (L6)");
+  if (sc.launch) refuse("shape", `${at}.scope.launch: scripts can't launch sim bodies yet`, "leave launch out");
+  if (sc.create && sc.ids !== "subtree") refuse("scope", `${at}: create needs ids: 'subtree' (what it makes must hang under it)`, "");
+  // a scope that names a typo of a registered component could never write it (admit refuses the name): say so now
+  for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !COMPONENTS[n] && !n.includes("/") ? nearMiss(n) : [];
+    if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${n}')`, { didYouMean: near }); }
+  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = rankNeeded({ id, comp: sampleOf(c) });
+    if (RANK[role] < RANK[need]) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${need}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly (41 §3.3): narrow the scope, or ask an owner to install or adopt it"); }
+  const on = v.on ?? [];
+  if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
+    refuse("shape", `${at}.on lists ${SCRIPT_EVENTS.join(", ")} and changed:<comp>`, "timers come from every (they deliver tick, and wake after sleeping)");
+  if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine (41 §3.8); motion is a function of time");
+  if (v.knobs !== undefined && jcs(v.knobs).length > 4096) refuse("too-big", `${at}.knobs is ${jcs(v.knobs).length} bytes; at most 4 KiB`, "big data goes in a blob");
+  const prev = st.entities[op.id]?.c[op.comp];
+  if (v.always === true && prev?.always !== true && RANK[role] < RANK.owner) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits (41 §3.8)");
+  if (prev === undefined) { const n = allScripts(s).length;
+    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.scripts.max (owner)"); }
+}
+const rtKey = (id, name) => `${id}|${name}`;
+const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });
+const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...line }); if (rt.console.length > 20) rt.console.shift(); w.presenceDirty = true; };
+// how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
+function bhvDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
+  while (isE(e) && isBhv(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
+// §5 "Two views" (H3): the sponsor is whose rights admitted the LATEST write to the script: key in its current life
+const sponsorOf = (w, id, key) => { if (!creatorOf(w, id, key)) return null; const c = lastSetterOf(w, id, key); return c && !c.deleted ? { sponsor: c.rights, sponsorAt: c.seq } : null; };
+// who is here: the door's own bodies plus whoever the host says is connected (a server's people), id → position | null
+function presentOf(w) { const out = new Map();
+  for (const [id, b] of Object.entries(w.presence.bodies ?? {})) out.set(id, Array.isArray(b?.at) ? b.at : null);
+  for (const p of w.present?.() ?? []) if (p && typeof p.id === "string" && !out.has(p.id)) out.set(p.id, Array.isArray(p.at) && p.at.length === 3 && p.at.every(Number.isFinite) ? p.at : null);
+  return out; }
+const scriptMemo = new WeakMap();
+function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out = [];
+  for (const [id, e] of Object.entries(st.entities)) for (const [k, v] of Object.entries(e.c)) if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) out.push({ id, name: k.slice(7), v });
+  scriptMemo.set(st, out); return out; }
+// budgets (door practice, stated in @world.scripts; §3d M3): per script per minute; per world per hour; each sponsor a fair
+// share of the world's hour, so one builder's chatty scripts can't starve everyone else's (and spreading a script over
+// many things or hashes gains nothing: the share is keyed on the sponsor)
+function budgetOf(w, st, now, id, key, sponsor, cfg) {
+  let mine = 0, all = 0, bySp = 0;
+  const sponsors = new Set(allScripts(st).map((x) => sponsorOf(w, x.id, `script:${x.name}`)?.sponsor).filter(Boolean));
+  for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && now - e.ts > 3600000) break;
+    if (!isBhv(e.actor)) continue; all++;
+    const a = e.kind === "act" ? e : w.entries[e.cause];
+    if (isE(a) && a.kind === "act" && a.body?.sponsor === sponsor) bySp++;
+    if (e.kind === "act" && e.actor === `bhv:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
+  return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
+}
+// door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
+function overCpu(w, now, id, key, sponsor, cfg) {
+  const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
+  const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs} (@world.scripts.runs)`;
+  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the door's time in the last minute; at most ${cfg.cpu} (@world.scripts.cpu)`;
+  const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the door's time in the last minute; at most ${cfg.cpu * 3}`;
+  return null;
+}
+// what an act records of its event: everything but what its trigger already holds (a say's text and `to`, a use's args),
+// so purging that say or that request purges it everywhere (an auditor reads it from the trigger: scriptaudit.js)
+const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };
+const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget} (@world.scripts.budget)`
+  : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
+// One activation. ev = {on, by?, seq?, cause?, dry?, …the event's own fields}. Returns what happened; a refused or failed
+// activation logs NOTHING (its reason goes to the script's console ring and the status view).
+function activate(w, id, name, ev) {
+  const st = w.state(), key = `script:${name}`, v = st.entities[id]?.c[key], cfg = scriptsCfg(st);
+  const { cause, dry, ...event } = ev;
+  const rt = dry ? { console: [] } : rtOf(w, id, name);
+  const out = (status, extra = {}) => { if (!dry) { const { logs, ...line } = extra; logRt(w, rt, { on: ev.on, status, ...line, ...(logs ? { logs } : {}) }); rt.status = status; }
+    return { script: key, id, status, ...extra }; };
+  if (!v || typeof v !== "object" || v === PURGED) return out("not-installed");
+  if (v.paused === true) return out("paused", { why: "paused: true (set by its sponsor or an owner)" });
+  if (cfg.run === false) return out("stopped", { why: "@world.scripts.run is false (the owner's kill switch)" });
+  const sp = sponsorOf(w, id, key); if (!sp) return out("not-installed");
+  if (isBanned(w, sp.sponsor)) return out("suspended", { why: `suspended: sponsor ${said(sp.sponsor)} is banned (moderator log); nothing ran` });
+  const ver = lastTouch(w, id, key)?.seq; if (!dry && rt.ver !== ver) { rt.ver = ver; rt.fails = 0; } // a re-set (a fix) clears the failure count
+  if (!dry && (rt.fails ?? 0) >= cfg.fails) return out("paused", { why: `paused after ${rt.fails} failed activations in a row; set it again (a fix, or the same value) to retry` });
+  const depth = 1 + (cause !== undefined ? bhvDepth(w, cause) : 0);
+  if (depth > cfg.depth) return out("refused", { code: "depth", why: `cascade depth ${depth} > ${cfg.depth}` });
+  if (!w.scripts) return out("unavailable", { why: "this door has no script sandbox" });
+  let blob = null; try { blob = w.getBlob(v.src); } catch { /* below */ }
+  const fail = (code, why, logs) => { if (!dry && code !== "unavailable") rt.fails = (rt.fails ?? 0) + 1; return out(code === "unavailable" ? "unavailable" : "failed", { code, why, ...(logs?.length ? { logs } : {}), ...(dry ? {} : { fails: rt.fails }) }); };
+  if (!blob || blob.lang !== SR.LANG || typeof blob.text !== "string") return fail("source", `${id}.${key}.src: no ${SR.LANG} source ${v.src} here`);
+  const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
+  if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
+  const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
+  { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
+  const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
+  const t0 = performance.now();
+  const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
+    near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
+    name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
+  if (!dry) ((w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(performance.now() - t0) }), w.presenceDirty = true);
+  if (!res.ok) return fail(res.code, res.why, res.logs);
+  const logs = res.logs.length ? { logs: res.logs } : {};
+  const ops = SR.elide(st, res.ops);
+  if (!ops.length && !res.says.length && !res.bodies.length) { if (!dry) rt.fails = 0; return out("nothing", { why: res.ran ? "nothing changed: no entry" : `it has no handler for '${ev.on}'`, ...logs }); }
+  const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
+  const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
+  if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
+  for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.act)) return mark("scope", `${key} doesn't declare bodies: ['${b.act}']`);
+  { const why = overBudget(B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
+  let plan = null;
+  if (ops.length) try { plan = admit(w, st, { actor: `bhv:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
+  if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
+  const gates = [];
+  for (const b of res.bodies) { const g = bodyGate(w, `bhv:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
+  const actE = { kind: "act", actor: `bhv:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
+    body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
+      event: recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
+      ...(gates.length ? { bodies: gates.map((g) => ({ act: g.act, to: `body:${g.to}`, consent: g.consent })) } : {}) } };
+  const sayE = (t, c) => ({ kind: "say", actor: `bhv:${id}`, cause: c, verb: "say", body: { text: t } });
+  let act, state = null;
+  w.pinTs = now;
+  try {
+    try { w.fits(actE, ...(plan ? [stateShape(plan, actSeq, w)] : []), ...res.says.map((t) => sayE(t, actSeq))); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
+    act = w.append(actE); if (plan) state = stateEntry(w, plan, act);
+    for (const t of res.says) (w.sayQ ??= []).push(w.append(sayE(t, act)));
+  } finally { w.pinTs = null; }
+  for (const g of gates) g.deliver();
+  rt.fails = 0; return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...logs });
+}
+function withDoor(w, fn) {
+  const prevCat = CAT, prevName = NAMEOF, prevAnon = ISANON, prevThrough = THROUGH; CAT = w.catalogue ?? LAB_CATALOGUE; NAMEOF = w.nameOf ?? null; THROUGH = false;
+  ISANON = (id) => w.kindOf?.(id) === "anon";
+  try { return fn(); } finally { CAT = prevCat; NAMEOF = prevName; ISANON = prevAnon; THROUGH = prevThrough; if (w.presenceDirty) { w.savePresence(); w.presenceDirty = false; } }
+}
+/**
+ * Timers (door practice): a due script with nobody present sleeps unless `always`; on its first due tick after someone
+ * arrives it gets ONE `wake {slept}`, never a burst. Several missed periods while awake coalesce into one tick. A timer
+ * act's cause is the entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on
+ * its own clock (server/v4: once a second); it never runs inside a request.
+ */
+export function tick(w) {
+  if (!w.exists || w.state().status !== "ok") return [];
+  return withDoor(w, () => {
+    w.changedQ = []; w.sayQ = [];
+    const now = w.now(), present = presentOf(w).size > 0, ran = [];
+    for (const { id, name, v } of allScripts(w.state())) { if (!(typeof v.every === "number" && v.every >= 5)) continue; const rt = rtOf(w, id, name);
+      if (rt.next === undefined) { rt.next = now + v.every * 1000; w.presenceDirty = true; continue; }
+      if (now < rt.next) continue;
+      rt.next = now + v.every * 1000; w.presenceDirty = true;
+      if (!present && v.always !== true) { rt.sleepingSince ??= now; rt.status = "asleep"; continue; }
+      const slept = rt.sleepingSince !== undefined ? Math.round((now - rt.sleepingSince) / 1000) : null; delete rt.sleepingSince;
+      const sp = sponsorOf(w, id, `script:${name}`);
+      ran.push(activate(w, id, name, { on: slept !== null ? "wake" : "tick", ...(slept !== null ? { slept } : {}), ...(sp ? { cause: sp.sponsorAt } : {}) }));
+    }
+    drainScripts(w);
+    return ran;
+  });
+}
+/** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by`. The act's
+ *  cause is the entry that made the script's sponsor (an arrival isn't logged on every path). */
+export function presenceEvent(w, kind, who) {
+  if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
+  return withDoor(w, () => {
+    w.changedQ = []; w.sayQ = []; const ran = [];
+    for (const { id, name, v } of allScripts(w.state())) if (Array.isArray(v.on) && v.on.includes(kind)) { const sp = sponsorOf(w, id, `script:${name}`);
+      ran.push(activate(w, id, name, { on: kind, by: who, ...(sp ? { cause: sp.sponsorAt } : {}) })); }
+    drainScripts(w);
+    return ran;
+  });
+}
+// What a request's (or an activation's) entries set off: `changed:<comp>` for a state entry that changes <comp> on an id
+// in the script's scope; `say` for a say entry. One activation per (script, triggering entry); a script never hears its own.
+function drainScripts(w) {
+  let guard = 0;
+  while ((w.changedQ?.length || w.sayQ?.length) && guard++ < 1000) {
+    const st = w.state(); const scripts = allScripts(st);
+    if (w.changedQ?.length) { const seq = w.changedQ.shift(); const e = w.entries[seq]; if (!isE(e)) continue;
+      const watching = scripts.filter((x) => Array.isArray(x.v.on) && x.v.on.some((o) => o.startsWith("changed:"))); if (!watching.length) continue;
+      const changed = opsQuiet(e).filter((o) => o.comp !== undefined);
+      for (const { id, name, v } of watching) { if (e.actor === `bhv:${id}`) continue;
+        const ids = scopeIds(st, id, v.scope?.ids); const hit = changed.find((o) => ids.includes(o.id) && v.on.includes(`changed:${o.comp}`));
+        if (hit) activate(w, id, name, { on: `changed:${hit.comp}`, id: hit.id, comp: hit.comp, by: (isE(w.entries[e.cause]) ? w.entries[e.cause].actor : null) ?? e.actor, seq, cause: seq }); }
+      continue; }
+    const seq = w.sayQ.shift(); const e = w.entries[seq]; if (!isE(e) || e.kind !== "say") continue;
+    for (const { id, name, v } of scripts) { if (!(Array.isArray(v.on) && v.on.includes("say")) || e.actor === `bhv:${id}`) continue;
+      activate(w, id, name, { on: "say", by: e.actor, text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: e.body.to } : {}), seq, cause: seq }); }
+  }
+  if (w.changedQ) w.changedQ.length = 0; if (w.sayQ) w.sayQ.length = 0;
+}
+// The status view (41 §3.4): suspended / paused / stopped / unavailable / dormant (and why, since when) / asleep / active.
+// A view, never logged.
+function scriptStatus(w, st, id, name, v) {
+  const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
+  let src = null; try { src = w.getBlob(v.src); } catch { /* missing: said below */ }
+  const base = { id, script: key, src: v.src, sponsor: sp?.sponsor ?? null, sponsorAt: sp?.sponsorAt ?? null, on: v.on ?? [], ...(v.every ? { every: v.every, always: !!v.always } : {}), scope: v.scope,
+    ...(src?.text && SR.looksMinified(src.text) ? { note: "the source looks minified: hard to review" } : {}), last: rt?.console?.slice(-3) ?? [] };
+  if (sp && isBanned(w, sp.sponsor)) return { ...base, status: "suspended", why: `sponsor ${said(sp.sponsor)} is banned` };
+  if (v.paused === true) return { ...base, status: "paused", why: "paused: true" };
+  if (cfg.run === false) return { ...base, status: "stopped", why: "@world.scripts.run is false" };
+  if (!src) return { ...base, status: "failed", why: `its source ${v.src} isn't here` };
+  if (!w.scripts) return { ...base, status: "unavailable", why: "this door has no script sandbox" };
+  if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: `${rt.fails} failed activations in a row; set it again to retry` };
+  const role = roleOf(st, sp?.sponsor); const lost = [];
+  for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { const need = rankNeeded({ id: x, comp: sampleOf(c) }); if (RANK[role] < RANK[need]) lost.push(`${x}.${c}`); }
+  if (lost.length) { const since = lastSetterOf(w, "@world", `roles:${sp.sponsor}`);
+    return { ...base, status: "dormant", why: `dormant: sponsor ${said(sp.sponsor)} (${role} now${since ? `, since seq ${since.seq}` : ""}) can no longer change ${lost.join(", ")}`, adopt: `an owner may: adopt {id: '${id}', script: '${name}'}` }; }
+  return { ...base, status: rt?.status === "asleep" ? "asleep" : "active" };
+}
+function scriptsOf(w, st, id) {
+  return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v)),
+    ...(id && id !== "@world" ? {} : { v1: v1Behaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (w.scripts.available?.() === true ? SR.ENGINE : `unavailable: ${w.scripts.available?.()}`) : "none" };
+}
+/** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
+export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], v1: [] }; return withDoor(w, () => scriptsOf(w, w.state(), id)); }
+// a translated v1 world carries its bindings as @world behavior:<name> (v1's shape, kept as a record). v4 never runs them.
+const V1_WHY = "a v1 behaviour, carried by translation. v4 doesn't run v1 source: it was written for v1's API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS-v4.md), upload {text}, then set script:<name> {src, scope, on}";
+function v1Behaviours(w, st) {
+  return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
+    attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: V1_WHY }));
 }
 
 // ---------- the act index (slice 3a): undo and wait without scanning the log ----------
@@ -1818,7 +2094,8 @@ function bodyGate(w, from, to, act, extra = {}) {
   if (from === to) return { ok: true, consent: "self", deliver: () => deliver(w, from, to, act, cls, extra, "self") };
   const result = (verdict, r) => { ringPush(P, { ts: now, from, to, cls, verdict }); w.presenceDirty = true; return r; };
   if (P.throttle?.[`${from}:${cls}`] > now) return result("refused", { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, teach: "ask people first; this lifts by itself" });
-  const d = C.decide(P, from, to, cls, now);
+  let d = C.decide(P, from, to, cls, now);
+  if (isBhv(from) && extra.sponsor && !C.tableOf(P, to).overrides[from]?.[cls] && C.tableOf(P, to).overrides[`bhvs:${extra.sponsor}`]?.[cls]) d = C.decide(P, `bhvs:${extra.sponsor}`, to, cls, now);
   if (d.mode === "nobody") { noteRefusal(w, from, to, cls, now); return result("refused", { ok: false, code: "consent", class: cls, reason: d.why, teach: `${to} isn't taking ${cls} from you; their shield says so (look)` }); }
   if (d.mode === "ask") {
     if (isBhv(from)) return result("refused", { ok: false, code: "consent", class: cls, reason: `${to}'s ${cls} is 'ask'; a behaviour can't wait for an answer`, teach: `${to} may allow ${from} by name` });
@@ -1917,6 +2194,7 @@ const TOOLS = {
         write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
+        scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS-v4.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z]}", "drop {id}", "leave", "wait"],
         physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
@@ -1979,6 +2257,21 @@ const TOOLS = {
   use(w, actor, a) {
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
     if (probe.presence) return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
+    if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
+      const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
+      if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
+        // a translated v1 world: the reaction names a v1 binding (@world behavior:<name>), which v4 never runs
+        // (a binding there, or the handler itself written by the translation: its cause is a `legacy` act)
+        const v1 = Object.entries(wc).find(([k, b]) => k.startsWith("behavior:") && (k === `behavior:${probe.script}` || b?.attach === a.id));
+        const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
+        if (v1 || (isE(ce) && ce.kind === "act" && ce.verb === "legacy"))
+          refuse("no-runtime", `${a.id}'s '${probe.action}' runs the v1 behaviour '${v1 ? v1[0].slice(9) : probe.script}', carried by translation; v4 doesn't run v1 source`, `re-install it as script:${probe.script} on ${a.id} (docs/SCRIPTS-v4.md); scripts lists v1 behaviours as needs-reinstall`);
+        refuse("no-handler", `${a.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here"); }
+      const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}) };
+      if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true }) };
+      rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", a, { runs: key }));
+      return { ok: true, act, recorded: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
+    }
     return commit(w, actor, "use", a, (ctx) => buildUse(ctx, a));
   },
   // moderation (§2.1): a separate log, enforced by the door; never a world entry
@@ -1993,8 +2286,41 @@ const TOOLS = {
     w.appendMod({ actor, verb: "unban", who: a.who }); return { ok: true, unbanned: a.who }; },
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
-    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); return { ok: true, seq }; }, // w.append refuses too-big before writing
+    rateCheck(w, actor, "say", a.text.length); const seq = w.append({ kind: "say", actor, verb: "say", body: { text: a.text, ...(a.to ? { to: a.to } : {}) } }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
+  // ---- scripts (research 41) ----
+  // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
+  // checked here (to teach early) and again at install (what binds).
+  upload(w, actor, a) {
+    if (RANK[roleOf(w.state(), actor)] < RANK[scriptsCfg(w.state()).install]) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner");
+    if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS-v4.md");
+    { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
+      if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
+      U.push(now); w.presenceDirty = true; }
+    const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused (41 §3.12): reviewers must see what runs");
+    const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS-v4.md shows the API");
+    if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
+    return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };
+  },
+  // 41 §3.4: recovery is an explicit, logged adopt: a NEW life of the key (delete + set, one batch), so the adopter becomes
+  // its creator and sponsor. §5's key rule decides who may (its creator or an owner); install checks apply with the
+  // adopter's rights. `base` (the version inspect gives) makes two racing adopters one winner.
+  adopt: (w, actor, a) => commit(w, actor, "adopt", a, (ctx) => { const e = needThing(ctx, a.id); const key = `script:${a.script}`; const v = e.c[key];
+    if (!v || typeof v !== "object") refuse("not-found", `${a.id} has no ${key}`, "scripts lists them");
+    const lt = lastTouch(w, a.id, key); const base = a.base === undefined ? undefined : versionSeq(w, a.base, "base");
+    if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${key} changed since version ${base}: ${said(lt.actor)} at ${lt.seq}`, "scripts shows who sponsors it now");
+    const was = sponsorOf(w, a.id, key); ctx.actExtra = { adopts: { script: key, was: was?.sponsor ?? null, wasAt: was?.sponsorAt ?? null } }; ctx.refs.add(a.id);
+    return [delOp(a.id, key), setOp(a.id, key, v)]; }),
+  // the status view (unlogged): every script here, its sponsor and why it does or doesn't run; translated v1 behaviours
+  // that need re-installing. With {id, script, test: {on, …}}: a dry run (41 §3.12): what it WOULD write, refused or not.
+  scripts(w, actor, a) { const st = w.state();
+    if (a.test !== undefined) {
+      if (RANK[roleOf(st, actor)] < RANK.builder) refuse("rights", "a dry run needs builder (it spends the door's time)", "");
+      if (!a.test || typeof a.test !== "object" || typeof a.test.on !== "string") refuse("shape", "test is an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}", "e.g. scripts {id: 'bell1', script: 'bell', test: {on: 'use', action: 'ring'}}");
+      if (!st.entities[a.id]?.c[`script:${a.script}`]) refuse("not-found", `${a.id} has no script:${a.script}`, "scripts lists them");
+      const { cause: _c, dry: _d, ...ev } = a.test; // a test event is the event's own fields; never a cause (depth) of its own
+      return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true }) }; }
+    return { ok: true, ...scriptsOf(w, st, a.id) }; },
   // the sky panel's two verbs, with v1's own meaning (shared/forecast.js foldSkyEntry, the same function v1's fold ran):
   // `sky` replaces the sky, stamped with the DOOR's clock (hours advance from it); `weather` merges onto the standing
   // sky. v1 also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
