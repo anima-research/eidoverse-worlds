@@ -27,7 +27,6 @@ import { state } from './state.js';
 import { net } from './net.js';
 import { renderDOM } from './panels.js';
 import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
-import { mayAuthor } from './placer.js';
 import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
@@ -68,11 +67,11 @@ function eulerHint(id, rec) {
 export function liveFor(id) {
   const obj = entities.get(id);
   const light = !!obj?.userData?.isLight;
-  return { casting: light ? hooks.casting?.(obj) : undefined, mayAuthor: mayAuthor(id), parts: obj && !light ? namedParts(obj) : undefined,
+  return { casting: light ? hooks.casting?.(obj) : undefined, parts: obj && !light ? namedParts(obj) : undefined,
     euler: eulerHint(id, foldRecord(id)),
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths
-    world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined),
+    world: state.st.entities ?? {},
     // the model's own box (the pivot's centre / base snaps)
     box: boxOf(id),
   };

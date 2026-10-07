@@ -24,7 +24,6 @@ import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
 import { foldRecord } from './inspect.js';
-import { mayAuthor } from './placer.js';
 import { editOps, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
 import * as OP from '../../shared/v4/ops.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
@@ -80,7 +79,7 @@ function editable(id, mode) {
   // pos.* edits, the frame the mesh drag already uses; a part socket (a moving node) stays out.
   const rides = !!rec?.parent;
   if (!rec || !obj || (rides && obj.parent !== entities.get(rec.parent.to ?? rec.parent))) return false;
-  const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id) });
+  const sc = inspectSchema(rec, id);
   const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
   const f = fieldAt(sc, key);
   return !!f && !f.disabled;

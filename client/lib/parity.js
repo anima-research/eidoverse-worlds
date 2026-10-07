@@ -1,16 +1,7 @@
-// parity — the shadow-mode probe (TEL0S_NOTES §11.6).
-//
-// While the migration runs two world models side by side — the legacy
-// applyEntry scene path and the pure shared-fold shadow in state.js — this
-// is the instrument that measures drift between them. House rule 1's
-// remaining mirror (shared/fold.js vs applyEntry) stops being a hope and
-// becomes a number you can print.
-//
-// Console surface: EW.foldParity() — run it in any live world, after any
-// suspect sequence of verbs. It compares the fold's OWN outputs (entity
-// ids, component bags, parents/mounts) and deliberately not realization
-// (transforms mid-motion, loaded meshes): those diverge by design while an
-// object is in flight or riding a motion comp.
+// parity — the scene against the view (EW.foldParity() in the console): does what this page DRAWS agree with the view
+// of its own fold (state.js)? Run it in any live world, after any suspect sequence of edits. It compares the fold's
+// OWN outputs (entity ids, component bags, parents) and deliberately not realization (transforms mid-motion, loaded
+// meshes): those diverge by design while an object is in flight or riding a motion.
 
 import { state } from './state.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
