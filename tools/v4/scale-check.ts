@@ -45,13 +45,17 @@ let LOAD = 1; const bound = () => BOUND_MS * LOAD;
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["supportBelow asks the index", "shared/v4/door.js", "  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {\n    if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) {\n    if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
   ["supportUnder asks the index", "shared/v4/door.js", "  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;\n    for (const s of ix.rec.get(id).surfs)", "  for (const id of Object.keys(st.entities)) { if (ignore.has(id)) continue;\n    for (const s of surfacesOf(st, id))", ["S2", "S3"]],
-  ["warnings: each thing against what its box meets", "shared/v4/door.js", "for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);", "for (const o of Object.keys(st.entities)) { if (fam.has(o) || !ix.rec.has(o)) continue; const go = ix.rec.get(o);", ["S2", "S3", "Q3"]],
-  ["a step tests what its swept box meets", "shared/v4/door.js", "for (const id of cands ?? near(st, box.min, box.max)) {", "for (const id of Object.keys(st.entities).filter((x) => spatial(st).rec.has(x))) {", ["S3"]],
+  ["warnings: each thing against what its box meets", "shared/v4/door.js", "for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);", "for (const o of Object.keys(st.entities)) { if (fam.has(o) || !ix.rec.has(o)) continue; const go = ix.rec.get(o);", ["S3", "S5"]],
+  ["a step tests what its swept box meets", "shared/v4/door.js", "const b1 = bodyBox(to); const swept = near(st, b0.min.map((v, i) => Math.min(v, b1.min[i])), b0.max.map((v, i) => Math.max(v, b1.max[i])));", "const swept = null;", ["S6"]],
   ["delete: only what stands over what's gone", "shared/v4/door.js", "for (const id of Object.keys(after.entities)) { if (!over.has(id)) continue; const b = aabb(after, id);", "for (const id of Object.keys(after.entities)) { const b = aabb(after, id);", ["S3"]],
   ["grab: only what stands over it", "shared/v4/door.js", "if (fam.has(k) || !over.has(k)) return false;", "if (fam.has(k)) return false;", ["S3"]],
-  ["place: nearest first, stopping when no ring can be nearer", "shared/v4/door.js", "if (best && r * 0.025 * (1 - 1e-6) - d0 > best.d) break;", "", ["S1", "S2", "S3"]],
+  ["place: nearest first, stopping when no ring can be nearer", "shared/v4/door.js", "            if (lb > best.d) break; }", "            }", ["S1", "S2", "S3", "Q6"]],
   ["place: the one gate before solving", "shared/v4/door.js", "if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, \"transform\", COMPONENTS.transform.defaults)]);", "", ["Q1"]],
-  ["previews are copy-on-write", "shared/v4/door.js", "const scratch = (st, ops) => applyCow(cowState(st), ops);", "const scratch = (st, ops) => applyOps(st, ops);", ["S3"]],
+  ["previews are copy-on-write", "shared/v4/door.js", "const scratch = (st, ops) => { const s = applyCow(cowState(st), ops);", "const scratch = (st, ops) => { const s = applyOps(st, ops);", ["S3"]],
+  ["a batch keeps one working copy", "shared/v4/door.js", "all.push(...ops); st = applyCow(work, ops); forget(st);", "all.push(...ops); st = scratch(st, ops);", ["S3"]],
+  ["a body box is rejected on the world's axes before the 15-axis test", "shared/v4/door.js", "if (B.h[0] + x.h[0] - Math.abs(o.c[0] - B.c[0]) <= eps || B.h[1] + x.h[1] - Math.abs(o.c[1] - B.c[1]) <= eps || B.h[2] + x.h[2] - Math.abs(o.c[2] - B.c[2]) <= eps) continue;", "if (x.min[0] > box.max[0] || x.max[0] < box.min[0] || x.min[1] > box.max[1] || x.max[1] < box.min[1] || x.min[2] > box.max[2] || x.max[2] < box.min[2]) continue; spend(10);", ["S5"]],
+  ["place: a ring's sides bound its distance", "shared/v4/door.js", "if (lb > best.d) break; }", "if (lb > best.d + 1e9) break; }", ["Q6"]],
+  ["place: every visited cell is work", "shared/v4/door.js", "const cell = (i, k) => { spend(1); const x = xs[i]", "const cell = (i, k) => { const x = xs[i]", ["Q2"]],
   ["the work budget", "shared/v4/door.js", "if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) {", "if (false) {", ["Q2", "Q3"]],
   ["a write's warnings never refuse it", "shared/v4/door.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
   ["look walks the children map", "shared/v4/door.js", "for (const k of kids.get(id) ?? []) tree(k, d + 1, n + 1); };", "for (const k of Object.keys(st.entities).filter((x) => st.entities[x].c.parent?.to === id)) tree(k, d + 1, n + 1); };", ["S4"]],
@@ -71,7 +75,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
 ];
 async function runSelf(tree: string, only: string[] | null, timeoutMs = 0) {
   const args = ["bun", path.join(ENGINE, "tools/v4/scale-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])];
-  const p = Bun.spawn(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  // a copied tree (a mutant, the base) finds the asset library where this checkout does (config.ts: EIDOVERSE_DIR)
+  const lib = process.env.EIDOVERSE_DIR ?? (await import(ENGINE + "server/config.ts")).LIBRARY_DIR;
+  const p = Bun.spawn(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", EIDOVERSE_DIR: lib }, stdout: "pipe", stderr: "pipe" });
   let timedOut = false; const t = timeoutMs ? setTimeout(() => { timedOut = true; p.kill(9); }, timeoutMs) : null;
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]); const code = await p.exited; if (t) clearTimeout(t);
   return { code, timedOut, out: out + err };
@@ -219,12 +225,13 @@ const cases: Case[] = [
       const dry = timed(() => s.call("bob", "place", { id: "mug", on: "big", dry: true })); const real = timed(() => s.call("bob", "place", { id: "mug", on: "big" }));
       return { dry: code(dry.r), dryMs: r1(dry.ms), real: code(real.r), realMs: r1(real.ms), bound: r1(bound()), why: real.r?.refused?.reason }; },
     good: (o) => o.dry === "too-costly" && o.real === "too-costly" && o.dryMs <= o.bound && o.realMs <= o.bound && /shared by every world/.test(o.why ?? "") },
-  { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget; a create into the heap still lands (its warnings say what went unchecked, if anything)", run(s) { cast(s);
+  { id: "Q3", what: "check {} on a heap of 700 things in one spot is refused too-costly inside the budget; a batch of 120 creates into the heap still lands, its warnings saying what went unchecked", run(s) { cast(s);
       fill(s, 700, () => [0, 0, 0]);
       const c = timed(() => s.call("vic", "check", {})); const one = timed(() => s.call("vic", "check", { id: "c-3" }));
-      const mk = timed(() => s.call("olive", "create", { id: "more", model: "crate", components: { transform: T0([0, 0, 0]) } }, 20000));
-      return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), create: code(mk.r), createMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities.more }; },
-    good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.create === "ok" && o.made && o.createMs <= o.bound },
+      const mk = timed(() => s.call("olive", "batch", { ops: Array.from({ length: 120 }, (_, k) => ({ tool: "create", args: { id: `more-${k}`, model: "crate", components: { transform: T0([0, 0, 0]) } } })) }, 20000));
+      return { check: code(c.r), ms: r1(c.ms), one: code(one.r), oneMs: r1(one.ms), batch: code(mk.r), batchMs: r1(mk.ms), bound: r1(bound()), made: !!s.w().state().entities["more-119"],
+        unchecked: mk.r?.warnings?.find((x: any) => x.kind === "unchecked")?.things ?? 0 }; },
+    good: (o) => o.check === "too-costly" && o.ms <= o.bound && o.one === "ok" && o.oneMs <= o.bound && o.batch === "ok" && o.made && o.unchecked > 0 && o.batchMs <= 2 * o.bound },
   { id: "Q4", what: "reads are metered per connection (server/v4/readmeter.ts): 60 in 10 s, or 1.5 s of the door's time, then refused (rate) until the window moves", run() {
       if (!RM) return { missing: true };
       const m = RM.readMeter(); const a = {}, b = {}; let t = 1000; const out: any = {};
@@ -244,6 +251,15 @@ const cases: Case[] = [
       return { ms: r1(x.ms), bound: r1(8 * bound()), settled: x.r.filter((r: any) => r.holder).length, deferred: x.r.find((r: any) => r.deferred)?.deferred ?? 0, holdsLeft: Object.keys(w.presence.holds).length }; },
     good: (o) => o.ms <= o.bound && o.settled > 0 && o.settled <= 16 && o.deferred === 400 - o.settled && o.holdsLeft === 0 },
 
+  { id: "Q6", what: "place {on, offset} far off a 1000× table, or onto one whose middle is taken, ends quickly and answers as the full search would (the nearest free spot)", run(s) { cast(s);
+      s.call("bob", "create", { id: "big", model: "table", components: { transform: T0([0, 0, 0], [1000, 1, 1000]) } });
+      s.call("bob", "create", { id: "slab", model: "crate", components: { transform: T0([0, 0.75, 0], [4, 1, 4]) } });
+      s.call("bob", "create", { id: "mug", model: "crate", components: { transform: T0([2, 0, -3000]) } });
+      const far = timed(() => s.call("bob", "place", { id: "mug", on: "big", offset: [1000, 0], attach: false, dry: true }));
+      const mid = timed(() => s.call("bob", "place", { id: "mug", on: "big", attach: false, dry: true }));
+      const at = (r: any) => r?.would?.find((o: any) => o.comp === "transform")?.value?.pos;
+      return { far: code(far.r), farMs: r1(far.ms), farAt: at(far.r), mid: code(mid.r), midMs: r1(mid.ms), midAt: at(mid.r), bound: r1(bound()) }; },
+    good: (o) => o.far === "ok" && o.mid === "ok" && o.farMs <= o.bound && o.midMs <= o.bound && Math.abs(o.farAt?.[0] - 599.7) < 0.01 && Math.abs(o.farAt?.[2]) < 0.01 && Math.abs(Math.abs(o.midAt?.[0]) - 1.5) < 0.01 && Math.abs(o.midAt?.[2]) < 0.01 },   // the nearest free spots: the edge toward the offset; beside the slab (which side: G3 compares with the full scan)
   // ---------------- C: capacity ----------------
   { id: "C1", what: "a world at capacity.things refuses what would add (full), a batch that would cross it whole; a delete frees room; other changes stay open", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 10 } });
@@ -304,25 +320,25 @@ const cases: Case[] = [
   { id: "I3", what: "a closed box measured the same way stays solid through and through: no arriving inside it, no walking into it", run(s) {
       s = session({ catalogue: withLab({ box: closedEntry() }) }); cast(s);
       s.call("olive", "create", { id: "box", model: "box", components: { transform: T0([0, 0, 0]) } });
-      return { solids: closedEntry().solids?.length ?? 0, tp: code(s.call("vic", "move", { to: [0, 0, 0] })), arrive: code(s.call("bob", "move", { to: [0, 0, 3] })), walk: code(s.call("bob", "move", { to: [0, 0, 0.5] }, 1000)) }; },
-    good: (o) => o.solids > 1 && o.tp === "solid" && o.arrive === "ok" && o.walk === "solid" },
-  { id: "I4", what: "real library GLBs through the engine's catalogue: the watchtower's open interior can be arrived in but not walked out of through its wall; the shipping container is solid", async: true, run: null as any, good: (o) => o.skipped === true || (o.inTower === "ok" && o.outWall === "solid" && o.container === "solid" && o.solids > 1) },
+      const small: number[] = []; boxTris([-0.5, 0, -0.5], [0.5, 1.6, 0.5], small);   // a cabinet: no room for a body inside, so it keeps its box
+      return { cabinet: SOL ? SOL.solidsFromTriangles(new Float32Array(small), [-0.5, 0, -0.5], [0.5, 1.6, 0.5]) : "absent", solids: closedEntry().solids?.length ?? 0, tp: code(s.call("vic", "move", { to: [0, 0, 0] })), arrive: code(s.call("bob", "move", { to: [0, 0, 3] })), walk: code(s.call("bob", "move", { to: [0, 0, 0.5] }, 1000)) }; },
+    good: (o) => o.cabinet === null && o.solids > 1 && o.tp === "solid" && o.arrive === "ok" && o.walk === "solid" },
+  { id: "I4", what: "real library GLBs through the engine's catalogue: the watchtower's open interior can be arrived in but not walked out of through its wall; the shipping container is solid", async: true, run: null as any, good: (o) => (o.skipped === true && !argv.includes("--tree")) || (o.inTower === "ok" && o.outWall === "solid" && o.container === "solid" && o.solids > 1) },
 
   // ---------------- R: re-entrancy ----------------
-  { id: "R1", what: "a request nested in another (a host callback re-entering the door with a leave, whose drops are requests too) leaves the outer call's queued script events alone", run(s) {
-      s = session({ scripts: SB.SANDBOX }); cast(s);
+  { id: "R1", what: "a request nested in another (a host callback re-entering the door with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it, and its release event too", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([0, 0, 0]), grabbable: { who: "visitor" } } });
       s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "visitor" } } });
-      const up = s.call("olive", "upload", { text: `world.on("changed:transform", (e) => world.set("self", "tally", (world.get("self", "tally") ?? 0) + 1));\n` });
-      const inst = s.call("olive", "set", { id: "mug", component: "script:watch", value: { src: up.src, scope: { ids: "self", comps: ["tally"] }, on: ["changed:transform"] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [3, 0, 0.5] });
       s.call("vic", "grab", { id: "mug" }); s.call("ann", "grab", { id: "ball" });
-      const w = s.w(); const save = w.savePresence; let nested: any = null;
-      let fired = false; w.savePresence = () => { save(); if (!fired && w.presence.holds.mug === undefined) { fired = true; nested = D.request(w, "ann", "leave", {}); } };   // during vic's put: after its state entry, before its scripts run
+      const w = s.w(); const save = w.savePresence; let nested: any = null, fired = false; const seen: any = {};
+      // during vic's put: after its state entry is queued, before the request drains its queues
+      w.savePresence = () => { save(); if (!fired && w.presence.holds.mug === undefined && w.changedQ?.length) { fired = true;
+        seen.before = [...w.changedQ]; nested = D.request(w, "ann", "leave", {}); seen.after = [...(w.changedQ ?? [])]; } };
       const put = s.call("vic", "put", { id: "mug", pos: [0.3, 0, 0.3] }); w.savePresence = save;
-      return { up: show(up), inst: show(inst), put: show(put), nested: show(nested), annLeft: !w.presence.bodies.ann, moved: w.state().entities.mug.c.tally ?? 0 }; },
-    good: (o) => o.put === "ok" && o.nested === "ok" && o.annLeft && o.moved === 1 },
+      return { put: show(put), nested: show(nested), annLeft: !w.presence.bodies.ann, before: seen.before, after: seen.after }; },
+    good: (o) => o.put === "ok" && o.nested === "ok" && o.annLeft && o.before?.length === 1 && JSON.stringify(o.after) === JSON.stringify(o.before) },
   { id: "R2", what: "…and a leave nested in another leave (a host callback during its drops) doesn't end the outer leave's settlement: its later drops are still never rate-refused", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       for (let k = 0; k < 3; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "visitor", ...(k < 2 ? { release: "return" } : {}) } } });   // two go home: the third lands alone
@@ -337,6 +353,29 @@ const cases: Case[] = [
     good: (o) => o.nested === "ok" && JSON.stringify(o.dropped) === "[true,true,true]" && o.held.length === 0 },
 
   // ---------------- G: guards ----------------
+  { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): check {}, look, and placing a book on a turned desk with a box in its middle each take under ${BOUND_MS} ms`, run(s) { cast(s);
+      const yq = (deg: number) => [0, Math.sin(deg * Math.PI / 360), 0, Math.cos(deg * Math.PI / 360)];
+      for (let d = 0; d < 300;) { const ops = []; for (let k = 0; k < 10; k++, d++) { const x = (d % 20) * 3 - 30, z = Math.floor(d / 20) * 3 - 22;
+          ops.push({ tool: "create", args: { id: `desk-${d}`, model: "table", components: { transform: { pos: [x, 0, z], q: yq(30), scale: [1.5, 1, 1.5] } } } });
+          for (let b = 0; b < 4; b++) ops.push({ tool: "create", args: { id: `bk-${d}-${b}`, model: "book", components: { transform: { pos: [x + (b - 1.5) * 0.25, 0.75, z], q: yq(30), scale: [1, 1, 1] } } } }); }
+        const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
+      s.call("olive", "create", { id: "pile", model: "crate", components: { transform: { pos: [-30, 0.75, -22], q: yq(30), scale: [1.2, 0.3, 1.2] } } }, 20000);
+      s.call("olive", "create", { id: "cup", model: "book", components: { transform: T0([40, 0, 40]) } }, 20000);
+      const ms: any = {}, codes: any = {};
+      const op = (k: string, f: (i: number) => any) => { const x = best(5, f); ms[k] = r1(x.ms); codes[k] = code(x.r); };
+      op("check", () => s.call("vic", "check", {})); op("look", () => s.call("vic", "look", {}));
+      op("place", () => s.call("bob", "place", { id: "cup", on: "desk-0", dry: true }));
+      return { ms, codes, bound: r1(bound()) }; },
+    good: (o) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound) && JSON.stringify(o.codes) === '{"check":"ok","look":"ok","place":"ok"}' },
+  { id: "S6", what: `a 4 m step beside 800 small things at body height (books on shelves) takes under ${BOUND_MS} ms, and one into them is refused (solid) as fast`, run(s) { cast(s);
+      for (let made = 0; made < 800;) { const ops = []; for (let k = 0; k < 50 && made < 800; k++, made++) ops.push({ tool: "create", args: { id: `b-${made}`, model: "book", components: { transform: T0([2.2 + (made % 10) * 0.06, 0.9 + (Math.floor(made / 100) % 8) * 0.1, 2.2 + (Math.floor(made / 10) % 10) * 0.06]) } } });
+        const r = s.call("olive", "batch", { ops }, 20000); if (!ok(r)) return { fill: show(r) }; }
+      s.call("vic", "move", { to: [0, 0, 2.8] }, 5000);
+      const past = best(5, (i) => s.call("vic", "move", { to: i % 2 ? [0, 0, 2.8] : [2.8, 0, 0] }, 2000));
+      s.call("vic", "move", { to: [0, 0, 2.8], teleport: true }, 5000);
+      const into = best(5, () => s.call("vic", "move", { to: [2.5, 0, 2.5] }, 2000));
+      return { ms: { past: r1(past.ms), into: r1(into.ms) }, past: code(past.r), into: code(into.r), bound: r1(bound()) }; },
+    good: (o) => o.past === "ok" && o.into === "solid" && o.ms.past <= o.bound && o.ms.into <= o.bound },
   { id: "S4", what: `look over 2 000 things: the first 40 in the tree's order and the total, in under ${BOUND_MS} ms`, run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "capacity", value: { things: 2400 } });
       fill(s, 2000); for (let k = 0; k < 3; k++) s.call("olive", "create", { id: `kid-${k}`, model: "book", components: { parent: { to: "c-0" }, transform: T0([0, 0.6, 0]) } });
@@ -381,7 +420,7 @@ if (argv.includes("--control")) {
 // the G3 scenario: every reply, with what differs between runs by design (chain heads, salts) left out
 function scenario() {
   // (and log positions: a refused move is no longer recorded, so the seqs after one shift by design)
-  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act"].includes(k) ? undefined : v)));
+  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause"].includes(k) ? undefined : v)));
   const c = (who: string, tool: string, args: any = {}, step = 200) => { const r = s.call(who, tool, args, step); out.push([who, tool, strip(r)]); return r; };
   cast(s); c("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
   fill(s, 100, (i) => [(i % 10) * 2.5 - 12, 0, Math.floor(i / 10) * 2.5 - 12]);
@@ -403,6 +442,10 @@ function scenario() {
   c("vic", "move", { to: [35, 0, 5.4], teleport: true }, 4000); c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug", pos: [35, 0.75, 5.3] }, 1000);
   c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug" }, 1000); c("vic", "move", { to: [21, 0, 4.4], teleport: true }, 4000); c("vic", "grab", { id: "cr-1" }, 1000);
   c("vic", "check", {}); c("vic", "look", { limit: 300 });
+  // a table scaled 12× with a slab in its middle: the nearest free spot, with and without offsets (one far off it)
+  c("ann", "create", { id: "wide", model: "table", components: { transform: T0([60, 0, 60], [12, 1, 12]) } }, 2000); c("ann", "create", { id: "slab", model: "crate", components: { transform: T0([60, 0.75, 60], [4, 1, 4]) } }, 2000);
+  for (const off of [undefined, [1000, 0], [0.3, -0.7], [-2, 2]]) c("ann", "place", { id: "c-50", on: "wide", ...(off ? { offset: off } : {}), dry: true });
+  c("ann", "place", { id: "c-50", on: "wide", facing: "slab" }, 2000);
   return out;
 }
 async function realGlbs() {

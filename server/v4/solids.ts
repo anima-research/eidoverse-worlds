@@ -10,16 +10,16 @@
 //      are enclosed (a crate's inside, a closed hut's) and count as solid: a door can't take a body into a closed box.
 //      A house with a doorway is reached through it, so its rooms stay open;
 //   3. the solid cells are merged greedily into boxes (x, then z, then y), each the union of its cells' bounds.
-// Small models (nothing as big as a body) and anything past the limits keep their bounding box (null): conservative,
-// and what the door did before.
+// Only models with room for a body inside them are measured (at least minHeight tall and minSpan across): furniture
+// and props keep their bounding box, as does anything past the limits (null): conservative, and what the door did before.
 type V3 = [number, number, number];
-export const SOLIDS = { minSize: 1.5, maxBoxes: 256, maxCells: 160_000, maxSamples: 6_000_000, cellsAcross: 32, minCell: 0.08 };
+export const SOLIDS = { minHeight: 2, minSpan: 2, maxBoxes: 128, maxCells: 160_000, maxSamples: 6_000_000, cellsAcross: 32, minCell: 0.08 };
 
 /** Boxes [[lo], [hi]] in the model's frame covering what's solid in `soup` (x,y,z per vertex, 3 vertices per triangle),
  *  or null when the bounding box should stand (small, too big to measure, or too many boxes). */
 export function solidsFromTriangles(soup: ArrayLike<number>, min: number[], max: number[]): number[][][] | null {
   const size = [0, 1, 2].map((i) => max[i] - min[i]); const big = Math.max(...size);
-  if (!(big >= SOLIDS.minSize) || !size.every(Number.isFinite) || soup.length < 9) return null;
+  if (!(size[1] >= SOLIDS.minHeight && Math.max(size[0], size[2]) >= SOLIDS.minSpan) || !size.every(Number.isFinite) || soup.length < 9) return null;
   for (let cell = Math.max(big / SOLIDS.cellsAcross, SOLIDS.minCell); cell <= big / 3; cell *= 1.5) {
     const r = attempt(soup, min, size, cell);
     if (r === "too-big") return null;

@@ -29,7 +29,7 @@ async function measure(lib: string): Promise<void> {
   let entry: Entry = { label, surfaces: [] };
   try {
     const file = resolveLibFile(lib);
-    const sum = file ? await summarizeGlb(file) : null;
+    const sum = file ? await summarizeGlb(file, { solids: true }) : null;
     const bb = sum?.bbox;
     if (bb && [...bb.min, ...bb.max].every(Number.isFinite)) {
       const box = [bb.min.map(r3), bb.max.map(r3)];

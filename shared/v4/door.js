@@ -256,17 +256,23 @@ function obbs(st, id) {
 }
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const satCost = (A, B) => (isI(A.ax) && isI(B.ax) ? 1 : 80);   // work units (the spatial index's budget)
+const satCost = (A, B) => (isI(A.ax) && isI(B.ax) ? 1 : 10);   // work units (the spatial index's budget): measured 0.1 / 1 µs
 const NONE = new Set();
 const isI = (ax) => ax[0][0] === 1 && ax[0][1] === 0 && ax[0][2] === 0 && ax[1][0] === 0 && ax[1][1] === 1 && ax[1][2] === 0 && ax[2][0] === 0 && ax[2][1] === 0 && ax[2][2] === 1;
 function satDepth(A, B) { // smallest penetration over the 15 axes; <= 0 means separated
   // two unrotated boxes (most pairs): the 15 axes are the world's three, so the same numbers in the same order, without
   // building them (a place's search tests thousands of pairs)
   if (isI(A.ax) && isI(B.ax)) { let b = Infinity; for (let i = 0; i < 3; i++) { const p = A.h[i] + B.h[i] - Math.abs(B.c[i] - A.c[i]); if (p < b) b = p; if (b <= 0) return b; } return b; }
-  const d = B.c.map((v, i) => v - A.c[i]); let best = Infinity;
-  const axes = [...A.ax, ...B.ax]; for (const a of A.ax) for (const b of B.ax) { const c = crs(a, b); const n = Math.hypot(...c); if (n > 1e-6) axes.push(c.map((v) => v / n)); }
-  for (const L of axes) { const ra = A.h.reduce((t, h, i) => t + h * Math.abs(dot(A.ax[i], L)), 0), rb = B.h.reduce((t, h, i) => t + h * Math.abs(dot(B.ax[i], L)), 0);
-    const p = ra + rb - Math.abs(dot(d, L)); if (p < best) best = p; if (best <= 0) return best; }
+  // the general case: the same axes in the same order (A's, B's, then their normalized cross products) and the same
+  // sums in the same order as ever (ra and rb summed from 0), without allocating them (a rotated pair cost ~8 µs)
+  const Ah = A.h, Bh = B.h, Aa = A.ax, Ba = B.ax; const d0 = B.c[0] - A.c[0], d1 = B.c[1] - A.c[1], d2 = B.c[2] - A.c[2]; let best = Infinity;
+  const p = (L0, L1, L2) => (0 + Ah[0] * Math.abs(Aa[0][0] * L0 + Aa[0][1] * L1 + Aa[0][2] * L2) + Ah[1] * Math.abs(Aa[1][0] * L0 + Aa[1][1] * L1 + Aa[1][2] * L2) + Ah[2] * Math.abs(Aa[2][0] * L0 + Aa[2][1] * L1 + Aa[2][2] * L2))
+    + (0 + Bh[0] * Math.abs(Ba[0][0] * L0 + Ba[0][1] * L1 + Ba[0][2] * L2) + Bh[1] * Math.abs(Ba[1][0] * L0 + Ba[1][1] * L1 + Ba[1][2] * L2) + Bh[2] * Math.abs(Ba[2][0] * L0 + Ba[2][1] * L1 + Ba[2][2] * L2))
+    - Math.abs(d0 * L0 + d1 * L1 + d2 * L2);
+  for (const ax of [Aa, Ba]) for (let i = 0; i < 3; i++) { const q = p(ax[i][0], ax[i][1], ax[i][2]); if (q < best) best = q; if (best <= 0) return best; }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const a = Aa[i], b = Ba[j];
+    const c0 = a[1] * b[2] - a[2] * b[1], c1 = a[2] * b[0] - a[0] * b[2], c2 = a[0] * b[1] - a[1] * b[0]; const n = Math.hypot(c0, c1, c2); if (!(n > 1e-6)) continue;
+    const q = p(c0 / n, c1 / n, c2 / n); if (q < best) best = q; if (best <= 0) return best; }
   return best;
 }
 const boxToObb = (b) => ({ c: [0, 1, 2].map((i) => (b.min[i] + b.max[i]) / 2), ax: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], h: [0, 1, 2].map((i) => (b.max[i] - b.min[i]) / 2) });
@@ -301,7 +307,7 @@ function surfacesOf(st, id) {
 // box test ≈ 1, a rotated one ≈ 80, a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
 // clock backstop (WORK_BUDGET.ms from the call's start, read every 64 units) bounds a host that is far slower. Past
 // either, a read or a solver is refused (too-costly) rather than holding every world's thread.
-export const WORK_BUDGET = { units: 250000, ms: 150 };
+export const WORK_BUDGET = { units: 350000, ms: 150 };
 const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
 let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
 const spend = (n, what = WORK.what ?? "this", teach = "ask about less at once: check {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
@@ -318,7 +324,8 @@ function geoOf(st, id) {
   if (g && g.id === id && g.m === m && g.chain.length === chain.length && g.chain.every((x, i) => x === chain[i])) return g;
   const box = m ? aabb(st, id) : null; const ob = box ? obbs(st, id) : []; const surfs = box ? surfacesOf(st, id) : [];
   // each oriented box's own world AABB (a cheap reject before the 15-axis test), and the box the grid files it under
-  const ext = ob.map((o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; });
+  // (h: its projected half-size on each world axis, summed as satDepth sums it, so hitsIx can reject on it exactly)
+  const ext = ob.map((o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { h, min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; });
   let q = null;
   if (box) { q = { min: box.min.slice(), max: box.max.slice() };
     for (const x of ext) for (let i = 0; i < 3; i++) { q.min[i] = Math.min(q.min[i], x.min[i]); q.max[i] = Math.max(q.max[i], x.max[i]); }
@@ -422,12 +429,14 @@ function near(st, min, max) {
   spend(10 + cand.length + (cand.length >> 2));
   return out;
 }
-// hits(), through the index's cached boxes: the same 15-axis test, after each box's cheap AABB reject
-function hitsIx(st, box, id, eps) {
-  const g = spatial(st).rec.get(id); if (!g) return false; const B = boxToObb(box); spend(10);
-  for (let k = 0; k < g.obbs.length; k++) { const x = g.ext[k];
-    if (x.min[0] > box.max[0] || x.max[0] < box.min[0] || x.min[1] > box.max[1] || x.max[1] < box.min[1] || x.min[2] > box.max[2] || x.max[2] < box.min[2]) continue;
-    spend(satCost(B, g.obbs[k])); if (satDepth(B, g.obbs[k]) > eps) return true; }
+// hits(), through the index's cached boxes. The query box is axis-aligned, so the world's three axes are among the 15
+// the test takes its minimum over: a penetration of eps or less along one of them (the same numbers satDepth would
+// compute there: half-sizes summed, less the centres' distance) is already the answer. Only the rest run the full test.
+function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an oriented box (a caller testing many may pass its own)
+  const g = spatial(st).rec.get(id); if (!g) return false;
+  for (let k = 0; k < g.obbs.length; k++) { const x = g.ext[k], o = g.obbs[k]; spend(1);
+    if (B.h[0] + x.h[0] - Math.abs(o.c[0] - B.c[0]) <= eps || B.h[1] + x.h[1] - Math.abs(o.c[1] - B.c[1]) <= eps || B.h[2] + x.h[2] - Math.abs(o.c[2] - B.c[2]) <= eps) continue;
+    spend(satCost(B, o)); if (satDepth(B, o) > eps) return true; }
   return false;
 }
 // descendants() through the index's children map (a set: callers here only ask membership)
@@ -543,10 +552,10 @@ function wire(args) {
 // and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
 // the door's own work.
 function enter(w, actor) {
-  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now };
+  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
   CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w; WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
   ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
-  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; };
+  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; w.pinTs = saved.pinTs; };
 }
 export function request(w, actor, tool, args = {}) {
   const exit = enter(w, actor);
@@ -566,7 +575,8 @@ export function request(w, actor, tool, args = {}) {
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     if (w.exists && tool !== "help" && isBanned(w, actor)) refuse("banned", `${actor} is banned from this world`, "the moderator log says so; ask a moderator");
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
-    if (h && w.exists) { settleSim(w); returnDue(w); expireAsks(w); }
+    // the door's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them
+    if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
@@ -1268,11 +1278,15 @@ function buildPlace(ctx, a) {
   const S = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], C = [(hi[0] + lo[0]) / 2, 0, (hi[2] + lo[2]) / 2];
   const half = (y) => { const c = Math.abs(Math.cos(y)), s = Math.abs(Math.sin(y)); const hx = S[0] / 2, hz = S[2] / 2; return [c * hx + s * hz, s * hx + c * hz]; };
   // `local`: what meets the whole region a search tests (its key order kept), so each spot filters that instead of asking
-  const free = (x, y, z, yw, ignore, local = null) => { const [hx, hz] = half(yw); const box = { min: [x - hx, y, z - hz], max: [x + hx, y + S[1], z + hz] };
+  // a search reuses one box and its oriented twin (the same numbers boxToObb gives), so a spot costs no allocations
+  const QB = { min: [0, 0, 0], max: [0, 0, 0] }, QO = { c: [0, 0, 0], ax: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], h: [0, 0, 0] };
+  const free = (x, y, z, yw, ignore, local = null) => { const [hx, hz] = half(yw);
+    const box = local ? QB : { min: [0, 0, 0], max: [0, 0, 0] }; box.min[0] = x - hx; box.min[1] = y; box.min[2] = z - hz; box.max[0] = x + hx; box.max[1] = y + S[1]; box.max[2] = z + hz;
+    const B = local ? QO : null; if (B) for (let i = 0; i < 3; i++) { B.c[i] = (box.min[i] + box.max[i]) / 2; B.h[i] = (box.max[i] - box.min[i]) / 2; }
     const ix = local && spatial(st);
     for (const id of local ?? near(st, box.min, box.max)) { if (fam.has(id) || ignore.has(id)) continue;
       if (local) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; spend(1); }
-      if (hitsIx(st, box, id, 0.01)) return id; } return null; };
+      if (B ? hitsIx(st, box, id, 0.01, B) : hitsIx(st, box, id, 0.01)) return id; } return null; };
   const relaxed = []; let pos, support;
   // a TARGET is aimed at by its bounds centre, never its origin: a library model's origin is wherever its author left it
   // (agent lab, 10-04: "near the desk, facing it" aimed at an origin 2.46 m off the desk and faced air; a swing hung from
@@ -1285,7 +1299,7 @@ function buildPlace(ctx, a) {
     if (!surfs.length) refuse("no-surface", `${a.on} has no surface to put things on`, `measure {id: '${a.on}'} shows its surfaces`);
     const s = surfs[a.level ?? surfs.length - 1] ?? refuse("no-surface", `${a.on} has levels 0–${surfs.length - 1}`, "");
     const want = a.offset ? [(s.min[0] + s.max[0]) / 2 + a.offset[0], (s.min[1] + s.max[1]) / 2 + a.offset[1]] : [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
-    let best = null, lastBlock = null;
+    let best = null, lastBlock = null; const whatWas = WORK.what;
     for (let pass = 0; pass < 2; pass++) {
       const [hx, hz] = half(yaw);
       // the 2.5 cm grid as ever (positions by the same running sum), searched nearest-first: ring by ring out from the
@@ -1297,20 +1311,29 @@ function buildPlace(ctx, a) {
       const xs = [], zs = []; for (let x = s.min[0] + hx; x <= s.max[0] - hx + 1e-9; x += 0.025) xs.push(x); for (let z = s.min[1] + hz; z <= s.max[1] - hz + 1e-9; z += 0.025) zs.push(z);
       const nx = xs.length, nz = zs.length; let lastIdx = -1;
       const nearestIx = (arr, v) => { let lo = 0, hi = arr.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; } return lo > 0 && Math.abs(arr[lo - 1] - v) <= Math.abs(arr[lo] - v) ? lo - 1 : lo; };
-      if (nx && nz) { const ci = nearestIx(xs, want[0]), ck = nearestIx(zs, want[1]); const d0 = Math.hypot(xs[ci] - want[0], zs[ck] - want[1]);
+      if (nx && nz) { const ci = nearestIx(xs, want[0]), ck = nearestIx(zs, want[1]);
         WORK.what = `finding room for ${a.id} on ${a.on}`;
         const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
-        const cell = (i, k) => { const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;
+        const cell = (i, k) => { spend(1); const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;   // every cell visited is work
           if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
-          spend(1);
-          const bl = free(x, s.y, z, yaw, NONE, local); if (!bl) best = { x, z, d, idx }; else if (idx > lastIdx) { lastIdx = idx; lastBlock = bl; } };
+          spend(4); const bl = free(x, s.y, z, yaw, NONE, local); if (!bl) best = { x, z, d, idx }; else if (idx > lastIdx) { lastIdx = idx; lastBlock = bl; } };
+        // the nearest any cell of a ring's side (columns i0..i1 of a row, or rows k0..k1 of a column) can be to `want`:
+        // a ring's cells are never nearer than its sides' clamp, and no ring is nearer than the one inside it (each of
+        // its cells has a neighbour a step toward the centre cell that is at least as near), so the search ends at the
+        // first ring whose sides are all further than the best found
+        const side = (i0, i1, k0, k1) => Math.hypot(Math.min(Math.max(want[0], xs[i0]), xs[i1]) - want[0], Math.min(Math.max(want[1], zs[k0]), zs[k1]) - want[1]);
         for (let r = 0, R = Math.max(ci, nx - 1 - ci, ck, nz - 1 - ck); r <= R; r++) {
-          if (best && r * 0.025 * (1 - 1e-6) - d0 > best.d) break;
+          const i0 = Math.max(0, ci - r), i1 = Math.min(nx - 1, ci + r), k0 = Math.max(0, ck - r), k1 = Math.min(nz - 1, ck + r);
+          if (best) { let lb = Infinity;
+            for (const k of [ck - r, ck + r]) if (k >= 0 && k < nz) lb = Math.min(lb, side(i0, i1, k, k));
+            for (const i of [ci - r, ci + r]) if (i >= 0 && i < nx) lb = Math.min(lb, side(i, i, k0, k1));
+            if (lb > best.d) break; }
           if (r === 0) { cell(ci, ck); continue; }
-          for (const k of [ck - r, ck + r]) if (k >= 0 && k < nz) for (let i = Math.max(0, ci - r); i <= Math.min(nx - 1, ci + r); i++) cell(i, k);
+          for (const k of [ck - r, ck + r]) if (k >= 0 && k < nz) for (let i = i0; i <= i1; i++) cell(i, k);
           for (const i of [ci - r, ci + r]) if (i >= 0 && i < nx) for (let k = Math.max(0, ck - r + 1); k <= Math.min(nz - 1, ck + r - 1); k++) cell(i, k); } }
       if (!best) break; if (a.facing && pass === 0) { yaw = faceYaw([best.x, 0, best.z]); best = null; } else break;
     }
+    WORK.what = whatWas;
     if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${r3(2 * hx)}×${r3(2 * hz)} m) doesn't fit free on ${a.on}'s level ${s.level} (${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m)${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
     if (best.d > 0.01) relaxed.push(`moved ${r3(best.d)} m from where you asked to stay clear and fully supported`);
     pos = [best.x, s.y, best.z]; support = a.on; if (a.attach === undefined) a.attach = true; // things rest on what supports them
@@ -1397,7 +1420,7 @@ function buildPlace(ctx, a) {
 // is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
-  const out = []; const ix = spatial(st); const pairs = new Set();
+  const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
   const B = boundsOf(st); let k = 0; const was = WORK.what; WORK.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
   for (; k < ids.length; k++) { const id = ids[k];
@@ -1405,11 +1428,11 @@ function warnings(st, ids, strict = false) {
     const fam = familyOf(st, id); // a parent is NOT exempt: a bell inside its lamp pole is still inside it
     const mine = g.obbs;
     for (const o of near(st, g.q.min, g.q.max)) { if (fam.has(o)) continue; const go = ix.rec.get(o);
-      const pair = [];
-      for (let i = 0; i < mine.length; i++) for (let j = 0; j < go.obbs.length; j++) { const x = g.ext[i], y = go.ext[j];
+      let deepest = -Infinity;   // the deepest of this pair's box overlaps past 2 cm (none: -Infinity)
+      for (let i = 0; i < mine.length; i++) for (let j = 0; j < go.obbs.length; j++) { const x = g.ext[i], y = go.ext[j]; spend(1);
         if (x.min[0] > y.max[0] || x.max[0] < y.min[0] || x.min[1] > y.max[1] || x.max[1] < y.min[1] || x.min[2] > y.max[2] || x.max[2] < y.min[2]) continue;
-        spend(satCost(mine[i], go.obbs[j])); const p = satDepth(mine[i], go.obbs[j]); if (p > 0.02) pair.push(p); }
-      if (pair.length && !pairs.has(`${o}\u0000${id}`)) { out.push({ id, kind: "overlap", with: o, by: r3(Math.max(...pair)) }); pairs.add(`${id}\u0000${o}`); } }
+        spend(satCost(mine[i], go.obbs[j])); const p = satDepth(mine[i], go.obbs[j]); if (p > 0.02 && p > deepest) deepest = p; }
+      if (deepest > -Infinity && !pairs.get(o)?.has(id)) { spend(10); out.push({ id, kind: "overlap", with: o, by: r3(deepest) }); let m = pairs.get(id); if (!m) pairs.set(id, (m = new Set())); m.add(o); } }
     const cx = (b.min[0] + b.max[0]) / 2, cz = (b.min[2] + b.max[2]) / 2;
     const sup = supportBelow(st, cx, cz, b.min[1], fam);
     const hungFrom = ancestors(st, id).find((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.max[1] > b.max[1]; });
@@ -2353,8 +2376,11 @@ const TRACK = { speed: 6, cap: 4, step: 0.8, radius: 0.2, height: 1.7, spawnR: 2
 function bodyBox(p) { return { min: [p[0] - TRACK.radius, p[1] + TRACK.step, p[2] - TRACK.radius], max: [p[0] + TRACK.radius, p[1] + TRACK.height, p[2] + TRACK.radius] }; }
 // both ask the spatial index: only what the body's box (or the whole step's swept box) meets is tested (review 10-06 S0-2)
 function solidAt(w, st, p, except = new Set(), cands = null) {
-  const box = bodyBox(p); const held = w.presence.holds;
-  for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id)) continue; if (hitsIx(st, box, id, 0.01)) return id; }
+  const box = bodyBox(p); const held = w.presence.holds; const ix = cands && spatial(st);
+  if (cands) spend(1 + (cands.length >> 3));   // a sub-step filters the step's candidates by box first
+  for (const id of cands ?? near(st, box.min, box.max)) { if (id === "@world" || Object.hasOwn(held, id) || except.has(id)) continue;
+    if (cands) { const q = ix.rec.get(id).q; if (q.min[0] > box.max[0] || q.max[0] < box.min[0] || q.min[1] > box.max[1] || q.max[1] < box.min[1] || q.min[2] > box.max[2] || q.max[2] < box.min[2]) continue; }
+    if (hitsIx(st, box, id, 0.01)) return id; }
   return null;
 }
 function pathBlocked(w, st, from, to) {

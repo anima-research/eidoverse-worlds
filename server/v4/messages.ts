@@ -45,6 +45,10 @@ export function whois(w: World, args: Any) {
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
 const reads = readMeter(); // per connection: reads and dry runs, by count and door time (security pass 2 H-A)
+// …and every request by door time: a refused step or write is cheap now, but nothing else bounds how much of the shared
+// thread one connection's stream of them takes (a guest is a fresh identity per connection, so the door's per-identity
+// rate doesn't either). 3 s of 10 is far past any person's or agent's real use.
+const busy = readMeter({ n: Infinity, ms: 3000, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
 /** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */
 function recordRefusal(c: Client): boolean {
@@ -87,13 +91,15 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (c.spectator && !READS.has(tool)) { reply({ ok: false, refused: { code: "spectator", reason: "spectators may read, not write", teach: "join embodied" } }); return; }
     const metered = READS.has(tool) || args.dry === true;
     let mark: { ms: number } | null = null;
-    if (metered) { const no = reads.check(c, Date.now()); if (no) { reply({ ok: false, refused: no }); return; } mark = reads.record(c, Date.now()); }
+    { const no = (metered ? reads.check(c, Date.now()) : null) ?? busy.check(c, Date.now()); if (no) { reply({ ok: false, refused: no }); return; } }
+    if (metered) mark = reads.record(c, Date.now());
+    const spent = busy.record(c, Date.now());
     if (tool === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the door's world
     inOrder(c, ws, async () => {
       if (c.world !== w) return;
       const wasBanned = (tool === "ban" || tool === "unban") && typeof args.who === "string" ? isBanned(w.v4!.live, String(args.who)) : false;
       const r = await w.v4!.request(actorOf(c), tool, args);
-      if (mark) mark.ms = (r && typeof r === "object" && doorTime.get(r)) || 0;
+      const ms = (r && typeof r === "object" && doorTime.get(r)) || 0; if (mark) mark.ms = ms; spent.ms = ms;
       reply(r);
       // the flight recorder hears every refusal (world_debug, /debug): the door logs refused WRITES as attempt acts, but
       // a read's, a rate limit's or a ban's refusal went nowhere a person debugging could see (Commons audit, agents #5)

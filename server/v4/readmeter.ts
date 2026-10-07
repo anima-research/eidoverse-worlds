@@ -18,7 +18,7 @@ export function readMeter(limits = READ) {
     check(who: object, now: number) {
       const a = recent(who, now); const ms = a.reduce((s, m) => s + m.ms, 0);
       if (a.length >= limits.n) return { code: "rate", reason: `this connection has made ${a.length} reads in ${limits.window / 1000} s (at most ${limits.n})`, teach: "slow down: a read answers until something changes (the world's updates arrive on their own)" };
-      if (ms >= limits.ms) return { code: "rate", reason: `this connection's reads took ${Math.round(ms)} ms of the server's time in ${limits.window / 1000} s (at most ${limits.ms}; every world shares it)`, teach: "ask about less at once (check {id}, look {limit}), and less often" };
+      if (ms >= limits.ms) return { code: "rate", reason: `this connection's ${limits.n === Infinity ? "requests" : "reads"} took ${Math.round(ms)} ms of the server's time in ${limits.window / 1000} s (at most ${limits.ms}; every world shares it)`, teach: "ask about less at once (check {id}, look {limit}), and less often" };
       return null;
     },
     /** count one read as it arrives (a burst is counted before any of it runs); set .ms on the mark when the door answers */

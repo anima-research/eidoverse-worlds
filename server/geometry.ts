@@ -106,17 +106,18 @@ export type GeomSummary = {
   solids?: number[][][];
 };
 
-const cache = new Map<string, { mtime: number; sum: GeomSummary }>();
+const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolean }>();
 const CACHE_MAX = 64;
 const SAMPLE_ABOVE_TRIS = 500_000;
 const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
-/** Summarize one GLB file. Returns null when parsing is unavailable/fails. */
-export async function summarizeGlb(absPath: string): Promise<GeomSummary | null> {
+/** Summarize one GLB file. Returns null when parsing is unavailable/fails. `solids`: also measure its solid parts
+ *  (server/v4/solids.ts; only the door's catalogue asks: it costs the thread, so no other caller pays for it). */
+export async function summarizeGlb(absPath: string, opts: { solids?: boolean } = {}): Promise<GeomSummary | null> {
   let mtime = 0;
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
   const hit = cache.get(absPath);
-  if (hit && hit.mtime === mtime) return hit.sum;
+  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) return hit.sum;
   const io = await getIO();
   if (!io) return null;
   let doc: any;
@@ -161,7 +162,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
   const stride = tris > SAMPLE_ABOVE_TRIS ? Math.ceil(tris / SAMPLE_ABOVE_TRIS) : 1;
 
   // the triangles in the model frame, for its solid parts (server/v4/solids.ts), when the mesh is walked whole
-  const soup = tris <= SOLIDS_MAX_TRIS ? new Float32Array(tris * 9) : null; let soupN = 0;
+  const soup = opts.solids && tris <= SOLIDS_MAX_TRIS ? new Float32Array(tris * 9) : null; let soupN = 0;
   // Flat zones bucketed by height (2.5cm) — up-facing triangles only.
   const buckets = new Map<number, { area: number; x: [number, number]; z: [number, number]; ySum: number; n: number }>();
   const nodes: GeomSummary["nodes"] = [];
@@ -419,7 +420,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     ...(orphans.length ? { orphans } : {}),
     ...(solids ? { solids } : {}),
   };
-  cache.set(absPath, { mtime, sum });
+  cache.set(absPath, { mtime, sum, solids: !!opts.solids });
   if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
   return sum;
 }
