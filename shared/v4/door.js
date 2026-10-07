@@ -2403,7 +2403,7 @@ function buildPublish(ctx, a, w) {
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
   const ids = [a.from, ...descendants(ctx.st, a.from)];
-  const keyOf = (id) => ctx.st.entities[id].c.blueprint?.key ?? id;
+  const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c.blueprint?.from);
   const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
     if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
@@ -2416,9 +2416,11 @@ function buildPublish(ctx, a, w) {
 }
 function publishGroup(ctx, a, w, roots) {
   // a group of siblings: the record gets a root part at their footprint centre on the ground; the world is untouched
-  const keyOf = (id) => ctx.st.entities[id].c.blueprint?.key ?? id;
-  const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const all = [...new Set(roots.flatMap((r) => [r, ...descendants(ctx.st, r)]))];
+  // re-publishing a group copy's members (siblings under one copy) keeps their keys, as a single publish does
+  const up = roots.map((r) => ctx.st.entities[r].c.parent?.to); const lineage = up[0] && up.every((p) => p === up[0]) ? ctx.st.entities[up[0]]?.c.blueprint?.from : undefined;
+  const keyOf = partKeys(ctx.st, all, lineage, ["root"]);
+  const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
     ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c.blueprint;
       if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
@@ -2427,6 +2429,21 @@ function publishGroup(ctx, a, w, roots) {
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
   const hash = w.putBlob(record); ctx.notes.push({ record: hash, parts: parts.length, roots: roots.length }); ctx.refs.add("@world");
   return [setOp("@world", libKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
+}
+// A record's part keys, unique within it (review 10-07 N1: a table holding two copies of a published leg got the keys
+// [top, leg, leg], and no copy of it could ever be placed). A part keeps the key it was copied as (blueprint.key) only
+// when it comes from the same record as what's being published (`lineage`: re-publishing an edited copy, so update {copy,
+// to} still matches part to part); a part nested from another record (a leg inside the table) is keyed by its id. Those
+// come first, so a nested part never takes a key the lineage needs; a key already taken falls back to the id, then to the
+// id with a number. Returns id → key.
+function partKeys(st, ids, lineage, reserved = []) {
+  const taken = new Set(reserved); const out = new Map();
+  const own = (id) => { const b = st.entities[id].c.blueprint; return lineage !== undefined && b?.from === lineage && typeof b.key === "string" ? b.key : null; };
+  for (const pass of [true, false]) for (const id of ids) { if (out.has(id) || !!own(id) !== pass) continue;
+    const want = own(id) ?? id; const k = taken.has(want) ? null : want;
+    let key = k ?? (taken.has(id) ? null : id); for (let n = 2; key === null; n++) if (!taken.has(`${id}-${n}`)) key = `${id}-${n}`;
+    taken.add(key); out.set(id, key); }
+  return (id) => out.get(id) ?? id;
 }
 // Ids for a copy's parts: minted, so they follow §2.3; which part is which lives in each part's blueprint.key.
 function partIds(st, copy, rootKey, keys) {
@@ -2489,12 +2506,16 @@ function buildCreateFrom(ctx, a) {
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(ctx.st, id, rec.root, rec.parts.map((p) => p.key));
+  // a record published before part keys were unique (N1) may name a key twice: each later twin gets an id of its own
+  // (a part that names a twin as its parent rides the first; there's no telling which was meant)
+  const seen = new Set(), used = new Set([...ids.values()]); const idAt = rec.parts.map((p) => { if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }
+    let n = 2, x; do x = `${ids.get(p.key)}`.slice(0, 60) + `-${n++}`; while (used.has(x) || ctx.st.entities[x]); used.add(x); return x; });
   const ops = [];
-  for (const p of rec.parts) { const c = clone(p.components);
-    if (p.key === rec.root) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
+  for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
+    if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
     c.blueprint = { from: a.from, key: p.key };
-    ops.push(...createOps(ids.get(p.key), c)); ctx.refs.add(ids.get(p.key)); }
+    ops.push(...createOps(idAt[i], c)); ctx.refs.add(idAt[i]); }
   return ops;
 }
 

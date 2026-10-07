@@ -24,11 +24,15 @@ const BASE = "7f1f1934";
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const ONLY = opt("only")?.split(",") ?? null;
 
-// [name, file, find, replace, cases that must turn red]
+// [name, file, find, replace, cases that must turn red]. Not listed: partKeys' lineage-first order (a defence: it keeps
+// a re-published copy's own parts on their keys when a nested part names the same key; the dedupe alone already makes
+// N1/N2 place, and G1 holds the re-publish).
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["the door reads a building's walls", "shared/v4/door.js", "const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));", "const geomE = (e) => geomOf(e?.c.model);", ["W1", "W2", "W3"]],
   ["a doorway is the absence of a box (every wall edge solid)", "shared/structure.js", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(...wallBoxes(edge, ap, g, floorY));", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(edgeSpan(edge.axis, (edge.axis === 0 ? edge.z : edge.x) * g.tile, (edge.axis === 0 ? edge.x : edge.z) * g.tile, (edge.axis === 0 ? edge.x + 1 : edge.z + 1) * g.tile, -g.wallT / 2, g.wallT / 2, floorY, floorY + g.wallH, edge.mat, 'wall'));", ["W1", "W2"]],
   ["floors are surfaces", "shared/v4/door.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
+  ["a key already taken falls back (no twins)", "shared/v4/door.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
+  ["an old record's twin keys each get an id", "shared/v4/door.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
 function copyTree(tag: string) {
@@ -137,6 +141,70 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       return r; },
     good: (o) => o.book === "ok" && o.bookWarn.length === 0 && o.placed === "ok" && Math.abs(o.placedY - 0.1) < 0.011 && o.stuckWarn.includes("overlap:home") },
 
+  // ---------------- N: nested blueprints ----------------
+  { id: "N1", what: "publish a leg, copy it twice under a table top, publish the top: every copy of the table places, each part with its own fresh id, the legs riding the top", run(s) { cast(s);
+      const r: any = {};
+      s.call("bob", "create", { id: "leg", model: "crate", components: { transform: T0([0, 0, 0]), label: "a leg" } });
+      const legRec = s.call("bob", "publish", { from: "leg", name: "leg" }); r.legRec = show(legRec);
+      const legHash = legRec.notes?.find((n: any) => n.record)?.record;
+      s.call("bob", "create", { id: "top", model: "table", components: { transform: T0([5, 0, 5]), label: "a table top" } });
+      const l1 = s.call("bob", "create", { from: legHash, at: { pos: [4, 0, 4] } }), l2 = s.call("bob", "create", { from: legHash, at: { pos: [6, 0, 6] } });
+      r.copies = [show(l1), show(l2)];
+      const ids = Object.keys(s.w().state().entities).filter((k) => s.w().state().entities[k].c.blueprint?.from === legHash);
+      for (const [k, id] of ids.entries()) s.call("bob", "set", { id, component: "parent", value: { to: "top" } }), s.call("bob", "set", { id, component: "transform", value: T0([k ? 0.5 : -0.5, 0, 0]) });
+      const tableRec = s.call("bob", "publish", { from: "top", name: "table" }); r.tableRec = show(tableRec);
+      const h = tableRec.notes?.find((n: any) => n.record)?.record; const rec = h ? s.w().getBlob(h) : null;
+      r.keys = rec?.parts.map((p: any) => p.key) ?? null;
+      r.placed = []; r.parts = [];
+      for (let k = 0; k < 3; k++) { const c = s.call("bob", "create", { from: h, at: { pos: [20 + 3 * k, 0, 20] } }); r.placed.push(show(c));
+        const st = s.w().state(); const mine = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+        r.parts.push(mine.length); }
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      const roots = copies.filter((x) => !st.entities[x].c.parent); const legsOf = (root: string) => copies.filter((x) => st.entities[x].c.parent?.to === root).length;
+      r.legsPerRoot = roots.map(legsOf); r.unique = new Set(copies).size === copies.length;
+      return r; },
+    good: (o) => o.legRec === "ok" && o.copies.every((x: string) => x === "ok") && o.tableRec === "ok" && Array.isArray(o.keys) && new Set(o.keys).size === o.keys.length && o.keys.length === 3
+      && o.placed.every((x: string) => x === "ok") && JSON.stringify(o.parts) === "[3,6,9]" && JSON.stringify(o.legsPerRoot) === "[2,2,2]" && o.unique },
+  { id: "N2", what: "a group publish of the two leg copies places, twice", run(s) { cast(s);
+      s.call("bob", "create", { id: "leg", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      const lh = s.call("bob", "publish", { from: "leg", name: "leg" }).notes?.find((n: any) => n.record)?.record;
+      const a = s.call("bob", "create", { from: lh, at: { pos: [4, 0, 4] } }), b = s.call("bob", "create", { from: lh, at: { pos: [6, 0, 4] } });
+      const st0 = s.w().state(); const legs = Object.keys(st0.entities).filter((k) => st0.entities[k].c.blueprint?.from === lh);
+      const g = s.call("bob", "publish", { from: legs, name: "pair" }); const gh = g.notes?.find((n: any) => n.record)?.record;
+      const rec = gh ? s.w().getBlob(gh) : null;
+      const p1 = s.call("bob", "create", { from: gh, at: { pos: [20, 0, 0] } }), p2 = s.call("bob", "create", { from: gh, at: { pos: [24, 0, 0] } });
+      return { made: [show(a), show(b)], group: show(g), keys: rec?.parts.map((p: any) => p.key) ?? null, p1: show(p1), p2: show(p2) }; },
+    good: (o) => o.group === "ok" && Array.isArray(o.keys) && new Set(o.keys).size === o.keys.length && o.p1 === "ok" && o.p2 === "ok" },
+  { id: "N3", what: "a record published before keys were unique (two parts keyed 'leg') still places, twice, every part with its own id", run(s) { cast(s);
+      const t = (x: number) => ({ pos: [x, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] });
+      const rec = { name: "table", root: "top", by: "bob", parts: [{ key: "top", components: { transform: t(0), model: "table" } },
+        { key: "leg", components: { transform: t(-0.5), model: "crate", parent: { to: "top" } } }, { key: "leg", components: { transform: t(0.5), model: "crate", parent: { to: "top" } } }] };
+      const h = s.w().putBlob(rec);
+      const lib = s.call("olive", "set", { id: "@world", component: `library:${String(h).replace(/^sha256:/, "")}`, value: { name: "table", parts: 3 } });
+      const p1 = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } }), p2 = s.call("bob", "create", { from: h, at: { pos: [24, 0, 0] } });
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      return { lib: show(lib), p1: show(p1), p2: show(p2), n: copies.length, kids: copies.filter((x) => st.entities[x].c.parent).map((x) => st.entities[x].c.parent.to) }; },
+    good: (o) => o.lib === "ok" && o.p1 === "ok" && o.p2 === "ok" && o.n === 6 && o.kids.length === 4 },
+  { id: "N4", what: "a group holding a thing whose id is 'root' (the key a group's own root takes): every part keeps a key of its own, and it places", run(s) { cast(s);
+      s.call("bob", "create", { id: "root", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "stool", model: "crate", components: { transform: T0([2, 0, 0]) } });
+      const h = s.call("bob", "publish", { from: ["root", "stool"], name: "pair" }).notes?.find((n: any) => n.record)?.record;
+      const keys = h ? s.w().getBlob(h).parts.map((p: any) => p.key) : null;
+      const placed = s.call("bob", "create", { from: h, at: { pos: [20, 0, 0] } });
+      const st = s.w().state(); const copies = Object.keys(st.entities).filter((x) => st.entities[x].c.blueprint?.from === h);
+      return { keys, placed: show(placed), n: copies.length, riders: copies.filter((x) => st.entities[x].c.parent).length }; },
+    good: (o) => Array.isArray(o.keys) && o.keys.length === 3 && new Set(o.keys).size === 3 && o.placed === "ok" && o.n === 3 && o.riders === 2 },
+  { id: "G1", what: "guard: re-publishing an edited copy keeps its parts' keys, so update {copy, to} still merges part by part", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      const a = s.call("bob", "create", { id: "a", from: v1, at: { pos: [5, 0, 5] } }); const b = s.call("bob", "create", { id: "b", from: v1, at: { pos: [9, 0, 5] } });
+      s.call("bob", "set", { id: "a-bulb", component: "label", value: "brighter" });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      const keys = s.w().getBlob(v2).parts.map((p: any) => p.key).sort();
+      const up = s.call("bob", "update", { copy: "b", to: v2 });
+      return { a: show(a), b: show(b), keys, up: show(up), label: s.w().state().entities["b-bulb"]?.c.label ?? null, kids: Object.keys(s.w().state().entities).filter((k) => k.startsWith("b-")).length }; },
+    good: (o) => o.up === "ok" && JSON.stringify(o.keys) === '["bulb","lamp"]' && o.label === "brighter" && o.kids === 1 },
 ];
 
 let pass = 0, fail = 0;
