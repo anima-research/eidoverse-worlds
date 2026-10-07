@@ -58,9 +58,13 @@ export const COMPONENTS = {
   // meaning so it's fixed (L5). Fields from every v1 log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
   sky:       { fields: { hours: "number", rate: "number", ts: "number", azimuth: "number", clouds: "string", weather: "string", forecast: "object", override: "object", weatherK: "number", clock: "string", tz: "string", dormantRated: "object", weatherSeconds: "number", fog: "number", exposure: "number", ambient: "number", sun: "number", fill: "number", world: "string" }, help: "on @world: the sky and its clock {hours, rate, weather, clouds, forecast, fog…}" },
-  grass:     { fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" }, help: "a grass or crop field {width, depth, center, species, density…}" },
+  grass:     { fields: { width: "number", depth: "number", center: "array", bladeHeight: "number", wind: "number", spacing: "number", perCell: "number", color: "any", colorTip: "number", species: "string", height: "number", density: "number", preset: "string", rows: "object", corn: "object" },
+               ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, bladeHeight: { gt: 0, max: 5 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 },
+                         spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, help: "a grass or crop field {width, depth, center, species, density…}" },
   structure: { fields: { tile: "number", wallH: "number", wallT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
-  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "number", speed: "number", opacity: "number", lifetime: "number" }, help: "a particle emitter {preset, count, size, speed, lifetime…}" },
+  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "number", speed: "number", opacity: "number", lifetime: "number" },
+               // the renderer's own bounds (shared/particles.js NUMERIC_BOUNDS): the door now says what the client would clamp
+               ranges: { count: { min: 1, max: 600 }, size: { min: 0.005, max: 4 }, opacity: { min: 0, max: 1 }, speed: { min: 0.05, max: 8 }, lifetime: { min: 0.05, max: 30 }, area: { min: 0, max: 8 } }, help: "a particle emitter {preset, count, size, speed, lifetime…}" },
   epoch:     { fields: { sim: "string", tickMs: "number", ts: "number", seq: "number" }, help: "on @world: the physics epoch a translated world began (dialect 3)" },
   behavior:  { keyed: true, key: "instance", fields: { src: "string", attach: "string", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: a v1 runtime script binding, carried from translation (v4's are script:<name>)" },
   palette:   { keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: an asset on the world's palette" },
@@ -74,6 +78,9 @@ export const COMPONENTS = {
   terrain:   { fields: { kind: "string", seed: "int", size: "number", amplitude: "number", octaves: "int", frequency: "number", flatRadius: "number", flatHeight: "number",
                          blob: "string", w: "int", h: "int", spacing: "number", origin: "array", format: "string", segments: "int", layers: "any" },
                defaultKind: "noise", byKind: { noise: ["kind", "seed", "size", "amplitude", "octaves", "frequency", "flatRadius", "flatHeight", "segments", "layers"], raster: ["kind", "blob", "w", "h", "spacing", "origin", "format"] },
+               // what every visitor's client can build: past these a single write freezes or breaks everyone (review T0)
+               ranges: { size: { gt: 0, max: 4096 }, segments: { min: 2, max: 512 }, octaves: { min: 1, max: 8 }, frequency: { gt: 0, max: 64 },
+                         amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, w: { min: 2, max: 4096 }, h: { min: 2, max: 4096 }, spacing: { gt: 0, max: 64 } },
                help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight} or {kind: 'raster', blob, w, h, spacing, origin: [x, z], format: 'i32-mm-le'}" },
   "terrain-grid": { fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
   "terrain-tile": { keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },

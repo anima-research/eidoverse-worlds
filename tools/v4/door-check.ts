@@ -731,5 +731,24 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(bad({ s: { pos: [0, 1, 0], body: { action: "Ride Now" } } }) === "shape", "SK4 body.action is a lower-case verb");
   ok(bad({ s: { body: {} } }) === "shape", "SK4 a socket needs its pos");
   ok(bad({ s: { pos: [0, 1, 0], body: { who: "king" } } }) === "shape", "SK4 body.who is visitor, builder or owner"); }
+const w0 = () => openWorld(root, "tier0");
+// T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
+{ T += 100; process.env.V4_NOW = String(T); const R = (tool, args) => request(openWorld(root, "tier0"), "ann", tool, args);
+  R("new", { title: "tier0" }); R("create", { id: "hearth", model: "crate" });
+  const S = (id, comp, value) => R("set", { id, component: comp, value }).refused?.code;
+  ok(S("@world", "terrain", { kind: "noise", segments: 100000 }) === "bounds", "T0a terrain segments past 512 (10^10 vertices on every client) is refused");
+  ok(S("@world", "terrain", { kind: "noise", size: 0 }) === "bounds", "T0a a terrain of size 0 is refused");
+  ok(S("@world", "terrain", { kind: "noise", octaves: 0 }) === "bounds", "T0a terrain octaves outside 1–8 is refused (the engine clamps; the door agrees)");
+  ok(S("@world", "grass", { width: 1e9, depth: 10 }) === "bounds", "T0b a grass field a million km wide is refused");
+  ok(S("hearth", "particles", { preset: "fire", count: 1e9 }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");
+  ok(S("hearth", "particles", { preset: "fire", size: -3 }) === "bounds" && S("hearth", "particles", { preset: "fire", opacity: 7 }) === "bounds", "T0c negative size, opacity past 1: refused");
+  ok(R("set", { id: "hearth", component: "particles", value: { preset: "fire", count: 150, size: 0.3, opacity: 0.8, lifetime: 1.2 } }).ok, "T0c …an ordinary fire is still taken");
+  ok(S("@world", "bounds", {}) === "shape" && S("@world", "bounds", { min: [5, 0, 5], max: [-5, 10, -5] }) === "shape", "T0d bounds needs min and max, with min ≤ max on every axis");
+  ok(R("create", { id: "c-after", model: "crate" }).ok, "T0d …and creating still answers (an empty bounds used to commit the create, then crash its reply)");
+  ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 0], scale: [1, 1, 1] }) === "shape", "T0e a zero quaternion is refused (it isn't a rotation)");
+  ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [0, 1, 1] }) === "shape", "T0e a zero scale is refused (its children's transforms divide by it)");
+  const nq = R("set", { id: "hearth", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0, 0.5], scale: [1, 1, 1] } });
+  const q = w0().state().entities.hearth?.c.transform?.q;
+  ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the door and the renderer then agree)", q); }
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

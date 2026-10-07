@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { directoryAt, isMinted } from "../../server/v4/directory.ts";
 import { openLive } from "../../server/v4/live.ts";
-import { request, actIndexOf } from "../../shared/v4/door.js";
+import { request, actIndexOf, isBanned } from "../../shared/v4/door.js";
 
 let pass = 0, fail = 0;
 const ok = (c: unknown, what: string, why?: unknown) => { if (c) pass++; else { fail++; console.log(`  FAIL ${what}${why === undefined ? "" : ` — ${JSON.stringify(why).slice(0, 300)}`}`); } };
@@ -216,6 +216,17 @@ const file = path.join(tmp, "worlds", ".v4-directory.json");
   const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
   let r: any = null, threw: any = null; try { r = request(w, "u-aaaaaaaaaaaaaaaaaaaa", "use", { id: "bell", action: "ring" }); } catch (e) { threw = String(e); }
   ok(!threw && r?.refused?.code === "no-runtime" && /bell's 'ring'/.test(r.refused.reason), "X1 using a translated script reaction refuses (no-runtime) and names the thing, instead of throwing", threw ?? r?.refused); }
+
+// ---- XB: a v1 ban survives translation as a ban the door enforces (component review, world-settings #3: it became a
+// state key the door never reads, so a translated world quietly unbanned everyone) ----
+{ const { translateV1World } = await import("../../server/v4/world.ts");
+  const W = path.join(tmp, "xb"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner" } } } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "ban", args: { id: "Mallory", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  translateV1World(path.join(W, "old"), path.join(W, "new"));
+  const w: any = openLive(path.join(W, "new"), "new", { now: () => 1800000000000 });
+  const at = Object.keys(w.state().entities["@world"].c).find((k) => k.startsWith("bans:")); const who = at?.slice(5);
+  ok(!!who && isBanned(w, who) && w.mod.some((m: any) => m.verb === "ban" && m.who === who && m.reason === "spam"), "XB1 a v1 ban is a ban the door enforces after translation (filed in the moderator log, reason kept)", [at, w.mod]); }
 
 // ---- V: a visitor undoes their own use, under the use's capability (round-2 R11) ----
 { let T = 1800000000000; const d = directoryAt(file);

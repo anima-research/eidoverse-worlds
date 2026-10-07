@@ -636,7 +636,13 @@ function valueCheck(s, { id, comp, value: v }) {
   if (id === "@world" && comp.startsWith("roles:") && !["owner", "builder", "visitor", "none"].includes(v?.role))
     refuse("shape", `${at}.role must be owner, builder, visitor or none (got ${JSON.stringify(v?.role)})`, "");
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
-    refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); }
+    refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000"); 
+    // a rotation is a unit quaternion (the renderer normalizes; the door's own maths uses q as written), and a scale of
+    // 0 makes every child's transform divide by zero (review T0e)
+    if (Math.hypot(...v.q) < 1e-6) refuse("shape", `${at}.q is all zeros, which isn't a rotation`, "no rotation is [0, 0, 0, 1]");
+    if (v.scale.some((x) => Math.abs(x) < 1e-4)) refuse("shape", `${at}.scale has a 0 in it; a thing can't be flat to nothing`, "to hide something, delete it or give it a tiny scale like 0.01"); }
+  if (comp === "bounds") { if (!obj || !nums(v.min, 3) || !nums(v.max, 3) || Object.keys(v).some((k) => !["min", "max"].includes(k)) || v.min.some((x, i) => x > v.max[i]))
+    refuse("shape", `${at} must be {min: [x,y,z], max: [x,y,z]} with min ≤ max on every axis`, "e.g. {min: [-20, 0, -20], max: [20, 12, 20]}"); }
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
@@ -817,6 +823,10 @@ function needThing(ctx, id) {
 
 // Resolve a component value fully (R7): defaults written out, conveniences converted, stamps applied. Shape and rights
 // are admit's; this only turns what was asked into a plain value.
+// @world.bounds as the readers use it: a malformed one already in a log (written before the door checked it) is
+// treated as no bounds, never a crash in every create's reply (review T0d)
+const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  return B && v3(B.min) && v3(B.max) ? B : null; };
 function resolve(ctx, id, comp, value, prev) {
   const def = COMPONENTS[comp];
   if (comp === "transform") {
@@ -825,6 +835,9 @@ function resolve(ctx, id, comp, value, prev) {
     if (typeof v.scale === "number") v.scale = [v.scale, v.scale, v.scale];
     for (const k of ["pos", "q", "scale"]) if (!Array.isArray(v[k]) || v[k].some((n) => !Number.isFinite(n))) refuse("shape", `transform.${k} must be numbers`, "pos [x,y,z], q [x,y,z,w], scale [x,y,z] or a number");
     v.pos = v.pos.map(r3);
+    // stored as a unit quaternion: a rounded yaw or a hand-typed [0,0,0,0.5] otherwise disagrees with the renderer
+    // (a zero q stays as sent, for schemaCheck to refuse)
+    const n = Math.hypot(...v.q); if (v.q.length === 4 && n > 1e-6 && Math.abs(n - 1) > 1e-9) v.q = v.q.map((x) => x / n);
     return v;
   }
   if (!COMPONENTS[comp] && !comp.includes(":")) ctx.notes.push({ id, component: comp, why: `'${comp}' isn't a component this world's engine knows: it is kept (and will be preserved), but nothing will draw or run it`, didYouMean: guess(comp, Object.keys(COMPONENTS)) });
@@ -1063,7 +1076,7 @@ function buildPlace(ctx, a) {
 // Physical checks on every write (A2).
 function warnings(st, ids) {
   const out = []; const all = Object.keys(st.entities);
-  const B = st.entities["@world"]?.c.bounds;
+  const B = boundsOf(st);
   for (const id of ids) {
     const b = aabb(st, id); if (!b) continue;
     const fam = new Set([id, ...descendants(st, id)]); // a parent is NOT exempt: a bell inside its lamp pole is still inside it
@@ -1559,7 +1572,7 @@ function settleSim(w) {
     catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
     w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
     const rest = stateEntry(w, plan, r.seq);
-    const st2 = w.state(); const B = st2.entities["@world"]?.c.bounds;
+    const st2 = w.state(); const B = boundsOf(st2);
     if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
       // it landed outside the world: lost. The door returns it to where it was picked up, as its own act.
       const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
@@ -1629,7 +1642,7 @@ const presenceFacts = (me) => ({ at: me.at.slice(), hand: handOf(me).map(r3), tr
 const PHYSICS_TOOLS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
-    const st = w.state(); const B = st.entities["@world"]?.c.bounds;
+    const st = w.state(); const B = boundsOf(st);
     if (B && (a.to[0] < B.min[0] || a.to[0] > B.max[0] || a.to[2] < B.min[2] || a.to[2] > B.max[2])) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
     const me = w.presence.bodies[actor]; const now = w.now(); const to = a.to.slice();
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record

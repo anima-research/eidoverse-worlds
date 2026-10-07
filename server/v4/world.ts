@@ -14,7 +14,7 @@
 // verbs are made for a v4 world. `state` is the VIEW of the fold (shared/v4/record.js viewState) plus the chat window,
 // for this server's own readers (rights, bans, leases, /geom, model warm-up); it is rebuilt by its next reader after
 // a write. Chat lines (say entries) are numbered v4seq × 1000 in the window and in readHistory.
-import { custodyAt } from "./custody.ts";
+import { custodyAt, modLogAt } from "./custody.ts";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -234,6 +234,11 @@ export function translateV1World(srcDir: string, destDir: string) {
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "v4.jsonl"));
   dir.put(planned);
+  // v1 bans are the moderator's record in v4 (the door reads bans only from v4.mod.jsonl): file each one there, or a
+  // translated world quietly unbans everyone (component review, world-settings #3)
+  const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("bans:"));
+  if (banned.length) { const m = modLogAt(path.join(destDir, "v4.mod.jsonl"));
+    for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "door", verb: "ban", who: k.slice(5), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
   return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back) };
 }
 
