@@ -133,6 +133,15 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(jg.snapshot?.yourRights?.role === "visitor" && (await g.req("create", { id: "box1", model: "crate" })).refused?.code === "rights", "H4 a guest is never given the default role: a visitor, and refused a build", jg.snapshot?.yourRights);
   const wren = await sock(S3.port); const jw = await wren.join("meadow", "Wren", { agentToken: "tok-wren" });
   ok(jw.snapshot?.yourRights?.role === "builder", "H4 …while a proven account does get it (builder)", jw.snapshot?.yourRights);
+  // …unless the world's owner opts guests in (R 10-06: whether strangers without an account may build is the world's
+  // choice; the Commons does). Explicit, default off, and never above the world's default role.
+  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "visitor", guests: "builder" } })).refused?.code === "shape", "H4g guests can't be given more than everyone else (guests ≤ the default role)");
+  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } })).ok, "(H4g setup) meadow lets guests build");
+  { const g2 = await sock(S3.port); const jg2 = await g2.join("meadow", "drifter2"); await sleep(100);
+    const made = await g2.req("create", { id: "guestbox", model: "crate_large_red.glb" });
+    ok(jg2.snapshot?.yourRights?.role === "builder" && made.ok, "H4g …and a guest arriving now is a builder, and can build", [jg2.snapshot?.yourRights, made.refused]);
+    g2.close(); }
+  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H4g teardown) back to guests-as-visitors");
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");

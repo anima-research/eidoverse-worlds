@@ -73,7 +73,7 @@ export const COMPONENTS = {
   palette:   { keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: an asset on the world's palette" },
   legacy:    { keyed: true, key: "instance", help: "keyed: a v1 field the translation had no mapping for, carried as it was (R10)" },
   roles:     { keyed: true, key: "instance", fields: { role: "string", gen: "bool", sub: "any" }, help: "on @world, keyed by identity: {role: owner|builder|visitor|none}" },
-  "default-role": { fields: { role: "string", gen: "bool" }, help: "on @world: the role of anyone without roles:<id> (absent = visitor)" },
+  "default-role": { fields: { role: "string", gen: "bool", guests: "string" }, help: "on @world: the role of anyone without roles:<id> (absent = visitor); guests (people without an account) are visitors unless guests: 'builder'" },
   about:     { fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },
   bounds:    { fields: { min: "vec3", max: "vec3" }, help: "on @world: the box the world lives in (m)" },
   spawn:     { fields: { pos: "vec3", radius: "number" }, help: "on @world: where visitors arrive {pos, radius}" },

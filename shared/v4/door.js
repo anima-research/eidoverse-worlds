@@ -301,7 +301,9 @@ function roleOf(st, actor, anon = ISANON(actor)) {
   const c = st.entities?.["@world"]?.c; if (!c) return "none";
   // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
   // may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
-  let r = c[`roles:${actor}`]?.role ?? (anon ? "visitor" : c["default-role"]?.role ?? "visitor");
+  // …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
+  const dr = c["default-role"]; const guestRole = dr?.guests === "builder" && dr?.role === "builder" ? "builder" : "visitor";
+  let r = c[`roles:${actor}`]?.role ?? (anon ? guestRole : dr?.role ?? "visitor");
   if (RANK[r] === undefined) r = "visitor";
   return !ownersOf(st).length && RANK[r] > RANK.visitor ? "visitor" : r;
 }
@@ -642,6 +644,8 @@ function valueCheck(s, { id, comp, value: v }) {
   // H5: everyone-is-owner would let any stranger remove the real owners; the default role tops out at builder
   if (id === "@world" && comp === "default-role" && !["visitor", "builder", "none"].includes(v?.role))
     refuse("shape", `${at}.role must be visitor, builder or none (got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
+  if (id === "@world" && comp === "default-role" && v?.guests !== undefined && !(v.guests === "visitor" || (v.guests === "builder" && v.role === "builder")))
+    refuse("shape", `${at}.guests must be visitor, or builder when role is builder (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
   if (id === "@world" && comp.startsWith("roles:") && !["owner", "builder", "visitor", "none"].includes(v?.role))
     refuse("shape", `${at}.role must be owner, builder, visitor or none (got ${JSON.stringify(v?.role)})`, "");
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
