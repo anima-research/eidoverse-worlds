@@ -1,5 +1,5 @@
-// agent-v4 — feed a WorldAgent (mcpl/agent.ts) the world of a scratch authority, the way its v4 path does, without a
-// server: the agent's v4 client adopts the door's cut, and after every write the agent takes the next view of its own
+// agent-scratch — feed a WorldAgent (mcpl/agent.ts) the world of a scratch authority, the way its protocol path does, without a
+// server: the agent's replica adopts the authority's cut, and after every write the agent takes the next view of its own
 // fold (applyView), diffing it from the last: percepts when live, supports always. This replaces the v1 bench idiom
 // (A.applyEntry({verb, args}) of hand-written log entries), which went with the v1 reader.
 //

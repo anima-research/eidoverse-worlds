@@ -590,7 +590,7 @@ function fieldDOM(f, edit, ro = {}) {
           const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}`);
           lock.innerHTML = iconSvg(r.locked ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
           lock.title = r.locked ? 'locked — click to unlock' : 'click to lock in place';
-          // lockable: false = this viewer may not lift locks (a v4 visitor, §5): the icon still says, the click doesn't
+          // lockable: false = this viewer may not lift locks (a visitor, §5): the icon still says, the click doesn't
           if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? 'locked (builders and owners can unlock it)' : 'not locked (builders and owners can lock it)'; }
           lock.onclick = (e) => { e.stopPropagation(); if (!lock.disabled) edit('lock', r.id); };
           line.append(lock);

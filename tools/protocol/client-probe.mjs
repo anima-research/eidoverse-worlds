@@ -1,4 +1,4 @@
-// tools/protocol/client-probe.mjs — TODAY's client (headless Chromium) visiting a world (protocol/v4 slice 2).
+// tools/protocol/client-probe.mjs — TODAY's client (headless Chromium) visiting a world (slice 2).
 // usage (one Chrome, under the guard):  perf-guard.sh -t 240 -- bun tools/protocol/client-probe.mjs
 // What it shows, each as a stage line printed green or red:
 //   boot      the client boots into a world (founded by tools/protocol/world.ts in a scratch WORLDS_DIR) and finishes
@@ -27,7 +27,7 @@
 //             grabbed: an offset), letting go throws it with the hand's velocity × its grabbable.throw, the trigger while
 //             holding is use (down, up), the laser reaches a thing out to its range, and a second hand takes a
 //             two-handed thing in both
-//   errors    no page error and no console.error from the v4 path
+//   errors    no page error and no console.error from the protocol path
 // PROBE_ONLY=grab runs boot, see, live and the grab stages only (the rest is skipped, said so). PROBE_ONLY=xr the same
 // with the VR stages. PROBE_ONLY=roles: boot, see, live and the roles stages as the owner (research roles S6–S8: badges, the
 // person menu, the form, the Moderation and World Settings panels, the inline strip); PROBE_ONLY=roles-visitor the same
@@ -572,7 +572,7 @@ try {
     const tried = rows?.rows?.find((x) => x.target === 'no-such-thing-probe');
     check('history: a refused attempt reads "tried … refused", not as done', rows?.refusedReply && tried?.refused && /tried .* refused/.test(tried.text), rows);
   }
-  // (the old 'edit'/'refuse' stages sent v1 verbs from the page; v4 refuses those by design. The page's door-request
+  // (the old 'edit'/'refuse' stages sent v1 verbs from the page; the authority refuses those by design. The page's door-request
   //  path is covered headlessly by editcommit/hierarchy-commit.)
   // spot: a spot light set through the authority (glTF/Godot shape: half-angle cone, shining along -Z) lights a SPOT slot in
   // Ann's client with that cone, pointing where the thing's -Z points (here: pitched to face straight down)
@@ -942,9 +942,9 @@ try {
   }
   }   // !SKIP_REST
   ws.close();
-  const pathErrors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
+  const pathErrors = errors.filter((e) => /replica|legacy|projection|fold/i.test(e));
   stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);
-  check('errors: no page error, and no console.error mentioning the v4 path', !errors.some((e) => /pageerror|TypeError|ReferenceError/.test(e)) && !pathErrors.length, errors.slice(0, 6));
+  check('errors: no page error, and no console.error mentioning the protocol path', !errors.some((e) => /pageerror|TypeError|ReferenceError/.test(e)) && !pathErrors.length, errors.slice(0, 6));
 } catch (e) {
   failed++; stage('probe', false, String(e?.stack ?? e).slice(0, 600));
 } finally {

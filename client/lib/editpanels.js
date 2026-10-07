@@ -48,7 +48,7 @@ import { reindexCollider } from './colliders.js';
 import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
-import { KEYHINTS } from './keyhints.js';   // protocol/v4 slice 3b: in a world these panels' writes are requests
+import { KEYHINTS } from './keyhints.js';   // slice 3b: in a world these panels' writes are requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -477,7 +477,7 @@ function placedBy(id, meta) {
   const r = authorityInspect(id);
   return r ? (r.derived?.madeBy ? Edits.nameOf(r.derived.madeBy) : 'unknown') : '…';
 }
-// a card's v4 component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
+// a card's component name: keyed sections carry it; the core ones (Transform, built from the record) go by their type
 const wireOf = (sec) => sec.key ?? sec.type.toLowerCase();
 const ago = (ts) => agoWords(ts);
 const touchLine = (t) => touchWords(t);
@@ -810,7 +810,7 @@ const blueprintFields = (pics) => [
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  door's publish (a person here, or an agent). */
 function savedFields(pics) { return savedFieldsHere(); }
-/** v4: this world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
+/** This world's blueprints are @world blueprints:<hash> (the authority's publish writes them); a copy is the authority's
  *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the authority's publish {from, name} on the selection. */
 function savedFieldsHere() {
   const lib = Edits.blueprints(); const sel = selection();

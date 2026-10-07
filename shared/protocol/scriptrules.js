@@ -1,4 +1,4 @@
-// shared/protocol/scriptrules.js — the parts of v4 scripts (research 41) that the AUTHORITY, the SANDBOX and an AUDITOR must agree on
+// shared/protocol/scriptrules.js — the parts of scripts (research 41) that the AUTHORITY, the SANDBOX and an AUDITOR must agree on
 // byte for byte. Pure: no node: imports, no sandbox (the authority is imported by browsers; the sandbox is injected).
 //   LIMITS   the budgets an activation runs under (41 §3.10), named once.
 //   SOURCE   what a script's source blob is: {lang: "js", api: 1, text}, stored by its sha256 name (§2.2).

@@ -3,8 +3,8 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/worldentity-test.ts
 //
-// 1. the alias both ways, on REAL v4 states (a synthetic world through the real
-//    door, then every spec fixture translated to v4): after every entry the
+// 1. the alias both ways, on REAL states (a synthetic world through the real
+//    door, then every spec fixture translated): after every entry the
 //    world reads as Sky / Weather / Terrain / Grass and writes back
 //    canon-identical; Sky and Weather partition state.sky; each component at most once
 // 2. picking a sky REPLACES the Sky (no leftovers from the old one) and keeps
@@ -16,7 +16,7 @@
 //    whatever was used last
 // 5. the text tier: inspect / edit / hierarchy speak @world (the agent's edit sent to a real door)
 //
-// v4 port (2026-10-06): the world is read from the v4 view (shared/protocol/view.js viewState); every result is the
+// the protocol port (2026-10-06): the world is read from the view (shared/protocol/view.js viewState); every result is the
 // door's (tools/protocol/scratchworld.ts). worldInverse is gone: undo is the door's `undo`, checked as such.
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,7 +27,7 @@ import { WORLD_ID, worldComponents, worldOf, worldState, worldSchema, worldEditO
 import { TABS, openingTab, useTab, TAB_V } from '../client/lib/edittabs.js';
 import { viewState, emptyView } from '../shared/protocol/view.js';
 import { translate } from './protocol/import-v1/translate-v1.js';
-import { emptyState as v4Empty, applyInPlace, opsOf } from '../shared/protocol/fold.js';
+import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 
@@ -54,7 +54,7 @@ function aliasBad(st: any): string | null {
   return null;
 }
 
-// ------------------------------------------------------------ 1. the alias, on real v4 states
+// ------------------------------------------------------------ 1. the alias, on real states
 console.log('1. the alias both ways, through the real door:');
 {
   const W = scratchWorld('worldentity');
@@ -91,7 +91,7 @@ console.log('1. the alias both ways, through the real door:');
     ['Sky', 'Weather', 'Terrain', 'Grass'].every((t) => /^[0-9a-f]{64}$/.test((RECORDS as any)[t]?.hash ?? '') && (RECORDS as any)[t].category === 'World')
     && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a: any) => (RECORDS as any)[a.name]?.world));
 
-  // every spec fixture, translated to v4 (shared/protocol/translate-v1.js, as a world is migrated), state by state
+  // every spec fixture, translated (shared/protocol/translate-v1.js, as a world is migrated), state by state
   const logs: string[] = [];
   const walk = (d: string) => { if (!existsSync(d)) return; for (const x of readdirSync(d)) { const p = join(d, x); if (statSync(p).isDirectory()) walk(p); else if (x === 'log.jsonl') logs.push(p); } };
   walk(join(ROOT, 'spec/fixtures'));
@@ -101,7 +101,7 @@ console.log('1. the alias both ways, through the real door:');
     for (const line of readFileSync(p, 'utf8').split('\n').filter(Boolean)) { try { old.push(JSON.parse(line)); } catch { /* a fixture of a malformed line */ } }
     let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch (e) { fbad.push(`${p.split('/').slice(-2).join('/')}: translate threw ${String(e).slice(0, 80)}`); continue; }
     translated++;
-    const s: any = v4Empty();
+    const s: any = emptyState();
     r.out.forEach((e: any, seq: number) => {
       if (e.kind !== 'change') return;
       applyInPlace(s, opsOf(e), seq);
@@ -110,7 +110,7 @@ console.log('1. the alias both ways, through the real door:');
       const b = aliasBad(v); if (b && fbad.length < 5) fbad.push(`${p.split('/').slice(-2).join('/')} @${seq}: ${b}`);
     });
   }
-  check(`…and after every state of every spec fixture translated to v4 (${translated}/${logs.length} logs, ${states} states, ${worldStates} with a world — the fixtures grow terrain but author no sky)`, fbad.length === 0 && worldStates > 0 && translated === logs.length, fbad.join(' | '));
+  check(`…and after every state of every spec fixture translated (${translated}/${logs.length} logs, ${states} states, ${worldStates} with a world — the fixtures grow terrain but author no sky)`, fbad.length === 0 && worldStates > 0 && translated === logs.length, fbad.join(' | '));
 }
 
 // ------------------------------------------------------------ 2. picking replaces
@@ -253,7 +253,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   W.call('create', { id: 'pivot', components: { transform: { pos: [1, 0, 1] } } });
   const ag = new WorldAgent({ name: 'eye' });
   const A = ag as any;
-  // the agent's world is the v4 view; its door is this scratch world's real door (dry runs answered by the door itself)
+  // the agent's world is the view; its door is this scratch world's real door (dry runs answered by the door itself)
   const sync = () => { A.st = W.view(); A.reconcileFromFold(); };
   sync();
   A.door = async (verb: string, args: any) => W.call(verb, args);

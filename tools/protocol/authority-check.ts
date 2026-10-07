@@ -64,9 +64,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("tools/protocol/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
-// ---- P: locks (PROTOCOL §5), mirroring v1's lock matrix (tools/locktest.ts) plus what v4 adds ----
+// ---- P: locks (PROTOCOL §5), mirroring v1's lock matrix (tools/locktest.ts) plus what the protocol adds ----
 // v1: a lock refuses everything that would MOVE, REPLACE or REMOVE the thing, for everyone, its locker included;
-// everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. v4 adds:
+// everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. The protocol adds:
 // it binds what's attached to it too; throughLock: true lets whoever may remove it act through it.
 { const name = "locks";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
@@ -93,7 +93,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("bob", "set", { id: "bell", component: "transform", value: { pos: [0, 0.6, 0] } })) === "locked", "P10 a grandchild is bound too (the lock is two levels up)");
   // what stays open: everything that doesn't relocate it (v1: "sit / use / motion / other comps all stay open while locked")
   ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table" }).ok && call("bob", "set", { id: "cup", component: "label", value: "a crate" }).ok, "P11 a label stays open (the locker's and a builder's)");
-  ok(call("olive", "set", { id: "tbl", component: "motion", value: { type: "spin", axis: [0, 1, 0], amp: 0.2, period: 4 } }).ok, "P12 motion stays open (v1's matrix; a v4 motion animates in place)");
+  ok(call("olive", "set", { id: "tbl", component: "motion", value: { type: "spin", axis: [0, 1, 0], amp: 0.2, period: 4 } }).ok, "P12 motion stays open (v1's matrix; a motion animates in place)");
   ok(call("olive", "set", { id: "tbl", component: "light", value: { range: 4 } }).ok && call("olive", "set", { id: "tbl", component: "physics", value: { kind: "static" } }).ok, "P13 a light and physics stay open (neither relocates it)");
   ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } } }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 reactions stay open, and a visitor may still `use` it");
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
@@ -359,7 +359,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r2 = call("bob", "undo", { act: u2.act });
   ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
 
-// ---- K: the client's own fold (shared/protocol/replica.js): adopt a cut, ingest the authority's entries; the v4 state equals the
+// ---- K: the client's own fold (shared/protocol/replica.js): adopt a cut, ingest the authority's entries; the state equals the
 // server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
   let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
@@ -372,7 +372,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
     const before = c.view(); const k = c.ingest(fresh, from); steps++;
     if (k.resync) return { r, k };
-    if (!bad && digest(c.st) !== digest(w.state())) bad = [what, "v4 state differs"];
+    if (!bad && digest(c.st) !== digest(w.state())) bad = [what, "state differs"];
     if (!bad && !same(c.view(), viewState(w.state()))) bad = [what, diffView(c.view(), viewState(w.state()))];
     return { r, k, d: diffView(before, c.view()) }; };
   step("on", "ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
@@ -469,7 +469,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(v9.r.ok && v9.has("tbl", "born"), "V9 undo brings it back: 'born' again", v9.d);
   ok(diffView(held, viewState(w.state())).things.length === 0 && !diffView(held, viewState(w.state())).world.length, "V10 nothing changed says nothing"); }
 
-// ---- S3: a stretched v4 thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
+// ---- S3: a stretched thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
 { const { viewOf } = await import("../../shared/protocol/view.js");
   const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
   const rec = viewOf("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
@@ -585,8 +585,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
   ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
 
-// ---- SW: a push re-expresses the swing at the push instant, as v1's pendulumImpulse does (v4-vs-v1 review 10-06 #5):
-// no jump at the push, and pushing in rhythm builds. v4 kept the old phase with a new t0 and halved amp (a snap). ----
+// ---- SW: a push re-expresses the swing at the push instant, as v1's pendulumImpulse does (old-vs-new review 10-06 #5):
+// no jump at the push, and pushing in rhythm builds. The port kept the old phase with a new t0 and halved amp (a snap). ----
 { const sw = (actor, verb, args = {}) => { process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "swingpush"), actor, verb, args); };
   const { pendulumTheta } = await import("../../client/lib/motioneval.js");
   T += 100; sw("ann", "create-world", { title: "swingpush" });
@@ -770,7 +770,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { preset: "fire", texture: "eidoverse/assets/particle_textures/flame.png" }).ok, "T1e particles.texture (in AGENTS.md's own example) is taken");
   ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");
   ok(S("chair", "particles", { preset: "fire", texture: "../../etc/x.png" }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
-// CP (Commons v1→v4 parity audit, 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
+// CP (Commons parity audit (old world → new), 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
 { const R = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, verb, args); };
   R("ann", "create-world", { title: "cp" });
   R("ann", "create", { id: "rock", model: "crate" });
@@ -816,7 +816,7 @@ const w0 = () => openWorld(root, "tier0");
   const s4 = R("ann", "say", { text: "no spoken", utt: 5 });
   const s5 = R("ann", "say", { text: "future t0", spoken: true, utt: 6, t0: now + 10_000_000 });
   const E = openWorld(root, "cp").entries; const b = (r) => E[r.seq]?.body;
-  ok(s1.ok && b(s1).spoken === true && b(s1).utt === 3 && b(s1).t0 === now - 1000, "CP8 a spoken say keeps spoken/utt/t0 (they were dropped on v4)", b(s1));
+  ok(s1.ok && b(s1).spoken === true && b(s1).utt === 3 && b(s1).t0 === now - 1000, "CP8 a spoken say keeps spoken/utt/t0 (the port dropped them)", b(s1));
   ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
   ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
   ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);

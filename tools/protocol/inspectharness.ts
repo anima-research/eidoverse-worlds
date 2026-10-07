@@ -2,7 +2,7 @@
 // door on a scratch world (tools/protocol/scratchworld.ts). Import this BEFORE importing client/lib/inspect.js: it
 // registers the Bun plugin that stubs the page around them. What is real: inspect.js, editwrites.js (send, expect, the
 // lock dialog's three answers, undo/redo by act), the shared planners, the authority. What is stubbed, from client/lib:
-//   net.js     sendRequest → the scratch world, as the signed-in person `actor`; replica.st = the authority's v4 state (kept in
+//   net.js     sendRequest → the scratch world, as the signed-in person `actor`; replica.st = the authority's state (kept in
 //              sync after every request, as the live client's fold is); replicaActive → true; sendDrag records
 //   state.js   state.st = the authority's state as the view (shared/protocol/view.js viewState), what the panels read
 //   world.js   the realized objects (a Map the test fills)

@@ -1,4 +1,4 @@
-// tools/protocol/common.ts — what the v4 suites share: where the engine is, a scratch root per run, and the optional
+// tools/protocol/common.ts — what the protocol suites share: where the engine is, a scratch root per run, and the optional
 // control arm.
 //
 // The suites came from the protocol lab (the protocol lab @ 11db981). There, each attack/probe ran twice: through the lab's

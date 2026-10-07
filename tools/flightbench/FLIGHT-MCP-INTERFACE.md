@@ -152,7 +152,7 @@ and you are a glider.
 # reason is worth keeping.
 
 *Run on the first protocol's behavior sandbox (since removed with that
-protocol); the reason it fails holds unchanged for v4 scripts
+protocol); the reason it fails holds unchanged for scripts
 (docs/SCRIPTS.md).*
 
 Janus asked whether agents can already script multiple actions, and suggested

@@ -1,4 +1,4 @@
-// thingphysics — physics in a world, on the client (design 20: notes/eidoverse/v4-research/20-physics-in-v4-design.md).
+// thingphysics — physics in a world, on the client (design 20: the physics design note, research 20).
 //
 // Nothing here simulates for anyone else and nothing is streamed: every act is a REQUEST, and every client draws
 // the same truth.

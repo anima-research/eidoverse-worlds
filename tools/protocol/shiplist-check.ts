@@ -57,7 +57,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["motion: a part's enums", "shared/protocol/authority.js", "for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(\":\")[0]]?.enums ?? {})) if (obj", "for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj", ["M2"]],
   ["the orbit's period", "client/lib/motioneval.js", "if (Number.isFinite(m.period) && m.period > 0) return 360 / m.period;", "", ["M3"]],
   ["the editor reads the rate as the evaluator does", "shared/editschema.js", "Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : ", "", ["M3"]],
-  ["the importer: rpm → degPerSec", "tools/protocol/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? v4Motion(v) : v;", "v;", ["M4"]],
+  ["the importer: rpm → degPerSec", "tools/protocol/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? newMotion(v) : v;", "v;", ["M4"]],
   ["the editor's rate drops the period", "shared/editschema.js", "if (param === 'degPerSec') { delete next.rpm; delete next.period; }", "if (param === 'degPerSec') { delete next.rpm; }", ["M5"]],
   ["Add Path starts where it stands", "shared/editschema.js", "Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };", "Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };", ["M5"]],
   ["help: physics.who's default", "shared/protocol/componentspec.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],

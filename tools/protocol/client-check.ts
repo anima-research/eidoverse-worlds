@@ -1,7 +1,7 @@
 // tools/protocol/client-check.ts — slice 3b in a real browser: edit mode in a world sends requests, folds the log and
 // waits for the authority. One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench: scratch port,
 // scratch WORLDS_DIR, its own profile; never 8968/8970). Run it under the house guards:
-//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/client-check.ts      (test:v4's `client` suite does this)
+//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/client-check.ts      (test:protocol's `client` suite does this)
 //
 //   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
@@ -78,8 +78,8 @@ try {
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
-  check("B1 the page knows it's in a world (it adopted the v4 cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(500);   // replica: a world speaks only to clients that read v4 (3c)
+  check("B1 the page knows it's in a world (it adopted the cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(500);   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));
@@ -400,7 +400,7 @@ try {
   await page(`await (await import('/lib/editwrites.js')).lock('pebble', false); return true;`);
   check("I12 …and unlocking takes it away", await waitFor(`!(${tfLock})`), await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.innerHTML.slice(0, 80))`));
 
-  // three-axis scale (R 10-04): the v4 wire always had [x,y,z]; the page now edits, draws and keeps it
+  // three-axis scale (R 10-04): the wire always had [x,y,z]; the page now edits, draws and keeps it
   const sLabels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent).filter((t) => /scale/.test(t))`);
   check("I13 the Transform shows scale x / y / z", JSON.stringify(sLabels) === JSON.stringify(["scale x", "scale y", "scale z"]), sLabels);
   await page(`(await import('/lib/inspect.js')).commitEdit('pebble', 'pos.sx', 2); return true;`);
@@ -416,7 +416,7 @@ try {
     const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
   check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
 
-  // the World row: its name big (v4 keeps it on @world.about), @world small (R 10-04: "World and (@world)?")
+  // the World row: its name big (the protocol keeps it on @world.about), @world small (R 10-04: "World and (@world)?")
   const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
   check("W1 the Hierarchy's World row reads the world's name, not '(@world)'", wrow?.startsWith("client check") && !wrow.includes("@world"), wrow);
 
@@ -586,7 +586,7 @@ try {
   await evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = 'hello from the page (3c)'; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
   check("B5a the chat box's line (a UI verb) reaches the log, as the person's say", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "hello from the page (3c)")), entries().filter((e) => e?.kind === "say").slice(-2));
   check("B5 the page sent no v1 verb to the world, all run long: every UI verb was spelled as a request at the page (3c)", await evalJson(`window.__v1sent.length === 0`), await evalJson(`window.__v1sent.slice(0, 10)`));
-  // ---- CP: the Commons v1→v4 parity audit (10-06): what a person who isn't in the editor sees ----
+  // ---- CP: the Commons parity audit (old world → new) (10-06): what a person who isn't in the editor sees ----
   { const lines = () => evalJson(`[...document.querySelectorAll('#chatlog .line')].map((l) => l.textContent)`);
     const type = (text: string) => evalJson(`(() => { const t = document.getElementById('chatline'); t.focus(); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true })); return true; })()`);
     const lineLike = (re: string, ms = 5000) => waitFor(`[...document.querySelectorAll('#chatlog .line')].some((l) => ${re}.test(l.textContent))`, ms);
@@ -602,7 +602,7 @@ try {
       await waitFor(`import('/lib/world.js').then((m) => m.entities.has('bell'))`);
       await type("/use bell");
       check("CP3 /use bell rings it: the authority did its one action (the label is on the record)", r && await waitDisk(() => disk().entities.bell?.c.label === "rung"), { r, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
-    // CP5 a spoken utterance arriving in two says is one chat line again (the trio was dropped on v4)
+    // CP5 a spoken utterance arriving in two says is one chat line again (the port dropped the trio)
     { await bobReq("say", { text: "the first half", spoken: true, utt: 41 }); await bobReq("say", { text: "and the rest", spoken: true, utt: 41 });
       check("CP5 a spoken utterance's continuation merges into its line", await lineLike(`/the first half and the rest/`), (await lines() as string[]).slice(-3)); }
     let carlId = "";
@@ -611,7 +611,7 @@ try {
       carl.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { carlId = m.cut?.you; carl.send(JSON.stringify({ type: "request", id: 1, verb: "say", args: { text: "carl was here" } })); } };
       carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", replica: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
-    // CP6 a line typed while reconnecting is queued, then sent (v4 dropped it as 'offline')
+    // CP6 a line typed while reconnecting is queued, then sent (the port dropped it as 'offline')
     { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(), true))`);
       await waitFor(`import('/lib/net.js').then((m) => !m.net.joined)`, 3000);
       await type("typed while away");
@@ -626,11 +626,11 @@ try {
     // CP7 a refused say is shown (the rate limit: the reply was ignored, and the line just didn't appear)
     { await page(`const m = await import('/lib/net.js'); await Promise.all(Array.from({ length: 24 }, (_, i) => m.say('flood ' + i))); return true;`);
       check("CP7 a say refused by the rate limit is shown, in words", await lineLike(`/slow down — you've said a lot/`), (await lines() as string[]).slice(-3)); }
-    // CP8 the help sheet and the command bar describe v4 (first-in owners, /grant * visitor closing a world, objects flying with /punt, +gen)
+    // CP8 the help sheet and the command bar describe the protocol (first-in owners, /grant * visitor closing a world, objects flying with /punt, +gen)
     { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
       check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|\+gen|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
-      check("CP8 the command bar lists nothing that sends nothing on v4 (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); }
+      check("CP8 the command bar lists nothing that sends nothing here (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
     { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'builder', guests: 'builder' } })).ok;`);
       await sleep(1200);   // CP7's flood is the say budget; this is an act

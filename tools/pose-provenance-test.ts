@@ -87,12 +87,12 @@ console.log("wire + call-site invariants (asserted against the source):");
      "the presence packet only ships a physics bag under the ragdoll label");
   ok(/heldPose = out\.pose; this\.heldPoseAuthored = false/.test(src),
      "a settled sim frame is marked physics at capture");
-  // a seat is presence on v4 (the body's own frames carry it, nothing is logged): leaving it is setSeat(null)
+  // a seat is presence (the body's own frames carry it, nothing is logged): leaving it is setSeat(null)
   const leaves = src.match(/this\.mySeat && this\.mayLeaveSeat\("menu"\)\) this\.setSeat\(null\)/g) ?? [];
   ok(leaves.length >= 2, "walking AND standing both leave the seat (found " + leaves.length + " call sites)");
   ok(/msg\.restore\.pose && msg\.restore\.clip !== "ragdoll"\) \{ this\.heldPose = msg\.restore\.pose; this\.heldPoseAuthored = true/.test(src),
      "a restored pose (post-settledPose server memory) counts as authored");
-  // (gone with v1: "stateToEntries replays folded mounts — a rejoined agent knows it is seated". A v4 seat is presence
+  // (gone with v1: "stateToEntries replays folded mounts — a rejoined agent knows it is seated". A seat is presence
   //  and isn't in the log or the cut, so a rejoin starts standing; there is no folded mount to replay.)
 }
 

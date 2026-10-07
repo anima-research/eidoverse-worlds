@@ -1,4 +1,4 @@
-// tools/protocol/scripts-check.ts — v4 scripts (research 41; the lab's 46 B-cases, ported from its toy language to real
+// tools/protocol/scripts-check.ts — scripts (research 41; the lab's 46 B-cases, ported from its toy language to real
 // JavaScript in the QuickJS sandbox), through the real authority, plus `use` → script and a timer through a real server.
 //   bun tools/protocol/scripts-check.ts                 every case (the server cases start a scratch sequencer)
 //   bun tools/protocol/scripts-check.ts --only B2,B5    just those
@@ -728,7 +728,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
-      // bellkeeper: kv → a component in scope; emit('motion') → set motion (pivot is its own component in v4); emit('say') → say
+      // bellkeeper: kv → a component in scope; emit('motion') → set motion (pivot is its own component now); emit('say') → say
       s.call("bob", "create", { id: "bell1", model: "bell", components: { pivot: { pos: [0, 1.6, 0] } }, place: { at: [0, 0] } });
       install(s, "bob", "bell1", "keeper", `world.on("use", (e) => {
   if (e.action !== "ring") return;
@@ -740,7 +740,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
 `, { scope: { ids: "self", comps: ["bellkeeper", "motion"], say: true }, on: ["use"], knobs: { period: 2.2, note: "the bell tolls" } });
       s.call("bob", "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "keeper" } } });
       const ring = s.call("vic", "use", { id: "bell1", action: "ring" });
-      // greeter: world-level in v1; in v4 a script lives on a thing (a sign), and hears every arrival
+      // greeter: world-level in v1; now a script lives on a thing (a sign), and hears every arrival
       s.call("bob", "create", { id: "sign", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "sign", "greeter", `world.on("enter", (e) => {
   const met = (world.get("self", "greeter")?.met ?? 0) + 1;

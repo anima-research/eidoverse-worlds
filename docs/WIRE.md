@@ -73,7 +73,7 @@ Every message belongs to exactly one plane:
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
 | `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, replica}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. An embodied (`world` surface) join must say `replica: true` — it folds the log itself — or it is refused. Answers `snapshot` (§4). |
-| `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `v4-result`. There is no other write path. |
+| `request` | authored | embodied; spectators may only read | `{id?, verb, args}` | the ONLY way into the log: one request (create, set, delete, place, batch, use, say, undo, publish, update, grab/put/throw/drop/punt/move/wait, sky/weather/sculpt, upload/adopt, kick/ban/unban, and the reads look/inspect/measure/find/lint/history/schema/scripts/help/whois). The asker is stamped from the connection, never read from the payload. Answers `reply`. There is no other write path. |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
@@ -96,9 +96,10 @@ Every message belongs to exactly one plane:
 ## 4. Server → client messages
 
 - `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
-  v4: {…, state, head, worldId, sim, names, holds, mine}, state (the chat
+  cut: {dialect, v, head, worldId, verbs, state, sim, names, holds, mine, you},
+  state (the chat
   window), avatars (roster), yourRights, restore, present[{id, avatar, pose,
-  agent, surfaces}]}`. `v4.state` is the fold at `head` (each component
+  agent, surfaces}]}`. `cut.state` is the fold at `head` (each component
   wrapped `{v}` or `{purged: true}`, as in the digest); a joiner adopts that
   cut and folds on from `head + 1`. Cost scales with the world, not its
   history.

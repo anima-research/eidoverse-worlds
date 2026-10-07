@@ -9,7 +9,7 @@
 // The world speaks the protocol: the join says `replica: true` (a client that
 // doesn't is refused), and chat arrives as `say` entries in the `log`
 // stream. Their actors are opaque ids; the stream's `names` (and the
-// snapshot's v4.names) say who they are, and SPEAKERS / voices.json name
+// snapshot's cut.names) say who they are, and SPEAKERS / voices.json name
 // speakers by that display name.
 //
 // Env:

@@ -32,7 +32,7 @@ import { namedParts } from './parts.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
-import * as Edits from './editwrites.js';   // protocol/v4 slice 3b: a world's component edits are requests
+import * as Edits from './editwrites.js';   // slice 3b: a world's component edits are requests
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -92,7 +92,7 @@ export function schemaFor(id) {
   return inspectSchema(rec, id, liveFor(id));
 }
 
-let gesture = null;   // { id, v4 } — the thing's components as they stood when a drag began
+let gesture = null;   // { id, comps } — the thing's components as they stood when a drag began
 export function endGesture() { gesture = null; }
 
 /** The authority ops ONE edit would send (shared/editschema.js editOps), computed but not sent — a multi-selection batches

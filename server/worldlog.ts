@@ -1,7 +1,8 @@
 // server/worldlog.ts — a world's log as this server holds it: the authority over the world's directory.
 //
-// Every world this server serves is a world (its directory holds world.jsonl, line 0 a genesis: isWorldDir); World
-// (server/world.ts) holds one WorldLog. Writes: every write is a v4 REQUEST through the authority (shared/protocol/authority.js: one
+// Every world this server serves speaks the current protocol (its directory holds world.jsonl, line 0 a genesis saying
+// {dialect, v: 4}: isWorldDir); World
+// (server/world.ts) holds one WorldLog. Writes: every write is a REQUEST through the authority (shared/protocol/authority.js: one
 // `admit`, act + change entries, the ts from this server's clock); request() is the only way in.
 //
 // What clients see: every client folds the log itself. A joiner adopts the authority's cut (clientCut) and folds the raw entries
@@ -25,7 +26,7 @@ import { openLive, isWorldDir, isPreNamesDir } from "./livehost.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
 
 type Any = any;
-/** One chat line as this server's readers hold it (the chat window, history pages, the attest lookup): a v4 say entry
+/** One chat line as this server's readers hold it (the chat window, history pages, the attest lookup): a say entry
  *  numbered seq × 1000, its actor a display name. */
 export type ChatLine = { seq: number; ts: number; actor: string; verb: "say"; args: { text: string; to?: string; spoken?: boolean; utt?: number; t0?: number } };
 /** The view of the fold (shared/protocol/view.js viewState) plus the chat window. */
@@ -113,7 +114,7 @@ export class WorldLog {
     hear(this._state, { actor: line.actor, text: (line.args as Any).text, ts: line.ts, seq: line.seq });
     this.record(line);
   }
-  /** The last v4 seq. */
+  /** The last seq. */
   get head(): number { return this.live.entries.length - 1; }
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
   get snapSeq(): number { return this.head * 1000 + 999; }

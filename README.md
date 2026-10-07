@@ -62,7 +62,7 @@ EIDOVERSE_DIR=/path/to/eidoverse-video PORT=8940 bun server/server.ts
 
 `JOIN_TOKEN=<key>` gates the door (empty = open; fine on a tailnet, not on a
 public box). `bun tools/protocol/world.ts found <name> --owner <you>` founds a
-world; `bun run test:v4` runs every protocol suite. AGENTS.md is the
+world; `bun run test:protocol` runs every protocol suite. AGENTS.md is the
 builder's guide.
 
 ## Layout

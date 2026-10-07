@@ -1,6 +1,6 @@
 // tools/protocol/batch2-probe.ts — batch 2 in a real browser: one headless Chromium against a scratch sequencer (tools/harness.ts
 // scratchBench), one stage per visible component, plus the privacy proof for media links. Run it under the house guards
-// (test:v4's `client-b2` suite does: flock on the headless lock, perf-guard).
+// (test:protocol's `client-b2` suite does: flock on the headless lock, perf-guard).
 //
 //   PRIV  an untrusted link (a picture's and a sound's) is NEVER requested by a viewer who hasn't opted in: every https
 //         request the page makes is caught at the network layer (CDP Fetch: paused, recorded, failed: nothing leaves the

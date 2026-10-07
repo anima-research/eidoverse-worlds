@@ -7,10 +7,10 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/hierarchy-commit-test.ts
 //
-// v4 port (2026-10-06): the wire is the real authority on a scratch world (tools/protocol/inspectharness.ts stubs the page
+// the protocol port (2026-10-06): the wire is the real authority on a scratch world (tools/protocol/inspectharness.ts stubs the page
 // around inspect.js/editwrites.js). One drag = one request (a batch: set parent + the LOCAL transform, scale included), so
 // "a mount and a scale place" and the client-side inverse list are gone: undo is the door's, by act. A lock is the
-// door's to refuse, and the client asks "Move anyway?" (v4 §5).
+// door's to refuse, and the client asks "Move anyway?" (§5).
 import { inspectHarness } from "./protocol/inspectharness.ts";
 import { worldPose } from "../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";

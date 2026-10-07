@@ -18,7 +18,7 @@ const HIDDEN_WORLD = new Set(["physics-engine", "imported-epoch", "about", "boun
 const IMP = "imported:", IMP_BANS = "imported-bans:";
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
-/** One v4 entity's components as the record readers use. */
+/** One entity's components as the record readers use. */
 export function viewOf(id, c) {
   const rec = {};
   if (typeof c.model === "string") rec.lib = c.model;

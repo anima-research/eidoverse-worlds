@@ -499,7 +499,7 @@ a visitor keeps in their own browser (IndexedDB) as trusted in-page
 modules — the whole client surface, speaking AS that visitor, like a
 browser extension. They reach the world only through the requests and
 presence that visitor's client sends. A world can't offer a mod to its
-visitors in v4 yet. docs/MODDING-UI.md covers the UI a mod can build.
+visitors yet. docs/MODDING-UI.md covers the UI a mod can build.
 
 ## Code, through this repo — extending the vocabulary itself
 
@@ -555,7 +555,7 @@ JOIN_TOKEN=test-key PORT=8993 bun run server/server.ts &
 #   http://localhost:8993/?name=you&world=devtest
 
 # every protocol suite (authority, fold, scripts, grab, physics, server, client…)
-bun run test:protocol                                    # (test:v4 is the same)
+bun run test:protocol
 bun tools/protocol/run.ts authority scripts              # only the named suites
 ```
 
@@ -563,7 +563,7 @@ bun tools/protocol/run.ts authority scripts              # only the named suites
 (`request(openWorld(root, name), actor, verb, args)`); extend it, or the
 suite closest to your change, when you add vocabulary — a request without
 a check doesn't exist yet. Run suites with
-`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:v4` sets it): a cached
+`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`test:protocol` sets it): a cached
 transpile once hid a stale module.
 
 Deploys are the operator's call: pushing `main` updates no running world.
@@ -574,7 +574,7 @@ ripple every resident's reconnect.
 translated once, by an operator, into a new world:
 `WORLDS_DIR=… bun tools/protocol/world.ts translate <old world> <new name>`. The
 old log is read, never written. Its entries appear in the new world's
-history as `imported` acts (`{verb, args, from}`), and fields v4 has no
+history as `imported` acts (`{verb, args, from}`), and fields the protocol has no
 component for ride along as `imported:<name>`. Old runtime scripts are kept
 as a record on `@world` and never run: `scripts` lists them as
 `needs-reinstall` (docs/SCRIPTS.md says how to port one).

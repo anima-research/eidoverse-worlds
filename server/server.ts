@@ -878,12 +878,12 @@ const server = Bun.serve({
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
-          // slice 3c: a world speaks only v4. A client that doesn't fold it (an old page, an old agent build) is refused
+          // slice 3c: a world talks only to clients that fold its log. A client that doesn't (an old page, an old agent build) is refused
           // with the reason; 4005 = a refused join, which clients know not to redial
           // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
           if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
-            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" is a protocol world, and this client doesn't read v4 — reload the page for the current client, or update the agent` }));
-            ws.close(4005, "this client doesn't read v4");
+            ws.send(JSON.stringify({ type: "error", error: `"${w.name}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent` }));
+            ws.close(4005, "this client doesn't fold the log");
             clients.delete(ws);
             return;
           }
@@ -1126,7 +1126,7 @@ const server = Bun.serve({
           // OWN keys only: a type such as "__proto__" or "constructor" must
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
-          // every world is v4: the authority's own types first (server/requestwire.ts), then the room's (presence, voice, chat lanes)
+          // every world speaks the protocol: the authority's own types first (server/requestwire.ts), then the room's (presence, voice, chat lanes)
           const h = requestHandler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
           if (h && !gagged(c, String(msg.type))) h({ c, ws, now, expel, sweep: sanctionSweep }, msg);
         }

@@ -34,7 +34,7 @@ import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
-import * as Edits from './editwrites.js';   // protocol/v4 slice 3b: in a world every write here is a request
+import * as Edits from './editwrites.js';   // slice 3b: in a world every write here is a request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -419,7 +419,7 @@ export function updateBuild() {
         // ORIGIN sits under the cursor, which is both a jump and usually wrong —
         // you grabbed a crate by its corner, not by its pivot.
         if (dragging.world) {
-          // v4: the grab offset, the aim and the result are WORLD points; a mounted child's object position is local
+          // the grab offset, the aim and the result are WORLD points; a mounted child's object position is local
           // to its parent (turned, scaled), so the world target is brought into that frame last (research 44 #5)
           _w.copy(aim.point).add(dragging.grab);
           if (aim.onto) _w.y = aim.point.y;
@@ -568,7 +568,7 @@ canvas.addEventListener('mousedown', (e) => {
   dragging = {
     id,
     world,
-    // v4: the components this gesture starts from: the release's `expect`
+    // the components this gesture starts from: the release's `expect`
     before: { ...snapshotOf(root), comps: Edits.compsOf(id) },
     lastSent: 0,
     armed: false,
@@ -635,7 +635,7 @@ let escapeHook = () => false;
 export function setEscapeHook(fn) { escapeHook = fn; }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
-    // v4 (§3a): Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
+    // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
     if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); return; }
     if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")

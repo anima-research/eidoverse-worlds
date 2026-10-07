@@ -113,7 +113,7 @@ try {
   for (let i = 0; i < 30; i++) { ins = await rpc('tools/call', { name: 'inspect', arguments: { id: 'lamp1' } }); if (/light\.intensity = 16  \(/.test(toolText(ins))) break; await sleep(200); }
   check('inspect reads the FOLDED light (intensity 16, range 6 m, colour) — not the thinned perception view', /light\.intensity = 16  \(/.test(toolText(ins)) && /light\.range = 6 m  \(/.test(toolText(ins)) && /0xff8800/.test(toolText(ins)) && /pos\.y = 2 m/.test(toolText(ins)), toolText(ins).slice(0, 200));
   const dry = await rpc('tools/call', { name: 'edit', arguments: { id: 'lamp1', dry: true, set: { 'pos.x': '+=1', 'pos.z': 0, 'light.intensity': '+=25%' } } });
-  // a v4 lamp is a thing with a light component: the edit is ONE door batch, a transform set (the whole pose) and a
+  // a lamp is a thing with a light component: the edit is ONE door batch, a transform set (the whole pose) and a
   // light set (the bag, merged)
   check('edit dry: three edits → ONE batch: set transform (full pose) + set light', (toolText(dry).match(/would send/g) ?? []).length === 1 && /would send batch .*"component":"transform","value":\{"pos":\[2,2,0\]/.test(toolText(dry)) && /"component":"light","value":\{[^}]*"intensity":20[,}]/.test(toolText(dry)), toolText(dry));
   const ed = await rpc('tools/call', { name: 'edit', arguments: { id: 'lamp1', set: { 'light.intensity': '+=4', 'flags.label': 'the porch lamp' } } });
@@ -121,7 +121,7 @@ try {
   let ins2: any = null;
   for (let i = 0; i < 30; i++) { ins2 = await rpc('tools/call', { name: 'inspect', arguments: { id: 'lamp1' } }); if (/light\.intensity = 20  \(/.test(toolText(ins2)) && /porch lamp/.test(toolText(ins2))) break; await sleep(200); }
   check('…and the fold came back with 20 and the label', /light\.intensity = 20  \(/.test(toolText(ins2)) && /"the porch lamp"/.test(toolText(ins2)), toolText(ins2).slice(0, 160));
-  // (a v4 lamp is a thing: it has a heading, so pos.yaw is no longer the field it lacks)
+  // (a lamp is a thing: it has a heading, so pos.yaw is no longer the field it lacks)
   const bad = await rpc('tools/call', { name: 'edit', arguments: { id: 'lamp1', set: { 'light.flicker': 2 } } });
   check('a field a light does not have is refused by name, nothing sent, marked isError', /refused: light\.flicker/.test(toolText(bad)) && !/sent/.test(toolText(bad)) && bad.result?.isError === true, toolText(bad));
   const hier = await rpc('tools/call', { name: 'hierarchy', arguments: {} });

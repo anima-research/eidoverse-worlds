@@ -1,6 +1,6 @@
 // components-corpus-test — the component view is lossless on every world we have.
 //
-// The primitives (sha256, canon), the step-2 spellings (synthetic entity records), and then the corpus: for every v4
+// The primitives (sha256, canon), the step-2 spellings (synthetic entity records), and then the corpus: for every
 // world log, fold it (shared/protocol/fold.js), take the view a client reads (shared/protocol/view.js viewState), and read every
 // entity as components (shared/components.js componentsOf) and back (entityOf). The bytes must come back identical
 // (canonical JSON), and every key must land in a component parameter, a declared stamp, or `extra` (which is counted
@@ -103,12 +103,12 @@ check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add o
   && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')
   && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 
-// ------------------------------------------------------------ the corpus (v4)
+// ------------------------------------------------------------ the corpus
 // Every world log we have: fold it (shared/protocol/fold.js), take the view a client reads (view.js viewState: the
 // entity records the editor's componentsOf reads), and every entity must read as components and write back exact.
 // (Protocol v1 removed, 2026-10-07: the v1 corpus went with it — every entry of every v1 log through the v1 fold, the
 //  @world sky/terrain/grass components after every v1 world verb, and each entity saved as a blueprint and PLACED
-//  through placeVerbs into the v1 fold. v4 blueprints are the door's: tools/blueprint-test.ts sections 6–7.)
+//  through placeVerbs into the v1 fold. blueprints are the authority's: tools/blueprint-test.ts sections 6–7.)
 const { readLog, fold } = await import('../shared/protocol/fold.js');
 const { viewState } = await import('../shared/protocol/view.js');
 const logs: string[] = [];
@@ -118,10 +118,10 @@ const walk = (d: string, depth = 0) => {
     const p = join(d, n);
     let st; try { st = statSync(p); } catch { continue; }
     if (st.isDirectory()) { if (n === 'node_modules' || n === '.git') continue; walk(p, depth + 1); }
-    else if (n.endsWith('.jsonl') && (n === 'world.jsonl' || d.endsWith(join('spec', 'v4', 'fixtures')))) logs.push(p);
+    else if (n.endsWith('.jsonl') && (n === 'world.jsonl' || n === 'lab-cottage.jsonl')) logs.push(p);
   }
 };
-walk(join(import.meta.dir, '..', 'spec', 'v4', 'fixtures'));
+walk(join(import.meta.dir, '..', 'spec', 'conformance'));
 for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
 const seen = new Set<string>(); const unique: string[] = [];
 for (const p of logs) { const h = createHash('md5').update(readFileSync(p)).digest('hex'); if (!seen.has(h)) { seen.add(h); unique.push(p); } }

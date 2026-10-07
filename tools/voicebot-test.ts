@@ -47,7 +47,7 @@ for (let i = 0; i < 40 && !/no voice for "alice"/.test(out); i++) await sleep(10
 await sleep(400);
 
 console.log("\nvoicebot — hearing a world (DRY_RUN)\n");
-check("the bot joins as a spectator that reads v4", /watching world "commons" as spectator/.test(out), out.slice(-300));
+check("the bot joins as a spectator that folds the log", /watching world "commons" as spectator/.test(out), out.slice(-300));
 check("a configured speaker's live line reaches the synth step, by display name", (out.match(/no voice for "alice"/g) ?? []).length === 1, out.slice(-400));
 check("history from before the join is not voiced", !/history/.test(out));
 check("a speaker not in SPEAKERS is not voiced", !/"bob"/.test(out));

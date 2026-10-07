@@ -3,12 +3,12 @@
 **License: CC0 1.0 (public domain)** — same grant as PROTOCOL.md; the
 contract is free.
 
-*This file keeps its old name because code cites it ("PROTOCOL_v2 Covenant
-I") for the owned-numerics rules. It began as the deterministic-sim
-amendment to the first protocol and is now the physics part of the protocol
-(PROTOCOL.md); the covenants carried over unchanged, and how physics meets
-the log was redone for v4: launches are `sim` entries, and the log records
-where things come to rest.*
+*This began as the deterministic-sim amendment to the first protocol
+(PROTOCOL_v2.md, "dialect 3"; kept verbatim as `history/PROTOCOL-v2-sim.md`,
+which is what code citing "PROTOCOL_v2 Covenant I" points at) and is now the
+physics part of the protocol (PROTOCOL.md); the covenants carried over
+unchanged, and how physics meets the log was redone: launches are `sim`
+entries, and the log records where things come to rest.*
 
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` (eidosim), `shared/simmath.js`,
@@ -75,7 +75,7 @@ versioned in the log itself:
   sets `engine`; the **authority stamps `build`**, the hash of the exact files
   that implement it (determinism is per binary). The reference authority carries
   `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
-  `shared/protocol/simlayer.js`; `bun run test:v4` recomputes it from the files
+  `shared/protocol/simlayer.js`; `bun run test:protocol` recomputes it from the files
   and fails if they changed without a new name).
 - **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing

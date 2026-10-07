@@ -41,7 +41,7 @@ export function foundWorlds(worldsDir: string, names: string[], owner = "owner")
 }
 
 /** The chat lines in a socket's received messages: `say` entries of the `log` stream (actors are opaque ids; the
- *  stream's `names` and the snapshot's v4.names say who they are). {seq, actor (display name), by (id), text, body}. */
+ *  stream's `names` and the snapshot's cut.names say who they are). {seq, actor (display name), by (id), text, body}. */
 export function saysIn(msgs: any[]) {
   const names: Record<string, string> = {};
   const out: { seq: number; actor: string; by: string; text: string; body: any }[] = [];

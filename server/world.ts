@@ -2,7 +2,7 @@
 //
 // A World is one world as this server holds it: its log (server/worldlog.ts WorldLog: the authority over the world's
 // directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
-// persisted). Every world this server serves is a world: a directory that holds only an old log (the first
+// persisted). Every world this server serves speaks the current protocol: a directory that holds only an old log (the first
 // protocol's log.jsonl) is refused at open, with the command that translates it (tools/protocol/import-v1/, run once by the
 // operator).
 // The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
@@ -145,7 +145,7 @@ export class World {
     // server-side.
     this.scripts = new WorldScripts(this.log);
     this.scripts.sync();
-    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, v4 head ${this.log.head}, `
+    console.log(`[world:${name}] loaded — ${Object.keys(this.state.entities).length} things, head ${this.log.head}, `
       + `${Object.keys(this.poses).length} remembered poses`);
   }
   private openLog(): WorldLog {

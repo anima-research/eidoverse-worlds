@@ -1,6 +1,6 @@
 // channelbox-test — the inspector's channel box (design §5, step 3): Translate,
 // Rotate (Euler read from q in the entity's rotation order), Scale, the order,
-// and the Quaternion row — schema → editOps → the REAL door (a scratch v4
+// and the Quaternion row — schema → editOps → the REAL door (a scratch
 // world, tools/protocol/scratchworld.ts) → the view → schema again.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/channelbox-test.ts
@@ -9,8 +9,8 @@
 // rigger touches: what each channel reads, what one edit writes, and that the
 // other channels read back unchanged after the door writes it.
 //
-// v4 port (2026-10-06): a transform is written whole ({pos, q, scale}), so "a yaw-only thing keeps writing a bare yaw
-// (its history keeps its bytes)" has no v4 meaning: those checks now ask that the written q IS that pure heading.
+// the protocol port (2026-10-06): a transform is written whole ({pos, q, scale}), so "a yaw-only thing keeps writing a bare yaw
+// (its history keeps its bytes)" has no meaning here: those checks now ask that the written q IS that pure heading.
 // Light-verb lights and guard are gone. A lock no longer makes Rotate read-only: the door refuses the turn.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { inspectSchema, editOps, fieldAt, describeSchema, poseEdits } from '../shared/editschema.js';
@@ -18,7 +18,7 @@ import { qFromEuler, eulerFromQ, ROT_ORDERS, sameRotation } from '../shared/eule
 import { qHeading, qRotate, qFromYaw } from '../shared/rot.js';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 import { encName } from '../shared/protocol/names.js';
-const ROT_ORDER = encName('rotOrder');   // camelCase isn't a v4 component name: requests.js escapes it once, the view decodes it
+const ROT_ORDER = encName('rotOrder');   // camelCase isn't a component name: requests.js escapes it once, the view decodes it
 
 let pass = 0, fail = 0;
 const fails: string[] = [];
@@ -51,7 +51,7 @@ console.log('the channels a yaw-only thing shows');
     const r = rotOf(withOrder(crate, order));
     check(`${order}: a yaw-only thing reads exactly Rotate (0, yaw, 0)`, r[0] === 0 && r[1] === 2.5 && r[2] === 0, JSON.stringify(r));
   }
-  // and the same thing as the door stores it (every v4 record carries q): an upright q reads (0, yaw, 0) too
+  // and the same thing as the door stores it (every record carries q): an upright q reads (0, yaw, 0) too
   const asStored = W.seed({ yawonly: crate }).rec('yawonly');
   check('…and as the door stores it (a whole q): still (0, 2.5, 0)', Array.isArray(asStored.q) && ROT_ORDERS.every((o) => { const r = rotOf(withOrder(asStored, o)); return close(r[0], 0, 1e-12) && close(r[1], 2.5, 1e-9) && close(r[2], 0, 1e-12); }), JSON.stringify(asStored));
   const card = s.sections.list.find((c: any) => c.type === 'Transform');
@@ -84,7 +84,7 @@ console.log('one Rotate edit on a yaw-only thing');
   check('an edit that leaves X and Z at 0 stays a pure heading (the yaw it had)', !!tfOf(r) && upright(tfOf(r).q) && sameRotation(tfOf(r).q, qFromYaw(0.4), 1e-12), JSON.stringify(r.ops));
 }
 
-console.log('an upright thing that carries a q (every v4 record does)');
+console.log('an upright thing that carries a q (every record does)');
 {
   for (const order of ROT_ORDERS) {
     const q = [0, Math.sin(1.1), 0, Math.cos(1.1)];   // a 126° turn about +Y
@@ -163,7 +163,7 @@ console.log('rotate order: changing it never changes q');
   const card = q.sections.list.find((c: any) => c.type === 'Transform');
   check('quaternion mode: the Rotate channels are hidden, the Quaternion row is shown open', !fieldAt(q, 'rot.x') && !!fieldAt(q, 'rot.qw') && card.quatOpen === true);
   const locked = inspectSchema({ ...ent, comp: { rotOrder: 'ZXY', lock: true } }, 'e');
-  check('locked: Rotate and Quaternion stay editable and say moving it asks first (the door decides, v4 §5); the order is open',
+  check('locked: Rotate and Quaternion stay editable and say moving it asks first (the door decides, §5); the order is open',
     !fieldAt(locked, 'rot.x')!.disabled && !fieldAt(locked, 'rot.qw')!.disabled && /locked — moving it asks first/.test(fieldAt(locked, 'rot.x')!.hint) && !fieldAt(locked, 'rot.order')!.disabled);
   // a lock binds the turn at the door, and the order change (it moves nothing) passes it
   const L = { ...ent, comp: { rotOrder: 'ZXY', lock: true } };

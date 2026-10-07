@@ -10,7 +10,7 @@
 //      old n, a superseded leg, an end for the wrong session); the fold
 //      (append, the window bound, a newer leg or a new session starts fresh,
 //      end clears). `gen` is the sequencer's stamp: the live leg.
-// (Protocol v1 removed, 2026-10-07. Two legs went with it and wait on the v4 caption path, being designed: 1d THE
+// (Protocol v1 removed, 2026-10-07. Two legs went with it and wait on the caption path, being designed: 1d THE
 //  DEED (the per-entity caption grant folded by the v1 `grant` verb and carried by rightsIn: its born/rename/sub
 //  migration rules) and 2 PERCEPTION (the agent's look() line folded from v1 `caption` entries: newest line,
 //  duplicate n and superseded leg folding to nothing, `end` clearing it, a hand-written captions comp ignored).

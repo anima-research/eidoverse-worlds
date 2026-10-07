@@ -132,7 +132,7 @@ set {id: "@world", component: "resolvers", value: {urls: ["https://eidoverse.ani
 (a later write replaces it; absent = origin only).
 
 **No protocol change needed.** `resolvers` and §1a's `variants:<hex>` are
-components, and every v4 reader keeps and replays components it doesn't
+components, and every reader keeps and replays components it doesn't
 understand (PROTOCOL §4), so an older reader folds an imported world with
 them intact and simply doesn't use them. Bare names belong to the
 protocol's registry, so a host implementing this spec registers them there

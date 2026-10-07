@@ -54,7 +54,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
 
 export const confirmOpen = () => !!open;
 
-/** The same centre card with more than two answers (the v4 lock question: ✓ Move anyway / ✕ Cancel / 🔓 Unlock).
+/** The same centre card with more than two answers (the lock question: ✓ Move anyway / ✕ Cancel / 🔓 Unlock).
  *  choices: [{v, label}], in the order shown; `cancel` is the v that Esc and the backdrop answer (and Enter on it).
  *  The first choice has focus (the house yes); Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
  *  rule: asking again answers the open one with its cancel. */

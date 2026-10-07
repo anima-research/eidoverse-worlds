@@ -37,7 +37,7 @@ const redoStack = [];   // my undo acts, newest last
 bus.on('my-acts', (m) => { undoStack.splice(0, undoStack.length, ...(Array.isArray(m) ? m : [])); redoStack.length = 0; });
 export const stacks = () => ({ undo: [...undoStack], redo: [...redoStack] });
 
-/** A thing's v4 components as this client folds them now (a copy), or null. */
+/** A thing's components as this client folds them now (a copy), or null. */
 export function compsOf(id) { const e = replica.st?.entities?.[idIn(id)]; return e ? clone({ ...e.c }) : null; }
 /** expect entries for these things' components, from `base` (id → comps, a gesture's start) or the fold now. */
 export function expectOf(ids, comps, base = null) {

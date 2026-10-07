@@ -576,7 +576,7 @@ Before public performances:
 - Authenticated sessions and invites.
 - Explicit spectator, performer, host, moderator, renderer, and agent roles.
 - Server-assigned identity; clients cannot impersonate names.
-- Server-checked settlement of anything a body holds (v4: the door's
+- Server-checked settlement of anything a body holds (the door's
   grab/put/throw).
 - Schema validation for every message.
 - Message and upload limits.

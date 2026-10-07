@@ -1,6 +1,6 @@
 // tools/protocol/build-probe.ts — ship-list group B (10-07) in a real browser: one headless Chromium against a scratch
 // sequencer (tools/harness.ts scratchBench), run under the house guards like client-check:
-//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/build-probe.ts      (test:v4's `build-client` does this)
+//   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/build-probe.ts      (test:protocol's `build-client` does this)
 //   ST  a building edit lands on the SELECTED building (not the world's first), as ONE act with expect; Ctrl+Z (the
 //       editor's one undo) puts it back; after someone else changes it, Ctrl+Z writes nothing over their work; the
 //       Create panel has no second "undo building edit"

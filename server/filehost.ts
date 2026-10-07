@@ -3,7 +3,7 @@
 // <root>/worlds/<name>.presence.json (the presence plane, a file only because a test process may call once per
 // request) and <root>/store/sha256-<hex>.json (blobs, §2.2: named by full hash, stored once, verified on read).
 //
-// Slice 1: used by the v4 suites only. Nothing in the running server imports this yet (slice 2 is the authority).
+// Slice 1: used by the protocol suites only. Nothing in the running server imports this yet (slice 2 is the authority).
 import fs from "node:fs";
 import path from "node:path";
 import { readLog, jcs, sha256 } from "../shared/protocol/fold.js";

@@ -154,7 +154,7 @@ console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
 }
 
 console.log("\n=== H1: typed name takeover → actorId keyed ===");
-// H1: v4 presence keyed by typed name allows impersonate/eavesdrop by typing name
+// H1: presence keyed by typed name allows impersonate/eavesdrop by typing name
 // Attack: join as "Alice", then someone else joins as "Alice" → same session/roles/whispers
 // Fix: key on c.actorId in worlds; takeover only same account; unique present names
 {
@@ -175,9 +175,9 @@ console.log("\n=== H1: typed name takeover → actorId keyed ===");
   alice2.close();
 }
 
-console.log("\n=== H2: rightsOf keyed by name (old v1 code) → use v4 role ===");
-// H2: v1 rightsOf over v4 view keyed by name; typing owner's u- id as name passes rights check
-// Fix: all v4 rights via w.log.roleOf(c.actorId); refuse names matching ^u-[a-z2-7]{20}$
+console.log("\n=== H2: rightsOf keyed by name (old v1 code) → use role ===");
+// H2: v1 rightsOf over the view keyed by name; typing owner's u- id as name passes rights check
+// Fix: all rights via w.log.roleOf(c.actorId); refuse names matching ^u-[a-z2-7]{20}$
 {
   const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
   const bob = await client(srv.port, "sec-test", "Bob", { replica: true });
@@ -203,7 +203,7 @@ console.log("\n=== H3: joining founds world → getWorld after admission ===");
 
 console.log("\n=== H4: anon fresh id per connection → capped at visitor; ban expels ===");
 // H4: anonymous gets fresh id on reconnect (ban/rollback reset); door ban doesn't expel
-// Fix: anon capped at visitor; expel on ban + v4 kick
+// Fix: anon capped at visitor; expel on ban + kick
 {
   // Join as guest (anon)
   const guest1 = await client(srv.port, "sec-test", "Guest", { replica: true });

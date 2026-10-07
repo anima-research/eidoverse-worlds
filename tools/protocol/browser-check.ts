@@ -1,4 +1,4 @@
-// tools/protocol/browser-check.ts — the shared v4 core in a real browser (headless Chromium), against the same work in bun.
+// tools/protocol/browser-check.ts — the shared protocol core in a real browser (headless Chromium), against the same work in bun.
 // A grep for node: imports isn't evidence that the client can import these files; loading them in a page is.
 // One static server (this process, /shared only), one page, no world server, no WebGL. (The old-world importer,
 // tools/protocol/import-v1/, runs once at the operator's command, never in a browser: it isn't loaded here.)
@@ -52,7 +52,7 @@ const here = await work("file://" + ENGINE.replace(/\/$/, ""), texts);
 
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const p = decodeURIComponent(new URL(req.url).pathname);
-  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><link rel=icon href=\"data:,\"><title>v4</title>", { headers: { "content-type": "text/html" } });
+  if (p === "/") return new Response("<!doctype html><meta charset=utf-8><link rel=icon href=\"data:,\"><title>protocol</title>", { headers: { "content-type": "text/html" } });
   if (!/^\/(shared)\/[A-Za-z0-9_\-./]+\.js$/.test(p) || p.includes("..")) return new Response("no", { status: 404 });
   const f = ENGINE + p.slice(1); if (!fs.existsSync(f)) return new Response("missing", { status: 404 });
   return new Response(fs.readFileSync(f), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });

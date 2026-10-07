@@ -1,4 +1,4 @@
-// garden-look-probe — open R's v4 garden (a running server, GARDEN_ORIGIN) as a person would, after slice 3c: the page
+// garden-look-probe — open R's garden (a running server, GARDEN_ORIGIN) as a person would, after slice 3c: the page
 // must draw from its own fold (state.st = viewState(fold)), with every thing in the scene. Screenshot to SHOT.
 import { launchBrowser, checker } from './probe-harness.mjs';
 const ORIGIN = process.env.GARDEN_ORIGIN ?? 'http://127.0.0.1:8985';

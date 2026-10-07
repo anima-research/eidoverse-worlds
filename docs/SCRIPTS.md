@@ -191,7 +191,7 @@ A refused or failed activation writes nothing. Its reason goes to the script's c
 
 ## Translated v1 worlds
 
-A v1 world translated to v4 keeps its bindings as `@world.imported-behavior:<name>`, as a record. v4 never runs them: they were
+A translated v1 world keeps its bindings as `@world.imported-behavior:<name>`, as a record. They never run: they were
 written for v1's API (`world.emit`, `world.kv`), with their author's rights and no scope. `scripts` lists each as
 `needs-reinstall`, and a `use` that reaches one says so. To bring one back: rewrite it for this API (`emit(verb)`
 becomes `world.set`/`world.say`; `kv` becomes a component in scope; `world.every` becomes `every` in the component),

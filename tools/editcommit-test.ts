@@ -4,14 +4,14 @@
 //
 // The client's half of the shared schema: a live call previews through the
 // group's handler and never sends; the final call sends ONE door request whose
-// `expect` names what it changes AS IT STOOD WHEN THE GESTURE BEGAN — the v4
+// `expect` names what it changes AS IT STOOD WHEN THE GESTURE BEGAN — the
 // form of the "a scrub's before leaked into the next selection" bug the first
-// review round found (v1 computed an undo inverse from it; v4 sends it as
+// review round found (v1 computed an undo inverse from it; now it is sent as
 // expect, and the door refuses `changed` if someone wrote it since).
 // tools/protocol/inspectharness.ts stubs the page (the realized world, the wire to the
 // scratch door, the dialogs); inspect.js, editwrites.js, the schema and the door are real.
 //
-// v4 port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
+// the protocol port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
 // by act; a lamp is a light COMPONENT edited with set). Each old inverse check became either the expect the request
 // carries (what it started from) or the door's undo of the act, read back.
 import { inspectHarness } from "./protocol/inspectharness.ts";

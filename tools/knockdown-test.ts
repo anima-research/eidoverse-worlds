@@ -106,7 +106,7 @@ check("pushable=false: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 
-// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A v4 push is
+// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A push is
 //     presence, never in the log, so there is nothing to replay.)
 ag.close?.();
 await sleep(200);

@@ -15,8 +15,8 @@
 //                    reported; motion.js's frame loop skips it
 //   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set`; the edit's ops go through the
 //                    real authority on a scratch world and are read back
-// (Ported to v4 2026-10-07: tiers 1–3 pinned the v1 runtime's verbs.ts/fold.js/foldLive path, gone with protocol v1.
-//  The v1-only shape rules they pinned, a 32-char type name truncated and an 8 KB comp refused, have no v4 subject.)
+// (Ported 2026-10-07: tiers 1–3 pinned the v1 runtime's verbs.ts/fold.js/foldLive path, gone with protocol v1.
+//  The v1-only shape rules they pinned, a 32-char type name truncated and an 8 KB comp refused, have no subject here.)
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';

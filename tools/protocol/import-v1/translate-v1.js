@@ -47,7 +47,7 @@ function splitUnknown(c) {
 }
 // every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
 // using it). A v1 socket key v4 doesn't define rides in imported:sockets {<slot>: {key: value}}.
-function v4Sockets(S, c) {
+function newSockets(S, c) {
   if (!S || typeof S !== "object" || Array.isArray(S)) return S;
   const out = {}, left = {};
   for (const [slot, s] of Object.entries(S)) {
@@ -59,7 +59,7 @@ function v4Sockets(S, c) {
   if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
   return out;
 }
-function v4Story(v) {
+function newStory(v) {
   const out = { ...v };
   if (typeof v.practice === "string" && v.practice.trim()) out.text = (typeof v.text === "string" && v.text ? `${v.text}\n\n` : "") + v.practice.trim();
   if (typeof v.markedEntity === "string" && v.markedEntity) out.marks = [enc(v.markedEntity)];
@@ -67,12 +67,12 @@ function v4Story(v) {
 }
 // v1's spin took rpm or degPerSec; v4's is degPerSec (rpm × 6, lossless: the renderer read rpm × 6). degPerSec wins
 // when both were written, as the renderer had it.
-function v4Motion(m) {
+function newMotion(m) {
   if (!m || typeof m !== "object" || Array.isArray(m) || !("rpm" in m)) return m;
   const { rpm, ...rest } = m;
   return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
 }
-function v4Reactions(rx) {
+function newReactions(rx) {
   if (!rx || typeof rx !== "object") return rx;
   const out = {};
   for (const [k, h] of Object.entries(rx)) {
@@ -169,9 +169,9 @@ export function project(st, seen = null, who = null) {
     c.transform = t;
     if (e.lib !== undefined) c.model = e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? v4Reactions(v) : k === "sockets" ? v4Sockets(v, c) : k === "motion" || k.startsWith("motion:") ? v4Motion(v) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
-    if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = v4Story(c.story); // @5: a marker's words, in story's shape
+    if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"
       ? { to: enc(e.parent.to), order: "a0", ...Object.fromEntries(Object.entries(e.parent).filter(([k]) => k !== "to" && !PARENT_POSE.has(k)).map(([k, v]) => [k === "slot" ? "socket" : k, v])) }   // v1's slot is v4's socket (@7)
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is

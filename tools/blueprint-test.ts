@@ -6,9 +6,9 @@
 // 1. the hash      key order and prose (note) never move it; meaning does
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
-// 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch world
+// 6. the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch world
 //    (tools/protocol/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
-// 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
+// 7. the agent's blueprints / blueprint_place / look() over the library, its door the scratch door
 //
 // Sections 1–3 are pure functions of shared/blueprint.js and stay as they were (NOTE: expand/overridesOf/rebase have
 // no runtime caller today). The v1 sections went with the v1 runtime (protocol v1 removed, 2026-10-07): 4 (the v1
@@ -188,13 +188,13 @@ const copyOf = (rec: any, at: number[]) => {
   capped.root.children[0].components.push({ type: 'Label', key: 'label', params: { text: 'the bulb' } });
   const c7: any = rebase(noBulb, capped, lampV1);
   check('rebase: a part the copy removed but the update added to is a conflict (not a silent drop)', c7.ok === false && c7.conflicts.some((c: any) => J(c.path) === J(['bulb']) && c.comp === 'Label|label'), J(c7));
-  const unlabel = structuredClone(lampV1); unlabel.parent = H1; unlabel.root.components.find((c: any) => c.type === 'Label').params.text = 'a lamp, v4';
+  const unlabel = structuredClone(lampV1); unlabel.parent = H1; unlabel.root.components.find((c: any) => c.type === 'Label').params.text = 'a lamp, now';
   const c6: any = rebase(red, unlabel, lampV1);
   check('rebase: a component the copy removed but the update edited is a conflict', c6.ok === false && c6.conflicts.some((c: any) => c.comp === 'Label|label'), J(c6));
 }
 
-// ---- 6. v4: the door's publish and create {from} ------------------------------------------
-console.log('\n6. v4: publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
+// ---- 6. the door's publish and create {from} ------------------------------------------
+console.log('\n6. publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
 const { scratchWorld } = await import('./protocol/scratchworld.ts');
 const { worldPose } = await import('../shared/hierarchy.js');
 const { qFromYaw, qNorm } = await import('../shared/rot.js');
@@ -211,7 +211,7 @@ const lampWorld = () => {
   return W;
 };
 const libOf = (W: any) => Object.fromEntries(Object.entries(W.state().entities['@world'].c).filter(([k]) => k.startsWith('blueprints:')).map(([k, v]) => [k.slice('blueprints:'.length), v]));
-let HV = '';   // the v4 record's hash, "sha256:<hex>"
+let HV = '';   // the record's hash, "sha256:<hex>"
 {
   const W = lampWorld();
   const vis = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'vis');
@@ -294,8 +294,8 @@ let HV = '';   // the v4 record's hash, "sha256:<hex>"
   check('…throughLock: one undo takes the whole deep copy away, its locked part included', u.ok && !Object.keys(W.view().entities).some((x) => x.startsWith('desk2')), J([u.refused, Object.keys(W.view().entities)]));
 }
 
-// ---- 7. v4: the agent's tools over the library ------------------------------------------------
-console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcpl), the agent\'s door the scratch door');
+// ---- 7. the agent's tools over the library ------------------------------------------------
+console.log('\n7. the text tier — blueprints, blueprint_place, look() (mcpl), the agent\'s door the scratch door');
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const { HANDLERS } = await import('../mcpl/tools.ts');
@@ -329,7 +329,7 @@ console.log('\n7. v4: the text tier — blueprints, blueprint_place, look() (mcp
   const look = ag.look();
   const line = (id: string) => look.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
   // KNOWN BUG (reported 2026-10-06, mcpl/agent.ts look → shared/blueprint.js copyLine): copyLine reads v1's link
-  // ({hash, name} / {part} and state.blueprints); the v4 link is copy-of {from, key}, so look() says nothing about a
+  // ({hash, name} / {part} and state.blueprints); the link is copy-of {from, key}, so look() says nothing about a
   // copy and dumps "components: blueprint" instead
   check('look(): a placed copy says which blueprint it is (KNOWN BUG: v1 copyLine)', /a copy of "Lamp"/.test(line('lampa')) && !/components: .*blueprint/.test(line('lampa')), line('lampa'));
   check('look(): a part says whose part it is (KNOWN BUG: v1 copyLine)', /part "bulb" of lampa/.test(line('lampa-bulb')), line('lampa-bulb'));

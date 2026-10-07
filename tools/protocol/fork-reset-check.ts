@@ -1,4 +1,4 @@
-// tools/protocol/fork-reset-check.ts — world fork and reset on v4, against a real sequencer (scratch port and WORLDS_DIR).
+// tools/protocol/fork-reset-check.ts — world fork and reset, against a real sequencer (scratch port and WORLDS_DIR).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/fork-reset-check.ts
 //   FK  fork: owner-only; a NEW world (its own id) whose founding act names the source {world, name, head}; the copy's
 //       things and @world equal the source's; roles travel; chat does not; bad/taken names refused

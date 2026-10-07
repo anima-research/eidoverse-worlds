@@ -1,4 +1,4 @@
-# The eidoverse world protocol, v4
+# The eidoverse world protocol
 
 **License: CC0 1.0 (public domain).** This document and the conformance
 suite beside it (`conformance/`) may be implemented, copied, and modified
@@ -7,7 +7,8 @@ attribution. The reference implementation in this repository is separately
 licensed (AGPL); *the contract is free*. SMTP being free is what made the
 mail ecosystem exist.
 
-Status: v4.0, normative for logs whose genesis says `version: 4, minor: 0`.
+Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4,
+minor: 0` (the version history is at the end).
 The words MUST/SHOULD/MAY are used in the RFC-2119 sense. Where this
 document and the reference implementation disagree, one of them has a bug —
 file it. The reference fold is `shared/protocol/fold.js`; a second reader, written
@@ -88,7 +89,7 @@ tolerates a legacy `by` field, which nothing reads.)
   usually the act that asked for it.
 - **`sim`** — a physics intent (a launch, a lift, a catch, the engine's
   digest); read only by readers that carry the world's engine
-  (`PROTOCOL_v2.md`).
+  (`PHYSICS.md`).
 - **`say`** — chat: `body {text, to?}`. Never world state.
 - **`purge`** — the one rule that changes the record (§12).
 - **`sequencer`** — governance: handing the writer role on, or an owner
@@ -366,7 +367,7 @@ so every runtime gets the same bits.
   authority's practice: it changes no old log, and it grants nothing — its writes pass
   `admit` like everyone's.
 - **The four operations, the envelope, the kinds and the fold are fixed.**
-  Changing them is a new `minor` (or `version`) in genesis; a reader that
+  Changing them is a new `minor` (or a new `v`) in genesis; a reader that
   doesn't know a world's minor refuses the world rather than folding it to
   a different digest.
 
@@ -422,14 +423,16 @@ argument will be short.
 ## 13. Genesis and governance
 
 - **Genesis** (seq 0, `kind: "genesis"`, actor `system`, verb `genesis`):
-  `body {version: 4, minor: 0, nonce, owners: [[<key>…], …], sequencer,
-  quorum?, rewind_window?, parent?}`. Exactly those fields within a known
-  minor. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
+  `body {dialect: "eidoverse-log", v: 4, minor: 0, nonce, owners: [[<key>…], …],
+  sequencer, quorum?, rewind_window?, parent?}`. Exactly those fields within a
+  known minor. `dialect` and `v` are the shape every eidoverse log has
+  announced itself with since its first genesis (`{v, dialect}`); `v` is the
+  protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
   worlds founded with the same keys must not share an id). `owners` are rank
   tiers of keys, tier 0 highest; `quorum` optionally gives each tier's
   threshold; `parent {world, seq, head}` names the world a fork came from.
   Genesis seeds no state: the founding act then writes `@world` through the
-  gate. A missing or malformed genesis means "no world"; a `version` or
+  gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
   `minor` the reader doesn't implement means "unknown version" and no world.
 - **Keys** are `ed25519:<base64url of 32 bytes>`. Registration refuses a key
   that is small-order in any sign-bit encoding or has y ≥ p; verification
@@ -450,5 +453,19 @@ be translated once, one way, into a new world
 (`bun tools/protocol/world.ts translate <old> <new>`); the old log is read, never
 written. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
-produced; fields with no v4 component ride along as `imported:<name>`. A
+produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.
+
+## Version history
+
+A log says which protocol reads it in its genesis, `{dialect: "eidoverse-log",
+v}`. File names, wire fields and code don't carry the number.
+
+| `v` | What it is | Text |
+|---|---|---|
+| 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
+| 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md` | this document |
+
+Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
+world.

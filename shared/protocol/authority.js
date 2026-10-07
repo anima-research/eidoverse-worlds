@@ -1,4 +1,4 @@
-// The v4 authority (from the lab's authority). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
+// The authority (from the protocol lab's authority). Every request is resolved here once; the log receives the request as sent (an `act` entry) and
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
 // PROTOCOL L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
@@ -770,7 +770,7 @@ function guess(s, opts) {
 // or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
 // Everything that doesn't relocate it stays open: labels, lights,
 // reactions, sockets, `use`, sitting on it, and motion (the old matrix keeps motion open: "sit / use / motion / other comps
-// all stay open while locked"; v4's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
+// all stay open while locked"; today's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
 // physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
 // and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
 const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
@@ -926,7 +926,7 @@ function shapeOneOrRefuse(verb, op, i) {
 // L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
 // needs is a SWITCH (roles.js), never a rank:
 //   a thing          build when you make it or made it; editOthers when someone else made it
-//   @world.blueprints:*  build (publish);  @world.assets:*  generate (the v4 landing of the old `asset` spend gate)
+//   @world.blueprints:*  build (publish);  @world.assets:*  generate (where the old `asset` spend gate landed)
 //   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
 //                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
 //   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
@@ -2271,7 +2271,7 @@ function scriptsOf(w, st, id) {
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
 export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }
 // an imported world carries its old bindings as @world imported-behavior:<name> (their old shape, kept as a record). The authority never runs them.
-const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for the v4 API (docs/SCRIPTS.md), upload {text}, then set script:<name> {src, scope, on}";
+const IMPORTED_WHY = "an imported behaviour, carried by translation from the world's old log. It doesn't run here: it was written for the old script API (world.emit, world.kv) with its author's rights and no declared scope. Re-install it as script:<name> on the thing it belongs to: rewrite the source for today's script API (docs/SCRIPTS.md), upload {text}, then set script:<name> {src, scope, on}";
 function importedBehaviours(w, st) {
   return Object.entries(st.entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-behavior:")).map(([k, b]) => ({ id: "@world", behavior: k,
     attach: b?.attach ?? null, src: b?.src ?? null, author: b?.author ?? null, status: "needs-reinstall", why: IMPORTED_WHY }));
@@ -3046,7 +3046,7 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.e
 // The socket a released thing snaps into (research §3, Resonite Snapper with XRI's radius): the nearest socket, on
 // anything but itself or what it carries, whose `accepts` shares a keyword with its grabbable.fits and whose world point
 // is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
-// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a v4 child's transform is
+// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a child's transform is
 // local to its parent; the slot names which socket it's in).
 function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;

@@ -3,14 +3,14 @@
 //   bun tools/smoke.ts                       # against a throwaway server
 //   URL=ws://host:8940/ws WORLD=<name> bun tools/smoke.ts   # against a running one (see below)
 //
-// This covers the wire, not the renderer: join and the v4 cut, door requests and
+// This covers the wire, not the renderer: join and the cut, door requests and
 // their order, presence batching, the two NON-logged channels (whisper, drag),
 // identity takeover, and the invariant that matters most — a private message
 // must never reach the world log, because the log is public, permanent, and
 // readable by everyone who ever joins.
 //
 // The world speaks the protocol (shared/protocol/authority.js): a join says `replica: true`,
-// the snapshot carries the door's cut (`v4`) and the chat window (`state`), every
+// the snapshot carries the authority's cut (`cut`) and the chat window (`state`), every
 // write is a request {type: "request", id, verb, args} answered by `reply`,
 // and what the door wrote reaches every client as `log` entries. A world is
 // founded by its operator (bun tools/protocol/world.ts found); joining never founds one.
@@ -162,7 +162,7 @@ try {
   const alice = await joined("alice");
   check("join returns a snapshot", !!alice.snapshot);
   check("snapshot names you", alice.snapshot.you === "alice", alice.snapshot.you);
-  check("the snapshot is a v4 cut (version, head, the fold's state) and carries no history",
+  check("the snapshot is a cut (version, head, the fold's state) and carries no history",
     alice.snapshot.cut?.dialect === "eidoverse-log" && alice.snapshot.cut?.v === 4 && Number.isInteger(alice.snapshot.cut?.head) && !!alice.snapshot.cut?.state && !("entries" in alice.snapshot),
     JSON.stringify(Object.keys(alice.snapshot.cut ?? {})));
   check("you are told your identity: an opaque directory id, not your name", /^u-[a-z2-7]{20}$/.test(alice.me ?? ""), alice.me);

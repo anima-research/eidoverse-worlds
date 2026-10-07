@@ -6,7 +6,7 @@
 //     entry — the translator checks this itself);
 //   - the written log, re-read from text by the strict reader alone: status ok, 0 malformed, and its fold equals
 //     the translator's final projection;
-//   - the projection loses nothing: an independent inverse (v4 components → old field names), compared with the
+//   - the projection loses nothing: an independent inverse (components → old field names), compared with the
 //     REAL engine fold, entry by entry (every 250th past 2,000 entries), aligned by act. Only representation is
 //     normalised (yaw ↔ q, scalar scale ↔ vector, light spelling) and only translate-v1's DROPPED list may differ.
 //     (Kept from the phase-1 test, b05715f9: the lab sweep had no such check. Without it a translator that silently
@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
-import { readLog, fold as replica, opsOf, applyInPlace, emptyState as v4Empty } from "../../shared/protocol/fold.js";
+import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/protocol/simlayer.js";
@@ -72,7 +72,7 @@ for (const name of Object.keys(golden)) {
 }
 
 // ---- 4. every local world log through translate-v1 ----
-// The inverse, written independently of translate-v1's project(): v4 components → the old fold's field names.
+// The inverse, written independently of translate-v1's project(): components → the old fold's field names.
 const yq = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const LIGHT_KEYS = ["color", "intensity", "range", "keep", "day"];
 const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex").toString("utf8") : s); // h--: a hash, not invertible; a mismatch shows
@@ -83,7 +83,7 @@ const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED
 // else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
 // parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").
 const POSE = new Set(["offset", "yaw", "q"]);
-// v1's parent.slot is v4's parent.socket: shared/hierarchy.js (the renderer's reading) speaks the protocol
+// v1's parent.slot is today's parent.socket: shared/hierarchy.js (the renderer's reading) speaks the protocol
 const asSocketParent = (e: any) => (e?.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e);
 const v1Shim = (ents: any) => (ents ? Object.fromEntries(Object.entries<any>(ents).map(([k, e]) => [k, asSocketParent(e)])) : ents);   // per call: the v1 fold mutates its state in place
 function oldNorm(st: any) {
@@ -98,7 +98,7 @@ function oldNorm(st: any) {
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
-    // declared (translate-v1@7): v1's light keep is v4's light.important
+    // declared (translate-v1@7): v1's light keep is today's light.important
     if (n.comp?.light && typeof n.comp.light === "object" && "keep" in n.comp.light) { const { keep, ...l } = n.comp.light; n.comp.light = { ...l, important: keep }; }
     // declared: a socket's yaw is its rotation about up, written as q (a zero yaw is no rotation)
     if (n.comp?.sockets && typeof n.comp.sockets === "object") n.comp.sockets = Object.fromEntries(Object.entries<any>(n.comp.sockets).map(([k, s]) => {
@@ -120,27 +120,27 @@ function oldNorm(st: any) {
     world.sky = sky; }
   return { ents, world };
 }
-// v4's body socket is v1's seat (translate-v1 v4Sockets)
+// today's body socket is v1's seat (translate-v1's sockets mapping)
 function v1Sockets(S: any, left: any) {
   if (!S || typeof S !== "object") return S; const out: any = {};
   for (const [slot, s] of Object.entries<any>(S)) { if (!s || typeof s !== "object") { out[slot] = s; continue; }
     const { body, ...r } = s; out[slot] = { ...r, ...(body?.pose !== undefined ? { pose: body.pose } : {}), ...(left?.[slot] ?? {}) }; }
   return out;
 }
-// v4's angular impulse is v1's {impulse: x} (translate-v1 v4Reactions)
+// today's angular impulse is v1's {impulse: x} (translate-v1's reactions mapping)
 function v1Reactions(rx: any) {
   if (!rx || typeof rx !== "object") return rx; const out: any = {};
   for (const [k, h] of Object.entries<any>(rx)) out[k] = h?.kind === "impulse" && typeof h.angular === "number" ? (({ kind, angular, ...r }) => ({ ...r, impulse: angular }))(h) : h?.component === "openable" ? { ...h, component: "door" } : h;
   return out;
 }
-// v1's fly and gen grants are the fly and generate permissions in v4 (translate-v1 toCan, @4/@7): read back as v1 wrote them
+// v1's fly and gen grants are the fly and generate permissions now (translate-v1 toCan, @4/@7): read back as v1 wrote them
 function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v.can !== "object") return v;
   const { can, ...rest } = v; const { fly, generate, ...left } = can; const out: any = { ...rest };
   if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }
 const IMP = "imported:", BANS = "imported-bans:", BEHAVIOR = "imported-behavior:";   // what translate-v1 carries (@7)
-function unproject(v4: any) {
+function unproject(ents0: any) {
   const ents: any = {}, world: any = {};
-  for (const [id, comps] of Object.entries<any>(v4)) {
+  for (const [id, comps] of Object.entries<any>(ents0)) {
     if (id === "@world") {
       for (const [k, v] of Object.entries<any>(comps)) {
         if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
@@ -162,10 +162,10 @@ function unproject(v4: any) {
     for (const [k, v] of Object.entries<any>(comps)) {
       if (k === "transform") { e.pos = v.pos; e.q = v.q; e.scale = v.scale; }
       else if (k === "model") e.lib = v;
-      else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, socket, ...p }) => ({ ...p, to: dec(v.to), ...(socket !== undefined ? { slot: socket } : {}) }))(v) : v; // order: v4's sibling order, no v1 field; v4's socket is v1's slot
+      else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, socket, ...p }) => ({ ...p, to: dec(v.to), ...(socket !== undefined ? { slot: socket } : {}) }))(v) : v; // order: today's sibling order, no v1 field; today's socket is v1's slot
       else if (k.startsWith(IMP) && comps[dec(k.slice(IMP.length))] !== undefined && dec(k.slice(IMP.length)) !== "parent") {}   // folded back below
       else if (k.startsWith(IMP)) e[dec(k.slice(IMP.length))] = v;
-      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): v4's openable is v1's door
+      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): today's openable is v1's door
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith(IMP) ? dec(k.slice(IMP.length)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }
@@ -181,8 +181,8 @@ function unproject(v4: any) {
 function lossAt(oldSt: any, st: any) {
   const a = oldNorm(oldSt), b = unproject(Object.fromEntries(Object.keys(st.entities).map((id) => [id, st.entities[id].c])));
   if (c(a) === c(b)) return null;
-  for (const id of new Set([...Object.keys(a.ents), ...Object.keys(b.ents)])) if (c(a.ents[id]) !== c(b.ents[id])) return { id, old: a.ents[id], v4: b.ents[id] };
-  for (const k of new Set([...Object.keys(a.world), ...Object.keys(b.world)])) if (c(a.world[k]) !== c(b.world[k])) return { world: k, old: a.world[k], v4: b.world[k] };
+  for (const id of new Set([...Object.keys(a.ents), ...Object.keys(b.ents)])) if (c(a.ents[id]) !== c(b.ents[id])) return { id, old: a.ents[id], now: b.ents[id] };
+  for (const k of new Set([...Object.keys(a.world), ...Object.keys(b.world)])) if (c(a.world[k]) !== c(b.world[k])) return { world: k, old: a.world[k], now: b.world[k] };
   return { other: true };
 }
 
@@ -206,11 +206,11 @@ for (const p of logs.sort()) {
   check(`${name}: the read-back fold equals the translator's final projection`, back.status === "ok" && c(Object.fromEntries(Object.keys(back.entities).map((id) => [id, back.entities[id].c]))) === c(r.final.v1));
   // the inverse, aligned by act: the k-th act/say in the log is the k-th non-genesis old entry
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
-  const v1 = v1Empty(); const v4 = v4Empty(); let k = -1, loss: any = null;
-  const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, v4); if (x) loss = { oldSeq: body[i].seq, ...x }; };
+  const v1 = v1Empty(); const now = emptyState(); let k = -1, loss: any = null;
+  const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, now); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
-    else if (e.kind === "change") applyInPlace(v4, opsOf(e), s); }
+    else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   compareAt(k); if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)

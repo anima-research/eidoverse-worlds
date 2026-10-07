@@ -33,7 +33,7 @@ export const avatarMounts = new Map();
 export const vrmaShaLoaded = () => null;
 export const pendingMounts = new Map();
 export const mountTransform = () => null;
-// world.js's seat surface (presence seats, v4): remotes.js sets a body's seat from its frames, and seatbody.js reads the
+// world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and seatbody.js reads the
 // thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
 export const setBodySeat = () => {};
 export const comps = new Map();

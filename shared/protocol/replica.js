@@ -2,7 +2,7 @@
 // suites (tools/protocol/authority-check.ts) run the same code.
 //
 // The client folds the log itself, from the server's own log stream:
-//   adopt(snap)        the join snapshot's v4 part: {state: stateView(fold), head, worldId, mine?}, the fold as the
+//   adopt(snap)        the join snapshot's cut: {state: stateView(fold), head, worldId, mine?}, the fold as the
 //                      server holds it at `head` (a client can't refold the whole log on join; it adopts a cut);
 //   ingest(entries, from, held)
 //                      the `log` message: the raw entries the authority just wrote, folded with the fold's own ops

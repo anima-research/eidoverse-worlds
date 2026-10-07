@@ -216,7 +216,7 @@ export class WorldAgent {
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
   mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number; q?: number[] }>();
-  /** Bodies' seats are PRESENCE (v4: bodies aren't entities, nothing is logged): a body's pose frame carries
+  /** Bodies' seats are PRESENCE (bodies aren't entities, nothing is logged): a body's pose frame carries
    *  `seat: {to, slot}` while it sits. Others' come from their frames; mine rides my frames. */
   bodySeats = new Map<string, { to: string; slot?: string }>();
   mySeat: { to: string; slot?: string; pose?: string; at?: number } | null = null;

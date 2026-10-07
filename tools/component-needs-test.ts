@@ -10,7 +10,7 @@
 // Reactions needs the WHOLE entity's Pendulum (what the door's `use` pushes):
 // one sensible default when nothing moves it, a choice when a spin is in the way.
 //
-// v4 port (2026-10-06): ops are door requests; "folded" means "sent to the door and read back". v1's
+// the protocol port (2026-10-06): ops are door requests; "folded" means "sent to the door and read back". v1's
 // server/reactions.ts pendulumImpulse is replaced by the door's own `use {action: 'push'}`. Light-verb lights are gone.
 import { inspectSchema, editOps, addOps, removeOps, needMet } from '../shared/editschema.js';
 import { RECORDS, addable, componentsOf } from '../shared/components.js';
@@ -42,7 +42,7 @@ console.log('a need with one sensible default is added for you, as real door ops
     r.ops.length === 2 && J(r.ops[0]) === J(set('motion', { type: 'pendulum', amp: 0, period: 3.5 })) && r.ops[1].verb === 'set' && r.ops[1].args.component === 'reactions' && !!r.ops[1].args.value?.push && r.errors.length === 0 && !r.choice, J(r));
   check('…and says what it brought', /Pendulum at rest/.test(r.brings ?? ''), J(r));
   const d = door(swing, r.ops);
-  // KNOWN BUG (reported 2026-10-06, not fixed here): the recipe writes v1's handler {push: {impulse: 0.35}}; the v4
+  // KNOWN BUG (reported 2026-10-06, not fixed here): the recipe writes v1's handler {push: {impulse: 0.35}}; the current
   // door's reactions take {<action>: {kind: 'toggle'|'set'|'impulse', …}} and refuse a handler with no kind
   // ("reactions.push: no handler kind 'undefined'"), so Add Component ▸ Reactions is refused in every world.
   check('…the door takes the recipe as ONE request (KNOWN BUG: v1 handler shape refused)', d.res.ok, J(d.res.refused));
@@ -103,7 +103,7 @@ console.log('a need that cannot be met in place is explained (a Model comes from
 
 console.log('removing something another component needs names the dependant and offers remove-both');
 {
-  // a v4 swing: its reactions are the door's own impulse handler (so the door holds what it removes)
+  // a swing: its reactions are the door's own impulse handler (so the door holds what it removes)
   const swing = { lib: LIB, pos: [0, 0, 0], yaw: 0, comp: { motion: { type: 'pendulum', amp: 0, period: 3.5, t0: 5 }, reactions: { push: { kind: 'impulse', strength: 0.5 } } }, actor: 'o', ts: 1 };
   const r = removeOps(swing, 's', 'motion');
   check('remove.motion under a Reactions: nothing sent, a confirm naming Reactions', r.ops.length === 0 && r.errors.length === 0 && r.confirm?.dependants?.[0]?.type === 'Reactions' && /Reactions needs this Pendulum — remove both\?/.test(r.confirm.prompt), J(r));

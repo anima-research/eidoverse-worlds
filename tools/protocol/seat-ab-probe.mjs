@@ -1,7 +1,7 @@
 // tools/protocol/seat-ab-probe.mjs — where a sitter lands on a Commons seat, for an A/B across client versions.
 // usage (one Chrome, under the guard):  perf-guard.sh -t 300 -- bun tools/protocol/seat-ab-probe.mjs [shot.png]
 // The seat is the Commons crate seat (commons-0927 snapshot, entity 0febbb4b: crate_large_red at scale 0.3997, socket
-// {pos [0.343, 1.954, -0.375], yaw 2.09}), written the way the v1→v4 translator writes it ({pos, q, body: {}}), in a
+// {pos [0.343, 1.954, -0.375], yaw 2.09}), written the way the old-world translator writes it ({pos, q, body: {}}), in a
 // scratch world. Ann sits with her own /sit; the probe prints one line, `AB {...}`: her root's world position and
 // rotation, her hips joint, and the socket's world point. Run it at two commits and compare the lines: a change that
 // leaves existing seats alone prints the same numbers. Self-contained on purpose (it runs unchanged at older commits).

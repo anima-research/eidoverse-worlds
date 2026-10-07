@@ -19,7 +19,7 @@ import { sendDrag } from './net.js';
 import { registerSystem } from './frameloop.js';
 import { sceneSelected } from './scenegraph.js';
 import { getTool, getSpace, isEditing, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
-import * as Edits from './editwrites.js';   // protocol/v4 slice 3b: a world's release is one door request with expect
+import * as Edits from './editwrites.js';   // slice 3b: a world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from './realize/models.js';
@@ -32,8 +32,8 @@ const R2D = 180 / Math.PI;
 let controls = null;
 let helper = null;
 let attachedId = null;
-let start = null;        // { rec, scale, comps? } at drag start (v4: the components the release's expect names)
-let cancelled = false;   // v4: Esc during the drag — the thing goes back, and the release writes nothing (§3a)
+let start = null;        // { rec, scale, comps? } at drag start (the components the release's expect names)
+let cancelled = false;   // Esc during the drag — the thing goes back, and the release writes nothing (§3a)
 let lastSent = 0;
 // the pivot (research 52, Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as
 // the thing, and the thing follows the proxy: objWorld = proxy × offset (offset fixed at drag start). A turn or a size
@@ -86,7 +86,7 @@ function editable(id, mode) {
 }
 
 function sync() {
-  // v4: a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
+  // a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
   // (and offers to move it anyway); detaching mid-drag left the preview stranded with nothing sent
   if (start) return;
   const id = sceneSelected();

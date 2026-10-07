@@ -1,5 +1,5 @@
-// tools/protocol/scale-check.ts — the authority at scale, and what the 10-06 reviews found there (REVIEW-2026-10-06-v4-top-down
-// S0-2, S0-3 and S3's request globals; REVIEW-2026-10-06-security-v4-pass2 H-A and M-C). Every world on a server shares
+// tools/protocol/scale-check.ts — the authority at scale, and what the 10-06 reviews found there (the 10-06 top-down review
+// S0-2, S0-3 and S3's request globals; the 10-06 security review pass 2, H-A and M-C). Every world on a server shares
 // ONE thread, and every request goes through shared/protocol/authority.js on it: no request may hold it for long.
 //   bun tools/protocol/scale-check.ts                 every case
 //   bun tools/protocol/scale-check.ts --only S2,I1    just those

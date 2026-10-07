@@ -6,7 +6,7 @@
 //
 // The world speaks the protocol: the join says `replica: true` (a client that
 // doesn't is refused), chat arrives as `say` entries in the `log` stream
-// (actors are opaque ids; the stream's `names` and the snapshot's v4.names say
+// (actors are opaque ids; the stream's `names` and the snapshot's cut.names say
 // who they are), and a say is a door request {type: "request", id, verb: "say",
 // args: {text}} answered by `reply` (a refusal is logged, not retried).
 //
@@ -18,7 +18,7 @@
 //
 // Loop safety (both directions, both by identity):
 //   world → Discord: entries whose actor is the bridge's own identity (the
-//     snapshot's v4.you) are skipped — that covers the echo of every line it
+//     snapshot's cut.you) are skipped — that covers the echo of every line it
 //     just spoke.
 //   Discord → world: messages from bots/webhooks are skipped — that covers
 //     the bridge's own posts (and any other bot; humans only by default).

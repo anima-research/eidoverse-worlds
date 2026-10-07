@@ -394,7 +394,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // anyone present — the moderator's record is public in its outline (who,
     // when, by whom); a list nobody can read is not an audit trail.
     if (!c.world) return;
-    // v4: the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
+    // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
     if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
       if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "mod", text: "the ban list is for people who hold a moderation power here" })); return; } }

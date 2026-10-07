@@ -217,7 +217,7 @@ try {
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
   const built = await ag.request("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] } } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
-  // a v4 seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
+  // a seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
   const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
   const legacy = await ag.request("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));

@@ -111,7 +111,7 @@ const bandCentre = (t: any) => [(t.x[0] + t.x[1]) / 2, (t.z[0] + t.z[1]) / 2];
 const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 
 /** The scene's old authoring words, as authority requests (the world speaks the protocol: every write is a door request). A
- *  v4 "moving platform" is any motion component; v4 has no `path` motion, so a path becomes a bob, which moves it all
+ *  a "moving platform" is any motion component; there is no `path` motion, so a path becomes a bob, which moves it all
  *  the same. Requests go out in order on one socket and the door answers them in order. */
 const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
   const tf = (x: any) => ({ ...(x.pos ? { pos: x.pos } : {}), ...(typeof x.yaw === "number" ? { q: qFromYaw(x.yaw) } : {}) });
