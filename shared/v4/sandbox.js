@@ -103,26 +103,20 @@ const firstLine = (e) => { const st = e && typeof e === "object" ? String(e.stac
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "thing";
 
 /**
- * Run one activation. Never throws for anything the script does; returns {ok, ...}.
- * @param {{text: string, self: string, key: string, event: object, knobs?: object, now: number, seed: string, st: any,
- *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
- *   reads?: {near?: {r, ids}[], count?: number[], names?: {id, name}[]},
- *   limits?: object, clock?: () => number}} x
- * @returns {{ok: true, ops, says, bodies, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
+ * The HOST side of one activation: everything the script can ask of the world, answered from the door's state on the
+ * door's thread (reads see the head plus the activation's own writes; writes are recorded as proposals; presence and
+ * names are recorded, or replayed from `x.reads`). `call(json) → json` is what the VM's world.* functions reach, in
+ * this process or, isolated, through the relay. `finish(vm)` turns the VM's outcome into the activation's result.
  */
-export function runScript(x) {
+export function makeHost(x) {
   const L = { ...LIMITS, ...(x.limits ?? {}) };
-  const logs = [];
-  if (!Q) return { ok: false, code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})`, logs, fuel: 0 };
-  const clock = x.clock ?? (() => performance.now());
-  let deadline = Infinity; // set once the prelude (ours) has run: fuel and time are the script's
-  const ops = [], says = [], bodies = [], reads = { near: [], count: [], names: [] }; let nearAt = 0, countAt = 0, nameAt = 0;
-  let calls = 0, minted = 0, fuel = 0, stop = null, cur = x.st, pending = [];
+  const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: [] }; let nearAt = 0, countAt = 0, nameAt = 0;
+  let calls = 0, minted = 0, stop = null, cur = x.st, pending = [];
   const view = () => { if (pending.length) { for (const o of pending) { try { cur = applyOps(cur, [o]); } catch { /* admit names it */ } } pending = []; } return cur; };
   const self = (id) => (id === "self" ? x.self : id);
+  class HostError extends Error {}
   const wantId = (id, what) => { if (!isEntityId(id)) throw new HostError(`${what}: '${id}' isn't an entity id`); return id; };
   const wantComp = (c, what) => { if (!isComponent(c)) throw new HostError(`${what}: '${c}' isn't a component name`); return c; };
-  class HostError extends Error {}
   const read = () => { if (++calls > L.calls) { stop = { code: "calls", why: `more than ${L.calls} reads in one activation` }; throw new HostError(stop.why); } };
   const write = () => { if (ops.length >= L.ops) { stop = { code: "too-big", why: `more than ${L.ops} writes in one activation (41 §3.10)` }; throw new HostError(stop.why); } };
   const copy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
@@ -157,36 +151,65 @@ export function runScript(x) {
       default: throw new HostError(`no host call '${verb}'`);
     }
   };
-  let rt = null, ctx = null;
+  const call = (json) => { try { return JSON.stringify({ v: host(JSON.parse(json)) ?? null }); }
+    catch (e) { return JSON.stringify({ err: String(e?.message ?? e), name: e instanceof HostError ? "WorldError" : "Error" }); } };
+  // vm: {fuel, ran?, fail?: {code, why}}. A limit the host enforced (reads, writes, says) wins over how the VM ended,
+  // because the script may have caught the error it was thrown
+  const finish = (vm) => {
+    if (stop) return { ok: false, ...stop, logs, fuel: vm.fuel };
+    if (vm.fail) return { ok: false, ...vm.fail, logs, fuel: vm.fuel };
+    return { ok: true, ran: vm.ran, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names.length ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names.length ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
+  };
+  return { call, finish, limits: L, input: { self: x.self, key: x.key, knobs: x.knobs ?? {}, now: x.now, seed: x.seed } };
+}
+/**
+ * The VM side: QuickJS runs the prelude, the source and the one event, reaching the world only through `call`. Fuel and
+ * the wall clock are counted from after the prelude (ours). Pure function of (text, input, event, limits, call's
+ * answers): the same inputs give the same run. Never throws.
+ * @returns {{fuel: number, ran?: number, fail?: {code: string, why: string}}}
+ */
+export function vmRun(text, input, event, L, call, clock = () => performance.now()) {
+  if (!Q) return { fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})` } };
+  let rt = null, ctx = null, fuel = 0, deadline = Infinity, vstop = null;
   try {
     rt = Q.newRuntime(); rt.setMemoryLimit(L.memory); rt.setMaxStackSize(L.stack);
-    rt.setInterruptHandler(() => { fuel++; if (fuel > L.fuel) { stop ??= { code: "fuel", why: `out of fuel (${L.fuel} interrupt ticks): a loop that never ends, or too much work for one activation` }; return true; }
-      if (clock() > deadline) { stop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` }; return true; } return false; });
+    rt.setInterruptHandler(() => { fuel++; if (fuel > L.fuel) { vstop ??= { code: "fuel", why: `out of fuel (${L.fuel} interrupt ticks): a loop that never ends, or too much work for one activation` }; return true; }
+      if (clock() > deadline) { vstop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` }; return true; } return false; });
     ctx = rt.newContext();
-    const fn = ctx.newFunction("__host", (h) => {
-      try { return ctx.newString(JSON.stringify({ v: host(JSON.parse(ctx.getString(h))) ?? null })); }
-      catch (e) { return ctx.newString(JSON.stringify({ err: String(e?.message ?? e), name: e instanceof HostError ? "WorldError" : "Error" })); } });
+    const fn = ctx.newFunction("__host", (h) => ctx.newString(call(ctx.getString(h))));
     ctx.setProp(ctx.global, "__host", fn); fn.dispose();
-    const inp = ctx.newString(JSON.stringify({ self: x.self, key: x.key, knobs: x.knobs ?? {}, now: x.now, seed: x.seed }));
-    ctx.setProp(ctx.global, "__in", inp); inp.dispose();
+    const inp = ctx.newString(JSON.stringify(input)); ctx.setProp(ctx.global, "__in", inp); inp.dispose();
     const evalStep = (code, file) => { const r = ctx.evalCode(code, file);
       if (r.error) { const e = ctx.dump(r.error); r.error.dispose(); return { e }; } const v = ctx.dump(r.value); r.value.dispose(); return { v }; };
-    let r = evalStep(PRELUDE, "prelude.js"); if (r.e) return { ok: false, code: "sandbox", why: `the prelude failed: ${errMsg(r.e)}`, logs, fuel };
-    fuel = 0; stop = null; deadline = clock() + L.wallMs;
-    r = evalStep(x.text, "eval.js");
-    if (!r.e) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(x.event))})`, "deliver.js");
-    if (clock() > deadline) stop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` };
-    if (stop) return { ok: false, ...stop, logs, fuel };
+    let r = evalStep(PRELUDE, "prelude.js"); if (r.e) return { fuel, fail: { code: "sandbox", why: `the prelude failed: ${errMsg(r.e)}` } };
+    fuel = 0; vstop = null; deadline = clock() + L.wallMs;
+    r = evalStep(text, "eval.js");
+    if (!r.e) r = evalStep(`__deliver(${JSON.stringify(JSON.stringify(event))})`, "deliver.js");
+    if (clock() > deadline) vstop ??= { code: "time", why: `over the ${L.wallMs} ms wall-clock backstop` };
+    if (vstop) return { fuel, fail: vstop };
     if (r.e) { const m = errMsg(r.e);
       const code = /out of memory|string too long|Array too long|invalid array length/i.test(m) ? "memory" : /stack overflow|Maximum call stack/i.test(m) ? "stack" : errName(r.e) === "SyntaxError" ? "syntax" : "thrown";
-      return { ok: false, code, why: `${m.slice(0, 300)}${firstLine(r.e)}`, logs, fuel }; }
-    return { ok: true, ran: r.v, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names.length ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names.length ? { names: reads.names } : {}) } : null, logs, fuel };
+      return { fuel, fail: { code, why: `${m.slice(0, 300)}${firstLine(r.e)}` } }; }
+    return { fuel, ran: r.v };
   } catch (e) {
-    return { ok: false, code: "sandbox", why: `the sandbox failed: ${String(e?.message ?? e).slice(0, 200)}`, logs, fuel };
+    return { fuel, fail: { code: "sandbox", why: `the sandbox failed: ${String(e?.message ?? e).slice(0, 200)}` } };
   } finally {
     try { ctx?.dispose(); } catch { /* already */ }
     try { rt?.dispose(); } catch { /* already */ }
   }
+}
+/**
+ * Run one activation IN THIS PROCESS (an auditor's re-run, tools). Never throws for anything the script does; returns
+ * {ok, ...}. A slow native builtin can hold this thread: a door runs activations isolated (runIsolated, below).
+ * @param {{text: string, self: string, key: string, event: object, knobs?: object, now: number, seed: string, st: any,
+ *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
+ *   reads?: {near?: {r, ids}[], count?: number[], names?: {id, name}[]},
+ *   limits?: object, clock?: () => number}} x
+ * @returns {{ok: true, ops, says, bodies, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
+ */
+export function runScript(x) {
+  const h = makeHost(x);
+  return h.finish(vmRun(x.text, h.input, x.event, h.limits, h.call, x.clock));
 }
 /** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null, or {code, why}. */
 export function checkSyntax(text) {
@@ -199,8 +222,100 @@ export function checkSyntax(text) {
   } catch (e) { return { code: "sandbox", why: String(e?.message ?? e).slice(0, 200) }; }
   finally { try { ctx?.dispose(); } catch { /* already */ } try { rt?.dispose(); } catch { /* already */ } }
 }
+// ---------- isolated: the VM side in a killable process (sandbox-child.js) ----------
+// The door's thread sends the job down a named pipe and reads the process's lines back without blocking, answering the
+// script's world.* calls itself (makeHost). So an activation stays one synchronous step of the door (L7: one act + one
+// batch, admitted at the head it read), and the door holds the process's handle: at `wallMs + GRACE` after the job was
+// sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
+// Nothing a script does, a native builtin included, can hold the door's thread past that deadline.
+// (A Worker can't do this: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3; measured 2026-10-06.)
+export const GRACE = 100;        // ms over the script's own wall-clock backstop: the pipes, and the kill
+const MAX = 2 << 20;             // bytes of one message (a job, a host call, an answer)
+const WARM_MS = 1000;            // at most this long an activation waits for a warm process (at start, or after kills)
+const WANT = 2;                  // warm processes kept: one runs, one is ready the moment a kill takes the other
+const env = () => globalThis.process?.env ?? {};
+let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where isolation runs (never in a browser)
+try { if (globalThis.process?.versions) { fsm = await import("node:fs"); osm = await import("node:os"); pathm = await import("node:path"); } } catch { /* no isolation here */ }
+const canIsolate = () => !!(Q && fsm && typeof Bun !== "undefined" && !env().EIDO_SANDBOX_CHILD && env().EIDO_SANDBOX !== "inprocess" && fifoOk());
+let FIFO = null; const fifoOk = () => (FIFO ??= (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
+const pool = []; let kills = 0, spawned = 0;
+const SLEEP = new Int32Array(new SharedArrayBuffer(4)); const nap = (ms) => Atomics.wait(SLEEP, 0, 0, ms);
+function spawnChild() {
+  const dir = fsm.mkdtempSync(pathm.join(osm.tmpdir(), "eido-sandbox-")); const inP = pathm.join(dir, "in"), outP = pathm.join(dir, "out");
+  if (Bun.spawnSync(["mkfifo", "-m", "600", inP, outP]).exitCode !== 0) { fsm.rmSync(dir, { recursive: true, force: true }); return null; }
+  const rfd = fsm.openSync(outP, fsm.constants.O_RDONLY | fsm.constants.O_NONBLOCK); // the child's "w" open then succeeds
+  const wfd = fsm.openSync(inP, fsm.constants.O_RDWR | fsm.constants.O_NONBLOCK);    // O_RDWR: never blocks, never EPIPE
+  const proc = Bun.spawn([process.execPath, new URL("./sandbox-child.js", import.meta.url).pathname, inP, outP],
+    { stdio: ["ignore", "ignore", "ignore"], env: { ...env(), EIDO_SANDBOX_CHILD: "1", TZ: "UTC" } });
+  proc.unref?.(); spawned++;
+  return { proc, rfd, wfd, dir, pend: "", ready: false, buf: Buffer.alloc(1 << 16), dec: new TextDecoder() };
+}
+function closeChild(c, kill) {
+  if (kill) { try { c.proc.kill(9); } catch { /* gone */ } }
+  for (const fd of [c.rfd, c.wfd]) try { fsm.closeSync(fd); } catch { /* closed */ }
+  try { fsm.rmSync(c.dir, { recursive: true, force: true }); } catch { /* gone */ }
+}
+// one line from the process, or null at the deadline (or if it died). Polls the non-blocking pipe, napping in between
+function lineOf(c, deadline) {
+  let naps = 0;
+  for (;;) {
+    const i = c.pend.indexOf("\n"); if (i >= 0) { const l = c.pend.slice(0, i); c.pend = c.pend.slice(i + 1); return l; }
+    let n = 0; try { n = fsm.readSync(c.rfd, c.buf, 0, c.buf.length, null); } catch (e) { if (e?.code !== "EAGAIN") return null; }
+    if (n > 0) { c.pend += c.dec.decode(c.buf.subarray(0, n), { stream: true }); naps = 0; continue; }
+    if (c.proc.exitCode !== null || c.proc.signalCode) return null;
+    const left = deadline - performance.now(); if (left <= 0) return null;
+    nap(Math.min(left, naps++ < 40 ? 0.05 : 0.5)); // fast while a reply is likely, gentle while the script computes
+  }
+}
+function send(c, str, deadline) {
+  const b = Buffer.from(str + "\n"); let o = 0;
+  while (o < b.length) { try { o += fsm.writeSync(c.wfd, b, o); } catch (e) { if (e?.code !== "EAGAIN") return false; }
+    if (o < b.length) { if (performance.now() > deadline) return false; nap(0.1); } }
+  return true;
+}
+function refill() { while (pool.length < WANT) { const c = spawnChild(); if (!c) break; pool.push(c); } }
+// a warm process: one that has said ready. One still loading QuickJS is waited for, bounded; a dead one is replaced
+const dead = (c) => c.proc.exitCode !== null || !!c.proc.signalCode;
+function takeReady(until) {
+  refill();
+  for (;;) {
+    for (const c of [...pool]) {
+      if (c.ready) return c;
+      if (lineOf(c, 0) !== null) { c.ready = true; return c; } // its {ready: true}
+      if (dead(c)) { pool.splice(pool.indexOf(c), 1); closeChild(c, false); refill(); }
+    }
+    if (!pool.length || performance.now() > until) return null;
+    nap(1);
+  }
+}
+/** Start the warm processes now (a door that holds scripts calls this at load, so its first activation doesn't wait). */
+export function warm() { if (canIsolate()) refill(); }
+/** A view for tests and status: is isolation on, how many processes were killed, how many were started. */
+export const isolationStats = () => ({ isolated: canIsolate(), kills, spawned, warm: pool.filter((c) => c.ready).length });
+if (globalThis.process?.on) process.on("exit", () => { for (const c of pool) closeChild(c, true); });
+/** Run one activation with its VM side in a sandbox process. Same input and result as runScript. */
+export function runIsolated(x) {
+  const h = makeHost(x); const L = h.limits;
+  if (!Q) return h.finish({ fuel: 0, fail: { code: "unavailable", why: `the script sandbox isn't available on this door (${unavailable})` } });
+  const c = takeReady(performance.now() + WARM_MS);
+  if (!c) return h.finish({ fuel: 0, fail: { code: "unavailable", why: "no sandbox process is ready" } });
+  const deadline = performance.now() + L.wallMs + GRACE;
+  const stop = (fail) => { pool.splice(pool.indexOf(c), 1); closeChild(c, true); refill(); return h.finish(fail); };
+  if (!send(c, JSON.stringify({ text: x.text, input: h.input, event: x.event, limits: L, max: MAX }), deadline)) return stop({ fuel: null, fail: { code: "sandbox", why: "couldn't hand the job to the sandbox process" } });
+  for (;;) {
+    const l = lineOf(c, deadline);
+    if (l === null) { const died = c.proc.exitCode !== null || !!c.proc.signalCode; if (!died) kills++;
+      return stop({ fuel: null, fail: died ? { code: "sandbox", why: "the sandbox process died" }
+        : { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline: its sandbox process was killed (a loop or a native call that wouldn't yield)` } }); }
+    let m; try { m = JSON.parse(l); } catch { return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unreadable" } }); }
+    if (typeof m.h === "string") { if (!send(c, h.call(m.h), deadline)) return stop({ fuel: null, fail: { code: "time", why: `stopped at the ${L.wallMs + GRACE} ms deadline` } }); continue; }
+    if (m.done) return h.finish(m.done); // the process stays warm for the next job
+    return stop({ fuel: null, fail: { code: "sandbox", why: "the sandbox process said something unexpected" } });
+  }
+}
 // warm the sandbox once at load (the first QuickJS run in a process is several times slower than the rest)
 if (Q) try { runScript({ text: "", self: "warm", key: "script:warm", event: { on: "warm" }, now: 0, seed: "0".repeat(64), st: { entities: {} } }); } catch { /* the next run says what's wrong */ }
 /** What a door injects as io.scripts. */
-export const SANDBOX = Object.freeze({ run: runScript, checkSyntax, available: sandboxAvailable });
+// a door runs activations isolated wherever it can (bun, node: Worker + SharedArrayBuffer); EIDO_SANDBOX=inprocess opts out
+export const SANDBOX = Object.freeze({ run: (x) => (canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
 export { jcs };

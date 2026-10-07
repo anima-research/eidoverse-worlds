@@ -81,6 +81,9 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["upload rate", "door.js", "if (U.length >= SR.LIMITS.uploads) refuse(\"rate\"", "if (false) refuse(\"rate\"", ["H5"]],
   ["acts point at a say's text, never copy it", "door.js", "const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq !== undefined ? rest : ev; };", "const recorded = (ev) => ev;", ["E1"]],
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
+  ["a door runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
+  ["the kill at the deadline", "sandbox.js", "const deadline = performance.now() + L.wallMs + GRACE;", "const deadline = performance.now() + L.wallMs + GRACE + 60000;", ["I1"]],
+  ["the process's script duty", "door.js", "if (!dry && dutyLeft() <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2"]],
   ["CONTROL (no-op: must stay green)", "door.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -126,6 +129,9 @@ const F = await import(TREE + "shared/v4/fold.js");
 const SB = await tryImport(TREE + "shared/v4/sandbox.js");
 const AU = await tryImport(TREE + "shared/v4/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
+// the process-wide script duty (DUTY, door.js) is about real seconds; these cases fire hundreds of activations in a tight
+// loop on a simulated clock, so it's opened wide here, and I2 sets it on purpose
+const DUTY0 = D.setScriptDuty ? D.setScriptDuty({ maxMs: 1e9 }) : null;
 const root = scratch("scripts");
 
 // a world on disk over THIS tree's door (as server/v4/disk.ts does with the checkout's)
@@ -440,6 +446,37 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const next = s.call("vic", "use", { id: "box", action: "go", args: { ok: true } });
       return { inst: show(inst), r: st(s, r), bhv, next: st(s, next) }; },
     good: (o: any) => (want === "syntax" ? o.inst.startsWith("refused syntax") : o.r === `failed ${want}` && o.bhv === 0 && o.next === "ran") })),
+  // ---------------- I: isolation (a killable sandbox process per activation's VM side) ----------------
+  { id: "I1", what: "isolation: a script stuck in a slow native builtin (indexOf on crafted text, a huge BigInt power, out of memory inside Array.fill) is stopped at its deadline and its process killed; the door is back within it, another world answers at once, and the run is counted against its sponsor",
+    run(s) { cast(s); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
+      if (!SB?.isolationStats) return { absent: true };
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `3n ** 30000000n;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
+      for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(Object.keys(HOSTILE).map((k) => [k, { kind: "script", script: k }])) });
+      SB.warm(); Bun.sleepSync(800); // warm processes, as a door with scripts has at load
+      const k0 = SB.isolationStats().kills; const runs: any[] = [];
+      for (const k of Object.keys(HOSTILE)) { const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: k }); const ms = performance.now() - t0;
+        const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
+        runs.push({ k, r: st(s, r), why: r.script?.why, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs) }); }
+      const counted = (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "bob").map((x: any) => x.ms);
+      const after = s.call("vic", "use", { id: "box", action: "idx" }); // the 4th failure in a row is still counted, never a hang
+      return { runs, counted, kills: SB.isolationStats().kills - k0, fails: s.w().presence.scripts?.["box|idx"]?.fails }; },
+    good: (o) => o.runs.every((x: any) => x.r === "failed time" && /killed/.test(x.why) && x.ms < 500 && x.other && x.otherMs < 150)
+      && o.kills >= 3 && o.counted.length >= 3 && o.counted.every((ms: number) => ms >= 250) && o.fails === 2 },
+  { id: "I2", what: "isolation, a whole request: one say wakes 12 hostile listeners; the door's script time is capped per second for the process (DUTY), so the request returns within about DUTY + one deadline, the rest are refused busy (not failures), and another world answers at once",
+    run(s) { cast(s, [["cat", "builder"]]); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
+      if (!D.setScriptDuty) return { absent: true };
+      SB.warm(); Bun.sleepSync(800); D.setScriptDuty({ maxMs: DUTY0.maxMs, windowMs: DUTY0.windowMs });
+      for (let i = 0; i < 12; i++) { const who = i % 2 ? "bob" : "cat"; s.call(who, "create", { id: `ear${i}`, model: "crate", place: { at: [i - 6, 2] } });
+        install(s, who, `ear${i}`, "spin", `world.on("say", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] }); }
+      s.advance(61000); s.call("olive", "look", {}); // fresh minute; the pool is warm
+      const t0 = performance.now(); const r = s.call("vic", "say", { text: "hello" }); const ms = performance.now() - t0;
+      const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
+      const st0 = s.call("olive", "scripts", {}).scripts.map((x: any) => `${x.last.at(-1)?.status} ${x.last.at(-1)?.code}`);
+      D.setScriptDuty({ maxMs: 1e9 });
+      return { said: r.ok, ms: Math.round(ms), other: other.ok, otherMs: Math.round(otherMs), killed: st0.filter((x: string) => x === "failed time").length, busy: st0.filter((x: string) => x === "refused busy").length }; },
+    good: (o) => o.said && o.ms < DUTY0.maxMs + 300 + 300 && o.other && o.otherMs < 150 && o.killed >= 1 && o.busy >= 6 },
   // ---------------- U: use → script ----------------
   { id: "U1", what: "use → script: the visitor's use is their act (with `runs`); the bhv act's cause is that use, its trigger the visitor, its sponsor bob; the batch's cause is the bhv act; the say too", run(s) { cast(s);
       bell(s, "bob"); const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const L = s.entries();
@@ -657,6 +694,44 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a v4 w
   } finally { proc.kill(); }
 }, good: (o) => o.mk && o.inst === "ok" && o.clock === "ok" && o.ring === "ran" && o.rung === 1 && o.tickActs >= 1 && o.beats >= 1 && o.hello && o.sawBhv
   && o.roster?.includes("bell1/bell:active") && o.roster?.includes("bell1/clock:active") && !o.v1Host && o.malformed === 0 }];
+
+serverCases.push({ id: "S2", server: true, what: "the server: while a hostile script (indexOf on crafted text) runs in one world, another world's requests keep answering within the deadline; each hostile run is stopped and shows as a failure (time) against its script",
+  run: async () => {
+    const W4 = path.join(root, "srv2"); fs.mkdirSync(W4, { recursive: true });
+    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "",
+      ...(opt("sandbox") ? { EIDO_SANDBOX: opt("sandbox") } : {}) };
+    for (const wn of ["alpha", "beta"]) { const f = Bun.spawnSync(["bun", "tools/v4/world.ts", "found", wn, "--owner", "Ann"], { cwd: ENGINE, env }); if (f.exitCode !== 0) return { found: f.stderr.toString() }; }
+    let port = 0; for (let p = 9500; p < 9700; p++) { try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }
+    const logf = path.join(root, "srv2.log");
+    const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...env, PORT: String(port) }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    try {
+      let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch { /* not yet */ } }
+      if (!up) return { up: false };
+      const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
+        ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "v4-result") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
+        await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+        ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", v4fold: true }));
+        for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+        return { ws, req: (tool: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, res); ws.send(JSON.stringify({ type: "v4", id: rid, tool, args })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
+      const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");
+      await ann.req("create", { id: "box" });
+      const u = await ann.req("upload", { text: `world.on("use", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n` });
+      const inst = await ann.req("set", { id: "box", component: "script:spin", value: { src: u.src, scope: { ids: "self", comps: ["n"] }, on: ["use"] } });
+      await ann.req("set", { id: "box", component: "reactions", value: { spin: { kind: "script", script: "spin" } } });
+      await sleep(800); // the world now holds a script: its sandbox processes warm
+      const rounds = [];
+      for (let i = 0; i < 3; i++) {
+        const t0 = performance.now(); let done: any = null; const p = ann.req("use", { id: "box", action: "spin" }).then((r) => { done = { r, ms: performance.now() - t0 }; });
+        const lat: number[] = []; while (!done && performance.now() - t0 < 20000) { const t1 = performance.now(); await bea.req("look", {}); lat.push(performance.now() - t1); await sleep(20); }
+        await p; rounds.push({ status: done.r.script?.status, code: done.r.script?.code, ms: Math.round(done.ms), maxOther: Math.round(Math.max(...lat)), looks: lat.length });
+        await sleep(1100); // a new second of script duty
+      }
+      const sv = await ann.req("scripts", { id: "box" });
+      ann.ws.close(); bea.ws.close();
+      return { inst: show(inst), rounds, status: sv.scripts?.[0]?.status, last: sv.scripts?.[0]?.last?.at(-1)?.code };
+    } finally { proc.kill(); }
+  }, good: (o) => o.inst === "ok" && o.rounds.length === 3 && o.rounds.every((r: any) => r.status === "failed" && r.code === "time" && r.ms < 800 && r.maxOther < 600) && o.last === "time" });
 
 // ---------------- run ----------------
 let pass = 0, fail = 0;

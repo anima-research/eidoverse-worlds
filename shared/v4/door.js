@@ -1239,6 +1239,7 @@ function installCheck(w, st, s, who, op) {
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
   const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install (41 §3.12): reviewers must see what runs");
+  w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
   const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS-v4.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
@@ -1292,6 +1293,16 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
     if (e.kind === "act" && e.actor === `bhv:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
+// The door's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
+// world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
+// ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
+// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
+export const DUTY = { windowMs: 1000, maxMs: 500 };
+/** A host sets the process's script duty (a big server may give scripts more of each second; a test that fires a thousand
+ *  activations in a tight loop opens it wide). Returns the previous setting. */
+export function setScriptDuty({ windowMs = DUTY.windowMs, maxMs = DUTY.maxMs } = {}) { const was = { ...DUTY }; Object.assign(DUTY, { windowMs, maxMs }); dutyLog.length = 0; return was; }
+const dutyLog = [];
+const dutyLeft = () => { const t = performance.now(); while (dutyLog.length && t - dutyLog[0].at > DUTY.windowMs) dutyLog.shift(); return DUTY.maxMs - dutyLog.reduce((n, d) => n + d.ms, 0); };
 // door practice: what the door spends, logged or not (presence, never the log): an activation that writes nothing still ran
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
@@ -1332,11 +1343,13 @@ function activate(w, id, name, ev) {
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the door a run
   { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
+  if (!dry && dutyLeft() <= 0) return out("refused", { code: "busy", why: `this door's scripts have used their ${DUTY.maxMs} ms of the last second (every world here shares it); it runs again when there's time`, sponsor: sp.sponsor });
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isBhv(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
-  if (!dry) ((w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(performance.now() - t0) }), w.presenceDirty = true);
+  if (!dry) { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms });
+    (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
   const ops = SR.elide(st, res.ops);

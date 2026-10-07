@@ -88,6 +88,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
   for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s)) sim.feed(s); }
 
+  // a world that holds scripts starts its sandbox processes now, so its first activation doesn't wait for one
+  if (st.status === "ok" && Object.values(st.entities ?? {}).some((e: Any) => Object.keys(e.c).some((k) => k.startsWith("script:")))) w.scripts?.warm?.();
   w.state = () => st;
   w.sim = () => sim.view(now());
   w.touching = (id: string) => touching.get(id) ?? [];
