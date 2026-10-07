@@ -13,6 +13,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the door (admit, L7)
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
+  ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],             // translators on every local world log + her dialect-3 goldens + pins

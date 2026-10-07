@@ -25,7 +25,7 @@ import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
 import { request as doorRequest, seal, actIndexOf, roleIn, isBanned, tick as doorTick, presenceEvent, scriptsView } from "../../shared/v4/door.js";
-import { stateView } from "../../shared/v4/client.js";
+import { clientCutOf } from "../../shared/v4/client.js";
 import { viewState } from "../../shared/v4/record.js";
 import { hear } from "../../shared/chatwindow.js";
 import { dec } from "../../shared/v4/names.js";
@@ -115,10 +115,25 @@ export class V4Log {
   }
   requestSync(actor: string, tool: string, args: Record<string, unknown> = {}) {
     this.stats.requests++;
-    const from = this.live.entries.length;
+    const from = this.live.entries.length; const held = this.holdsKey();
     const r = doorRequest(this.live, actor, tool, args);
     if (this.live.entries.length > from) this.afterWrite(from);
+    if (this.holdsKey() !== held) this.host?.broadcast({ type: "v4-holds", world: this.name, holds: this.holds() });
     return r;
+  }
+  /** Who holds what (the door's presence plane, design 20 P2): {id: {by}}. Never logged; every client draws a held thing
+   *  in its holder's hand, so it is sent whenever it changes, and in every join cut. */
+  holds(): Record<string, { by: string }> {
+    const out: Record<string, { by: string }> = {};
+    for (const [id, h] of Object.entries(this.live.presence.holds ?? {}) as [string, Any][]) out[id] = { by: h.by };
+    return out;
+  }
+  private holdsKey() { return JSON.stringify(this.holds()); }
+  /** A person's last connection left (not a takeover): what they held is dropped into the world (orphans, 18a), and the
+   *  door forgets their body. Their tracked body, if any, is all `leave` needs. */
+  departed(actor: string) {
+    if (!this.live.presence.bodies?.[actor]) return;
+    try { this.requestSync(actor, "leave", {}); } catch (err) { console.error(`[world:${this.name}] leave for ${actor}`, err); }
   }
 
   /** Scripts (research 41): the door's timers on this server's clock (server.ts calls World.bhv.tick once a second). What
@@ -190,7 +205,7 @@ export class V4Log {
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
     const mine = (X.actsOf.get(actor) ?? []).filter((q: number) => !["undo", "new", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40);
-    return { state: stateView(this.live.state()), head: this.head, mine, you: actor, names: this.names([...this.actors, actor]) };
+    return { ...clientCutOf(this.live), head: this.head, mine, you: actor, names: this.names([...this.actors, actor]), holds: this.holds() };
   }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;

@@ -1,3 +1,6 @@
+> **v1 only.** A v4 world refuses leases: carrying is grab/put/throw/drop/punt through the door (AGENTS.md,
+> notes design 20; client/lib/v4phys.js). This document records the v1 contract.
+
 # Animation leases — physics and motion as plugins
 
 **The takeover negotiation is the architecture; everything that moves is a

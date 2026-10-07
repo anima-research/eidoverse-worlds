@@ -3,7 +3,7 @@
 // The trust model, decided deliberately (docs/leases.md §self-animation):
 //
 //   * A LOCAL mod is a TRUSTED MOD — full access, an in-page ES module with
-//     the whole EW surface (your bones, your leases, the scene, the wire).
+//     the whole EW surface (your bones, the scene, door requests, the wire).
 //     It can act as you; loading one is a mod-install decision, like a
 //     browser extension. Stored in IndexedDB, yours alone, survives reloads.
 //   * A WORLD mod is an OFFER: the owner promotes a script to the server
@@ -13,9 +13,10 @@
 //     so a changed script means a fresh question; a world wildcard is the
 //     deliberate exception ("run whatever this place offers, sight unseen").
 //
-// What a mod can DO needs no new machinery — that is the lease thesis: it
-// animates your own body freely (it is you), other bodies by their consent
-// (bodydrag), objects via leases, and it may build in-game UI through the
+// What a mod can DO needs no new machinery: it animates your own body freely
+// (it is you), other bodies by their consent (bodydrag), objects through the
+// door as you would (EW.physics: grab/put/throw/drop/punt; v1's entity leases
+// are gone, a v4 door refuses them), and it may build in-game UI through the
 // same panel primitives the client itself uses. The engine cannot tell a
 // mod's output from anyone else's, which is the point.
 //
@@ -29,7 +30,6 @@
 import { bus, CONFIG, report } from './base.js';
 import { behaviors } from './world.js';
 import { makeSection, toast, flashHint } from './ui.js';
-import { physicsEnabled, setPhysicsEnabled } from './physobj.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
 import { makeFrame } from './frames.js';
 import { logChat } from './chat.js';
@@ -175,13 +175,13 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.
-// EW: entities, remotes, myState, me(), THREE, scene, requestV4 (door requests), bus…
+// EW: entities, remotes, myState, me(), THREE, scene, requestV4 (door requests), physics (grab/put/throw/punt), bus…
 export default ({ EW, ui, onTick }) => {
   ui.flashHint('hello from a mod');
   let t = 0;
   onTick((dt) => {
     t += dt;
-    // your per-frame work here — e.g. drive your own bones, hold leases…
+    // your per-frame work here — e.g. drive your own bones…
   });
 };
 `;
@@ -239,9 +239,6 @@ export function initMods() {
       body.innerHTML = `
         <div class="sec-cap">built in</div>
         <div class="mod-row">
-          <div class="mod-txt"><span class="mod-nm">object physics</span><span class="mod-note">balls, boxes, punts — the simulating half; you always see others' physics</span></div>
-          <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
-        <div class="mod-row">
           <div class="mod-txt"><span class="mod-nm">body engine</span><span class="mod-note">how your falls simulate — verlet: particles · ammo: Bullet, the janus rig. Click to cycle.</span></div>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
         <div class="sec-cap">your mods</div>
@@ -274,12 +271,6 @@ export function initMods() {
           const names = listBodyEngines();
           setBodyEngine(names[(names.indexOf(currentBodyEngine()) + 1) % names.length]);
           flashHint(`body engine: ${bodyEngine()} — takes effect on your next fall`);
-          return render();
-        }
-        if (d.corephys) {
-          setPhysicsEnabled(!physicsEnabled());
-          flashHint(physicsEnabled() ? 'object physics on — you simulate again'
-            : 'object physics off — held objects handed off; others simulate for you');
           return render();
         }
         let mine2 = [];

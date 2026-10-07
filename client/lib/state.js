@@ -25,7 +25,6 @@
 // a v1 world still folds its v1 entries here (foldLive), and says the same.
 
 import { foldEntry, emptyState } from '../../shared/fold.js';
-import { emptySim, simEntry } from '../../shared/sim.js';
 import { rightsIn } from '../../shared/rightsfold.js';
 import { CONFIG, bus } from './base.js';
 import { diffView, diffThing } from '../../shared/v4/viewdiff.js';
@@ -33,12 +32,8 @@ import { diffView, diffThing } from '../../shared/v4/viewdiff.js';
 export const state = {
   /** @type {import('../../shared/fold.js').WorldState} */
   st: emptyState(),
-  /** The sim fold beside the instant one (dialect 3, PROTOCOL_v2): folded
-   *  through the same entries in the same normative order; adopted from
-   *  the join snapshot's cut (a joiner cannot recompute flights whose
-   *  intents were folded out of the tail). simworld.js advances and
-   *  applies it. */
-  sim: emptySim(),
+  // (the v1 sim fold that lived here is gone: a v4 world's physics is the v4 client's own sim layer, beside its fold —
+  //  shared/v4/client.js, drawn by v4phys.js)
   /** Highest folded seq; -1 before hydration. Synthetic pre-hydration
    *  state (the snapshot) is already folded into what the server sent. */
   lastSeq: -1,
@@ -74,18 +69,14 @@ function emit(ev) {
  *    overlap and are skipped.
  *  The clone makes the shadow OWN its state: live folds here must never
  *  mutate objects the legacy path is still reading out of the join msg. */
-export function hydrate(snapshotState, tail = [], throughSeq = -1, sim = null) {
+export function hydrate(snapshotState, tail = [], throughSeq = -1) {
   // Defensive merge: snapshots from older servers may lack newer maps
   // (bans, mounts, behaviors are optional in the shape already).
   state.st = { ...emptyState(), ...structuredClone(snapshotState ?? {}) };
-  // the sequencer's sim cut, adopted wholesale — advancement is schedule-
-  // independent (PROTOCOL_v2), so resuming from it is exact
-  state.sim = sim?.epoch ? structuredClone(sim) : emptySim();
   state.lastSeq = throughSeq;
   for (const e of tail) {
     if (e.seq <= state.lastSeq) continue;   // the documented overlap
     foldEntry(state.st, e);
-    simEntry(state.sim, e, state.st);
     state.lastSeq = e.seq;
   }
   state.hydrated = true;
@@ -108,7 +99,6 @@ export function foldLive(entry) {
   }
   const watch = beforeOf(entry);
   foldEntry(state.st, entry);
-  simEntry(state.sim, entry, state.st);   // normative order: instant fold first
   state.lastSeq = entry.seq;
   // LIVE RIGHTS, RECOMPUTED FROM THE FOLD -- not merged by hand.
   //
@@ -195,7 +185,6 @@ function refreshMyRights() {
 /** World switch / fork / leave: back to nothing. */
 export function reset() {
   state.st = emptyState();
-  state.sim = emptySim();
   state.lastSeq = -1;
   state.hydrated = false;
   emit({ type: 'reset' });

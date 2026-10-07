@@ -11,7 +11,7 @@ export async function commandsFor(getMe:()=>any, messages:string[]) {
     'net.js':{net:{myId:'owner'},sendVerb:noop,sendMod:noop,sendPuppet:noop,sendWorldFork:noop,sendWorldReset:noop,requestDebug:noop},
     'remotes.js':{remotes:new Map()},
     'controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
-    'physobj.js':{kick:noop},'chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
+    'v4phys.js':{punt:noop,grab:noop,put:noop,drop:noop,throwHeld:noop},'chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
     'ui.js':{toggleHelp:noop,flashHint:noop},'scenegraph.js':{sceneAttach:noop,sceneDetach:noop},
     'consent.js':{setPushable:noop,pushable:()=>false},'localbody.js':{trySitOn:noop},'mybody.js':{getMe},
   };

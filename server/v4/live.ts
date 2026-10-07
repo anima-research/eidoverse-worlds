@@ -89,7 +89,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s)) sim.feed(s); }
 
   w.state = () => st;
-  w.sim = () => sim.view(now());
+  w.sim = () => sim.view(w.now()); // the door's clock: one per request (door.js request pins it)
   w.touching = (id: string) => touching.get(id) ?? [];
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {

@@ -411,8 +411,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 5, cpu: 60000 } });
       const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
       const earWhy = last("ear")?.why;
-      // phase 2: cpu (runs out of the way), a minute later. Measured: the mill's run ≈ 30–45 ms (30 fuel)
-      s.advance(61000); s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 600, cpu: 60 } });
+      // phase 2: cpu (runs out of the way), a minute later
+      s.advance(61000); s.call("olive", "set", { id: "@world", component: "scripts", value: { runs: 600, cpu: 25 } });   // ≈10 ms a run on a quiet host, ≈30–45 loaded: either way the cap binds before the sixth
       const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
       return { ear, earWhy, mill, why: last("mill")?.why }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)

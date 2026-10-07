@@ -469,9 +469,10 @@ export function refitCollider(id) {
   if (!e) return;
   bucketRemove(id, e);
   decide(e, e.obj.scale?.x || 1);
-  bucketAdd(id, e);
+  if (!suspended.has(id)) bucketAdd(id, e);
 }
 export function removeCollider(id) {
+  suspended.delete(id);
   const e = colliders.get(id);
   if (e) {
     bucketRemove(id, e);
@@ -484,10 +485,20 @@ export function removeCollider(id) {
   }
   colliders.delete(id);
 }
+/** A thing in a hand or in the air (v4phys.js) isn't where its collider was: take it out of the walking world's grid
+ *  while it is (on = true), and put it back where it is now (on = false). The entry itself is kept. */
+const suspended = new Set();
+export function suspendCollider(id, on) {
+  const e = colliders.get(id);
+  if (on) { if (!e || suspended.has(id)) return; bucketRemove(id, e); e.cells = []; suspended.add(id); return; }
+  if (!suspended.delete(id) || !e) return;
+  bucketAdd(id, e);
+}
+export const isSuspended = (id) => suspended.has(id);
 /** Call after moving an entity so its bucket registration follows it. */
 export function reindexCollider(id) {
   const e = colliders.get(id);
-  if (!e) return;
+  if (!e || suspended.has(id)) return;
   bucketRemove(id, e);
   bucketAdd(id, e);
 }
