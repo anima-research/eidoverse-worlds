@@ -65,7 +65,8 @@ function modLine(w: World, by: string, tool: string, who: string) {
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
   const w = c.world; if (!w?.v4 || !c.v4id || !QUIET.has(type)) return false;
-  if (w.isGhost(c) || w.v4.rightsOf(c.v4id).role === "none") return true;
+  // ghostHidden is the sweep's own flag (set at join and on every change): no moderator-log scan per typing packet
+  if (c.ghostHidden || w.v4.roleOf(c.v4id) === "none") return true;
   return type === "caption" && !!w.v4.mutedHere(c.v4id);
 }
 export const actorOf = (c: Client) => { if (!c.v4id) throw new Error(`v4 request from ${c.id} with no directory id (join didn't resolve one)`); return c.v4id; };

@@ -291,15 +291,16 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const vyErr = vy.msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error);
     const fernGot = mo.msgs.some((m) => m.type === "whisper" && m.text === "why was I muted?");
     await own.req("unmute", { who: you(jv) }); await own.req("ghost", { who: you(jv), minutes: 10 }); await sleep(300);
-    const k2 = vy.msgs.length; mo.raw({ type: "whisper", to: "Vole", text: "secret" }); vy.raw({ type: "whisper", to: "Fern", text: "boo" }); await sleep(400);
+    const VOLE = jv.snapshot?.you ?? "Vole";   // the display id the server gave this connection (an aid1 agent's may differ from its name)
+    const k2 = vy.msgs.length; mo.raw({ type: "whisper", to: VOLE, text: "secret" }); vy.raw({ type: "whisper", to: "Fern", text: "boo" }); await sleep(400);
     const ghostGot = vy.msgs.slice(k2).some((m) => m.type === "whisper" && m.text === "secret"), ghostSent = mo.msgs.some((m) => m.type === "whisper" && m.text === "boo");
-    ok(vyErr.some((e) => /muted/.test(e)) && fernGot && !ghostGot && !ghostSent, "RS8 a chat-muted person's whisper reaches only a moderator; a ghost neither receives nor sends whispers", [vyErr, fernGot, ghostGot, ghostSent]);
+    ok(vyErr.some((e) => /muted/.test(e)) && fernGot && !ghostGot && !ghostSent, "RS8 a chat-muted person's whisper reaches only a moderator; a ghost neither receives nor sends whispers", [VOLE, vyErr, fernGot, ghostGot, ghostSent]);
     // RS9 (review 10-07): the ghost (Vole) reads no chat through the history message, and its presence messages
     // (an anim) reach nobody; a visitor can't read the ban list; a guest's kick holds against a fresh guest connection
     const k3 = vy.msgs.length; vy.raw({ type: "history", reqId: "h1" }); await sleep(400);
     const hist = vy.msgs.slice(k3).find((m) => m.type === "history");
     const k4 = mo.msgs.length; vy.raw({ type: "anim", dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }); await sleep(400);
-    const animSeen = mo.msgs.slice(k4).some((m) => m.type === "anim" && m.id === "Vole");
+    const animSeen = mo.msgs.slice(k4).some((m) => m.type === "anim" && m.id === VOLE);
     const gv = await sock(S4.port); const jg = await gv.join("heath", "visitor-x");   // a guest (no account on this door)
     const kb = gv.msgs.length; gv.raw({ type: "world-bans" }); await sleep(300);
     const visBans = gv.msgs.slice(kb).find((m) => m.type === "mod")?.text ?? "";

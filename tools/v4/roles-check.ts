@@ -509,7 +509,12 @@ const cases: Case[] = [
       s.call("jun", "set", { id: "@world", component: "reactions", value: { coup: { kind: "set", component: "roles:olive", value: { role: "visitor" } } } });
       const use = s.call("vic", "use", { id: "@world", action: "coup" });
       return { use: code(use) ?? show(use), olive: eff(s, "olive")?.role }; },
-    good: (o) => o.olive === "owner" }
+    good: (o) => o.olive === "owner" },
+  { id: "V11", what: "an exception is cleared by sending it as null in a merge (what the Exceptions form sends); the others stay", run(s) { cast(s);
+      role(s, "bob", { role: "builder", can: { fly: true, generate: true }, note: "keep me" });
+      const r = s.call("olive", "set", { id: "@world", component: "roles:bob", value: { can: { generate: true, fly: null } }, merge: true });
+      const v = s.w().state().entities["@world"].c["roles:bob"]; return { r: show(r), can: v?.can, note: v?.note, sw: eff(s, "bob")?.switches }; },
+    good: (o) => o.r === "ok" && JSON.stringify(o.can) === '{"generate":true}' && o.note === "keep me" && !o.sw?.includes("fly") && o.sw?.includes("generate") }
 ];
 
 // ---------------- run ----------------

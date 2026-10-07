@@ -241,7 +241,8 @@ function expel(w: World, target: Client, why: string, until?: number | null) {
   clients.delete(target.ws);
   target.world = null;
   target.ws.close?.(4006, "removed by moderation");
-  if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id, target.v4id); }
+  // a ghost already left everyone's view (and the scripts' senses) when it became one: never a second leave
+  if (wasEmbodied && !target.ghostHidden) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id, target.v4id); }
   if (wasEmbodied && target.v4id) w.v4?.departed(target.v4id); // what they held drops into the world (design 20, orphans)
 }
 
@@ -857,8 +858,7 @@ const server = Bun.serve({
               try { c.world.rememberPose(c.id, c.lastPose); } // sleep where you stood
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
-            c.world.broadcast({ type: "leave", id: c.id });
-            c.world.bhv.onPresence("leave", c.id, c.v4id);
+            if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.bhv.onPresence("leave", c.id, c.v4id); }   // a ghost left already
             if (!c.superseded && c.v4id) c.world.v4?.departed(c.v4id); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
@@ -927,8 +927,7 @@ const server = Bun.serve({
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
-              c.world.broadcast({ type: "leave", id: c.id });
-              c.world.bhv.onPresence("leave", c.id, c.v4id);
+              if (!c.ghostHidden) { c.world.broadcast({ type: "leave", id: c.id }); c.world.bhv.onPresence("leave", c.id, c.v4id); }   // a ghost left already
               if (c.v4id) c.world.v4?.departed(c.v4id);
               reapAuxLegs(c.world, c, "primary traveled");
             }

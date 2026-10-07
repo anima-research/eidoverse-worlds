@@ -206,7 +206,10 @@ function openCanForm(display, surface) {
   // an existing entry is patched (its note and legacy fields stay); someone on the default role gets an entry naming the
   // role they have now (an exception needs an entry to live on; review 10-07)
   const has = !!wc()[`roles:${them.id}`];
-  b.onclick = async () => { const value = has ? { can: st } : { role: them.role, ...(Object.keys(st).length ? { can: st } : {}) };
+  // a merge keeps keys it isn't sent (RFC 7396): an exception set back to "as the role" goes as null, which removes it
+  // (review 10-07: clearing an exception did nothing)
+  b.onclick = async () => { const cleared = Object.fromEntries(Object.keys(cur).filter((k) => !(k in st)).map((k) => [k, null]));
+    const value = has ? { can: { ...st, ...cleared } } : { role: them.role, ...(Object.keys(st).length ? { can: st } : {}) };
     const r = await run('set', { id: '@world', component: `roles:${them.id}`, value, ...(has ? { merge: true } : {}) }, `${display}'s exceptions`); if (r?.ok) { closeCard(); closeSheet(); } };
   host.append(b);
   if (surface === 'card') { closeCard(); card = document.createElement('div'); card.id = 'person-form'; const c = document.createElement('div'); c.className = 'pm-card panel'; c.append(host); card.append(c); card.addEventListener('pointerdown', (e) => { if (e.target === card) closeCard(); }); document.body.append(card); }
