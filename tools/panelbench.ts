@@ -12,7 +12,7 @@
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 
-const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('panelbench');
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('panelbench', { worlds: ['panelbench'], serverEnv: { SKIP_OPT_SWEEP: '1' } });   // joining never founds a world
 const { check, tally } = mkCheck();
 
 // console/exception collector, installed before any document loads

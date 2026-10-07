@@ -1,25 +1,19 @@
 // blueprint-test — design §3 "Blueprints", §7 step 6a: the record, its hash,
-// the store, the `blueprint` verb's door, and the copy link as pure functions.
+// the copy link as pure functions, and blueprints through the v4 door.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/blueprint-test.ts
 //
 // 1. the hash      key order and prose (note) never move it; meaning does
 // 2. the shape     blueprintRefusal's rules, each refused by name
 // 3. the link      expand / overridesOf / rebase, a conflict included
-// 4. the store     the fold keeps every record by its recomputed hash; a
-//                  snapshot (stateToEntries) carries it; lineage walks it
-// 5. the door      server/verbs.ts runVerb on an in-process bench world
 // 6. v4: the door's publish (@world library:<hash>) and create {from: <hash>, at} on a scratch v4 world
 //    (tools/v4/scratchdoor.ts): the record, the copy's tree, its local poses, one act, the door's undo
 // 7. v4: the agent's blueprints / blueprint_place / look() over the v4 library, its door the scratch door
-// 8. the pacer      shared/pace.js against the v1 door's rate rule
 //
-// v4 port (2026-10-06): v4 blueprints are the door's (publish → a content-addressed blob + @world library:<hash>;
-// create {from: hash, at} expands the copy as one batch). Sections 1–5 and 8 pin the v1 runtime and pure helpers
-// that still exist (shared/fold.js's store, server/verbs.ts's blueprint verb, shared/pace.js) and are kept as they
-// were; NOTE several of them now test code with no runtime caller (expand/overridesOf/rebase, pace.js): see the port
-// report. The v1 placing path (placeVerbs → runVerb, its inverses, the v1 agent readout over state.blueprints and
-// world_verb) is replaced by sections 6 and 7.
+// Sections 1–3 are pure functions of shared/blueprint.js and stay as they were (NOTE: expand/overridesOf/rebase have
+// no runtime caller today). The v1 sections went with the v1 runtime (protocol v1 removed, 2026-10-07): 4 (the v1
+// fold's state.blueprints store and its stateToEntries snapshot), 5 (server/verbs.ts's blueprint verb) and 8
+// (shared/pace.js against a model of the v1 door's 12-per-4-s verb window; pace.js has no runtime caller now).
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,7 +31,6 @@ const J = JSON.stringify;
 
 const { blueprintHash, blueprintRefusal, hashRefusal, expand, overridesOf, rebase, linkOf, lineageOf, BLUEPRINT_LIMITS } = await import('../shared/blueprint.js');
 const { componentsOf, entityOf, canon, sha256hex } = await import('../shared/components.js');
-const { emptyState, foldEntry, stateToEntries } = await import('../shared/v4/import-v1/fold.js');
 
 const LAMP = 'eidoverse/assets/models/lamp.glb';
 // a lamp: a model with a light, and a bulb child (an Empty with its own light) 1.2 m up
@@ -198,114 +191,6 @@ const copyOf = (rec: any, at: number[]) => {
   const unlabel = structuredClone(lampV1); unlabel.parent = H1; unlabel.root.components.find((c: any) => c.type === 'Label').params.text = 'a lamp, v4';
   const c6: any = rebase(red, unlabel, lampV1);
   check('rebase: a component the copy removed but the update edited is a conflict', c6.ok === false && c6.conflicts.some((c: any) => c.comp === 'Label|label'), J(c6));
-}
-
-// ---- 4. the store ------------------------------------------------------------------
-console.log('\n4. the store (shared/fold.js state.blueprints)');
-const lampV2: any = structuredClone(lampV1); lampV2.parent = H1; lampV2.root.components[2].params.intensity = 24;
-const H2 = blueprintHash(lampV2);
-{
-  const st: any = emptyState();
-  let s = 0; const E = (verb: string, args: any, actor = 'ann') => ({ seq: s++, ts: 1786320000000 + s, actor, verb, args });
-  foldEntry(st, E('blueprint', { hash: H1, record: lampV1 }));
-  check('a published record folds into the store under its hash, with who and when', st.blueprints?.[H1]?.record?.name === 'Lamp' && st.blueprints[H1].by === 'ann' && st.blueprints[H1].ts === 1786320000001, J(st.blueprints?.[H1]));
-  foldEntry(st, E('blueprint', { hash: '0'.repeat(64), record: lampV2 }));
-  check('the fold recomputes the hash: a mismatched entry (a hand-edited log) folds to nothing', !st.blueprints['0'.repeat(64)] && !st.blueprints[H2]);
-  foldEntry(st, E('blueprint', { hash: H1, record: { ...lampV1, note: 'reworded' } }, 'bo'));
-  check('re-publishing reworded prose keeps the first publisher and time, takes the new note', st.blueprints[H1].by === 'ann' && st.blueprints[H1].ts === 1786320000001 && st.blueprints[H1].record.note === 'reworded');
-  foldEntry(st, E('blueprint', { hash: H1 }, 'bo'));
-  check('a thin re-publish {hash} folds to nothing new', st.blueprints[H1].record.note === 'reworded' && Object.keys(st.blueprints).length === 1);
-  foldEntry(st, E('blueprint', { hash: H2, record: lampV2 }));
-  check('a new version is stored beside its parent (nothing is replaced)', !!st.blueprints[H1] && !!st.blueprints[H2]);
-  check('lineage walks parent hashes, newest first', J(lineageOf(st.blueprints, H2)) === J([H2, H1]));
-  check('…and stops at a parent the store lacks', J(lineageOf({ [H2]: st.blueprints[H2] }, H2)) === J([H2, H1]));
-  for (const junk of [null, 'x', { hash: H1, record: 'lamp' }, { record: lampV1 }, { hash: 5, record: lampV1 }]) foldEntry(st, E('blueprint', junk));
-  check('malformed entries fold to nothing and never throw (PROTOCOL §1 totality)', Object.keys(st.blueprints).length === 2);
-  const bad = { kind: 'eido.blueprint', v: 1, name: 'n', root: { components: [{ type: 'Transform', params: { scale: 1 } }], children: [] }, extra: { s: 1e999 } };
-  foldEntry(st, E('blueprint', { hash: 'f'.repeat(64), record: bad }));
-  check('…including a record canon() refuses', Object.keys(st.blueprints).length === 2);
-  // the snapshot path: a joiner folding stateToEntries gets the same store
-  const re: any = emptyState();
-  for (const e of stateToEntries(st)) foldEntry(re, e);
-  check('a snapshot (stateToEntries) carries the store: a re-fold holds the same records', canon(re.blueprints ?? null) === canon(st.blueprints), J(Object.keys(re.blueprints ?? {})));
-  const fresh: any = emptyState();
-  check('a world with no blueprints folds no store key (old states keep their shape)', !('blueprints' in fresh) && !stateToEntries(fresh).some((e: any) => e.verb === 'blueprint'));
-}
-
-// ---- 5. the door -----------------------------------------------------------------------
-console.log('\n5. the door (server/verbs.ts runVerb)');
-{
-  const { runVerb, VERBS } = await import('../server/verbs.ts');
-  const st: any = emptyState();
-  st.roles.owner = { role: 'owner' }; st.roles.bld = { role: 'builder' }; st.roles.vis = { role: 'visitor' };
-  let seq = -1;
-  const log: any[] = [];
-  const debug: any[] = [];
-  const w: any = {
-    name: 'blueprint-bench', state: st, clients: new Set(), leases: new Map(),
-    sim: { epoch: null, bodies: {} }, bhv: { sync() {}, onEntry() {} },
-    append(actor: string, verb: string, args: any) { const e = { seq: ++seq, ts: 1786320000000 + seq, actor, verb, args }; foldEntry(st, e); log.push(e); return e; },
-    commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
-    broadcast() {}, debug(kind: string, d: any) { debug.push([kind, d]); }, fold() {},
-  };
-  const conn = (id: string) => { const msgs: any[] = []; const c: any = { id, spectator: false, world: w, lastPose: null, ws: { send(x: string) { msgs.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0, msgs }; w.clients.add(c); return c; };
-  const as = (c: any) => (args: any) => { c.verbWin = 0; c.verbCount = 0; c.msgs.length = 0; const n = log.length; runVerb({ w, c, now: Date.now(), expel() {} } as any, 'blueprint', args); return { appended: log.length > n ? log.at(-1) : null, error: c.msgs.filter((m: any) => m.type === 'error').at(-1)?.error as string | undefined }; };
-  const B = as(conn('bld')), V = as(conn('vis'));
-
-  check('the verb is in the table at builder rank (design §8)', VERBS.blueprint?.rank === 1 && !VERBS.blueprint?.gen);
-  let r = V({ hash: H1, record: lampV1 });
-  check('a visitor is refused by rank', !r.appended && /builder rights/.test(r.error ?? ''), J(r));
-  r = B({ hash: H1, record: { ...lampV1, author: 'x' } });
-  check('a malformed record is refused with the shape rule\'s words, and recorded', !r.appended && /no "author"/.test(r.error ?? '') && debug.some(([k, d]) => k === 'rejected' && d.verb === 'blueprint'), J(r));
-  r = B({ record: lampV1 });
-  check('a publish without its hash is refused (say which record you mean)', !r.appended && /wants \{hash, record\}/.test(r.error ?? ''), J(r));
-  r = B({ hash: '0'.repeat(64), record: lampV1 });
-  check('a hash that is not the record\'s is refused, naming the real one', !r.appended && (r.error ?? '').includes(H1), J(r));
-  r = B({ hash: H2, record: lampV2 });
-  check('a parent the store does not hold is refused', !r.appended && /parent .* is not in this world's store/.test(r.error ?? ''), J(r));
-  r = B({ hash: H1, record: { ...lampV1, note: 'first' }, extra: 'dropped', by: 'someone-else' });
-  check('a good publish is appended as exactly {hash, record}', !!r.appended && J(Object.keys(r.appended.args).sort()) === J(['hash', 'record']) && st.blueprints[H1]?.by === 'bld', J(r));
-  const n = log.length;
-  r = B({ hash: H1, record: { ...lampV1, note: 'first' } });
-  check('an identical re-publish is accepted idempotently: a thin {hash} entry, store unchanged', !r.error && !!r.appended && J(r.appended.args) === J({ hash: H1 }) && log.length === n + 1 && st.blueprints[H1].record.note === 'first', J(r));
-  r = B({ hash: H1 });
-  check('a bare {hash} the store holds is the same thin acknowledgement', !r.error && J(r.appended?.args) === J({ hash: H1 }));
-  r = B({ hash: H2 });
-  check('a bare {hash} the store lacks is refused (send the record)', !r.appended && /send the record/.test(r.error ?? ''), J(r));
-  r = B({ hash: H1, record: { ...lampV1, note: 'reworded' } });
-  check('a re-publish with reworded prose goes in whole, and the store takes the note', !!r.appended?.args.record && st.blueprints[H1].record.note === 'reworded', J(r));
-  r = B({ hash: H2, record: lampV2 });
-  check('now the parent is held, the new version is accepted', !!r.appended && !!st.blueprints[H2], J(r));
-}
-
-// ---- 8. the pacer ------------------------------------------------------------------------
-console.log('\n8. the pacer (shared/pace.js) against the door\'s rate rule');
-{
-  const { makePacer, PACE } = await import('../shared/pace.js');
-  // a model of server/verbs.ts runVerb's window: 12 per 4 s, the window opening at the first verb after the last one closed
-  const door = () => { let win = -Infinity, n = 0, dropped = 0; return { hit(t: number) { if (t - win > 4000) { win = t; n = 0; } if (++n > 12) dropped++; }, get dropped() { return dropped; } }; };
-  const run = (count: number, jitter: number, direct = 0) => {
-    let now = 0; const timers: [number, () => void][] = []; const d = door(); const sent: string[] = [];
-    const p = makePacer({ now: () => now, schedule: (fn: () => void, ms: number) => { timers.push([now + ms, fn]); return 0; },
-      send: (verb: string, args: any) => { sent.push(args.n); d.hit(now + (now === 0 ? jitter : 0)); } });   // the worst bunching: the first burst arrives `jitter` ms late, the next on time
-    for (let i = 0; i < direct; i++) p.direct('place', { n: `d${i}` });
-    p.run(Array.from({ length: count }, (_, i) => ({ verb: 'comp', args: { n: i } })));
-    p.direct('remove', { n: 'after' });   // an undo issued mid-run waits its turn
-    while (timers.length) { timers.sort((a, b) => a[0] - b[0]); const [at, fn] = timers.shift()!; now = at; fn(); }
-    return { dropped: d.dropped, sent, end: now };
-  };
-  const a = run(120, 0);
-  check(`120 verbs in one run: none dropped by the door, in order (drained in ${(a.end / 1000).toFixed(1)} s)`, a.dropped === 0 && a.sent.length === 121 && a.sent.slice(0, 120).every((n, i) => n === i), J({ dropped: a.dropped, n: a.sent.length }));
-  check('…and a verb sent the ordinary way while it drains goes after it, not into the middle', a.sent.at(-1) === 'after');
-  const b = run(60, 350, 5);
-  check('with the first burst arriving 0.35 s late (the next on time: the worst bunching) and 5 direct sends before it, still none dropped', b.dropped === 0, J({ dropped: b.dropped }));
-  const worst = run(60, 1500, 0);
-  check('control: past the margin (the first burst 1.5 s late) the door does drop — the margin is what holds', worst.dropped > 0, J({ dropped: worst.dropped }));
-  const small = run(PACE.LIMIT - 1, 0);
-  check(`a run under the budget (${PACE.LIMIT - 1}) goes at once`, small.end === 0 && small.sent.length === PACE.LIMIT);
-  // the control: the same 120 sent unpaced lose their tail at the door
-  const d = door(); for (let i = 0; i < 120; i++) d.hit(i);
-  check('control: unpaced, the door drops all but 12', d.dropped === 108);
 }
 
 // ---- 6. v4: the door's publish and create {from} ------------------------------------------

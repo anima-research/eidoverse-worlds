@@ -1,24 +1,22 @@
 // unknown-comp-test — what today's engine does with a component type it does
-// not know. Pins the baseline docs/COMPONENTS-TODAY.md states under "An
-// unknown component", so a port onto component records can be checked
-// against it rather than against anyone's memory.
+// not know (the baseline docs/COMPONENTS-TODAY.md states under "An unknown
+// component", on protocol v4).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/unknown-comp-test.ts
 //
 // Four tiers, each the REAL module, no server process, no browser:
-//   1. the door      server/verbs.ts runVerb on an in-process bench world
-//                    (the flight-test.ts precedent): accepted, appended verbatim
-//   2. the fold      shared/fold.js — kept verbatim, replaced wholesale, removed
-//                    by null, and carried across a snapshot (stateToEntries)
-//   3. the browser   client/lib/realize/models.js + state.js + the real bus, over
-//                    tools/lod-client-stub.mjs's cone (no renderer, no network):
-//                    the bag is mirrored and announced, nobody claims it,
-//                    nothing is reported; motion.js's frame loop skips it
-//   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set` (v4 port 2026-10-06: the
-//                    edit's ops go through the real v4 door on a scratch world and are read back; tiers 1–3 still pin
-//                    the v1 runtime, which v1 worlds still run — tools/v4/nov1-check.ts)
-// Text-tier perception ("components: <type>" in look()) is pinned live by
-// tools/compfold-test.ts and tools/comptest.ts against a scratch sequencer.
+//   1. the door      shared/v4/door.js on a scratch v4 world (tools/v4/scratchdoor.ts): a set of an unknown type is
+//                    accepted, with a note that the door knows no evaluator for it
+//   2. the fold      the door's state as the view a client reads (record.js viewState): kept verbatim, replaced
+//                    wholesale, removed by delete {id, component}
+//   3. the browser   client/lib/realize/models.js + state.js + the real bus, over tools/lod-client-stub.mjs's cone
+//                    (no renderer, no network), fed the views a v4 client folds (hydrate the cut's view, then
+//                    applyView after each write): the bag is mirrored and announced, nobody claims it, nothing is
+//                    reported; motion.js's frame loop skips it
+//   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set`; the edit's ops go through the
+//                    real v4 door on a scratch world and are read back
+// (Ported to v4 2026-10-07: tiers 1–3 pinned the v1 runtime's verbs.ts/fold.js/foldLive path, gone with protocol v1.
+//  The v1-only shape rules they pinned, a 32-char type name truncated and an 8 KB comp refused, have no v4 subject.)
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -54,74 +52,33 @@ const jeq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const settle = async () => { for (let i = 0; i < 8; i++) await sleep(15); };
 
-const { emptyState, foldEntry, stateToEntries } = await import('../shared/v4/import-v1/fold.js');
-const { runVerb } = await import('../server/verbs.ts');
 const { inspectSchema, editOps, fieldAt } = await import('../shared/editschema.js');
+const { scratchWorld } = await import('./v4/scratchdoor.ts');
 
 const TYPE = 'weathervane';                 // a type no evaluator in this tree knows
 const D1 = { points: 'north', vanes: [1, 2, { deep: true }], note: 'a cockerel' };
 const D2 = { points: 'south' };
+const LIB = 'eidoverse/assets/models/crate_large_red.glb';
 
 // ---- 1. the door -------------------------------------------------------------
-console.log('\n1. the door (server/verbs.ts runVerb)');
-const st: any = emptyState();
-st.roles.owner = { role: 'owner' };
-let seq = -1;
-const log: any[] = [];
-const debugs: any[] = [];
-const w: any = {
-  name: 'unknown-comp-bench', state: st, clients: new Set(), leases: new Map(),
-  sim: { epoch: null, bodies: {} },
-  bhv: { sync() {}, onEntry() {} },
-  append(actor: string, verb: string, args: any) {
-    const e = { seq: ++seq, ts: 1786320000000 + seq, actor, verb, args };
-    foldEntry(st, e); log.push(e); return e;
-  },
-  commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
-  broadcast() {}, debug(kind: string, detail: any) { debugs.push({ kind, ...detail }); }, fold() {},
-};
-const msgs: any[] = [];
-const owner: any = { id: 'owner', spectator: false, world: w, lastPose: null,
-  ws: { send(x: string) { msgs.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 };
-w.clients.add(owner);
-const verb = (v: string, args: any) => runVerb({ w, c: owner, now: Date.now(), expel() {} } as any, v, args);
-const errors = () => msgs.filter((m) => m.type === 'error').map((m) => m.error);
-
-verb('spawn', { id: 'crate', lib: 'eidoverse/assets/models/crate_large_red.glb', pos: [1, 0, 1] });
-verb('comp', { id: 'crate', type: TYPE, data: D1 });
-const e1 = log.at(-1);
-check('an unknown type is accepted: no refusal, one comp entry appended',
-  errors().length === 0 && e1?.verb === 'comp' && e1.args.type === TYPE, JSON.stringify({ errors: errors(), e1 }));
-check('…carrying the data exactly as sent (opaque: nothing validated, nothing dropped)', jeq(e1?.args.data, D1), JSON.stringify(e1?.args));
-check('…and leaving no flight-recorder line (only motion*/particles are linted after a comp)', debugs.length === 0, JSON.stringify(debugs));
-
-const LONG = 'a-component-type-name-well-past-thirty-two';
-verb('comp', { id: 'crate', type: LONG, data: { x: 1 } });
-check('a type name longer than 32 chars is TRUNCATED to 32, not refused',
-  log.at(-1)?.args.type === LONG.slice(0, 32) && errors().length === 0, JSON.stringify(log.at(-1)?.args));
-verb('comp', { id: 'crate', type: LONG.slice(0, 32), data: null });   // tidy: back to one unknown type
-
-const nBefore = log.length;
-verb('comp', { id: 'crate', type: TYPE, data: { blob: 'x'.repeat(8200) } });
-check('the only shape rule an unknown type meets is size: > 8KB is refused, nothing appended',
-  log.length === nBefore && /8KB/.test(errors().at(-1) ?? ''), errors().at(-1));
+console.log('\n1. the door (shared/v4/door.js, a scratch v4 world)');
+const W = scratchWorld('unknowncomp').seed({ crate: { lib: LIB, pos: [1, 0, 1] } });
+const r0 = W.call('set', { id: 'crate', component: TYPE, value: D1 });
+check('an unknown type is accepted: the set is not refused', r0.ok === true, JSON.stringify(r0.refused));
+check('…and the door says it knows no evaluator for it (a note, not a refusal)',
+  (r0.notes ?? []).some((n: any) => n.component === TYPE), JSON.stringify(r0.notes));
 
 // ---- 2. the fold -------------------------------------------------------------
-console.log('\n2. the fold (shared/fold.js)');
-check('folded verbatim into entities[id].comp[type]', jeq(st.entities.crate?.comp?.[TYPE], D1), JSON.stringify(st.entities.crate?.comp));
-const snapState = structuredClone(st);       // what a late joiner is handed
-const snapSeq = seq;
-{
-  const st2: any = emptyState();
-  for (const e of stateToEntries(st, { now: 1 })) foldEntry(st2, e as any);
-  check('a snapshot roundtrip (stateToEntries → fold) carries it unchanged',
-    jeq(st2.entities.crate?.comp?.[TYPE], D1), JSON.stringify(st2.entities.crate?.comp));
-}
-verb('comp', { id: 'crate', type: TYPE, data: D2 });
-check('a second comp of the same type REPLACES the data wholesale (no merge)', jeq(st.entities.crate.comp[TYPE], D2), JSON.stringify(st.entities.crate.comp));
-verb('comp', { id: 'crate', type: TYPE, data: null });
-check('data: null removes it, and an emptied bag is deleted, not left as {}',
-  st.entities.crate.comp === undefined, JSON.stringify(st.entities.crate));
+console.log('\n2. the fold (the door\'s state, as the view clients read)');
+check('folded verbatim into the view: entities[id].comp[type]', jeq(W.rec('crate')?.comp?.[TYPE], D1), JSON.stringify(W.rec('crate')?.comp));
+const snapView = structuredClone(W.view());  // what a late joiner adopts (the cut's view)
+const views: any[] = [];                     // the views after each later write, as a joined client folds them
+const r1 = W.call('set', { id: 'crate', component: TYPE, value: D2 });
+views.push(structuredClone(W.view()));
+check('a second set of the same type REPLACES the data wholesale (no merge)', r1.ok && jeq(W.rec('crate').comp?.[TYPE], D2), JSON.stringify(W.rec('crate').comp));
+const r2 = W.call('delete', { id: 'crate', component: TYPE });
+views.push(structuredClone(W.view()));
+check('delete {id, component} removes it, and the thing stays', r2.ok && W.rec('crate') && W.rec('crate').comp?.[TYPE] === undefined, JSON.stringify(W.rec('crate')));
 
 // ---- 3. the browser realizer ----------------------------------------------------
 console.log('\n3. the browser realizer (client/lib/realize/models.js, real bus + state)');
@@ -135,8 +92,8 @@ const { tickMotion } = await import('../client/lib/motion.js');
 const heard: any[] = [];
 bus.on('comp', (ev: any) => heard.push(structuredClone(ev)));
 M.initModelsRealizer();
-// late join: the bench world as it stood with the unknown comp on the crate
-S.hydrate(snapState, [], snapSeq);
+// late join: the world's view as it stood with the unknown comp on the crate
+S.hydrate(snapView);
 for (let i = 0; i < 4; i++) { M.residencySweep?.(); await settle(); }
 const obj = stub.entities.get('crate');
 check('the entity realizes normally (an unknown comp blocks nothing)', !!obj && typeof obj.traverse === 'function',
@@ -146,9 +103,9 @@ check('…as a CLONE, never an alias of the folded state', stub.comps.get('crate
 check('the join announces it on the bus like any component ({id, type, data})',
   heard.some((h) => h.id === 'crate' && h.type === TYPE && jeq(h.data, D1)), JSON.stringify(heard));
 
-// live: replace, then remove — exactly the entries the door appended
+// live: replace, then remove — the views a joined client's own fold reaches after the door's two writes
 heard.length = 0;
-for (const e of log.filter((x) => x.seq > snapSeq)) S.foldLive(structuredClone(e));
+for (const v of views) S.applyView(structuredClone(v));
 await settle();
 const live = heard.filter((h) => h.id === 'crate' && h.type === TYPE);
 check('a live replace and a live removal are each announced (data, then null)',
@@ -180,7 +137,6 @@ check('…and an emptied field removes it (delete)', jeq(del.ops, [{ tool: 'dele
 {
   // through the real v4 door: the unknown type is kept verbatim (the door notes it knows no evaluator), replaced
   // wholesale by the edit, removed by the delete
-  const { scratchWorld } = await import('./v4/scratchdoor.ts');
   const W = scratchWorld('unknowncomp').seed({ crate: ent });
   check('the v4 door keeps an unknown component verbatim', jeq(W.rec('crate').comp?.[TYPE], D1), JSON.stringify(W.rec('crate').comp));
   const r1 = W.send(set.ops[0]);

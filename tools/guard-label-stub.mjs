@@ -1,5 +1,5 @@
-// guard-label-test substitutes this for everything build.js AND scenegraph.js
-// import — the build-gate stub plus the handful of symbols scenegraph.js
+// picture-note-test and sound-guard-test substitute this for everything build.js AND
+// scenegraph.js import (it was written for guard-label-test, gone with the v1 guard) — the build-gate stub plus the handful of symbols scenegraph.js
 // wants that build.js never did. placer.js is NOT stubbed: it is the module
 // under test, reading the stubbed world/net exactly as the real panels do.
 export * from './build-gate-stub.mjs';

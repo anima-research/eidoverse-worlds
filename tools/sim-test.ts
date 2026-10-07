@@ -9,7 +9,21 @@
 // never recomputed.
 
 import { emptySim, simEntry, advanceSim, tickOf, simPose, simSnapshot, SIM_ID } from "../shared/sim.js";
-import { foldEntry, emptyState, type LogEntry } from "../shared/v4/import-v1/fold.js";
+
+// The engine reads an "instant fold" beside its entries: st.entities[id].{lib, pos, yaw, scale} and st.terrain (the
+// shape shared/v4/simlayer.js's v1View hands it). This is that view, for exactly the dialect-3 verbs these scripts
+// use: spawn makes a thing, place moves it, remove/light end it as a modelled thing (a light reusing the id has no
+// lib), terrain is the world's ground. It is not a fold of any log format; it is the engine's input, kept by hand.
+type LogEntry = { seq: number; ts: number; actor: string; verb: string; args: Record<string, any> };
+const emptyState = () => ({ entities: {} as Record<string, any>, terrain: null as any });
+function foldEntry(st: ReturnType<typeof emptyState>, e: LogEntry) {
+  const a = e.args ?? {};
+  if (e.verb === "spawn" && typeof a.id === "string") st.entities[a.id] = { lib: a.lib, pos: a.pos, yaw: a.yaw ?? 0, ...(a.scale !== undefined ? { scale: a.scale } : {}) };
+  else if (e.verb === "place" && st.entities[a.id]) { const t = st.entities[a.id]; if (a.pos) t.pos = a.pos; if (typeof a.yaw === "number") t.yaw = a.yaw; if (a.scale !== undefined) t.scale = a.scale; }
+  else if (e.verb === "remove") delete st.entities[a.id];
+  else if (e.verb === "light" && typeof a.id === "string") st.entities[a.id] = { kind: "light", pos: a.pos ?? st.entities[a.id]?.pos };
+  else if (e.verb === "terrain") st.terrain = a;
+}
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {

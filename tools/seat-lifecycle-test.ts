@@ -36,6 +36,8 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { SeatStore } from "../server/seats.ts";
+import { HANDLERS } from "../mcpl/tools.ts";
+import { foundWorlds } from "./harness.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LIB = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
@@ -83,13 +85,16 @@ if (!existsSync(TOKENS)) {
 } else console.log("  (mcpl/tokens.json exists — HTTP named-actor leg will be skipped, operator-import covers propose)");
 
 const WORLDS = mkdtempSync(join(tmpdir(), "seatlife-"));
+// the world exists before anyone joins (joining never founds one), founded by seatbot: its enrolment when this run
+// minted one, else (TRUST_NAMES) the local account its typed name is — so seatbot builds the crate as the owner
+foundWorlds(WORLDS, ["seatlab"], namedToken ? "agent:token:seatbot" : "seatbot");
 const CHILD_LOG = join(WORLDS, "server-output.txt");
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
 // whose pid dies immediately, orphaning the real sequencer on this port where
 // it poisons the next run.
 const server = Bun.spawn([process.execPath, "run", "server/server.ts"], {
   cwd: ROOT,
-  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB },
+  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 // preserve the child's own words — a startup crash must be readable, not mute
@@ -130,7 +135,7 @@ try {
   // OUR scratch WORLDS_DIR or nothing below is inspecting our child
   watcher = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
   await new Promise<void>((res, rej) => {
-    watcher!.onopen = () => { watcher!.send(JSON.stringify({ type: "join", world: "seatlab", id: "watcher", token: DOOR })); res(); };
+    watcher!.onopen = () => { watcher!.send(JSON.stringify({ type: "join", world: "seatlab", id: "watcher", token: DOOR, v4fold: true })); res(); };
     watcher!.onerror = () => rej(new Error("watcher ws failed"));
   });
   watcher.onmessage = (ev) => { try { const m = JSON.parse(String(ev.data)); if (m.type === "avatar-profile-updated") watcherEvents.push(m); } catch { /* not ours */ } };
@@ -209,23 +214,31 @@ try {
   ag = new WorldAgent({ url: `ws://127.0.0.1:${PORT}/ws`, name: "seatbot", world: "seatlab",
     avatar: "eidoverse/assets/vrms/claude.vrm", agentToken: namedToken ?? "" });
   await ag.connect();
-  ag.verb("spawn", { id: "crate1", lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], yaw: 0 });
-  ag.verb("comp", { id: "crate1", type: "sockets", data: {
-    seatL: { pos: [0, 1, 0], pose: "sitchair" },                          // legacy: no anchor authored
-    seatS: { pos: [0, 1, 0], pose: "sitchair", seatAnchor: "surface" },   // authored support plane
-  } });
+  // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
+  const built = await ag.door("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] } } });
+  check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
+  // a v4 seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
+  const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
+  const legacy = await ag.door("set", { id: "crate1", component: "sockets", value: { seatL } });
+  check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
+  // the seat-profile correction keys on a socket that authors its support plane: seatAnchor "surface" (client
+  // seatcore.js socketAnchor, world.js). KNOWN GAP (2026-10-07): the v4 door's sockets schema has no seatAnchor (a socket
+  // takes pos, q, part, body, accepts, radius), so this seat can't be authored on a v4 world and every check below that
+  // sits on seatS stays red until the schema carries it (or the anchor moves into body).
+  const surface = await ag.door("set", { id: "crate1", component: "sockets", value: { seatL, seatS: { pos: [0, 1, 0], seatAnchor: "surface", body: { action: "sit", pose: "sitchair" } } } });
+  check("…and a seat that authors its support plane (seatAnchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
   await sleep(600);
 
-  ag.verb("mount", { id: "seatbot", to: "crate1", slot: "seatL" });
+  await HANDLERS.sit(ag as any, { on: "crate1", slot: "seatL" }, {} as any, "sit");
   {
     const line = await until(() => { const l = ag!.look(); return /seated on crate1/.test(l) ? l : null; });
     check("legacy socket: seated, byte-identical composition (y = socket)", !!line && /ground height 1\.00m/.test(line ?? ""), line?.split("\n")[0]);
     check("legacy socket: declared, never silent", /seat approximate: legacy socket/.test(line ?? ""), line?.split("\n")[0]);
   }
 
-  ag.verb("dismount", { id: "seatbot", pos: [1, 0, 1], yaw: 0 });
+  await HANDLERS.sit(ag as any, {}, {} as any, "sit");   // sit with no `on`: get off
   await sleep(400);
-  ag.verb("mount", { id: "seatbot", to: "crate1", slot: "seatS" });
+  await HANDLERS.sit(ag as any, { on: "crate1", slot: "seatS" }, {} as any, "sit");
   {
     const line = await until(() => { const l = ag!.look(); return /seated on crate1/.test(l) ? l : null; });
     check("surface socket + proposed profile: still approximate, reason names the countersign",
@@ -270,7 +283,7 @@ try {
       avatar: "eidoverse/assets/vrms/seatprobe.vrm" });
     await probeAg.connect();
     await sleep(400);
-    probeAg.verb("mount", { id: "probebot", to: "crate1", slot: "seatS" });
+    await HANDLERS.sit(probeAg as any, { on: "crate1", slot: "seatS" }, {} as any, "sit");
     const seated = await until(() => { const l = probeAg!.look(); return /ground height 0\.79m/.test(l) ? l : null; }, 12000);
     check("probebot seats corrected under its accepted profile", !!seated, probeAg.look().split("\n")[0]);
 
@@ -311,7 +324,7 @@ try {
 
   console.log("dismount stamping unchanged (#18/#98 neighborhood)");
   {
-    ag.verb("dismount", { id: "seatbot", pos: [2, 0, 2], yaw: 0 });
+    await HANDLERS.sit(ag as any, {}, {} as any, "sit");
     // the check reads the HEADER line only: probebot is still seated nearby,
     // legitimately declaring its stale seat in the People section
     const header = await until(() => { const h = ag!.look().split("\n")[0]; return !/seated on/.test(h) ? h : null; });

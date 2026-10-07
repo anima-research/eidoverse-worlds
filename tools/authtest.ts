@@ -12,9 +12,10 @@ import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:c
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds, freePort } from "./harness.ts";
 import { verifyToken } from "../server/aid1.ts";
 
-const PORT = Number(process.env.PORT ?? 8992);
+const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9420);   // a free port, never a fixed default
 const HTTP = `http://localhost:${PORT}`;
 const WS_URL = `ws://localhost:${PORT}/ws`;
 const DOOR = "test-door";
@@ -57,7 +58,7 @@ function open(joinMsg: Record<string, unknown>, cookie = ""): Promise<Sock> {
   return new Promise((resolve) => {
     const ws = new WebSocket(WS_URL, cookie ? ({ headers: { cookie } } as any) : undefined);
     const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", ...joinMsg }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", v4fold: true, ...joinMsg }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       s.msgs.push(m);
@@ -71,13 +72,17 @@ const snap = (s: Sock) => s.msgs.find((m) => m.type === "snapshot");
 
 // ---- boot scratch sequencer ----
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-authtest-"));
+foundWorlds(worldsDir, ["authtest"]);   // joining never founds a world
+// the agent enrolments (reserved names) are this run's own, not whatever the checkout's mcpl/tokens.json holds
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({ "authtest-claude-bearer": { id: "claude" } }));
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
 // whose pid dies immediately, orphaning the real sequencer on this port where
 // it poisons the next run.
 const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
   env: {
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
-    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0",
+    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: join(worldsDir, "opt"),
   },
   stdout: "ignore", stderr: "inherit",
 });
@@ -137,14 +142,13 @@ try {
   const s6 = await open({}, spoof.cookie);
   check("agent name via Discord nick → reserved, rejected", s6.closedWith === 4004, `code=${s6.closedWith}`);
 
-  // ---- /upload gate: aid1 reaches the script tier (Digi's finding #5) ----
+  // ---- /upload gate: an aid1 agent credential reaches the upload door (Digi's finding #5). (The v1 runtime-script
+  // store, /upload?as=script, went with protocol v1: a v4 script is a door `upload {text}`, tools/v4/scripts-check.ts.)
   const upTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });
-  const up = (tok: string, body = "world.log('hi')") =>
-    fetch(`${HTTP}/upload?as=script&token=${encodeURIComponent(tok)}`, { method: "POST", body });
+  const glb = new Uint8Array(16); new DataView(glb.buffer).setUint32(0, 0x46546c67, true);   // a glTF header
+  const up = (tok: string) => fetch(`${HTTP}/upload?token=${encodeURIComponent(tok)}`, { method: "POST", body: glb });
   const u1 = await up(upTok);
-  const u1body = u1.status === 200 ? await u1.json() : null;
-  check("aid1 token uploads a script", u1.status === 200 && typeof u1body?.path === "string",
-    `status=${u1.status}`);
+  check("aid1 token is accepted at the upload door", u1.status === 200, `status=${u1.status}`);
   check("aid1 upload is repeatable (no jti burn)", (await up(upTok)).status === 200);
   check("garbage aid1 at /upload → 401", (await up("aid1.not.real")).status === 401);
   check("spectate-only scope at /upload → 401",

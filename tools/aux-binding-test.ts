@@ -8,9 +8,11 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 
 const PORT = 8600 + (process.pid % 150);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-auxbind-"));
+foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
 
 // The test OWNS its credential fixture: a scratch tokens.json reserving the
 // agent names this test asserts on (hesp2, hesp3) and minting hesp2's bearer.
@@ -32,7 +34,7 @@ const check = (name: string, ok: boolean, extra = "") => {
 };
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", AGENT_TOKENS_PATH: tokensPath },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 
@@ -47,7 +49,7 @@ const dial = (joinMsg: Record<string, unknown>): Promise<Sock> => new Promise((r
     if (m.type === "snapshot" || m.type === "error") { clearTimeout(t); res({ ws, seen, closed }); } };
   ws.onclose = (ev) => { clearTimeout(t); closeRes({ code: ev.code });
     res({ ws, seen, closed }); };  // refused sockets may close before/without error frame
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", ...joinMsg }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "commons", v4fold: true, ...joinMsg }));
 });
 
 try {
