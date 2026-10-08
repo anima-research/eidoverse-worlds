@@ -453,7 +453,7 @@ initReachNet({
   myId: () => CONFIG.name,
   avatarOf: (id) => (id === CONFIG.name ? getMe() : remotes.get(id)?.avatar ?? null),
 });
-initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
+initMods();   // 🧩 runtime client scripts: your local trusted mods (a world offers none: its code is its server-side scripts)
 initLocalBody({ logChat });
 initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
 
@@ -1019,7 +1019,7 @@ const EW = globalThis.EW = {
   clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
   physics: physicsApi, // grab/put/throw/drop/punt as door requests (thingphysics.js): what runtime mods script against
-  mods: modsApi,     // load/run/offer runtime client scripts (🧩)
+  mods: modsApi,     // list/put/run/stop your local runtime client scripts (🧩); put and run need your click
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
   foldParity,        // shadow-mode drift probe (TEL0S_NOTES §11.6)
   reconcileModels,   // force a full realizer pass (idempotent — §11.4)

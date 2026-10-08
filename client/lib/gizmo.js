@@ -151,7 +151,7 @@ function endPivotDrag() {
     if (best) { p = best.h.map((v) => Math.round(v * 1e4) / 1e4); snapped = best.name; } }
   const data = p.every((v) => v === 0) ? null : { pos: p };   // back at the origin = no pivot
   Edits.sendOps([data ? OP.set(id, 'pivot', data) : OP.unset(id, 'pivot')], { what: `pivot of ${id}`, expect: false });
-  import('./ui.js').then((m) => m.flashHint(snapped ? `pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
+  import('./ui.js').then((m) => m.flashHint(snapped ? m.html`pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
 function endDrag() {

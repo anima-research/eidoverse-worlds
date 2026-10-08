@@ -29,7 +29,8 @@ import { scaleOf } from '../../shared/scale3.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
-import { flashHint, collapseAll, panelFrame } from './ui.js';
+import { flashHint, collapseAll, panelFrame, html } from './ui.js';
+import { paint, escapeHtml } from './markup.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
@@ -114,7 +115,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   if (on) panelFrame().show();
   if (!quiet) {
     flashHint(on
-      ? 'builder mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves'
+      ? html`builder mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves`
       : 'looking again');
   }
   bus.emit('edit-mode', on);
@@ -180,8 +181,8 @@ function ensureInspector() {
 }
 /** The inspector bar as a surface other editors write to — seatedit paints
  *  its anchor line through this rather than reaching into the element. */
-export function setInspectorHtml(html) {
-  ensureInspector().innerHTML = html;
+export function setInspectorHtml(line) {   // text, or markup built with html`` (markup.js)
+  paint(ensureInspector(), line);
   inspector.style.display = 'flex';
 }
 function showInspector(id) {
@@ -190,7 +191,7 @@ function showInspector(id) {
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id;
   const locked = isLocked(id);
   inspector.innerHTML =
-    `<span><b>${label.slice(0, 34)}</b></span>` +
+    `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
     (locked
         ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag up/down · ` +
@@ -269,8 +270,8 @@ export async function holdGhost(lib, label) {
     scene.add(obj);
     collapseAll();
     flashHint(lib === '@light'
-      ? 'placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel'
-      : `placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+      ? html`placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel`
+      : html`placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
     if (lib !== '@light') engage('ghostKeys');   // the status line keeps the keys while it's in hand
   } catch (e) { report('ghost', e); }
 }
@@ -321,7 +322,7 @@ export async function holdBlueprint(hash, record) {
     scene.add(holder);
     collapseAll();
     const n = (function count(x) { return 1 + x.children.reduce((k, c) => k + count(c), 0); })(record.root);
-    flashHint(`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+    flashHint(html`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
     engage('ghostKeys');
     return true;
   } catch (e) { report('ghost', e); return false; }
@@ -345,7 +346,7 @@ function ghostKey(e) {
   else if (e.code === 'Comma' || e.code === 'Period') { const k = fine ? GHOST_SIZE_FINE : GHOST_SIZE; ghost.scale = THREE.MathUtils.clamp(ghost.scale * (e.code === 'Period' ? k : 1 / k), 0.1, 12); }
   else return false;
   ghost.yaw = Math.atan2(Math.sin(ghost.yaw), Math.cos(ghost.yaw));
-  flashHint(`turned <b>${Math.round(ghost.yaw * 180 / Math.PI)}°</b> · size <b>×${ghost.scale.toFixed(2)}</b>`, 1500);
+  flashHint(html`turned <b>${Math.round(ghost.yaw * 180 / Math.PI)}°</b> · size <b>×${ghost.scale.toFixed(2)}</b>`, 1500);
   return true;
 }
 
@@ -666,7 +667,7 @@ bus.on('key', (e) => {
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {   // keys: toolKeys
     const t = { KeyQ: 'select', KeyG: 'move', KeyE: 'rotate', KeyR: 'scale', KeyP: 'pivot' }[e.code];   // P: the pivot (Maya's D; D walks here)
     if (t) {   // the active tool's key again steps its space (G G: move in the thing's own axes), saying so
-      if (t === getTool() && SPACES[t]?.length > 1) { const s = cycleSpace(t); flashHint(`${t} in <b>${s}</b> axes · ${{ move: 'G', rotate: 'E' }[t]} again to switch`, 2200); return; }
+      if (t === getTool() && SPACES[t]?.length > 1) { const s = cycleSpace(t); flashHint(html`${t} in <b>${s}</b> axes · ${{ move: 'G', rotate: 'E' }[t]} again to switch`, 2200); return; }
       setTool(t); return;
     }
     if (e.code === 'KeyF' && keyTarget()) { bus.emit('edit-find', keyTarget()); return; }

@@ -6,7 +6,8 @@
 
 import { makeFrame, chromeCost } from './windows.js';
 import { bus } from './base.js';
-import { EMOTE_ORDER, EMOTE_ICONS } from './emotedefs.js';   // names + glyphs, no engine
+import { EMOTE_ORDER, EMOTE_ICONS } from './emotedefs.js';
+import { escapeHtml } from './markup.js';   // names + glyphs, no engine
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
 import { register as registerAction } from './actions.js';
@@ -243,7 +244,7 @@ export function initEmoteBar() {
       // glyph paints a tofu box or nothing, so the tile falls back to the word
       // when the emoji measurably does not render (live, 09-05)
       const em = EMOTE_ICONS[name] ?? GLYPH[name] ?? '✨';
-      b.innerHTML = emojiRenders(em) ? `<span class="tile-glyph">${em}</span>` : `<span class="tile-word">${name}</span>`;
+      b.innerHTML = emojiRenders(em) ? `<span class="tile-glyph">${escapeHtml(em)}</span>` : `<span class="tile-word">${escapeHtml(name)}</span>`;   // names and glyphs come from the world's defs: text
       b.onclick = () => { getMe()?.playEmote(name); myState.emote = name; litEmote = name; litUntil = performance.now() + 1500; paint(); };
       grid.appendChild(b);
       tiles.set(name, b);

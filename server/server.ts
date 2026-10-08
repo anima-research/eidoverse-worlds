@@ -5,6 +5,7 @@
 //  - serves the browser client and the eidoverse-video asset library
 // No world manifest: everything about a world arrives through its log.
 
+import { nameAtDoor } from "./names.ts";
 import { existsSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
@@ -371,6 +372,17 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.id = c.id.replace(/[\u0000-\u001f\u007f]/g, "").trim();
     // M3: format characters (zero-width, bidi overrides) and compatibility forms are how one name passes for another
     c.id = c.id.normalize("NFKC").replace(/\p{Cf}/gu, "").trim();
+    // security pass 3 (H1): no markup characters in a name — a typed one is refused in words, one the identity service
+    // gave loses them (server/names.ts)
+    {
+      const n = nameAtDoor(c.id, { typed: !auth });
+      if (n.refused) {
+        ws.send(JSON.stringify({ type: "error", error: n.refused }));
+        ws.close(4004, "name has markup");
+        return null;
+      }
+      c.id = n.name;
+    }
     // H2: an identity is never a name — a name shaped like one (u-…) would pass for the person who wears it
     if (!c.id || /^(world|\*|system|sim)$/i.test(c.id) || /^script:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
@@ -432,7 +444,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         account = viaEnrolment ? `agent:token:${viaEnrolment.toLowerCase()}` : `aid1:${a.payload.iss}:${a.payload.sub}`;
         agentName = viaEnrolment ?? a.slug;
       }
-      if (agentName) { c.id = agentName.slice(0, LIMITS.ID_LEN); c.tokenVerified = true; c.agent = true; }
+      if (agentName) { c.id = nameAtDoor(agentName.slice(0, LIMITS.ID_LEN), { typed: false }).name; c.tokenVerified = true; c.agent = true; }   // an aid1 slug is the credential issuer's: no markup in it either
       if (at.names.has(c.id.toLowerCase()) && account !== `agent:token:${c.id.toLowerCase()}`) {
         console.log(`[perm] join refused: "${c.id}" is a reserved agent name (no proof of that enrolment)`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
@@ -455,7 +467,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
       const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
-        || (!!c.anonymous && dir.claimedName(n));
+        || (!!c.anonymous && dir.claimedName(n))
+        || (!!c.account && dir.claimedByOther(n, c.account));   // H2 (pass 3): nor an account under another account's name, here or not
       if (taken(c.id)) {
         const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${(c.account ?? "").replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`;
         let n = base.slice(0, LIMITS.ID_LEN), k = 2;

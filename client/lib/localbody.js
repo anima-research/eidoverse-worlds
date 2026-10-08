@@ -27,8 +27,8 @@ import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
-import { toast, flashHint, setAmbientHint } from './ui.js';
-import { posable, pushable } from './consent.js';
+import { toast, flashHint, setAmbientHint, html } from './ui.js';
+import { posable, pushable, bodyTable, onConsentChange } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
@@ -106,7 +106,7 @@ export function dismountMe(kind = 'menu') {
   if (!m) return false;
   const body = mySeatBody();
   if (!mayLeave(body, kind)) {
-    flashHint(body?.leaveBy === 'script' ? "this seat lets you go only when the world does" : body?.leaveBy === 'jump' ? '<kbd>Space</kbd> or <kbd>X</kbd> to get off' : '<kbd>X</kbd> to get off');
+    flashHint(body?.leaveBy === 'script' ? "this seat lets you go only when the world does" : body?.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> to get off` : html`<kbd>X</kbd> to get off`);
     return false;
   }
   const me = getMe();
@@ -304,9 +304,9 @@ export function updateSeatHint(dt) {
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
   if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
-    hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? '<kbd>X</kbd> get up · <kbd>WASD</kbd> drive' : '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off')
-      : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? '<kbd>Space</kbd> or <kbd>X</kbd> get up' : '<kbd>X</kbd> get up'; }
-  else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+    hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
+      : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
+  else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
   setAmbientHint(hint);
 }
@@ -479,6 +479,12 @@ function applyShove(lean, by) {
 
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
+
+  // my two switches, as the authority's consent table for my body: the server checks it before it forwards anyone's
+  // knock-over, pose or grab (consent.js bodyTable). Every arrival (a world's presence plane is its own), every change.
+  const syncConsent = () => { if (CONFIG.renderer || CONFIG.spectate) return;
+    for (const [cls, mode] of bodyTable()) sendRequest('consent', { set: { class: cls, tier: 'strangers', mode } }).catch?.(() => {}); };
+  bus.on('hydrated', syncConsent); onConsentChange(syncConsent);
 
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to

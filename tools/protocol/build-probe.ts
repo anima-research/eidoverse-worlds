@@ -119,7 +119,7 @@ try {
     const pose = await evalJson(`import('/lib/build.js').then((m) => m.ghostPose?.() ?? null)`);
     check("GH1 E E . turn it 30° (clockwise from above) and size it ×1.1 while it's in hand", pose && Math.abs(pose.yaw + Math.PI / 6) < 1e-6 && Math.abs(pose.scale - 1.1) < 1e-6, pose);
     check("GH2 …E didn't permission the tool under it", (await evalJson(`import('/lib/build.js').then((m) => m.getTool())`)) === tool0);
-    check("GH3 the status line names the keys while it's in hand", await evalJson(`__hints.some((h) => typeof h === 'string' && /turn/.test(h) && /size/.test(h))`), await evalJson(`__hints`));
+    check("GH3 the status line names the keys while it's in hand", await evalJson(`__hints.some((h) => h != null && /turn/.test(String(h)) && /size/.test(String(h)))`), await evalJson(`__hints`));
     const n0 = myActs().length;
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: SX - 120, y: SY + 40 }); await sleep(200);
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: ${SX - 120}, clientY: ${SY + 40} })), true))`);

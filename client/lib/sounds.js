@@ -236,7 +236,7 @@ export async function uploadSound(file) {
 registerEditor(({ id, obj, meta, bag, commit }) => {
   if (!obj || obj.userData?.isLight) return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
-  const vol = cur?.volume ?? 0.8, rad = cur?.radius ?? 12;
+  const vol = Number(cur?.volume ?? 0.8), rad = Number(cur?.radius ?? 12);   // numbers into markup: never a string from the world
   return {
     html: `<div data-se-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">
       <div><b>🔊 sound</b> <span style="color:var(--dim);font-size:11px">${cur ? (cur.playing === false ? 'paused' : 'playing') : 'none'}</span></div>
@@ -279,7 +279,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         if (!norm.ok) { msg(norm.why, true); return; }
         commit('sound', norm.sound);
         msg(norm.notes.length ? norm.notes.join(' · ') : 'playing');
-        if (norm.notes.length) flashHint(`🔊 ${esc(norm.notes[0])}`);
+        if (norm.notes.length) flashHint(`🔊 ${norm.notes[0]}`);
         ev.target.blur();
       });
       q('pause')?.addEventListener('click', (ev) => {
@@ -304,12 +304,12 @@ function pickFile(accept) {
 async function uploadThenSet(id) {
   flashHint(`🔊 ${RIGHTS_WARNING}`, 4000);
   const file = await pickFile(SOUND_ACCEPT); if (!file) return;
-  flashHint(`uploading ${esc(file.name)}…`);
+  flashHint(`uploading ${file.name}…`);
   try {
     const path = await uploadSound(file);
     const r = commitEdit(id, 'sound.src', path);
-    if (r.errors?.length) flashHint(`🔊 ${esc(r.errors.join(' · '))}`, 6000);
-    else flashHint(`🔊 ${esc(path.split('/').pop())} — playing`, 3000);
+    if (r.errors?.length) flashHint(`🔊 ${r.errors.join(' · ')}`, 6000);
+    else flashHint(`🔊 ${path.split('/').pop()} — playing`, 3000);
   } catch (err) { toast(`sound upload failed — ${err.message}`, 'warn', 8000); }
 }
 registerHandler('sound', (id, _obj, k, _v, opts) => { if (k !== 'upload' || opts?.live) return false; uploadThenSet(id); return true; });

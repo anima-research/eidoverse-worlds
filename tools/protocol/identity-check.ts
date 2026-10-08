@@ -9,7 +9,8 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
-//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second "Riannon" gets neither the first
+//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Riannon" is shown
+//       with a disambiguator (pass 3 H2), and gets neither the first
 //       one's held whisper nor her remembered pose; the real one gets both
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
@@ -425,7 +426,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   g.raw({ type: "whisper", to: name, text: "the authority code is 4471" }); await sleep(250);
   const other = await sock(srv.port); const jo = await other.join("garden", name);   // TRUST_NAMES: local:<name>, another account
   await sleep(250);
-  ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you === name, "HB (setup) two accounts, one display name", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
+  // since pass 3 (H2) the second account isn't even SHOWN as her: a name another account claimed gets a disambiguator
+  // (presence-check PN); what it may never get is hers either way — her held whisper and her remembered pose
+  ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you !== name && jo.snapshot.you.startsWith(name), "HB (setup) two accounts asking for one display name: the second is shown with a disambiguator", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
   ok(!other.msgs.some((m) => m.type === "whisper"), "HB a different account wearing an absent person's name doesn't receive her held whisper", other.msgs.filter((m) => m.type === "whisper"));
   ok(!jo.snapshot?.restore, "HB …nor inherit her remembered pose", jo.snapshot?.restore);
   other.close(); await sleep(300);
@@ -447,6 +450,30 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   huge.raw({ type: "typing", pad: "x".repeat(3 * 1024 * 1024) }); await sleep(600);
   ok(huge.closed != null, "MA one websocket message past 2 MiB closes the socket (Bun's default took 16 MB)", huge.closed);
   a.close(); b.close(); }
+
+// ---- NM: a name with markup in it is refused at the door (security pass 3, H1's belt-and-braces) ----
+// The client shows names as text now (client/lib/markup.js); a name that IS markup is still refused, so no other reader
+// of the presence plane (an agent's page, a bot, a future sink) ever has to be careful with one. < > and " — the three
+// that open a tag or close an attribute; & and ' stay (Tom & Jerry, O'Brien are names, and escape cleanly).
+{ for (const bad of [`<img src=x onerror="alert(1)">`, "Ann<b>", "x>y", `Ro"wan`]) {
+    const g = await sock(srv.port); const j = await g.join("garden", bad);
+    ok(!j.snapshot && j.errors.some((e) => /name/i.test(e) && /</.test(e)) && !/[{}]/.test(j.errors.join(" ")), `NM a name with markup characters is refused, in words (${JSON.stringify(bad)})`, j.errors);
+    g.close(); }
+  for (const good of ["Tom & Jerry", "O'Brien", "Zoë 🌙"]) {
+    const g = await sock(srv.port); const j = await g.join("garden", good);
+    ok(!!j.snapshot, `NM …and an ordinary name with & ' or an emoji still gets in (${JSON.stringify(good)})`, j.errors);
+    g.close(); }
+  const { nameAtDoor } = await import("../../server/names.ts");
+  ok(nameAtDoor("Ann<b>", { typed: true }).refused && nameAtDoor("Ann<b>", { typed: false }).name === "Annb", "NM a name the identity service gave (not typed here) loses the characters instead of its owner being turned away",
+    [nameAtDoor("Ann<b>", { typed: true }), nameAtDoor("Ann<b>", { typed: false })]); }
+
+// ---- M3: the perf beacon keeps no raw address (security pass 3) ----
+{ const r = await fetch(`http://127.0.0.1:${srv.port}/perflog`, { method: "POST", headers: { "x-real-ip": "203.0.113.77" }, body: JSON.stringify({ kind: "load", ms: 1234 }) });
+  await sleep(100);
+  const f = path.join(W, ".perflogs.jsonl"); const txt = fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "";
+  const last = txt.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).at(-1);
+  ok(r.ok && last?.ms === 1234, "(M3 setup) the beacon line was written", [r.status, last]);
+  ok(!txt.includes("203.0.113.77") && last && !("ip" in last) && /^[0-9a-f]{16,}$/.test(String(last.addr ?? "")), "M3 /perflog stores a hashed address, never the raw IP", last); }
 
 // ---- LC: the world's live state is behind the same door as a join ----
 { const S4 = await start({ JOIN_TOKEN: "door-key" });

@@ -19,7 +19,7 @@ import { bus } from './base.js';
 import { libLabels } from './assets.js';
 import { entities, entityMeta, comps, findPart } from './world.js';
 import { mouse } from './controller.js';
-import { flashHint } from './ui.js';
+import { flashHint, html } from './ui.js';
 import { engage, release } from './keyhints.js';
 import { setEditMode, isEditing, deselect,
   setInspectorHtml, hideInspector } from './build.js';
@@ -108,8 +108,7 @@ export function selectSeat(pick) {
   const meta = entityMeta.get(pick.id) ?? {};
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
   setInspectorHtml(
-    `<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span>` +
-    `<span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);
+    html`<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span><span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);   // one html``: markup + markup would concatenate to a plain (text) string
 }
 export function deselectSeat() {
   if (seatSel) release();
@@ -184,7 +183,7 @@ export function armSeatPlacement(id) {
   if (!id || !entities.get(id)) return;
   setEditMode(true, { quiet: true });
   seatArm = id;
-  flashHint('click the spot where a sitter goes — the arrow will face you · <kbd>Esc</kbd> cancels', 8000);
+  flashHint(html`click the spot where a sitter goes — the arrow will face you · <kbd>Esc</kbd> cancels`, 8000);
 }
 
 export function cancelSeatArm() {
@@ -201,7 +200,7 @@ function placeSeatAt(e) {
   const root = entities.get(id);
   if (!root) { seatArm = null; return; }
   const hit = raycaster.intersectObject(root, true)[0];
-  if (!hit) { flashHint('that missed the thing — click ON it, or <kbd>Esc</kbd>'); return; }
+  if (!hit) { flashHint(html`that missed the thing — click ON it, or <kbd>Esc</kbd>`); return; }
   seatArm = null;
   const { pos, part } = seatFromHit(id, root, hit);
   // face the declarer: you are looking at the seat from where a sitter's
@@ -213,7 +212,7 @@ function placeSeatAt(e) {
   sockets[slot] = { pos, ...(yaw ? { q: qFromYaw(yaw).map((v) => +v.toFixed(6)) } : {}), ...(part ? { part } : {}), body: {} };   // '+ seat' places a seat: a person attaches here
   commitSockets(id, sockets, 'seat anchor');
   selectSeat({ id, slot });      // the comp echo builds the gizmo already selected
-  flashHint(`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
+  flashHint(html`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
 }
 
 /** The core's mousedown hands seat gestures here FIRST — a gizmo is small

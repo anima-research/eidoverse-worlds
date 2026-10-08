@@ -45,10 +45,14 @@ export const QUAD_MAX_EXTENT = 50;
 export const MAX_TEXTURE_PX = 2048;
 const blocked = new Map();   // id → why this browser didn't fetch it (probes)
 export const _blocked = blocked;
+// A link is loaded as an image, not fetched: the page's CSP lets images come from any https host (img-src) but keeps
+// connect-src to this server and its known services, so a script can't post what it reads anywhere (server/csp.ts).
+// crossOrigin 'anonymous' sends no credentials to another origin and needs its CORS answer (a texture must be clean).
 async function linkTexture(url) {
-  const r = await fetch(url, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
-  if (!r.ok) throw new Error(`${r.status}`);
-  const bmp = await createImageBitmap(await r.blob());
+  const img = new Image();
+  img.crossOrigin = 'anonymous'; img.referrerPolicy = 'no-referrer'; img.decoding = 'async';
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('the image did not load')); img.src = url; });
+  const bmp = await createImageBitmap(img);
   const k = Math.min(1, MAX_TEXTURE_PX / Math.max(bmp.width, bmp.height));
   const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close?.();
@@ -368,7 +372,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('picture', norm.picture);
         msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
-        if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
+        if (norm.notes.length) flashHint(`🖼 ${norm.notes[0]}`);
         ev.target.blur();
       });
       q('down')?.addEventListener('click', (ev) => {
@@ -393,12 +397,12 @@ function pickFile(accept) {
 async function uploadThenSet(id, key) {
   flashHint(`🖼 ${RIGHTS_WARNING}`, 4000);
   const file = await pickFile(PICTURE_ACCEPT); if (!file) return;
-  flashHint(`uploading ${esc(file.name)}…`);
+  flashHint(`uploading ${file.name}…`);
   try {
     const path = await uploadPicture(file);
     const r = commitEdit(id, key, path);
-    if (r.errors?.length) flashHint(`🖼 ${esc(r.errors.join(' · '))}`, 6000);
-    else flashHint(`🖼 hung ${esc(path.split('/').pop())}`, 3000);
+    if (r.errors?.length) flashHint(`🖼 ${r.errors.join(' · ')}`, 6000);
+    else flashHint(`🖼 hung ${path.split('/').pop()}`, 3000);
   } catch (err) { toast(`picture upload failed — ${err.message}`, 'warn', 8000); }
 }
 registerHandler('picture', (id, _obj, k, _v, opts) => {

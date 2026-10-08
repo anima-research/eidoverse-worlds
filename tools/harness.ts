@@ -175,7 +175,7 @@ export async function scratchSequencer(name: string, opts: ScratchOptions = {}) 
   return { PORT, BASE, SCRATCH, NONCE, EIDOVERSE_DIR, seq, track, record, cleanup, die, sleep };
 }
 
-export async function scratchBench(name: string, opts: ScratchOptions & { headed?: boolean } = {}) {
+export async function scratchBench(name: string, opts: ScratchOptions & { headed?: boolean; cspExpected?: boolean } = {}) {
   const run = await scratchSequencer(name, opts);
   const { PORT, SCRATCH, NONCE, track, record, die } = run;
   if (!existsSync(CHROME)) await die(2, `no browser at ${CHROME}`);
@@ -200,9 +200,15 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   if (!target) await die(2, `no owned page target on :${DEBUG_PORT}`);
   const cws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { cws.onopen = res as any; cws.onerror = rej as any; });
+  // Every page this bench drives runs under the server's Content-Security-Policy (server/csp.ts). A violation is the
+  // client trying something the policy refuses (an inline handler, a host connect-src doesn't name) — a feature that
+  // silently stopped working, so every browser probe is a CSP regression test: any violation fails the run at cleanup,
+  // unless the probe causes them on purpose (cspExpected).
+  const cspViolations: string[] = [];
   cws.addEventListener("message", (ev) => {
     const m = JSON.parse(String(ev.data));
     if (["Runtime.consoleAPICalled", "Runtime.exceptionThrown", "Log.entryAdded", "Network.loadingFailed"].includes(m.method)) record("browser.events.jsonl", m);
+    if (m.method === "Log.entryAdded" && /Content Security Policy/i.test(String(m.params?.entry?.text ?? ""))) cspViolations.push(String(m.params.entry.text).slice(0, 300));
   });
   const cdp = cdpOn(cws);
   await Promise.all([cdp.send("Runtime.enable"), cdp.send("Page.enable"), cdp.send("Log.enable"), cdp.send("Network.enable")]);
@@ -217,5 +223,13 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
     }
     return r?.result?.value;
   };
-  return { ...run, browser, cws, cdp, evalJson };
+  const cleanup = async (code?: number) => {
+    if (cspViolations.length && !opts.cspExpected) {
+      console.log(`  \x1b[31m✗\x1b[0m FAIL the page broke its Content-Security-Policy ${cspViolations.length}× (server/csp.ts): ${[...new Set(cspViolations)].slice(0, 4).join(" | ")}`);
+      await run.cleanup(1);
+      process.exit(1);   // the probes exit with their own tally after cleanup; a broken policy outranks it
+    }
+    return run.cleanup(code);
+  };
+  return { ...run, cleanup, browser, cws, cdp, evalJson, cspViolations };
 }

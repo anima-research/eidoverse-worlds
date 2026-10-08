@@ -11,6 +11,7 @@ import { register as registerAction } from './actions.js';
 import { send } from './editwrites.js';
 import { xrActive } from './xrask.js';
 import { nameOf } from './plainwords.js';
+import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
 
 export const USE_REACH = 2.5;   // m, feet to the thing (Roblox's prompt reaches ~10 studs ≈ 2.8 m)
@@ -50,11 +51,10 @@ export function usable() {
   return { id: best, action, verb, ...(barred ? { barred } : {}) };
 }
 
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 /** The hint bar's line for it, or null. */
 export function usePromptHint() {
   const u = usable(); if (!u) return null;
-  return `<kbd>E</kbd> ${esc(u.verb)} ${esc(nameOf(u.id) ?? 'it')}${u.barred ? ` <span>(${esc(u.barred)})</span>` : ''}`;
+  return html`<kbd>E</kbd> ${u.verb} ${nameOf(u.id) ?? 'it'}${u.barred ? html` <span>(${u.barred})</span>` : ''}`;   // html``: every value escaped (markup.js)
 }
 /** Use what E points at. Returns the door's reply (or null when there's nothing in reach). */
 export async function useNearest() {

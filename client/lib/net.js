@@ -108,6 +108,9 @@ export function wireNet(h) {
  *  the server sends it on arrive and in the join roster). A role, a ban or a rollback goes to THIS, never to a typed
  *  name (round-2 R1/R2; security review 10-06 H2). */
 export const identities = new Map();
+/** A presence message names its person by IDENTITY too (security pass 3, H2): the server routes it to that identity, and
+ *  a name someone else wears never catches it. `key` is the field the server reads (targetActor / toActor). */
+const actorFor = (name, key) => { const a = name ? identities.get(name) : null; return a ? { [key]: a } : {}; };
 /** Display ids of people here without an account (the server marks them on arrive/present): the 'guest' badge. */
 export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
@@ -161,7 +164,7 @@ export function sendAnim(data) {
  *  without it the pose replaces theirs whole. */
 export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
+    net.ws.send(JSON.stringify({ type: 'puppet', target, ...actorFor(target, 'targetActor'), pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
 
@@ -229,7 +232,7 @@ export function sendMod(type, extra = {}) {
 /** Private, point-to-point. Deliberately not a verb: verbs go in the world
  *  log, and the log is public forever. */
 export function sendWhisper(to, text) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, text }));
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, ...actorFor(to, 'toActor'), text }));
 }
 /** #104 phase-1: ask the sequencer to mint this body's media credential. */
 export function sendRelayCredRequest(scopes = {}) {
@@ -240,7 +243,7 @@ export function sendVoiceConsent(recv) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'voice-consent', recv: !!recv }));
 }
 export function sendTyping(to, state) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...(state ? { state } : {}) }));
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
 }
 
 /** Transient, never-logged relay — used while a build drag is in flight so
@@ -320,7 +323,7 @@ let lastPoseSent = 0;
  *  semantics: fire-and-forget, never logged. The target's client decides. */
 export function sendBodyDrag(target, payload) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'bodydrag', target, ...payload }));
+    net.ws.send(JSON.stringify({ type: 'bodydrag', target, ...actorFor(target, 'targetActor'), ...payload }));
   }
 }
 
