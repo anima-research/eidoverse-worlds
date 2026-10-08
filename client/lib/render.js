@@ -101,6 +101,9 @@ let worldHold = false;
 export function setWorldHold(on) { worldHold = !!on; }
 export function renderWorld() {
   if (worldHold) return;
+  // a lost GPU (gpulost.js handled it: reloading, or stopped with a notice) draws nothing: rendering into the dead
+  // device throws every frame, and each throw leaks a render context and a shader build (10-08: ~50 MB/s)
+  if (globalThis.__gpuLost?.fired) return;
   mainPassCam = camera;
   // SELF-HEAL (09-07 00:30, the black desktop's second half): three captures `outputRenderTarget = _renderTarget || …`
   // at the top of every render. A frame that aborts between binding its frame-buffer target and restoring leaves
