@@ -32,6 +32,8 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
+import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
+import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
@@ -47,7 +49,7 @@ export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
 // a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
 // tools/protocol/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
 const rateOf = (m, def) => (Number.isFinite(m.degPerSec) ? m.degPerSec : Number.isFinite(m.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m.rpm) ? m.rpm * 6 : def);
-export const PARTICLE_PRESETS = ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'];
+export const PARTICLE_PRESETS = ESSENTIAL_NAMES;   // the Essentials (shared/particle_effects.js): the effects every world has by name
 const round = (v, dp = 3) => +(+v).toFixed(dp);
 
 /** Typed entry → number, with Maya's relative operators. null = not a number. */
@@ -181,6 +183,11 @@ export function inspectSchema(ent, id, live = {}) {
       hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
     { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
+    // R 10-07: how it is described to anyone who reads rather than sees (alt text); what it can do and its state are read
+    // out from its components (shared/a11y.js), shown below as everyone who reads it gets it
+    { t: 'text', k: 'description', label: 'description', value: typeof c.description === 'string' ? c.description : '', multiline: true, placeholder: 'what it is and looks like, for people who can\'t see it and for agents',
+      hint: `${graphemes(typeof c.description === 'string' ? c.description : '')} / ${SPEC.description.maxLen}. Don't list what it does: that is read from its components. A visible nameplate is a child thing with a sign (Text, billboard yaw)` },
+    { t: 'info', k: 'reads', label: 'reads as', value: (() => { const r = readOut(c, { name: typeof c.label === 'string' ? c.label : null }); return [r.name ? `«${r.name}»` : '(no name)', readLine(r, { max: 120 })].filter(Boolean).join(': ') || '—'; })() },
   ] });
 
   // pivot (research 52): where it turns and scales from, in its own frame (before scale). The buttons snap it to the
@@ -387,19 +394,25 @@ export function inspectSchema(ent, id, live = {}) {
   }
 
   if (c.particles && typeof c.particles === 'object') {
-    const p = c.particles; const o = p.origin ?? [0, 0, 0];
-    const presets = PARTICLE_PRESETS.includes(p.preset) ? PARTICLE_PRESETS : [...PARTICLE_PRESETS, p.preset ?? '?'];
+    // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
+    // (an Essential's: count, size, opacity, speed, lifetime, area, texture, quality). An older value (the first
+    // protocol's flat bag) is shown in today's shape and written back in it on the first edit
+    const inst = instanceOf(c.particles) ?? {}; const doc = effectFor(inst.effect, live.effects ?? (() => null)); const at = Array.isArray(inst.at) ? inst.at : [0, 0, 0];
+    const effects = ESSENTIAL_NAMES.includes(inst.effect) ? ESSENTIAL_NAMES : [...ESSENTIAL_NAMES, inst.effect ?? '?'];
+    const params = Object.entries(doc?.params ?? {}).flatMap(([name, p]) => { const v = inst.params?.[name] ?? paramShown(doc, name); const k = `param|${name}`, hint = p.help;
+      if (p.type === 'number') return [{ t: 'num', k, label: name, value: v, step: (p.max ?? 10) - (p.min ?? 0) > 20 ? 10 : 0.05, dp: Number.isInteger(v) && (p.max ?? 0) > 20 ? 0 : 2, min: p.min, max: p.max, hint }];
+      if (p.type === 'area') return [{ t: 'num', k, label: name, value: Array.isArray(v) ? v[0] : v, step: 0.05, dp: 2, min: p.min, max: p.max, unit: 'm', hint: `${hint ?? ''}${Array.isArray(v) ? ' (per-axis [x, y, z] in the JSON below)' : ''}` }];
+      if (p.type === 'enum') return [{ t: 'enum', k, label: name, value: v ?? p.values[0], options: p.values.map((x) => ({ v: x, label: x })), hint }];
+      if (p.type === 'bool') return [{ t: 'check', k, label: name, value: v === true, hint }];
+      if (p.type === 'color') return [{ t: 'color', k, label: name, value: v ?? 0xffffff, hint }];
+      return [{ t: 'text', k, label: name, value: v ?? '', placeholder: p.type === 'texture' ? 'eidoverse/assets/particle_textures/….png' : '', hint }]; });
     groups.push({ group: 'particles', label: 'particles', types: ['particles'], fields: [
-      { t: 'enum', k: 'preset', label: 'preset', value: p.preset, options: presets.map((v) => ({ v, label: v })) },
-      { t: 'num', k: 'count', label: 'count', value: p.count ?? 150, def: 150, step: 10, dp: 0, min: 1, max: 600 },
-      { t: 'num', k: 'origin|0', label: 'origin x', value: o[0], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' },
-      { t: 'num', k: 'origin|1', label: 'origin y', value: o[1], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' },
-      { t: 'num', k: 'origin|2', label: 'origin z', value: o[2], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' },
-      { t: 'num', k: 'size', label: 'size', value: p.size ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, softMax: 4 },
-      { t: 'num', k: 'opacity', label: 'opacity', value: p.opacity ?? 1, def: 1, step: 0.05, dp: 2, min: 0, max: 1 },
-      { t: 'num', k: 'speed', label: 'speed', value: p.speed ?? 1, def: 1, step: 0.1, dp: 2, min: 0, softMax: 4 },
-      { t: 'num', k: 'lifetime', label: 'lifetime', value: p.lifetime ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, softMax: 10, unit: 's' },
-      { t: 'enum', k: 'quality', label: 'quality', value: p.quality ?? 'auto', def: 'auto', options: ['auto', 'high', 'med', 'low'].map((v) => ({ v, label: v })) },
+      { t: 'enum', k: 'effect', label: 'effect', value: inst.effect, options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' },
+      { t: 'check', k: 'playing', label: 'playing', value: inst.playing !== false, hint: 'off: no new particles; the living finish' },
+      { t: 'num', k: 'scale', label: 'scale', value: inst.scale ?? 1, def: 1, step: 0.1, dp: 2, min: 0.01, max: 100 },
+      ...[0, 1, 2].map((i) => ({ t: 'num', k: `at|${i}`, label: `at ${'xyz'[i]}`, value: at[i], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' })),
+      { t: 'text', k: 'part', label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' },
+      ...params,
       { t: 'btn', k: 'out', label: 'put it out', danger: true },
     ] });
   }
@@ -606,7 +619,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         else sec.fields = [`comp.${inst.key}`];
         sec.removable = inst.key != null;
         break;
-      case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
+      case 'Label': case 'Hidden': case 'Description': continue;       // the header's, like Unity's name and active box
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key || f.k === 'lockLevel'); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
@@ -648,7 +661,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // needs (design §3): an entry whose need has one sensible default says what
   // it brings; one that needs a choice says it will ask; one whose need cannot
   // be met in place (a Model: placed from the Library) is blocked, saying why
-  const add = addable(components, { unmet: true, met: (n) => needMet(n, ent) }).filter((a) => a.name !== 'Label' && a.name !== 'Hidden' && !NOT_OFFERED.has(a.name))
+  const add = addable(components, { unmet: true, met: (n) => needMet(n, ent) }).filter((a) => a.name !== 'Label' && a.name !== 'Hidden' && a.name !== 'Description' && !NOT_OFFERED.has(a.name))
     .map((a) => {
       const plan = a.unmet ? planNeeds(ent, id, a.name) : null;
       const needsWhy = plan?.choice && !plan.choice.options.length ? plan.choice.prompt : null;
@@ -662,7 +675,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add,
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'description' || f.k === 'reads'), list: out, add,
     lib, libLabel: lib != null ? libLabel(lib) : ent?.comp?.light ? 'light' : 'empty' };
 }
 
@@ -742,7 +755,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'motion', motion[name])], errors: [] };
   }
   const simple = { Pivot: ['pivot', { pos: Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value : [0, 0, 0] }], Lock: ['lock', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
-    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look-at', { target: '@viewer' }], Story: ['story', { title: 'Untitled', text: 'Why is this here?' }], Text: ['text', { text: 'Hello' }], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
+    Particles: ['particles', { effect: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look-at', { target: '@viewer' }], Story: ['story', { title: 'Untitled', text: 'Why is this here?' }], Text: ['text', { text: 'Hello' }], Reactions: ['reactions', { push: { kind: 'impulse', strength: 0.5 } }], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, type, data)], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
   // and it is written with its fields spelled out — the log records the result,
@@ -957,6 +970,7 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'label') { const s = String(raw ?? '').trim(); flagsComp('label', s ? s.slice(0, 80) : null); }
+        else if (k === 'description') { const s = String(raw ?? '').trim(); flagsComp('description', s || null); }
         break;
       }
       case 'light': {
@@ -1064,10 +1078,19 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'particles': {
         if (k === 'out') { comps.set('particles', null); break; }
-        const next = comps.get('particles') ?? { ...c.particles };
-        if (k.startsWith('origin|')) { const n = num(f, raw); if (n == null) break; next.origin = [...(next.origin ?? [0, 0, 0])]; next.origin[+k.slice(7)] = round(n); }
-        else if (f.t === 'num') { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
-        else next[k] = raw;
+        const next = modernize(comps.get('particles') ?? { ...c.particles });   // an older value is written back in today's shape
+        if (k.startsWith('at|')) { const n = num(f, raw); if (n == null) break; next.at = [...(next.at ?? [0, 0, 0])]; next.at[+k.slice(3)] = round(n); }
+        else if (k.startsWith('param|')) { const name = k.slice(6); const v = f?.t === 'num' ? num(f, raw) : f?.t === 'check' ? bool(raw) : f?.t === 'color' ? (typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw) : String(raw ?? '').trim();
+          if (v == null || v === '') { const { [name]: _, ...rest } = next.params ?? {}; if (Object.keys(rest).length) next.params = rest; else delete next.params; }
+          else next.params = { ...(next.params ?? {}), [name]: f?.t === 'num' ? round(v) : v }; }
+        else if (k === 'scale') { const n = num(f, raw); if (n == null) break; next.scale = round(n); }
+        else if (k === 'playing') next.playing = bool(raw);
+        else if (k === 'part') { const v = String(raw ?? '').trim(); if (v) next.part = v; else delete next.part; }
+        else if (k === 'effect') { if (String(raw) !== next.effect) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these
+        else { errors.push(`${key}: no such field`); break; }
+        // the authority's rules, here first (a known effect: an Essential, or a stored one the viewer has)
+        const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) ? instanceProblem(next, doc) : null;
+        if (bad) { errors.push(`particles.${k}: ${bad}`); break; }
         comps.set('particles', next);
         break;
       }

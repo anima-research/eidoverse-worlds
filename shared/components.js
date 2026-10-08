@@ -141,14 +141,15 @@ const DEFS = [
     fallback: { text: 'on <to>' } },
   { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (added here: a push that swings it; an Openable brings its own)',
     params: { actions: { t: 'json', default: {} } }, fallback: { text: 'reacts to: <actions>' } },
-  { name: 'Particles', category: 'Effects', summary: 'fire, smoke, sparks…',
-    params: { preset: { t: 'choice', options: ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'], default: null, required: true },
-      seed: { t: 'num', default: null, hint: 'from the id when absent' }, origin: { t: 'vec3', unit: 'm', default: [0, 0, 0], min: -8, max: 8 },
-      count: { t: 'num', default: null, presetDefault: true, min: 1, max: 600 }, size: { t: 'num', default: null, presetDefault: true, min: 0.005 },
-      opacity: { t: 'num', default: null, presetDefault: true, min: 0, max: 1 }, speed: { t: 'num', default: null, presetDefault: true, min: 0.05 },
-      lifetime: { t: 'num', unit: 's', default: null, presetDefault: true, max: 30 }, area: { t: 'json', default: null }, texture: { t: 'asset', default: null },
-      quality: { t: 'choice', options: ['auto', 'high', 'med', 'low'], default: 'auto' } },
-    fallback: { visual: 'an unknown preset draws nothing', text: 'described by preset' } },
+  // R 10-07 (v2 of Particles, a new hash, L5): the instance names an effect document (shared/particle_effects.js) and sets
+  // its params; the first protocol's flat knobs are params of the Essentials now, and an older bag round-trips through
+  // `extra` as every unknown key does
+  { name: 'Particles', category: 'Effects', summary: 'an effect: fire, smoke, sparks… or a stored effect document',
+    params: { effect: { t: 'choice', options: ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'], default: null, required: true, hint: 'an Essential, or a stored effect\'s address (sha256:…)' },
+      part: { t: 'text', default: null, hint: 'a node of its model it emits from' }, at: { t: 'vec3', unit: 'm', default: [0, 0, 0], min: -8, max: 8 },
+      seed: { t: 'num', default: null, hint: 'from the id when absent' }, playing: { t: 'bool', default: true }, scale: { t: 'num', default: 1, min: 0.01, max: 100 },
+      params: { t: 'json', default: null, hint: 'the effect\'s own knobs {<name>: value}' } },
+    fallback: { visual: 'an effect this client doesn\'t know draws nothing', text: 'described by its effect' } },
   // batch 2 (10-07): v2 of Picture and Sound (new hashes, L5): a picture needs no model (no part = a quad of its own),
   // `look` became `alt`; a sound is silent at radius (cap 100), with near, pitch and spatial
   { name: 'Picture', category: 'Rendering', summary: 'an image: on a part of its model, or a framed picture of its own',
@@ -182,6 +183,8 @@ const DEFS = [
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },
   { name: 'Label', category: 'Core', summary: 'a display name people see', params: { text: { t: 'text', default: '', max: 80 } }, fallback: { text: 'the label' } },
+  // R 10-07: how it is described to anyone who reads rather than sees (alt text); the header's, beside its name
+  { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it (alt text)', params: { text: { t: 'text', default: '', max: 500 } }, fallback: { text: 'the description' } },
   { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: { feed: { t: 'json', default: null } }, fallback: { text: 'captions' } },
   { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: { speaker: { t: 'text', default: null } }, fallback: { text: 'components: stage' } },
   { name: 'Annotation', category: 'Data', summary: 'any other data a world invents (recipe, notice, story…)',
@@ -310,6 +313,7 @@ export function componentsOf(ent) {
     if (key in FLAG) { out.push({ type: FLAG[key], key, params: {}, wire: { value: data } }); continue; }
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
     if (key === 'label') { out.push({ type: 'Label', key, params: { text: data } }); continue; }
+    if (key === 'description' && typeof data === 'string') { out.push({ type: 'Description', key, params: { text: data } }); continue; }
     if ((key === 'motion' || key.startsWith('motion:')) && data && typeof data === 'object' && MOTION[data.type]) {
       const type = MOTION[data.type];
       const known = Object.keys(RECORDS[type].params);
@@ -387,6 +391,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Pivot': comp[inst.key ?? 'pivot'] = { pos: p.pos }; break;
       case 'Lock': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
+      case 'Description': comp[inst.key ?? 'description'] = p.text; break;
       case 'Pendulum': case 'Spin': case 'Orbit': case 'Bob': case 'Path': {
         const x = inst.extra ?? {};
         const bag = { type: MOTION_TYPE[inst.type] };

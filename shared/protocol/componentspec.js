@@ -13,7 +13,14 @@ export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
-  label:     { type: "string", help: "its display name, a short string" },
+  label:     { type: "string", help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
+  // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
+  // name / description / role+state. label stays the name; description is how the thing is described to any text-based
+  // reader (alt text), one plain string, like label and picture.alt; what it can do and its state are GENERATED from its
+  // components (shared/a11y.js), so a description never restates them; why it's here, as a titled placard with marks, is
+  // story's (the long-form details beside the short description). A visible nameplate is a child thing with text.
+  description: { on: "thing", type: "string", maxLen: 500, cleanAs: "lines",
+               help: "how it is described to anyone who reads rather than sees it (alt text), a sentence or two of plain text (≤ 500): what it is and what it looks like. Its name is label. What it can do and its state (it opens, it's locked, it can be picked up or sat on, it's playing…) are read out from its components, so don't restate them here; why it is here, as a titled placard, is story. A visible nameplate isn't a component: it's a child thing (parent {to: this}) with text {text, billboard: 'yaw'}" },
   // every client honours it (the editor's Hide; shared/editschema.js flags); registered 10-07 when bare names became the
   // registry's (PROTOCOL §4), with the meaning it already had
   // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
@@ -169,9 +176,24 @@ export const COMPONENTS = {
                ranges: { width: { gt: 0, max: 1000 }, depth: { gt: 0, max: 1000 }, bladeHeight: { gt: 0, max: 5 }, height: { gt: 0, max: 10 }, density: { min: 0, max: 4 },
                          spacing: { min: 0.05, max: 10 }, perCell: { min: 1, max: 32 }, wind: { min: 0, max: 10 } }, help: "a grass or crop field {width, depth, center, species, density…}" },
   structure: { on: "thing", fields: { tile: "number", wallH: "number", wallT: "number", slabT: "number", labels: "object", levels: "array" }, help: "a built structure's plan {tile, wallH, wallT, levels, labels}" },
-  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "any", texture: "string", speed: "number", opacity: "number", lifetime: "number" },
-               // the renderer's own bounds (shared/particles.js NUMERIC_BOUNDS): the authority now says what the client would clamp
-               ranges: { count: { min: 1, max: 600 }, size: { min: 0.005, max: 4 }, opacity: { min: 0, max: 1 }, speed: { min: 0.05, max: 8 }, lifetime: { min: 0.05, max: 30 }, area: { min: 0, max: 8 } }, help: "a particle emitter {preset, count, size, speed, lifetime…}" },
+  // R 10-07: "not the kitchen sink style for particles". The instance is tiny and names an effect document (the
+  // Niagara / Godot / bevy_hanabi shape; shared/particle_effects.js): an Essentials name or a stored document's content
+  // address, with the document's own params. The first protocol's bag (preset, origin, count, quality, size, area,
+  // texture, speed, opacity, lifetime) stays here because a stored value is read forever (PROTOCOL §4): it reads as
+  // {effect: preset, at: origin, params: {count, …}} (instanceOf), and the authority no longer takes it in a write
+  particles: { fields: { preset: "string", seed: "number", origin: "array", count: "number", quality: "string", size: "number", area: "any", texture: "string", speed: "number", opacity: "number", lifetime: "number",
+                 effect: "string", part: "string", at: "vec3", playing: "bool", scale: "number", params: "object" },
+               defaults: { playing: true, scale: 1 },
+               legacy: ["preset", "origin", "count", "quality", "size", "area", "texture", "speed", "opacity", "lifetime"],
+               ranges: { scale: { min: 0.01, max: 100 }, part: { maxLen: 64 }, effect: { maxLen: 80 } },
+               absentMeans: {
+                 effect: "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
+                 part: "it emits from the thing itself, not one node of its model",
+                 at: "[0, 0, 0] in its own frame; in an older value, its origin",
+                 playing: "playing: it emits (the component's presence was its state)",
+                 scale: "1: the effect at its own size",
+                 params: "none: the effect's own defaults (in an older value, its own knobs: see effect)" },
+               help: "it emits particles: {effect (an Essentials name: fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle; or a stored effect document's address sha256:<64 hex>: upload {effect: {…}} stores one), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100, its size), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js)" },
   "imported-epoch": { on: "world", fields: { sim: "string", tickMs: "number", ts: "number", seq: "number" }, help: "on @world: the physics epoch a translated world began (dialect 3), carried from translation" },
   "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "string", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
   assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: one of the world's assets (a model added here)" },

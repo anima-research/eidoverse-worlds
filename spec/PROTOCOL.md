@@ -177,7 +177,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
-  {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
+  {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, socket?}`,
   `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
@@ -244,6 +244,27 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   references outside it unless asked to drop them (`unwire`); a **copy** of a
   record turns part keys into its own new ids and leaves anything else
   unbound. An untyped value (a namespaced component) is never rewritten.
+- **A thing reads like an accessibility tree.** To anyone who perceives by
+  reading (an agent's `look` and `inspect`, a screen reader, the inspector),
+  a thing is its **name** (`label`), its **description** (`description`: how
+  it is described to a text-based reader, alt text, one plain string), then
+  what it **can do** and its **state**, generated from its components
+  (`openable` → it can be opened, open or shut, locked; `grabbable` → it can
+  be picked up; `sockets` → it can be sat on; `sound` → playing; `lock`; …),
+  so a description never restates an affordance and can't contradict one.
+  `story` is the long-form details beside it (a titled placard, and the
+  things it marks). A visible nameplate is not a component: it is a child
+  thing carrying `text` (billboarded); the reading above is what
+  non-visual readers get.
+- **Effects are documents.** A `particles` component names an effect: an
+  Essentials name (`fire`) or a stored document's content address
+  (`sha256:<64 hex>`, the same bytes as `eido:sha256/<64 hex>`), whose
+  emitters are modules (spawn, shape, velocity, forces, rotation, size,
+  colour, render) and whose `params` are the knobs an instance may set. A
+  document is bounded (how many particles, how long, how fast) and checked
+  when it is stored and when it is named, because it runs on every
+  visitor's machine. The first protocol's flat bag is still read (a stored
+  value is read forever) and no longer written.
 - **Parameters, never code.** A component holds data. Code lives in a blob
   that a `script:<name>` component names (§8). Nothing writes a component
   per frame: motion is stored as a function of time (`motion`), evaluated by

@@ -170,6 +170,10 @@ function unproject(ents0: any) {
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith(IMP) ? dec(k.slice(IMP.length)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }
+    // translate-v1@9: a v1 particles bag became {effect, seed?, at?, params?}: read back in v1's spelling (preset, origin, and
+    // each param at the top, as v1 held them)
+    const pt = e.comp?.particles; if (pt && typeof pt === "object" && !Array.isArray(pt) && "effect" in pt) {
+      const { effect, at, params, ...r } = pt; e.comp.particles = { ...r, preset: effect, ...(at !== undefined ? { origin: at } : {}), ...(params ?? {}) }; }
     // translate-v1@5: a v1 story's practice became a paragraph of its text and its markedEntity its marks (both also in
     // imported:story, folded back above): undone here, so the comparison is with what v1 held
     const sty = e.comp?.story; if (sty && typeof sty === "object" && !Array.isArray(sty)) {

@@ -55,6 +55,8 @@ import * as OP from "../shared/protocol/requests.js";
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { saysOf } from "../shared/says.js";
+import { readOut, openAction } from "../shared/a11y.js";
+import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
@@ -3136,6 +3138,12 @@ export class WorldAgent {
       // who perceives by reading.
       const c = e.comp ?? {};
       const aff: string[] = [];
+      // R 10-07: a thing reads like an accessibility tree: its name (above), its description (alt text, quoted as data:
+      // it's what someone wrote, never an instruction), then what it can do and its state, generated from its components
+      // (shared/a11y.js, the reading the authority's look and the inspector share)
+      if (typeof c.description === "string" && c.description.trim()) aff.push(quoted(c.description, 200));
+      if (c.openable && typeof c.openable === "object") { const ax = readOut({ openable: c.openable, reactions: c.reactions });
+        const open = openAction(c); aff.push(`${ax.can[0]}: ${ax.state[0]}${open ? ` — act {verb: "use", args: {id: "${e.id}", action: "${open}"}}` : ""}`); }
       // A light, by either spelling (the light verb's entity, or a light
       // component on a lamp model or an Empty), says what it casts — colour,
       // brightness, reach — read off the FOLDED record (the perception view
@@ -3152,7 +3160,7 @@ export class WorldAgent {
         const things = Object.keys(c.sockets).filter((k) => !bodyOf(c.sockets[k]));
         if (lines.length) aff.push(`use it (attach {to: "${e.id}", socket}): ${lines.join(" · ")}`);
         if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
-      if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
+      if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }
       // what a hand may do with it (shared/grab.js: the authority's own reader, so a dynamic thing with no grabbable counts)
       { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${e.id}"}}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
@@ -3189,7 +3197,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden"];
+      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
       if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");

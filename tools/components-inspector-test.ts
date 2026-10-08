@@ -52,7 +52,7 @@ for (const [id, e] of ents) {
   const s = inspectSchema(e, id);
   const comps = componentsOf(e).components;
   cards += s.sections.list.length;
-  const inHeader = comps.filter((c) => c.type === 'Label' || c.type === 'Hidden').length;
+  const inHeader = comps.filter((c) => c.type === 'Label' || c.type === 'Hidden' || c.type === 'Description').length;
   const emptyParent = s.sections.list.filter((c: any) => c.type === 'Parent' && c.present === false).length;   // a root's quiet Parent card (the no-drag path, R 10-04)
   if (s.sections.list.length - emptyParent !== comps.length - inHeader) probs.push(`${id}: ${comps.length} components (${inHeader} in the header), ${s.sections.list.length} cards`);
   const owned = new Map<string, string>();

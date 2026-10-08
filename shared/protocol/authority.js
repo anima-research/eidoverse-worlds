@@ -26,6 +26,8 @@ import * as R from "./roles.js";
 import { graphemes, cleanText } from "../text.js";
 import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
+import { readOut } from "../a11y.js";
+import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
@@ -632,7 +634,7 @@ const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, f
 let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
 // verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
-const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans"]);
+const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -718,7 +720,7 @@ export function request(w, actor, verb, args = {}) {
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
 // what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
-const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox"]);
+const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox", "effect"]);
 function logRefusal(w, actor, verb, args, code) {
   try {
     // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
@@ -879,6 +881,7 @@ function admit(w, st, who, ops) {
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: FORKING }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
+  if (!FORKING) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -1133,12 +1136,6 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
-  if (comp === "particles" && obj) {
-    if (v.texture !== undefined && !(typeof v.texture === "string" && /^eidoverse\/assets\/particle_textures\/[\w.-]+\.png$/.test(v.texture)))
-      refuse("shape", `${at}.texture must be a .png in eidoverse/assets/particle_textures/`, "e.g. 'eidoverse/assets/particle_textures/flame.png'");
-    if (Array.isArray(v.area) && !(v.area.length === 3 && v.area.every((n) => typeof n === "number" && n >= 0 && n <= 8)))
-      refuse("bounds", `${at}.area as [x, y, z] needs three numbers, each 0–8 (m)`, "or one number for a round area");
-    if (v.area !== undefined && !Array.isArray(v.area) && typeof v.area !== "number") refuse("shape", `${at}.area is a number or [x, y, z]`, ""); }
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
   // research §4); `none` (legacy: below visitor) is still read and written, as existing worlds carry it
@@ -1322,6 +1319,10 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
+  // a whole-value string (description): its length in graphemes and the words-everyone-reads check, as a field's
+  if (def.type === "string" && typeof v === "string") {
+    if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse("bounds", `${at} is ${graphemes(v).toLocaleString("en")} characters; it must be ≤ ${def.maxLen}`, def.help ?? "");
+    if (def.cleanAs) { const bad = cleanText(v, { lines: def.cleanAs === "lines" }); if (bad) refuse("shape", `${at} ${bad.why}`, bad.fix); } }
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words
   if (name === "sockets") { const bad = checkSockets(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.sockets.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
@@ -1976,6 +1977,36 @@ function scriptRights(w, st, cap, op, at, made) {
 // At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
 // rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
 // timer floor, `always` only by an owner, the world's script count.
+// R 10-07 (particles): the instance names an effect (an Essential, or a document stored in this world's blobs), and its
+// params are ones that document declares, within their bounds, with the effect still within EFFECT_LIMITS once they're
+// applied. The first protocol's flat bag is read in older values (PROTOCOL §4: a stored value is read forever) and never
+// taken in a write: its spelling would be a second way to say one thing. A held thing's fx carries a particles value too.
+function particlesCheck(w, op) {
+  const one = (v, at) => { if (!v || typeof v !== "object" || Array.isArray(v)) return;
+    const b = effectBlobName(v.effect); let doc = null;
+    if (b) { try { doc = w.getBlob(b); } catch { /* not stored here: said below */ }
+      if (doc && (doc.kind !== EFFECT_KIND || effectProblem(doc))) refuse("shape", `${at}.effect: ${b} isn't a particle effect this protocol runs (${doc.kind !== EFFECT_KIND ? "not a particle-effect document" : effectProblem(doc)})`, "upload {effect: {kind: 'particle-effect', v: 1, emitters: [...]}} stores one and says why it can't"); }
+    else doc = effectFor(v.effect);
+    const bad = instanceProblem(v, doc);
+    if (bad) refuse(b && !doc ? "not-found" : /^params\.[\w-]+ is (a number|\[x, y, z\])/.test(bad) || /out of bounds/.test(bad) ? "bounds" : "shape", `${at}: ${bad}`, `PROTOCOL §4 (effects are documents): {effect: '${ESSENTIAL_NAMES[0]}'} or an uploaded effect's address; schema {component: 'particles'} lists the Essentials and their params`,
+      b && !doc ? undefined : { didYouMean: typeof v.effect === "string" && !b ? guess(v.effect, ESSENTIAL_NAMES) : [] }); };
+  if (baseOf(op.comp) === "particles") one(op.value, `${op.id}.${op.comp}`);
+  if (baseOf(op.comp) === "grabbable" && op.value?.fx?.particles) one(op.value.fx.particles, `${op.id}.${op.comp}.fx.particles`);
+}
+// upload {effect}: a particle effect document, stored by its content (a blob, §9: not world state, so not logged), checked
+// whole first (shared/particle_effects.js effectProblem: shape and every bound). Building rights: it is something to build
+// with, and naming it in a particles value is the write that's logged.
+function uploadEffect(w, actor, a) {
+  if (!may(w.state(), actor, "build")) refuse("rights", `storing a particle effect needs build; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "build" });
+  { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
+    if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} documents in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
+    U.push(now); w.presenceDirty = true; }
+  const bad = effectProblem(a.effect);
+  if (bad) refuse("shape", `effect: ${bad}`, "PROTOCOL §4 (effects are documents): {kind: 'particle-effect', v: 1, emitters: [{spawn: {amount, lifetime}, …}], params?}; effect {name: 'fire'} shows an Essential's");
+  if (a.dry) return { ok: true, dry: true, note: "a particle effect this protocol runs; nothing stored" };
+  const h = w.putBlob(a.effect);
+  return { ok: true, effect: h, next: `set {id, component: 'particles', value: {effect: '${h}'}}` };
+}
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
@@ -2748,9 +2779,14 @@ function buildDuplicate(ctx, a) {
 }
 
 // ---------- reads ----------
-function describe(st, id, live = {}, holds = {}) {
+// R 10-07: a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (alt text; a look clips it,
+// inspect has it whole), then what it can do and its state, generated from its components by shared/a11y.js, the reading
+// mcpl's look and the inspector share
+function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
   const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
-  return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
+  const ax = readOut(e.c, { name, heldBy: holds[id] ? said(holds[id].by) : null });
+  const desc = ax.description == null ? null : full || graphemes(ax.description) <= 200 ? ax.description : `${[...ax.description].slice(0, 200).join("")}… (inspect for all)`;
+  return { id, name, ...(desc ? { description: desc } : {}), ...(ax.can.length ? { can: ax.can } : {}), ...(ax.state.length ? { state: ax.state } : {}), at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
     ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
@@ -3451,7 +3487,7 @@ const VERBS = {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
+    return { ok: true, ...describe(st, a.id, livePoses(w.sim()), w.presence.holds, { full: true }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
@@ -3627,6 +3663,7 @@ const VERBS = {
   // a script's source is a blob (§2.2): stored once by its hash; not world state, so not logged. Hygiene and syntax are
   // checked here (to teach early) and again at install (what binds).
   upload(w, actor, a) {
+    if (a.effect !== undefined) return uploadEffect(w, actor, a);
     if (!may(w.state(), actor, "scripts")) refuse("rights", `uploading a script needs ${scriptsCfg(w.state()).install === "owner" ? "owner" : "the scripts permission"}; you are ${roleOf(w.state(), actor)}`, "ask the world's owner", { needs: "scripts" });
     if (typeof a.text !== "string") refuse("shape", "upload {text}: the script's JavaScript source", "docs/SCRIPTS.md");
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
@@ -3637,6 +3674,14 @@ const VERBS = {
     if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
     return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };
   },
+  // a particle effect document by name (an Essential's, or one stored here): what a renderer draws and an agent reads
+  // to know an effect's modules and params. Unlogged; anyone here may read it (it's what every visitor's machine runs)
+  effect(w, actor, a) {
+    if (typeof a.name !== "string") refuse("shape", "effect {name}: an Essentials name or a stored effect's address (sha256:<64 hex>)", `the Essentials: ${ESSENTIAL_NAMES.join(", ")}`);
+    const b = effectBlobName(a.name); let doc = null;
+    if (b) { try { doc = w.getBlob(b); } catch { /* below */ } } else doc = effectFor(a.name);
+    if (!doc || doc.kind !== EFFECT_KIND) refuse("not-found", `no particle effect ${a.name} here`, `the Essentials: ${ESSENTIAL_NAMES.join(", ")}; upload {effect: {…}} stores one`, b ? undefined : { didYouMean: guess(a.name, ESSENTIAL_NAMES) });
+    return { ok: true, name: a.name, effect: doc }; },
   // 41 §3.4: recovery is an explicit, logged adopt: a NEW life of the key (delete + set, one batch), so the adopter becomes
   // its creator and sponsor. §5's key rule decides who may (its creator or an owner); install checks apply with the
   // adopter's rights. `base` (the version inspect gives) makes two racing adopters one winner.

@@ -783,9 +783,10 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("@world", "terrain", { kind: "noise", size: 0 }) === "bounds", "T0a a terrain of size 0 is refused");
   ok(S("@world", "terrain", { kind: "noise", octaves: 0 }) === "bounds", "T0a terrain octaves outside 1–8 is refused (the engine clamps; the authority agrees)");
   ok(S("@world", "grass", { width: 1e9, depth: 10 }) === "bounds", "T0b a grass field a million km wide is refused");
-  ok(S("hearth", "particles", { preset: "fire", count: 1e9 }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");
-  ok(S("hearth", "particles", { preset: "fire", size: -3 }) === "bounds" && S("hearth", "particles", { preset: "fire", opacity: 7 }) === "bounds", "T0c negative size, opacity past 1: refused");
-  ok(R("set", { id: "hearth", component: "particles", value: { preset: "fire", count: 150, size: 0.3, opacity: 0.8, lifetime: 1.2 } }).ok, "T0c …an ordinary fire is still taken");
+  // R 10-07: the knobs are the effect's params now (an Essential's: count, size, opacity, lifetime…), with the same bounds
+  ok(S("hearth", "particles", { effect: "fire", params: { count: 1e9 } }) === "bounds", "T0c a billion particles is refused (600 is the renderer's ceiling)");
+  ok(S("hearth", "particles", { effect: "fire", params: { size: -3 } }) === "bounds" && S("hearth", "particles", { effect: "fire", params: { opacity: 7 } }) === "bounds", "T0c negative size, opacity past 1: refused");
+  ok(R("set", { id: "hearth", component: "particles", value: { effect: "fire", params: { count: 150, size: 0.3, opacity: 0.8, lifetime: 1.2 } } }).ok, "T0c …an ordinary fire is still taken");
   ok(S("@world", "bounds", {}) === "shape" && S("@world", "bounds", { min: [5, 0, 5], max: [-5, 10, -5] }) === "shape", "T0d bounds needs min and max, with min ≤ max on every axis");
   ok(R("create", { id: "c-after", model: "crate" }).ok, "T0d …and creating still answers (an empty bounds used to commit the create, then crash its reply)");
   ok(S("hearth", "transform", { pos: [0, 0, 0], q: [0, 0, 0, 0], scale: [1, 1, 1] }) === "shape", "T0e a zero quaternion is refused (it isn't a rotation)");
@@ -802,9 +803,9 @@ const w0 = () => openWorld(root, "tier0");
   for (const [comp, value] of [["transform", { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }], ["model", "crate"], ["parent", { to: "chair" }]])
     ok(S("@world", comp, value).refused?.code === "thing-only", `T1b ${comp} belongs to a thing: on @world it's refused (the authority and renderer disagreed about where its children were)`);
   ok(S("chair", "structure", { tile: 1, wallH: 2.6, wallT: 0.12, slabT: 0.15, levels: [], labels: {} }).ok, "T1d structure.slabT, which the renderer reads, is taken");
-  ok(S("chair", "particles", { preset: "fire", texture: "eidoverse/assets/particle_textures/flame.png" }).ok, "T1e particles.texture (in AGENTS.md's own example) is taken");
-  ok(S("chair", "particles", { preset: "dust", area: [2, 0.5, 2] }).ok && S("chair", "particles", { preset: "dust", area: [2, 99, 2] }).refused?.code === "bounds", "T1e particles.area [x,y,z] is taken, and bounded per axis");
-  ok(S("chair", "particles", { preset: "fire", texture: "../../etc/x.png" }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
+  ok(S("chair", "particles", { effect: "fire", params: { texture: "eidoverse/assets/particle_textures/flame_05.png" } }).ok, "T1e particles' texture param (in AGENTS.md's own example) is taken");
+  ok(S("chair", "particles", { effect: "dust", params: { area: [2, 0.5, 2] } }).ok && S("chair", "particles", { effect: "dust", params: { area: [2, 99, 2] } }).refused?.code === "bounds", "T1e particles' area param [x,y,z] is taken, and bounded per axis");
+  ok(S("chair", "particles", { effect: "fire", params: { texture: "../../etc/x.png" } }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 // CP (Commons parity audit (old world → new), 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
 { const R = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, verb, args); };
   R("ann", "create-world", { title: "cp" });
