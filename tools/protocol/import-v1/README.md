@@ -10,9 +10,9 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | --- | --- |
 | `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
 | `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes a `legacy` act (its verb and args, kept as provenance) and one change entry that brings the v4 fold to the same place, checked after every entry |
-| `translate-d3.js` | the same for dialect-3 logs (the old deterministic-sim epochs) |
+| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which since @10 runs her sim (`shared/sim.js`) beside the v1 fold whenever a log enters a physics `epoch` — a punt becomes a logged launch with its exact state, every rest a logged result, the epoch `@world physics-engine` and each collider's stamped box its `physics.shape`. A log with no epoch translates byte-for-byte as @9 did |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
-| `world.ts` | `translateV1World(src, dest)`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader, maps every old name to a door identity, then writes `dest/world.jsonl` |
+| `world.ts` | `translateV1World(src, dest)`: reads `src/log.jsonl` (never writes it), translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
 
 The operator runs it: `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <old world> <new name>`. To cut a world over
 under its own name (the Commons), move the old directory aside first, then translate it into the name:
