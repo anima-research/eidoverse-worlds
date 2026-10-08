@@ -331,7 +331,7 @@ export function domQuadsAt(handRay) {
 
 // ---- ZONES: a panel's RESIZE corners and edges (owner, 10-02) ------------------------------------------------------
 // In frame CSS px: the four corners (ZONE_CORNER_PX squares, within ZONE_EDGE_PX of an edge) and the left, right and
-// bottom edges resize (a frame the desktop can resize; frames.js frameResizeInfo); the rest is 'body' (grip there moves
+// bottom edges resize (a frame the desktop can resize; windows.js frameResizeInfo); the rest is 'body' (grip there moves
 // the panel, the fallback grab). The MOVE handle is not on the panel any more: it is the bar under it (below). A
 // control under the laser outranks every zone: grip there does nothing.
 export const ZONE_EDGE_PX = 12, ZONE_CORNER_PX = 24;
@@ -432,7 +432,7 @@ export const domQuadAids = (id) => { const q = all.find((x) => x.id === id);   /
 
 // ---- RESIZE in VR: grip on a corner or an edge (owner, 10-02). While held, the gripped corner/edge follows the laser
 // across the panel's plane and an outline shows the new size; the opposite side stays put. On release the size is VR's
-// OWN (owner, 10-02, revising the first pass, which wrote the desktop layout): it goes on the staged frame (frames.js
+// OWN (owner, 10-02, revising the first pass, which wrote the desktop layout): it goes on the staged frame (windows.js
 // _setVrSize) and is saved with the panel's VR place (ew-xr-quads: w, bh, mpp, pos, yaw, pitch); the desktop frame's
 // size and saved layout are untouched, and come back when the frame leaves the headset. Whether a panel is open and
 // which tab is chosen stay one state for both. The quad is rebuilt at the SAME pixel density, so the panel grows
@@ -479,7 +479,7 @@ export function domQuadResizeMove(drag, handRay) {
   pos.needsUpdate = true; drag.outline.geometry.computeBoundingSphere();
   return drag;
 }
-/** Release: commit the size to the frame (frames.js, as a desktop resize does) and rebuild the quad at the same density
+/** Release: commit the size to the frame (windows.js, as a desktop resize does) and rebuild the quad at the same density
  *  with the anchor where it was. Returns { w, h } (CSS px, the frame's whole box) or null. */
 export function domQuadResizeEnd(drag, rig) {
   if (!drag) return null;

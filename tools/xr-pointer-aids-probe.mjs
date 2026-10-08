@@ -126,7 +126,7 @@ try {
   if (!st0.visible || !st0.open) throw new Error(`readiness gate: the settings quad's VR tab did not open: ${J(st0)}`);
   check('stage: a real trigger on the settings quad\'s VR tab chose it (the laser held the tab first)', st0.clicked === 1 && st0.heldBefore?.kind === 'panel', J(st0));
   // the frame's own api and a fresh copy of its saved layout, for the resize checks
-  await ev(pg, async () => { const fr = await import('./lib/frames.js'); __h.frames_ = fr; __h.dwell = await import('./lib/dwell.js');
+  await ev(pg, async () => { const fr = await import('./lib/windows.js'); __h.frames_ = fr; __h.dwell = await import('./lib/dwell.js');
     __h.kind = () => __h.dbg().dot.kind; __h.tip = async () => (await import('./lib/xrtip.js')).xrTipState();
     // aim a hand at the centre of a panel's handle bar (under the panel)
     __h.handleAt = (id) => __h.dq.domQuadHandle(id)?.getWorldPosition(new __h.T.Vector3());
