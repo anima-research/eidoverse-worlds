@@ -13,6 +13,7 @@ import { seal } from "../../../shared/protocol/authority.js";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { translate } from "./translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
+import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
 
 type Any = any;
 
@@ -47,8 +48,12 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
+  // models by content address (review 10-07 H3): the original bytes on this host, hashed; recorded so this server resolves them
+  const addressed = new Map<string, string>();
+  const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `eido:sha256/${h}`; };
+  const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: addressed by what's here
   if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: path.basename(destDir), ...(founderKey ? { founder: founderKey } : {}) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: path.basename(destDir), content, ...(founderKey ? { founder: founderKey } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
@@ -61,6 +66,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
   dir.put(planned);
+  for (const [h, p] of addressed) recordEido(h, p);
   // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
   // translated world quietly unbans everyone (component review, world-settings #3)
   const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
@@ -73,6 +79,6 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { identities: Object.keys(planned).length, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses };
+  return { identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses };
 }
 

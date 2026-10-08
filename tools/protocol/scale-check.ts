@@ -315,7 +315,7 @@ const cases: Case[] = [
       const step = s.call("vic", "move", { to: [0, 0, 5] }, 1000); const step2 = s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       const tp = s.call("bob", "move", { to: [0, 0, 4] }); const tp2 = s.call("vic", "move", { to: [0, 0, 4], teleport: true }, 4000);
       return { arrive: code(arrive), step: [code(step), code(step2)], tp: code(tp), tp2: code(tp2), refusedLogged: n1 - n0, arrivalLogged: n2 - n1, afterArrival: s.w().entries.length - n2 }; },
-    good: (o) => o.arrive === "spawn" && o.step.includes("solid") && o.tp === "solid" && o.tp2 === "solid" && o.refusedLogged === 0 && o.arrivalLogged === 1 && o.afterArrival === 0 },
+    good: (o) => o.arrive === "spawn" && o.step.includes("solid") && o.tp === "solid" && o.tp2 === "solid" && o.refusedLogged === 0 && o.arrivalLogged === 0 && o.afterArrival === 0 },   // review 10-07 M3: an accepted arrival is presence too (it was one act)
   { id: "I2", what: "a house measured from its triangles: a body walks in through the doorway (not through a wall), arrives inside, and a thing is put down on its floor", run(s) {
       s = session({ catalogue: withLab({ house: houseEntry() }) }); cast(s);
       s.call("olive", "create", { id: "home", model: "house", components: { transform: T0([0, 0, 0]) } });
@@ -432,7 +432,7 @@ if (argv.includes("--control")) {
 // the G3 scenario: every reply, with what differs between runs by design (chain heads, salts) left out
 function scenario() {
   // (and log positions: a refused move is no longer recorded, so the seqs after one shift by design)
-  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause"].includes(k) ? undefined : v)));
+  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause", "recorded"].includes(k) ? undefined : v)));   // recorded: an arrival isn't logged now (review 10-07 M3)
   const c = (who: string, verb: string, args: any = {}, step = 200) => { const r = s.call(who, verb, args, step); out.push([who, verb, strip(r)]); return r; };
   cast(s); c("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
   fill(s, 100, (i) => [(i % 10) * 2.5 - 12, 0, Math.floor(i / 10) * 2.5 - 12]);

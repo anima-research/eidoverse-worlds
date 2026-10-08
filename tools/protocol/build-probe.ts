@@ -145,7 +145,7 @@ try {
       { acts: myActs().slice(n0).map((x) => x.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), card: await evalJson(`document.querySelector('#script-new .sn-err')?.textContent ?? null`) });
     check("SC4 …and the card closes", await waitFor(`!document.querySelector('#script-new')`));
     const used = await bobReq("use", { id: thing });
-    check("SC5 a visitor's use runs it: the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c.counter?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c.counter]);
+    check("SC5 a visitor's use runs it: the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c["local/counter"]?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c["local/counter"]]);
     check("SC6 the Inspector lists it under Scripts", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"]')].some((f) => /greeter/.test(f.textContent))`, 6000));
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

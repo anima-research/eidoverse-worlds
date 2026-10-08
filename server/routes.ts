@@ -11,7 +11,9 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
 import { sfuDiag } from "./sfuadapter.ts";
-import { join, normalize } from "node:path";
+import { join, normalize, dirname, basename } from "node:path";
+import { hexOfLibRel } from "../shared/eido.js";
+import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
 import { libraryCredits } from "./modelcatalogue.ts";
@@ -997,10 +999,22 @@ const ROUTES: Route[] = [
       });
     },
   },
+  // spec/EIDO-URIS.md §3: exactly the bytes an address names (the original upload, never a variant), cached forever
+  {
+    match: (u) => /^\/eido\/sha256\/[0-9a-f]{64}$/.test(u.pathname),
+    handler: ({ req, url }) => {
+      const file = eidoFile(url.pathname.slice("/eido/sha256/".length));
+      if (!file) return new Response("not found", { status: 404 });
+      return serveFrom(dirname(file), basename(file), true, req, true);
+    },
+  },
   {
     match: (u) => u.pathname.startsWith("/library/"),
     handler: ({ req, url }) => {
-      const rel = url.pathname.slice("/library/".length);
+      // /library/eido/sha256/<hex>.glb (shared/eido.js libRelOf): the client loading a model by its address gets this
+      // host's rendition of the file it names, through the same ladder as its path (review 10-07 H3)
+      const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);
+      const rel = eh ? eidoRel(eh) ?? rel0 : rel0;
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
       // Deliberate upstream forks win over EVERYTHING (upstream-patched/

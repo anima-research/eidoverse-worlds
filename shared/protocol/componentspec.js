@@ -9,7 +9,7 @@
 
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
-  model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}" },
+  model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
   label:     { type: "string", help: "its display name, a short string" },
   // every client honours it (the editor's Hide; shared/editschema.js flags); registered 10-07 when bare names became the
   // registry's (PROTOCOL §4), with the meaning it already had
