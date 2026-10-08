@@ -22,7 +22,7 @@ import { summarizeGlb } from "./geometry.ts";
 // The world itself (a log + the embodied plane) and the registry. The boot
 // sweep below stays HERE: waking scripted worlds with the server is boot
 // policy, not world mechanics.
-import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights } from "./world.ts";
+import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved, isPreNamesSaved } from "./worldlog.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress } from "./requestwire.ts";
@@ -123,7 +123,8 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
   // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
   // client replayed a voice state its new session never had (review 09-30 S2)
-  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
+  // t/seq: a sample's capture time and count (spec/PHYSICS.md §5.1) belong to that one sample, never to a remembered body
+  const { emote: _emote, mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = pose as Record<string, unknown>;
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -1167,7 +1168,10 @@ registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
     try {
     if (w.dirty.size === 0) continue;
     const hidden = w.log ? new Set([...w.clients].filter((c) => c.ghostHidden).map((c) => c.id)) : null;   // ghosts (PLAN 10-06)
-    const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: Date.now(), poses: Object.fromEntries(hidden?.size ? [...w.dirty].filter(([id]) => !hidden.has(id)) : w.dirty) });
+    // t is the AUTHORITY's clock (spec/PHYSICS.md §5.1: max(last entry ts, wall), the one that stamps entries' ts), never
+    // raw wall time: in a world whose log runs ahead of the wall clock, a client drawing flights at serverNow() drew them
+    // at the wrong tick (physseeds SV1)
+    const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: authorityNow(w), poses: Object.fromEntries(hidden?.size ? [...w.dirty].filter(([id]) => !hidden.has(id)) : w.dirty) });
     w.dirty.clear();
     if (RECORD) {
       if (!w.recPath) {

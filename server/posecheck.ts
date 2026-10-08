@@ -35,6 +35,9 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
   // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
   for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];
+  // a sample's capture time (authority clock, ms) and its sender's count (spec/PHYSICS.md §5.1): bad ones cost the field
+  if ("t" in p && !fin(p.t)) delete p.t;
+  if ("seq" in p && !(Number.isInteger(p.seq) && (p.seq as number) >= 0 && (p.seq as number) <= Number.MAX_SAFE_INTEGER)) delete p.seq;
   if ("scale" in p) { if (fin(p.scale)) p.scale = clampBodyScale(p.scale); else delete p.scale; }
   if ("plateY" in p) { if (fin(p.plateY)) p.plateY = clampPlateY(p.plateY); else delete p.plateY; }
   for (const [k, v] of Object.entries(p)) if (typeof v === "string" && v.length > STR_MAX) delete p[k];

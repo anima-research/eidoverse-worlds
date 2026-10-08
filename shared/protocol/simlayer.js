@@ -14,6 +14,7 @@ import { sha256 } from "./hash.js";
 import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed } from "./fold.js";
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
+import { isBoxShape } from "./shapes.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
 // sha256(sim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
@@ -40,9 +41,12 @@ export function worldPose(st, id, depth = 0) {
   const [a, b, c, d] = pt.q, [e2, f, g, h] = q;
   return { pos: pt.pos.map((n, i) => n + r[i]), q: [d*e2+a*h+b*g-c*f, d*f-a*g+b*h+c*e2, d*g+a*f-b*e2+c*h, d*h-a*e2-b*f-c*g], scale: sc.map((n, i) => n * pt.scale[i]) };
 }
+// eidosim carries boxes only (PHYSICS.md §3.1): a stamped physics.shape is its collider when it's a bare box; any other
+// shape is no body to it (rather than a tagged object misread as [[min], [max]]). An engine that carries spheres reads them.
+export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 // The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
 function engineEntity(st, id, models = MODELS) {
-  const e = st.entities[id]; if (!e || !(models[e.c.model] || e.c.physics?.shape) || e.c.physics?.kind === "none") return null;
+  const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics)) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   return { pos: t.pos, yaw: yawOf(t.q), lib: e.c.model, scale: t.scale[1] };
 }
@@ -56,7 +60,7 @@ const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise
 function boxesForM(st, models = MODELS) {
   const out = Object.fromEntries(Object.entries(models).map(([k, m]) => [k, catalogueBox(m)]));
-  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; if (e.c.physics?.shape && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape; }
+  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; if (engineBox(e.c.physics) && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape; }
   return out;
 }
 const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof Malformed) return []; throw x; } };
@@ -141,7 +145,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
           if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
           continue; }
-        const shape = st.entities[o.id]?.c.physics?.shape, model = st.entities[o.id]?.c.model;
+        const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
         const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
         if (!whole && !PHYSICAL.has(o.comp)) continue;

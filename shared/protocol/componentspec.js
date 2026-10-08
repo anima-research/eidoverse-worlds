@@ -7,6 +7,9 @@
 // log doesn't hold, and changing a default here never changes an old world. A default that lives only in help text or a
 // renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed meaning (spec/registry-pin.json, D8).
 
+// how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
+// callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
+export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
@@ -75,15 +78,52 @@ export const COMPONENTS = {
                defaults: { open: false, locked: false, time: 1 }, when: [{ absent: ["slide"], set: { angle: Math.PI / 2, axis: [0, 1, 0] } }],
                ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },
                help: "it opens and closes when someone uses it: a door, a gate, a lid, a hatch. {open: true/false (its state), locked? (true bars an open handler with unless: 'locked'; the edit lock is the separate `lock`), angle? (rad it turns when open, default π/2; negative turns the other way), axis? (its own frame, default [0,1,0]: an upright hinge), slide? [x,y,z] (m it moves in its own frame when open, instead of turning), time? (s to open or close, 0–10, default 1), part? (a node of its model that moves instead of the whole thing)}. It turns about its pivot (pivot {pos}: put it on the hinge edge). Usable with reactions {open: {kind: 'toggle', unless: 'locked'}} (toggle's default flips openable.open)" },
-  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any" }, defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none"] },
+  // spec/PHYSICS.md §3.1–§3.2 (research physics-seeds 10-07, seeds 3–4): shape has a grammar (shared/protocol/shapes.js),
+  // and the physical properties are named now, with units and what absence means, so the first engine that reads them
+  // can't invent either. None is a materialized default: no engine this server carries reads them yet, and a number
+  // written into every value that nothing honours is a number builders tune for nothing. Absence keeps today's meaning.
+  // Angular velocity everywhere (acts, launches, state samples) is w: [x, y, z] rad/s in the world frame.
+  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any", mass: "number", density: "number", material: "string", friction: "number", restitution: "number",
+                 linearDamping: "number", angularDamping: "number", centerOfMass: "vec3", ccd: "bool", layers: "int", mask: "int",
+                 frictionCombine: "string", restitutionCombine: "string" },
+    grammar: { shape: "shape" },   // `any` is the pinned type of every value ever stored; the grammar narrows what may be written
+    defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none", "kinematic"], frictionCombine: COMBINE, restitutionCombine: COMBINE },
     when: [{ if: { kind: "dynamic" }, set: { who: "visitor" } }],   // shared/grab.js DEFAULT_WHO, written down
-    help: "how it takes part in physics: {kind: dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | none (nothing collides with it), who: who may punt it (and pick it up, when it has no grabbable; default visitor), shape: stamped by the authority (its measured box; you never send it)}. Grabbable makes a thing carryable; physics makes it fall. With eidosim@0.5: a thrown thing flies, bounces off what's in the world and comes to rest; it does NOT push or topple things at rest (stacks don't fall over), and things don't spin" },
+    ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 }, friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 },
+              layers: { min: 0, max: 0xffffffff }, mask: { min: 0, max: 0xffffffff }, material: { maxLen: 64 } },
+    absentMeans: {
+      shape: "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
+      mass: "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
+      density: "kg/m³; absent, its material's surface density, else 1000 kg/m³ (water)",
+      material: "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
+      friction: "≥ 0, one coefficient (static = dynamic); absent, its material's, else the engine's own law (eidosim: its fixed constants)",
+      restitution: "0..1; absent, its material's, else the engine's own law (eidosim: its fixed bounce)",
+      frictionCombine: "average|min|multiply|max, how its friction meets another's (the higher in that order wins); absent, its material's, else average",
+      restitutionCombine: "average|min|multiply|max, as frictionCombine; absent, its material's, else max",
+      linearDamping: "1/s; absent, the engine's own law (eidosim: none)",
+      angularDamping: "1/s; absent, the engine's own law (eidosim: none; it doesn't spin)",
+      centerOfMass: "[x, y, z] m in its own frame; absent, the centroid of its stamped shape",
+      ccd: "true: swept (continuous) collision for this body; absent, the engine's own law (eidosim sweeps every body)",
+      layers: "32-bit collision layers it is in; absent, 1 (the first)",
+      mask: "32-bit layers it collides with (both sides must accept); absent, all (0xffffffff)" },
+    help: "how it takes part in physics: {kind: dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | kinematic (a collider moved only by edits and motion, never by the engine; it is never launched) | none (nothing collides with it), who: who may punt it (and pick it up, when it has no grabbable; default visitor), shape: stamped by the authority (its measured box; you never send it), and, for engines that read them (eidosim reads none of these yet): mass (kg; absent: density × volume), density (kg/m³), material (a surface:<name> on @world), friction, restitution (0..1), linearDamping, angularDamping (1/s), centerOfMass [x,y,z], ccd, layers, mask (32-bit collision layers), frictionCombine, restitutionCombine (average|min|multiply|max)}. Grabbable makes a thing carryable; physics makes it fall. With eidosim@0.5: a thrown thing flies, bounces off what's in the world and comes to rest; it does NOT push or topple things at rest (stacks don't fall over), and things don't spin" },
   // what a hand may do with it (research RESEARCH-grab-2026-10-06; shared/grab.js holds the shape, the defaults and the
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
   grabbable: { on: "thing", refPaths: { "home.parent.to": "ref" }, defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }, help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
+  // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
+  // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.material names one
+  surface:   { on: "world", keyed: true, key: "instance", fields: { friction: "number", restitution: "number", density: "number", frictionCombine: "string", restitutionCombine: "string", label: "string" },
+               enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE }, ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, density: { gt: 0, max: 1e5 }, label: { maxLen: 80 } },
+               help: "on @world, keyed by name: a surface material things name with physics.material: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the higher of average < min < multiply < max wins (PHYSICS §3.2)" },
+  // spec/PHYSICS.md §3.3: reserved so a door, a lever or a chain has ONE meaning when an engine can solve it. parent is a
+  // rigid attachment, never a solver joint; openable is kinematic animation; a physical door is a joint. The authority
+  // refuses it until the world's engine carries joints (none does yet)
+  joint:     { on: "thing", keyed: true, key: "instance", fields: { to: "ref", type: "string", anchor: "vec3", axis: "axis", limits: "array", drive: "object", breakForce: "number" },
+               enums: { type: ["fixed", "hinge", "slider", "ball", "distance", "spring"] }, ranges: { breakForce: { gt: 0 } },
+               help: "reserved (refused until this world's engine carries joints): keyed by name, a physical joint to another thing: {to: id, type: fixed|hinge|slider|ball|distance|spring, anchor [x,y,z] (own frame, m), axis, limits [min, max] (rad or m), drive {stiffness, damping, maxForce}, breakForce (N)}" },
   "copy-of": { on: "thing", fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
   // a sound a thing plays (shared/sound.js; batch 2, 10-07): silent AT radius (a true taper to zero, not Web Audio's clamp,
   // which leaked about −21 dB across the whole world), cap 100 m, near ≤ radius (valueCheck), the authority stamps t0 when it
@@ -267,8 +307,10 @@ export const defaultsOf = (name) => { const d = COMPONENTS[name]; return Object.
 // ---- what a name means, pinned (PROTOCOL §4: a name never changes meaning) ----
 // The checkable part of a definition: each field's type, each default (and when it applies), each enum's members. A
 // change to any of these is a changed meaning, so spec/registry-pin.json holds them and test:protocol fails when one
-// moves (pretrans-check D8); a NEW field, default, enum member or name is an addition and is fine. Regenerate the pin
-// only for an addition: bun tools/protocol/pretrans-check.ts --pin
+// moves (pretrans-check D8); a NEW field, default, enum member or name is an addition and is fine. A field added to a name
+// after its first registration must say what an older value without it means (`absentMeans`, PROTOCOL §4; D11), and that
+// sentence is pinned too, as is a field's `grammar` (physics.shape). Regenerate the pin only for an addition:
+// bun tools/protocol/pretrans-check.ts --pin
 export function pinOf() {
   const out = {};
   for (const [name, d] of Object.entries(COMPONENTS)) {
@@ -278,6 +320,8 @@ export function pinOf() {
     if (d.defaults) p.defaults = copy(d.defaults);
     if (d.when) p.when = copy(d.when);
     if (d.enums) p.enums = copy(d.enums);
+    if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
+    if (d.grammar) p.grammar = { ...d.grammar };
     if (d.keyed !== undefined) p.keyed = d.keyed;
     if (d.on) p.on = d.on;
     out[name] = p;
@@ -294,6 +338,12 @@ export function pinBreaks(pin, now = pinOf()) {
     for (const [f, v] of Object.entries(p.defaults ?? {})) if (j(n.defaults?.[f]) !== j(v)) out.push(`${name}.${f}: default ${j(v)} → ${j(n.defaults?.[f]) ?? "gone"}`);
     for (const r of p.when ?? []) if (!(n.when ?? []).some((q) => j(q.if) === j(r.if) && j(q.absent) === j(r.absent) && Object.entries(r.set).every(([f, v]) => j(q.set?.[f]) === j(v)))) out.push(`${name}: a conditional default changed: ${j(r)}`);
     for (const [f, vals] of Object.entries(p.enums ?? {})) for (const x of vals) if (!(n.enums?.[f] ?? []).includes(x)) out.push(`${name}.${f}: ${j(x)} is no longer allowed`);
+    for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) out.push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
+    for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) out.push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
+    // PROTOCOL §4: a field added after the name's first registration says what an older value WITHOUT it means (a value
+    // stored before it existed never holds it, and materialize never rewrites the past), and that meaning is pinned
+    for (const f of Object.keys(n.fields ?? {})) if (!Object.hasOwn(p.fields ?? {}, f) && !(typeof n.absentMeans?.[f] === "string" && n.absentMeans[f].trim()))
+      out.push(`${name}.${f}: added after ${name} was first registered, with no meaning of absence (absentMeans.${f}: what an older value without it means)`);
   }
   return out;
 }

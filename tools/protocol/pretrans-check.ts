@@ -249,8 +249,17 @@ await C("D8", "a definition's meaning is pinned: a changed default, type or enum
   const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf?.(); const g = CAT.pinBreaks?.(pin, now) ?? ["no pinBreaks"];
   const was = CAT.COMPONENTS.light.defaults.intensity; CAT.COMPONENTS.light.defaults.intensity = 17;
   const moved = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? []; CAT.COMPONENTS.light.defaults.intensity = was;
-  CAT.COMPONENTS.light.fields.extra = "number"; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra;
+  // an addition (with its meaning of absence stated: D11) is fine
+  CAT.COMPONENTS.light.fields.extra = "number"; CAT.COMPONENTS.light.absentMeans = { extra: "no extra" }; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra; delete CAT.COMPONENTS.light.absentMeans;
   return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
+await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
+  L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
+  L.absentMeans = { ...(L.absentMeans ?? {}), extra: "no extra: what the light did before extra existed" }; const said = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"];
+  const pinned = CAT.pinOf(); L.absentMeans.extra = "something else"; const moved = CAT.pinBreaks?.(pinned, CAT.pinOf()) ?? [];
+  delete L.fields.extra; delete L.absentMeans.extra; if (!Object.keys(L.absentMeans).length) delete L.absentMeans;
+  const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1"));
+  return [bare.some((x: string) => /light\.extra/.test(x) && /absen/.test(x)) && !said.length && moved.some((x: string) => /light\.extra/.test(x)) && /meaning of absence/i.test(g) && /absentMeans/.test(g), { bare, said, moved }]; });
 await C("D10", "grabbable's written defaults are shared/grab.js's own (the hand's reader and the registry can't drift)", async () => {
   const G = await imp("shared/grab.js"); const reg = CAT.COMPONENTS.grabbable.defaults;
   const want = Object.fromEntries(Object.entries(G.DEFAULTS).filter(([, v]) => v !== null && !(typeof v === "object" && !Object.keys(v).length)));

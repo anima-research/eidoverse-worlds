@@ -1,7 +1,10 @@
 // thingphysics — physics in a world, on the client (design 20: the physics design note, research 20).
 //
-// Nothing here simulates for anyone else and nothing is streamed: every act is a REQUEST, and every client draws
-// the same truth.
+// TODAY nothing here simulates for anyone else and nothing is streamed: every act is a REQUEST, and every client draws
+// the same truth. That is this client's current state, not the protocol's limit: spec/PHYSICS.md §4.1 lets whoever
+// holds or touches a thing simulate it locally and stream its state on a presence lane (§4.3, reserved), crossing into
+// the engine only through log entries (a lift; a launch or a checked settlement). Continuous contact gives no unlogged
+// impulse TO THE ENGINE; it was never a ban on live hands.
 //
 //   carrying   grab / put / throw / drop / punt are requests (shared/protocol/authority.js). Who holds what is the authority's
 //              presence plane (`holds`, never logged); every client draws a held thing in its holder's hand, so it

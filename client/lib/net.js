@@ -19,6 +19,7 @@ import { pending, P } from './scheduler.js';
 
 import { wingFoldPresence } from '../../shared/wingpresence.js';
 import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
+import { serverNow, localNow, noteRoundTrip, clockRtt } from './serverclock.js';
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
@@ -331,6 +332,12 @@ export function sendBodyDrag(target, payload) {
 // pitch while presenting — porch-old sent head yaw (index.html:11066–11072); remotes turn with the head.
 let poseOverride = null;
 export const setPoseOverride = (fn) => { poseOverride = fn; };
+// spec/PHYSICS.md §5.1: one time base. Each sample carries its capture time on the authority's clock (once a round trip
+// has measured it: a one-way guess runs late) and this sender's own count; the clock is re-measured every CLOCK_MS.
+let poseSeq = 0, clockTimer = null;
+const CLOCK_MS = 10_000;
+function askClock() { if (net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'clock', t0: localNow() })); }
+function startClock() { clearInterval(clockTimer); askClock(); setTimeout(askClock, 1000); clockTimer = setInterval(askClock, CLOCK_MS); }
 export function sendPose(now) {
   const s = hooks.myState;
   if (!net.joined || !hooks.me() || !s || now - lastPoseSent < 66) return;
@@ -372,6 +379,8 @@ export function sendPose(now) {
   // routes it (throttle/steer, aimYaw/aimPitch: signals every client computes my pose from; client/lib/socksignals.js)
   if (seat?.to) pose.seat = { to: seat.to, ...(seat.slot ? { slot: seat.slot } : {}), ...(seat.pose ? { pose: seat.pose, at: seat.at ?? 0 } : {}),
     ...(seat.in && Object.keys(seat.in).length ? { in: Object.fromEntries(Object.entries(seat.in).map(([k, v]) => [k, Math.round(v * 1000) / 1000])) } : {}) };
+  if (clockRtt() !== null) pose.t = Math.round(serverNow());
+  pose.seq = ++poseSeq;
   net.ws.send(JSON.stringify({ type: 'pose', pose }));
 }
 
@@ -526,6 +535,7 @@ export async function connect() {
  *  early socket (the inline boot script in index.html — see connect()). */
 function wireSocket(ws) {
   ws.onclose = (ev) => {
+    clearInterval(clockTimer); clockTimer = null;
     net.joined = false;
     if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
     // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
@@ -637,7 +647,9 @@ function noteStalePresence(id) {
 
 async function handle(msg) {
   switch (msg.type) {
-    case 'snapshot': return onSnapshot(msg);
+    case 'snapshot': startClock(); return onSnapshot(msg);
+
+    case 'clock': noteRoundTrip(msg.t0, msg.t, localNow()); break;
 
     case 'your-rights': {
       // Personalized effective rights, folded by the authority after every
