@@ -16,6 +16,7 @@
 // building was current, with expect: false.)
 
 import * as OP from '../../shared/protocol/requests.js';
+import { mintId } from '../../shared/protocol/ids.js';
 import { sendOps } from './editwrites.js';
 import { flashHint } from './ui.js';
 import { THREE, canvas, camera, scene } from './core.js';
@@ -186,7 +187,7 @@ export function newBuilding(ev) {
   ray.setFromCamera(ndc, camera);
   const hit = new THREE.Vector3();
   if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return;
-  const id = `house-${Math.floor(hit.x)}_${Math.floor(hit.z)}`;
+  const id = mintId('house');   // 128+ random bits (shared/protocol/ids.js); a coordinate id collided and broke the grammar ('_')
   sendOps([OP.create(id, { model: 'eidoverse/assets/models/crate_large_red.glb', transform: { pos: [Math.round(hit.x), 0, Math.round(hit.z)] },
     components: { structure: emptyStructure() } })], { what: 'a new building', expect: false });
   editing = id; selectedId = id;   // the new building is the one the tools edit now (until something else is selected)

@@ -4,7 +4,8 @@
 
 The spec's hazard (review 47 C2) is language-level: all([]) is True in Python and [].every() is true in JS, so a reader
 written straight from "every tier-0 key" lets anyone rewind past the window in a world whose tier 0 is empty. Here an
-empty tier never acts, explicitly. The choices the spec leaves open are governance.js's GOV-1..GOV-4.
+empty tier never acts, explicitly. The rules are PROTOCOL §13's (GOV-1..GOV-5); this file is the reference for them
+(the lab's governance.js it was written beside is not in this repository).
 
 Usage:  python3 gov.py LOG.jsonl     prints one JSON object: {status, window, events: [...]}
 """
@@ -136,6 +137,15 @@ def governance(data):
                     now = next((i for i, nt in enumerate(b["owners"]) if k in nt), -1)
                     if (now == -1 or now > t) and not (rank != NONE and rank <= t):
                         bad = "removing or demoting a tier-%d key needs rank %d or higher" % (t, t)
+            # GOV-5 (review 2026-10-07 H4): ADDING is checked as removing is. A key that lands in tier t and wasn't
+            # already at tier t or higher (a new key, or a promotion) needs rank t or higher. Without this a tier-1 key
+            # adds two keys to tier 0, and those two then remove the original tier-0 key: tier 1 owns the world.
+            # Consequence, on purpose: an empty tier can never be filled from below, so genesis names its keys.
+            for t, tier in enumerate(b["owners"]):
+                for k in tier:
+                    was = next((i for i, ot in enumerate(tiers) if k in ot), -1)
+                    if (was == -1 or was > t) and not (rank != NONE and rank <= t):
+                        bad = "adding or promoting a key into tier %d needs rank %d or higher" % (t, t)
         if bad:
             ev["why"] = bad; continue
         current = rank_at(seq)

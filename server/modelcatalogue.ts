@@ -11,6 +11,8 @@
 // stop at whatever this host happens to have on disk), but it has no size: the authority says it can't place or collide
 // it. A name that isn't a library path at all is refused (no model called …).
 import { resolveLibFile } from "./libfile.ts";
+import { isEido, eidoHex } from "../shared/eido.js";
+import { eidoRel } from "./eidoindex.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { creditsFor } from "../shared/libcredits.js";
@@ -30,11 +32,12 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const cache = new Map<string, Entry>();
 const pending = new Map<string, Promise<void>>();
 /** What a library path looks like (resolveLibFile's own rule, plus the content store's names). */
-export const isLibPath = (s: unknown): s is string => typeof s === "string" && s.length <= 512 && !s.includes("..") && /^[A-Za-z0-9_./-]+\.(glb|vrm)$/i.test(s);
+export const isLibPath = (s: unknown): s is string => isEido(s) || (typeof s === "string" && s.length <= 512 && !s.includes("..") && /^[A-Za-z0-9_./-]+\.(glb|vrm)$/i.test(s));
 const MIN_ZONE = 0.02; // m²: smaller up-facing zones are trim and bevels, not surfaces
 
 async function measure(lib: string): Promise<void> {
-  const label = lib.split("/").pop()!.replace(/\.(glb|vrm)$/i, "").replace(/[_-]+/g, " ");
+  const named = isEido(lib) ? eidoRel(eidoHex(lib)!) ?? lib : lib;   // an address is labelled by the file it names here
+  const label = named.split("/").pop()!.replace(/\.(glb|vrm)$/i, "").replace(/[_-]+/g, " ");
   let entry: Entry = { label, surfaces: [] };
   try {
     const file = resolveLibFile(lib);

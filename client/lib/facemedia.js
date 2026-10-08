@@ -10,6 +10,7 @@ import { THREE } from './core.js';
 import { entities } from './world.js';
 import { bus } from './base.js';
 import { enc } from '../../shared/protocol/names.js';
+import { mintId } from '../../shared/protocol/ids.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { sendOps } from './editwrites.js';
 
@@ -46,7 +47,7 @@ export function frontOf(id) {
  *  reply; the new sign is selected once it lands. Returns null (nothing sent) when `id` has no model of its own. */
 export async function addOnFace(id, comp, data) {
   const f = frontOf(id); if (!f) return null;
-  const cid = `${String(id).slice(0, 24)}-${comp === 'text' ? 'sign' : 'pic'}-${crypto.randomUUID().slice(0, 4)}`;
+  const cid = mintId(comp === 'text' ? 'sign' : 'picture');   // 128+ random bits (shared/protocol/ids.js)
   const value = { ...data };
   let pos = f.pos;
   if (comp === 'picture') {

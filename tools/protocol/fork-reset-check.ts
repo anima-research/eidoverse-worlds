@@ -61,10 +61,10 @@ for (const r of [
   await ann.req("say", { text: "a private chat line from before the copy" }),
 ]) ok(r.ok, "(setup) the source world takes it", r.refused);
 // a scripted bell: scripts travel with a fork (their source blobs too) and keep working there
-{ const up = await ann.req("upload", { text: 'world.on("use", () => { world.set("self", "bell", { rung: (world.get("self", "bell")?.rung ?? 0) + 1 }); });' });
+{ const up = await ann.req("upload", { text: 'world.on("use", () => { world.set("self", "t/bell", { rung: (world.get("self", "t/bell")?.rung ?? 0) + 1 }); });' });
   ok(up.ok && /^sha256:/.test(up.src), "(setup) upload the bell's source", up);
   for (const r of [await ann.req("create", { id: "bell1", model: MODEL, components: { reactions: { ring: { kind: "script", script: "bell" } } } }),
-    await ann.req("set", { id: "bell1", component: "script:bell", value: { src: up.src, scope: { ids: "self", comps: ["bell"] }, on: ["use"] } })]) ok(r.ok, "(setup) the bell is scripted", r.refused);
+    await ann.req("set", { id: "bell1", component: "script:bell", value: { src: up.src, scope: { ids: "self", comps: ["t/bell"] }, on: ["use"] } })]) ok(r.ok, "(setup) the bell is scripted", r.refused);
   const rung = await bob.req("use", { id: "bell1", action: "ring" });
   ok(rung.ok, "(setup) the bell rings in the source", rung.refused); }
 const readSrc = () => fold(logOf("src"));
@@ -87,11 +87,18 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "visitor", "FK5 roles and the default role travel", b["@world"]);
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
+  // review 10-07 H5: the fork's genesis names its parent {world, seq, head} (part of its id: the merge base), and the acts
+  // that copied the parent are marked, so a reader tells inherited things from births
+  const gp = logOf("copy")[0]?.body?.parent, sl = logOf("src");
+  ok(gp && gp.world === fold(sl).worldId && Number.isInteger(gp.seq) && gp.seq < sl.length && /^[0-9a-f]{64}$/.test(gp.head) && (sl[gp.seq]?.head === undefined || sl[gp.seq].head === gp.head)
+    && f?.body?.request?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
+  const copyActs = logOf("copy").filter((e) => e.kind === "act" && e.verb !== "create-world");
+  ok(copyActs.length > 0 && copyActs.every((e) => e.verb === "fork-copy") && !logOf("src").slice(-1)[0]?.body?.parent, "FK11 every act that copied the parent is a fork-copy (inherited, not born)", copyActs.map((e) => e.verb));
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }
 { const c2 = await sock(S.port); const j0 = await c2.join("copy", "Ann");
   const r = await c2.req("use", { id: "bell1", action: "ring" }); await sleep(200);
-  ok(r.ok && fold(logOf("copy")).entities.bell1?.c.bell?.rung === 2, "FK9 the scripted bell rings in the copy (its script and source travelled; its count carried on from 1)", [r.refused, fold(logOf("copy")).entities.bell1?.c.bell]);
+  ok(r.ok && fold(logOf("copy")).entities.bell1?.c["t/bell"]?.rung === 2, "FK9 the scripted bell rings in the copy (its script and source travelled; its count carried on from 1)", [r.refused, fold(logOf("copy")).entities.bell1?.c["t/bell"]]);
   c2.close(); }
 { const c2 = await sock(S.port); const j = await c2.join("copy", "Ann");
   ok(!!j.snapshot && j.snapshot.yourRights?.role === "owner", "FK8 the copy is served, and its owner is its owner", [j.errors, j.snapshot?.yourRights]); c2.close(); }
@@ -119,10 +126,10 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   ok(!!ja.snapshot && ja.snapshot.yourRights?.role === "owner" && Object.keys(ja.snapshot.cut?.state ?? { x: 1 }).filter((x) => x !== "@world").length === 0, "RS6 rejoining finds the fresh, empty world, still Ann's", [ja.errors, ja.snapshot?.yourRights]);
   const w2 = await again.req("create", { id: "new-crate", model: MODEL });
   // the fresh world's scripts run (the server's tick and arrivals reach THIS world's script host, not the archived one's)
-  const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "greet", { last: e.by }); });' });
-  const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["greet"] }, on: ["enter"] } });
+  const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "t/greet", { last: e.by }); });' });
+  const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["t/greet"] }, on: ["enter"] } });
   const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee"); await sleep(1500);
-  const greet = fold(logOf("src")).entities["new-crate"]?.c.greet;
+  const greet = fold(logOf("src")).entities["new-crate"]?.c["t/greet"];
   ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.cut?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
   arriving.close();
   ok(w2.ok, "RS6 …and it takes writes (the live world was swapped in place)", w2.refused);

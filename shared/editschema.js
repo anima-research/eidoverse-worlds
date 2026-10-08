@@ -32,7 +32,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './pict
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { COMPONENTS as SPEC } from './protocol/componentspec.js';
+import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -510,7 +510,7 @@ export function inspectSchema(ent, id, live = {}) {
   if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
   if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
   if (!c.sockets && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ seat…', client: true, hint: 'click the spot on the thing where a sitter goes' });
-  fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (recipe, notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
+  fields.push({ t: 'text', k: '+', label: '+ component', value: '', placeholder: 'type (local/recipe, example.org/notice…) ⏎', hint: 'attach a component — any type folds, evaluators give known ones behavior' });
   groups.push({ group: 'comp', label: `Components (${rest.length})`, fields });
 
   return { id, groups, sections: componentSections(ent, groups, live, id) };
@@ -774,7 +774,10 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'openable', { open: false, locked: false, angle: round(Math.PI / 2, 6), time: 1 }),
       ...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };
   }
-  if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] }; return { ops: [OP.set(id, type, {})], errors: [] }; }
+  if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] };
+    // PROTOCOL §4: a bare name is the registry's; your own carries a namespace (local/recipe, example.org/recipe)
+    if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [`'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
+    return { ops: [OP.set(id, type, {})], errors: [] }; }
   return { ops: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
 
@@ -1151,7 +1154,7 @@ export function editOps(ent, id, edits, live = {}) {
           // same ops a person's menu writes (review 10-07 B4: comp.+ "Openable" minted a junk x--… component instead)
           const rec = Object.keys(RECORDS).find((n) => n.toLowerCase() === type.toLowerCase().replace(/[-_ ]/g, ''));
           if (rec && !RECORDS[rec].world && !RECORDS[rec].readOnly) { const r = addOps(ent, id, rec); errors.push(...r.errors); ops.push(...r.ops); if (r.choice) asks.push({ kind: 'choice', ...r.choice, key: `add.${rec}` }); break; }
-          if (!/^[a-z][a-z0-9-]*$/.test(type)) { errors.push(`comp.+: '${type}' isn't a component name (lowercase a–z, 0–9 and '-'); Add Component's names are ${Object.keys(RECORDS).filter((n) => !RECORDS[n].world).join(', ')}`); break; }
+          if (!/^([a-z0-9.-]+\/)?[a-z][a-z0-9-]*$/.test(type)) { errors.push(`comp.+: '${type}' isn't a component name (lowercase a–z, 0–9 and '-'; one of your own carries a namespace, e.g. 'example.org/${type.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}'); Add Component's names are ${Object.keys(RECORDS).filter((n) => !RECORDS[n].world).join(', ')}`); break; }
           if (c[type] != null) { errors.push(`${id} already has ${type}`); break; } comps.set(type, {}); break; }
         if (raw == null || raw === '') { comps.set(k, null); break; }
         let data = raw;

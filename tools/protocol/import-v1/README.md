@@ -24,3 +24,37 @@ the old format. The sweep
 **This directory is temporary.** It stays only until the live Commons has been cut over to v4 (decided 2026-10-06); a
 follow-up change, about a month after that cutover, deletes this directory, the sweep's v1 half and the v1 fixtures in
 `spec/fixtures/`.
+
+## The Commons ceremony (governance keys, PROTOCOL §13)
+
+A translated world's genesis names its governance keys, and genesis never changes. Under §13's add-key rule (GOV-5) a
+lower tier can never add a key to a higher one, so **tier 0 must be the founder's key at translation, or it stays empty
+for ever**. The public Commons was founded by **antra**; its owners (antra, fable, janus, mica, from the v1 log's grants)
+and builder (Digi_Rat) come across as `roles:<id>` either way, because roles are rights inside the world and governance
+keys are a separate list (§7, "two owner lists, never confused"). Neither R's key nor Burrow's goes in tier 0.
+
+1. **The founder makes a key on her own machine.** The private half never leaves it. With OpenSSL (any recent
+   version):
+
+       openssl genpkey -algorithm ed25519 -out eidoverse-owner.pem
+       printf 'ed25519:%s\n' "$(openssl pkey -in eidoverse-owner.pem -pubout -outform DER | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=')"
+
+   Keep `eidoverse-owner.pem` offline and backed up: it is the only thing that can reclaim, rewind or re-key the
+   Commons from the top.
+2. **She proves it's hers, and that the text is spelled right**, by signing the ceremony text with it and sending the
+   public key and the signature (both are safe to share):
+
+       KEY=ed25519:…   # the line printed above
+       printf 'eidoverse-owner-key:%s' "$KEY" > msg.txt
+       openssl pkeyutl -sign -inkey eidoverse-owner.pem -rawin -in msg.txt | base64 | tr -d '\n'; echo
+
+3. **The operator checks it** (nothing is written): `bun tools/protocol/world.ts owner-key <KEY> <signature>`. It says
+   `ok` only when the signature verifies over `eidoverse-owner-key:<KEY>`.
+4. **Back up the host's custody** (`keys/custody.json` under the worlds directory) off this machine first: it holds the
+   sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
+5. **Translate** with her key in tier 0 and the host's operator key in tier 1:
+   `bun tools/protocol/world.ts translate commons-v1 commons --founder-key <KEY>`. `info commons` afterwards shows the
+   roles; line 0 of `world.jsonl` shows `owners: [[<KEY>], [<operator>]]`.
+
+`--no-founder-key` translates with tier 0 empty, knowingly (a test world, or a world whose founder can't be reached and
+doesn't want to be its top key). The command refuses to guess between the two.

@@ -25,6 +25,7 @@
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
 import { jcs, isEntityId, isComponent } from "./fold.js";
 import { LIMITS, isParamKey } from "./scriptrules.js";
+import { materialize } from "./componentspec.js";
 
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
@@ -155,7 +156,9 @@ export function makeHost(x) {
       case "name": { read(); const id = a[0]; // a display name lives in the authority's directory, outside the log: recorded, so a re-run agrees
         const n = x.reads ? x.reads.names?.[nameAt]?.name ?? null : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names.push({ id, name: n }); return n; }
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
-      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: a[2] }; ops.push(op); apply(op); return null; }
+      // every parameter written down (PROTOCOL §4): a script's value gets its definition's defaults here, in the host, so the
+      // logged batch is what an auditor's re-run makes too (and a re-asserted value equal to the stored one is elided)
+      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
       case "param": { write(); const id = wantId(self(a[0]), "world.param"), comp = wantComp(a[1], "world.param"), key = `param.${a[2]}`;
         if (!isParamKey(key)) throw new HostError(`world.param: '${a[2]}' isn't a parameter name (a letter, then letters, digits, _ or -, up to 32)`);
         if (typeof a[3] !== "number") throw new HostError(`world.param: ${key} is a number (a signal), got ${JSON.stringify(a[3])}`);
@@ -163,10 +166,11 @@ export function makeHost(x) {
         const op = { verb: "set", id, comp, value: { ...prev, [key]: a[3] } }; ops.push(op); apply(op); return null; }
       case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
-        const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 8)}${minted ? `-${minted}` : ""}`; minted++;
+        // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it again
+        const id = a[1] !== null ? wantId(a[1], "world.create") : `${slug(comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
         write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
-        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: v }; ops.push(op); apply(op); }
+        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }
         return id; }
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }

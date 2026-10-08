@@ -73,12 +73,12 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 | `body` | an object |
 | `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
 | `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed |
+| `by` | legacy (the lab's name for `actor`): allowed, and every reader MUST ignore it. Writers MUST NOT write it |
 
 An unknown field, a `seq` field, a missing or non-string `kind`/`actor`/
 `verb`, a non-object `body`, a bad `cause`, or a missing, fractional or
 decreasing `ts` makes the entry malformed: it shapes nothing and the reader
-reports it in diagnostics, never in the world. (The reference reader also
-tolerates a legacy `by` field, which nothing reads.)
+reports it in diagnostics, never in the world.
 
 **The kinds.**
 
@@ -150,7 +150,13 @@ A `change` entry's `verb` and `body` are one of:
 All ASCII.
 
 - **Entity ids**: `[a-z0-9-]{1,64}`, opaque and minted, plus the reserved
-  `@world`.
+  `@world`. An id is **world-scoped**: a thing's global name is the pair
+  `(world id, entity id)`, written `<world id>#<entity id>`, and no protocol
+  feature may assume an id is unique outside its world (a fork copies its
+  parent's ids). A minted id SHOULD carry at least 128 random bits (the
+  reference authority and clients write `<slug>-<26 base32>`), so two forks
+  rarely mint alike; that makes renames on merge rare, never unnecessary. An
+  entity id never has an identity's shape (`u-` and 20 base32 letters).
 - **Identities** (actors, and keys such as `roles:<identity>`):
   `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
   outside the log, so purging a person never needs the log's skeleton.
@@ -167,7 +173,8 @@ Components are how a world grows: **a new feature is a new component,
 never a new operation**. The fold applies every component blindly; meaning
 lives in whatever reads it — a renderer, the authority's checks, a script.
 
-- **Bare names are the protocol's registry.** The registered components,
+- **Bare names are the protocol's registry.** An authority refuses an unregistered bare name
+  (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
@@ -176,21 +183,54 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
   `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
-- **Anyone else's components carry a domain prefix**, so two honest clients
-  can't both invent `light`. Unknown names are kept, replayed and shown
-  honestly; they wait for a reader that understands them.
-- **A changed meaning or default is a new name** (`light@2`). Old names are
-  read forever. No component may change how another is read.
+- **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
+  domain they control or a handle (`example.org/heart`, `mica/heart`), so two
+  honest clients can't both invent `light`. The mark is the `/` itself: the
+  registry never uses it, the way HTML's own elements never contain the
+  hyphen that custom elements must. Namespaced names are kept, replayed and
+  shown honestly; they wait for a reader that understands them. A translated
+  world's own inventions come across under its name (`commons/heart`).
+- **Promotion keeps an alias.** A namespaced component that proves itself is
+  registered bare by a change to the registry, which lists the namespaced
+  spelling in the definition's `aliases`: both spellings then mean that one
+  definition, are checked the same way, and old values keep working.
+- **A changed meaning is a new name**, `<name>@<n>` (`light@2`), registered
+  before anyone writes it, whose definition says what it `supersedes`. Old
+  names are read forever. No component may change how another is read.
+- **Every parameter is written down.** The authority writes a component's
+  defaults into the stored value when it is created or set, so a reader never
+  supplies a value the log doesn't hold, and a later change to a default
+  never changes an old world. A parameter's meaning (its units, what it
+  does) never changes; a new meaning is a new versioned name.
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
-- **Meaning travels with the world.** A `schemas:<name>` component on
-  `@world` holds the content hash of that name's written definition (shape,
-  units, prose meaning, what absence means); once set it never changes.
+- **Meaning travels with the world.** Two things keep an old world's
+  meaning fixed, and neither needs a hash in the world: every parameter is in
+  the stored value (above), and the registry's checkable meaning — each
+  field's type, each default and when it applies, each enum's members — is
+  pinned in `registry-pin.json` beside this document; the conformance suite
+  fails when one changes, and only additions may be re-pinned. A
+  `schemas:<name>` component on `@world` is **optional**: it holds the content
+  hash of that name's written definition (shape, units, prose meaning, what
+  absence means, an example), and once set it never changes. It adds what the
+  pin can't check, the prose, for a world that travels to readers who don't
+  share this registry; a world without one is read by this registry, whose
+  pinned meanings never change.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its
   current life) or an owner. Partition keys (`terrain-tile:`) are pieces of
   one shared surface and follow ordinary rank rules.
+- **References are typed.** A field that names another thing or a person
+  says so in its definition: `ref` (one entity id), `refs` (a list), `person`
+  (an identity), `people` (a list), `target` (a `ref`, a `person` or an
+  `@word` such as `@viewer`), and a script's `scope.ids`. Every typed
+  reference is what copying rebinds: a **duplicate** points references to
+  copied things at their twins and keeps the rest (listing them); a
+  **publish** turns references inside the record into part keys and refuses
+  references outside it unless asked to drop them (`unwire`); a **copy** of a
+  record turns part keys into its own new ids and leaves anything else
+  unbound. An untyped value (a namespaced component) is never rewritten.
 - **Parameters, never code.** A component holds data. Code lives in a blob
   that a `script:<name>` component names (§8). Nothing writes a component
   per frame: motion is stored as a function of time (`motion`), evaluated by
@@ -235,12 +275,20 @@ request moves a copy to a newer version, keeping its own overrides.
   a server keeps for late joiners, as `wingsFolded` does; `mic`/`hear` are
   a live reading re-sent with every packet and are never part of it. The
   pose packet's fields are `docs/pose-wire.md`.
-- **Presence touches the log only through checked acts.** Arriving,
-  teleporting, putting something down, letting it go and throwing it are
-  requests the authority checks (against its own cheap track of each body: speed,
-  reach, solids) and records. A release with velocity is a launch. Continuous
-  contact from a body or a held thing gives no unlogged impulse. A disconnect
-  settles at the last accepted state.
+- **Presence touches the log only through checked acts, and only with what
+  the world needs.** The authority checks every body request against its
+  own cheap track of each body (speed, reach, solids). Arriving is presence:
+  it is never logged. A teleport while present is an act (it resets the
+  track), recording who and when, never where from or to, and never what kind
+  of client someone uses. Picking something up, putting it down, letting it
+  go, throwing and punting are acts that record the request about the thing
+  and who handled it, never the body's position or hand: a put's change
+  carries where the thing went, and a launch's `sim` entry where it left and
+  how fast, which the engine needs. A release with velocity is a launch.
+  Continuous contact from a body or a held thing gives no unlogged impulse. A
+  disconnect settles at the last accepted state. (A world whose scripts
+  listen for `enter`/`leave` records who triggered each activation, as every
+  script act does; that is the world's choice, visible in its scripts.)
 - **The plane-transition invariant**: anything returning from live motion
   to rest stamps its absolute state into the log (a put's transform, a
   rest caused by its launch). The log never depends on reconstructing where
@@ -449,6 +497,64 @@ argument will be short.
   every tier-0 key. An empty tier can never act. Moving a world and forking
   it are different: a fork is a new genesis naming its parent. Nothing is
   atomic across worlds.
+- **The governance body** is `{key?, owners?, fork?, sigs}`, exactly those
+  fields, at least one of `key`, `owners`, `fork`:
+  - `key`: the new sequencer key; `owners`: the new tiers, whole (same shape
+    as genesis: distinct registrable keys); `fork {seq, head}`: rewind to just
+    after `seq` (`seq` < this entry's seq), whose head is `head`.
+  - `sigs`: a non-empty list of distinct `{key, v}`; `v` is base64url Ed25519
+    over UTF-8 `"eidoverse-gov:<world id>:<seq>:" + JCS(body without sigs)`
+    (**GOV-1**). Only signatures that verify count.
+  - **GOV-2, rank.** An entry's rank is the highest tier (smallest number)
+    whose quorum signed it. A body that is only `key`, signed by the outgoing
+    sequencer, is a **handoff** of rank *none*, below every tier.
+  - **GOV-3, quorum.** Tier t acts when at least `quorum[t]` of its keys
+    signed (genesis `quorum`; absent: 1 for a one-key tier, else a strict
+    majority). **An empty tier never acts**, whatever its quorum computes to
+    (`all([])` is true in most languages: a reader must say so explicitly).
+    When `owners` changes the number of tiers, quorum reverts to the default.
+  - **GOV-4, removing.** Removing a tier-t key, or demoting it to a lower
+    tier, needs rank t or higher.
+  - **GOV-5, adding.** Adding a key to tier t, or promoting one into it,
+    needs rank t or higher. So a tier can never fill a tier above itself, and
+    **an empty tier can never be filled**: whoever should hold tier 0 must be
+    named in genesis. (Without this rule a tier-1 key adds two tier-0 keys,
+    and those two remove the original one.)
+  - A `fork` needs a rank higher than every branch it orphans, and every
+    tier-0 key once the orphaned branch holds `rewind_window` change entries
+    or more; a `key` without a handoff is a **reclaim** and needs a rank
+    higher than the current branch's.
+
+  The fold never reads `sequencer` entries, so these rules decide who may
+  write, never what a world is. The reference reader for them is
+  `conformance/gov.py` (with `conformance/test_gov.py`); the reference
+  authority does not yet write or validate them.
+- **Forks and merges.** A fork's genesis carries `parent {world, seq,
+  head}`: the world it was copied from, the seq it was copied at and that
+  seq's chain head. The acts that copy the parent's state are verb
+  `fork-copy`, so a reader tells an inherited thing from one born in the
+  fork. A merge of fork F into its parent P, with base B = F's
+  `genesis.parent`, decides each of F's entity ids x (this is the rule; the
+  reference implementation doesn't merge yet):
+  1. x was live in P folded to B's seq **and** in F it was created by a
+     `fork-copy` act (never deleted and re-created): the same thing. Merge it
+     per component against its value at the base.
+  2. Otherwise, if P has ever had x (live or deleted): a collision. Mint a
+     fresh id in P, and rewrite every **typed reference** to x in the merged
+     changes (ids-as-keys such as `roles:<identity>` are people, never
+     renamed).
+  3. Otherwise x is new to P and keeps its id.
+
+  A value that names x without a typed reference (a namespaced component's
+  data) is not rewritten; the merge act lists each one as a warning. The
+  merge act records its **rename map** `{x: y}`, so provenance and outside
+  links can follow. An id chosen to collide is simply renamed: a fork can
+  never overwrite a thing in its parent.
+- **Whose key is tier 0.** A world's founder holds tier 0 with a key made on
+  their own machine (the authority's `create-world {ownerKey}`; a translated
+  world's `--founder-key`). A host's custody keys (sequencer, operator) are
+  never the founder's. A world founded without one has an empty tier 0 for
+  ever, and its operator key (tier 1) is its top governance key.
 
 ## 14. Worlds from the first protocol
 

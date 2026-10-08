@@ -196,13 +196,13 @@ function install(s: any, who: string, id: string, name: string, text: string, va
 }
 const BELL = `// the bell: counts its rings and says who rang it
 world.on("use", (e) => {
-  const rung = (world.get("self", "bell")?.rung ?? 0) + 1;
-  world.set("self", "bell", { rung });
+  const rung = (world.get("self", "t/bell")?.rung ?? 0) + 1;
+  world.set("self", "t/bell", { rung });
   world.say("the bell tolls for " + e.by + " (" + rung + ")");
 });
 `;
 function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model: "bell", place: { at: [0, 0] } });
-  const r = install(s, who, "bell1", "bell", BELL, { scope: { ids: "self", comps: ["bell"], say: true }, on: ["use"] });
+  const r = install(s, who, "bell1", "bell", BELL, { scope: { ids: "self", comps: ["t/bell"], say: true }, on: ["use"] });
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
@@ -220,12 +220,12 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } }); const n0 = s.entries().length;
       const after = s.call("vic", "use", { id: "bell1", action: "ring" }); const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { u: show(u), first: st(s, first), after: st(s, after), newKinds: kinds(s.entries().slice(n0)), status: sv?.status, why: sv?.why }; },
-    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(visitor now.*bell1\.bell/.test(o.why) },
+    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(visitor now.*bell1\.t\/bell/.test(o.why) },
   { id: "B3", what: "41 #3 confused deputy: an OWNER uses a script installed by bob (owner then, builder now) that writes roles:mal; the trigger adds no rights", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
       s.call("bob", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "kiosk", "promo", onUse(`world.set("@world", "roles:mal", { role: "builder" });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
-      install(s, "bob", "kiosk", "hello", onUse(`world.set("self", "greeting", e.by);`), { scope: { ids: "self", comps: ["greeting"] }, on: ["use"] });
+      install(s, "bob", "kiosk", "hello", onUse(`world.set("self", "t/greeting", e.by);`), { scope: { ids: "self", comps: ["t/greeting"] }, on: ["use"] });
       s.call("bob", "set", { id: "kiosk", component: "reactions", value: { promote: { kind: "script", script: "promo" }, hello: { kind: "script", script: "hello" } } });
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
       const promote = s.call("olive", "use", { id: "kiosk", action: "promote" }), hello = s.call("olive", "use", { id: "kiosk", action: "hello" });
@@ -234,7 +234,7 @@ const cases: Case[] = [
     good: (o) => /^refused rights: script:promo's sponsor bob can't change @world\.roles:mal/.test(o.promote) && o.mal === null && o.hello === "ran" && o.trigger === "olive" && o.sponsor === "bob" },
   { id: "B4", what: "41 #5 half an activation: the third of three writes is outside the scope; nothing lands (v1 committed two)", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "three", onUse(`world.set("self", "a", 1); world.set("self", "b", 2); world.set("self", "c", 3);`), { scope: { ids: "self", comps: ["a", "b"] }, on: ["use"] });
+      install(s, "bob", "box", "three", onUse(`world.set("self", "t/a", 1); world.set("self", "t/b", 2); world.set("self", "t/c", 3);`), { scope: { ids: "self", comps: ["t/a", "t/b"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "three" } } }); const n0 = s.entries().length;
       const r = s.call("vic", "use", { id: "box", action: "go" }); const c = s.w().state().entities.box.c;
       return { r: st(s, r), a: c.a ?? null, b: c.b ?? null, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
@@ -257,8 +257,8 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 60 } });
       s.call("olive", "create", { id: "heart", model: "bell", place: { at: [0, 0] } });
       const BEAT = (c: string) => `world.on("tick", () => world.set("self", "${c}", { n: (world.get("self", "${c}")?.n ?? 0) + 1 }));\n`;
-      install(s, "olive", "heart", "beat", BEAT("beat"), { scope: { ids: "self", comps: ["beat"] }, every: 30, always: true });
-      install(s, "olive", "heart", "beat2", BEAT("beat2"), { scope: { ids: "self", comps: ["beat2"] }, every: 30, always: true });
+      install(s, "olive", "heart", "beat", BEAT("t/beat"), { scope: { ids: "self", comps: ["t/beat"] }, every: 30, always: true });
+      install(s, "olive", "heart", "beat2", BEAT("t/beat2"), { scope: { ids: "self", comps: ["t/beat2"] }, every: 30, always: true });
       const t0 = T; const why = new Set();
       for (let i = 0; i < 2 * 120; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget") why.add(/world's scripts/.test(r.why) ? "world" : /sponsors here/.test(r.why) ? "sponsor" : "script"); }
       const hours = [0, 0]; for (const e of s.entries()) if (isScriptActor(e.actor) && e.ts > t0) hours[Math.min(1, Math.floor((e.ts - t0) / 3600000))]++;
@@ -268,10 +268,10 @@ const cases: Case[] = [
       if (!D.tick) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 40 } });
       s.call("olive", "create", { id: "a", model: "crate", place: { at: [0, 0] } }); s.call("bob", "create", { id: "b", model: "crate", place: { at: [2, 0] } });
-      const BEAT = `world.on("tick", () => world.set("self", "n", (world.get("self", "n") ?? 0) + 1));\n`;
+      const BEAT = `world.on("tick", () => world.set("self", "t/n", (world.get("self", "t/n") ?? 0) + 1));\n`;
       s.call("vic", "move", { to: [0, 0, 3] }); // someone is here, so timers run
-      install(s, "bob", "b", "chatty", BEAT, { scope: { ids: "self", comps: ["n"] }, every: 5 });
-      install(s, "olive", "a", "kind", onUse(`world.set("self", "n", (world.get("self", "n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "b", "chatty", BEAT, { scope: { ids: "self", comps: ["t/n"] }, every: 5 });
+      install(s, "olive", "a", "kind", onUse(`world.set("self", "t/n", (world.get("self", "t/n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("olive", "set", { id: "a", component: "reactions", value: { poke: { kind: "script", script: "kind" } } });
       for (let i = 0; i < 60; i++) { s.advance(5000); s.tick(); } // bob's timer has 5 minutes (two sponsors: 20 entries each of 40)
       const pokes = []; for (let i = 0; i < 3; i++) pokes.push(st(s, s.call("vic", "use", { id: "a", action: "poke" }, 20000)));
@@ -280,11 +280,11 @@ const cases: Case[] = [
     good: (o) => o.bob === 20 && o.pokes.every((p: string) => p === "ran") && o.olive === 6 },
   { id: "B6c", what: "the per-script rate: 6 logged activations a minute per script, then refused (budget) until the minute passes", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "inc", onUse(`world.set("self", "n", (world.get("self", "n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "inc", onUse(`world.set("self", "t/n", (world.get("self", "t/n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { inc: { kind: "script", script: "inc" } } });
       const rs = []; for (let i = 0; i < 8; i++) rs.push(st(s, s.call("vic", "use", { id: "box", action: "inc" }, 1000)));
       s.advance(61000); rs.push(st(s, s.call("vic", "use", { id: "box", action: "inc" })));
-      return { rs, n: comp(s, "box", "n") }; },
+      return { rs, n: comp(s, "box", "t/n") }; },
     good: (o) => JSON.stringify(o.rs) === JSON.stringify(["ran", "ran", "ran", "ran", "ran", "ran", "refused budget", "refused budget", "ran"]) && o.n === 7 },
   { id: "B7", what: "41 #7 grey goo: each use makes a child carrying the same script; the world's script count (12) stops it", run(s) { cast(s);
       s.call("bob", "create", { id: "root", model: "crate", place: { at: [0, 0] } });
@@ -298,9 +298,9 @@ const cases: Case[] = [
     good: (o) => o.scripts === 12 && o.stoppedBy === "refused too-many" },
   { id: "B8", what: "41 #8 cascade ping-pong: two scripts each write what the other watches; it stops at depth 8, and a reader recomputes the depth", run(s) { cast(s);
       s.call("bob", "create", { id: "ea", model: "crate", place: { at: [0, 0] } }); s.call("bob", "create", { id: "eb", model: "crate", place: { at: [2, 0] } });
-      install(s, "bob", "ea", "ping", `world.on("changed:pong", () => world.set("self", "ping", (world.get("eb", "pong") ?? 0) + 1));\n`, { scope: { ids: ["self", "eb"], comps: ["ping"] }, on: ["changed:pong"] });
-      install(s, "bob", "eb", "pong", `world.on("changed:ping", () => world.set("self", "pong", (world.get("ea", "ping") ?? 0) + 1));\n`, { scope: { ids: ["self", "ea"], comps: ["pong"] }, on: ["changed:ping"] });
-      const kick = s.call("bob", "set", { id: "eb", component: "pong", value: 0 });
+      install(s, "bob", "ea", "ping", `world.on("changed:t/pong", () => world.set("self", "t/ping", (world.get("eb", "t/pong") ?? 0) + 1));\n`, { scope: { ids: ["self", "eb"], comps: ["t/ping"] }, on: ["changed:t/pong"] });
+      install(s, "bob", "eb", "pong", `world.on("changed:t/ping", () => world.set("self", "t/pong", (world.get("ea", "t/ping") ?? 0) + 1));\n`, { scope: { ids: ["self", "ea"], comps: ["t/pong"] }, on: ["changed:t/ping"] });
+      const kick = s.call("bob", "set", { id: "eb", component: "t/pong", value: 0 });
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null; const sv = s.call("olive", "scripts", {}).scripts ?? [];
       return { kick: show(kick), scriptActs: s.entries().filter((e: any) => isScriptActor(e.actor) && e.kind === "act").length, readerMaxDepth: A?.maxDepth, flags: A?.flags.length, reran: A?.reran,
         ninth: sv.flatMap((x: any) => x.last).find((l: any) => l.code === "depth")?.why ?? null }; },
@@ -344,13 +344,13 @@ const cases: Case[] = [
       return { first: a.script?.status, second: b.script?.status, firstKinds: kinds(s.entries().slice(n0, n1)), secondKinds: kinds(s.entries().slice(n1)) }; },
     good: (o) => o.first === "ran" && o.second === "nothing" && JSON.stringify(o.firstKinds) === '{"act":2,"change":1}' && JSON.stringify(o.secondKinds) === '{"act":1}' },
   { id: "B17", what: "install rules: a builder's `always`, a 1 s timer, a visitor's install, and a builder's install after the owner raises it to owner", run(s) { cast(s);
-      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } }); const t = onUse(`world.set("self", "a", 1);`);
-      const always = install(s, "bob", "box", "a", t, { scope: { ids: "self", comps: ["a"] }, every: 5, always: true }).r;
-      const fast = install(s, "bob", "box", "b", t, { scope: { ids: "self", comps: ["a"] }, every: 1 }).r;
-      const src = install(s, "bob", "box", "ok", t, { scope: { ids: "self", comps: ["a"] }, on: ["use"] }).src;
-      const vic = s.call("vic", "set", { id: "box", component: "script:c", value: { src, scope: { ids: "self", comps: ["a"] } } });
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } }); const t = onUse(`world.set("self", "t/a", 1);`);
+      const always = install(s, "bob", "box", "a", t, { scope: { ids: "self", comps: ["t/a"] }, every: 5, always: true }).r;
+      const fast = install(s, "bob", "box", "b", t, { scope: { ids: "self", comps: ["t/a"] }, every: 1 }).r;
+      const src = install(s, "bob", "box", "ok", t, { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] }).src;
+      const vic = s.call("vic", "set", { id: "box", component: "script:c", value: { src, scope: { ids: "self", comps: ["t/a"] } } });
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { install: "owner" } });
-      const raised = install(s, "bob", "box", "d", t, { scope: { ids: "self", comps: ["a"] }, on: ["use"] }).r;
+      const raised = install(s, "bob", "box", "d", t, { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] }).r;
       return { always, fast, vic, raised }; },
     good: (o) => code(o.always) === "rights" && /always/.test(o.always.refused.reason) && code(o.fast) === "shape" && /floor is 5/.test(o.fast.refused.reason) && code(o.vic) === "rights" && code(o.raised) === "rights" && /needs owner/.test(o.raised.refused.reason) },
   { id: "B18", what: "sponsor = the latest write that changes more than `paused` (§5 Two views; R on F4): an owner who EDITS bob's script (its knobs) answers for it; bob is demoted; it runs on olive's rights", run(s) { cast(s);
@@ -376,7 +376,7 @@ const cases: Case[] = [
       && o.stored === "on,paused,scope,src" && o.sponsor === "bob" && o.status === "dormant" && o.use2 === "refused rights" && o.use3 === "ran" && o.act3Sponsor === "bob" && JSON.stringify(o.auditFlags) === "[]" },
   { id: "PA4", what: "review r2 #3: only a write that changes nothing but `paused` (against the value just before it, in the same write) skips install checks: adopt, [delete, set] and [set, set] are installs", run(s) { cast(s);
       bell(s, "bob"); const v = comp(s, "bell1", "script:bell");
-      const wide = { ...v, scope: { ids: ["self", "@world"], comps: ["bell", "script-settings"], say: true } };
+      const wide = { ...v, scope: { ids: ["self", "@world"], comps: ["t/bell", "script-settings"], say: true } };
       const owner = s.call("olive", "set", { id: "bell1", component: "script:bell", value: wide }); // an owner may widen it: now olive's
       const adopt = s.call("bob", "adopt", { id: "bell1", script: "bell" });
       const reset = s.call("bob", "batch", { ops: [{ verb: "delete", args: { id: "bell1", component: "script:bell" } }, { verb: "set", args: { id: "bell1", component: "script:bell", value: wide } }] });
@@ -410,13 +410,13 @@ const cases: Case[] = [
   { id: "B19", what: "replay never runs code: the fold alone (no door, no sandbox, no blobs) gives the authority's world after script activations", run(s) { cast(s);
       bell(s, "bob"); for (let i = 0; i < 3; i++) s.call("vic", "use", { id: "bell1", action: "ring" });
       const f = F.fold(F.readLog(fs.readFileSync(s.logPath))); const foldSrc = fs.readFileSync(TREE + "shared/protocol/fold.js", "utf8");
-      return { same: F.digest(f) === F.digest(s.w().state()), rung: f.entities.bell1?.c.bell?.rung, foldImportsVm: /sandbox|scriptaudit|quickjs/.test(foldSrc) }; },
+      return { same: F.digest(f) === F.digest(s.w().state()), rung: f.entities.bell1?.c["t/bell"]?.rung, foldImportsVm: /sandbox|scriptaudit|quickjs/.test(foldSrc) }; },
     good: (o) => o.same && o.rung === 3 && !o.foldImportsVm },
   { id: "B20", what: "kill permissions: paused: true and @world.script-settings.run: false stop it; runaway work dies by fuel; 5 failures in a row pause it until it is set again", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "tick", onUse(`world.set("self", "n", (world.get("self", "n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
-      install(s, "bob", "box", "spin", onUse(`while (true) {}`), { scope: { ids: "self", comps: ["m"] }, on: ["use"] });
-      install(s, "bob", "box", "oops", onUse(`throw new Error("bad input");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "tick", onUse(`world.set("self", "t/n", (world.get("self", "t/n") ?? 0) + 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
+      install(s, "bob", "box", "spin", onUse(`while (true) {}`), { scope: { ids: "self", comps: ["t/m"] }, on: ["use"] });
+      install(s, "bob", "box", "oops", onUse(`throw new Error("bad input");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { tick: { kind: "script", script: "tick" }, spin: { kind: "script", script: "spin" }, oops: { kind: "script", script: "oops" } } });
       const v = comp(s, "box", "script:tick"); s.call("olive", "set", { id: "box", component: "script:tick", value: { ...v, paused: true } });
       const paused = s.call("vic", "use", { id: "box", action: "tick" }).script?.status; s.call("olive", "set", { id: "box", component: "script:tick", value: { ...v, paused: false } });
@@ -427,13 +427,13 @@ const cases: Case[] = [
       const sv = (s.call("olive", "scripts", {}).scripts ?? []).find((x: any) => x.script === "script:oops");
       const fv = comp(s, "box", "script:oops"); s.call("bob", "set", { id: "box", component: "script:oops", value: { ...fv, knobs: { fixed: 1 } } });
       const afterFix = s.call("vic", "use", { id: "box", action: "oops" }).script?.status;
-      return { paused, stopped, runs, spin: spin ? `${spin.status} ${spin.code}` : null, fails, status: sv?.status, afterFix, n: comp(s, "box", "n") ?? null }; },
+      return { paused, stopped, runs, spin: spin ? `${spin.status} ${spin.code}` : null, fails, status: sv?.status, afterFix, n: comp(s, "box", "t/n") ?? null }; },
     good: (o) => o.paused === "paused" && o.stopped === "stopped" && o.runs === "ran" && o.spin === "failed fuel" && JSON.stringify(o.fails) === '["failed","failed","failed","failed","failed","paused"]' && o.status === "paused" && o.afterFix === "failed" && o.n === 1 },
   { id: "B21", what: "say needs scope.say: a script without it that says something is refused whole (its write too)", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "talk", onUse(`world.set("self", "a", 1); world.say("hello");`), { scope: { ids: "self", comps: ["a"] }, on: ["use"] });
+      install(s, "bob", "box", "talk", onUse(`world.set("self", "t/a", 1); world.say("hello");`), { scope: { ids: "self", comps: ["t/a"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "talk" } } });
-      const r = s.call("vic", "use", { id: "box", action: "go" }); return { r: st(s, r), a: comp(s, "box", "a") ?? null, says: s.entries().filter((e: any) => e.kind === "say").length }; },
+      const r = s.call("vic", "use", { id: "box", action: "go" }); return { r: st(s, r), a: comp(s, "box", "t/a") ?? null, says: s.entries().filter((e: any) => e.kind === "say").length }; },
     good: (o) => o.r === "refused scope" && o.a === null && o.says === 0 },
   { id: "B22", what: "create needs scope.create, and what it creates must hang inside its subtree", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -446,7 +446,7 @@ const cases: Case[] = [
   // ---------------- D: determinism and the reader's audit ----------------
   { id: "D1", what: "41 #14/#15: a reader re-runs every activation from what its act records (head, event, ts, seed, presence reads) and gets the logged batch; a forged sponsor and an altered op are flagged", run(s) { cast(s);
       s.call("bob", "create", { id: "dice", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "dice", "roll", onUse(`world.set("self", "face", { n: Math.floor(Math.random() * 6), near: world.near(3), here: world.count(), at: Date.now(), by: e.by });`), { scope: { ids: "self", comps: ["face"] }, on: ["use"] });
+      install(s, "bob", "dice", "roll", onUse(`world.set("self", "t/face", { n: Math.floor(Math.random() * 6), near: world.near(3), here: world.count(), at: Date.now(), by: e.by });`), { scope: { ids: "self", comps: ["t/face"] }, on: ["use"] });
       s.call("bob", "set", { id: "dice", component: "reactions", value: { roll: { kind: "script", script: "roll" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); for (let i = 0; i < 3; i++) s.call("vic", "use", { id: "dice", action: "roll" });
       s.call("vic", "move", { to: [0, 0, 5] }); s.call("vic", "use", { id: "dice", action: "roll" }, 2000); // walked away: the 4th roll's near is []
@@ -463,10 +463,10 @@ const cases: Case[] = [
   { id: "D2", what: "41 §3.7: an activation's clock is frozen at its act's ts, and Math.random is seeded from its act: the same seed gives the same numbers, another seed others", run(s) { cast(s);
       if (!SB) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "clock", onUse(`const t0 = Date.now(); let x = 0; for (let i = 0; i < 2e5; i++) x += i; world.set("self", "t", { now: Date.now(), same: Date.now() === t0 && new Date().getTime() === t0 && world.now === t0, r: [Math.random(), Math.random()] });`), { scope: { ids: "self", comps: ["t"] }, on: ["use"] });
+      install(s, "bob", "box", "clock", onUse(`const t0 = Date.now(); let x = 0; for (let i = 0; i < 2e5; i++) x += i; world.set("self", "t/t", { now: Date.now(), same: Date.now() === t0 && new Date().getTime() === t0 && world.now === t0, r: [Math.random(), Math.random()] });`), { scope: { ids: "self", comps: ["t/t"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "clock" } } });
-      const r1 = s.call("vic", "use", { id: "box", action: "go" }); const t1 = comp(s, "box", "t"); const act1 = s.entries()[r1.script?.act];
-      const r2 = s.call("vic", "use", { id: "box", action: "go" }); const t2 = comp(s, "box", "t");
+      const r1 = s.call("vic", "use", { id: "box", action: "go" }); const t1 = comp(s, "box", "t/t"); const act1 = s.entries()[r1.script?.act];
+      const r2 = s.call("vic", "use", { id: "box", action: "go" }); const t2 = comp(s, "box", "t/t");
       const again = SB.runScript({ text: s.w().getBlob(act1.body.src).text, self: "box", key: "script:clock", event: act1.body.event, now: act1.ts, seed: act1.body.seed, st: F.fold(s.entries(), { until: act1.body.head }) });
       return { nowIsTs: t1?.now === act1?.ts, same: t1?.same, r1: t1?.r, r2: t2?.r, rerun: again.ops?.[0]?.value?.r }; },
     good: (o) => o.nowIsTs && o.same === true && JSON.stringify(o.r1) === JSON.stringify(o.rerun) && JSON.stringify(o.r1) !== JSON.stringify(o.r2) },
@@ -475,15 +475,15 @@ const cases: Case[] = [
       const f = path.join(root, "tz-probe.ts");
       fs.writeFileSync(f, `import { runScript } from ${JSON.stringify(TREE + "shared/protocol/sandbox.js")};
 const r = runScript({ self: "b", key: "script:x", now: 1800000000000, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" },
-  text: 'world.on("use", () => { const d = new Date(); world.set("self", "t", [d.getHours(), d.getTimezoneOffset(), String(d), Date(), new Date(2020, 0, 1).getTime(), Date.parse("2020-01-01T00:00"), new Date("2020-01-01 12:30").getTime(), d.toLocaleString(), d.toTimeString()]); })' });
+  text: 'world.on("use", () => { const d = new Date(); world.set("self", "t/t", [d.getHours(), d.getTimezoneOffset(), String(d), Date(), new Date(2020, 0, 1).getTime(), Date.parse("2020-01-01T00:00"), new Date("2020-01-01 12:30").getTime(), d.toLocaleString(), d.toTimeString()]); })' });
 console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
   { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute, and a sponsor to `cpu` ms of sandbox time", run(s) { cast(s);
       s.call("bob", "create", { id: "ear", model: "crate", place: { at: [0, 0] } }); s.call("ann", "create", { id: "mill", model: "crate", place: { at: [2, 0] } });
-      install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
-      install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] });
+      install(s, "bob", "ear", "idle", `world.on("say", () => {});\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
+      install(s, "ann", "mill", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
       const last = (id: string) => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === id).last.at(-1);
       // phase 1: runs (cpu out of the way)
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { runs: 5, cpu: 60000 } });
@@ -500,7 +500,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
       s.call("olive", "set", { id: "@world", component: "roles:gus", value: { role: "builder" } });
       s.call("gus", "create", { id: "gbox", model: "crate", place: { at: [0, 0] } });
-      install(s, "gus", "gbox", "g", onUse(`world.set("self", "n", 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "gus", "gbox", "g", onUse(`world.set("self", "t/n", 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("gus", "set", { id: "gbox", component: "reactions", value: { go: { kind: "script", script: "g" } } });
       s.call("olive", "delete", { id: "@world", component: "roles:gus" });
       const direct = s.call("gus", "set", { id: "gbox", component: "label", value: "x" }); const r = s.call("vic", "use", { id: "gbox", action: "go" });
@@ -508,11 +508,11 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.direct === "rights" && o.r === "refused rights" && o.status === "dormant" },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
-      ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
+      ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
     id, what: `41 #9 runaway: ${body.slice(0, 40)} → ${want}; it writes nothing and the next activation still runs`, run(s: any) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      const src = s.w().putBlob({ lang: "js", api: 1, text: `world.on("use", (e) => { if (e.args?.ok) { world.set("self", "n", 1); return; } ${body} });\n` });
-      const inst = s.call("bob", "set", { id: "box", component: "script:x", value: { src, scope: { ids: "self", comps: ["n"] }, on: ["use"] } });
+      const src = s.w().putBlob({ lang: "js", api: 1, text: `world.on("use", (e) => { if (e.args?.ok) { world.set("self", "t/n", 1); return; } ${body} });\n` });
+      const inst = s.call("bob", "set", { id: "box", component: "script:x", value: { src, scope: { ids: "self", comps: ["t/n"] }, on: ["use"] } });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "x" } } }); const n0 = s.entries().length;
       const r = s.call("vic", "use", { id: "box", action: "go" }); const scripted = s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length;
       const next = s.call("vic", "use", { id: "box", action: "go", args: { ok: true } });
@@ -524,7 +524,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!SB?.isolationStats) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const HOSTILE = { idx: `const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`, pow: `(7n ** 300000n).toString().length;`, fill: `let a = []; for (;;) a.push(new Array(1e5).fill(1));` };
-      for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      for (const [k, body] of Object.entries(HOSTILE)) install(s, "bob", "box", k, onUse(body), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(Object.keys(HOSTILE).map((k) => [k, { kind: "script", script: k }])) });
       SB.warm(); Bun.sleepSync(800); // warm processes, as an authority with scripts has at load
       const k0 = SB.isolationStats().kills; const runs: any[] = [];
@@ -541,7 +541,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!SB?.isolationStats) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { idx: { kind: "script", script: "idx" } } });
       process.env.EIDO_SANDBOX_TEST_DELAY = "3000"; // the spares started from here on are slow to start (a loaded host)
       const runs: string[] = []; let worst = 0;
@@ -554,7 +554,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!D.setScriptDuty) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "idx", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { idx: { kind: "script", script: "idx" } } });
       D.setScriptDuty({ maxMs: DUTY0.maxMs }); const t0 = performance.now(); const rs: string[] = [];
       for (let i = 0; i < 12; i++) { const r = s.call("vic", "use", { id: "box", action: "idx", dry: true }, 50); rs.push(`${r.script?.status} ${r.script?.code}`); }
@@ -563,18 +563,18 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
   { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
-      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { data: { xs: big } } } })) }, 6000); // under the byte rate
+      for (let b = 0; b < 15; b++) s.call("olive", "batch", { ops: Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } })) }, 6000); // under the byte rate
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "heavy", onUse(`for (let i = 0; i < 31; i++) world.set("self", "n", i); world.get("self"); world.set("self", "m", world.ids().length); world.children("box");`), { scope: { ids: "self", comps: ["n", "m"] }, on: ["use"] });
+      install(s, "bob", "box", "heavy", onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`), { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
-      return { r: st(s, r), ms: Math.round(ms), m: comp(s, "box", "m"), things: Object.keys(s.w().state().entities).length }; },
+      return { r: st(s, r), ms: Math.round(ms), m: comp(s, "box", "t/m"), things: Object.keys(s.w().state().entities).length }; },
     good: (o) => o.r === "ran" && o.ms < 400 && o.m === 1000 && o.things > 1500 },
   { id: "I6", what: "review r2 #4: a sandbox process that dies mid-run is noticed at once (end of file on its pipe), not at the deadline, even before it's reaped", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "long", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "long", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "long" } } });
       const pid = SB.isolationStats().next; if (!pid) return { pid: null };
       Bun.spawn(["sh", "-c", `sleep 0.12; kill -9 ${pid}`]); // someone else kills it (an OOM killer, an operator)
@@ -586,9 +586,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       SB.warm(); Bun.sleepSync(800);
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 40 } });
       for (let i = 0; i < 30; i++) { const who = ["bob", "cat", "ann"][i % 3]; s.call(who, "create", { id: `ear${i}`, model: "crate", place: { at: [i % 10 - 5, Math.floor(i / 10)] } });
-        install(s, who, `ear${i}`, "grind", `world.on("say", () => { let x = 0; for (let k = 0; k < 1e5; k++) x += Math.sqrt(k); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] }); }
+        install(s, who, `ear${i}`, "grind", `world.on("say", () => { let x = 0; for (let k = 0; k < 1e5; k++) x += Math.sqrt(k); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] }); }
       s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });
-      install(s2, "olive", "cup", "go", onUse(`world.set("self", "n", 1);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s2, "olive", "cup", "go", onUse(`world.set("self", "t/n", 1);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s2.call("olive", "set", { id: "cup", component: "reactions", value: { go: { kind: "script", script: "go" } } });
       s.advance(61000); Bun.sleepSync(1100);
       D.setScriptDuty({ maxMs: DUTY0.maxMs });
@@ -602,7 +602,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!SB?.isolationStats) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "n", x);`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "t/n", x);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "calm" } } });
       const pid = SB.isolationStats().next; if (!pid) return { pid: null };
       Bun.spawn(["sh", "-c", `kill -STOP ${pid}`]); Bun.sleepSync(100);
@@ -615,7 +615,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!SB?.isolationStats) return { absent: true };
       SB.warm(); Bun.sleepSync(800);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "box", "ask", onUse(`for (let i = 0; i < 64; i++) world.name("vic");`), { scope: { ids: "self", comps: ["n"] }, on: ["use"] });
+      install(s, "bob", "box", "ask", onUse(`for (let i = 0; i < 64; i++) world.name("vic");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "ask" } } });
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|ask"]?.fails ?? 0 }; },
@@ -625,7 +625,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!D.setScriptDuty) return { absent: true };
       SB.warm(); Bun.sleepSync(800); D.setScriptDuty({ maxMs: DUTY0.maxMs, windowMs: DUTY0.windowMs });
       for (let i = 0; i < 12; i++) { const who = i % 2 ? "bob" : "cat"; s.call(who, "create", { id: `ear${i}`, model: "crate", place: { at: [i - 6, 2] } });
-        install(s, who, `ear${i}`, "spin", `world.on("say", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n`, { scope: { ids: "self", comps: ["n"] }, on: ["say"] }); }
+        install(s, who, `ear${i}`, "spin", `world.on("say", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] }); }
       s.advance(61000); s.call("olive", "look", {}); // fresh minute; the pool is warm
       const t0 = performance.now(); const r = s.call("vic", "say", { text: "hello" }); const ms = performance.now() - t0;
       const t1 = performance.now(); const other = s2.call("olive", "inspect", { id: "cup" }); const otherMs = performance.now() - t1;
@@ -649,50 +649,50 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "parrot", "echo", `world.on("say", (e) => { world.set("self", "heard", { by: e.by, text: e.text, n: (world.get("self", "heard")?.n ?? 0) + 1 }); world.say("squawk: " + e.text); });\n`, { scope: { ids: "self", comps: ["heard"], say: true }, on: ["say"] });
+      install(s, "bob", "parrot", "echo", `world.on("say", (e) => { world.set("self", "t/heard", { by: e.by, text: e.text, n: (world.get("self", "t/heard")?.n ?? 0) + 1 }); world.say("squawk: " + e.text); });\n`, { scope: { ids: "self", comps: ["t/heard"], say: true }, on: ["say"] });
       s.call("vic", "say", { text: "!hello" });
       const act = s.entries().find((e: any) => e.actor === "script:parrot" && e.kind === "act"); const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
-      return { heard: comp(s, "parrot", "heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
+      return { heard: comp(s, "parrot", "t/heard"), squawks: s.entries().filter((e: any) => e.kind === "say" && e.actor === "script:parrot").map((e: any) => e.body.text),
         copied: JSON.stringify(act?.body?.event ?? {}).includes("!hello"), audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     good: (o) => o.heard?.by === "vic" && o.heard?.text === "!hello" && o.heard?.n === 1 && JSON.stringify(o.squawks) === '["squawk: !hello"]' && o.copied === false && o.audit === "1/1 " },
   { id: "E2", what: "enter / leave: the host says who arrived or left; scripts that list them hear it, by identity (presence, told by the host)", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "door1", "greet", `world.on("enter", (e) => world.set("self", "last", "hello " + e.by));\nworld.on("leave", (e) => world.set("self", "last", "bye " + e.by));\n`, { scope: { ids: "self", comps: ["last"] }, on: ["enter", "leave"] });
-      T += 100; process.env.PROTOCOL_NOW = String(T); const a = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => x.status); const after1 = comp(s, "door1", "last");
-      T += 100; process.env.PROTOCOL_NOW = String(T); D.presenceEvent(s.w(), "leave", "vic"); const after2 = comp(s, "door1", "last");
+      install(s, "bob", "door1", "greet", `world.on("enter", (e) => world.set("self", "t/last", "hello " + e.by));\nworld.on("leave", (e) => world.set("self", "t/last", "bye " + e.by));\n`, { scope: { ids: "self", comps: ["t/last"] }, on: ["enter", "leave"] });
+      T += 100; process.env.PROTOCOL_NOW = String(T); const a = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => x.status); const after1 = comp(s, "door1", "t/last");
+      T += 100; process.env.PROTOCOL_NOW = String(T); D.presenceEvent(s.w(), "leave", "vic"); const after2 = comp(s, "door1", "t/last");
       return { a, after1, after2 }; },
     good: (o) => JSON.stringify(o.a) === '["ran"]' && o.after1 === "hello vic" && o.after2 === "bye vic" },
   { id: "E3", what: "changed:<comp>: a lever's door opening lights the path (a cascade across scripts, one activation per triggering entry)", run(s) { cast(s);
       s.call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } });
       s.call("bob", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
       s.call("bob", "create", { id: "path", model: "crate", place: { at: [3, 0] } });
-      install(s, "bob", "path", "lights", `world.on("changed:openable", (e) => world.set("self", "glow", world.get("gate", "openable").open === true));\n`, { scope: { ids: ["self", "gate"], comps: ["glow"] }, on: ["changed:openable"] });
-      s.call("vic", "use", { id: "gate", action: "open" }); const lit1 = comp(s, "path", "glow");
-      s.call("vic", "use", { id: "gate", action: "open" }); const lit2 = comp(s, "path", "glow");
+      install(s, "bob", "path", "lights", `world.on("changed:openable", (e) => world.set("self", "t/glow", world.get("gate", "openable").open === true));\n`, { scope: { ids: ["self", "gate"], comps: ["t/glow"] }, on: ["changed:openable"] });
+      s.call("vic", "use", { id: "gate", action: "open" }); const lit1 = comp(s, "path", "t/glow");
+      s.call("vic", "use", { id: "gate", action: "open" }); const lit2 = comp(s, "path", "t/glow");
       const act = s.entries().findLast((e: any) => e.actor === "script:path" && e.kind === "act");
       return { lit1, lit2, on: act?.body?.on, by: act?.body?.trigger?.actor, comp: act?.body?.event?.comp }; },
     good: (o) => o.lit1 === true && o.lit2 === false && o.on === "changed:openable" && o.by === "vic" && o.comp === "openable" },
   { id: "E4", what: "sleep and wake: nobody here → the timer sleeps (0 entries); someone arrives → ONE wake {slept}, then ticks; never a burst", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("bob", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "clock", "chime", `world.on("tick", () => world.set("self", "n", (world.get("self", "n") ?? 0) + 1));\nworld.on("wake", (e) => world.set("self", "woke", e.slept));\n`, { scope: { ids: "self", comps: ["n", "woke"] }, every: 10 });
+      install(s, "bob", "clock", "chime", `world.on("tick", () => world.set("self", "t/n", (world.get("self", "t/n") ?? 0) + 1));\nworld.on("wake", (e) => world.set("self", "t/woke", e.slept));\n`, { scope: { ids: "self", comps: ["t/n", "t/woke"] }, every: 10 });
       const n0 = s.entries().length; for (let i = 0; i < 360; i++) { s.advance(10000); s.tick(); } const asleep = s.entries().slice(n0).length;
       s.call("vic", "move", { to: [0, 0, 2] }); const evs: string[] = [];
       for (let i = 0; i < 3; i++) { s.advance(10000); for (const r of s.tick()) evs.push(r.status); }
-      return { asleep, evs, woke: comp(s, "clock", "woke"), n: comp(s, "clock", "n") }; },
+      return { asleep, evs, woke: comp(s, "clock", "t/woke"), n: comp(s, "clock", "t/n") }; },
     good: (o) => o.asleep === 0 && JSON.stringify(o.evs) === '["ran","ran","ran"]' && o.woke >= 3590 && o.woke <= 3610 && o.n === 2 },
   // ---------------- P: param.<name> ----------------
   { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", model: "swing-seat", place: { at: [0, 0] } });
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
-      install(s, "bob", "swing", "pump", onUse(`world.param("self", "light", "lean", 0.25); world.param("self", "pose", "lean", -1);`), { scope: { ids: "self", comps: ["light", "pose"] }, on: ["use"] });
+      install(s, "bob", "swing", "pump", onUse(`world.param("self", "light", "lean", 0.25); world.param("self", "t/pose", "lean", -1);`), { scope: { ids: "self", comps: ["light", "t/pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "swing", component: "reactions", value: { pump: { kind: "script", script: "pump" } } });
       const r = s.call("vic", "use", { id: "swing", action: "pump" });
       const typo = s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensty: 2, "param.lean": 1 } });
-      return { r: st(s, r), light: comp(s, "swing", "light"), pose: comp(s, "swing", "pose"), typo: code(typo) }; },
+      return { r: st(s, r), light: comp(s, "swing", "light"), pose: comp(s, "swing", "t/pose"), typo: code(typo) }; },
     good: (o) => o.r === "ran" && o.light?.["param.lean"] === 0.25 && o.light?.intensity === 1 && o.pose?.["param.lean"] === -1 && o.typo === "schema" },
-  { id: "P2", what: "param values are numbers: a direct set of param.lean = 'far' is refused, as is a bad parameter name, and world.param('x', 'on') throws in the script", run(s) { cast(s);
+  { id: "P2", what: "param values are numbers: a direct set of param.lean = 'far' is refused, as is a bad parameter name, and world.param('x', 't/on') throws in the script", run(s) { cast(s);
       s.call("bob", "create", { id: "seat", model: "crate", place: { at: [0, 0] } });
       const str = s.call("bob", "set", { id: "seat", component: "light", value: { kind: "point", "param.lean": "far" } });
       const name = s.call("bob", "set", { id: "seat", component: "light", value: { kind: "point", "param.9": 1 } });
@@ -732,38 +732,38 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "bell1", model: "bell", components: { pivot: { pos: [0, 1.6, 0] } }, place: { at: [0, 0] } });
       install(s, "bob", "bell1", "keeper", `world.on("use", (e) => {
   if (e.action !== "ring") return;
-  const rings = (world.get("self", "bellkeeper")?.rings ?? 0) + 1;
-  world.set("self", "bellkeeper", { rings });
+  const rings = (world.get("self", "t/bellkeeper")?.rings ?? 0) + 1;
+  world.set("self", "t/bellkeeper", { rings });
   world.set("self", "motion", { type: "pendulum", axis: [0, 0, 1], amp: 0.5, phase: 0, damp: 0.25, period: world.knobs.period ?? 2.2, t0: Date.now() });
   world.say((world.knobs.note ?? "the bell tolls") + " (" + rings + ") — rung by " + e.by);
 });
-`, { scope: { ids: "self", comps: ["bellkeeper", "motion"], say: true }, on: ["use"], knobs: { period: 2.2, note: "the bell tolls" } });
+`, { scope: { ids: "self", comps: ["t/bellkeeper", "motion"], say: true }, on: ["use"], knobs: { period: 2.2, note: "the bell tolls" } });
       s.call("bob", "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "keeper" } } });
       const ring = s.call("vic", "use", { id: "bell1", action: "ring" });
       // greeter: world-level in v1; now a script lives on a thing (a sign), and hears every arrival
       s.call("bob", "create", { id: "sign", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "sign", "greeter", `world.on("enter", (e) => {
-  const met = (world.get("self", "greeter")?.met ?? 0) + 1;
-  world.set("self", "greeter", { met });
+  const met = (world.get("self", "t/greeter")?.met ?? 0) + 1;
+  world.set("self", "t/greeter", { met });
   world.say((world.knobs.greeting ?? "welcome") + ", " + (world.name(e.by) ?? e.by) + " — you are visitor #" + met);
 });
-`, { scope: { ids: "self", comps: ["greeter"], say: true }, on: ["enter"], knobs: { greeting: "welcome to the meadow" } });
+`, { scope: { ids: "self", comps: ["t/greeter"], say: true }, on: ["enter"], knobs: { greeting: "welcome to the meadow" } });
       T += 100; process.env.PROTOCOL_NOW = String(T); D.presenceEvent(s.w(), "enter", "vic");
       // lighthouse: world.every(60) → every: 60 in the component; people() → world.count()
       s.call("bob", "create", { id: "lamp1", model: "floor-lamp", place: { at: [-3, 0] } });
       install(s, "bob", "lamp1", "keeper", `world.on("tick", () => {
-  const n = (world.get("self", "lighthouse")?.sweeps ?? 0) + 1;
-  world.set("self", "lighthouse", { sweeps: n });
+  const n = (world.get("self", "t/lighthouse")?.sweeps ?? 0) + 1;
+  world.set("self", "t/lighthouse", { sweeps: n });
   const here = world.count();
   if (here > 0) world.say((world.knobs.text ?? "all clear") + " — sweep " + n + ", " + here + " soul(s) in view");
 });
-`, { scope: { ids: "self", comps: ["lighthouse"], say: true }, every: 60, knobs: { text: "all clear" } });
+`, { scope: { ids: "self", comps: ["t/lighthouse"], say: true }, every: 60, knobs: { text: "all clear" } });
       s.call("vic", "move", { to: [0, 0, 2] });
       for (let i = 0; i < 3; i++) { s.advance(60000); s.tick(); }
       const says = s.entries().filter((e: any) => e.kind === "say" && isScriptActor(e.actor)).map((e: any) => e.body.text);
       NAMES.vic = "Vee"; // a rename in the directory afterwards: the audit replays the name the act recorded
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
-      return { ring: st(s, ring), motion: comp(s, "bell1", "motion")?.type, rings: comp(s, "bell1", "bellkeeper")?.rings, met: comp(s, "sign", "greeter")?.met, sweeps: comp(s, "lamp1", "lighthouse")?.sweeps, says,
+      return { ring: st(s, ring), motion: comp(s, "bell1", "motion")?.type, rings: comp(s, "bell1", "t/bellkeeper")?.rings, met: comp(s, "sign", "t/greeter")?.met, sweeps: comp(s, "lamp1", "t/lighthouse")?.sweeps, says,
         audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
     opts: { nameOf: (id: string) => NAMES[id] ?? null },
     good: (o) => o.ring === "ran" && o.motion === "pendulum" && o.rings === 1 && o.met === 1 && o.sweeps === 2 && o.audit === "4/4 "
@@ -779,18 +779,18 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   // ---------------- H: hygiene and syntax ----------------
   { id: "H1", what: "41 #16 Trojan Source at upload: U+202E inside a comment; code at column 4,000; a BOM; a zero-width space", run(s) { cast(s);
       const up = (t: string) => code(s.call("bob", "upload", { text: t }));
-      return { bidi: up(`// harmless ‮ ;)"neewteb"\nworld.on("use", () => {});`), wide: up(`world.on("use", () => {});${" ".repeat(4000)}world.set("self","a",1)`), bom: up(`﻿world.on("use", () => {});`), zw: up(`world.on("use", () => { const a​ = 1; });`) }; },
+      return { bidi: up(`// harmless ‮ ;)"neewteb"\nworld.on("use", () => {});`), wide: up(`world.on("use", () => {});${" ".repeat(4000)}world.set("self","t/a",1)`), bom: up(`﻿world.on("use", () => {});`), zw: up(`world.on("use", () => { const a​ = 1; });`) }; },
     good: (o) => o.bidi === "trojan-source" && o.wide === "long-line" && o.bom === "source-bom" && o.zw === "trojan-source" },
   { id: "H2", what: "…and at install (what binds): a blob put without upload's check is still refused when set as a script", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const src = s.w().putBlob({ lang: "js", api: 1, text: `// harmless ‮ ;)\nworld.on("use", () => {});` });
-      const r = s.call("bob", "set", { id: "box", component: "script:a", value: { src, scope: { ids: "self", comps: ["a"] }, on: ["use"] } });
+      const r = s.call("bob", "set", { id: "box", component: "script:a", value: { src, scope: { ids: "self", comps: ["t/a"] }, on: ["use"] } });
       return { r: code(r), why: r.refused?.reason }; },
     good: (o) => o.r === "trojan-source" && /U\+202E/.test(o.why) },
   { id: "H4", what: "a scope naming a typo of a registered component (lit → light) is refused at install, not at every run", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const r = install(s, "bob", "box", "a", onUse(`world.set("self", "lit", true);`), { scope: { ids: "self", comps: ["lit"] }, on: ["use"] }).r;
-      const own = install(s, "bob", "box", "b", onUse(`world.set("self", "glow", true);`), { scope: { ids: "self", comps: ["glow", "my.place/lit"] }, on: ["use"] }).r;
+      const own = install(s, "bob", "box", "b", onUse(`world.set("self", "t/glow", true);`), { scope: { ids: "self", comps: ["t/glow", "my.place/lit"] }, on: ["use"] }).r;
       return { r: code(r), dym: r.refused?.didYouMean?.[0], own: show(own) }; },
     good: (o) => o.r === "schema" && o.dym === "light" && o.own === "ok" },
   { id: "H5", what: "uploads are rate-limited (20 a person a minute: a blob costs storage and a parse, and logs nothing)", run(s) { cast(s);
@@ -800,9 +800,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.rs.slice(0, 20).every((x: string) => x === "ok") && o.rs[20] === "rate" && o.rs[21] === "rate" && o.rs[22] === "ok" },
   { id: "H3", what: "source that doesn't parse is refused at upload and at install, with the line", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-      const u = s.call("bob", "upload", { text: "world.on('use', () => {\n  world.set('self', 'a' 1);\n});" });
-      const src = s.w().putBlob({ lang: "js", api: 1, text: "world.on('use', () => {\n  world.set('self', 'a' 1);\n});" });
-      const r = s.call("bob", "set", { id: "box", component: "script:a", value: { src, scope: { ids: "self", comps: ["a"] }, on: ["use"] } });
+      const u = s.call("bob", "upload", { text: "world.on('use', () => {\n  world.set('self', 't/a' 1);\n});" });
+      const src = s.w().putBlob({ lang: "js", api: 1, text: "world.on('use', () => {\n  world.set('self', 't/a' 1);\n});" });
+      const r = s.call("bob", "set", { id: "box", component: "script:a", value: { src, scope: { ids: "self", comps: ["t/a"] }, on: ["use"] } });
       return { u: code(u), r: code(r), why: r.refused?.reason }; },
     good: (o) => o.u === "syntax" && o.r === "syntax" && /line 2/.test(o.why) },
 ];
@@ -830,10 +830,10 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     const ann = await client("Ann");
     const mk = await ann.req("create", { id: "bell1" });
     const up1 = await ann.req("upload", { text: BELL });
-    const inst = await ann.req("set", { id: "bell1", component: "script:bell", value: { src: up1.src, scope: { ids: "self", comps: ["bell"], say: true }, on: ["use"] } });
+    const inst = await ann.req("set", { id: "bell1", component: "script:bell", value: { src: up1.src, scope: { ids: "self", comps: ["t/bell"], say: true }, on: ["use"] } });
     await ann.req("set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } });
-    const up2 = await ann.req("upload", { text: `world.on("tick", () => world.set("self", "beats", (world.get("self", "beats") ?? 0) + 1));\nworld.on("enter", (e) => world.set("self", "hello", e.by));\n` });
-    const clock = await ann.req("set", { id: "bell1", component: "script:clock", value: { src: up2.src, scope: { ids: "self", comps: ["beats", "hello"] }, on: ["enter"], every: 5 } });
+    const up2 = await ann.req("upload", { text: `world.on("tick", () => world.set("self", "t/beats", (world.get("self", "t/beats") ?? 0) + 1));\nworld.on("enter", (e) => world.set("self", "t/hello", e.by));\n` });
+    const clock = await ann.req("set", { id: "bell1", component: "script:clock", value: { src: up2.src, scope: { ids: "self", comps: ["t/beats", "t/hello"] }, on: ["enter"], every: 5 } });
     const bob = await client("Bob"); await sleep(300);
     const ring = await bob.req("use", { id: "bell1", action: "ring" });
     await sleep(11500); // two 5 s periods on the server's 1 s clock (the first only arms the timer)
@@ -844,7 +844,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
       ann.ws.addEventListener("message", on); ann.send({ type: "debug", scripts: true, reqId: "d1" }); setTimeout(() => res(null), 3000); });
     const srvLog = fs.readFileSync(logf, "utf8") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : "");
     ann.ws.close(); bob.ws.close();
-    return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0.bell?.rung, tickActs, beats: st0.beats, hello: st0.hello === bob.you,
+    return { mk: mk.ok, inst: show(inst), clock: show(clock), ring: ring.script?.status, rung: st0["t/bell"]?.rung, tickActs, beats: st0["t/beats"], hello: st0["t/hello"] === bob.you,
       sawScript: bob.msgs.some((m) => m.type === "log" && m.entries.some((e: any) => e.actor === "script:bell1" && e.body?.on === "tick")),
       roster: dbg?.events?.map((e: any) => `${e.id}:${e.status}`), v1Host: /\[behaviors\]|behavior tick/.test(srvLog), malformed: F.fold(L).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).length };
   } finally { proc.kill(); }
@@ -873,7 +873,7 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");
       await ann.req("create", { id: "box" });
       const u = await ann.req("upload", { text: `world.on("use", () => { const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b"); });\n` });
-      const inst = await ann.req("set", { id: "box", component: "script:spin", value: { src: u.src, scope: { ids: "self", comps: ["n"] }, on: ["use"] } });
+      const inst = await ann.req("set", { id: "box", component: "script:spin", value: { src: u.src, scope: { ids: "self", comps: ["t/n"] }, on: ["use"] } });
       await ann.req("set", { id: "box", component: "reactions", value: { spin: { kind: "script", script: "spin" } } });
       await sleep(800); // the world now holds a script: its sandbox processes warm
       const rounds = [];
