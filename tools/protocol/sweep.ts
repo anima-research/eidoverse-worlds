@@ -21,7 +21,7 @@ import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
-import { translate as translateV1, DROPPED } from "./import-v1/translate-v1.js";
+import { translate as translateV1, DROPPED, hasEpoch } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/protocol/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
@@ -67,7 +67,9 @@ for (const name of Object.keys(golden)) {
   check(`${name}: strict read-back ok, 0 malformed`, back.status === "ok" && !back.diagnostics.some(([, k]: any) => k.startsWith("malformed")), JSON.stringify(back.diagnostics.filter(([, k]: any) => k.startsWith("malformed")).slice(0, 3)));
   const where = Object.entries(s0.bodies).every(([id, b]: [string, any]) => c(back.entities?.[id]?.c.transform.pos) === c(b.p));
   check(`${name}: with no engine at all, everything rests where hers rests`, where);
-  const sf = simFold(readLog(text(r.out)), Math.max(...r.out.map((e: any) => e.ts ?? 0)));
+  // re-checked as the live host runs the sim layer (server/livehost.ts, the replica: no catalogue of its own, geometry only
+  // through physics.shape): the digest each rest carries covers the engine's boxes table, so it is the live one's
+  const sf = simFold(readLog(text(r.out)), Math.max(...r.out.map((e: any) => e.ts ?? 0)), { models: {} });
   check(`${name}: a carrier re-checks every rest`, sf.checks.agree === r.stats.rests && !sf.checks.disagree.length, JSON.stringify(sf.checks).slice(0, 200));
 }
 
@@ -86,7 +88,12 @@ const POSE = new Set(["offset", "yaw", "q"]);
 // v1's parent.slot is today's parent.socket: shared/hierarchy.js (the renderer's reading) speaks the protocol
 const asSocketParent = (e: any) => (e?.parent && "slot" in e.parent ? { ...e, parent: (({ slot, ...p }) => ({ ...p, socket: slot }))(e.parent) } : e);
 const v1Shim = (ents: any) => (ents ? Object.fromEntries(Object.entries<any>(ents).map(([k, e]) => [k, asSocketParent(e)])) : ents);   // per call: the v1 fold mutates its state in place
-function oldNorm(st: any) {
+// A physics-epoch log (translate-v1@10): the old world is her instant fold COMPOSED with her sim, so the reference here
+// runs her sim beside the v1 fold (independently of the translator's bookkeeping): a body stands where it last came to
+// rest in her sim while her sim still holds it (resting, or flying again), and a thing whose lib has a box in her sim's
+// stamped table carries that box as physics.shape. Declared: the epoch is @world physics-engine {engine, build, tickMs};
+// its ts and seq are where its change entry stands in the new log, and build is the authority's engine stamp.
+function oldNorm(st: any, phys: any = null) {
   const ents: any = {}; let shim: any = null;
   for (const [id, e0] of Object.entries<any>(st.entities ?? {})) {
     const e: any = {};
@@ -108,6 +115,8 @@ function oldNorm(st: any) {
     // declared (translate-v1@5 DROPPED motion.rpm): a spin's rpm is degPerSec = rpm × 6 (degPerSec wins when both were written)
     if (n.comp) for (const [k, m] of Object.entries<any>(n.comp)) if ((k === "motion" || k.startsWith("motion:")) && m && typeof m === "object" && "rpm" in m) {
       const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
+    if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
+    if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { shape: phys.sim.boxes[e0.lib] } };
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
   }
@@ -118,6 +127,7 @@ function oldNorm(st: any) {
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     world.sky = sky; }
+  if (phys && world.epoch) world.epoch = { sim: world.epoch.sim, tickMs: world.epoch.tickMs };
   return { ents, world };
 }
 // today's body socket is v1's seat (translate-v1's sockets mapping)
@@ -146,6 +156,7 @@ function unproject(ents0: any) {
       for (const [k, v] of Object.entries<any>(comps)) {
         if (["sky", "terrain", "grass"].includes(k)) world[k] = v;
         else if (k === "imported-epoch") world.epoch = v;
+        else if (k === "physics-engine") world.epoch = { sim: v.engine, tickMs: v.tickMs };   // translate-v1@10: a dialect-3 epoch
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
         else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']
         else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = fromCan(v);
@@ -183,8 +194,8 @@ function unproject(ents0: any) {
   }
   return { ents, world };
 }
-function lossAt(oldSt: any, st: any) {
-  const a = oldNorm(oldSt), b = unproject(Object.fromEntries(Object.keys(st.entities).map((id) => [id, st.entities[id].c])));
+function lossAt(oldSt: any, st: any, phys: any = null) {
+  const a = oldNorm(oldSt, phys), b = unproject(Object.fromEntries(Object.keys(st.entities).map((id) => [id, st.entities[id].c])));
   if (c(a) === c(b)) return null;
   for (const id of new Set([...Object.keys(a.ents), ...Object.keys(b.ents)])) if (c(a.ents[id]) !== c(b.ents[id])) return { id, old: a.ents[id], now: b.ents[id] };
   for (const k of new Set([...Object.keys(a.world), ...Object.keys(b.world)])) if (c(a.world[k]) !== c(b.world[k])) return { world: k, old: a.world[k], now: b.world[k] };
@@ -212,10 +223,17 @@ for (const p of logs.sort()) {
   // the inverse, aligned by act: the k-th act/say in the log is the k-th non-genesis old entry
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
   const v1 = v1Empty(); const now = emptyState(); let k = -1, loss: any = null;
-  const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, now); if (x) loss = { oldSeq: body[i].seq, ...x }; };
+  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {} } : null;
+  const settle = (tick: number) => { if (!phys?.sim.epoch) return; eidosim.advanceSim(phys.sim, tick);   // schedule-independent: one jump is exact
+    for (const [id, b] of Object.entries<any>(phys.sim.bodies)) if (b.resting) phys.restAt[id] = b.p.slice();
+    for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
+  const compareAt = (i: number) => { if (loss || i < 0) return; if (i % every && i !== body.length - 1) return; const x = lossAt(v1, now, phys); if (x) loss = { oldSeq: body[i].seq, ...x }; };
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
-    if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { compareAt(k); k++; foldEntry(v1, body[k]); } // `translated` (genesis's companion, translate-v1@3) has no old entry
+    if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) has no old entry
+      if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
+      compareAt(k); k++; foldEntry(v1, body[k]); if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
+  if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does
   compareAt(k); if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)

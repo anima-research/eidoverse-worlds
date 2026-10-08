@@ -265,15 +265,146 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const fresh = path.join(tmp, "fresh"); fs.mkdirSync(fresh);
   ok(custodyFileIn(fresh) === path.join(fresh, CUSTODY_FILE) && fs.readdirSync(fresh).length === 0, "K5 a fresh worlds dir: the current name, and nothing created by asking", fs.readdirSync(fresh)); }
 
-// ---- EP: a v1 log with a physics epoch (dialect 3) must not translate quietly lossy (2026-10-08: the live Commons has
-// eidosim@0.5.0 from seq 15641; translate-v1 kept each punt as an `imported` record and left the punted ball at its
-// pre-punt place, reporting "0 divergences" because it only compares against the instant fold; her sim rests it elsewhere) ----
-{ const { translateV1World } = await import("./import-v1/world.ts");
-  const W = path.join(tmp, "ep"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
-  fs.copyFileSync(path.join(import.meta.dir, "../../spec/fixtures/replay/eidosim-0.5/log.jsonl"), path.join(W, "old", "log.jsonl"));
-  let threw: any = null; try { translateV1World(path.join(W, "old"), path.join(W, "new")); } catch (e) { threw = String(e); }
-  ok(!!threw && /epoch/.test(threw) && /punt/.test(threw) && !fs.existsSync(path.join(W, "new", "world.jsonl")),
-    "EP1 a log with a physics epoch and punts is refused, naming the epoch and the punts, and nothing is written", threw); }
+// ---- EP: a v1 log with a physics epoch (dialect 3) translates with her sim's outcomes (2026-10-08). The live Commons has
+// eidosim@0.5.0 from seq 15641; translate-v1@9 kept each punt as an `imported` record and left the punted thing where it
+// was punted FROM, reporting "0 divergences" because it compared only against the instant fold (her sim rests it
+// elsewhere). The importer refused such logs until translate-v1@10 ran her sim beside the v1 fold. Each case goes
+// through the real importer (translateV1World, in a child with a scratch library: epoch-probe.ts) with the founder's key,
+// directory identities and content addresses, and is compared with HER sim (shared/sim.js beside the v1 fold, as sweep §3).
+{ const { emptyState: v1Empty, foldEntry } = await import("./import-v1/fold.js");
+  const eidosim = await import("../../shared/sim.js");
+  const { simFold } = await import("../../shared/protocol/simlayer.js");
+  const { readLog, fold } = await import("../../shared/protocol/fold.js");
+  const TV1 = await import("./import-v1/translate-v1.js");
+  const crypto = await import("node:crypto");
+  const FIX = path.join(import.meta.dir, "../../spec/fixtures/replay");
+  const parseLog = (f: string) => fs.readFileSync(f, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+  const founder = "ed25519:" + (crypto.generateKeyPairSync("ed25519").publicKey.export({ format: "jwk" }) as any).x;
+  const shaHex = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
+  // her world: the v1 fold composed with her sim, settled far past the end as her replaybench does
+  const hers = (L: any[]) => { const st: any = v1Empty(), sim: any = eidosim.emptySim(); for (const e of L) { foldEntry(st, e); eidosim.simEntry(sim, e, st); }
+    if (sim.epoch && !sim.epoch.foreign) eidosim.advanceSim(sim, sim.tick + 100_000); return { st, sim }; };
+  let n = 0;
+  // translate `L` through the real importer; `lib` maps a model path to bytes the scratch library holds (or a real library dir)
+  const importer = (tag: string, L: any[], { lib = {}, libDir = null }: { lib?: Record<string, Buffer>; libDir?: string | null } = {}) => {
+    const W = path.join(tmp, `ep-${tag}-${++n}`), LIB = libDir ?? path.join(W, "lib"), OPT = path.join(W, "opt");
+    fs.mkdirSync(path.join(W, "worlds", "old"), { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
+    for (const [p, b] of Object.entries(lib)) { fs.mkdirSync(path.dirname(path.join(LIB, p)), { recursive: true }); fs.writeFileSync(path.join(LIB, p), b); }
+    fs.writeFileSync(path.join(W, "worlds", "old", "log.jsonl"), L.map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const run = Bun.spawnSync(["bun", path.join(import.meta.dir, "epoch-probe.ts"), path.join(W, "worlds", "old"), path.join(W, "worlds", "new"), founder],
+      { env: { ...process.env, OPT_DIR: OPT, EIDOVERSE_DIR: LIB, TRUST_NAMES: "" }, stdout: "pipe", stderr: "pipe" });
+    const line = run.stdout.toString().trim().split("\n").pop() ?? ""; let res: any; try { res = JSON.parse(line); } catch { res = { ok: false, err: `probe printed ${JSON.stringify(line.slice(0, 200))}; stderr ${run.stderr.toString().slice(-400)}` }; }
+    const file = path.join(W, "worlds", "new", "world.jsonl");
+    const lines = res.ok && fs.existsSync(file) ? readLog(fs.readFileSync(file, "utf8")) : [];
+    return { ...res, lines, back: lines.length ? fold(lines) : null, dir: res.ok ? directoryAt(path.join(W, "worlds", DIRECTORY_FILE)) : null, at: path.join(W, "worlds", "new") };
+  };
+  const endOf = (lines: any[]) => Math.max(0, ...lines.map((e: any) => (Number.isFinite(e?.ts) ? e.ts : 0)));
+  // the facts every physics-era translation must have; returns [pass, why] per fact (why names what broke)
+  const facts = (t: any, L: any[], { addresses = {} as Record<string, string>, launches = -1 } = {}) => {
+    const out: Record<string, [boolean, unknown]> = {};
+    if (!t.ok) return { translated: [false, t.err] as [boolean, unknown] };
+    const { st, sim } = hers(L); const E = t.back.entities;
+    const bad = Object.entries<any>(sim.bodies).filter(([id, b]) => JSON.stringify(E[TV1.enc(id)]?.c.transform?.pos) !== JSON.stringify(b.p)).map(([id, b]) => ({ id, hers: b.p, ours: E[TV1.enc(id)]?.c.transform?.pos }));
+    out.rests = [Object.keys(sim.bodies).length > 0 && !bad.length, bad.slice(0, 3)];
+    // every thing her sim does NOT hold stands where her instant fold has it (the instant fold owns it)
+    const off = Object.entries<any>(st.entities).filter(([id, e]) => !sim.bodies[id] && !e.parent && JSON.stringify(E[TV1.enc(id)]?.c.transform?.pos) !== JSON.stringify(e.pos ?? [0, 0, 0])).map(([id]) => id);
+    out.others = [!off.length, off.slice(0, 5)];
+    const sf = simFold(t.lines, endOf(t.lines), { models: {} });
+    out.carrier = [t.r.sim && sf.checks.agree === t.r.sim.rests && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches), { checks: sf.checks, sim: t.r.sim }];
+    out.strict = [t.back.status === "ok" && !t.back.diagnostics.some(([, c]: any) => String(c).startsWith("malformed")), t.back.diagnostics.slice(0, 3)];
+    out.founder = [JSON.stringify(t.lines[0].body.owners[0]) === JSON.stringify([founder]), t.lines[0].body.owners];
+    out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
+    // identities: every old actor's act (and the launch it caused) is an opaque directory id, never the old name
+    const people = t.lines.filter((e: any) => (e.kind === "act" && e.verb === "imported") || (e.kind === "sim" && e.verb === "launch"));
+    // (v1's own system actors keep their v1 spelling on this path, as before: "world" stays "world", "door" is "system")
+    const named = people.filter((e: any) => !["system", "world", "sim"].includes(e.actor) && !isMinted(e.actor)).map((e: any) => e.actor);
+    const launchBy = t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").every((e: any) => e.actor === t.lines[e.cause]?.actor);
+    out.identities = [!named.length && launchBy && people.some((e: any) => isMinted(e.actor) && t.dir.entry(e.actor)), { named: [...new Set(named)].slice(0, 5), launchBy }];
+    // content addresses: every model whose bytes this host has is eido:sha256/<its bytes>; a collider's box rides as physics.shape
+    const wrongModel = Object.entries<any>(st.entities).filter(([id, e]) => typeof e.lib === "string" && addresses[e.lib] && E[TV1.enc(id)]?.c.model !== `eido:sha256/${addresses[e.lib]}`).map(([id]) => id);
+    out.addresses = [Object.keys(addresses).length > 0 && !wrongModel.length, wrongModel.slice(0, 5)];
+    const shapes = sim.boxes ? Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && sim.boxes[e.lib]) : [];
+    const noShape = shapes.filter(([id, e]) => JSON.stringify(E[TV1.enc(id)]?.c.physics?.shape) !== JSON.stringify(sim.boxes[e.lib])).map(([id]) => id);
+    out.shapes = [!sim.boxes || (shapes.length > 0 && !noShape.length), noShape.slice(0, 5)];
+    // the live host opens it (the code the cutover runs) and its own sim layer agrees with every logged rest
+    const live: any = openLive(t.at, "new", { now: () => endOf(t.lines) + 1000, custodyFile: path.join(path.dirname(t.at), CUSTODY_FILE) });
+    const ls = live.sim(); out.live = [ls.checks.agree === t.r.sim?.rests && !ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
+    return out;
+  };
+  const report = (id: string, what: string, f: Record<string, [boolean, unknown]>) => { const broken = Object.entries(f).filter(([, [p]]) => !p);
+    ok(!broken.length, `${id} ${what}`, Object.fromEntries(broken.map(([k, [, why]]) => [k, why]))); };
+  const fixtureLib = () => Object.fromEntries(["wall.glb", "deck.glb", "crate.glb"].map((p) => [p, Buffer.from(`a stand-in model for ${p} ${founder}`)]));
+  const addrOf = (lib: Record<string, Buffer>) => Object.fromEntries(Object.entries(lib).map(([p, b]) => [p, shaHex(b)]));
+
+  // EP1: her four fixtures, as the importer makes them
+  for (const name of fs.readdirSync(FIX).filter((d) => fs.existsSync(path.join(FIX, d, "log.jsonl"))).sort()) {
+    const L = parseLog(path.join(FIX, name, "log.jsonl")); const lib = fixtureLib();
+    const t = importer(name, L, { lib });
+    report("EP1", `${name}: a physics-epoch log translates through the importer, and every body rests where her sim rests (founder, identities, content addresses, physics.shape; the authority's sim layer re-checks every rest)`, facts(t, L, { addresses: addrOf(lib), launches: L.filter((e: any) => e.verb === "punt").length }));
+  }
+
+  // EP2: LEAVING the epoch (PROTOCOL_v2 §3): the sequencer releases every live body with result-shaped `place` entries
+  // (via epoch-release), then logs `epoch {sim: null}`; from then on a punt is v1's (an instant cause: nothing moves)
+  { const L = parseLog(path.join(FIX, "eidosim-0.5", "log.jsonl")); const { sim } = hers(L); let seq = L.at(-1).seq, ts = L.at(-1).ts + 20_000;
+    const X = [...L, ...Object.entries<any>(sim.bodies).map(([id, b]) => ({ seq: ++seq, ts: (ts += 10), actor: "world", verb: "place", args: { id, pos: b.p.slice(), yaw: b.yaw, via: "epoch-release" } })),
+      { seq: ++seq, ts: (ts += 10), actor: "world", verb: "epoch", args: { sim: null } },
+      { seq: ++seq, ts: (ts += 500), actor: "fixture", verb: "punt", args: { id: "ball", power: 8, dir: [1, 1, 0] } },
+      { seq: ++seq, ts: (ts += 500), actor: "fixture", verb: "spawn", args: { id: "late", lib: "crate.glb", pos: [9, 0, 9], yaw: 0 } }];
+    const lib = fixtureLib(); const t = importer("exit", X, { lib });
+    const f: any = facts(t, X, { addresses: addrOf(lib), launches: 4 });
+    delete f.rests;   // her sim holds nothing after the exit: `others` is the whole check (the instant fold owns everything)
+    const W = t.back?.entities ?? {};
+    f.released = [Object.entries<any>(sim.bodies).every(([id, b]) => JSON.stringify(W[id]?.c.transform?.pos) === JSON.stringify(b.p)), Object.keys(sim.bodies)];
+    f.off = [!W["@world"]?.c["physics-engine"] && !Object.values<any>(W).some((e) => e.c.physics), { engine: W["@world"]?.c["physics-engine"], physics: Object.keys(W).filter((k) => W[k].c.physics) }];
+    f.inert = [t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").length === 4, null];
+    f.layerOff = [t.lines.length > 0 && !simFold(t.lines, endOf(t.lines), { models: {} }).sim, null];
+    report("EP2", "leaving the epoch (epoch {sim: null}) after the sequencer's epoch-release places: every body stands where it was released, physics is off (no engine, no shapes), and a later punt is inert", f);
+    // …and with no release places (her sim drops its bodies at the exit): the instant fold owns them again, as in her fold
+    const Y = X.filter((e: any) => e.args?.via !== "epoch-release"); const u = importer("exit-bare", Y, { lib });
+    const g: any = facts(u, Y, { addresses: addrOf(lib), launches: 4 }); delete g.rests;
+    report("EP2", "leaving the epoch with no release places: what her sim held goes back to the instant fold's word, as her composed fold has it", g); }
+
+  // EP3: an epoch entered mid-log after thousands of instant-fold entries: the local Commons copy (commons-0927, 15k
+  // entries, no epoch) with her eidosim-0.5 epoch and punts appended, their ids remapped onto real Commons things, models
+  // addressed from this host's real library. The thousands before the epoch must come out exactly as they did without it.
+  { const roots = [path.resolve(import.meta.dir, "../../.."), path.resolve(import.meta.dir, "../../worlds")];
+    const found = roots.flatMap((r) => { try { return fs.readdirSync(r).flatMap((d) => [path.join(r, d, "worlds", "commons-0927", "log.jsonl"), path.join(r, d, "commons-0927", "log.jsonl"), path.join(r, "commons-0927", "log.jsonl")]); } catch { return []; } })
+      .filter((f) => fs.existsSync(f));
+    if (process.env.PROTOCOL_COMMONS) found.unshift(process.env.PROTOCOL_COMMONS);   // a commons-0927 log.jsonl elsewhere
+    if (!found.length) console.log("  SKIP EP3: no commons-0927 log on this host (looked beside the checkout); EP3 is unchecked here");
+    else {
+      const C = parseLog(found[0]); const st: any = v1Empty(); for (const e of C) foldEntry(st, e);
+      const { LIBRARY_DIR } = await import("../../server/config.ts");
+      // library models only (a store/ path resolves under OPT_DIR, which the probe gives a scratch one)
+      const libs = [...new Set(Object.values<any>(st.entities).map((e) => e.lib).filter((l) => typeof l === "string" && /\.glb$/i.test(l) && !l.startsWith("store/") && fs.existsSync(path.join(LIBRARY_DIR, l))))];
+      const pick = Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && libs.includes(e.lib) && !e.parent && !e.kind && Array.isArray(e.pos) && e.pos.every(Number.isFinite)).sort(([a], [b]) => (a < b ? -1 : 1));
+      const byLib = new Map<string, string>(); for (const [id, e] of pick) if (!byLib.has(e.lib)) byLib.set(e.lib, id);
+      const four = [...byLib.values()].slice(0, 4);
+      if (four.length < 4) ok(false, "EP3 the Commons copy has four modelled things on distinct library models to punt", four);
+      else {
+        const F = parseLog(path.join(FIX, "eidosim-0.5", "log.jsonl")); const ep = F.find((e: any) => e.verb === "epoch");
+        const as: Record<string, string> = { crate: four[0], ball: four[1], wall: four[2], deck: four[3] };
+        const libOf = (id: string) => st.entities[as[id]].lib;
+        const box = ep.args.boxes; const at = st.entities[as.crate].pos;
+        // her timing kept exactly (the sim's outcome depends on it): each entry lands the same ms after her epoch as in her log
+        const base = C.at(-1).ts + 60_000 - ep.ts; let seq = C.at(-1).seq; const shift = (e: any) => ({ ...e, seq: ++seq, ts: e.ts + base });
+        const tail = F.filter((e: any) => !["genesis", "spawn"].includes(e.verb) && e.seq !== 1).map((e: any) => {
+          if (e.verb === "epoch") return shift({ ...e, actor: "world", args: { ...e.args, boxes: { [libOf("crate")]: box["crate.glb"], [libOf("ball")]: box["crate.glb"], [libOf("wall")]: box["wall.glb"], [libOf("deck")]: box["deck.glb"] } } });
+          if (e.verb === "place") return shift({ ...e, actor: "mica", args: { ...e.args, id: as[e.args.id], pos: [at[0] + 2.2, at[1], at[2]] } });
+          if (e.verb === "punt") return shift({ ...e, actor: e.args.id === "ball" ? "antra" : "janus", args: { ...e.args, id: as[e.args.id] } });
+          return shift(e); });
+        const X = [...C, ...tail];
+        const addresses = Object.fromEntries(libs.map((l) => [l, shaHex(fs.readFileSync(path.join(LIBRARY_DIR, l)))]));
+        const t = importer("commons", X, { libDir: LIBRARY_DIR });
+        report("EP3", `an epoch entered after ${C.length} instant-fold entries (the Commons copy, her epoch and punts on ${four.join(", ")}): every body rests where her sim rests, through the importer`, facts(t, X, { addresses, launches: tail.filter((e: any) => e.verb === "punt").length }));
+        // the thousands before it: the pure translator over the copy alone and over the copy + epoch agree entry for entry
+        // up to the epoch's act (the second entry, the translator's stamp, differs by design: @10 says the sim ran)
+        const nonce = "ZXAzLXNhbWUtbm9uY2UtMDAw";   // one world id for both (the default nonce hashes the whole source)
+        const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "act" && e.body?.verb === "epoch");
+        const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2])) && JSON.stringify(a[0]) !== undefined;
+        ok(same && a[1].body.from.translator === TV1.TRANSLATOR && b[1].body.from.translator === TV1.TRANSLATOR_SIM, `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
+    } }
+}
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);

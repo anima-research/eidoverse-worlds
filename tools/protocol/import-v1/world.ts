@@ -11,6 +11,7 @@ import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal } from "../../../shared/protocol/authority.js";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
+import { simFold } from "../../../shared/protocol/simlayer.js";
 import { translate } from "./translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
@@ -24,18 +25,10 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  // A dialect-3 log (one with a physics `epoch`) gets its outcomes from her sim, not from the instant fold this importer
-  // checks against: a punt here is kept only as an `imported` record and the thing stays where it was punted FROM, while
-  // "0 divergences" still prints. Refuse rather than translate quietly wrong ("a wrong answer is worse than a cached one",
-  // PROTOCOL_v2 §3). The sim-aware path is translate-d3.js; it must learn this importer's identities, content addresses
-  // and founder key before a physics-era world (the live Commons, epoch at seq 15641) can come through here.
-  const epochs = old.filter((e) => e?.verb === "epoch" && e?.args?.sim);
-  if (epochs.length) {
-    const simVerbs = old.filter((e) => e?.verb === "punt" || e?.verb === "force").length;
-    throw new Error(`${src}: this log has a physics epoch (${epochs.map((e) => `${e.args.sim} at seq ${e.seq}`).join(", ")}) and ${simVerbs} punt/force ` +
-      `entr${simVerbs === 1 ? "y" : "ies"} whose outcomes come from that sim; translate-v1 would leave them where they started. ` +
-      `Not translated (nothing written). The sim-aware importer is import-v1/translate-d3.js.`);
-  }
+  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@10 runs it
+  // beside the v1 fold (a punt is a launch, every rest a logged result), and below, the sealed text is re-checked by the
+  // authority's own sim layer, as the live host runs it, before anything is written. (Until 2026-10-08 such a log was
+  // refused here: the importer compared only against the instant fold and left every punted thing where it started.)
   // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/custody.ts)
   // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the
   // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
@@ -73,6 +66,14 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
   if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
+  // a physics-era world: a carrier re-checks every rest (L3) on the sealed text, with no catalogue of its own (livehost.ts):
+  // each rest must be where the engine has the body, every digest the engine's, and none missing
+  let sim: Any = null;
+  if (r.stats.launches !== undefined) {
+    const lines = readLog(text); const sf = simFold(lines, Math.max(0, ...lines.map((e: Any) => (Number.isFinite(e?.ts) ? e.ts : 0))), { models: {} });
+    if (sf.checks.disagree.length || sf.checks.agree !== r.stats.rests) throw new Error(`the translated world's sim layer disagrees with its logged rests (${sf.checks.agree}/${r.stats.rests} agree; ${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
+    sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
+  }
   fs.mkdirSync(destDir, { recursive: true });
   const tmp = path.join(destDir, "world.jsonl.tmp");
   fs.writeFileSync(tmp, text);
@@ -91,6 +92,6 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
     for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
     if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  return { identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses };
+  return { identities: Object.keys(planned).length, renamedBlobs, stats: r.stats, entries: r.out.length, worldId: back.worldId, digest: digest(back), poses, ...(sim ? { sim } : {}) };
 }
 
