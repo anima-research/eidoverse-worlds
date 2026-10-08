@@ -3534,7 +3534,10 @@ const VERBS = {
     if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }
     else { for (let i = Math.min(w.entries.length, a.before ?? Infinity) - 1; i >= 0; i--) { if (!match(w.entries[i])) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } out.reverse(); }
     return { ok: true, entries: out, ...(more ? a.after !== undefined ? { next: out.at(-1).seq, more: "send after: next for newer" } : { next: out[0].seq, more: "send before: next for older" } : {}) }; },
-  schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS }; },
+  // particles names an effect: its schema also lists the Essentials and each one's params (the knobs an instance sets), so
+  // an agent can write one without a second question; effect {name} returns a whole document
+  schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS,
+    ...(a.component === "particles" ? { effects: Object.fromEntries(ESSENTIAL_NAMES.map((k) => { const d = effectFor(k); return [k, { reads: d.reads, params: Object.fromEntries(Object.entries(d.params ?? {}).map(([n, p]) => [n, { type: p.type, ...(p.min !== undefined ? { min: p.min } : {}), ...(p.max !== undefined ? { max: p.max } : {}), ...(p.values ? { values: p.values } : {}), ...(p.help ? { help: p.help } : {}) }])) }]; })) } : {}) }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
   delete: (w, actor, a) => commit(w, actor, "delete", a, (ctx) => buildDelete(ctx, a)),

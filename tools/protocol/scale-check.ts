@@ -489,7 +489,10 @@ async function sameAsBase() {
   // the base speaks the names before the 10-07 conventional-names pass: its replies' keys are read in today's names
   const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (!v || typeof v !== "object" || Array.isArray(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
-  const diff = a.findIndex((x: any, i: number) => JSON.stringify(x) !== JSON.stringify(b[i]));
+  // R 10-07: look and inspect read a thing as its name, description, what it can do and its state (shared/a11y.js): those
+  // fields are additions the base never wrote, generated from components it also had. Compared without them, on both sides
+  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined : v));
+  const diff = a.findIndex((x: any, i: number) => noA11y(x) !== noA11y(b[i]));
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }
 if (argv.includes("--scenario")) { console.log(JSON.stringify(scenario())); process.exit(0); }

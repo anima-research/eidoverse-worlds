@@ -203,6 +203,10 @@ const cases: Case[] = [
       return { a: lookOf(s, "a")?.state, b: lookOf(s, "b")?.state }; },
     good: (o) => o.a?.includes("emitting fire") && o.b?.includes("can emit smoke (stopped)") },
 
+  { id: "X12", what: "schema {component: 'particles'} lists the Essentials and each one's params (an agent writes one without a second question)", run(s) { cast(s);
+      const r = s.call("vic", "schema", { component: "particles" }); return { n: Object.keys(r.effects ?? {}).length, count: r.effects?.fire?.params?.count, reads: r.effects?.snow?.reads }; },
+    good: (o) => o.n === 9 && o.count?.max === 600 && o.reads === "falling snow" },
+
   // ---------------- G: the simulation (Godot's modules) ----------------
   { id: "G1", what: "preprocess: a steady effect is in flight on its first frame (Godot's pre_process_time)", run() { const s = PS.makeSim(em({ spawn: { amount: 64, lifetime: 1, preprocess: 1 }, velocity: { speed: [1, 1] } }), { seed: 3 }); s.step(0); return { n: alive(s).length }; },
     good: (o) => o.n >= 60 },
