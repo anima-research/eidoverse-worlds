@@ -10,14 +10,15 @@ import { agentTokens } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal } from "../../../shared/protocol/authority.js";
-import { readLog, fold, digest } from "../../../shared/protocol/fold.js";
+import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { translate } from "./translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
 
 type Any = any;
 
-/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. */
-export function translateV1World(srcDir: string, destDir: string) {
+/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir. `founderKey`: the
+ *  founder's own governance key (ed25519:…), made on their machine, for tier 0 (README.md, "The Commons ceremony"). */
+export function translateV1World(srcDir: string, destDir: string, { founderKey }: { founderKey?: string } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
@@ -46,7 +47,8 @@ export function translateV1World(srcDir: string, destDir: string) {
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who });
+  if (founderKey !== undefined && !keyOk(founderKey)) throw new Error(`${founderKey}: not a governance key (ed25519:<base64url of 32 bytes>, PROTOCOL §13)`);
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, ...(founderKey ? { founder: founderKey } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";

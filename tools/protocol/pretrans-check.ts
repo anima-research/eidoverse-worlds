@@ -19,7 +19,9 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { ENGINE, scratch } from "./common.ts";
+const require = createRequire(import.meta.url);
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -103,6 +105,58 @@ await C("C3", "a lock's words cite §7 (Locks), where the spec keeps them, not �
 await C("A1", "the agent tools call a translated act what the log calls it: imported", () => {
   const src = read("mcpl/tools.ts"); const bad = literals(src).filter((s) => /\blegacy\b/.test(s));
   return [!bad.length, bad.map((s) => s.slice(0, 120))]; });
+
+// ---- G: governance (H4) ----
+const py = (args: string[], cwd = path.join(T, "spec/conformance")) => Bun.spawnSync(["python3", "-B", ...args], { cwd, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+await C("G1", "gov.py: a lower tier can't add or promote keys into a higher tier (test_gov.py, with the reviewer's escalation as GV1)", () => {
+  const r = py(["test_gov.py"]); const out = r.stdout.toString() + r.stderr.toString(); return [r.exitCode === 0, out.split("\n").filter((l) => /FAIL|passed|Error/.test(l))]; });
+await C("G2", "the suite runs the governance tests (compare.ts lists test_gov.py)", () => /"test_gov\.py"/.test(read("tools/protocol/compare.ts")));
+await C("G3", "§13 writes the governance body down: {key?, owners?, fork?, sigs}, the signed message, and the add-key rule", () => {
+  const g = SPEC.slice(SPEC.indexOf("## 13."), SPEC.indexOf("## 14."));
+  const need = ["`sigs`", "eidoverse-gov:", "GOV-5", "adding", "empty tier"]; return [need.every((n) => g.includes(n)), need.filter((n) => !g.includes(n))]; });
+
+// ---- K: the Commons' keys and owners (H4) ----
+const TV1 = await imp("tools/protocol/import-v1/translate-v1.js");
+const KEYS = await imp("shared/protocol/fold.js");
+const FOUNDER = "ed25519:" + Buffer.from(require("node:crypto").generateKeyPairSync("ed25519").publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
+const v1commons = () => [{ seq: 0, ts: 1, actor: "world", verb: "grant", args: { id: "antra", role: "owner", gen: true } },
+  { seq: 1, ts: 2, actor: "antra", verb: "grant", args: { id: "Digi_Rat", role: "builder" } },
+  { seq: 2, ts: 3, actor: "antra", verb: "grant", args: { id: "fable", role: "owner" } },
+  { seq: 3, ts: 4, actor: "antra", verb: "grant", args: { id: "janus", role: "owner", sub: "human:discord:1" } },
+  { seq: 4, ts: 5, actor: "antra", verb: "grant", args: { id: "mica", role: "owner" } },
+  { seq: 5, ts: 6, actor: "antra", verb: "spawn", args: { id: "rock_1", lib: "store/0123456789abcdef.glb", pos: [0, 0, 0] } }];
+await C("K1", "a translation with the founder's key puts it in tier 0 and the operator's in tier 1", () => {
+  const r = TV1.translate(v1commons(), { founder: FOUNDER, operator: TV1.LAB_DOOR_KEY });
+  const g = r.out[0].body; return [JSON.stringify(g.owners) === JSON.stringify([[FOUNDER], [TV1.LAB_DOOR_KEY]]) && KEYS.checkGenesis(g) === null, g.owners]; });
+await C("K2", "the Commons' roles come across: antra, fable, janus, mica owners; Digi_Rat builder", () => {
+  const r = TV1.translate(v1commons(), { founder: FOUNDER }); const w = r.final.translated["@world"];
+  const role = (n: string) => w[`roles:${TV1.enc(n)}`]?.role;
+  return [["antra", "fable", "janus", "mica"].every((n) => role(n) === "owner") && role("Digi_Rat") === "builder", Object.keys(w).filter((k) => k.startsWith("roles:"))]; });
+await C("K3", "the translate command refuses to found a world without the founder's key (or an explicit --no-founder-key)", () => {
+  const W = scratch("ktr"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
+  fs.writeFileSync(path.join(W, "old", "log.jsonl"), v1commons().map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const run = (...extra: string[]) => Bun.spawnSync(["bun", path.join(T, "tools/protocol/world.ts"), "translate", "old", ...extra], { cwd: T, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const bare = run("new1"); const withKey = run("new2", "--founder-key", FOUNDER);
+  const g = fs.existsSync(path.join(W, "new2", "world.jsonl")) ? JSON.parse(fs.readFileSync(path.join(W, "new2", "world.jsonl"), "utf8").split("\n")[0]).body : null;
+  return [bare.exitCode !== 0 && !fs.existsSync(path.join(W, "new1", "world.jsonl")) && withKey.exitCode === 0 && g?.owners?.[0]?.[0] === FOUNDER,
+    { bare: bare.exitCode, bareSaid: bare.stderr.toString().slice(0, 200), withKey: withKey.exitCode, said: withKey.stderr.toString().slice(0, 300), owners: g?.owners }]; });
+await C("K4", "the founder proves the key is theirs before it's baked in: world.ts owner-key checks a signature over the ceremony text", () => {
+  const kp = require("node:crypto").generateKeyPairSync("ed25519");
+  const pub = "ed25519:" + Buffer.from(kp.publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
+  const msg = `eidoverse-owner-key:${pub}`; const sig = require("node:crypto").sign(null, Buffer.from(msg), kp.privateKey).toString("base64");
+  const run = (s: string) => Bun.spawnSync(["bun", path.join(T, "tools/protocol/world.ts"), "owner-key", pub, s], { cwd: T, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const good = run(sig), bad = run(Buffer.from(sig, "base64").map((x, i) => (i === 3 ? x ^ 1 : x)).toString("base64"));
+  return [good.exitCode === 0 && bad.exitCode !== 0, [good.exitCode, good.stdout.toString().slice(0, 200), bad.exitCode]]; });
+await C("K5", "create-world takes the founder's own key for tier 0 (ownerKey); without one, tier 0 stays empty and the reply says so", async () => {
+  const { openWorld } = await imp("server/filehost.ts"); const root = scratch("k5"); process.env.PROTOCOL_NOW = String(1800000000000);
+  const w1 = openWorld(root, "a"), w2 = openWorld(root, "b"), w3 = openWorld(root, "c");
+  const r1 = D.request(w1, "kay", "create-world", { title: "a", ownerKey: FOUNDER });
+  const r2 = D.request(w2, "kay", "create-world", { title: "b" });
+  const r3 = D.request(w3, "kay", "create-world", { title: "c", ownerKey: "ed25519:AAAA" });
+  return [r1.ok && JSON.stringify(w1.entries[0].body.owners[0]) === JSON.stringify([FOUNDER]) && r2.ok && w2.entries[0].body.owners[0].length === 0 && /tier 0/.test(JSON.stringify(r2))
+    && !r3.ok && r3.refused.code === "shape", [w1.entries[0]?.body?.owners, r2, r3.refused]]; });
+await C("K6", "the import README documents the Commons ceremony: key made on the founder's machine, checked, then translated", () => {
+  const t = read("tools/protocol/import-v1/README.md"); const need = ["owner-key", "--founder-key", "openssl", "custody.json", "antra"]; return [need.every((n) => t.includes(n)), need.filter((n) => !t.includes(n))]; });
 
 console.log(`\npretrans: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

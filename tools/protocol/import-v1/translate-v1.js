@@ -112,9 +112,13 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // A real authority passes its own keys and a random nonce (round-2 review R4): the operator's governance key in tier 1,
 // never the sequencer's, and a nonce that makes two translations of one log two worlds. Without them (the pure tests)
 // the nonce is derived from the source and one fixed key stands in for both.
-export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
+// The founder's own key (review 10-07 H4, R's ruling): tier 0 is the world's founder, from a key made on their own machine;
+// the operator (custody) stays tier 1. Under §13's add-key rule (GOV-5) an empty tier 0 can never be filled later, so a
+// translation that leaves it empty does so knowingly (tools/protocol/world.ts translate --no-founder-key).
+export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce, founder } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
+  if (founder !== undefined && (founder === key || founder === operator)) throw new Error("the founder's key must be their own: not this server's sequencer or operator key");
+  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [founder ? [founder] : [], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -224,7 +228,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder } = {}) {
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, change: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
@@ -237,7 +241,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
+  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(founder ? { founder } : {}) }) });
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
   const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);

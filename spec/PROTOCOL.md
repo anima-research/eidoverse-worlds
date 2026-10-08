@@ -445,6 +445,43 @@ argument will be short.
   every tier-0 key. An empty tier can never act. Moving a world and forking
   it are different: a fork is a new genesis naming its parent. Nothing is
   atomic across worlds.
+- **The governance body** is `{key?, owners?, fork?, sigs}`, exactly those
+  fields, at least one of `key`, `owners`, `fork`:
+  - `key`: the new sequencer key; `owners`: the new tiers, whole (same shape
+    as genesis: distinct registrable keys); `fork {seq, head}`: rewind to just
+    after `seq` (`seq` < this entry's seq), whose head is `head`.
+  - `sigs`: a non-empty list of distinct `{key, v}`; `v` is base64url Ed25519
+    over UTF-8 `"eidoverse-gov:<world id>:<seq>:" + JCS(body without sigs)`
+    (**GOV-1**). Only signatures that verify count.
+  - **GOV-2, rank.** An entry's rank is the highest tier (smallest number)
+    whose quorum signed it. A body that is only `key`, signed by the outgoing
+    sequencer, is a **handoff** of rank *none*, below every tier.
+  - **GOV-3, quorum.** Tier t acts when at least `quorum[t]` of its keys
+    signed (genesis `quorum`; absent: 1 for a one-key tier, else a strict
+    majority). **An empty tier never acts**, whatever its quorum computes to
+    (`all([])` is true in most languages: a reader must say so explicitly).
+    When `owners` changes the number of tiers, quorum reverts to the default.
+  - **GOV-4, removing.** Removing a tier-t key, or demoting it to a lower
+    tier, needs rank t or higher.
+  - **GOV-5, adding.** Adding a key to tier t, or promoting one into it,
+    needs rank t or higher. So a tier can never fill a tier above itself, and
+    **an empty tier can never be filled**: whoever should hold tier 0 must be
+    named in genesis. (Without this rule a tier-1 key adds two tier-0 keys,
+    and those two remove the original one.)
+  - A `fork` needs a rank higher than every branch it orphans, and every
+    tier-0 key once the orphaned branch holds `rewind_window` change entries
+    or more; a `key` without a handoff is a **reclaim** and needs a rank
+    higher than the current branch's.
+
+  The fold never reads `sequencer` entries, so these rules decide who may
+  write, never what a world is. The reference reader for them is
+  `conformance/gov.py` (with `conformance/test_gov.py`); the reference
+  authority does not yet write or validate them.
+- **Whose key is tier 0.** A world's founder holds tier 0 with a key made on
+  their own machine (the authority's `create-world {ownerKey}`; a translated
+  world's `--founder-key`). A host's custody keys (sequencer, operator) are
+  never the founder's. A world founded without one has an empty tier 0 for
+  ever, and its operator key (tier 1) is its top governance key.
 
 ## 14. Worlds from the first protocol
 
