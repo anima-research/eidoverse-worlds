@@ -109,7 +109,18 @@ const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () =>
   ok(!away.isError && Math.abs(ag.pos.x - 10) < 0.05, "AT1c it walks on carrying the mug", T(away));
   const put = await call("act", { verb: "put", args: { id: "mug" } }); await sleep(300);
   const mx = ag.foldRecord("mug")?.pos?.[0];
-  ok(!put.isError && Number.isFinite(mx) && Math.abs(mx - 10) < 1.6, "AT1c …and puts it down where it IS (x≈10), not where the authority last saw it (the probe's 'two bodies')", [T(put).slice(0, 200), ag.foldRecord("mug")?.pos]); }
+  ok(!put.isError && Number.isFinite(mx) && Math.abs(mx - 10) < 1.6, "AT1c …and puts it down where it IS (x≈10), not where the authority last saw it (the probe's 'two bodies')", [T(put).slice(0, 200), ag.foldRecord("mug")?.pos]);
+  // a body moved without walking (a flight, a seat, a drag): the authority's track is stale; the next walk re-arrives it
+  ag.pos.x = 10; ag.pos.z = -9;
+  const stale = await call("move", { to: [10, -8] });
+  ok(!stale.isError && /re-arrived/.test(T(stale)) && Math.abs(ag.pos.z + 8) < 0.05, "AT1d after a move that wasn't a walk, the next walk re-arrives the authority's body there (a teleport, said) and walks on", T(stale));
+  // a visitor in a world with a spawn arrives at the spawn, as a person does
+  ok((await ann.req("set", { id: "@world", component: "spawn", value: { pos: [-8, 0, -8], radius: 2 } })).ok, "(AT1e setup) Ann gives the yard a spawn at (-8, -8)");
+  const vee = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Vee", world: "yard", avatar: "" });
+  await vee.connect(); for (let i = 0; i < 60 && !vee.replica?.active; i++) await sleep(50);
+  const vm = await HANDLERS.move(vee, { to: [-6, -8], run: true }, { agent: vee, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, "move");
+  ok(!vm.isError && /spawn/.test(T(vm)) && Math.abs(vee.pos.x + 6) < 0.05 && Math.abs(vee.pos.z + 8) < 0.05, "AT1e a visitor's first walk in a world with a spawn arrives there and walks on (not stuck behind 'spawn')", [T(vm), vee.pos]);
+  vee.close(); }
 
 // ---- AT2: duplicate from the tool ----
 { const d1 = await call("create", { from: "mug", at: [8, 2] }); await sleep(200);
