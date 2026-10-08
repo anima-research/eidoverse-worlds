@@ -128,7 +128,7 @@ try {
     for (let n = h.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) box.append(n.cloneNode(true)); box.__live = h; return box; })()`;
   const cardBtn = (re: string) => `(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Openable/.test(g.textContent));
     for (let n = h?.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) { const b = [...(n.matches('button') ? [n] : []), ...n.querySelectorAll('button')].find((b) => ${re}.test(b.textContent)); if (b) { b.click(); return true; } } return false; })()`;
-  check("E1 the Inspector shows an Openable card with its rows (open, locked, opens by, turns, hinge axis, takes)", await waitFor(`(() => { const c = ${card}; if (!c) return false; const L = [...c.querySelectorAll('.sp-label')].map((l) => l.textContent); return ['open', 'locked', 'opens by', 'turns', 'hinge axis', 'takes'].every((x) => L.includes(x)); })()`, 6000),
+  check("E1 the Inspector shows an Openable card with its rows (open, door locked, opens by, turns, hinge axis, takes)", await waitFor(`(() => { const c = ${card}; if (!c) return false; const L = [...c.querySelectorAll('.sp-label')].map((l) => l.textContent); return ['open', 'door locked', 'opens by', 'turns', 'hinge axis', 'takes'].every((x) => L.includes(x)); })()`, 6000),
     { rows: await evalJson(`[...(${card}?.querySelectorAll('.sp-label') ?? [])].map((l) => l.textContent)`), groups: await evalJson(`[...(${insp}?.querySelectorAll('.sp-group') ?? [])].map((g) => g.textContent.slice(0, 60))`), sel: await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected())`) });
   const clicked = await evalJson(cardBtn("/hinge on its right edge/"));
   check("E2 'hinge on its right edge' puts its pivot on the +x edge of its box (one act)", clicked && await waitDisk(() => (disk().entities.gate?.c.pivot?.pos?.[0] ?? -1) > 0.2), { clicked, pivot: disk().entities.gate?.c.pivot });
@@ -139,7 +139,7 @@ try {
   const all = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
   await evalJson(`(() => { const i = document.querySelector('.sp-pop-search'); i.value = 'door'; i.dispatchEvent(new Event('input')); return true; })()`);
   const items = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
-  check("E3 Add Component offers Path and no LookAt (what the authority takes), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && !all?.some((t: string) => /LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
+  check("E3 Add Component offers Path and LookAt (what the authority takes: look-at since batch 2), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && all?.some((t: string) => /^LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
   check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);

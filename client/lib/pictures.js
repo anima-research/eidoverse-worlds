@@ -411,5 +411,20 @@ registerHandler('picture', (id, _obj, k, _v, opts) => {
 });
 registerHandler('comp', (id, _obj, k, _v, opts) => {
   if (k !== 'add:picture' || opts?.live) return false;
-  uploadThenSet(id, 'picture.src'); return true;   // part defaults to the first named part (the schema's `parts`)
+  uploadThenFace(id); return true;
 });
+// Add Component › Picture on a MODEL hangs it on the model's front face, as its own child (facemedia.js; review 10-07
+// S4: a picture with no part drew at the origin, inside the crate). On an empty it is that thing's own quad, as before;
+// a part is still picked in the card's `where`.
+async function uploadThenFace(id) {
+  const fm = await import('./facemedia.js');
+  if (!fm.frontOf(id)) return uploadThenSet(id, 'picture.src');
+  flashHint(`🖼 ${RIGHTS_WARNING}`, 4000);
+  const file = await pickFile(PICTURE_ACCEPT); if (!file) return;
+  flashHint(`uploading ${file.name}…`);
+  try {
+    const path = await uploadPicture(file);
+    const r = await fm.addOnFace(id, 'picture', { src: path });
+    if (r?.ok) flashHint(`🖼 hung ${path.split('/').pop()} on its front`, 3000);
+  } catch (err) { toast(`picture upload failed — ${err.message}`, 'warn', 8000); }
+}

@@ -226,6 +226,10 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 // untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
+// lock levels (R, 10-07): a lock is `true` or {rank: builder|moderator|owner}; only that rank and above — or whoever set it
+// — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
+export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
+export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
 const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
@@ -854,6 +858,7 @@ function admit(w, st, who, ops) {
       refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity (40 §6.1)");
     if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); L6: no write may touch a launched thing before its rest");
     if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§5: lock the things in it instead");
+    lockLevelCheck(w, st, s, who, op, at);
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
     else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp) || op.comp.startsWith("terrain-tile:"))) { // a rest is the engine's word on a released thing: locks guard authored writes
@@ -906,14 +911,39 @@ function capacityCheck(w, st, s, who, norm) {
 // all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the authority's own follow-ups) never
 // acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
 function lockCheck(w, st, who, role, k, op, at) {
-  const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" });
+  const level = lockLevel(st.entities[k]?.c.lock);
+  const below = !who.cap && !mayLiftLock(w, st, who.actor, k);   // a level above you, and not yours
+  const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" }) && !below;
   if (THROUGH && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
-  const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
+  const lv = level === "builder" ? "" : ` at ${level} level`;
+  const what = k === op.id ? `${op.id} is locked${lv}${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${lv}${whose}, so ${at} can't change`;
   const fix = THROUGH && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
-    : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift it, and history shows who did`
+    : below ? `only ${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} may unlock it or act through it; you are ${role}`
+    : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift a builder-level lock, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
-  refuse("locked", what, fix, { lock: k, ...(by && !by.deleted ? { by: by.by } : {}) });
+  refuse("locked", what, fix, { lock: k, rank: level, ...(by && !by.deleted ? { by: by.by } : {}), ...(below ? { mayLift: false } : {}) });
+}
+/** May `holder` lift k's lock (or act through it)? At its level or above, or whoever set it (R, 10-07: "whoever locked it,
+ *  or anyone at the lock's rank"). Rights to delete the component are checked apart (L7: lacks). */
+function mayLiftLock(w, st, holder, k) {
+  if (rankOf(st, holder) >= RANK[lockLevel(st.entities[k]?.c.lock)]) return true;
+  const by = lastSetterOf(w, k, "lock"); return !!by && !by.deleted && by.rights === holder;
+}
+// A write to a lock itself: changing or removing a lock is lifting it (its level or its locker), and nobody sets one above
+// their own rank. A capability is judged by its holder (a handler's author, a script's sponsor); the authority's own
+// follow-ups never touch a lock.
+function lockLevelCheck(w, st, s, who, op, at) {
+  if (op.comp !== "lock" || op.id === "@world") return;
+  const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
+  const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
+  const cur = st.entities[op.id]?.c.lock;
+  if (cur !== undefined && cur !== PURGED && !(op.verb === "set" && jcs(op.value) === jcs(cur)) && !mayLiftLock(w, st, holder, op.id)) {
+    const by = lastSetterOf(w, op.id, "lock"); const level = lockLevel(cur);
+    refuse("rank", `${op.id} is locked at ${level} level${by && !by.deleted ? ` by ${said(by.by)}` : ""}; only ${level === "owner" ? "an owner" : `a ${level} or above`} or whoever locked it may ${op.verb === "delete" ? "unlock" : "change"} it`,
+      `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: level, needs: "rank" }); }
+  if (op.verb === "set" && rankOf(st, holder) < RANK[lockLevel(op.value)])
+    refuse("rank", `${at}: a lock at ${lockLevel(op.value)} level is above your rank (${roleOf(st, holder)})`, "lock at your own level or below: true (builder) or {rank: 'builder'}", { needs: "rank" });
 }
 const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
@@ -1147,7 +1177,8 @@ function valueCheck(s, { id, comp, value: v }) {
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
-  if (comp === "lock" && v !== true) refuse("shape", `${at} is true while locked; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
+  if (comp === "lock" && v !== true && !(obj && Object.keys(v).length === 1 && LOCK_LEVELS.includes(v.rank)))
+    refuse("shape", `${at} is true (a builder-level lock) or {rank: 'builder' | 'moderator' | 'owner'}; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
   if (comp === "openable" && obj) {
     if (v.angle !== undefined && v.slide !== undefined) refuse("shape", `${at} turns (angle) or slides (slide), not both`, "give one: angle (rad) to swing about its pivot, or slide [x, y, z] (m) to slide");
     if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse("bounds", `${at}.slide is [x, y, z] in metres, each within 10`, "e.g. [0.9, 0, 0]: a sliding door moves its own width sideways"); }
@@ -2668,7 +2699,7 @@ function describe(st, id, live = {}, holds = {}) {
   return { id, name, at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
     ...sayOf(st, e.c) };
 }
 // batch 2: what its words and media say (shared/says.js, the same lines mcpl's look prints); things it names by their names

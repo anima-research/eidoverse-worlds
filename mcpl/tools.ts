@@ -148,7 +148,7 @@ export const TOOLS = [
   { name: "ban", description: "MODERATION: ban someone — the authority's ban {who, days?, reason?}: disconnects them now if they're here and refuses their joins (including spectating) until unban or for days. who is their name or identity (u-…): someone absent is found among the people this world has seen (whois). Default is THIS world only (needs the ban permission here). global:true bans them from every world on this server (needs WORLD_ADMIN). Give a reason — it is shown to them and kept in the moderator's record; bystanders see only that they were banned.", inputSchema: { type: "object", properties: { who: { type: "string" }, days: { type: "number" }, reason: { type: "string" }, global: { type: "boolean" } }, required: ["who"] } },
   { name: "unban", description: "MODERATION: lift a ban — the authority's unban {who}: this world's by default (who: their name or identity; they needn't be here), the server-wide list with global:true.", inputSchema: { type: "object", properties: { who: { type: "string" }, global: { type: "boolean" } }, required: ["who"] } },
   { name: "whois", description: "Who goes by a name here: their identity (u-…, what roles and bans name), what they are (person, agent, guest), their role in this world, whether they're here now and whether they're banned. Only people this world has seen (present, in its log, its roles or its moderator record), never the whole server. An identity (u-…) works as the name too.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
-  { name: "list_bans", description: "Who is banned from this world (anyone may ask), or from the whole server with global:true (operator only).", inputSchema: { type: "object", properties: { global: { type: "boolean" } } } },
+  { name: "list_bans", description: "What is in force in this world now: bans, removals cooling down, mutes and ghosts (people who hold a moderation power may ask), or the whole server's bans with global:true (operator only).", inputSchema: { type: "object", properties: { global: { type: "boolean" } } } },
 ];
 
 import { readdirSync } from "node:fs";
@@ -981,10 +981,27 @@ export const HANDLERS: Record<string, ToolHandler> = {
   ban: (ag, a, ctx, name) => HANDLERS.kick(ag, a, ctx, name),
   unban: (ag, a, ctx, name) => HANDLERS.kick(ag, a, ctx, name),
   list_bans: async (ag, a, ctx, name) => {
-      const t0 = Date.now();
-      ag.sendMod(a.global ? "global-bans" : "world-bans");
-      const answer = await ag.modOutcome(t0);
-      return text(answer ?? "no reply from the world (timeout)");
+      if (a.global) {
+        const t0 = Date.now();
+        ag.sendMod("global-bans");
+        const answer = await ag.modOutcome(t0);
+        return text(answer ?? "no reply from the world (timeout)");
+      }
+      // this world: the authority's `bans` (what the Moderation panel reads): bans, removals, mutes and ghosts in force.
+      // The legacy world-bans message listed bans only, so a mute in force read "nobody is banned" (audit 10-07)
+      const r: any = await ag.request("bans", {});
+      if (!r?.ok) return { content: [{ type: "text", text: r?.refused?.reason ?? "couldn't read what's in force here" }], isError: true };
+      const until = (t: any) => (Number.isFinite(t) ? `until ${new Date(t).toISOString()}` : "until lifted");
+      const why = (x: any) => (x?.reason ? ` — ${x.reason}` : "");
+      const lines: string[] = [];
+      for (const x of r.now ?? []) {
+        const who = x.name ? `${x.name} (${x.who})` : x.who;
+        if (x.ban) lines.push(`banned: ${who} ${until(x.ban.until)}${why(x.ban)}`);
+        else if (x.kick) lines.push(`removed, cooling down: ${who} ${until(x.kick.until)}${why(x.kick)}`);
+        if (x.mute) lines.push(`muted (${(x.mute.channels ?? ["voice", "chat"]).join(" + ")}): ${who} ${until(x.mute.until)}${why(x.mute)}`);
+        if (x.ghost && !x.ghost.chosen) lines.push(`ghost: ${who} ${until(x.ghost.until)}${why(x.ghost)}`);
+      }
+      return text(lines.length ? lines.join("\n") : "nobody is banned, muted or a ghost here");
 
   },
 };

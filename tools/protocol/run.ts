@@ -42,6 +42,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["presence", "presence-check.ts", 1], // security pass 3 H2: no one shows under another account's name; puppet/bodydrag/typing/whisper reach the identity named
   ["modhole", "modhole-check.ts", 1],   // security pass 3: nothing a world sends runs as code in a visitor's browser; EW.mods.put/run need your hand
   ["xss-probe", "xss-probe.ts", 1],     // security pass 3 H1 in headless Chromium: a hostile display name is text everywhere; the page's CSP refuses inline script and lets the client run
+  ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
 ];
 const only = process.argv.slice(2);
 const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }; // a cached transpile once hid a stale module (bun cache poison)
@@ -53,13 +54,13 @@ for (const [name, file, tail] of SUITES) {
   // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
   // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
   let cmd = ["bun", ENGINE + "tools/protocol/" + file]; let senv: Record<string, string | undefined> = env;
-  if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe") {   // the browser suites
+  if (name === "client" || name === "client-b2" || name === "build-client" || name === "shiplist-probe" || name === "xss-probe" || name === "party-probe") {   // the browser suites
     const home = process.env.HOME ?? "";
     const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
     if (!chrome) { console.log(`\n== ${name} (${file}) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
     senv = { ...env, CHROME: chrome, SKIP_OPT_SWEEP: "1" };
     const lock = `${home}/eido/.headless.lock`, guard = "/mnt/c/Users/Claude/code/scripts/perf-guard.sh";
-    if (existsSync(guard) && existsSync(lock)) cmd = ["flock", lock, "bash", guard, "-t", "400", "--", ...cmd];
+    if (existsSync(guard) && existsSync(lock)) cmd = ["flock", lock, "bash", guard, "-t", name === "party-probe" ? "650" : "400", "--", ...cmd];   // the party probe drives ~12 stages by hand: ~6 min on this host
   }
   const r = Bun.spawnSync(cmd, { cwd: ENGINE, env: senv });
   const out = (r.stdout.toString() + r.stderr.toString()).trimEnd().split("\n");

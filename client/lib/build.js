@@ -477,10 +477,26 @@ function commitSpawn() {
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
-  if (ghost.bp) Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
-  else if (ghost.lib === '@light') Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
-  else Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
+  let sent;
+  if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
+  else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
+  else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
+  // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot
+  // select what was inserted). A blueprint copy selects its root: the first thing the authority names that rides nothing
+  // else it made. The thing arrives a frame or two after the reply.
+  const bp = !!ghost.bp;
+  Promise.resolve(sent).then((r) => {
+    if (!r?.ok) return;
+    const made = (r.refs ?? []).map((x) => x.id);
+    const pick = bp ? made.find((x) => !made.includes(state.st.entities?.[x]?.parent?.to)) ?? made[0] : id;
+    if (pick) selectWhenHere(pick);
+  });
   cancelGhost();
+}
+function selectWhenHere(id, ms = 3000) {
+  const t0 = performance.now();
+  const go = () => { if (entities.has(id)) { if (editMode) sceneSelect(id); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
+  go();
 }
 
 // ---- lock: `comp {id, type: "lock", data: true}` nails a thing down. The

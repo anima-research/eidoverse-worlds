@@ -69,7 +69,10 @@ export const REDUCED_CHIP = {
   id: 'quality-reduced', level: 'attn', label: 'reduced detail', title: 'Distant objects reduced',
   body: 'The frame rate dipped, so objects at middle distance load a lighter version to keep it. ' +
         'Full detail comes back on its own once the frame rate recovers — this chip goes with it.',
+  actions: [{ label: 'got it' }, { label: 'hide for this visit', clear: true, run: () => { reducedChipHidden = true; } }],
 };
+
+let reducedChipHidden = false;   // the viewer put the chip away (for this visit)
 
 // ---- the resident's render-scale dial (§22k) --------------------------------
 // The §22j A/B proved pixel-bound machines exist; the cruise answers them
@@ -266,7 +269,9 @@ const LEVERS = [
       modelQuality.setShed(true);
       // a STATE, not an event: the chip stays while the reduction is in effect and goes when restore() lifts it (a
       // toast said it once and was gone while the world stayed reduced)
-      statusChip(REDUCED_CHIP);
+      // put away (review 10-07 B1: it couldn't be dismissed): for this visit; the reduction itself carries on, and
+      // Settings still says so
+      if (!reducedChipHidden) statusChip(REDUCED_CHIP);
       return true;
     },
     restore() {

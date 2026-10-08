@@ -201,7 +201,26 @@ register('unban', (arg) => {
   onePerson(id, 'unban').then((who) => { if (who) send({ verb: 'unban', args: { who } }, { what: `unban ${id}` }); });
 });
 
-register('bans', () => sendMod('world-bans'));
+// /bans: what is in force here now — bans, removals cooling down, mutes and ghosts — from the authority's `bans` (the
+// Moderation panel's source). The legacy world-bans message listed bans only, so a mute in force read "nobody is banned"
+// (audit 10-07). Moderators may ask; the authority says so to anyone else.
+register('bans', async () => {
+  const r = await sendRequest('bans', {});
+  if (!r?.ok) return logChat('*', r?.refused?.reason ?? "couldn't read what's in force here");
+  const now = r.now ?? [];
+  const until = (t) => (Number.isFinite(t) ? `until ${new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'until lifted');
+  const why = (x) => (x?.reason ? ` — ${x.reason}` : '');
+  const lines = [];
+  for (const x of now) {
+    const who = x.name ?? x.who;
+    if (x.ban) lines.push(`banned: ${who} ${until(x.ban.until)}${why(x.ban)}`);
+    else if (x.kick) lines.push(`removed (cooling down): ${who} ${until(x.kick.until)}${why(x.kick)}`);
+    if (x.mute) lines.push(`muted (${(x.mute.channels ?? ['voice', 'chat']).join(' + ')}): ${who} ${until(x.mute.until)}${why(x.mute)}`);
+    if (x.ghost && !x.ghost.chosen) lines.push(`ghost: ${who} ${until(x.ghost.until)}${why(x.ghost)}`);
+  }
+  if (!lines.length) return logChat('*', 'nobody is banned, muted or a ghost here');
+  for (const l of lines) logChat('*', l);
+});
 
 // global moderation — WORLD_ADMIN only, the server enforces
 function moderateGlobal(cmd, arg) {

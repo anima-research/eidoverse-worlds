@@ -297,11 +297,16 @@ export function trySitOn(arg, slot = null) {
 // is within reach the hint bar says so — an affordance nobody can discover
 // is indistinguishable from one that doesn't exist. Checked ~2×/s.
 let _hintAcc = 0;
+// builder mode has its own keys (build.js: X and Del remove, E rotates): the world's play offers ("X — sit", "E open")
+// would advertise a delete key as a seat (review 10-07 B5). The bar carries the builder's hints there instead.
+let _building = false;
+bus.on('edit-mode', (on) => { _building = !!on; _hintAcc = 1; });
 export function updateSeatHint(dt) {
   _hintAcc += dt;
   if (_hintAcc < 0.45) return;
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
+  if (_building) { setAmbientHint(null); return; }
   let hint = null;
   if (avatarMounts.has(CONFIG.name)) { const b = mySeatBody();
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)

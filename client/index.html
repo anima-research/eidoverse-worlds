@@ -1662,6 +1662,14 @@ body.touch #touch { display: block; }
 .sp-text { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 3px 6px; }
 .sp-btn { background: var(--brand); border: none; color: #14100c; font-weight: 600; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .sp-btn.danger, .sp-mini.danger { background: #6e2a2a; color: var(--fg); }
+/* the searchable pick list (panels.js openPop: Add Component). Opaque, one lit row — the keyboard's (review 10-07 S10) */
+.sp-pop { background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #3a3a40); border-radius: 6px; box-shadow: 0 8px 28px rgb(0 0 0 / .55); padding: 6px; color: var(--e-text, #d8d8dc); font: 12.5px var(--font); }
+.sp-pop .sp-pop-search { width: 100%; box-sizing: border-box; margin-bottom: 6px; background: var(--e-well, #121214); color: inherit; border: 1px solid var(--e-line, #3a3a40); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.sp-pop .sp-pop-list { overflow-y: auto; flex: 1; min-height: 0; }
+.sp-pop .sp-pop-cat { opacity: .6; font-size: .8em; margin: 6px 4px 2px; text-transform: uppercase; }
+.sp-pop .sp-pop-item { display: block; width: 100%; text-align: left; margin: 1px 0; padding: 4px 8px; border: none; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.sp-pop .sp-pop-item.active { background: var(--e-accent-bg, rgba(77,138,224,.18)); box-shadow: inset 2px 0 0 var(--e-accent, #4d8ae0); }
+.sp-pop .sp-pop-item:disabled { opacity: .45; cursor: not-allowed; }
 .sp-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; }
 .sp-item { display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 5px; }
 .sp-item:hover { background: rgba(255,255,255,.04); }
@@ -1805,6 +1813,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-tree-row:hover .sp-mini, .frame.edit .sp-tree .sp-mini:focus-visible { visibility: visible; }
 .frame.edit .sp-tree .sp-mini.on { color: var(--e-accent); background: none; }
 .frame.edit .sp-tree .sp-lock:disabled { cursor: default; opacity: .55; background: none; }
+.frame.edit .sp-tree .sp-lock.inherited { opacity: .5; }   /* held by a locked parent: a lock, dimmed */
 .frame.edit .sp-tree .sp-mini:hover { background: var(--e-hover); }
 .frame.edit .sp-empty { color: var(--e-dim); font-style: normal; }
 body.edit-workspace [data-frame="emotes"] { display: none !important; }
@@ -2353,7 +2362,10 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 #confirm-center .cc-no { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
 #confirm-center .cc-ok { background: var(--brand-deep); color: var(--ink-on-brand, var(--bg)); border: 1px solid var(--brand); font-weight: 600; }
 #confirm-center .cc-alt { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
+#confirm-center .cc-danger { background: #5a2424; color: #ffd9d4; border: 1px solid #b0524a; font-weight: 600; }
+#confirm-center .cc-btns button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 #confirm-center .cc-btns.cc-many { flex-wrap: wrap; }
+#confirm-center .cc-input { min-height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--edge-hi); background: var(--chip); color: var(--fg); font: 14px var(--font); }
 
 /* ---------------------------------------------------------------- lite client
    The renderer-free surface (client/lite.js). It shares the token sheet above and

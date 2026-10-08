@@ -174,7 +174,11 @@ export function inspectSchema(ent, id, live = {}) {
 
   const flags = [];
   groups.push({ group: 'flags', label: 'Flags', fields: [...flags,
-    { t: 'check', k: 'lock', label: 'locked', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts can move, replace or remove it (server-enforced); sitting on it and content edits stay open' },
+    { t: 'check', k: 'lock', label: 'locked in place', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts can move, replace or remove it (server-enforced); sitting on it and content edits stay open. Not a door\'s lock (that is Openable\'s "door locked")' },
+    // lock levels (R, 10-07): who may lift it — builders and up (a plain lock), moderators and up, or owners only ("not this
+    // piece"). Nobody locks above their own rank; whoever set it may always lift it (the authority's rule)
+    ...(locked ? [{ t: 'enum', k: 'lockLevel', label: 'lock level', value: LOCK_LEVEL(c.lock), def: 'builder', options: LOCK_LEVEL_OPTIONS,
+      hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
     { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
   ] });
@@ -340,7 +344,7 @@ export function inspectSchema(ent, id, live = {}) {
     const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box;
     const fields = [
       { t: 'check', k: 'open', label: 'open', value: o.open === true, hint: 'its state now; anyone using it flips this (its reactions)' },
-      { t: 'check', k: 'locked', label: 'locked', value: o.locked === true, hint: "bars opening while on (an open handler with unless: 'locked'); the edit lock is the Lock component" },
+      { t: 'check', k: 'locked', label: 'door locked', value: o.locked === true, hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" },
       { t: 'enum', k: 'by', label: 'opens by', value: slides ? 'slide' : 'turn', def: 'turn', options: [['turn', 'turning about its pivot (a hinge)'], ['slide', 'sliding']].map(([v, label]) => ({ v, label })) },
     ];
     if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, min: -10, max: 10, unit: 'm', hint: 'how far it moves when open, in its own frame' }));
@@ -523,11 +527,28 @@ const WIRE_BLOCKED = {
   Model: () => 'swap the model from the Library',
   Structure: () => 'start a building from Create ▸ Structure',
   Parent: () => 'give it a parent: drag its row onto another in the Hierarchy, or pick one in this card',
+  // the authority's one-turner rule (look-at vs a rotating motion, or physics turning it): said here, not refused there
+  LookAt: (_have, ent) => { const m = ent?.comp?.motion; if (m && ['pendulum', 'spin'].includes(m.type)) return `it already turns by its ${m.type}; one thing turns at a time — remove that first, or add LookAt to a part`;
+    return ent?.comp?.physics?.kind === 'dynamic' ? 'physics turns it (it is dynamic): make it static, or add LookAt to a part' : null; },
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
-// not offered by Add Component: what the authority refuses today. LookAt writes `look`, a near-miss of `lock` (batch 2 is
-// renaming it look-at). tools/protocol/shiplist-check.ts R1 sends every offered entry to the real door: all must be accepted.
-const NOT_OFFERED = new Set(['LookAt']);
+// not offered by Add Component: what the authority refuses today (none: LookAt writes `look-at` since batch 2, and the
+// agent's add.LookAt already worked while this list still hid it from people: audit 10-07). tools/protocol/shiplist-check.ts
+// R1 sends every offered entry to the real door: all must be accepted.
+const NOT_OFFERED = new Set();
+// a lock's level as the inspector reads it: true (a plain lock) is builder level
+const LOCK_LEVEL = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
+const LOCK_LEVEL_OPTIONS = [['builder', 'builders and up'], ['moderator', 'moderators and up'], ['owner', 'owners only']].map(([v, label]) => ({ v, label }));
+/** The words people search Add Component with that aren't in a component's name or summary (review 10-07 S9: "seat"
+ *  found nothing; the seat is Sockets). Shared so an agent's surface can use the same words. */
+export const ADD_WORDS = Object.freeze({
+  Sockets: ['seat', 'chair', 'sit', 'bench', 'stool', 'saddle', 'swing'], Reactions: ['button', 'switch', 'lever', 'trigger', 'press'],
+  Text: ['sign', 'label', 'words', 'caption', 'write'], Picture: ['image', 'poster', 'photo', 'painting', 'decal'],
+  Sound: ['music', 'audio', 'speaker', 'song'], Openable: ['door', 'gate', 'lid', 'hatch'], Grabbable: ['pick up', 'carry', 'hold', 'item', 'pickup'],
+  Light: ['lamp', 'bulb', 'torch', 'glow'], LookAt: ['face', 'turn to', 'track', 'follow', 'watch'], Collider: ['solid', 'collide', 'walk on'],
+  Particles: ['fire', 'smoke', 'sparks', 'fx', 'effect'], Spin: ['rotate', 'turn'], Bob: ['float', 'hover'], Story: ['description', 'info', 'plaque'],
+  Lock: ['pin', 'nail down', 'freeze'], Pivot: ['hinge', 'origin'],
+});
 /** A library path as the inspector header shows it: the file stem, first three words. */
 export const libLabel = (lib) => String(lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ');
 // A node name a generator made (tripo_part_fused_0, mesh_12, Cube.003, a uuid)
@@ -586,7 +607,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         sec.removable = inst.key != null;
         break;
       case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
-      case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
+      case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key || f.k === 'lockLevel'); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
       case 'Openable': sec.fields = refs('openable'); sec.removable = true; break;
@@ -929,7 +950,8 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'flags': {
-        if (k === 'lock') flagsComp('lock', bool(raw) ? true : null);
+        if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
+        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'label') { const s = String(raw ?? '').trim(); flagsComp('label', s ? s.slice(0, 80) : null); }
         break;
@@ -1124,7 +1146,13 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'comp': {
-        if (k === '+') { const type = String(raw ?? '').trim(); if (!type) break; if (c[type] != null) { errors.push(`${id} already has ${type}`); break; } comps.set(type, {}); break; }
+        if (k === '+') { const type = String(raw ?? '').trim(); if (!type) break;
+          // a component's own name ("Openable", "openable", "look-at") is Add Component, needs and defaults included — the
+          // same ops a person's menu writes (review 10-07 B4: comp.+ "Openable" minted a junk x--… component instead)
+          const rec = Object.keys(RECORDS).find((n) => n.toLowerCase() === type.toLowerCase().replace(/[-_ ]/g, ''));
+          if (rec && !RECORDS[rec].world && !RECORDS[rec].readOnly) { const r = addOps(ent, id, rec); errors.push(...r.errors); ops.push(...r.ops); if (r.choice) asks.push({ kind: 'choice', ...r.choice, key: `add.${rec}` }); break; }
+          if (!/^[a-z][a-z0-9-]*$/.test(type)) { errors.push(`comp.+: '${type}' isn't a component name (lowercase a–z, 0–9 and '-'); Add Component's names are ${Object.keys(RECORDS).filter((n) => !RECORDS[n].world).join(', ')}`); break; }
+          if (c[type] != null) { errors.push(`${id} already has ${type}`); break; } comps.set(type, {}); break; }
         if (raw == null || raw === '') { comps.set(k, null); break; }
         let data = raw;
         if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { errors.push(`comp.${k}: not valid JSON (${e.message})`); break; } }
@@ -1189,7 +1217,7 @@ export function editOps(ent, id, edits, live = {}) {
   // one whole transform (§2.3): local to the parent for a child, which is the pose the channels edit (pv)
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
-  for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
+  for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' && data !== true && !(data && typeof data === 'object' && LOCK_LEVEL(data) === data.rank) ? true : data)); }
   return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), };
 }
 

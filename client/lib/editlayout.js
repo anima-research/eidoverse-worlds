@@ -26,6 +26,7 @@ import { withKeys, KEYHINTS } from './keyhints.js';
 import * as Edits from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
+import { placeStatusChips } from './statuschips.js';
 
 const LS = 'ew-edit-layout';
 // the left column's top pane is one frame at a time, picked by tab (edittabs.js TABS): B opens
@@ -236,7 +237,10 @@ function menu(label, items) {
 }
 function closeMenus() { for (const p of document.querySelectorAll('.edit-menu-pop')) p.hidden = true; for (const p of document.querySelectorAll('.edit-space-pop')) p.remove(); }
 addEventListener('pointerdown', (e) => { if (!(e.target instanceof Element && e.target.closest('.edit-menu, .edit-space-pop'))) closeMenus(); }, true);
-addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenus(); }, true);
+// Esc with a menu open closes the menu and goes no further: it used to also reach build.js's Esc ladder, which left
+// builder mode (open Edit ▾, change your mind, Esc: out of the editor)
+const menuOpen = () => [...document.querySelectorAll('.edit-menu-pop')].some((p) => !p.hidden) || !!document.querySelector('.edit-space-pop');
+addEventListener('keydown', (e) => { if (e.key !== 'Escape' || !menuOpen()) return; closeMenus(); e.preventDefault(); e.stopImmediatePropagation(); }, true);
 
 function dragSplit(handle, onDelta) {
   handle.addEventListener('pointerdown', (e) => {
@@ -358,7 +362,7 @@ function enter() {
   if (w?.visible) w.hide();
   apply();
   // the glyphs re-seat on the next frame (mictoggle hears edit-mode too); measure once they have
-  requestAnimationFrame(() => requestAnimationFrame(fitSeat));
+  requestAnimationFrame(() => requestAnimationFrame(() => { fitSeat(); placeStatusChips(); }));   // the chips continue past the menus (B1)
   clearInterval(seatTimer); seatTimer = setInterval(() => { fitSeat(); apply(); }, 1000);
 }
 function exit() {
@@ -378,6 +382,7 @@ function exit() {
   if (prevWorld) getFrame('world')?.show();
   prevChat = prevWorld = null;
   closeMenus();
+  placeStatusChips();   // back beside the HUD's ∃
 }
 
 export function initEditLayout() {
