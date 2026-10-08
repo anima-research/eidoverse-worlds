@@ -3,8 +3,12 @@
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { OPT_DIR, LIBRARY_DIR } from "./config.ts";
+import { eidoHex } from "../shared/eido.js";
+import { eidoFile } from "./eidoindex.ts";
 
 export function resolveLibFile(lib: string): string | null {
+  // a content address (eido:sha256/<hex>; review 10-07 H3): the original bytes it names, wherever this host keeps them
+  const hex = eidoHex(lib); if (hex) return eidoFile(hex);
   const rel = normalize(lib).replace(/^\/+/, "");
   if (rel.includes("..") || !/\.(glb|vrm)$/i.test(rel)) return null;
   for (const base of [OPT_DIR, LIBRARY_DIR]) {

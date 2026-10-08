@@ -31,6 +31,7 @@ import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
 import { registerFoliage } from './foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
+import { libRelOf } from '../../shared/eido.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -217,7 +218,9 @@ export const lodNegotiable = (libPath) => resolveLoadRequest(libPath, 'lod').tie
  *  never a restatement of it: tools/lod-loader-probe.ts runs THIS module
  *  against an owned sequencer, and a mutation here fails it. */
 export function resolveLoadRequest(libPath, tier = 'full') {
-  const ask = askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
+  // a model named by its content address (eido:sha256/…, review 10-07 H3) is fetched as /library/eido/sha256/<hex>.glb:
+  // the host serves its rendition of the file it names; the cache keys stay the model value itself
+  const ask = askFor({ libPath: libRelOf(libPath), key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
   return { url: ask.url, tier: ask.tier, glbKey: ask.tier === 'lod' ? `${libPath}#lod` : libPath };
 }
 /** GPU memory against the proto budget — the policy's "device pressure". */

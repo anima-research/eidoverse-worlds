@@ -41,6 +41,8 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
       return flat.length === 1 ? W.send(flat[0], extra, actor) : call("batch", { ops: flat, ...extra }, actor);
     },
     state: () => (w ??= open(root, name)).state(),
+    /** the log's entries as the authority holds them */
+    entries: () => (w ??= open(root, name)).entries,
     /** a stored blob (a published blueprint record) by its hash */
     getBlob: (h) => (w ??= open(root, name)).getBlob(h),
     view: () => viewState(w.state()),

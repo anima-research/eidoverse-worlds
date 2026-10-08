@@ -10,8 +10,9 @@
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION } from "./fold.js";
-import { COMPONENTS, PENDULUM } from "./componentspec.js";
+import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
+import { mintId, PERSON_ID } from "./ids.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
@@ -162,10 +163,10 @@ export function worldOf(io) {
   // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any is written, so a
   // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
   w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k); if (!bad) continue;
-    if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§2.4)`, "split it into smaller requests, or put big data in a blob and store its hash");
+    if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§1)`, "split it into smaller requests, or put big data in a blob and store its hash");
     throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
   w.append = (e, token) => {
-    if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (L7: one gate)");
+    if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (§7: one gate)");
     w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
     if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
     entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
@@ -215,7 +216,7 @@ export function seal(entries, { sign, random } = {}) {
 // version was read on a branch that was rewound (or in another world): refused, never compared by seq alone.
 function versionSeq(w, v, what) {
   if (!(v && typeof v === "object" && !Array.isArray(v) && Number.isInteger(v.seq) && typeof v.head === "string" && Object.keys(v).length === 2))
-    refuse("shape", `${what} is a version {seq, head}, never a bare seq (§3d M7)`, "inspect {id} → versions gives {seq, head} for each component; a write's result carries its own seq and head");
+    refuse("shape", `${what} is a version {seq, head}, never a bare seq`, "inspect {id} → versions gives {seq, head} for each component; a write's result carries its own seq and head");
   if (v.seq < 0 || v.seq >= w.entries.length || w.headAt(v.seq) !== v.head)
     refuse("other-branch", `${what} {seq: ${v.seq}} names a head this world's history doesn't have at that seq: it was read on a branch that was rewound, or elsewhere`, "inspect again and redo the change on what's here");
   return v.seq;
@@ -657,13 +658,13 @@ export function request(w, actor, verb, args = {}) {
   // carrier re-folding the log would then call the authority's own digest wrong (physlive Q1).
   const clock = w.now; const t0 = clock(); w.now = () => t0;
   try {
-    if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the authority can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); system, sim and world are the authority's own");
+    if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the authority can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§3.1); system, sim and world are the authority's own");
     const h = VERBS[verb];
     if (h && !w.exists && !["create-world", "help"].includes(verb)) refuse("no-world", `there is no world called '${w.name}' yet`, `create-world {title: '…'} founds it (you become its owner); or pick a world that exists`);
     // §2.4: chain points are signed by the key genesis names (or the latest handoff). An authority holding another key would
     // write lines its own verifier calls forged (a moved dir, a lost or swapped custody file): it refuses instead (R5).
     if (h && w.exists && w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer && !READ_ONLY.has(verb))
-      refuse("custody", "this server doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§2.4 handoff); reads still work");
+      refuse("custody", "this server doesn't hold the key that signs this world (its genesis names another sequencer)", "the operator restores the world's custody file, or hands the sequencer over (§13 handoff); reads still work");
     if (h && w.exists && w.state().status !== "ok") refuse("unreadable", `this world's log folds to '${w.state().status}'`, "the authority won't write to a log its own reader refuses");
     if (!h) refuse("unknown-verb", `there is no '${verb}'`, "help lists every verb", { didYouMean: guess(verb, Object.keys(VERBS)) });
     // `leave` passes: it settles their own presence (the server sends it when it removes them; review 10-07: a kicked
@@ -832,12 +833,13 @@ function admit(w, st, who, ops) {
       if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
     const e = s.entities[op.id];
     if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
+      if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");
       // §3d H7: an id is never reused, so a re-created id can't inherit references (parents, portals, old acts) or a sponsorship
       // …except the SAME thing coming back: an undo restoring what its own target deleted (who.restores, set only by
       // buildUndo's whole-thing branch). Its references are its own, so inheriting them is the point (Ctrl+Z after Delete).
       if ((w.everIds().has(op.id) && !who.restores?.has(op.id)) || made.has(op.id)) refuse("reused", `'${op.id}' existed before in this world; an id is never reused`, "choose another id, or leave id out and the authority mints a fresh one"); }
     else if (!e) refuse("not-found", `no thing called '${op.id}'`, "look lists what's here", { didYouMean: guess(op.id, Object.keys(s.entities)) });
-    else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2.3: delete or change its components instead (owners only)");
+    else if (op.verb === "delete" && op.comp === undefined && op.id === "@world") refuse("world", "@world can't be deleted", "§2: delete or change its components instead (owners only)");
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
     const pause = op.verb === "set" && op.comp.startsWith("script:") && pauseOnly(op.value, s.entities[op.id]?.c[op.comp]);
@@ -849,11 +851,11 @@ function admit(w, st, who, ops) {
     // §3d M6 (L5): a schemas:<name> value, once set, can't change (a new meaning is a new name). Setting the same value
     // again changes nothing; deleting it is changing it.
     if (op.id === "@world" && op.comp?.startsWith("schemas:") && e && op.comp in e.c && !(op.verb === "set" && jcs(op.value) === jcs(e.c[op.comp])))
-      refuse("schema-fixed", `@world.${op.comp} is set; a schema never changes (L5: a name never changes meaning)`, "a new meaning is a new name");
+      refuse("schema-fixed", `@world.${op.comp} is set; a schema never changes (§4: a name never changes meaning)`, "a new meaning is a new name");
     if (op.comp === "terrain-grid" && Object.keys(e?.c ?? {}).some((k) => k.startsWith("terrain-tile:")) && !(op.verb === "set" && jcs(op.value) === jcs(e.c["terrain-grid"])))
-      refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity (40 §6.1)");
-    if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); L6: no write may touch a launched thing before its rest");
-    if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§5: lock the things in it instead");
+      refuse("grid-fixed", `${op.id}'s terrain-grid is fixed while it has tiles`, "regridding is a new ground entity");
+    if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); no write may touch a launched thing before its rest");
+    if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§7: lock the things in it instead");
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
     else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp) || op.comp.startsWith("terrain-tile:"))) { // a rest is the engine's word on a released thing: locks guard authored writes
@@ -868,12 +870,12 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: FORKING }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
-  if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
+  if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
   return new Admitted(who, norm, s);
 }
@@ -918,8 +920,8 @@ function lockCheck(w, st, who, role, k, op, at) {
 const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
   if (!["create", "set", "delete"].includes(verb)) refuse("shape", `op ${i}: '${verb}' isn't a state operation`, "create, set and delete (batches are flat)");
-  if (!isEntityId(op.id)) refuse("shape", `'${op.id}' isn't an entity id`, "§2.3: a–z, 0–9 and '-', up to 64, or @world", { didYouMean: guess(String(op.id), []) });
-  if ((verb === "set" || op.comp !== undefined) && !isComponent(op.comp)) refuse("shape", `'${op.comp}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/ first, @<n> version and :<key> after (ASCII only)", { didYouMean: guess(String(op.comp), Object.keys(COMPONENTS)) });
+  if (!isEntityId(op.id)) refuse("shape", `'${op.id}' isn't an entity id`, "§3.1: a–z, 0–9 and '-', up to 64, or @world", { didYouMean: guess(String(op.id), []) });
+  if ((verb === "set" || op.comp !== undefined) && !isComponent(op.comp)) refuse("shape", `'${op.comp}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/ first, @<n> version and :<key> after (ASCII only)", { didYouMean: guess(String(op.comp), Object.keys(COMPONENTS)) });
   const out = { id: op.id }; if (op.comp !== undefined) out.comp = op.comp; if (verb === "set" && "value" in op) out.value = op.value;
   return out;
 }
@@ -1090,11 +1092,11 @@ function rolesCheck(st, s, ops) {
   // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
 // Sanity and shape of the values the authority's own engine reads (what the change IS, not which word carried it).
-function valueCheck(s, { id, comp, value: v }) {
+function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
   // meant different things to the authority and the renderer (component review T1a/T1b)
-  const on = COMPONENTS[comp.split(":")[0]]?.on;
+  const on = defOf(comp)?.on;
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
@@ -1157,18 +1159,18 @@ function valueCheck(s, { id, comp, value: v }) {
     if (v.type === "path" && v.speed !== undefined && v.duration !== undefined) refuse("shape", `${at} gives its speed twice (speed and duration)`, "give one: speed (m/s) or duration (s from the first point to the last)");
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
-  if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "L2: no stored derived values; inspect shows the pivot as a view");
+  if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
-      if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3");
+      if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§3.1");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'openable', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
-  schemaCheck(at, comp, v);
+  schemaCheck(at, comp, v, { carry });
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
     if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
@@ -1224,7 +1226,10 @@ const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
   vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),
   axis: (x) => (Array.isArray(x) && x.length === 3 && x.every(isNum)) || x === "x" || x === "y" || x === "z", // the text-tier shorthand the renderer reads (motioneval.js)
-  array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x) };
+  array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x),
+  // references (componentspec REF_TYPES): ids of things, identities of people, or @words where a field takes them
+  ref: (x) => isEntityId(x), refs: (x) => Array.isArray(x) && x.every((y) => isEntityId(y)), person: (x) => isIdentity(x), people: (x) => Array.isArray(x) && x.every((y) => isIdentity(y)),
+  target: (x) => typeof x === "string" && (isEntityId(x) || /^@[a-z]+$/.test(x)), scope: (x) => x === "self" || x === "subtree" || (Array.isArray(x) && x.every((y) => y === "self" || isEntityId(y))) };
 // "did you mean" for a field name: a prefix either way (amp → amplitude) beats a short edit distance (amp → w)
 function guessKey(k, allowed) {
   const lev = (a, b) => { const m = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
@@ -1251,8 +1256,8 @@ export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
     const ob = v && typeof v === "object" && !Array.isArray(v);
     for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (ob && v[f] !== undefined && !allowed.includes(v[f])) return `shape: ${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`;
     return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
-function schemaCheck(at, comp, v) {
-  const name = comp.split(":")[0], def = COMPONENTS[name];
+function schemaCheck(at, comp, v, { carry = false } = {}) {
+  const base = baseOf(comp), name = registered(base) ?? base, def = COMPONENTS[name];
   // `param.<name>`: a number a script writes into a component for something else to read (seat poses that blend by
   // signals). Any object component may carry them at its top level; the rest of the value is checked as usual.
   if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith("param."))) {
@@ -1261,13 +1266,20 @@ function schemaCheck(at, comp, v) {
       if (!isNum(v[k])) refuse("shape", `${at}.${k} is a number (a signal), got ${JSON.stringify(v[k]).slice(0, 40)}`, "a script writes it with world.param(id, component, name, number)"); }
     v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("param.")));
   }
-  // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
-  // it's a near-miss of a registered name: that's a typo (ligth, transform@2), and it would be a new name forever (L5)
+  // PROTOCOL §4 (review 10-07 H1, R's ruling): a bare name is the registry's. An unregistered one is refused: a typo of
+  // a registered name says "did you mean"; a versioned one (light@2) says a new meaning is registered first; anything
+  // else is someone's own component, which carries a namespace (example.org/heart). Before this they were admitted, and
+  // the registry later promoting the same word (story) would have reread every old value in the new meaning.
+  // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
   if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
-  if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (L2), never stored`, "inspect {id} → derived.madeBy");
-  if (!def) { if (!name.includes("/")) { const near = nearMiss(name);
-      if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${name}')`, { didYouMean: near }); }
-    return; }
+  if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
+  if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
+    const ver = /^(.*)@[1-9][0-9]*$/.exec(name);
+    if (ver && COMPONENTS[ver[1]]) refuse("schema", `${at}: '${name}' isn't registered yet: a changed meaning of '${ver[1]}' is a new name, registered (saying what it supersedes) before anyone writes it`, `use '${ver[1]}' as it is defined (schema {component: '${ver[1]}'}), or propose ${name} for the registry (shared/protocol/componentspec.js); a meaning of your own goes under your namespace: 'example.org/${name}'`, { didYouMean: [ver[1]] });
+    const near = nearMiss(name);
+    if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own carries a namespace (e.g. 'example.org/${name}')`, { didYouMean: near });
+    refuse("schema", `${at}: '${name}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: '<your domain or handle>/${name}', e.g. 'example.org/${name}'. It's kept and shown as it is; schema lists the registered ones`, { didYouMean: [`example.org/${name}`] });
+  }
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
@@ -1334,7 +1346,7 @@ function changeShape(plan, cause, w) {
   return { kind: "change", actor: plan.who.actor, cause, ...one };
 }
 function changeEntry(w, plan, cause) {
-  if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (L7)");
+  if (!(plan instanceof Admitted)) throw new Error("authority bug: a state write that admit() didn't produce (§7)");
   const seq = w.append(changeShape(plan, cause, w), CHANGE);
   (w.changedQ ??= []).push(seq); // `changed:<comp>` events, drained after the request (scripts, below)
   return seq;
@@ -1460,7 +1472,7 @@ function needThing(ctx, id) {
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 function resolve(ctx, id, comp, value, prev) {
-  const def = COMPONENTS[comp] ?? (comp.startsWith("look-at:") ? COMPONENTS["look-at"] : undefined);   // a part's look-at has the whole one's defaults
+  const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
     const v = { ...COMPONENTS.transform.defaults, ...(prev ?? {}), ...(value ?? {}) };
     if (value && "yaw" in value) { v.q = yawQ(value.yaw).map((n) => r3(n)); delete v.yaw; ctx.notes.push({ id, component: "transform", field: "yaw", sent: value.yaw, kept: v.q, why: "yaw is a convenience; the log stores q" }); }
@@ -1472,18 +1484,16 @@ function resolve(ctx, id, comp, value, prev) {
     const n = Math.hypot(...v.q); if (v.q.length === 4 && n > 1e-6 && Math.abs(n - 1) > 1e-9) v.q = v.q.map((x) => x / n);
     return v;
   }
-  if (!COMPONENTS[comp] && !comp.includes(":")) ctx.notes.push({ id, component: comp, why: `'${comp}' isn't a component this world's engine knows: it is kept (and will be preserved), but nothing will draw or run it`, didYouMean: guess(comp, Object.keys(COMPONENTS)) });
-  if (comp === "motion" && value && typeof value === "object") { const v = { ...(value.type === "pendulum" ? PENDULUM : {}), ...value }; delete v.pivot;
+  if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
+  // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
+  const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
+  if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled); delete v.pivot;
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
   // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
-  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value) && value.t0 === undefined) {
-    const v = { ...value, t0: ctx.w.now() }; ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); return v; }
-  if (def?.defaults && value && typeof value === "object" && !Array.isArray(value)) {
-    const filled = Object.keys(def.defaults).filter((k) => !(k in value));
-    if (filled.length) ctx.notes.push({ id, component: comp, filled, why: "defaults written out so the engine can't change them later" });
-    return { ...def.defaults, ...value };
-  }
+  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize("motion", value); const v = filled(m.value, m.filled);
+    if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
+  if (def && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize(comp, value); return filled(m.value, m.filled); }
   return value;
 }
 function merge7396(target, patch) {
@@ -1495,17 +1505,18 @@ function merge7396(target, patch) {
 let mintN = 0;
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
 let mintW = null;
-function mint(st, base) { base = slug(base); let n = Object.keys(st.entities).length + (++mintN); const ever = mintW?.everIds() ?? new Set();
-  while (st.entities[`${base}-${n}`] || ever.has(`${base}-${n}`)) n++; return `${base}-${n}`; }
+// review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
+function mint(st, base) { const ever = mintW?.everIds() ?? new Set(); let id;
+  do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
 function buildCreate(ctx, a) {
   if (a.from) return buildCreateFrom(ctx, a);
   const comps = { ...(a.components ?? {}) };
   if (a.model) comps.model = a.model;
   const id = a.id ?? mint(ctx.st, comps.model ?? "thing");
-  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out and the authority mints one");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id, or leave id out and the server mints one");
-  for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
+  for (const k of Object.keys(comps)) if (!isComponent(k)) refuse("shape", `'${k}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key>", { didYouMean: guess(k, Object.keys(COMPONENTS)) });
   const out = {};
   for (const [k, v] of Object.entries(comps)) out[k] = resolve(ctx, id, k, v);
   if (!out.transform) out.transform = resolve(ctx, id, "transform", {});
@@ -1519,7 +1530,7 @@ function buildCreate(ctx, a) {
 
 function buildSet(ctx, a) {
   const e = needThing(ctx, a.id);
-  if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
+  if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
   const lt = lastTouch(ctx.w, a.id, a.component); const base = a.base === undefined ? undefined : versionSeq(ctx.w, a.base, "base");
   if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { current: e.c[a.component] ?? null, version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
@@ -1904,6 +1915,7 @@ function offersFor(st, id, actor) {
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
+export const SCRIPT_DEFAULTS = Object.freeze({ ...SCRIPTS });   // what script-settings' registered defaults must equal (pretrans D6)
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
 const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];
@@ -1914,9 +1926,9 @@ function scriptRights(w, st, cap, op, at, made) {
   if (op.verb === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
   else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
     if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
-      refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install (41 §3.5)"); }
+      refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install"); }
   const r = roleOf(st, cap.sponsor); const need = lacks(w, st, cap.sponsor, op, new Set([...(made ?? []), ...(cap.made ?? [])]), { viaCap: true });
-  if (need) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${needWords(need)})`, "dormant: a behaviour has its sponsor's rights now, never more (L4). An owner may adopt it: adopt {id, script}");
+  if (need) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${needWords(need)})`, "dormant: a behaviour has its sponsor's rights now, never more (§8). An owner may adopt it: adopt {id, script}");
 }
 // At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
 // rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
@@ -1931,28 +1943,31 @@ function installCheck(w, st, s, who, op) {
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
   if (!blob) refuse("not-found", `${at}.src: no blob ${v.src} here`, "upload {text} first");
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
-  const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install (41 §3.12): reviewers must see what runs");
+  const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, "refused at install: reviewers must see what runs");
   w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
   const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
     refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
   if (!Array.isArray(sc.comps) || sc.comps.length > 16 || !sc.comps.every((c) => typeof c === "string" && isComponent(sampleOf(c)))) refuse("shape", `${at}.scope.comps must be up to 16 component names ('name:*' for keyed)`, COMPONENTS.script.help);
-  if (sc.bodies !== undefined && (!Array.isArray(sc.bodies) || sc.bodies.some((b) => !BODY_EFFECTS.includes(b)))) refuse("shape", `${at}.scope.bodies may name ${BODY_EFFECTS.join(", ")}`, "each lands only where that body's consent allows it (L6)");
+  if (sc.bodies !== undefined && (!Array.isArray(sc.bodies) || sc.bodies.some((b) => !BODY_EFFECTS.includes(b)))) refuse("shape", `${at}.scope.bodies may name ${BODY_EFFECTS.join(", ")}`, "each lands only where that body's consent allows it (§5)");
   if (sc.launch) refuse("shape", `${at}.scope.launch: scripts can't launch sim bodies yet`, "leave launch out");
   if (sc.create && sc.ids !== "subtree") refuse("scope", `${at}: create needs ids: 'subtree' (what it makes must hang under it)`, "");
   // a scope that names a typo of a registered component could never write it (admit refuses the name): say so now
-  for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !COMPONENTS[n] && !n.includes("/") ? nearMiss(n) : [];
-    if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${n}')`, { didYouMean: near }); }
+  for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !registered(n) && !n.includes("/") ? nearMiss(n) : [];
+    if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own carries a namespace (e.g. 'example.org/${n}')`, { didYouMean: near });
+    // PROTOCOL §4: a script may only ever write what the authority takes, so a bare name nobody registered is refused here,
+    // at install, rather than at every activation
+    if (!registered(n) && !n.includes("/")) refuse("schema", `${at}.scope.comps: '${n}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: 'example.org/${n}'`, { didYouMean: [`example.org/${n}`] }); }
   for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { verb: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
-    if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly (41 §3.3): narrow the scope, or ask an owner to install or adopt it"); }
+    if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly: narrow the scope, or ask an owner to install or adopt it"); }
   const on = v.on ?? [];
   if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
     refuse("shape", `${at}.on lists ${SCRIPT_EVENTS.join(", ")} and changed:<comp>`, "timers come from every (they deliver tick, and wake after sleeping)");
-  if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine (41 §3.8); motion is a function of time");
+  if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine; motion is a function of time");
   if (v.knobs !== undefined && jcs(v.knobs).length > 4096) refuse("too-big", `${at}.knobs is ${jcs(v.knobs).length} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
-  if (v.always === true && prev?.always !== true && role !== "owner") refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits (41 §3.8)");
+  if (v.always === true && prev?.always !== true && role !== "owner") refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
   if (prev === undefined) { const n = allScripts(s).length;
     if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.script-settings.max (owner)"); }
 }
@@ -2439,7 +2454,7 @@ function buildUndo(ctx, a, w) {
     : pick((q) => E[q].verb !== "create-world" && depthOf(q) % 2 === 0 && !X.undone.has(q) && X.resultOf.has(q));
   if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
     refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
-  if (target.verb === "create-world") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
+  if (target.verb === "create-world") refuse("founding", "founding a world can't be undone", "§2: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
   if (X.undone.has(target.seq)) { let head = target.seq; const chain = []; for (let i = 0; i < 64; i++) { const u = undoneBy(head); if (u === undefined) break; chain.push(u); head = u; }
     const live = head !== target.seq && depthOf(head) % 2 === 0 ? head : null;
     refuse("nothing", `act ${target.seq} was already undone${chain.length ? ` (by ${chain.map((c) => `${depthOf(c) % 2 ? "undo" : "redo"} ${c}`).join(", then ")})` : ""}`,
@@ -2507,7 +2522,7 @@ function buildSculpt(ctx, a) {
   const { writes, clamped } = TR.applyStroke(g, tiles, a);
   if (!writes.size) refuse("nothing", "the brush touches no sample of the grid", "check the path against terrain-grid.origin and extent");
   const bytes = [...writes.values()].reduce((t, mm) => t + jcs(mm).length + 60, 0);
-  if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles (about ${bytes} bytes); a log line is at most 1 MiB, and a stroke is one entry (§3b)`, "use the base (terrain) or import a raster for big changes; or use a smaller brush");
+  if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles (about ${bytes} bytes); a log line is at most 1 MiB, and a stroke is one entry`, "use the base (terrain) or import a raster for big changes; or use a smaller brush");
   ctx.actExtra = { tiles: writes.size, ...(clamped ? { clamped: true } : {}) }; ctx.refs.add(a.on);
   return [...writes].map(([c, mm]) => setOp(a.on, c, { mm }));
 }
@@ -2515,16 +2530,34 @@ function buildSculpt(ctx, a) {
 const BLUEPRINTS = "blueprints:";
 const blueprintKey = (h) => `${BLUEPRINTS}${String(h).replace(/^sha256:/, "")}`;
 const isPublished = (st, h) => !!st.entities["@world"]?.c[blueprintKey(h)];
+// References across a copy (review 10-07 H5; RESEARCH-event-wiring §4.3): every typed reference in a components map (its
+// parent excepted: copies place parents themselves) through f(id, path) → new id | null (drop) | the same id (keep).
+// Returns the components with dropped references removed (a value whose required reference went is removed whole).
+function rebindAll(c, f) {
+  for (const k of Object.keys(c)) { if (k === "parent" || k === "copy-of") continue;
+    const r = mapRefs(k, c[k], (x, at) => f(x, at, k)); if (r.value === undefined) delete c[k]; else c[k] = r.value; }
+  return c;
+}
+// publish: a reference inside what's published becomes that part's key; one outside is refused (a raw id from this world
+// means nothing, or something else, wherever the record lands) unless unwire: true, which drops it and says so
+function publishLinks(ctx, a, inside, keyOf, partsOf) {
+  const outside = [], unwired = [];
+  const parts = partsOf((id, c) => rebindAll(c, (x, at) => { if (inside.has(x)) return keyOf(x); if (a.unwire) { unwired.push({ from: `${id}.${at}`, to: x }); return null; } outside.push({ from: `${id}.${at}`, to: x }); return x; }));
+  if (outside.length) refuse("outside-link", `${outside.length} link(s) point outside what you're publishing: ${outside.slice(0, 6).map((o) => `${o.from} → ${o.to}`).join(", ")}`,
+    "publish those things too (from: [them, …]), or send unwire: true to publish without those links (each is dropped and listed)", { links: outside });
+  if (unwired.length) ctx.notes.push({ unwired, why: "these links pointed outside what you published: dropped from the record (unwire: true)" });
+  return parts;
+}
 function buildPublish(ctx, a, w) {
   const roots = Array.isArray(a.from) ? a.from : [a.from];
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
   const ids = [a.from, ...descendants(ctx.st, a.from)];
   const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c["copy-of"]?.from);
-  const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
+  const parts = publishLinks(ctx, a, new Set(ids), keyOf, (fix) => ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
     if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
-    return { key: keyOf(id), components: c }; });
+    return { key: keyOf(id), components: fix(id, c) }; }));
   const record = { name: a.name ?? a.from, root: keyOf(a.from), parts, by: ctx.actor };
   const hash = w.putBlob(record);
   ctx.notes.push({ record: hash, parts: parts.length });
@@ -2539,10 +2572,10 @@ function publishGroup(ctx, a, w, roots) {
   const keyOf = partKeys(ctx.st, all, lineage, ["root"]);
   const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
-    ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
+    ...publishLinks(ctx, a, new Set(all), keyOf, (fix) => all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
       if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
       else c.parent = { ...c.parent, to: keyOf(c.parent.to) };
-      return { key: keyOf(id), components: c }; })];
+      return { key: keyOf(id), components: fix(id, c) }; }))];
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
   const hash = w.putBlob(record); ctx.notes.push({ record: hash, parts: parts.length, roots: roots.length }); ctx.refs.add("@world");
   return [setOp("@world", blueprintKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
@@ -2578,7 +2611,9 @@ function buildUpdate(ctx, a, w) {
   const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c["copy-of"]?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
   const fresh = partIds(ctx.st, a.copy, base.root, theirs.parts.map((p) => p.key).filter((k) => !have.has(k)));
   const idOf = (key) => (key === base.root ? a.copy : have.get(key) ?? fresh.get(key));
-  const B = Object.fromEntries(base.parts.map((p) => [p.key, p.components])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, p.components]));
+  // references are merged as values in this world's ids: a part key → its id here (an unknown key is unbound, as on copy)
+  const inIds = (c) => rebindAll(clone(c), (x) => idOf(x) ?? null);
+  const B = Object.fromEntries(base.parts.map((p) => [p.key, inIds(p.components)])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, inIds(p.components)]));
   const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
   const ops = [], conflicts = [], kept = [], orphaned = [];
   const skipComp = new Set(["copy-of", "parent"]);
@@ -2620,19 +2655,23 @@ function buildCreateFrom(ctx, a) {
   try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's blueprints"); }
   if (!isPublished(ctx.st, a.from)) refuse("not-published", `${a.from} isn't one of this world's blueprints`, "publish it here first");
   const id = a.id ?? mint(ctx.st, rec.name);
-  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (ctx.st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(ctx.st, id, rec.root, rec.parts.map((p) => p.key));
   // a record published before part keys were unique (N1) may name a key twice: each later twin gets an id of its own
   // (a part that names a twin as its parent rides the first; there's no telling which was meant)
   const seen = new Set(), used = new Set([...ids.values()]); const idAt = rec.parts.map((p) => { if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }
     let n = 2, x; do x = `${ids.get(p.key)}`.slice(0, 60) + `-${n++}`; while (used.has(x) || ctx.st.entities[x]); used.add(x); return x; });
-  const ops = [];
+  const ops = [], unbound = [];
   for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
     if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
+    // a reference to a part key is that part's new id; anything else (a record published before references were typed,
+    // naming a raw id of the world it came from) is unbound here, and said: it would mean something else in this world
+    rebindAll(c, (x, at) => { if (ids.has(x)) return ids.get(x); unbound.push({ from: `${idAt[i]}.${at}`, was: x }); return null; });
     c["copy-of"] = { from: a.from, key: p.key };
     ops.push(...createOps(idAt[i], c)); ctx.refs.add(idAt[i]); }
+  if (unbound.length) ctx.notes.push({ unbound, why: "the record named things that aren't parts of it: those links aren't wired in the copy (set them again)" });
   return ops;
 }
 
@@ -2647,18 +2686,21 @@ function buildDuplicate(ctx, a) {
   const all = [src, ...descendants(st, src)];
   const sc = st.entities[src].c;
   const id = a.id ?? mint(st, typeof sc.label === "string" ? sc.label : typeof sc.model === "string" ? sc.model.split("/").pop().replace(/\.[a-z0-9]+$/i, "") : src);
-  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(st, id, src, all);
-  const ops = []; let locks = 0;
+  const ops = []; let locks = 0; const keptLinks = [];
   for (const sid of all) { const orig = st.entities[sid].c; const c = clone(orig);
     if ("lock" in c) { delete c.lock; locks++; }
     for (const k of Object.keys(orig)) if (orig[k] === PURGED) delete c[k]; // a purged value can't be copied
     if (c.parent && typeof c.parent.to === "string") c.parent = { ...c.parent, to: ids.get(c.parent.to) ?? c.parent.to };
+    // every typed reference to something copied now points at its twin (a lamp that looks at its own switch looks at the
+    // copy's switch; a script's scope drives the copy, never the original); one to something else is kept, and listed
+    rebindAll(c, (x, at) => { if (ids.has(x)) return ids.get(x); keptLinks.push({ from: `${ids.get(sid)}.${at}`, to: x, why: `${x} wasn't copied` }); return x; });
     if (sid === src) { const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
       c.transform = resolve(ctx, id, "transform", a.at ?? { pos: [t.pos[0] + 0.5, t.pos[1], t.pos[2]] }, t); }
     ops.push(...createOps(ids.get(sid), c)); ctx.refs.add(ids.get(sid)); }
-  ctx.notes.push({ copied: src, as: id, parts: all.length, ...(locks ? { why: "a lock isn't copied: the copy is free to move" } : {}) });
+  ctx.notes.push({ copied: src, as: id, parts: all.length, ...(locks ? { why: "a lock isn't copied: the copy is free to move" } : {}), ...(keptLinks.length ? { keptLinks } : {}) });
   return ops;
 }
 
@@ -2769,7 +2811,9 @@ function pathBlocked(w, st, from, to) {
   for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
   return null;
 }
-const presenceFacts = (me) => ({ at: me.at.slice(), hand: handOf(me).map(r3), trackTs: me.ts });
+// review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
+// the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
+// and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
 const PHYSICS_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
@@ -2784,9 +2828,12 @@ const PHYSICS_VERBS = {
       if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
       rateCheck(w, actor);
-      const act = w.append(actOf(w, actor, "move", a, { presence: { from: me?.at ?? null, to, arrival: !me } }));
+      // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
+      // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
+      // track: who did it and when is on the record; never where from, where to, or what kind of client they are
+      const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; w.savePresence();
-      return { ok: true, recorded: true, act, at: to };
+      return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
@@ -2841,7 +2888,7 @@ const PHYSICS_VERBS = {
     // sim, so it goes through the log (Covenant III: presence never feeds the sim otherwise)
     let act = null;
     if ((spec && carried(spec)) || dependents.length) rateCheck(w, actor); // this grab will be logged
-    const actOnce = () => (act ??= w.append(actOf(w, actor, "grab", a, { presence: presenceFacts(me) })));
+    const actOnce = () => (act ??= w.append(actOf(w, actor, "grab", a)));
     if (spec && carried(spec)) { w.append({ kind: "sim", actor, cause: actOnce(), verb: live ? "catch" : "lift", body: { id: a.id } });
       if (live) notes.push({ id: a.id, why: "caught it in the air (logged: the sim had it)" }); }
     if (dependents.length) {
@@ -2866,7 +2913,7 @@ const PHYSICS_VERBS = {
   put(w, actor, a, how = "put") {
     const me = body(w, actor); const h = holdOf(w, actor, a.id);
     const st = w.state(); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
-    const facts = () => ({ handled: h.handled, presence: { ...presenceFacts(me), held: h.pose.pos.map(r3) } });
+    const facts = () => ({ handled: h.handled });
     // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
     // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
     // snap are the holder's settlements too, as a plain put is)
@@ -2968,7 +3015,7 @@ const PHYSICS_VERBS = {
     // is the engine's (L6: no write may touch it in flight), so for a volley the gates above are the whole check.
     if (!flying) admit(w, st, { actor, cap: { kind: "handle", via: "punt", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
     else rateCheck(w, actor);
-    const act = w.append(actOf(w, actor, "punt", a, { presence: presenceFacts(me), ...(flying ? { volley: true } : {}) }));
+    const act = w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
     const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying ? noNeg0(b.yaw) : qYaw(t.q), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
@@ -3157,7 +3204,7 @@ function launch(w, actor, a, verb, g = null) {
   if (g && g.throw !== 1 && verb === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
-  const act = w.append(actOf(w, actor, verb, a, { handled: h.handled, presence: presenceFacts(me) }));
+  const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
@@ -3226,7 +3273,7 @@ const BODY_VERBS = {
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: `${actor} said no` }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
     const changing = ["preset", "set", "allow", "deny", "pause", "friend"].some((k) => a[k] !== undefined);
-    if (changing) { const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "anyone you trust may close your shield; only you may open it (L6)");
+    if (changing) { const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "anyone you trust may close your shield; only you may open it (§5)");
       const ended = revokeAfter(w, r.target); w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
     const t = C.tableOf(P, actor);
     return { ok: true, table: { preset: t.preset, strangers: t.strangers, friends: t.friends, paused: t.paused, trusted: t.friendsList }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
@@ -3300,19 +3347,27 @@ const VERBS = {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
     // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
+    // a FORK names its parent with the seq it was copied at ({world, seq, head}): that's genesis.parent, part of the new
+    // world's id, the merge base a later merge folds from (PROTOCOL §13; review 10-07 H5). A reset names its predecessor
+    // without a seq: provenance in the founding act only (it copies nothing, so it has no merge base)
     if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
-      if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || Object.keys(f).some((k) => !["world", "head", "name"].includes(k)))
-        refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
-    // genesis seeds no state (§2.4): it names the governance keys. The founding act then writes @world, once.
-    // §2.4 + §3d: {dialect, v, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. The founder's key (held
-    // here in custody) is tier 0; rewind_window is left at its default (1000 change entries).
-    const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §2.4)");
-    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [[], [cu.operator()]], sequencer: cu.sequencer() } });
+      if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || (f.seq !== undefined && !(Number.isInteger(f.seq) && f.seq >= 0)) || Object.keys(f).some((k) => !["world", "head", "name", "seq"].includes(k)))
+        refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, seq? (a fork: the seq it was copied at), name?}", ""); }
+    // genesis seeds no state (§13): it names the governance keys. The founding act then writes @world, once.
+    // {dialect, v, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. Tier 0 is the founder's OWN key when
+    // they bring one (ownerKey: made on their machine; this server never holds its private half); the operator's custody
+    // key is tier 1. Without one tier 0 stays empty, and under §13's add-key rule (GOV-5) it can never be filled later:
+    // the operator is then the world's top governance key. rewind_window is left at its default (1000 change entries).
+    if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (openssl genpkey -algorithm ed25519; PROTOCOL §13, \"Whose key is tier 0\"); or leave ownerKey out");
+    const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
+    if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
+    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
+      ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}) } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
     changeEntry(w, plan, w.append(actOf(w, actor, "create-world", a)));
-    return { ok: true, world: w.name, you: "owner" };
+    return { ok: true, world: w.name, you: "owner", ...(a.ownerKey ? {} : { governance: "tier 0 is empty: this server's operator key is the world's top governance key (PROTOCOL §13). Founding with ownerKey (your own ed25519 key) puts you there instead; tier 0 can't be filled later" }) };
   },
   help(w, actor, a) {
     if (a?.verb) return verbHelp(a.verb) ? { ok: true, ...verbHelp(a.verb) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.verb}' yet`, fix: `detailed: ${Object.keys(VERBSPEC).join(", ")}` } };
@@ -3327,7 +3382,7 @@ const VERBS = {
           "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
@@ -3529,7 +3584,7 @@ const VERBS = {
     { const now = w.now(), U = ((w.presence.uploads ??= {})[actor] ??= []).filter((t) => now - t < 60000); w.presence.uploads[actor] = U; // presence: never logged
       if (U.length >= SR.LIMITS.uploads) refuse("rate", `${said(actor)} has uploaded ${U.length} sources in the last minute; at most ${SR.LIMITS.uploads}`, "slow down");
       U.push(now); w.presenceDirty = true; }
-    const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused (41 §3.12): reviewers must see what runs");
+    const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, "refused: reviewers must see what runs");
     const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS.md shows the API");
     if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
     return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };
@@ -3544,7 +3599,7 @@ const VERBS = {
     const was = sponsorOf(w, a.id, key); ctx.actExtra = { adopts: { script: key, was: was?.sponsor ?? null, wasAt: was?.sponsorAt ?? null } }; ctx.refs.add(a.id);
     return [delOp(a.id, key), setOp(a.id, key, v)]; }),
   // the status view (unlogged): every script here, its sponsor and why it does or doesn't run; imported behaviours
-  // that need re-installing. With {id, script, test: {on, …}}: a dry run (41 §3.12): what it WOULD write, refused or not.
+  // that need re-installing. With {id, script, test: {on, …}}: a dry run: what it WOULD write, refused or not.
   scripts(w, actor, a) { const st = w.state();
     if (a.test !== undefined) {
       if (!may(st, actor, "build")) refuse("rights", "a dry run needs builder (it spends the authority's time)", "");
@@ -3559,8 +3614,19 @@ const VERBS = {
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
-  batch(w, actor, a) {
-    return commit(w, actor, "batch", a, (ctx) => {
+  batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },
+  // a fork's copy of its parent (server/worldlog.ts forkWorld): an ordinary batch through the same gate, logged under its
+  // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent
+  // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
+  "fork-copy"(w, actor, a) {
+    if (!FORKING) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
+    return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));
+  },
+};
+let FORKING = false;
+/** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
+export function forkCopy(w, actor, args) { FORKING = true; try { return request(w, actor, "fork-copy", args); } finally { FORKING = false; } }
+function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
       // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
       // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
@@ -3579,6 +3645,4 @@ const VERBS = {
         if (sub.cap) ctx.cap = sub.cap;
       });
       return all;
-    });
-  },
-};
+} }

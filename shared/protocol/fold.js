@@ -103,14 +103,17 @@ function checkString(s) {
     if ((cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xfffe) === 0xfffe) bad("ijson-noncharacter", cp.toString(16));
   }
 }
-// The same rules for a value that was built in memory rather than parsed (a authority's own entry, a test's tamper).
-// A number in [2^53, 1e21) is refused too: every JSON writer (and JCS) spells it as an integer lexeme, which §2.4
-// makes malformed on the next read.
+// The same rules for a value that was built in memory rather than parsed (an authority's own entry, a test's tamper).
+// A number of 2^53 or more that every JSON writer (and JCS) spells as an integer lexeme NOT equal to it is refused too:
+// the next read would find it malformed (§1). Below 1e21 that's most of them; 2^53, 2^54 and other exact spellings pass.
 function checkValue(v, depth = 0) {
   if (depth > MAX_DEPTH) bad("cap-depth", String(MAX_DEPTH));
   if (v === null || typeof v === "boolean") return;
   if (typeof v === "number") {
     if (!Number.isFinite(v)) bad("ijson-nonfinite", String(v)); if (Object.is(v, -0)) bad("ijson-negzero", "-0");
+    // what the reader will see is the writer's spelling: an integer lexeme (no '.', no exponent) must name this number
+    // exactly (§1). 2^65 is written 36893488147419103000, which is not 2^65: refused here, as the reader would refuse it
+    if (Number.isInteger(v) && Math.abs(v) >= BIG) { const s = String(v); if (/^-?[0-9]+$/.test(s) && BigInt(s) !== BigInt(v)) bad("ijson-bigint", s.slice(0, 40)); }
     return; }
   if (typeof v === "string") return checkString(v);
   if (PARSED.has(v)) return;

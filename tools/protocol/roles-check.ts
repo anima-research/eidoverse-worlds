@@ -445,7 +445,7 @@ const cases: Case[] = [
       return { a2demotesA1: show(set(s, "a2", "roles:a1", { role: "builder" })), a1demotesA2: code(set(s, "a1", "roles:a2", { role: "builder" })) }; },
     good: (o) => o.a2demotesA1 === "ok" || o.a1demotesA2 === "rights" },
   { id: "F3", what: "role none is below every member: it can't say, use a thing or build (review: none passed say and reaction use)", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", components: { reactions: { on: { kind: "toggle", component: "light-on" } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lamp", model: "table-lamp", components: { reactions: { on: { kind: "toggle", component: "t/light-on" } } }, place: { at: [0, 0] } });
       role(s, "nn", { role: "none" });
       return { say: code(s.call("nn", "say", { text: "hi" })), use: code(s.call("nn", "use", { id: "lamp", action: "on" })), look: show(s.call("nn", "look")), vicSay: show(s.call("vic", "say", { text: "hi" })), vicUse: show(s.call("vic", "use", { id: "lamp", action: "on" })) }; },
     good: (o) => o.say === "rights" && o.use === "rights" && o.look === "ok" && o.vicSay === "ok" && o.vicUse === "ok" },

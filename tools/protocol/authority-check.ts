@@ -60,7 +60,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r = translate(old, { foldBuild: v1FoldBuild() });
   ok(r.out[1].verb === "translated" && r.out[1].body.from.translator === TRANSLATOR && r.out[1].body.from.fold === v1FoldBuild() && r.out[0].body.minor === 0, "T2 the act after genesis names the translator and the v1 fold build", r.out[1].body);
   const c = r.final.translated[enc("lamp_1")];
-  ok(c && c["n0abc"] === 2 && c[encName("0abc")] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart", c);
+  ok(c && c["imported/n0abc"] === 2 && c[`imported/${encName("0abc")}`] === 1 && !r.stats.divergences, "T3 a translated world keeps comps '0abc' and 'n0abc' apart (each under the imported namespace: bare names are the registry's, PROTOCOL §4)", c);
   ok(JSON.stringify(r.out[0].body.owners) === JSON.stringify([[], [r.out[0].body.sequencer]]) && r.out[1].body.from.roles?.Riannon?.role === "owner" && !r.final.translated["@world"]?.[`roles:${enc("Riannon")}`], "T4 genesis is custodial (tier 0 empty, the authority's key in tier 1); v1 genesis roles, which v1 never folds, are kept verbatim in the translated act and grant nothing", [r.out[0].body.owners, r.out[1].body.from])
   ok(v1FoldFiles().includes("tools/protocol/import-v1/fold.js") && v1FoldFiles().length >= 5 && /^[0-9a-f]{16}$/.test(v1FoldBuild()), "T5 the fold build covers the importer's v1 fold and its imports", v1FoldFiles()); }
 
@@ -130,7 +130,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { // the gameplay lock lives inside its own component: door {open, locked}
     call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
     ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
-    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && JSON.stringify(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
+    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && (({ open, locked }) => JSON.stringify({ open, locked }))(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
     const r = call("vic", "use", { id: "gate", action: "open" });
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
     const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the authority's state", i.notForYou);

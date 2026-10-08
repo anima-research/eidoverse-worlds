@@ -13,7 +13,7 @@ import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION
 import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
-import { COMPONENTS } from "../../../shared/protocol/componentspec.js";
+import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -85,7 +85,7 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@7";
+export const TRANSLATOR = "eidoverse/translate-v1@8";
 // @7 (2026-10-07, the conventional-names pass, R's approved table): the output speaks the renamed protocol. A result entry
 // is kind `change` (was `state`); the translating door's own entries are actor `system` (was `door`), and so is a v1 entry
 // whose actor was v1's "door". Everything carried only from translation is one `imported` family: the act verb `imported`
@@ -112,9 +112,13 @@ const b64url = (bytes) => { let s = ""; for (const x of bytes) s += String.fromC
 // A real authority passes its own keys and a random nonce (round-2 review R4): the operator's governance key in tier 1,
 // never the sequencer's, and a nonce that makes two translations of one log two worlds. Without them (the pure tests)
 // the nonce is derived from the source and one fixed key stands in for both.
-export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce } = {}) {
+// The founder's own key (review 10-07 H4, R's ruling): tier 0 is the world's founder, from a key made on their own machine;
+// the operator (custody) stays tier 1. Under §13's add-key rule (GOV-5) an empty tier 0 can never be filled later, so a
+// translation that leaves it empty does so knowingly (tools/protocol/world.ts translate --no-founder-key).
+export function translatedGenesis(oldEntries, { key = LAB_DOOR_KEY, operator = key, nonce, founder } = {}) {
   if (!nonce) { const h = sha256(oldEntries.map((e) => JSON.stringify(e)).join("\n")); nonce = b64url(Uint8Array.from(h.slice(0, 32).match(/../g), (x) => parseInt(x, 16))); }
-  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [[], [operator]], sequencer: key };
+  if (founder !== undefined && (founder === key || founder === operator)) throw new Error("the founder's key must be their own: not this server's sequencer or operator key");
+  return { dialect: DIALECT, v: VERSION, minor: 0, nonce, owners: [founder ? [founder] : [], [operator]], sequencer: key };
 }
 export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
@@ -158,7 +162,24 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
 const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
-export function project(st, seen = null, who = null) {
+// @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A
+// v1 world's own inventions (a `heart` comp nobody registered) come across under a namespace, `<namespace>/heart` (the
+// translated world's name; "imported" when the caller gives none), so the registry can promote the word later without
+// rereading this world's values in a new meaning. Registered names, and the imported family, stay as they were.
+export const NAMESPACE = "imported";
+/** A world's name as a §3.1 namespace (lowercase letters, digits, '-', '.'), or the default. */
+export const namespaceOf = (name) => { const s = String(name ?? "").toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").replace(/\.{2,}/g, "."); return /^[a-z0-9]/.test(s) ? s.slice(0, 63).replace(/[-.]+$/, "") : NAMESPACE; };
+function namespaceUnknown(c, ns) {
+  for (const k of Object.keys(c)) { const base = k.split(":")[0];
+    if (base.includes("/") || registered(base)) continue;
+    const to = `${ns}/${k}`; if (to in c) continue;   // never overwrite (a world that already used both spellings keeps the bare one)
+    c[to] = c[k]; delete c[k]; }
+}
+// @8 (review 10-07 H3, R's ruling): a model is named by its content address, eido:sha256/<64 hex> (spec/EIDO-URIS.md), when
+// the caller can say what the bytes are (`content(path)` → the address, or null): a host path would bake this host's library
+// layout into the permanent history and into every fork. A path the resolver can't place stays as it was (and is listed);
+// the imported act keeps the path as it was written either way.
+export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
   const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
   const unsub = (v) => { if (!who || !v || typeof v !== "object" || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };
@@ -167,7 +188,7 @@ export function project(st, seen = null, who = null) {
     const t = { pos: e.pos ?? [0, 0, 0], q: Array.isArray(e.q) ? e.q : yawQ(e.yaw ?? 0), scale: typeof e.scale === "number" ? [e.scale, e.scale, e.scale] : (e.scale ?? [1, 1, 1]) };
     const ride = rideOf(st, e); if (ride) { t.pos = ride.pos; t.q = ride.q; }
     c.transform = t;
-    if (e.lib !== undefined) c.model = e.lib;
+    if (e.lib !== undefined) c.model = content && typeof e.lib === "string" ? content(e.lib) ?? e.lib : e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
@@ -202,7 +223,7 @@ export function project(st, seen = null, who = null) {
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
-  for (const c of Object.values(out)) splitUnknown(c);
+  for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }
 
@@ -224,7 +245,10 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
+  const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
+  const seenModels = new Map();   // path → its address (or null): each path resolved once, and counted
+  const addr = content ? (p) => { if (!seenModels.has(p)) seenModels.set(p, content(p) ?? null); return seenModels.get(p); } : null;
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, change: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
@@ -237,16 +261,16 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "change") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
-  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
+  push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}), ...(founder ? { founder } : {}) }) });
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
   const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);
-  let prev = project(v1, seen, who);
+  let prev = project(v1, seen, who, ns, addr);
   for (const e of oldEntries) {
     if (e.verb === "genesis") continue;
     stats.verbs[e.verb] = (stats.verbs[e.verb] ?? 0) + 1;
     foldEntry(v1, e);
-    const now = project(v1, seen, who);
+    const now = project(v1, seen, who, ns, addr);
     const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : actorOf(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the authority's admission time, carried from the old entry
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
@@ -257,7 +281,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     prev = now;
   }
   stats.out = out.length;
+  if (addr) { stats.modelsRewritten = [...seenModels.values()].filter(Boolean).length; stats.modelsKept = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: project(v1, null, who), translated: v4project(v4) } };
+  return { out, stats, final: { v1: project(v1, null, who, ns, addr), translated: v4project(v4) } };
 }
 

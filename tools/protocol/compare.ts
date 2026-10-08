@@ -32,7 +32,7 @@ console.log(`${files.length} logs, ${diffs} unexplained differences`);
 // the reference reader's own suites. test_reader.py regenerates logs/ from its builders: they must come out byte-identical
 const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
 let suiteFails = 0;
-for (const t of ["test_reader.py", "test_chain.py"]) {
+for (const t of ["test_reader.py", "test_chain.py", "test_gov.py"]) {   // test_gov: governance (§13), with the add-key rule (review 10-07 H4)
   const r = py([t]); const out = (r.stdout.toString() + r.stderr.toString()).trim().split("\n");
   console.log(`${r.exitCode === 0 ? "ok  " : "FAIL"} python ${t}: ${out.find((l) => /^\d+\/\d+ passed/.test(l)) ?? out.at(-1)}`);
   if (r.exitCode !== 0) { suiteFails++; console.log(out.slice(-8).join("\n")); }
@@ -62,6 +62,14 @@ if (drift.length) { suiteFails++; console.log(`FAIL test_reader.py rewrote ${dri
       return L.every((e: any) => e.kind === "change" ? (e.verb === "batch" ? e.body.ops : [{ verb: e.verb, ...e.body }]).every((o: any) => o.verb !== "set" || salted(o)) : !["act", "say", "sim"].includes(e.kind) || salted(e.body))
         && L.some((e: any) => e.kind === "say"); })(), "every set, and every act/say/sim body, carries a 16-byte salt (§2.4; round-2 R3: chat is most of the personal data)", null],
     [bad.status === "broken", "a value altered after the fact breaks the chain", bad]];
+  // a fork's genesis (parent {world, seq, head}) and a founder's own tier-0 key (review 10-07 H4, H5): the spec's readers take them
+  { const crypto = await import("node:crypto"); const key = "ed25519:" + Buffer.from(crypto.generateKeyPairSync("ed25519").publicKey.export({ format: "der", type: "spki" })).subarray(12).toString("base64url");
+    const f: any = openLive(path.join(tmp, "f"), "f", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json") });
+    const made = [request(f, "ann", "create-world", { title: "fork", ownerKey: key, from: { world: "sha256:" + "a".repeat(64), seq: 41, head: "b".repeat(64), name: "src" } }), request(f, "ann", "create", { model: "table" })];
+    const flog = path.join(tmp, "f", "world.jsonl"); const g = f.entries[0].body;
+    const frd = JSON.parse(py([here + "reader.py", flog, "--json"]).stdout.toString()); const fch = JSON.parse(py([here + "chain.py", "verify", flog]).stdout.toString());
+    checks.push([made.every((r: any) => r.ok) && g.parent?.seq === 41 && g.owners[0][0] === key && frd.status === "ok" && !(frd.diagnostics ?? []).some((d: any) => String(d).includes("malformed")) && fch.status === "ok",
+      "a fork's genesis.parent and a founder's tier-0 key: the reference reader and chain verifier read the engine's log as ok", { g, frd: frd.status, fch: fch.status }]); }
   for (const [okk, what, why] of checks) { console.log(`${okk ? "ok  " : "FAIL"} engine output: ${what}${okk ? "" : " — " + JSON.stringify(why).slice(0, 200)}`); if (!okk) suiteFails++; }
   fs.rmSync(tmp, { recursive: true, force: true }); }
 process.exit(diffs || suiteFails ? 1 : 0);

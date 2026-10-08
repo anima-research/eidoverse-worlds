@@ -17,6 +17,7 @@
 // across that seam and never re-implements them.
 
 import * as OP from '../../shared/protocol/requests.js';
+import { mintId } from '../../shared/protocol/ids.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
@@ -473,7 +474,7 @@ bus.on('drag', ({ id, pos, yaw, q }) => {
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = crypto.randomUUID().slice(0, 8);
+  const id = mintId(ghost.lib === '@light' ? 'light' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
