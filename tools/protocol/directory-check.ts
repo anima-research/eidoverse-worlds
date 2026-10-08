@@ -265,6 +265,16 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const fresh = path.join(tmp, "fresh"); fs.mkdirSync(fresh);
   ok(custodyFileIn(fresh) === path.join(fresh, CUSTODY_FILE) && fs.readdirSync(fresh).length === 0, "K5 a fresh worlds dir: the current name, and nothing created by asking", fs.readdirSync(fresh)); }
 
+// ---- EP: a v1 log with a physics epoch (dialect 3) must not translate quietly lossy (2026-10-08: the live Commons has
+// eidosim@0.5.0 from seq 15641; translate-v1 kept each punt as an `imported` record and left the punted ball at its
+// pre-punt place, reporting "0 divergences" because it only compares against the instant fold; her sim rests it elsewhere) ----
+{ const { translateV1World } = await import("./import-v1/world.ts");
+  const W = path.join(tmp, "ep"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
+  fs.copyFileSync(path.join(import.meta.dir, "../../spec/fixtures/replay/eidosim-0.5/log.jsonl"), path.join(W, "old", "log.jsonl"));
+  let threw: any = null; try { translateV1World(path.join(W, "old"), path.join(W, "new")); } catch (e) { threw = String(e); }
+  ok(!!threw && /epoch/.test(threw) && /punt/.test(threw) && !fs.existsSync(path.join(W, "new", "world.jsonl")),
+    "EP1 a log with a physics epoch and punts is refused, naming the epoch and the punts, and nothing is written", threw); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
