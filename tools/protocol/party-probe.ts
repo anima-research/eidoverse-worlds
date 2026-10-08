@@ -12,6 +12,8 @@
 //   S5  Save as blueprint asks for a name (the thing's label or its model's name, not a hex id)
 //   S7  a thing just placed from the library is the selection
 //   M   /mute /warn /ghost /unmute /unghost are commands; /bans shows mutes too
+//   X   leaving builder mode leaves the old build panel shut; the World inspector's Terrain card offers the ground shapes;
+//       toasts sit above the selection bar
 //   L   the inspector shows a lock's level; the edit lock and a door's lock read differently; a child of a locked thing
 //       shows the inherited lock in the hierarchy
 // @ts-nocheck
@@ -282,11 +284,34 @@ try {
       check(`M1 ${c.split(" ")[0]} is a command (not "unknown command")`, (await log()).split("unknown command").length === before, (await log()).slice(-300));
     }
     await say("/mute vicky 5 chat again"); await sleep(1200);
-    const n0 = (await log()).length;
-    await say("/bans"); await sleep(1500);
-    const tail = (await log()).slice(n0);
-    check("M2 /bans lists the mute in force, not only bans", /muted/i.test(tail) && /vicky/.test(tail), tail);
+    const lines = async () => ((await log()).match(/muted \((?:chat|voice)[^)]*\): vicky/g) ?? []).length;   // the /bans line's own shape ("muted (chat): vicky until …")
+    const n0 = await lines();
+    await say("/bans");
+    if (await evalJson(`!!document.getElementById('chatline').value.trim()`)) { await press("Enter"); }   // the first Enter took the autocomplete's "/bans "
+    await sleep(1500);
+    const tail = { before: n0, after: await lines(), end: (await log()).slice(-300) };
+    check("M2 /bans lists the mute in force, not only bans", tail.after > tail.before, tail);
     vic.ws.close();
+  });
+  // ---- X: the leftovers (review 10-07 S14, S15, S11) ----
+  await stage("X", async () => {
+    await editMode(false);
+    const worldOpen = `(() => { const f = document.querySelector('[data-frame="world"]'); return !!f && getComputedStyle(f).display !== 'none'; })()`;
+    await page(`(await import('/lib/windows.js')).getFrame('world')?.hide(); return true;`); await sleep(300);
+    await editMode(true); await sleep(600); await editMode(false); await sleep(600);
+    check("X1 leaving builder mode doesn't leave the old build panel open (it wasn't open before)", !(await evalJson(worldOpen)));
+    await editMode(true);
+    await evalJson(`document.querySelector('.edit-left .edit-tab[data-tab="hierarchy"]')?.click(), true`); await sleep(600);
+    await clickEl(`[...document.querySelectorAll('[data-frame="hierarchy"] .sp-item')].find((r) => r.dataset.id === '@world')`); await sleep(800);
+    const card = await evalJson(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); if (!h) return null; const out = [];
+      for (let n = h.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) out.push({ text: n.textContent.slice(0, 80), tiles: n.querySelectorAll('button').length }); return out; })()`);
+    check("X2 the World inspector's Terrain card offers the ground shapes when there's no terrain yet", card && card.some((r: any) => r.tiles >= 2), card);
+    const t0 = !!disk().entities["@world"]?.c.terrain;
+    const picked = await clickEl(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); for (let n = h?.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) { const b = n.querySelector('button'); if (b) return b; } return null; })()`);
+    check("X3 …and a pick there writes the terrain (one act)", picked && !t0 && await waitDisk(() => !!disk().entities["@world"]?.c.terrain, 5000), { picked, t0 });
+    await shot("X-terrain-card");
+    check("X4 in builder mode the toasts sit above the selection bar", await evalJson(`(() => { const t = document.getElementById('trayzone'); return parseFloat(getComputedStyle(t).bottom) >= 110; })()`));
+    await evalJson(`document.querySelector('.edit-left .edit-tab[data-tab="build"]')?.click(), true`);
   });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }

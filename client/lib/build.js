@@ -110,10 +110,9 @@ export function setEditMode(on, { quiet = false } = {}) {
   document.body.classList.toggle('edit-mode', on);
   if (!on) { cancelGhost(); deselect(); resetSeats(); }
   refreshSeatGizmos();   // anchors are visible exactly while you are editing
-  // Saying you are building should put the tools in front of you — B is now
-  // the mode, so the catalog needs to arrive with it rather than behind a
-  // separate keystroke nobody will guess.
-  if (on) panelFrame().show();
+  // Saying you are building puts the tools in front of you: the workspace's Build tab (editlayout.js) is the catalog.
+  // The legacy World frame used to be shown here too; the workspace parked it at once and then "restored" it on the
+  // way out, so it stayed open in look mode (review 10-07 S14). It now opens only if it was open before.
   if (!quiet) {
     flashHint(on
       ? html`builder mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves`

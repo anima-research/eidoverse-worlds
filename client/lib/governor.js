@@ -73,6 +73,8 @@ export const REDUCED_CHIP = {
 };
 
 let reducedChipHidden = false;   // the viewer put the chip away (for this visit)
+// builder mode: the governor's frame-rate toasts landed on the selection bar (review 10-07 S11); the work still happens
+const building = () => typeof document !== 'undefined' && document.body?.classList.contains('edit-mode');
 
 // ---- the resident's render-scale dial (§22k) --------------------------------
 // The §22j A/B proved pixel-bound machines exist; the cruise answers them
@@ -191,7 +193,7 @@ const LEVERS = [
       // empty world must not eat shed windows and toast lies (review note 3)
       if (getSlotCap() === 0 || litCount() === 0) return false;
       setSlotCap(getSlotCap() - 1);
-      toast('turned a light down to keep the frame rate — it still glows', 'warn', 6000);
+      if (!building()) toast('turned a light down to keep the frame rate — it still glows', 'warn', 6000);
       return true;
     },
     restore() {
@@ -208,7 +210,7 @@ const LEVERS = [
       const i = EMITTER_TIERS.indexOf(emitterQuality());
       if (i < 0 || i >= EMITTER_TIERS.length - 1) return false;
       if (!setEmitterQuality(EMITTER_TIERS[i + 1])) return false;
-      toast('particle effects thinned to keep the frame rate', 'warn', 8000);
+      if (!building()) toast('particle effects thinned to keep the frame rate', 'warn', 8000);
       return true;
     },
     restore() {
@@ -248,7 +250,7 @@ const LEVERS = [
       if (!hasGrass() || eff <= GRASS_STEPS[GRASS_STEPS.length - 1]) return false;
       grassDial = eff > 0.65 ? 0.6 : 0.35;
       setGrassDensity(grassDial);
-      toast('grass thinned to keep the frame rate', 'warn', 8000);
+      if (!building()) toast('grass thinned to keep the frame rate', 'warn', 8000);
       return true;
     },
     restore() {

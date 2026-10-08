@@ -1941,7 +1941,7 @@ body.edit-workspace #dock button[data-toggles="edit"].on::before { display: none
 .frame.edit .sp-f-text .sp-label:empty { display: none; }
 .frame.edit .sp-f-text .sp-text { font-size: 12px; }
 /* fixed chrome from before the columns keeps to the VIEWPORT between them */
-body.edit-workspace #trayzone { right: calc(var(--edit-right-w, 0px) + 10px); }
+body.edit-workspace #trayzone { right: calc(var(--edit-right-w, 0px) + 10px); bottom: 116px; }   /* above the selection bar (build.js, bottom 64px) — S11 */
 body.edit-workspace #hintbar { left: calc(var(--edit-left-edge, 0px) + (100vw - var(--edit-left-edge, 0px) - var(--edit-right-w, 0px)) / 2); }
 /* ---- edit mode: the look, for the workspace's own chrome (DESIGN-SPEC 2026-09-30; tokens: the --e-* block above) */
 body.edit-workspace .edit-strip { background: var(--e-bg0); border-color: var(--e-line); }

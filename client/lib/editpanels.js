@@ -44,7 +44,7 @@ import { schemaFor, commitEdit, planEdit, setEditHooks, endGesture, foldRecord, 
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from './xrask.js';
-import { frontOf, addOnFace, selectWhenHere } from './facemedia.js';
+import { frontOf, addOnFace } from './facemedia.js';
 import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { reindexCollider } from './colliders.js';
@@ -478,6 +478,13 @@ function worldFields() {
   ];
   if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
   pushCards(f, schema, WORLD_ID);
+  // no terrain yet: the card's only row pointed elsewhere (review 10-07 S15). Put Build ▸ World's ground shapes in it
+  if (!state.st.terrain) {
+    const at = f.findIndex((x) => x.t === 'info' && /no terrain authored/.test(String(x.value ?? '')));
+    const shapes = Object.keys(groundPal?.shapes ?? {}).filter((k) => k !== 'doc');
+    if (at >= 0 && shapes.length) f.splice(at + 1, 0, { t: 'tiles', k: 'wshape', value: null, options: shapes.map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...(mayShape() === false ? { disabled: true } : {}) });
+    if (at >= 0) f[at] = { ...f[at], value: 'no terrain authored: the default flat ground. Pick a shape:' };
+  }
   const shown = filterFields(f, ifilter);
   painted = shown;
   return shown;
@@ -621,6 +628,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
     if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;
     const isDelta = typeof payload === 'object' && payload && 'delta' in payload;   // a VR stepper
