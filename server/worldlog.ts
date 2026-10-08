@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, presenceEvent, scriptsView, settleOrphans } from "../shared/protocol/authority.js";
+import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, presenceEvent, scriptsView, settleOrphans } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -348,7 +348,7 @@ function copyInto(w: Any, actor: string, st: Any, skipWorld: (k: string) => bool
     if (lock !== undefined) late.push({ verb: "set", args: { id, component: "lock", value: lock } });
   }
   const all = [...reqs, ...late]; let batch: Any[] = [], size = 0, acts = 0;
-  const flush = () => { if (!batch.length) return; const r = authorityRequest(w, actor, "batch", { ops: batch, throughLock: true });
+  const flush = () => { if (!batch.length) return; const r = forkCopy(w, actor, { ops: batch, throughLock: true });   // logged as fork-copy: inherited, not born
     if (!r.ok) throw new Error(`the copy was refused at ${JSON.stringify(batch[r.refused?.op ?? 0]?.args?.id ?? "?")}: ${r.refused?.code} ${r.refused?.reason}`); acts++; batch = []; size = 0; };
   for (const q of all) { const n = JSON.stringify(q).length; if (size + n > 400_000) flush(); batch.push(q); size += n; }
   flush();
@@ -374,7 +374,8 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
     if (fs.existsSync(blobs)) fs.cpSync(blobs, path.join(tmp, "blobs"), { recursive: true });
     const w = openLive(tmp, to, { catalogue: ENGINE_CATALOGUE });
     const title = st.entities["@world"]?.c.about?.name ?? to;
-    const r0 = authorityRequest(w, forker, "create-world", { title, from: { world: src.live.worldId, name: src.name, head: headOf(src.live) } });
+    const at = src.live.entries.length - 1;   // genesis.parent {world, seq, head}: the merge base (PROTOCOL §13)
+    const r0 = authorityRequest(w, forker, "create-world", { title, from: { world: src.live.worldId, name: src.name, seq: at, head: src.live.headAt(at) } });
     if (!r0.ok) throw new Error(`founding refused: ${r0.refused?.reason}`);
     const skip = (k: string) => k === "about" || k === `roles:${forker}`;   // the founding act wrote these
     const acts = copyInto(w, forker, st, skip);

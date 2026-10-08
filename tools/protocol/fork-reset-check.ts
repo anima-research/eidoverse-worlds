@@ -87,6 +87,13 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "visitor", "FK5 roles and the default role travel", b["@world"]);
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
+  // review 10-07 H5: the fork's genesis names its parent {world, seq, head} (part of its id: the merge base), and the acts
+  // that copied the parent are marked, so a reader tells inherited things from births
+  const gp = logOf("copy")[0]?.body?.parent, sl = logOf("src");
+  ok(gp && gp.world === fold(sl).worldId && Number.isInteger(gp.seq) && gp.seq < sl.length && /^[0-9a-f]{64}$/.test(gp.head) && (sl[gp.seq]?.head === undefined || sl[gp.seq].head === gp.head)
+    && f?.body?.request?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
+  const copyActs = logOf("copy").filter((e) => e.kind === "act" && e.verb !== "create-world");
+  ok(copyActs.length > 0 && copyActs.every((e) => e.verb === "fork-copy") && !logOf("src").slice(-1)[0]?.body?.parent, "FK11 every act that copied the parent is a fork-copy (inherited, not born)", copyActs.map((e) => e.verb));
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }
 { const c2 = await sock(S.port); const j0 = await c2.join("copy", "Ann");

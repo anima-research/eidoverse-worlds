@@ -449,7 +449,8 @@ function scenario() {
   c("ann", "create", { id: "big", model: "crate", components: { transform: T0([-12, 0, -12], [3, 1, 3]) } }, 2000);
   c("vic", "lint", {}); c("vic", "lint", { id: "c-14" }); c("vic", "lint", { id: "big" }); c("vic", "look", { limit: 300 }); c("vic", "measure", { id: "t-2" });
   c("olive", "delete", { id: "t-1" }, 2000); c("olive", "delete", { id: "t-4", dry: true }); c("olive", "delete", { id: "shelf-1" }, 2000);
-  c("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "visitor" } }, place: { on: "t-5" } }, 2000);
+  // written out whole (PROTOCOL §4: the authority now writes a grabbable's defaults into it; the base tree didn't), so both trees reply alike
+  c("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "visitor", enabled: true, steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 } }, place: { on: "t-5" } }, 2000);
   c("vic", "move", { to: [35, 0, 9] }); for (const p of [[33, 0, 7], [31, 0, 6], [29, 0, 5.5], [26, 0, 5], [24.6, 0, 12], [24, 0, 11]]) c("vic", "move", { to: p }, 1000);
   c("vic", "move", { to: [35, 0, 5.4], teleport: true }, 4000); c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug", pos: [35, 0.75, 5.3] }, 1000);
   c("vic", "grab", { id: "mug" }, 1000); c("vic", "put", { id: "mug" }, 1000); c("vic", "move", { to: [21, 0, 4.4], teleport: true }, 4000); c("vic", "grab", { id: "cr-1" }, 1000);

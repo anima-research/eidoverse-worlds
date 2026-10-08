@@ -21,7 +21,7 @@ export const COMPONENTS = {
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
-  parent:    { on: "thing", fields: { to: "string", order: "string", socket: "string" }, defaults: { order: "a0" }, help: "{to: id, socket?: one of its sockets}; its transform becomes local to the parent (to the socket, with socket)" },
+  parent:    { on: "thing", fields: { to: "ref", order: "string", socket: "string" }, defaults: { order: "a0" }, help: "{to: id, socket?: one of its sockets}; its transform becomes local to the parent (to the socket, with socket)" },
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
   // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
@@ -79,7 +79,7 @@ export const COMPONENTS = {
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
-  grabbable: { on: "thing", defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }, help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
+  grabbable: { on: "thing", refPaths: { "home.parent.to": "ref" }, defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }, help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
   "copy-of": { on: "thing", fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
   // a sound a thing plays (shared/sound.js; batch 2, 10-07): silent AT radius (a true taper to zero, not Web Audio's clamp,
@@ -98,7 +98,7 @@ export const COMPONENTS = {
                 help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), part? (a model node to texture; absent = a picture of its own, a quad facing +Z), width? m (the quad's; its height follows the image), alt? (alternative text: what it shows, for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit), flip?}" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
-  story:      { on: "thing", fields: { title: "string", text: "string", marks: "array" }, required: ["title", "text"],
+  story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],
                 ranges: { title: { maxLen: 80 }, text: { maxLen: 1000 }, marks: { maxItems: 8 } }, clean: { title: "line", text: "lines" },
                 help: "why this thing is here, a museum label: {title (≤ 80), text (≤ 1000; plain text, a blank line between paragraphs), marks? [ids] (≤ 8: what it marks or commemorates)}. Shown on Inspect and in look" },
   // words in the world (batch 2): signage, on the canvas text path (a browser font stack: CJK, RTL and emoji). Long-form
@@ -110,14 +110,14 @@ export const COMPONENTS = {
                 help: "a sign: {text (≤ 400 characters, ≤ 16 lines), size? (line height, m; 0.02..2), width? (wrap width, m; 0.1..10), align?: left|center|right, color? 0xRRGGBB, outline? (a contrasting edge), background? 0xRRGGBB (a plate behind it; absent = none), billboard?: off (flat, facing +Z, readable from both sides) | yaw (turns about up toward each viewer) | full (faces each viewer, kept upright), lit?: self|scene}" },
   // a thing (or one part, look-at:<part>) turns to face something (batch 2; Unity AimConstraint, Blender Locked/Damped
   // Track, Resonite LookAt). State is logged; the turn is a view each client computes, like motion
-  "look-at":  { on: "thing", keyed: "optional", fields: { target: "string", mode: "string", forward: "axis", up: "axis", yaw: "array", pitch: "array", speed: "number", range: "number", offset: "vec3" },
+  "look-at":  { on: "thing", keyed: "optional", fields: { target: "target", mode: "string", forward: "axis", up: "axis", yaw: "array", pitch: "array", speed: "number", range: "number", offset: "vec3" },
                 defaults: { mode: "yaw", forward: "z", up: "y", speed: 240, range: 12 }, required: ["target"], enums: { mode: ["yaw", "aim"] },
                 ranges: { speed: { min: 0, max: 3600 }, range: { gt: 0, max: 100 } },
                 help: "it turns to face something: {target (a thing's id, @viewer: each viewer's own eyes, @nearest: whoever is nearest within range, or a person's identity u-…), mode?: yaw (turns about up only, stays upright) | aim (tilts too), forward? (its local axis that points: x|y|z|-x|-y|-z, default z, its front), up?, yaw? [min, max]° and pitch? [min, max]° (limits from rest), speed? °/s (0 = at once), range? m (a person beyond it: back to rest), offset? [x,y,z] (a point in the target thing's frame)}. look-at:<part> turns one model part" },
   // captions (a screen's live subtitles): written only by the caption request, a line at a time (shared/captions.js);
   // who may caption a screen is the screen's own captioners list (R leaned that way, 10-06, as the roles branch's CAPTION_ON_SCREENS does)
   captions:   { on: "thing", fields: { session: "string", n: "int", gen: "number", title: "string", mediaTime: "number", window: "array" }, help: "a screen's captions, written by the caption request only: {session, n, gen, title?, mediaTime, window: [{t0, t1, text, speaker?}]}" },
-  captioners: { on: "thing", fields: { ids: "array" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
+  captioners: { on: "thing", fields: { ids: "people" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
   // round-2 review R8 (2026-10-05): names the engine reads, carried by imported worlds, registered with their old
   // meaning so it's fixed (L5). Fields from every old world log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
@@ -137,7 +137,9 @@ export const COMPONENTS = {
   // research roles 10-06 (shared/protocol/roles.js): ranked membership (visitor 0, builder 100, moderator 200, owner 255,
   // custom roles between) and a closed list of permissions. Banned and ghost are states in the moderator log, never roles.
   roles:     { on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", sub: "any" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
-  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, defaults: { guests: "visitor" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
+  // guests isn't written down: absent means visitor whatever the role (roles.js guestRoleOf), and a written visitor is
+  // refused above a default role of none (guests never above role). Pinned as a known gap (pretrans D7)
+  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
   access:    { on: "world", fields: { join: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"] }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id>), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
   about:     { on: "world", fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },
@@ -155,7 +157,7 @@ export const COMPONENTS = {
   "terrain-tile": { on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
   script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
-               scopeFields: { ids: "any", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
+               scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", launch: "bool", bodies: "array" },
                help: "keyed <name>: a script (JavaScript; docs/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
   // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
   schemas:   { on: "world", keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (PROTOCOL §4)" },
@@ -193,6 +195,51 @@ export const defOf = (comp) => { const r = registered(baseOf(comp)); return r ? 
 export const canonicalName = (comp) => { const b = baseOf(comp), r = registered(b); return r && r !== b ? r + String(comp).slice(b.length) : String(comp); };
 /** What a versioned name replaces (light@2 → light), from its definition; null if it says nothing. */
 export const supersedes = (comp) => defOf(comp)?.supersedes ?? null;
+
+// ---- references (PROTOCOL §4, "References are typed"; review 10-07 H5) ----
+// A field that names another thing or a person says so in its type, so copy, publish and a merge can find every
+// reference without knowing the component: ref (one entity id), refs (a list of them), person (an identity), people (a
+// list), target (a ref, a person, or an @word such as @viewer), scope (a script's 'self' | 'subtree' | [refs]). A nested
+// one a fields map can't name is listed in the definition's refPaths ("home.parent.to": "ref"). People are never copied,
+// so only thing references are ever rebound.
+export const REF_TYPES = new Set(["ref", "refs", "person", "people", "target", "scope"]);
+const PERSON_SHAPE = /^u-[a-z2-7]{20}$/;   // shared/protocol/ids.js PERSON_ID: an entity may never wear it
+/** [{path: ["field", …], type}] for every reference-bearing field of a name (its scope's ids included). */
+export function refFields(comp) {
+  const d = defOf(comp); if (!d) return [];
+  const out = Object.entries(d.fields ?? {}).filter(([, t]) => REF_TYPES.has(t)).map(([f, t]) => ({ path: [f], type: t }));
+  for (const [f, t] of Object.entries(d.scopeFields ?? {})) if (REF_TYPES.has(t)) out.push({ path: ["scope", f], type: t });
+  for (const [p, t] of Object.entries(d.refPaths ?? {})) out.push({ path: p.split("."), type: t });
+  return out;
+}
+const isThingRef = (x) => typeof x === "string" && x !== "" && !x.startsWith("@") && !PERSON_SHAPE.test(x);
+const getAt = (v, path) => path.reduce((o, k) => (o && typeof o === "object" && !Array.isArray(o) ? o[k] : undefined), v);
+/** Every THING an entity's component value refers to: [{path: "story.marks[1]", id}]. People and @words aren't things. */
+export function refsOf(comp, v) {
+  const out = []; const name = baseOf(comp);
+  for (const { path, type } of refFields(comp)) { const x = getAt(v, path); const at = `${name}.${path.join(".")}`;
+    if (type === "ref" || type === "target") { if (isThingRef(x)) out.push({ path: at, id: x }); }
+    else if ((type === "refs" || type === "scope") && Array.isArray(x)) x.forEach((y, i) => { if (isThingRef(y)) out.push({ path: `${at}[${i}]`, id: y }); }); }
+  return out;
+}
+/** The value with each thing reference x replaced by f(x, path); f returning null drops it (a list entry is removed; a
+ *  single reference's field is removed, and if that field is required the whole value is: returns undefined). Returns
+ *  {value, dropped: [paths]}. Never touches people or @words. */
+export function mapRefs(comp, v, f) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return { value: v, dropped: [] };
+  const out = copy(v), dropped = []; const d = defOf(comp); const name = baseOf(comp); let gone = false;
+  for (const { path, type } of refFields(comp)) {
+    const parent = getAt(out, path.slice(0, -1)); const k = path.at(-1); if (!parent || typeof parent !== "object" || Array.isArray(parent)) continue;
+    const x = parent[k]; const at = `${name}.${path.join(".")}`;
+    if (type === "ref" || type === "target") { if (!isThingRef(x)) continue; const y = f(x, at);
+      if (y === null) { delete parent[k]; dropped.push(at); if (path.length === 1 && (d?.required ?? []).includes(k)) gone = true; if (comp === "parent" || baseOf(comp) === "parent") gone = true; }
+      else parent[k] = y; }
+    else if ((type === "refs" || type === "scope") && Array.isArray(x)) {
+      const kept = []; x.forEach((y, i) => { if (!isThingRef(y)) { kept.push(y); return; } const z = f(y, `${at}[${i}]`); if (z === null) dropped.push(`${at}[${i}]`); else kept.push(z); });
+      parent[k] = kept; }
+  }
+  return { value: gone ? undefined : out, dropped };
+}
 
 // ---- every parameter written down (PROTOCOL §4) ----
 const copy = (x) => (x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : x);

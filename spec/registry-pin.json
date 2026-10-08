@@ -59,7 +59,7 @@
  },
  "parent": {
   "fields": {
-   "to": "string",
+   "to": "ref",
    "order": "string",
    "socket": "string"
   },
@@ -420,7 +420,7 @@
   "fields": {
    "title": "string",
    "text": "string",
-   "marks": "array"
+   "marks": "refs"
   },
   "on": "thing"
  },
@@ -465,7 +465,7 @@
  },
  "look-at": {
   "fields": {
-   "target": "string",
+   "target": "target",
    "mode": "string",
    "forward": "axis",
    "up": "axis",
@@ -504,7 +504,7 @@
  },
  "captioners": {
   "fields": {
-   "ids": "array"
+   "ids": "people"
   },
   "on": "thing"
  },
@@ -630,9 +630,6 @@
    "role": "string",
    "can": "object",
    "guests": "string"
-  },
-  "defaults": {
-   "guests": "visitor"
   },
   "on": "world"
  },

@@ -226,19 +226,20 @@ await C("D4", "a motion's per-type defaults are written: spin's axis and rate, o
   const m = (id: string) => stored(W, id, "motion");
   return [JSON.stringify(m("sp").axis) === "[0,1,0]" && m("sp").degPerSec === 36 && m("sp").phase === 0 && !("degPerSec" in m("sp2")) && m("or").radius === 3 && m("or").degPerSec === 12 && m("or").face === true
     && m("bo").amp === 0.3 && m("bo").period === 4 && m("pa").speed === 1 && m("pa").loop === "loop" && m("pa").face === true, ["sp", "sp2", "or", "bo", "pa"].map(m)]; });
-await C("D5", "a physics thing that flies says who may punt it (visitor); world settings set in part are written whole (capacity, script-settings, default-role.guests)", () => {
+await C("D5", "a physics thing that flies says who may punt it (visitor); world settings set in part are written whole (capacity, script-settings)", () => {
   const W = world(); mk(W, "p"); W.call("set", { id: "p", component: "physics", value: { kind: "dynamic" } });
   W.call("set", { id: "@world", component: "capacity", value: { things: 100 } }); W.call("set", { id: "@world", component: "script-settings", value: { max: 3 } });
   W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const w = W.state().entities["@world"].c, ss = w["script-settings"];
-  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.guestThings === 200 && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && w["default-role"]?.guests === "visitor",
+  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.guestThings === 200 && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && W.call("set", { id: "@world", component: "default-role", value: { role: "none" } }).ok,
     [stored(W, "p", "physics"), w.capacity, ss, w["default-role"]]]; });
 await C("D6", "the registry's defaults are the authority's own: script-settings and capacity agree with what it enforces when they're absent", () => {
   const ss = CAT.COMPONENTS["script-settings"].defaults, cap = CAT.COMPONENTS.capacity.defaults;
   return [!!ss && !!cap && cap.things === D.CAPACITY.things && cap.guestThings === D.CAPACITY.guestThings && D.SCRIPT_DEFAULTS && Object.entries(D.SCRIPT_DEFAULTS).every(([k, v]) => ss[k] === v), [ss, cap, D.SCRIPT_DEFAULTS]]; });
 await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
-  const DYN = new Set(["motion.center", "grabbable.pose", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength"]);
+  // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)
+  const DYN = new Set(["motion.center", "grabbable.pose", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
   const bad = [];
   for (const [name, def] of Object.entries<any>(CAT.COMPONENTS)) { const h = def.help ?? ""; const all = CAT.defaultsOf?.(name) ?? {};
     for (const m of h.matchAll(/(\b[a-zA-Z]+)\??:? ?\(([^()]*\bdefault\b[^()]*)\)/g)) { const f = m[1]; if (DYN.has(`${name}.${f}`) || DYN.has(`${def.on === "world" ? name : name}.${f}`)) continue;
@@ -256,6 +257,63 @@ await C("D10", "grabbable's written defaults are shared/grab.js's own (the hand'
   return [JSON.stringify(Object.keys(want).sort().map((k) => [k, want[k]])) === JSON.stringify(Object.keys(reg).sort().map((k) => [k, reg[k]])), { want, reg }]; });
 await C("D9", "§4 explains schemas: optional, and why the stamped parameters and the pinned registry make old worlds safe without them", () => {
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /optional/i.test(g) && /registry-pin/.test(g), g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
+
+// ---- I: ids (H5) ----
+const RAND = /-[a-z2-7]{26}$/;
+await C("I1", "the authority mints ids with 128+ random bits (<slug>-<26 base32>), never <slug>-<count>", () => {
+  const W = world(); const ids = []; for (let i = 0; i < 40; i++) { const r = W.call("create", { model: "crate" }); ids.push(r.refs?.[0]?.id); }
+  const dup = W.call("create", { from: ids[0] }); const dupId = dup.refs?.[0]?.id;
+  return [ids.every((x) => typeof x === "string" && RAND.test(x) && FOLD.isEntityId(x)) && new Set(ids).size === ids.length && RAND.test(dupId ?? ""), [ids.slice(0, 3), dupId]]; });
+await C("I2", "every client and agent mints through one helper (shared/protocol/ids.js); no 8-hex or coordinate ids remain", () => {
+  const files = ["client/lib/build.js", "client/lib/worldquad.js", "client/lib/structure_ui.js", "mcpl/tools.ts"];
+  const bad = files.filter((f) => /randomUUID\(\)\.slice\(0, 8\)|`house-\$\{Math\.floor/.test(read(f)) || !/mintId\(/.test(read(f)));
+  return [!bad.length && fs.existsSync(path.join(T, "shared/protocol/ids.js")), bad]; });
+await C("I3", "mintId: 26 base32 characters of randomness, a slug prefix cut so the id stays within the grammar's 64", async () => {
+  const I = await imp("shared/protocol/ids.js"); const xs = Array.from({ length: 2000 }, () => I.mintId("a".repeat(80)));
+  const bare = I.mintId(); return [xs.every((x) => FOLD.isEntityId(x) && x.length <= 64 && RAND.test(x)) && new Set(xs).size === xs.length && /^[a-z2-7]{26}$/.test(bare), [xs[0], bare]]; });
+await C("I4", "an entity id shaped like a person's identity (u- + 20 base32) is refused: a reference to it could mean either", () => {
+  const W = world(); const r = W.call("create", { id: "u-abcdefghijklmnopqrst", model: "crate" }); return [!r.ok && r.refused.code === "shape", r.refused ?? r]; });
+
+// ---- R: references (H5) ----
+await C("R1", "the registry types every reference: parent.to ref, look-at.target target, story.marks refs, captioners.ids people, a script's scope.ids scope, grabbable.home.parent.to", () => {
+  const C0 = CAT.COMPONENTS; const got = [C0.parent.fields.to, C0["look-at"].fields.target, C0.story.fields.marks, C0.captioners.fields.ids, C0.script.scopeFields.ids, C0.grabbable.refPaths?.["home.parent.to"]];
+  return [JSON.stringify(got) === JSON.stringify(["ref", "target", "refs", "people", "scope", "ref"]) && typeof CAT.refsOf === "function" && typeof CAT.mapRefs === "function", got]; });
+await C("R2", "a reference field holds ids: story.marks [42] and captioners.ids ['Not An Id'] are refused", () => {
+  const W = world(); mk(W); const a = W.call("set", { id: "box", component: "story", value: { title: "t", text: "x", marks: [42] } });
+  const b = W.call("set", { id: "box", component: "captioners", value: { ids: ["Not An Id"] } }); return [!a.ok && !b.ok, [a.refused, b.refused]]; });
+await C("R3", "duplicate rebinds references inside the copy to their twins, keeps outside ones and lists them (keptLinks)", () => {
+  const W = world();   // a rig holding a lamp that turns to its sibling switch, and a label marking the switch and something far off
+  W.call("create", { id: "rig", model: "crate" }); W.call("create", { id: "lamp", model: "crate", components: { parent: { to: "rig" } } });
+  W.call("create", { id: "switch", model: "crate", components: { parent: { to: "rig" } } }); W.call("create", { id: "far", model: "crate" });
+  const r1 = W.call("set", { id: "lamp", component: "look-at", value: { target: "switch" } });
+  const r2 = W.call("set", { id: "rig", component: "story", value: { title: "rig", text: "x", marks: ["switch", "far"] } });
+  const d = W.call("create", { from: "rig", id: "rig2" }); const st = W.state().entities;
+  const kids = Object.keys(st).filter((k) => st[k].c.parent?.to === "rig2"); const lamp2 = kids.find((k) => st[k].c["look-at"]), sw2 = kids.find((k) => !st[k].c["look-at"]);
+  const kept = (d.notes ?? []).flatMap((n: any) => n.keptLinks ?? []);
+  return [r1.ok && r2.ok && d.ok && !!lamp2 && st[lamp2].c["look-at"].target === sw2 && JSON.stringify(st.rig2.c.story.marks) === JSON.stringify([sw2, "far"])
+    && kept.some((k: any) => k.to === "far" && /story\.marks/.test(k.from)) && st.lamp.c["look-at"].target === "switch", [why(r1), lamp2 && st[lamp2].c["look-at"], st.rig2?.c.story, kept]]; });
+await C("R4", "a script's scope.ids are rebound on duplicate (the copy drives its own twin, never the original)", async () => {
+  const W = world(); W.call("create", { id: "bell", model: "crate" }); W.call("create", { id: "bulb", model: "crate", components: { parent: { to: "bell" } } });
+  const src = W.call("upload", { text: 'world.on("use", () => world.set("bulb", "t/lit", true));\n' }).src;
+  const i = W.call("set", { id: "bell", component: "script:ring", value: { src, scope: { ids: ["bell", "bulb"], comps: ["t/lit"] }, on: ["use"] } });
+  const d = W.call("create", { from: "bell", id: "bell2" }); const st = W.state().entities; const twin = Object.keys(st).find((k) => st[k].c.parent?.to === "bell2");
+  return [i.ok && d.ok && JSON.stringify(st.bell2.c["script:ring"].scope.ids) === JSON.stringify(["bell2", twin]), [why(i), why(d), st.bell2?.c["script:ring"]?.scope]]; });
+await C("R5", "publish refuses a link to a thing outside what's published (outside-link, each listed); unwire: true drops them and says so", () => {
+  const W = world(); W.call("create", { id: "sw", model: "crate" }); W.call("create", { id: "lamp", model: "crate" });
+  W.call("set", { id: "sw", component: "story", value: { title: "switch", text: "x", marks: ["lamp"] } });
+  const a = W.call("publish", { from: "sw", name: "switch" }); const b = W.call("publish", { from: "sw", name: "switch", unwire: true });
+  const rec = b.ok ? W.getBlob(Object.keys(W.state().entities["@world"].c).find((k) => k.startsWith("blueprints:"))!.replace("blueprints:", "sha256:")) : null;
+  return [!a.ok && a.refused.code === "outside-link" && JSON.stringify(a.refused).includes("lamp") && b.ok && (b.notes ?? []).some((n: any) => n.unwired?.length)
+    && rec && !JSON.stringify(rec).includes('"lamp"'), [a.refused, why(b), rec?.parts?.[0]?.components?.story]]; });
+await C("R6", "a blueprint's inside links become the copy's own ids (parts' keys → fresh ids); a raw id from another world is unbound and said", () => {
+  const W = world(); W.call("create", { id: "rig", model: "crate" }); W.call("create", { id: "lamp", model: "crate", components: { parent: { to: "rig" } } });
+  W.call("create", { id: "switch", model: "crate", components: { parent: { to: "rig" } } }); W.call("set", { id: "lamp", component: "look-at", value: { target: "switch" } });
+  const p = W.call("publish", { from: "rig", name: "rig" }); const h = Object.keys(W.state().entities["@world"].c).find((k) => k.startsWith("blueprints:"))!.replace("blueprints:", "sha256:");
+  const c = W.call("create", { from: h, id: "copy" }); const st = W.state().entities; const kids = Object.keys(st).filter((k) => st[k].c.parent?.to === "copy");
+  const l2 = kids.find((k) => st[k].c["look-at"]), s2 = kids.find((k) => !st[k].c["look-at"]);
+  return [p.ok && c.ok && !!l2 && st[l2].c["look-at"].target === s2 && s2 !== "switch", [why(p), why(c), l2 && st[l2].c["look-at"]]]; });
+await C("R7", "the spec scopes ids to their world and writes the merge duplicate-id rule down", () => {
+  const need = ["(world id, entity id)", "fork-copy", "rename map", "typed reference"]; return [need.every((n) => SPEC.includes(n)), need.filter((n) => !SPEC.includes(n))]; });
 
 console.log(`\npretrans: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

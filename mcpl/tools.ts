@@ -26,6 +26,7 @@ import { describeBody } from "../shared/sockbody.js";
 import { dec as decName } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
+import { mintId } from "../shared/protocol/ids.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
@@ -699,7 +700,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const y = a.y ?? ag.heightAt(x, z) + 1.6;
-      const id = a.id ?? crypto.randomUUID().slice(0, 8);
+      const id = a.id ?? mintId("light");   // 128+ random bits (shared/protocol/ids.js)
       const r = await ag.sendOps([OP.create(id, { transform: { pos: [x, y, z] }, components: { light: { color: a.color ?? 0xffd9a0, intensity: a.intensity ?? 16, range: a.range ?? 10, ...(a.important ? { important: true } : {}) } } })]);
       if (r && !r.ok) return refusedBy(r, "light");
       return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);

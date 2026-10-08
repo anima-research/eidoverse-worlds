@@ -150,7 +150,13 @@ A `change` entry's `verb` and `body` are one of:
 All ASCII.
 
 - **Entity ids**: `[a-z0-9-]{1,64}`, opaque and minted, plus the reserved
-  `@world`.
+  `@world`. An id is **world-scoped**: a thing's global name is the pair
+  `(world id, entity id)`, written `<world id>#<entity id>`, and no protocol
+  feature may assume an id is unique outside its world (a fork copies its
+  parent's ids). A minted id SHOULD carry at least 128 random bits (the
+  reference authority and clients write `<slug>-<26 base32>`), so two forks
+  rarely mint alike; that makes renames on merge rare, never unnecessary. An
+  entity id never has an identity's shape (`u-` and 20 base32 letters).
 - **Identities** (actors, and keys such as `roles:<identity>`):
   `[a-z0-9-]{1,64}`, opaque. The mapping from an identity to a person lives
   outside the log, so purging a person never needs the log's skeleton.
@@ -215,6 +221,16 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   deleted only by its creator (whose rights admitted the first write in its
   current life) or an owner. Partition keys (`terrain-tile:`) are pieces of
   one shared surface and follow ordinary rank rules.
+- **References are typed.** A field that names another thing or a person
+  says so in its definition: `ref` (one entity id), `refs` (a list), `person`
+  (an identity), `people` (a list), `target` (a `ref`, a `person` or an
+  `@word` such as `@viewer`), and a script's `scope.ids`. Every typed
+  reference is what copying rebinds: a **duplicate** points references to
+  copied things at their twins and keeps the rest (listing them); a
+  **publish** turns references inside the record into part keys and refuses
+  references outside it unless asked to drop them (`unwire`); a **copy** of a
+  record turns part keys into its own new ids and leaves anything else
+  unbound. An untyped value (a namespaced component) is never rewritten.
 - **Parameters, never code.** A component holds data. Code lives in a blob
   that a `script:<name>` component names (§8). Nothing writes a component
   per frame: motion is stored as a function of time (`motion`), evaluated by
@@ -501,6 +517,27 @@ argument will be short.
   write, never what a world is. The reference reader for them is
   `conformance/gov.py` (with `conformance/test_gov.py`); the reference
   authority does not yet write or validate them.
+- **Forks and merges.** A fork's genesis carries `parent {world, seq,
+  head}`: the world it was copied from, the seq it was copied at and that
+  seq's chain head. The acts that copy the parent's state are verb
+  `fork-copy`, so a reader tells an inherited thing from one born in the
+  fork. A merge of fork F into its parent P, with base B = F's
+  `genesis.parent`, decides each of F's entity ids x (this is the rule; the
+  reference implementation doesn't merge yet):
+  1. x was live in P folded to B's seq **and** in F it was created by a
+     `fork-copy` act (never deleted and re-created): the same thing. Merge it
+     per component against its value at the base.
+  2. Otherwise, if P has ever had x (live or deleted): a collision. Mint a
+     fresh id in P, and rewrite every **typed reference** to x in the merged
+     changes (ids-as-keys such as `roles:<identity>` are people, never
+     renamed).
+  3. Otherwise x is new to P and keeps its id.
+
+  A value that names x without a typed reference (a namespaced component's
+  data) is not rewritten; the merge act lists each one as a warning. The
+  merge act records its **rename map** `{x: y}`, so provenance and outside
+  links can follow. An id chosen to collide is simply renamed: a fork can
+  never overwrite a thing in its parent.
 - **Whose key is tier 0.** A world's founder holds tier 0 with a key made on
   their own machine (the authority's `create-world {ownerKey}`; a translated
   world's `--founder-key`). A host's custody keys (sequencer, operator) are

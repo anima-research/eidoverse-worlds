@@ -11,7 +11,8 @@ import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize } from "./componentspec.js";
+import { mintId, PERSON_ID } from "./ids.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
@@ -832,6 +833,7 @@ function admit(w, st, who, ops) {
       if (jcs(op.value).length > 65536) refuse("too-big", `${at} is ${jcs(op.value).length} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
     const e = s.entities[op.id];
     if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
+      if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");
       // §3d H7: an id is never reused, so a re-created id can't inherit references (parents, portals, old acts) or a sponsorship
       // …except the SAME thing coming back: an undo restoring what its own target deleted (who.restores, set only by
       // buildUndo's whole-thing branch). Its references are its own, so inheriting them is the point (Ctrl+Z after Delete).
@@ -868,7 +870,7 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: cap?.kind === "fork-copy" }); // against the state the whole write leaves (parents may come later in a batch)
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: FORKING }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
@@ -1224,7 +1226,10 @@ const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
   vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),
   axis: (x) => (Array.isArray(x) && x.length === 3 && x.every(isNum)) || x === "x" || x === "y" || x === "z", // the text-tier shorthand the renderer reads (motioneval.js)
-  array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x) };
+  array: Array.isArray, object: (x) => x && typeof x === "object" && !Array.isArray(x),
+  // references (componentspec REF_TYPES): ids of things, identities of people, or @words where a field takes them
+  ref: (x) => isEntityId(x), refs: (x) => Array.isArray(x) && x.every((y) => isEntityId(y)), person: (x) => isIdentity(x), people: (x) => Array.isArray(x) && x.every((y) => isIdentity(y)),
+  target: (x) => typeof x === "string" && (isEntityId(x) || /^@[a-z]+$/.test(x)), scope: (x) => x === "self" || x === "subtree" || (Array.isArray(x) && x.every((y) => y === "self" || isEntityId(y))) };
 // "did you mean" for a field name: a prefix either way (amp → amplitude) beats a short edit distance (amp → w)
 function guessKey(k, allowed) {
   const lev = (a, b) => { const m = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
@@ -1500,8 +1505,9 @@ function merge7396(target, patch) {
 let mintN = 0;
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
 let mintW = null;
-function mint(st, base) { base = slug(base); let n = Object.keys(st.entities).length + (++mintN); const ever = mintW?.everIds() ?? new Set();
-  while (st.entities[`${base}-${n}`] || ever.has(`${base}-${n}`)) n++; return `${base}-${n}`; }
+// review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
+function mint(st, base) { const ever = mintW?.everIds() ?? new Set(); let id;
+  do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
 function buildCreate(ctx, a) {
   if (a.from) return buildCreateFrom(ctx, a);
@@ -2524,16 +2530,34 @@ function buildSculpt(ctx, a) {
 const BLUEPRINTS = "blueprints:";
 const blueprintKey = (h) => `${BLUEPRINTS}${String(h).replace(/^sha256:/, "")}`;
 const isPublished = (st, h) => !!st.entities["@world"]?.c[blueprintKey(h)];
+// References across a copy (review 10-07 H5; RESEARCH-event-wiring §4.3): every typed reference in a components map (its
+// parent excepted: copies place parents themselves) through f(id, path) → new id | null (drop) | the same id (keep).
+// Returns the components with dropped references removed (a value whose required reference went is removed whole).
+function rebindAll(c, f) {
+  for (const k of Object.keys(c)) { if (k === "parent" || k === "copy-of") continue;
+    const r = mapRefs(k, c[k], (x, at) => f(x, at, k)); if (r.value === undefined) delete c[k]; else c[k] = r.value; }
+  return c;
+}
+// publish: a reference inside what's published becomes that part's key; one outside is refused (a raw id from this world
+// means nothing, or something else, wherever the record lands) unless unwire: true, which drops it and says so
+function publishLinks(ctx, a, inside, keyOf, partsOf) {
+  const outside = [], unwired = [];
+  const parts = partsOf((id, c) => rebindAll(c, (x, at) => { if (inside.has(x)) return keyOf(x); if (a.unwire) { unwired.push({ from: `${id}.${at}`, to: x }); return null; } outside.push({ from: `${id}.${at}`, to: x }); return x; }));
+  if (outside.length) refuse("outside-link", `${outside.length} link(s) point outside what you're publishing: ${outside.slice(0, 6).map((o) => `${o.from} → ${o.to}`).join(", ")}`,
+    "publish those things too (from: [them, …]), or send unwire: true to publish without those links (each is dropped and listed)", { links: outside });
+  if (unwired.length) ctx.notes.push({ unwired, why: "these links pointed outside what you published: dropped from the record (unwire: true)" });
+  return parts;
+}
 function buildPublish(ctx, a, w) {
   const roots = Array.isArray(a.from) ? a.from : [a.from];
   for (const r of roots) if (!ctx.st.entities[r]) refuse("not-found", `no '${r}'`, "look lists what's here", { didYouMean: guess(r, Object.keys(ctx.st.entities)) });
   if (roots.length > 1) return publishGroup(ctx, a, w, roots);
   const ids = [a.from, ...descendants(ctx.st, a.from)];
   const keyOf = partKeys(ctx.st, ids, ctx.st.entities[a.from].c["copy-of"]?.from);
-  const parts = ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
+  const parts = publishLinks(ctx, a, new Set(ids), keyOf, (fix) => ids.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
     if (id === a.from) { delete c.parent; c.transform = { ...c.transform, pos: [0, 0, 0] }; }
     else if (c.parent) c.parent = { ...c.parent, to: keyOf(c.parent.to) };
-    return { key: keyOf(id), components: c }; });
+    return { key: keyOf(id), components: fix(id, c) }; }));
   const record = { name: a.name ?? a.from, root: keyOf(a.from), parts, by: ctx.actor };
   const hash = w.putBlob(record);
   ctx.notes.push({ record: hash, parts: parts.length });
@@ -2548,10 +2572,10 @@ function publishGroup(ctx, a, w, roots) {
   const keyOf = partKeys(ctx.st, all, lineage, ["root"]);
   const ws = roots.map((r) => worldT(ctx.st, r).pos); const cx = ws.reduce((t, p) => t + p[0], 0) / ws.length, cz = ws.reduce((t, p) => t + p[2], 0) / ws.length;
   const parts = [{ key: "root", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: a.name } },
-    ...all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
+    ...publishLinks(ctx, a, new Set(all), keyOf, (fix) => all.map((id) => { const c = clone(ctx.st.entities[id].c); delete c["copy-of"];
       if (roots.includes(id)) { const t = worldT(ctx.st, id); c.transform = { ...t, pos: [r3(t.pos[0] - cx), r3(t.pos[1]), r3(t.pos[2] - cz)] }; c.parent = { to: "root", order: "a0" }; }
       else c.parent = { ...c.parent, to: keyOf(c.parent.to) };
-      return { key: keyOf(id), components: c }; })];
+      return { key: keyOf(id), components: fix(id, c) }; }))];
   const record = { name: a.name ?? "group", root: "root", parts, by: ctx.actor };
   const hash = w.putBlob(record); ctx.notes.push({ record: hash, parts: parts.length, roots: roots.length }); ctx.refs.add("@world");
   return [setOp("@world", blueprintKey(hash), { name: record.name, parts: parts.length })]; // who published it is a view (creatorOf), never stored (L2)
@@ -2587,7 +2611,9 @@ function buildUpdate(ctx, a, w) {
   const have = new Map(); for (const id of [a.copy, ...descendants(ctx.st, a.copy)]) { const k = ctx.st.entities[id].c["copy-of"]?.key; if (k !== undefined && !have.has(k)) have.set(k, id); }
   const fresh = partIds(ctx.st, a.copy, base.root, theirs.parts.map((p) => p.key).filter((k) => !have.has(k)));
   const idOf = (key) => (key === base.root ? a.copy : have.get(key) ?? fresh.get(key));
-  const B = Object.fromEntries(base.parts.map((p) => [p.key, p.components])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, p.components]));
+  // references are merged as values in this world's ids: a part key → its id here (an unknown key is unbound, as on copy)
+  const inIds = (c) => rebindAll(clone(c), (x) => idOf(x) ?? null);
+  const B = Object.fromEntries(base.parts.map((p) => [p.key, inIds(p.components)])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, inIds(p.components)]));
   const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
   const ops = [], conflicts = [], kept = [], orphaned = [];
   const skipComp = new Set(["copy-of", "parent"]);
@@ -2636,12 +2662,16 @@ function buildCreateFrom(ctx, a) {
   // (a part that names a twin as its parent rides the first; there's no telling which was meant)
   const seen = new Set(), used = new Set([...ids.values()]); const idAt = rec.parts.map((p) => { if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }
     let n = 2, x; do x = `${ids.get(p.key)}`.slice(0, 60) + `-${n++}`; while (used.has(x) || ctx.st.entities[x]); used.add(x); return x; });
-  const ops = [];
+  const ops = [], unbound = [];
   for (const [i, p] of rec.parts.entries()) { const c = clone(p.components);
     if (p.key === rec.root && i === rec.parts.findIndex((q) => q.key === rec.root)) c.transform = resolve(ctx, id, "transform", { ...c.transform, ...(a.at ?? {}) });
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
+    // a reference to a part key is that part's new id; anything else (a record published before references were typed,
+    // naming a raw id of the world it came from) is unbound here, and said: it would mean something else in this world
+    rebindAll(c, (x, at) => { if (ids.has(x)) return ids.get(x); unbound.push({ from: `${idAt[i]}.${at}`, was: x }); return null; });
     c["copy-of"] = { from: a.from, key: p.key };
     ops.push(...createOps(idAt[i], c)); ctx.refs.add(idAt[i]); }
+  if (unbound.length) ctx.notes.push({ unbound, why: "the record named things that aren't parts of it: those links aren't wired in the copy (set them again)" });
   return ops;
 }
 
@@ -2659,15 +2689,18 @@ function buildDuplicate(ctx, a) {
   if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§3.1: a–z, 0–9 and '-', up to 64; or leave id out");
   if (st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
   const ids = partIds(st, id, src, all);
-  const ops = []; let locks = 0;
+  const ops = []; let locks = 0; const keptLinks = [];
   for (const sid of all) { const orig = st.entities[sid].c; const c = clone(orig);
     if ("lock" in c) { delete c.lock; locks++; }
     for (const k of Object.keys(orig)) if (orig[k] === PURGED) delete c[k]; // a purged value can't be copied
     if (c.parent && typeof c.parent.to === "string") c.parent = { ...c.parent, to: ids.get(c.parent.to) ?? c.parent.to };
+    // every typed reference to something copied now points at its twin (a lamp that looks at its own switch looks at the
+    // copy's switch; a script's scope drives the copy, never the original); one to something else is kept, and listed
+    rebindAll(c, (x, at) => { if (ids.has(x)) return ids.get(x); keptLinks.push({ from: `${ids.get(sid)}.${at}`, to: x, why: `${x} wasn't copied` }); return x; });
     if (sid === src) { const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
       c.transform = resolve(ctx, id, "transform", a.at ?? { pos: [t.pos[0] + 0.5, t.pos[1], t.pos[2]] }, t); }
     ops.push(...createOps(ids.get(sid), c)); ctx.refs.add(ids.get(sid)); }
-  ctx.notes.push({ copied: src, as: id, parts: all.length, ...(locks ? { why: "a lock isn't copied: the copy is free to move" } : {}) });
+  ctx.notes.push({ copied: src, as: id, parts: all.length, ...(locks ? { why: "a lock isn't copied: the copy is free to move" } : {}), ...(keptLinks.length ? { keptLinks } : {}) });
   return ops;
 }
 
@@ -3309,9 +3342,12 @@ const VERBS = {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
     // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
+    // a FORK names its parent with the seq it was copied at ({world, seq, head}): that's genesis.parent, part of the new
+    // world's id, the merge base a later merge folds from (PROTOCOL §13; review 10-07 H5). A reset names its predecessor
+    // without a seq: provenance in the founding act only (it copies nothing, so it has no merge base)
     if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
-      if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || Object.keys(f).some((k) => !["world", "head", "name"].includes(k)))
-        refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, name?}", ""); }
+      if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || (f.seq !== undefined && !(Number.isInteger(f.seq) && f.seq >= 0)) || Object.keys(f).some((k) => !["world", "head", "name", "seq"].includes(k)))
+        refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, seq? (a fork: the seq it was copied at), name?}", ""); }
     // genesis seeds no state (§13): it names the governance keys. The founding act then writes @world, once.
     // {dialect, v, minor, nonce (16 random bytes), owners: tiers of keys, sequencer}. Tier 0 is the founder's OWN key when
     // they bring one (ownerKey: made on their machine; this server never holds its private half); the operator's custody
@@ -3320,7 +3356,8 @@ const VERBS = {
     if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (openssl genpkey -algorithm ed25519; PROTOCOL §13, \"Whose key is tier 0\"); or leave ownerKey out");
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
-    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer() } });
+    w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer(),
+      ...(a.from?.seq !== undefined ? { parent: { world: a.from.world, seq: a.from.seq, head: a.from.head } } : {}) } });
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" })];
     const plan = admit(w, w.state(), { actor, cap: { kind: "founding", ids: ["@world"], comps: ops.map((o) => o.comp) } }, ops);
@@ -3572,8 +3609,19 @@ const VERBS = {
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   sculpt: (w, actor, a) => commit(w, actor, "sculpt", a, (ctx) => buildSculpt(ctx, a)),
-  batch(w, actor, a) {
-    return commit(w, actor, "batch", a, (ctx) => {
+  batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },
+  // a fork's copy of its parent (server/worldlog.ts forkWorld): an ordinary batch through the same gate, logged under its
+  // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent
+  // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
+  "fork-copy"(w, actor, a) {
+    if (!FORKING) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
+    return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));
+  },
+};
+let FORKING = false;
+/** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
+export function forkCopy(w, actor, args) { FORKING = true; try { return request(w, actor, "fork-copy", args); } finally { FORKING = false; } }
+function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
       // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
       // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
@@ -3592,6 +3640,4 @@ const VERBS = {
         if (sub.cap) ctx.cap = sub.cap;
       });
       return all;
-    });
-  },
-};
+} }
