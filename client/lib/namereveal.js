@@ -2,7 +2,7 @@
 // at full legibility, out to ~60 m (platesize.js says how); release, and they ease back. Hold, not toggle: it is a
 // glance ("who is that, over there?"), and a toggle left on is a wall of labels you forgot you asked for.
 //
-// Sources are independent — the desktop key, a VR button, a timed pulse from the action list — and the reveal is on
+// Sources are independent — the desktop key, the "always show names" setting, a timed pulse from the action list — and the reveal is on
 // while ANY of them is; the level ramps from wherever it was, so a quick tap-release-tap never snaps.
 //
 // THE KEY: N ("names"). Alt was the first wish and is taken three times over: walk slowly (controller.js creeping),
@@ -31,6 +31,18 @@ export function setReveal(source, on, now = nowMs()) {
 export const revealLevel = (now = nowMs()) => revealEase(rawAt(now));
 export const revealHeld = () => held;
 export const revealSources = () => [...sources];
+
+// ALWAYS SHOW NAMES (owner, 10-02): what holding B/Y did in VR, as a setting (Settings › style), default off. The
+// controller's top face button follows VRChat's convention now (the menu: our panels' quick hide, xr.js). On, it is one
+// more source, so it composes with N and the pulse; persisted per browser.
+export const ALWAYS_LS = 'ew-names-always';
+const lsGet = (k) => { try { return globalThis.localStorage?.getItem(k); } catch { return null; } };
+export const alwaysNames = () => sources.has('always');
+export function setAlwaysNames(on) {
+  try { globalThis.localStorage?.setItem(ALWAYS_LS, on ? '1' : '0'); } catch { /* private mode */ }
+  setReveal('always', !!on);
+}
+if (lsGet(ALWAYS_LS) === '1') setReveal('always', true);
 
 // a timed reveal for surfaces that can't hold (the action list: choose "show every name" and they come up briefly)
 let pulseTimer = null;

@@ -64,10 +64,23 @@ const files = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.is
 const root = new URL('../client', import.meta.url).pathname;
 const others = files(root).filter((f) => !f.endsWith('/namereveal.js') && /['"]KeyN['"]|key === ['"][nN]['"]/.test(readFileSync(f, 'utf8')));
 check('N is bound nowhere else in the client', others.length === 0, others.join(', '));
-// the VR buttons: xr.js reads button 5 only for the reveal
+// the VR buttons (owner, 10-02): B/Y follows VRChat's convention (the menu: the panels' quick hide); no controller
+// button reveals names any more — that is the "always show names" setting
 const xr = readFileSync(`${root}/lib/xr.js`, 'utf8');
-const b5 = [...xr.matchAll(/buttons\[5\]/g)].length, line = xr.split('\n').filter((l) => /buttons\[5\]/.test(l));
-check('VR: B/Y (button 5) is read once, by the reveal', b5 === 2 && line.length === 1 && /setReveal\('xr'/.test(line[0]), line.join(' | '));
+check('VR: no controller button reveals names (xr.js never calls setReveal)', !/setReveal\(/.test(xr));
+const line = xr.split('\n').filter((l) => /buttons\[5\]/.test(l) && !/^\s*\/\//.test(l));
+check('VR: B/Y (button 5) is read in one place, the quick hide', line.length === 1 && /xrPanelsHideToggle|menuBtnWas|const by = /.test(line[0]), line.join(' | '));
+// the setting
+if (!R.err) {
+  const store = new Map(); globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  check('always show names: off by default', !R.alwaysNames());
+  R.setAlwaysNames(true);
+  check('…on: a reveal source of its own, and persisted', R.alwaysNames() && R.revealHeld() && R.revealSources().includes('always') && store.get(R.ALWAYS_LS) === '1', JSON.stringify(R.revealSources()));
+  R.setReveal('key', true); R.setReveal('key', false);
+  check('…an N hold and release meanwhile leaves it on', R.revealHeld() && R.alwaysNames());
+  R.setAlwaysNames(false);
+  check('…off: gone, and stored off', !R.revealHeld() && !R.alwaysNames() && store.get(R.ALWAYS_LS) === '0');
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -236,6 +236,10 @@ registerAction({ id: 'voice:ear', title: 'hear voices on / off', group: 'voice',
   keywords: ['ear', 'hush', 'deafen', 'headphones', 'listen', 'voice'], run: () => flipEar() });
 /** the menu wears the SAME glyphs as the floating pair */
 export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" height="26"', `width="${size}" height="${size}"`);
+/** The in-VR mic indicator's state and glyph (xrmicicon.js): the HUD glyph itself — off / on / hot (transmitting:
+ *  level up, and under push-to-talk only while the key or the left A/X is held), same inks. */
+export const micIndicatorState = () => (!micIsOn() ? 'off' : micHot ? 'hot' : 'on');
+export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
 export const earGlyph = (size = 16) => { let on = false; try { on = receivingVoice() && !isHushed(); } catch {} return EAR_SVG(on).replace('width="26" height="26"', `width="${size}" height="${size}"`); };
 

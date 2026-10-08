@@ -1635,6 +1635,10 @@ body.touch #touch { display: block; }
   opacity: 0; transition: opacity .12s ease;
 }
 #tipchip.show { opacity: 1; }
+/* the same chip in a VR panel (xrtip.js): rasterised onto the panel's quad, so opaque (no blur, no fade) and outlined in
+   the ring's rule ink to stand off the panel it sits on */
+#xr-tip { max-width: 320px; padding: 4px 10px; border-radius: 6px; font-family: var(--font); font-size: var(--fs-sm); line-height: 1.45;
+  color: var(--fg); background: rgb(var(--panel-rgb)); border: 1px solid rgb(143 232 200 / .45); white-space: pre-line; overflow-wrap: break-word; }
 
 .dbg-row { cursor: pointer; user-select: none; }
 .dbg-row input { accent-color: var(--control); margin: 0; }

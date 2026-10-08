@@ -5,10 +5,10 @@
 // eidoverse controller's own wish/gravity/mantle/seat code does every bit of
 // the moving; a thumbstick is a keyboard that reports fractions), the POINTER
 // (right-hand ray: trigger = select, feeding the same sgSelect the hierarchy
-// and viewport clicks feed), GRAB (the HIGGS chord: grip alone aims, grip+
-// trigger takes — local while held, and release SPEAKS A PLACE VERB, so a VR
-// grab and a typed /place are the same sentence; undo already knows how to
-// unsay it), and the RADIAL MENU (right-stick PRESS opens, stick aims, release
+// and viewport clicks feed), PANEL GRAB (grip alone takes the panel under the
+// laser by its background or title — never by a control, so a habitual grip
+// mid-click can't yank it; owner, 10-02, replacing the grip+trigger chord), and
+// the RADIAL MENU (right-stick PRESS opens, stick aims, release
 // commits; snap turn keeps stick-X when the ring is closed; every slot is a
 // verb-backed action — nothing exists only as a VR gesture. Agent parity).
 //
@@ -28,19 +28,24 @@ import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frameloop.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
-import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
-import { domQuadsScroll } from './domquad.js';
+import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
+import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
-import { entities } from './world.js';
+import { entities, comps } from './world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
-import { makePointerLine } from './pointer.js';
+import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
+import { setPttHeld } from './micstate.js';   // the left A/X under push-to-talk: held = speak, as V
+import { pttMode } from './voiceconsent.js';
+import './xrmicicon.js';   // the mic, in view, while presenting (VRChat's lower-left icon)
 import { markActive } from './presence.js';
-import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
+import { makeDwell } from './dwell.js';
+import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
+import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -297,8 +302,11 @@ export const isPresenting = () => presenting;
 // ---- VR preferences (Settings › VR; owner, 09-05 18:22). Persisted per browser.
 // turn: 'snap' | 'smooth' · vignette: comfort tunnel on move/turn · mirror:
 // what the desktop window shows while presenting — 'off' | 'first' | 'third'.
+// pointerVisibility: is the VR laser drawn — 'always' | 'never' | 'contextual' (owner, 10-02; xrpointer.js says what each means).
 const PREF_XR = 'ew-xr-prefs';
-export const xrPrefs = (() => { try { return { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto' }; } })();
+// dotVisibility: is the surface dot drawn — the same three words, its own setting (owner, 10-02).
+const XR_PREF_DEFAULTS = { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', pointerVisibility: POINTER_VIS_DEFAULT, dotVisibility: POINTER_VIS_DEFAULT };
+export const xrPrefs = (() => { try { return { ...XR_PREF_DEFAULTS, ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { ...XR_PREF_DEFAULTS }; } })();
 { const m = new URLSearchParams(location.search).get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B (the 'pop to origin' hunt, 09-05 21:46)
 // Eye resolution, as WebXR's framebufferScaleFactor: a per-axis scale of the size the runtime recommends. 'auto' (1.0)
 // is that size — SteamVR's resolution slider sets it, and it is deliberately LARGER than the panel because the lens
@@ -350,12 +358,59 @@ function makeHand(i) {
     new THREE.BoxGeometry(0.05, 0.035, 0.09),
     new THREE.MeshStandardMaterial({ color: 0xe8c9a0, roughness: 0.8 }));
   grip.add(box);
-  // the pointer: porch-old's fading beam (owner, 09-06 23:38: the cylinder was distracting)
+  // the pointer: porch-old's fading beam (owner, 09-06 23:38: the cylinder was distracting). It is drawn in WORLD space
+  // along the ray the hand picks with (placeLaser), not parented to the raw controller: that ray is smoothed (`aim`,
+  // below). In world space its length is the hit distance exactly — under the rig it was that times the chosen body size.
   const laser = makePointerLine();
   laser.visible = false;
-  ray.add(laser);
-  rig.add(grip); rig.add(ray);
-  return { grip, ray, laser, box };
+  // the AIM: the controller's target ray through a short low-pass (xrpointer.js POINTER_TAU), in the rig's space so
+  // walking and turning are never lagged — only the hand's own tremor is filtered. Every pick and the beam use it.
+  const aim = new THREE.Object3D(); aim.name = 'xr-aim';
+  // the surface dot where the laser meets its target (pointer.js). Parked under the rig so the hands' warm compiles it;
+  // it moves to the scene the first time it is placed.
+  const dot = makeSurfaceDot();
+  rig.add(grip); rig.add(ray); rig.add(aim); rig.add(dot);
+  return { grip, ray, aim, smooth: { init: false }, laser, dot, box };
+}
+const _dotP = new THREE.Vector3(), _dotN = new THREE.Vector3(), _dotO = new THREE.Vector3(), _dotD = new THREE.Vector3(), _eyeP = new THREE.Vector3();
+/** The dot on the hand's target (a panel hit {point, normal}, a plate at `plateDist` along the ray, an entity hit), or
+ *  hidden when there is none. Plates are camera-facing sprites: the dot faces the eye there. */
+/** What a press would do on this target — the dot's icon (pointer.js DOT_KINDS). */
+const RESIZE_KIND = { 'resize-e': 'resize-ew', 'resize-w': 'resize-ew', 'resize-s': 'resize-ns', 'resize-nw': 'resize-nwse', 'resize-se': 'resize-nwse', 'resize-ne': 'resize-nesw', 'resize-sw': 'resize-nesw' };
+export function targetKind({ panel = null, plateDist = null, hit = null } = {}) {
+  if (panel) {
+    if (panel.control) return typeof panel.control !== 'string' && panel.control.matches?.(TEXT_SEL) ? 'type' : 'click';
+    if (RESIZE_KIND[panel.zone]) return RESIZE_KIND[panel.zone];
+    return panel.zone === 'move' || !panel.scroll ? 'move' : 'scroll';
+  }
+  if (plateDist != null) return 'dot';   // a nameplate: resting there IS the action (the card)
+  return hit?.interactable ? 'click' : 'dot';   // an entity you can use (sit, react); a plain one is only a surface
+}
+function placeDot(hand, ray, eye, { panel = null, plateDist = null, hit = null } = {}) {
+  const dot = hand.dot;
+  if (!panel && plateDist == null && !hit) { hideSurfaceDot(dot); return; }
+  setSurfaceDotKind(dot, targetKind({ panel, plateDist, hit }));
+  if (dot.parent !== scene) scene.add(dot);
+  _eyeP.setFromMatrixPosition(eye.matrixWorld);
+  if (panel) placeSurfaceDot(dot, panel.point, panel.normal, _eyeP);
+  else if (plateDist != null) {
+    _dotO.setFromMatrixPosition(ray.matrixWorld); _dotD.set(0, 0, -1).transformDirection(ray.matrixWorld);
+    _dotP.copy(_dotO).addScaledVector(_dotD, plateDist);
+    placeSurfaceDot(dot, _dotP, _dotN.subVectors(_eyeP, _dotP), _eyeP);
+  } else placeSurfaceDot(dot, hit.point, hit.normal ?? _dotN.set(0, 0, 0), _eyeP);
+}
+const _lp = new THREE.Vector3(), _ls = new THREE.Vector3();
+/** The beam along a pick ray (a world matrix, −Z forward), `len` metres long. */
+function placeLaser(laser, m, len) {
+  if (laser.parent !== scene) scene.add(laser);
+  m.decompose(_lp, laser.quaternion, _ls); laser.position.copy(_lp);
+  laser.scale.set(1, 1, len);
+}
+/** This frame's aim for a hand: the raw target ray, low-passed (xrpointer.smoothPose). Returns the aim object. */
+function steerAim(hand, dtSec) {
+  smoothPose(hand.aim, hand.ray, dtSec, hand.smooth);
+  hand.aim.updateMatrixWorld(true);
+  return hand.aim;
 }
 
 /** Guarded rumble (porch-old _haptic): silently a no-op on pads without
@@ -385,21 +440,108 @@ function rayHitEntity(handRay, far = 24) {
   const hit = _rc.intersectObjects(roots, true)[0];
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
-  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point } : null;
+  const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot
+  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(comps.get(n.userData.entityId)) } : null;
 }
 
 
-// ---- panel grab: grip+trigger chord takes a QUAD to reposition it -----------
+// ---- stickiness (xrpointer.js §3) ------------------------------------------------------------------------------
+// Per hand, the target the laser HOLDS: a panel control or a nameplate, kept as a point LOCAL to the thing it is on
+// (the quad, the plate's sprite, the card's quad), so a panel that moves or a person who walks carries the point along.
+// Each frame the unbent aim is tested; stickStep decides hold / switch / let go, and while it holds, the ray every pick
+// and the beam use is BENT from the hand to that point. A press in progress or a panel in this hand: no bending —
+// the press clicks what it pressed whatever the ray does (domquad.js), and a held panel rides the hand.
+const sticky = { left: null, right: null };   // {kind: 'panel'|'plate', key, obj, local: Vector3}
+const pickState = { left: { bent: false, kind: null }, right: { bent: false, kind: null } };   // probe window
+// THE DWELL, per hand (dwell.js), keyed on what the laser HOLDS — so the stickiness carries it through a small drift.
+// The nameplate card, the VR tooltips and the panel handles all read it.
+const dwells = { left: makeDwell(), right: makeDwell() };
+export const xrDwell = (side) => dwells[side];
+const entSeen = { left: null, right: null };   // probe window: the entity under each laser, {id, interactable}
+const bentRay = { left: { matrixWorld: new THREE.Matrix4() }, right: { matrixWorld: new THREE.Matrix4() } };
+const _sp = new THREE.Vector3(), _so = new THREE.Vector3(), _sd = new THREE.Vector3();
+const stickAlive = (h) => !!h.obj?.parent && h.obj.visible && (h.obj.material?.opacity ?? 1) >= 0.1 && !h.obj.userData?.occluded
+  && (typeof h.key === 'string' || h.key?.isConnected !== false);
+/** What a ray is on: the panel (claims first; {dist, point, normal, mesh, control}) or a plate ({id, dist, obj}) that
+ *  nothing in the world stands in front of — the beam stops at the first thing. */
+function rayTargets(ray, eye) {
+  const panel = xrPanelsAt(ray);
+  const seen = panel == null ? platePick(ray, eye) : null;
+  return { panel, plate: seen && !rayHitEntity(ray, seen.dist) ? seen : null };
+}
+function stickTo(side, aim, eye, hold) {
+  const raw = rayTargets(aim, eye);
+  const o = _so.setFromMatrixPosition(aim.matrixWorld), dir = _sd.set(0, 0, -1).transformDirection(aim.matrixWorld);
+  let now = null;
+  if (raw.panel?.control) now = { kind: 'panel', key: raw.panel.control, obj: raw.panel.mesh, point: raw.panel.point };
+  else if (raw.plate?.obj) now = { kind: 'plate', key: `plate:${raw.plate.id}`, obj: raw.plate.obj, point: o.clone().addScaledVector(dir, raw.plate.dist) };
+  const keep = (t) => t && { kind: t.kind, key: t.key, obj: t.obj, local: t.obj.worldToLocal(t.point.clone()) };
+  const ps = pickState[side];
+  if (!hold) { sticky[side] = keep(now); ps.bent = false; ps.kind = now?.kind ?? null; return { ray: aim, ...raw }; }
+  const held = sticky[side];
+  const angle = held && stickAlive(held) ? angleTo(o, dir, held.obj.localToWorld(_sp.copy(held.local))) : NaN;
+  const step = stickStep(held, now, angle);
+  sticky[side] = step.held === now ? keep(now) : step.held;
+  ps.bent = step.bend; ps.kind = sticky[side]?.kind ?? null;
+  if (!step.bend) return { ray: aim, ...raw };
+  const ray = bentRay[side]; rayMatrixTo(ray.matrixWorld, o, _sp);   // _sp: the held point, world
+  return { ray, ...rayTargets(ray, eye) };
+}
+
+// ---- panel grab: GRIP takes a QUAD to reposition it -----------------------------
+// Grip ALONE, on the press (an edge: a grip held while the laser sweeps onto a panel takes nothing), by the panel's
+// background or title (owner, 10-02, after comparing with Resonite — it was the grip+trigger chord). Over a CONTROL
+// (domquad.js controlAt: a button, an input, a slider, a tab, a link…) grip does nothing: the trigger is the click, and
+// a hand that squeezes out of habit mid-click must not yank the panel away. Release on grip release, as before; the
+// trigger of the hand holding a panel does nothing while it holds.
 // World-object grabbing lived here too (near-grab, far-grab, the place verb + undo) and was removed
 // whole (owner, 09-07 22:26: 'take the code out — it needs to be a proper object component, otherwise it's
 // tech debt'). Panels are UI, not world entities: no verb, no undo, they just ride the hand and land
 // uprighted on the rig. See git history (a2e25e2 and before) for the entity path when the component exists.
 let held = null;   // {quad, hand}
-function tryGrab(hand) {
+// a RESIZE in progress (grip on a panel's corner or edge; domquad.js does the geometry and the commit): {hand, drag}
+let resizing = null;
+function tryGrab(hand, ray) {
   const h = hands[hand];
-  const q = xrPanelsGrab(h.ray);
+  const at = xrPanelsAt(ray);
+  if (at?.control) { tee(`[xr] grip on a control of the ${at.id} panel: not grabbed (grab it by its background or title)`); return; }
+  if (at?.zone?.startsWith('resize-')) {   // a corner or an edge: the grip resizes (owner, 10-02)
+    const drag = domQuadResizeBegin(at);
+    if (drag) { resizing = { hand, drag }; haptic(hand, 0.4, 30); }
+    return;
+  }
+  const q = xrPanelsGrab(ray);   // refuses a control too, for any other caller
   if (!q) return;
-  held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — release grip to place it`);
+  held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — trigger + stick to push or pull it, release grip to place it`);
+}
+// PUSH / PULL (owner, 10-02, Resonite's reel): on the hand HOLDING a panel, with that hand's TRIGGER also held, stick
+// forward sends it away along the laser, stick back reels it in. Exponential, so the feel is the same near and far
+// (×e^(rate) per second at full deflection), and clamped to an arm's reach and a room's. Carrying a panel must not stop
+// you running or turning (owner, 10-02, revising the first pass, which took the stick over for the whole hold): the
+// stick is the panel's only while that trigger is held (a holding hand's trigger clicks nothing anyway), and then only
+// its forward/back — the left stick's walk-forward is held off for those moments, its strafe and the right stick's turn
+// never are. No rotation: a released panel is uprighted and faces you, as before. Panels only (world-object grabbing
+// waits for its component).
+export const PUSH_RATE = 1.6;              // 1/s at full deflection: ≈5× farther per second
+export const PUSH_MIN_M = 0.25, PUSH_MAX_M = 3.0;
+const _pp = new THREE.Vector3(), _po = new THREE.Vector3(), _pd = new THREE.Vector3();
+function pushPull(hand, aim, stickY, dt) {
+  const d = dead(stickY); if (!d || !held) return;
+  const mesh = held.quad.mesh;
+  _po.setFromMatrixPosition(aim.matrixWorld); _pd.set(0, 0, -1).transformDirection(aim.matrixWorld);
+  mesh.getWorldPosition(_pp);
+  const along = _pp.sub(_po).dot(_pd);                                     // the panel's distance out along the laser
+  const want = THREE.MathUtils.clamp(along * Math.exp(PUSH_RATE * d * dt), PUSH_MIN_M, PUSH_MAX_M);
+  if (Math.abs(want - along) < 1e-5) return;
+  mesh.getWorldPosition(_pp).addScaledVector(_pd, want - along);           // slide along the laser only
+  mesh.parent.updateMatrixWorld(true); mesh.position.copy(mesh.parent.worldToLocal(_pp));
+}
+export const heldHand = () => held?.hand ?? null;
+function endResize() {
+  if (!resizing) return;
+  const r = domQuadResizeEnd(resizing.drag, rig);
+  if (r) tee(`[xr] panel ${resizing.drag.q.id} resized to ${Math.round(r.w)}×${Math.round(r.h)} px`);
+  resizing = null;
 }
 function releaseGrab() {
   if (!held) return;
@@ -603,8 +745,8 @@ function aimRadial(x, y) {
     if (best >= 0) haptic('right', 0.15, 10);
   }
 }
-let radialOpen = false, stickPressWas = false;
-const triggerWas = { left: false, right: false };
+let radialOpen = false, stickPressWas = false, menuBtnWas = false, muteBtnWas = false, pttFromX = false;
+const triggerWas = { left: false, right: false }, gripWas = { left: false, right: false };
 const panelPress = { left: null, right: null };   // a trigger press on a panel, pending drag-or-click
 // Buttons are NOT trusted for the first 700 ms after an input source appears: the gamepad's first
 // frames report pressed=true garbage (owner, 09-06 11:35: 'panels toggled' fired by itself, sandwiched
@@ -803,6 +945,9 @@ async function enterVR({ retryOf = null } = {}) {
       selfFirstPerson(false);
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
+      endResize();        // a resize in progress commits as it stands (as a released grip would)
+      sticky.left = sticky.right = null; dwells.left.reset(); dwells.right.reset(); dropXRTip();
+      for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); hideSurfaceDot(h.dot); rig.add(h.dot); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
       rig.remove(camera);
       scene.remove(rig);
@@ -1024,7 +1169,7 @@ let consoleTapped = false, shaderTees = 0;
 let turnMag = 0;                    // |stick-X| while smooth-turning — the vignette reads it
 export const turnMagnitude = () => turnMag;
 export function updateXR(dtSec = 1 / 72) {
-  if (!presenting) { turnMag = 0; setReveal('xr', false); return; }
+  if (!presenting) { turnMag = 0; if (pttFromX) { setPttHeld(false); pttFromX = false; } muteBtnWas = false; return; }
   renderCensusTick();
   // EYE WATCH (owner, 09-06 12:22: 'spontaneously each eye becomes extremely fish-eyed; right eye visible in the
   // left'): per frame, not per 5 s — the first sample is the baseline; any eye whose vertical fov moves
@@ -1108,14 +1253,33 @@ export function updateXR(dtSec = 1 / 72) {
   if (L) {
     xrIntent.fwd = dead(-pickAxis(L.axes[3], L.axes[1]));
     xrIntent.strafe = dead(pickAxis(L.axes[2], L.axes[0]));
-    // jump = A or X (porch-old: 'A / X = jump'; VRChat: A). No invented bindings on the sticks (owner, 09-06 12:37:
-    // 'we shouldn't mess with the default VR affordances') — panels live on the ring.
-    xrIntent.jump = !!L.buttons[4]?.pressed || !!R?.buttons[4]?.pressed;
+    // jump = the RIGHT A (VRChat's: docs.vrchat.com Touch "A (right hand, bottom button): Jump", Index "Right A: Jump").
+    // The LEFT A/X was jump too (porch-old); VRChat makes it the mic (below), so it is (owner, 10-02).
+    xrIntent.jump = !!R?.buttons[4]?.pressed;
+    if (held?.hand === 'left' && L.buttons[0]?.pressed) xrIntent.fwd = 0;   // trigger + stick on the holding hand reels the panel: that push is not a step
   } else { xrIntent.fwd = 0; xrIntent.strafe = 0; xrIntent.jump = !!R?.buttons[4]?.pressed; }
-  // HOLD B or Y = every name in range, through walls (namereveal.js; the desktop's N). xr-standard button 5 is the one
-  // face button nothing here reads: 0 trigger (point/select/ring), 1 grip (grab/cancel), 3 right-stick click (ring),
-  // 4 A/X (jump). Either hand; a hold, so a brush never latches anything.
-  setReveal('xr', buttonsTrusted() && (!!L?.buttons[5]?.pressed || !!R?.buttons[5]?.pressed));
+  // LEFT A / X = THE MIC (owner, 10-02, VRChat's convention: Touch "X (left hand, bottom button): Mute", Index "Left A:
+  // Toggle Mute"). It does what the desktop's V does, through the same doors: in voice-activation mode a press flips the
+  // mic (the ring's 'xr:mic', vrmic.js's VR-safe toggleMic); in push-to-talk mode it is HOLD to speak while the mic is
+  // armed (setPttHeld, exactly V's rule — an unarmed mic is armed from the ring or the HUD glyph, as on the desktop).
+  // Released on button-up, a dropped controller and the session's end (the stuck-key class, mictoggle.js).
+  { const x = buttonsTrusted() && !!L?.buttons[4]?.pressed;
+    if (x && !muteBtnWas) {
+      if (pttMode()) { if (micLive()) { setPttHeld(true); pttFromX = true; } }
+      else { bus.emit('xr:mic'); haptic('left', 0.3, 20); tee('[xr] mic toggled (left A/X)'); }
+    } else if (!x && muteBtnWas && pttFromX) { setPttHeld(false); pttFromX = false; }
+    muteBtnWas = x; }
+  // B or Y = THE QUICK HIDE (owner, 10-02: the face buttons follow VRChat's convention). VRChat opens its menu on the
+  // top face button, B or Y, either hand (docs.vrchat.com/docs/touch "B/Y: Quick Menu", /docs/valve-index "B (top
+  // button): Quick Menu"); our panels are our menu, so B/Y puts every open panel away and the next press brings exactly
+  // those back (xrpanels/domquad quick hide). A press, either hand, on the edge. B/Y held used to show every name;
+  // that is a setting now (Settings › style › always show names; namereveal.js) — the desktop's N hold is unchanged.
+  { const by = !!L?.buttons[5]?.pressed || !!R?.buttons[5]?.pressed;
+    if (by && !menuBtnWas && buttonsTrusted()) {
+      if (held) releaseGrab(); if (resizing) endResize();   // a carried or resizing panel is put down first
+      const hid = xrPanelsHideToggle(); haptic('left', 0.3, 20); haptic('right', 0.3, 20); tee(`[xr] panels ${hid ? 'hidden' : 'shown'} (B/Y)`);
+    }
+    menuBtnWas = by; }
   if (R) {
     const rx = dead(pickAxis(R.axes[2], R.axes[0]));
     const ry = dead(pickAxis(R.axes[3], R.axes[1]));
@@ -1130,6 +1294,7 @@ export function updateXR(dtSec = 1 / 72) {
     //   · FLICK: deflect and return to centre within 220 ms activates without the trigger;
     //   · compat: release the CLICK while still deflected within 700 ms of opening → commit + close (the old
     //     hold-aim-release muscle memory keeps working).
+    const ringOpenAtStart = radialOpen;   // a grip that closes the ring this frame is spent: it must not also grab
     const gripNow = !!R.buttons[1]?.pressed;
     const trigNow = !!R.buttons[0]?.pressed;
     const magNow = Math.hypot(rx, ry);
@@ -1177,59 +1342,103 @@ export function updateXR(dtSec = 1 / 72) {
 
     // pointer + grab chord on BOTH hands (Tier B7 — the left was a stick and one
     // button). Either hand can aim, select, and take a panel; one thing held at a time. The ring stays on the right.
+    const eye = renderer.xr.getCamera();
     for (const side of ['right', 'left']) {
       const G = side === 'right' ? R : L; const hand = hands[side];
-      if (!G || !hand) { panelPress[side] = null; continue; }   // a controller dropped mid-press: forget it (P3)
+      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; dwells[side].reset(); if (hand) { hand.laser.visible = false; hideSurfaceDot(hand.dot); } continue; }   // a controller dropped mid-press: forget it (P3)
       const grip = !!G.buttons[1]?.pressed, trig = !!G.buttons[0]?.pressed;
+      // the ray every pick below uses, and the beam is drawn along: the controller's, low-passed (xrpointer.js), then
+      // bent onto the target it holds while the hand drifts a little off it (stickTo)
+      const aim = steerAim(hand, dtSec ?? 1 / 72);
       // the laser also shows, with no button held, while it rests on a panel (Resonite's always-there pointer): that is
       // what makes the panel under it scrollable with the stick, and shows where a trigger will land
       // …or on a nameplate: resting there is VR's hover (platecard.js opens the card). Panels claim the laser first.
-      const panelNow = xrPanelsPick(hand.ray, false);
-      // a plate counts only if nothing in the world is nearer along the same laser (the beam stops at the first thing) —
+      // A plate counts only if nothing in the world is nearer along the same laser (the beam stops at the first thing) —
       // decided HERE, before the trust gate below, so the first 700 ms after a controller wakes obey it too (review 10-02)
-      const seen = panelNow == null ? platePick(hand.ray, renderer.xr.getCamera()) : null;
-      const plate = seen && !rayHitEntity(hand.ray, seen.dist) ? seen : null;
-      aimPlate(side, plate?.id);
-      hand.laser.visible = grip || trig || panelNow != null || plate != null;
+      const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side && resizing?.hand !== side);
+      const panelNow = panelAt?.dist ?? null;
+      // the WORLD, every frame now: an interactable entity (sockets, reactions — xrpointer.js) is a target like a panel
+      // (owner, 10-02); a plain one only counts with a button held. The beam stops at the first thing, so the whole
+      // world is cast, not just the interactable part (a wall in front of a chair hides the chair).
+      const ent = panelAt == null && plate == null ? rayHitEntity(ray, 40) : null;
+      entSeen[side] = ent && { id: ent.id, interactable: ent.interactable };
+      // the dwell's key: what the laser holds (a panel control, a plate) — else, on a panel, its zone (panel.js zones)
+      const dw = dwells[side].step(sticky[side]?.key ?? (panelAt ? `panel:${panelAt.id}:${panelAt.zone ?? 'body'}` : null));
+      aimPlate(side, plate?.id, dw.since);
+      // Settings › VR › pointer visibility (owner, 10-02): whether the BEAM is drawn. Everything below — the click, the plate
+      // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
+      hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
-      if (!buttonsTrusted()) { triggerWas[side] = trig; continue; }
-      // the world: grip takes a grabbable thing (near, else along the laser), letting go releases it, the trigger uses it
-      // (thingphysics.js xrHand). A hand holding a thing is busy: no panel chord, no select. Aiming at a panel, the panel wins.
-      { const aimPanel = panelNow != null;
-        const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: !aimPanel && !held, trig, pick: () => rayHitEntity(hand.ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
-        if (gh.holding || gh.took) { triggerWas[side] = trig; continue; } }
-      if (grip && trig && !held) tryGrab(side);   // panels only
+      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? (ent?.interactable ? ent.dist : 1.8));
+        if (dotVisible(xrPrefs.dotVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, surface: !!ent })) placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null, hit: ent }); else hideSurfaceDot(hand.dot);
+        continue; }
+      // GRIP (my collaborator, 10-08, merging the pointer pass into v4): aimed at a panel, grip takes the PANEL (tryGrab below: background,
+      // title, a corner to resize); aimed anywhere else, it takes a grabbable THING (thingphysics.js xrHand: near, else along
+      // the laser). A hand holding a thing is busy — no beam, no dot, no panel chord; its trigger uses the thing.
+      { const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: panelNow == null && !held && !resizing, trig, pick: () => rayHitEntity(ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
+        if (gh.holding || gh.took) { hand.laser.visible = false; hideSurfaceDot(hand.dot); triggerWas[side] = trig; gripWas[side] = grip; continue; } }
+      if (grip && !gripWas[side] && !held && !resizing && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only (a thing was taken above)
       if (!grip && held?.hand === side) releaseGrab();
-      if (trig && !triggerWas[side] && !grip && !(radialOpen && side === 'right')) {
+      if (resizing?.hand === side) { if (grip) domQuadResizeMove(resizing.drag, aim); else endResize(); }   // the raw aim: a resize must not bend onto a control
+      if (held?.hand === side && trig) pushPull(side, aim, -pickAxis(G.axes[3], G.axes[1]), dtSec ?? 1 / 72);   // trigger + stick: the reel
+      const holding = held?.hand === side || resizing?.hand === side;
+      if (trig && !triggerWas[side] && !holding && !(radialOpen && side === 'right')) {
         // panels claim the laser before the world does — a click meant for a
         // stepper must never select the mountain behind it
-        const pr = xrPanelsPress(hand.ray);
+        const pr = xrPanelsPress(ray);
         const panelDist = pr?.dist ?? null;
         if (pr?.press) panelPress[side] = pr.press;
         if (panelDist != null) haptic(side, 0.3, 18);   // a button, felt
-        if (panelDist == null) {
-          const hit = rayHitEntity(hand.ray);
+        if (panelDist == null && !panelAt?.handle) {   // (the handle bar is a panel's, not the world's)
+          const hit = rayHitEntity(ray);
           if (hit) { bus.emit('xr:select', hit.id); flashHint(`→ ${hit.id}`); }
         }
       }
       if (panelPress[side]) {
         // a press on a panel: held, it drags the panel's scroll; released, it clicks unless it dragged; a grab cancels it
-        if (trig && !grip) xrPanelsDrag(hand.ray, panelPress[side]);
-        else { xrPanelsReleasePress(panelPress[side], grip); panelPress[side] = null; }
+        if (trig && !holding) xrPanelsDrag(ray, panelPress[side]);
+        else { xrPanelsReleasePress(panelPress[side], holding); panelPress[side] = null; }
       }
-      if (hand.laser.visible) {
-        const panelDist = xrPanelsPick(hand.ray, false);
-        if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(hand.ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser
-        const hit = panelDist == null ? rayHitEntity(hand.ray, 40) : null;
+      {
+        const panelHit = xrPanelsAt(ray), panelDist = panelHit?.dist ?? null;   // again: a click above may have hidden or moved it
+        if (side === 'right' && panelDist != null && !radialOpen && !holding && Math.abs(ry) > 0.3) domQuadsScroll(ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser (with the beam hidden too)
         const plateDist = panelDist == null && plate ? plate.dist : null;
+        const seen = panelDist == null && plateDist == null ? ent : null;   // (a click above may have shown a panel in front of it)
+        const hit = seen && (seen.interactable || looksAtWorld(xrPrefs.pointerVisibility, { grip, trig })) ? seen : null;
         // owner 09-07 22:10: short and faint unless it points at something you can act on — porch-old's 1.8 m
         // idle beam; a panel, a nameplate or an entity under the ray draws it out to the hit at full strength
         const target = panelDist ?? plateDist ?? hit?.dist ?? null;
-        hand.laser.scale.z = target ?? 1.8;
+        if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, target ?? 1.8);
         hand.laser.userData.opacity.value = target != null ? 0.85 : 0.4;
+        // the dot follows ITS OWN setting (Settings › VR › surface dot visibility), not the beam's — and never marks the
+        // panel this hand is holding: that panel is not a target, it is in your hand
+        const dPanel = holding ? null : panelHit;
+        if (dotVisible(xrPrefs.dotVisibility, { target: !!dPanel || plateDist != null || !!seen?.interactable, surface: !!seen })) placeDot(hand, ray, eye, { panel: dPanel, plateDist, hit: dPanel || plateDist != null ? null : seen });
+        else hideSurfaceDot(hand.dot);
       }
-      triggerWas[side] = trig;
+      triggerWas[side] = trig; gripWas[side] = grip;
     }
+    // THE TOOLTIP (owner, 10-02): a hand whose laser has DWELLED on a panel control with a desktop tooltip shows that text
+    // in the panel (xrtip.js); the right hand first. It goes when no hand rests on such a control — and never for the
+    // panel a hand is holding (it is moving).
+    let tipShown = false;
+    for (const side of ['right', 'left']) {
+      const st = sticky[side], key = dwells[side].ripeKey();
+      if (tipShown || !key || st?.kind !== 'panel' || st.key !== key || typeof key === 'string' || held?.quad?.mesh === st.obj) continue;
+      const root = st.obj.material?.map?.dom, text = root ? tipTextFor(key, root) : '';
+      if (text) { showXRTip(st.obj, root, key, text); tipShown = true; }
+    }
+    if (!tipShown) hideXRTip();
+    // THE HANDLES (owner, 10-02): a panel's move strip and resize corners/edges are invisible until a laser has dwelled on
+    // one; then that one shows (domquad.js draws it). A resize in progress keeps its own showing.
+    const reveal = [];
+    for (const side of ['right', 'left']) {
+      const k = dwells[side].ripeKey(), m = typeof k === 'string' && k.match(/^panel:(.+):(move|resize-[a-z]+)$/);
+      if (m) { const mesh = domQuadMesh(m[1]); if (mesh) reveal.push({ mesh, zone: m[2] }); }
+    }
+    if (resizing) reveal.push({ mesh: resizing.drag.q.mesh, zone: `resize-${resizing.drag.z}` });
+    if (held?.quad?.mesh) reveal.push({ mesh: held.quad.mesh, zone: 'move' });   // the bar of a carried panel, at full
+    domQuadsRevealOnly(reveal);
   }
 
   // eye cameras see the first-person split, never the third-person head.
@@ -1364,8 +1573,14 @@ export async function initXR() {
   warm('xr hands', async () => {
     // the avatar warm's form: object + camera + the lit scene, frustumCulled
     // off so a parked (stale-matrix) mesh isn't culled out of the compile walk
+    // the surface dots too, shown for their compile only (a hidden object is skipped by the compile walk) — the rig is not
+    // in the scene before a session, so nothing draws them
+    // …the dot AND an icon with its texture on (a map changes the shader): every part compiles before the first session
+    const dots = [hands.left?.dot, hands.right?.dot].filter(Boolean);
+    for (const d of dots) { d.visible = true; setSurfaceDotKind(d, 'click'); d.userData.parts.rim.visible = d.userData.parts.core.visible = true; }
     const meshes = []; rig.traverse((o) => { if (o.isMesh) meshes.push(o); });
-    for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } }
+    try { for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } } }
+    finally { for (const d of dots) { setSurfaceDotKind(d, 'dot'); if (d.parent === rig) d.visible = false; } }
   }, { p: P_AMBIENT });
 
   { let tries = 0; const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed || ++tries > 240) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in; gives up after 2 min (a viewer page has no body)   // body arrives seconds after boot; poll until it does
@@ -1407,13 +1622,25 @@ export async function initXR() {
   setXrProbe(() => presenting);
 }
 
+/** harness window: the pointer, per hand — the beam as drawn, what the laser holds, whether the ray is bent onto it */
+export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((side) => {
+  const h = hands[side], st = sticky[side];
+  return [side, h && { laser: { visible: h.laser.visible, len: +h.laser.scale.z.toFixed(4), opacity: +h.laser.userData.opacity.value.toFixed(2), inScene: h.laser.parent === scene },
+    held: st && { kind: st.kind, key: typeof st.key === 'string' ? st.key : `${st.key?.tagName?.toLowerCase()}${st.key?.id ? '#' + st.key.id : ''}` },
+    ent: entSeen[side], dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, kind: h.dot.userData.kind, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
+      normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
+    heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
+    bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility, dotVisibility: xrPrefs.dotVisibility,
+    dwell: { key: typeof dwells[side].key === 'string' || dwells[side].key == null ? dwells[side].key : 'el', since: dwells[side].since, ripe: dwells[side].ripe() } }];
+}));
+
 /** harness window */
 export const xrDebug = () => {
   const ring = radialEntries().map((e) => ({ label: e.label, has: e.has !== false, on: !!e.on?.() }));
   const gp = new THREE.Vector3();
   hands.right?.grip.getWorldPosition(gp);
   return { ring,
-    presenting, held: held?.quad?.id ?? null, radialOpen,
+    presenting, held: held?.quad?.id ?? null, radialOpen, panelsHidden: xrPanelsHidden(), resizing: resizing ? { hand: resizing.hand, id: resizing.drag.q.id, zone: resizing.drag.z, w: Math.round(resizing.drag.w), h: Math.round(resizing.drag.h) } : null,
     radialSel: radial?.sel ?? null,
     rigYaw: +rig.rotation.y.toFixed(3),
     laserOn: hands.right?.laser.visible ?? false,
