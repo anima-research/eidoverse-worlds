@@ -1,5 +1,11 @@
-// shared/protocol/componentspec.js — the component types a builder can discover: their fields, defaults (which the authority
-// writes out in full, R7), ranges and help. The lab's hand-written models are shared/protocol/labmodels.js.
+// shared/protocol/componentspec.js — the component types a builder can discover: their fields, defaults, ranges and help.
+// The lab's hand-written models are shared/protocol/labmodels.js.
+//
+// Every parameter is written down (PROTOCOL §4; review 10-07 H2, R: "the parameter is the parameter"). The authority writes a
+// component's defaults into the stored value when it's created or set (materialize, below): `defaults` always, and each
+// `when` rule ({if: {field: value}, absent: [fields], set: {…}}) when it holds. So a renderer never supplies a number the
+// log doesn't hold, and changing a default here never changes an old world. A default that lives only in help text or a
+// renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed meaning (spec/registry-pin.json, D8).
 
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
@@ -19,13 +25,21 @@ export const COMPONENTS = {
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
   // Godot spot_angle, three.js angle/penumbra) and shines along the thing's local -Z (glTF, Godot)
-  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", shadows: "bool", important: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false }, enums: { kind: ["point", "spot"] },
+  light:     { fields: { kind: "string", color: "int", intensity: "number", range: "number", angle: "number", inner: "number", shadows: "bool", important: "bool", day: "bool" }, defaults: { kind: "point", color: 0xffd9a0, intensity: 16, range: 10, shadows: false, important: false, day: true }, enums: { kind: ["point", "spot"] },
+    when: [{ if: { kind: "spot" }, set: { angle: Math.PI / 4, inner: 0 } }],
     ranges: { color: { min: 0, max: 0xffffff }, intensity: { min: 0 }, range: { gt: 0 }, angle: { gt: 0, max: Math.PI / 2 }, inner: { min: 0, max: Math.PI / 2 } },
     help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}; a spot shines along the thing's -Z with angle (its cone's half-angle, rad, default π/4) and inner (where the edge starts to soften, rad, default 0)" },
   // the closed forms every client and the agent evaluate (client/lib/motioneval.js). Rates are degrees a second (Unreal's
   // RotatingMovementComponent RotationRate, Unity's Rotate) or a period in seconds; a path is control points with a speed
   // or a duration and a loop mode (Unreal's InterpToMovementComponent: ControlPoints, Duration, OneShot/Loop/PingPong)
-  motion:    { on: "thing", keyed: "optional", fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3",
+  // the per-type defaults are motioneval.js's readings, written down (a spin with no rate turned at 36°/s in every renderer)
+  motion:    { on: "thing", keyed: "optional", when: [
+                 { if: { type: "pendulum" }, set: { axis: [1, 0, 0], period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 } }, { if: { type: "pendulum" }, absent: ["amp", "amplitude"], set: { amp: 0 } },
+                 { if: { type: "spin" }, set: { axis: [0, 1, 0], phase: 0 } }, { if: { type: "spin" }, absent: ["degPerSec", "period", "rpm"], set: { degPerSec: 36 } },
+                 { if: { type: "orbit" }, set: { radius: 3, phase: 0, face: true } }, { if: { type: "orbit" }, absent: ["degPerSec", "period", "rpm"], set: { degPerSec: 12 } },
+                 { if: { type: "bob" }, set: { axis: [0, 1, 0], period: 4, phase: 0 } }, { if: { type: "bob" }, absent: ["amp", "amplitude"], set: { amp: 0.3 } },
+                 { if: { type: "path" }, set: { loop: "loop", face: true } }, { if: { type: "path" }, absent: ["speed", "duration"], set: { speed: 1 } }],
+               fields: { type: "string", axis: "axis", amp: "number", period: "number", damp: "number", maxAmp: "number", phase: "number", t0: "number", part: "string", radius: "number", degPerSec: "number", amplitude: "number", pivot: "vec3",
                  center: "vec3", face: "bool", points: "array", speed: "number", duration: "number", loop: "string" }, enums: { type: ["pendulum", "spin", "orbit", "bob", "path"], loop: ["loop", "pingpong", "once"] },
                ranges: { period: { gt: 0, max: 3600 }, degPerSec: { min: -36000, max: 36000 }, radius: { min: 0, max: 10000 }, speed: { min: 0, max: 1000 }, duration: { gt: 0, max: 36000 } },
                help: "{type, …} (the authority stamps t0): pendulum {axis [x,y,z] (local), amp (rad), period (s), damp, maxAmp, phase} swings about the point it hangs from; spin {axis, degPerSec (degrees a second) or period (s a turn), pivot?, phase} turns steadily; orbit {radius (m), center? [x,y,z] (in its parent's frame; default where it stands), period (s a lap) or degPerSec, face? (false: keeps its own heading), phase} circles; bob {axis, amp (m), period (s), phase} floats; path {points [[x,y,z], …] (2–64, in its parent's frame), speed (m/s) or duration (s), loop?: loop|pingpong|once, face?} follows its points. part: a node of its model that moves instead (motion:<part>)" },
@@ -55,13 +69,17 @@ export const COMPONENTS = {
   // (Unity/Godot/Roblox door recipes, Unreal's door timeline): a turn about a hinge (angle about axis, through the thing's
   // pivot) or a slide, tweened over a time (Roblox TweenInfo's default 1 s). `open` is the state; every client animates to it
   openable:  { on: "thing", fields: { open: "bool", locked: "bool", angle: "number", axis: "axis", slide: "vec3", time: "number", part: "string" },
+               defaults: { open: false, locked: false, time: 1 }, when: [{ absent: ["slide"], set: { angle: Math.PI / 2, axis: [0, 1, 0] } }],
                ranges: { angle: { min: -Math.PI, max: Math.PI }, time: { min: 0, max: 10 } },
                help: "it opens and closes when someone uses it: a door, a gate, a lid, a hatch. {open: true/false (its state), locked? (true bars an open handler with unless: 'locked'; the edit lock is the separate `lock`), angle? (rad it turns when open, default π/2; negative turns the other way), axis? (its own frame, default [0,1,0]: an upright hinge), slide? [x,y,z] (m it moves in its own frame when open, instead of turning), time? (s to open or close, 0–10, default 1), part? (a node of its model that moves instead of the whole thing)}. It turns about its pivot (pivot {pos}: put it on the hinge edge). Usable with reactions {open: {kind: 'toggle', unless: 'locked'}} (toggle's default flips openable.open)" },
   physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any" }, defaults: { kind: "dynamic" }, enums: { kind: ["dynamic", "static", "none"] },
+    when: [{ if: { kind: "dynamic" }, set: { who: "visitor" } }],   // shared/grab.js DEFAULT_WHO, written down
     help: "how it takes part in physics: {kind: dynamic (it flies when thrown, dropped or punted; with no grabbable it can also be picked up) | static (a collider; what anything with a model becomes when the world runs physics) | none (nothing collides with it), who: who may punt it (and pick it up, when it has no grabbable; default visitor), shape: stamped by the authority (its measured box; you never send it)}. Grabbable makes a thing carryable; physics makes it fall. With eidosim@0.5: a thrown thing flies, bounces off what's in the world and comes to rest; it does NOT push or topple things at rest (stacks don't fall over), and things don't spin" },
   // what a hand may do with it (research RESEARCH-grab-2026-10-06; shared/grab.js holds the shape, the defaults and the
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
-  grabbable: { on: "thing", help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
+  // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
+  // stay absent. grab-check pins that these equal grab.js's own.
+  grabbable: { on: "thing", defaults: { enabled: true, who: "visitor", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 }, help: "it can be picked up and carried (grab, put, drop, throw; a VR hand's grip; desktop T): {who?: visitor|builder|owner (default visitor), enabled? (false: not now), steal? (false: nobody takes it from a hand; owners may), range? (m from the hand, 0.1..10, default 1.5; past 1.5 it flies to you), priority? (-10..10: wins when several are in reach), hold?: auto|press|toggle, pose?: hand|carry|torch|pistol|two-hand|shoulder (a body without tracked hands; default by size), grips? {<name>: {pos, q?, hand?: left|right|either, role?: primary|secondary, fingers?: fist|pinch|point|flat|open|trigger, hold?, part?}} (where the palm goes, in its own frame; none: held where grabbed), twoHanded?, throw? (0..3, ×the release velocity; 0: drop only), release?: drop|stay|return, returnAfter? (s unheld, then it goes home), home? (stamped by the authority), fits? [keywords] (snaps into a socket whose accepts shares one), use? (a reactions action, or {down, up}: what the use button fires while held), prompt? (hover text), fx? {particles, at?} (drawn while its holder presses use: presence, never logged)}. Grabbable makes it carryable; physics {kind: 'dynamic'} makes it fall. A dynamic thing with no grabbable is carryable by physics.who" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "any", tickMs: "int" }, help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@0.5.0', tickMs?}. The authority stamps the exact build. Delete it to turn physics off (refused while things are in flight)" },
   "copy-of": { on: "thing", fields: { from: "string", key: "string" }, help: "set by the server on copies: {from: record hash, key}" },
   // a sound a thing plays (shared/sound.js; batch 2, 10-07): silent AT radius (a true taper to zero, not Web Audio's clamp,
@@ -119,7 +137,7 @@ export const COMPONENTS = {
   // research roles 10-06 (shared/protocol/roles.js): ranked membership (visitor 0, builder 100, moderator 200, owner 255,
   // custom roles between) and a closed list of permissions. Banned and ghost are states in the moderator log, never roles.
   roles:     { on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", sub: "any" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
-  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
+  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, defaults: { guests: "visitor" }, help: "on @world (owner): the role of anyone without roles:<id> (absent = visitor): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default visitor), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
   access:    { on: "world", fields: { join: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"] }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id>), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
   about:     { on: "world", fields: { name: "string", text: "string" }, help: "on @world: the world's name and blurb" },
@@ -143,9 +161,10 @@ export const COMPONENTS = {
   schemas:   { on: "world", keyed: true, key: "instance", help: "on @world (owner), keyed by component name: the content hash of that name's written definition; set once, never changed (PROTOCOL §4)" },
   blueprints: { on: "world", keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "terrain-paint": { on: "world", keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
-  capacity:  { on: "world", fields: { things: "int", guestThings: "int" }, ranges: { things: { min: 1, max: 5000 }, guestThings: { min: 0, max: 5000 } },
+  capacity:  { on: "world", fields: { things: "int", guestThings: "int" }, defaults: { things: 2000, guestThings: 200 }, ranges: { things: { min: 1, max: 5000 }, guestThings: { min: 0, max: 5000 } },
                help: "on @world (owner): how much this world holds: {things (default 2000, at most 5000), guestThings (default 200: how many things people without an account may have standing here, all of them together)}. A create past either is refused (full)" },
   "script-settings": { on: "world", fields: { run: "bool", install: "string", max: "int", budget: "int", rate: "int", depth: "int", fails: "int", cpu: "int", runs: "int" }, enums: { install: ["builder", "owner"] },
+               defaults: { run: true, install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, cpu: 2000, runs: 60 },   // the authority's SCRIPTS (pretrans D6 pins they agree)
                ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 }, cpu: { min: 0, max: 60000 }, runs: { min: 0, max: 600 } },
                help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5), cpu (ms of the authority's time per sponsor per minute, default 2000; the world 3×), runs (activations per script per minute, whatever they write, default 60)}" },
 };
@@ -174,5 +193,59 @@ export const defOf = (comp) => { const r = registered(baseOf(comp)); return r ? 
 export const canonicalName = (comp) => { const b = baseOf(comp), r = registered(b); return r && r !== b ? r + String(comp).slice(b.length) : String(comp); };
 /** What a versioned name replaces (light@2 → light), from its definition; null if it says nothing. */
 export const supersedes = (comp) => defOf(comp)?.supersedes ?? null;
+
+// ---- every parameter written down (PROTOCOL §4) ----
+const copy = (x) => (x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : x);
+/** A value with its definition's defaults written in: `defaults`, then each `when` rule that holds, never over a field
+ *  that's there. {value, filled: [fields written]}. A non-object value, or a name with no definition, comes back as it is. */
+export function materialize(comp, v) {
+  const def = defOf(comp);
+  if (!def || !v || typeof v !== "object" || Array.isArray(v)) return { value: v, filled: [] };
+  const out = { ...v }, filled = [];
+  const put = (set) => { for (const [k, x] of Object.entries(set)) if (!(k in out)) { out[k] = copy(x); filled.push(k); } };
+  if (def.defaults) put(def.defaults);
+  for (const r of def.when ?? []) {
+    if (r.if && !Object.entries(r.if).every(([k, x]) => out[k] === x)) continue;
+    if (r.absent && r.absent.some((k) => k in out)) continue;
+    put(r.set);
+  }
+  return { value: out, filled };
+}
+/** Every default a name can write (its `defaults` and every `when` rule's), for tools that ask "is this one written?" */
+export const defaultsOf = (name) => { const d = COMPONENTS[name]; return Object.assign({}, d?.defaults ?? {}, ...(d?.when ?? []).map((r) => r.set)); };
+
+// ---- what a name means, pinned (PROTOCOL §4: a name never changes meaning) ----
+// The checkable part of a definition: each field's type, each default (and when it applies), each enum's members. A
+// change to any of these is a changed meaning, so spec/registry-pin.json holds them and test:protocol fails when one
+// moves (pretrans-check D8); a NEW field, default, enum member or name is an addition and is fine. Regenerate the pin
+// only for an addition: bun tools/protocol/pretrans-check.ts --pin
+export function pinOf() {
+  const out = {};
+  for (const [name, d] of Object.entries(COMPONENTS)) {
+    const p = {};
+    if (d.type) p.type = d.type;
+    if (d.fields) p.fields = { ...d.fields };
+    if (d.defaults) p.defaults = copy(d.defaults);
+    if (d.when) p.when = copy(d.when);
+    if (d.enums) p.enums = copy(d.enums);
+    if (d.keyed !== undefined) p.keyed = d.keyed;
+    if (d.on) p.on = d.on;
+    out[name] = p;
+  }
+  return out;
+}
+/** What changed meaning between a pin and now (removals and changes; additions are not breaks). [] = nothing. */
+export function pinBreaks(pin, now = pinOf()) {
+  const out = [], j = (x) => JSON.stringify(x);
+  for (const [name, p] of Object.entries(pin)) {
+    const n = now[name]; if (!n) { out.push(`${name}: the name is gone (a registered name is read forever)`); continue; }
+    for (const k of ["type", "keyed", "on"]) if (p[k] !== undefined && j(p[k]) !== j(n[k])) out.push(`${name}: ${k} ${j(p[k])} → ${j(n[k])}`);
+    for (const [f, t] of Object.entries(p.fields ?? {})) if (n.fields?.[f] !== t) out.push(`${name}.${f}: type ${t} → ${n.fields?.[f] ?? "gone"}`);
+    for (const [f, v] of Object.entries(p.defaults ?? {})) if (j(n.defaults?.[f]) !== j(v)) out.push(`${name}.${f}: default ${j(v)} → ${j(n.defaults?.[f]) ?? "gone"}`);
+    for (const r of p.when ?? []) if (!(n.when ?? []).some((q) => j(q.if) === j(r.if) && j(q.absent) === j(r.absent) && Object.entries(r.set).every(([f, v]) => j(q.set?.[f]) === j(v)))) out.push(`${name}: a conditional default changed: ${j(r)}`);
+    for (const [f, vals] of Object.entries(p.enums ?? {})) for (const x of vals) if (!(n.enums?.[f] ?? []).includes(x)) out.push(`${name}.${f}: ${j(x)} is no longer allowed`);
+  }
+  return out;
+}
 
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

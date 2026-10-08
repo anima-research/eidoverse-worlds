@@ -11,7 +11,7 @@ import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
-import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize } from "./componentspec.js";
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
@@ -1480,17 +1480,15 @@ function resolve(ctx, id, comp, value, prev) {
     return v;
   }
   if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
-  if (comp === "motion" && value && typeof value === "object") { const v = { ...(value.type === "pendulum" ? PENDULUM : {}), ...value }; delete v.pivot;
+  // every parameter written down (PROTOCOL §4): the definition's defaults and per-kind rules (componentspec materialize)
+  const filled = (v, list) => { if (list.length) ctx.notes.push({ id, component: comp, filled: list, why: "defaults written out so the engine can't change them later" }); return v; };
+  if (comp === "motion" && value && typeof value === "object") { const m = materialize("motion", value); const v = filled(m.value, m.filled); delete v.pivot;
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
   // look and disagreed on its phase (a swing's seat, locked to that phase, pumped out of step on every screen)
-  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value) && value.t0 === undefined) {
-    const v = { ...value, t0: ctx.w.now() }; ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); return v; }
-  if (def?.defaults && value && typeof value === "object" && !Array.isArray(value)) {
-    const filled = Object.keys(def.defaults).filter((k) => !(k in value));
-    if (filled.length) ctx.notes.push({ id, component: comp, filled, why: "defaults written out so the engine can't change them later" });
-    return { ...def.defaults, ...value };
-  }
+  if (comp.startsWith("motion:") && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize("motion", value); const v = filled(m.value, m.filled);
+    if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: comp, field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
+  if (def && value && typeof value === "object" && !Array.isArray(value)) { const m = materialize(comp, value); return filled(m.value, m.filled); }
   return value;
 }
 function merge7396(target, patch) {
@@ -1911,6 +1909,7 @@ function offersFor(st, id, actor) {
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
 const SCRIPTS = { install: "builder", max: 12, budget: 600, rate: 6, depth: 8, fails: 5, run: true, cpu: SR.LIMITS.cpu, runs: SR.LIMITS.runs };
+export const SCRIPT_DEFAULTS = Object.freeze({ ...SCRIPTS });   // what script-settings' registered defaults must equal (pretrans D6)
 const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return { ...SCRIPTS, ...(c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}) }; };
 const BODY_EFFECTS = ["shove", "pose"];
 const SCRIPT_EVENTS = ["use", "say", "enter", "leave", "grab", "release"];

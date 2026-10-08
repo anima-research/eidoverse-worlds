@@ -43,6 +43,10 @@ const why = (r: any) => (r?.ok ? "ok" : `${r?.refused?.code}: ${r?.refused?.reas
 const world = (tag = "pre") => SD.scratchWorld(tag);
 const read = (p: string) => fs.readFileSync(path.join(T, p), "utf8");
 const SPEC = read("spec/PROTOCOL.md");
+if (argv.includes("--pin")) {   // regenerate the registry pin: ONLY for an addition (a new name, field, default or enum member)
+  const breaks = fs.existsSync(path.join(T, "spec/registry-pin.json")) ? CAT.pinBreaks(JSON.parse(read("spec/registry-pin.json"))) : [];
+  if (breaks.length) { console.log("refusing to re-pin: these change a meaning (a changed meaning is a new versioned name):\n  " + breaks.join("\n  ")); process.exit(1); }
+  fs.writeFileSync(path.join(T, "spec/registry-pin.json"), JSON.stringify(CAT.pinOf(), null, 1) + "\n"); console.log("spec/registry-pin.json written"); process.exit(0); }
 
 // ---- J: I-JSON (L2) ----
 const throws = (f: () => any) => { try { f(); return null; } catch (e) { return e; } };
@@ -198,6 +202,60 @@ await C("N8", "the translator moves an old world's own inventions under a namesp
 await C("N9", "§4 says it: bare names are refused unless registered, a namespace is a prefix with '/', promotion keeps an alias, name@N is registered first", () => {
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); const need = ["refuses an unregistered bare name", "alias", "supersedes", "custom elements"];
   return [need.every((n) => g.includes(n)), need.filter((n) => !g.includes(n))]; });
+
+// ---- D: every parameter written down (H2) ----
+const stored = (W: any, id: string, comp: string) => W.state().entities[id]?.c[comp];
+await C("D1", "a spot light's cone is written into it (angle π/4, inner 0); a point light carries no cone; important and day are written", () => {
+  const W = world(); mk(W, "a"); mk(W, "b");
+  const ra = W.call("set", { id: "a", component: "light", value: { kind: "spot" } }), rb = W.call("set", { id: "b", component: "light", value: { kind: "point" } });
+  const a = stored(W, "a", "light"), b = stored(W, "b", "light");
+  return [ra.ok && rb.ok && a.angle === Math.PI / 4 && a.inner === 0 && !("angle" in b) && a.important === false && a.day === true && b.intensity === 16, [a, b]]; });
+await C("D2", "an openable's turn is written (angle π/2, axis [0,1,0], time 1, locked false); a sliding one gets no turn", () => {
+  const W = world(); mk(W, "d"); mk(W, "s");
+  W.call("set", { id: "d", component: "openable", value: { open: false } }); W.call("set", { id: "s", component: "openable", value: { open: false, slide: [1, 0, 0] } });
+  const d = stored(W, "d", "openable"), sl = stored(W, "s", "openable");
+  return [d?.angle === Math.PI / 2 && JSON.stringify(d.axis) === "[0,1,0]" && d.time === 1 && d.locked === false && sl && !("angle" in sl) && !("axis" in sl) && sl.time === 1, [d, sl]]; });
+await C("D3", "a grabbable's defaults are written (range 1.5, who visitor, steal, throw, release…) and the authority still takes it", () => {
+  const W = world(); mk(W, "g"); const r = W.call("set", { id: "g", component: "grabbable", value: {} }); const g = stored(W, "g", "grabbable");
+  return [r.ok && g?.range === 1.5 && g.who === "visitor" && g.steal === true && g.throw === 1 && g.release === "drop" && g.hold === "auto" && g.enabled === true, [why(r), g]]; });
+await C("D4", "a motion's per-type defaults are written: spin's axis and rate, orbit's radius and rate, bob's amp and period, path's speed and loop", () => {
+  const W = world(); for (const id of ["sp", "sp2", "or", "bo", "pa"]) mk(W, id);
+  W.call("set", { id: "sp", component: "motion", value: { type: "spin" } }); W.call("set", { id: "sp2", component: "motion", value: { type: "spin", period: 10 } });
+  W.call("set", { id: "or", component: "motion", value: { type: "orbit" } }); W.call("set", { id: "bo", component: "motion", value: { type: "bob" } });
+  W.call("set", { id: "pa", component: "motion", value: { type: "path", points: [[0, 0, 0], [0, 0, 2]] } });
+  const m = (id: string) => stored(W, id, "motion");
+  return [JSON.stringify(m("sp").axis) === "[0,1,0]" && m("sp").degPerSec === 36 && m("sp").phase === 0 && !("degPerSec" in m("sp2")) && m("or").radius === 3 && m("or").degPerSec === 12 && m("or").face === true
+    && m("bo").amp === 0.3 && m("bo").period === 4 && m("pa").speed === 1 && m("pa").loop === "loop" && m("pa").face === true, ["sp", "sp2", "or", "bo", "pa"].map(m)]; });
+await C("D5", "a physics thing that flies says who may punt it (visitor); world settings set in part are written whole (capacity, script-settings, default-role.guests)", () => {
+  const W = world(); mk(W, "p"); W.call("set", { id: "p", component: "physics", value: { kind: "dynamic" } });
+  W.call("set", { id: "@world", component: "capacity", value: { things: 100 } }); W.call("set", { id: "@world", component: "script-settings", value: { max: 3 } });
+  W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+  const w = W.state().entities["@world"].c, ss = w["script-settings"];
+  return [stored(W, "p", "physics")?.who === "visitor" && w.capacity?.guestThings === 200 && ss?.budget === 600 && ss?.rate === 6 && ss?.run === true && ss?.install === "builder" && w["default-role"]?.guests === "visitor",
+    [stored(W, "p", "physics"), w.capacity, ss, w["default-role"]]]; });
+await C("D6", "the registry's defaults are the authority's own: script-settings and capacity agree with what it enforces when they're absent", () => {
+  const ss = CAT.COMPONENTS["script-settings"].defaults, cap = CAT.COMPONENTS.capacity.defaults;
+  return [!!ss && !!cap && cap.things === D.CAPACITY.things && cap.guestThings === D.CAPACITY.guestThings && D.SCRIPT_DEFAULTS && Object.entries(D.SCRIPT_DEFAULTS).every(([k, v]) => ss[k] === v), [ss, cap, D.SCRIPT_DEFAULTS]]; });
+await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
+  // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
+  const DYN = new Set(["motion.center", "grabbable.pose", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength"]);
+  const bad = [];
+  for (const [name, def] of Object.entries<any>(CAT.COMPONENTS)) { const h = def.help ?? ""; const all = CAT.defaultsOf?.(name) ?? {};
+    for (const m of h.matchAll(/(\b[a-zA-Z]+)\??:? ?\(([^()]*\bdefault\b[^()]*)\)/g)) { const f = m[1]; if (DYN.has(`${name}.${f}`) || DYN.has(`${def.on === "world" ? name : name}.${f}`)) continue;
+      if (!(f in all) && Object.keys(def.fields ?? {}).includes(f)) bad.push(`${name}.${f}: "${m[0].slice(0, 60)}"`); } }
+  return [!bad.length && typeof CAT.defaultsOf === "function", bad]; });
+await C("D8", "a definition's meaning is pinned: a changed default, type or enum is caught (spec/registry-pin.json); additions are fine", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf?.(); const g = CAT.pinBreaks?.(pin, now) ?? ["no pinBreaks"];
+  const was = CAT.COMPONENTS.light.defaults.intensity; CAT.COMPONENTS.light.defaults.intensity = 17;
+  const moved = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? []; CAT.COMPONENTS.light.defaults.intensity = was;
+  CAT.COMPONENTS.light.fields.extra = "number"; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra;
+  return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
+await C("D10", "grabbable's written defaults are shared/grab.js's own (the hand's reader and the registry can't drift)", async () => {
+  const G = await imp("shared/grab.js"); const reg = CAT.COMPONENTS.grabbable.defaults;
+  const want = Object.fromEntries(Object.entries(G.DEFAULTS).filter(([, v]) => v !== null && !(typeof v === "object" && !Object.keys(v).length)));
+  return [JSON.stringify(Object.keys(want).sort().map((k) => [k, want[k]])) === JSON.stringify(Object.keys(reg).sort().map((k) => [k, reg[k]])), { want, reg }]; });
+await C("D9", "§4 explains schemas: optional, and why the stamped parameters and the pinned registry make old worlds safe without them", () => {
+  const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /optional/i.test(g) && /registry-pin/.test(g), g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
 console.log(`\npretrans: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

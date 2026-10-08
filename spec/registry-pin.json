@@ -1,0 +1,783 @@
+{
+ "transform": {
+  "fields": {
+   "pos": "vec3",
+   "q": "array",
+   "scale": "vec3"
+  },
+  "defaults": {
+   "pos": [
+    0,
+    0,
+    0
+   ],
+   "q": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ]
+  },
+  "on": "thing"
+ },
+ "model": {
+  "type": "string",
+  "on": "thing"
+ },
+ "label": {
+  "type": "string"
+ },
+ "collider": {
+  "fields": {
+   "shape": "string"
+  },
+  "enums": {
+   "shape": [
+    "exact",
+    "box"
+   ]
+  },
+  "on": "thing"
+ },
+ "stage": {
+  "fields": {
+   "speaker": "any"
+  },
+  "on": "thing"
+ },
+ "hidden": {
+  "type": "bool",
+  "on": "thing"
+ },
+ "pivot": {
+  "on": "thing"
+ },
+ "parent": {
+  "fields": {
+   "to": "string",
+   "order": "string",
+   "socket": "string"
+  },
+  "defaults": {
+   "order": "a0"
+  },
+  "on": "thing"
+ },
+ "light": {
+  "fields": {
+   "kind": "string",
+   "color": "int",
+   "intensity": "number",
+   "range": "number",
+   "angle": "number",
+   "inner": "number",
+   "shadows": "bool",
+   "important": "bool",
+   "day": "bool"
+  },
+  "defaults": {
+   "kind": "point",
+   "color": 16767392,
+   "intensity": 16,
+   "range": 10,
+   "shadows": false,
+   "important": false,
+   "day": true
+  },
+  "when": [
+   {
+    "if": {
+     "kind": "spot"
+    },
+    "set": {
+     "angle": 0.7853981633974483,
+     "inner": 0
+    }
+   }
+  ],
+  "enums": {
+   "kind": [
+    "point",
+    "spot"
+   ]
+  }
+ },
+ "motion": {
+  "fields": {
+   "type": "string",
+   "axis": "axis",
+   "amp": "number",
+   "period": "number",
+   "damp": "number",
+   "maxAmp": "number",
+   "phase": "number",
+   "t0": "number",
+   "part": "string",
+   "radius": "number",
+   "degPerSec": "number",
+   "amplitude": "number",
+   "pivot": "vec3",
+   "center": "vec3",
+   "face": "bool",
+   "points": "array",
+   "speed": "number",
+   "duration": "number",
+   "loop": "string"
+  },
+  "when": [
+   {
+    "if": {
+     "type": "pendulum"
+    },
+    "set": {
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "period": 2.4,
+     "damp": 0.08,
+     "maxAmp": 0.9,
+     "phase": 0
+    }
+   },
+   {
+    "if": {
+     "type": "pendulum"
+    },
+    "absent": [
+     "amp",
+     "amplitude"
+    ],
+    "set": {
+     "amp": 0
+    }
+   },
+   {
+    "if": {
+     "type": "spin"
+    },
+    "set": {
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "phase": 0
+    }
+   },
+   {
+    "if": {
+     "type": "spin"
+    },
+    "absent": [
+     "degPerSec",
+     "period",
+     "rpm"
+    ],
+    "set": {
+     "degPerSec": 36
+    }
+   },
+   {
+    "if": {
+     "type": "orbit"
+    },
+    "set": {
+     "radius": 3,
+     "phase": 0,
+     "face": true
+    }
+   },
+   {
+    "if": {
+     "type": "orbit"
+    },
+    "absent": [
+     "degPerSec",
+     "period",
+     "rpm"
+    ],
+    "set": {
+     "degPerSec": 12
+    }
+   },
+   {
+    "if": {
+     "type": "bob"
+    },
+    "set": {
+     "axis": [
+      0,
+      1,
+      0
+     ],
+     "period": 4,
+     "phase": 0
+    }
+   },
+   {
+    "if": {
+     "type": "bob"
+    },
+    "absent": [
+     "amp",
+     "amplitude"
+    ],
+    "set": {
+     "amp": 0.3
+    }
+   },
+   {
+    "if": {
+     "type": "path"
+    },
+    "set": {
+     "loop": "loop",
+     "face": true
+    }
+   },
+   {
+    "if": {
+     "type": "path"
+    },
+    "absent": [
+     "speed",
+     "duration"
+    ],
+    "set": {
+     "speed": 1
+    }
+   }
+  ],
+  "enums": {
+   "type": [
+    "pendulum",
+    "spin",
+    "orbit",
+    "bob",
+    "path"
+   ],
+   "loop": [
+    "loop",
+    "pingpong",
+    "once"
+   ]
+  },
+  "keyed": "optional",
+  "on": "thing"
+ },
+ "lock": {},
+ "sockets": {
+  "on": "thing"
+ },
+ "params": {
+  "on": "thing"
+ },
+ "reactions": {},
+ "openable": {
+  "fields": {
+   "open": "bool",
+   "locked": "bool",
+   "angle": "number",
+   "axis": "axis",
+   "slide": "vec3",
+   "time": "number",
+   "part": "string"
+  },
+  "defaults": {
+   "open": false,
+   "locked": false,
+   "time": 1
+  },
+  "when": [
+   {
+    "absent": [
+     "slide"
+    ],
+    "set": {
+     "angle": 1.5707963267948966,
+     "axis": [
+      0,
+      1,
+      0
+     ]
+    }
+   }
+  ],
+  "on": "thing"
+ },
+ "physics": {
+  "fields": {
+   "kind": "string",
+   "who": "string",
+   "shape": "any"
+  },
+  "defaults": {
+   "kind": "dynamic"
+  },
+  "when": [
+   {
+    "if": {
+     "kind": "dynamic"
+    },
+    "set": {
+     "who": "visitor"
+    }
+   }
+  ],
+  "enums": {
+   "kind": [
+    "dynamic",
+    "static",
+    "none"
+   ]
+  },
+  "on": "thing"
+ },
+ "grabbable": {
+  "defaults": {
+   "enabled": true,
+   "who": "visitor",
+   "steal": true,
+   "range": 1.5,
+   "priority": 0,
+   "hold": "auto",
+   "twoHanded": false,
+   "throw": 1,
+   "release": "drop",
+   "returnAfter": 0
+  },
+  "on": "thing"
+ },
+ "physics-engine": {
+  "fields": {
+   "engine": "string",
+   "build": "any",
+   "tickMs": "int"
+  },
+  "on": "world"
+ },
+ "copy-of": {
+  "fields": {
+   "from": "string",
+   "key": "string"
+  },
+  "on": "thing"
+ },
+ "sound": {
+  "fields": {
+   "src": "string",
+   "playing": "bool",
+   "loop": "bool",
+   "volume": "number",
+   "pitch": "number",
+   "near": "number",
+   "radius": "number",
+   "spatial": "bool",
+   "t0": "number",
+   "alt": "string"
+  },
+  "defaults": {
+   "playing": true,
+   "loop": true,
+   "volume": 0.8,
+   "pitch": 1,
+   "near": 1.5,
+   "radius": 12,
+   "spatial": true
+  },
+  "on": "thing"
+ },
+ "picture": {
+  "fields": {
+   "src": "string",
+   "part": "string",
+   "width": "number",
+   "alt": "string",
+   "lit": "string",
+   "flip": "bool"
+  },
+  "defaults": {
+   "lit": "scene",
+   "flip": false,
+   "width": 1
+  },
+  "enums": {
+   "lit": [
+    "scene",
+    "self"
+   ]
+  },
+  "on": "thing"
+ },
+ "story": {
+  "fields": {
+   "title": "string",
+   "text": "string",
+   "marks": "array"
+  },
+  "on": "thing"
+ },
+ "text": {
+  "fields": {
+   "text": "string",
+   "size": "number",
+   "width": "number",
+   "align": "string",
+   "color": "int",
+   "outline": "bool",
+   "background": "int",
+   "billboard": "string",
+   "lit": "string"
+  },
+  "defaults": {
+   "size": 0.15,
+   "width": 2,
+   "align": "center",
+   "color": 16777215,
+   "outline": true,
+   "billboard": "off",
+   "lit": "self"
+  },
+  "enums": {
+   "align": [
+    "left",
+    "center",
+    "right"
+   ],
+   "billboard": [
+    "off",
+    "yaw",
+    "full"
+   ],
+   "lit": [
+    "self",
+    "scene"
+   ]
+  },
+  "on": "thing"
+ },
+ "look-at": {
+  "fields": {
+   "target": "string",
+   "mode": "string",
+   "forward": "axis",
+   "up": "axis",
+   "yaw": "array",
+   "pitch": "array",
+   "speed": "number",
+   "range": "number",
+   "offset": "vec3"
+  },
+  "defaults": {
+   "mode": "yaw",
+   "forward": "z",
+   "up": "y",
+   "speed": 240,
+   "range": 12
+  },
+  "enums": {
+   "mode": [
+    "yaw",
+    "aim"
+   ]
+  },
+  "keyed": "optional",
+  "on": "thing"
+ },
+ "captions": {
+  "fields": {
+   "session": "string",
+   "n": "int",
+   "gen": "number",
+   "title": "string",
+   "mediaTime": "number",
+   "window": "array"
+  },
+  "on": "thing"
+ },
+ "captioners": {
+  "fields": {
+   "ids": "array"
+  },
+  "on": "thing"
+ },
+ "sky": {
+  "fields": {
+   "hours": "number",
+   "rate": "number",
+   "ts": "number",
+   "azimuth": "number",
+   "clouds": "string",
+   "weather": "string",
+   "forecast": "object",
+   "override": "object",
+   "weatherK": "number",
+   "clock": "string",
+   "tz": "string",
+   "dormantRated": "object",
+   "weatherSeconds": "number",
+   "fog": "number",
+   "exposure": "number",
+   "ambient": "number",
+   "sun": "number",
+   "fill": "number",
+   "world": "string"
+  },
+  "on": "world"
+ },
+ "grass": {
+  "fields": {
+   "width": "number",
+   "depth": "number",
+   "center": "array",
+   "bladeHeight": "number",
+   "wind": "number",
+   "spacing": "number",
+   "perCell": "number",
+   "color": "any",
+   "colorTip": "number",
+   "species": "string",
+   "height": "number",
+   "density": "number",
+   "preset": "string",
+   "rows": "object",
+   "corn": "object"
+  },
+  "on": "world"
+ },
+ "structure": {
+  "fields": {
+   "tile": "number",
+   "wallH": "number",
+   "wallT": "number",
+   "slabT": "number",
+   "labels": "object",
+   "levels": "array"
+  },
+  "on": "thing"
+ },
+ "particles": {
+  "fields": {
+   "preset": "string",
+   "seed": "number",
+   "origin": "array",
+   "count": "number",
+   "quality": "string",
+   "size": "number",
+   "area": "any",
+   "texture": "string",
+   "speed": "number",
+   "opacity": "number",
+   "lifetime": "number"
+  }
+ },
+ "imported-epoch": {
+  "fields": {
+   "sim": "string",
+   "tickMs": "number",
+   "ts": "number",
+   "seq": "number"
+  },
+  "on": "world"
+ },
+ "imported-behavior": {
+  "fields": {
+   "src": "string",
+   "attach": "string",
+   "caps": "object",
+   "knobs": "object",
+   "author": "string",
+   "ts": "number",
+   "state": "object"
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "assets": {
+  "fields": {
+   "name": "string",
+   "path": "string"
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "imported": {
+  "keyed": true
+ },
+ "imported-bans": {
+  "keyed": true,
+  "on": "world"
+ },
+ "roles": {
+  "fields": {
+   "role": "string",
+   "can": "object",
+   "note": "string",
+   "sub": "any"
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "default-role": {
+  "fields": {
+   "role": "string",
+   "can": "object",
+   "guests": "string"
+  },
+  "defaults": {
+   "guests": "visitor"
+  },
+  "on": "world"
+ },
+ "role-defs": {
+  "on": "world"
+ },
+ "access": {
+  "fields": {
+   "join": "string",
+   "max": "int",
+   "soft": "int",
+   "minAccountDays": "int"
+  },
+  "enums": {
+   "join": [
+    "anyone",
+    "signed-in",
+    "listed"
+   ]
+  },
+  "on": "world"
+ },
+ "about": {
+  "fields": {
+   "name": "string",
+   "text": "string"
+  },
+  "on": "world"
+ },
+ "bounds": {
+  "fields": {
+   "min": "vec3",
+   "max": "vec3"
+  },
+  "on": "world"
+ },
+ "spawn": {
+  "fields": {
+   "pos": "vec3",
+   "radius": "number"
+  },
+  "on": "world"
+ },
+ "terrain": {
+  "fields": {
+   "kind": "string",
+   "seed": "int",
+   "size": "number",
+   "amplitude": "number",
+   "octaves": "int",
+   "frequency": "number",
+   "flatRadius": "number",
+   "flatHeight": "number",
+   "blob": "string",
+   "w": "int",
+   "h": "int",
+   "spacing": "number",
+   "origin": "array",
+   "format": "string",
+   "segments": "int",
+   "layers": "any"
+  },
+  "on": "world"
+ },
+ "terrain-grid": {
+  "fields": {
+   "spacing": "number",
+   "tile": "int",
+   "origin": "array",
+   "extent": "array",
+   "limits": "object"
+  },
+  "on": "world"
+ },
+ "terrain-tile": {
+  "fields": {
+   "mm": "array"
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "script": {
+  "fields": {
+   "src": "string",
+   "scope": "object",
+   "on": "array",
+   "every": "number",
+   "always": "bool",
+   "knobs": "object",
+   "paused": "bool"
+  },
+  "keyed": true
+ },
+ "schemas": {
+  "keyed": true,
+  "on": "world"
+ },
+ "blueprints": {
+  "keyed": true,
+  "on": "world"
+ },
+ "terrain-paint": {
+  "keyed": true,
+  "on": "world"
+ },
+ "capacity": {
+  "fields": {
+   "things": "int",
+   "guestThings": "int"
+  },
+  "defaults": {
+   "things": 2000,
+   "guestThings": 200
+  },
+  "on": "world"
+ },
+ "script-settings": {
+  "fields": {
+   "run": "bool",
+   "install": "string",
+   "max": "int",
+   "budget": "int",
+   "rate": "int",
+   "depth": "int",
+   "fails": "int",
+   "cpu": "int",
+   "runs": "int"
+  },
+  "defaults": {
+   "run": true,
+   "install": "builder",
+   "max": 12,
+   "budget": 600,
+   "rate": 6,
+   "depth": 8,
+   "fails": 5,
+   "cpu": 2000,
+   "runs": 60
+  },
+  "enums": {
+   "install": [
+    "builder",
+    "owner"
+   ]
+  },
+  "on": "world"
+ }
+}

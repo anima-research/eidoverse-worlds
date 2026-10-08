@@ -198,9 +198,18 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   does) never changes; a new meaning is a new versioned name.
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
-- **Meaning travels with the world.** A `schemas:<name>` component on
-  `@world` holds the content hash of that name's written definition (shape,
-  units, prose meaning, what absence means); once set it never changes.
+- **Meaning travels with the world.** Two things keep an old world's
+  meaning fixed, and neither needs a hash in the world: every parameter is in
+  the stored value (above), and the registry's checkable meaning — each
+  field's type, each default and when it applies, each enum's members — is
+  pinned in `registry-pin.json` beside this document; the conformance suite
+  fails when one changes, and only additions may be re-pinned. A
+  `schemas:<name>` component on `@world` is **optional**: it holds the content
+  hash of that name's written definition (shape, units, prose meaning, what
+  absence means, an example), and once set it never changes. It adds what the
+  pin can't check, the prose, for a world that travels to readers who don't
+  share this registry; a world without one is read by this registry, whose
+  pinned meanings never change.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its

@@ -157,7 +157,7 @@ await C("O3", "a visitor's use opens it (toggle's default is openable.open) and 
 await C("O4", "look tells an agent the openable's state", () => {
   const W = world(); W.call("create", { id: "gate", model: "door", components: { openable: { open: true } }, place: { at: [0, 0] } });
   const l = W.call("look", {}, "vic"); const t = JSON.stringify(l);
-  return [/"openable":\{"open":true\}/.test(t), t.slice(0, 300)];
+  return [/"openable":\{"open":true,/.test(t), t.slice(0, 300)];   // its other parameters are written down too (PROTOCOL §4)
 });
 await C("O5", "the importer: a v1 `door` component is `openable`, a reaction's component 'door' is 'openable'; the authority takes them", () => {
   const r = TV1.translate(v1({ verb: "spawn", args: { id: "gate", lib: "door", pos: [0, 0, 0] } }, { verb: "comp", args: { id: "gate", type: "door", data: { open: false, locked: false } } },

@@ -130,7 +130,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { // the gameplay lock lives inside its own component: door {open, locked}
     call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
     ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
-    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && JSON.stringify(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
+    ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && (({ open, locked }) => JSON.stringify({ open, locked }))(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
     const r = call("vic", "use", { id: "gate", action: "open" });
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
     const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the authority's state", i.notForYou);
