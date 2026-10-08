@@ -13,22 +13,23 @@ import { set } from "./requests.js";
 export const TEMPLATES = Object.freeze({
   use: `// runs when someone uses this thing (its action in the inspector, /use, or an agent's use)
 world.on("use", (e) => {
-  const n = (world.get("self", "counter")?.n ?? 0) + 1;
-  world.set("self", "counter", { n });
+  const n = (world.get("self", "local/counter")?.n ?? 0) + 1;
+  world.set("self", "local/counter", { n });
   world.say((world.name(e.by) ?? "someone") + " used me (" + n + ")");
 });
 `,
   timer: `// runs every few seconds while someone is here (set how often below)
 world.on("tick", () => {
-  const n = (world.get("self", "counter")?.n ?? 0) + 1;
-  world.set("self", "counter", { n });
+  const n = (world.get("self", "local/counter")?.n ?? 0) + 1;
+  world.set("self", "local/counter", { n });
   console.log("tick", n);
 });
 `,
 });
 
-/** What a template writes (its scope), so the card's defaults run as they stand. */
-export const TEMPLATE_SCOPE = Object.freeze({ use: { comps: ["counter"], say: true }, timer: { comps: ["counter"], say: false } });
+/** What a template writes (its scope), so the card's defaults run as they stand. Its counter is the world's own, not a
+ *  registered component, so it carries a namespace (PROTOCOL §4): `local/` is the conventional one for a world's own. */
+export const TEMPLATE_SCOPE = Object.freeze({ use: { comps: ["local/counter"], say: true }, timer: { comps: ["local/counter"], say: false } });
 
 /** A script name the authority takes (script:<name>: a–z, 0–9 and '-', up to 64), from whatever was typed. */
 export function scriptName(typed) {

@@ -214,7 +214,7 @@ await C("R1", "every entry Add Component offers (a modelled thing; a swinging on
   for (const [label, ent, value] of [["plain", { lib: "crate", pos: [0, 0, 0], comp: {} }, undefined], ["swing", { lib: "crate", pos: [0, 0, 0], comp: { motion: { type: "pendulum", amp: 0, period: 3.5 } } }, undefined]] as any) {
     const sc = ES.inspectSchema(ent, "thing", { box: [[-0.3, 0, -0.3], [0.3, 0.6, 0.3]], parts: ["lid"] });
     for (const a of sc.sections.add) { if (a.blocked) continue;
-      const v = a.name === "Annotation" ? "recipe" : a.name === "Label" ? "x" : value;
+      const v = a.name === "Annotation" ? "local/recipe" : a.name === "Label" ? "x" : value;
       const r0 = ES.addOps(ent, "thing", a.name, a.asks ? (a.asks === "Pendulum" ? "replace" : v) : v); if (r0.choice || r0.errors.length) continue;
       const W = world("r1"); const made = W.call("create", { id: "thing", model: "crate", components: Object.fromEntries(Object.entries(ent.comp)), place: { at: [0, 0] } });
       const r = W.sendAll(r0.ops); if (!r.ok) out.push(`${label}/${a.name}: ${why(r)}`); }
@@ -263,7 +263,7 @@ await C("R7", "what was right stays right: a door made with its state and handle
   const W = world();
   const a = W.call("create", { id: "gate2", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [0, 0] } });
   const b = W.call("create", { id: "bell", model: "bell", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } } }, place: { at: [2, 0] } });
-  const c = W.call("create", { id: "lever", model: "crate", components: { reactions: { pull: { kind: "set", component: "tag:pulled", value: true } } }, place: { at: [4, 0] } });
+  const c = W.call("create", { id: "lever", model: "crate", components: { reactions: { pull: { kind: "set", component: "t/tag:pulled", value: true } } }, place: { at: [4, 0] } });
   const u = W.call("use", { id: "bell" }, "vic");
   return [b.ok && c.ok && u.ok && W.state().entities.bell.c.label === "rung" && (a.ok || CAT.COMPONENTS?.door), { a: why(a), b: why(b), c: why(c), u: why(u) }];
 });

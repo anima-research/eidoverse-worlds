@@ -167,7 +167,8 @@ Components are how a world grows: **a new feature is a new component,
 never a new operation**. The fold applies every component blindly; meaning
 lives in whatever reads it — a renderer, the authority's checks, a script.
 
-- **Bare names are the protocol's registry.** The registered components,
+- **Bare names are the protocol's registry.** An authority refuses an unregistered bare name
+  (a typo of a registered one with a "did you mean"). The registered components,
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
@@ -176,11 +177,25 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
   `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
-- **Anyone else's components carry a domain prefix**, so two honest clients
-  can't both invent `light`. Unknown names are kept, replayed and shown
-  honestly; they wait for a reader that understands them.
-- **A changed meaning or default is a new name** (`light@2`). Old names are
-  read forever. No component may change how another is read.
+- **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
+  domain they control or a handle (`example.org/heart`, `mica/heart`), so two
+  honest clients can't both invent `light`. The mark is the `/` itself: the
+  registry never uses it, the way HTML's own elements never contain the
+  hyphen that custom elements must. Namespaced names are kept, replayed and
+  shown honestly; they wait for a reader that understands them. A translated
+  world's own inventions come across under its name (`commons/heart`).
+- **Promotion keeps an alias.** A namespaced component that proves itself is
+  registered bare by a change to the registry, which lists the namespaced
+  spelling in the definition's `aliases`: both spellings then mean that one
+  definition, are checked the same way, and old values keep working.
+- **A changed meaning is a new name**, `<name>@<n>` (`light@2`), registered
+  before anyone writes it, whose definition says what it `supersedes`. Old
+  names are read forever. No component may change how another is read.
+- **Every parameter is written down.** The authority writes a component's
+  defaults into the stored value when it is created or set, so a reader never
+  supplies a value the log doesn't hold, and a later change to a default
+  never changes an old world. A parameter's meaning (its units, what it
+  does) never changes; a new meaning is a new versioned name.
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
 - **Meaning travels with the world.** A `schemas:<name>` component on

@@ -57,19 +57,19 @@ const cases = [
         owner: s.call("olive", "delete", { id: "@world", component: blueprintKey(h2) }) }; },
     nowGood: (o) => ok(o.rename) && ok(o.del) && ok(o.owner) },
   { id: "G1d", what: "keyed instance on an ordinary thing: ann overwrites bob's `note:bob` (her own `note:ann` is fine)", run(s) { cast(s);
-      s.call("bob", "create", { id: "board", model: "crate", place: { at: [1, 1] } }); s.call("bob", "set", { id: "board", component: "note:bob", value: "bob was here" });
-      return { own: s.call("ann", "set", { id: "board", component: "note:ann", value: "and ann" }), attack: s.call("ann", "set", { id: "board", component: "note:bob", value: "bob is a fool" }) }; },
+      s.call("bob", "create", { id: "board", model: "crate", place: { at: [1, 1] } }); s.call("bob", "set", { id: "board", component: "t/note:bob", value: "bob was here" });
+      return { own: s.call("ann", "set", { id: "board", component: "t/note:ann", value: "and ann" }), attack: s.call("ann", "set", { id: "board", component: "t/note:bob", value: "bob is a fool" }) }; },
     baseBad: (o) => ok(o.own) && ok(o.attack), nowGood: (o) => ok(o.own) && code(o.attack) === "rights" },
   { id: "G1e", what: "creator is the key's CURRENT life: bob deletes his note, ann re-sets it, bob can no longer change it", run(s) { cast(s);
-      s.call("bob", "create", { id: "board", model: "crate", place: { at: [1, 1] } }); s.call("bob", "set", { id: "board", component: "note:x", value: "bob's" });
-      s.call("bob", "delete", { id: "board", component: "note:x" }); const annSets = s.call("ann", "set", { id: "board", component: "note:x", value: "ann's" });
-      return { annSets, annAgain: s.call("ann", "set", { id: "board", component: "note:x", value: "ann's, edited" }), bob: s.call("bob", "set", { id: "board", component: "note:x", value: "bob's again" }) }; },
+      s.call("bob", "create", { id: "board", model: "crate", place: { at: [1, 1] } }); s.call("bob", "set", { id: "board", component: "t/note:x", value: "bob's" });
+      s.call("bob", "delete", { id: "board", component: "t/note:x" }); const annSets = s.call("ann", "set", { id: "board", component: "t/note:x", value: "ann's" });
+      return { annSets, annAgain: s.call("ann", "set", { id: "board", component: "t/note:x", value: "ann's, edited" }), bob: s.call("bob", "set", { id: "board", component: "t/note:x", value: "bob's again" }) }; },
     baseBad: (o) => ok(o.annSets) && ok(o.bob), nowGood: (o) => ok(o.annSets) && ok(o.annAgain) && code(o.bob) === "rights" },
   { id: "G1f", what: "a handler's key belongs to the handler's AUTHOR, not to the visitor who pulled it", run(s) { cast(s);
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [2, 0] } });
-      s.call("bob", "set", { id: "lever", component: "reactions", value: { tag: { kind: "set", component: "tag:pulled", value: true } } });
+      s.call("bob", "set", { id: "lever", component: "reactions", value: { tag: { kind: "set", component: "t/tag:pulled", value: true } } });
       const use = s.call("vic", "use", { id: "lever", action: "tag" });
-      return { use, author: s.call("bob", "set", { id: "lever", component: "tag:pulled", value: false }), other: s.call("ann", "delete", { id: "lever", component: "tag:pulled" }) }; },
+      return { use, author: s.call("bob", "set", { id: "lever", component: "t/tag:pulled", value: false }), other: s.call("ann", "delete", { id: "lever", component: "t/tag:pulled" }) }; },
     baseBad: (o) => ok(o.use) && ok(o.author) && ok(o.other), nowGood: (o) => ok(o.use) && ok(o.author) && code(o.other) === "rights" },
   { id: "G1g", what: "a library entry's `by` was a stored copy of who published it, so it could lie; now it's a view", run(s) { cast(s); const h = publishCrate(s, "bob");
       s.call("bob", "set", { id: "@world", component: blueprintKey(h), value: { name: "bob's crate", by: "olive", parts: 1 } });

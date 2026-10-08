@@ -5,6 +5,13 @@ export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}" },
   label:     { type: "string", help: "its display name, a short string" },
+  // every client honours it (the editor's Hide; shared/editschema.js flags); registered 10-07 when bare names became the
+  // registry's (PROTOCOL §4), with the meaning it already had
+  // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
+  // its box; and the caption bot's speaker mark (shared/components.js Stage). Registered 10-07 with the meanings they had
+  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box)}; absent, its size decides" },
+  stage:     { on: "thing", fields: { speaker: "any" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
+  hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
@@ -142,5 +149,30 @@ export const COMPONENTS = {
                ranges: { max: { min: 0, max: 64 }, budget: { min: 0, max: 100000 }, rate: { min: 0, max: 600 }, depth: { min: 1, max: 32 }, fails: { min: 1, max: 100 }, cpu: { min: 0, max: 60000 }, runs: { min: 0, max: 600 } },
                help: "on @world (owner): {run: false stops every script, install: 'builder'|'owner', max (scripts, default 12), budget (script entries per hour, default 600; each sponsor gets a fair share), rate (logged activations per script per minute, default 6), depth (cascade depth, default 8), fails (failed activations in a row before a script pauses, default 5), cpu (ms of the authority's time per sponsor per minute, default 2000; the world 3×), runs (activations per script per minute, whatever they write, default 60)}" },
 };
+
+// ---- names (PROTOCOL §4, review 10-07 H1 + M7, R's ruling) ----
+// A component name is [<namespace>/]<name>[@<n>][:<key>]. A BARE name (no '/') is the registry's: it is one of COMPONENTS
+// or the authority refuses it. Anyone else's carries a namespace: a domain they control or a handle (`example.org/heart`,
+// `mica/heart`). The registry never uses '/', the way HTML's own elements never have a hyphen (custom elements must): the
+// mark is the separator itself. ':' already means a key (script:bell) and registered names already have hyphens
+// (look-at, copy-of), so neither could be the mark; '/' is already in the frozen grammar (§3.1's domain prefix).
+// A name that proves itself is promoted by a PR that registers it bare and lists its namespaced spelling in `aliases`:
+// both then mean the same definition, and old values keep working. A changed meaning is a NEW name, `<name>@<n>`,
+// registered before anyone writes it, with `supersedes: <name>` so a reader knows what it replaces.
+export const baseOf = (comp) => { const i = String(comp).indexOf(":"); return i < 0 ? String(comp) : String(comp).slice(0, i); };
+export const isNamespaced = (comp) => baseOf(comp).includes("/");
+/** The registered name a base answers to (itself, or the name that lists it as an alias), or null. */
+export function registered(base) {
+  if (Object.hasOwn(COMPONENTS, base)) return base;
+  if (!base.includes("/")) return null;   // an alias is always a namespaced spelling
+  for (const [k, d] of Object.entries(COMPONENTS)) if (d.aliases?.includes(base)) return k;
+  return null;
+}
+/** The definition a component name is checked against (an alias reaches its registered name's), or undefined. */
+export const defOf = (comp) => { const r = registered(baseOf(comp)); return r ? COMPONENTS[r] : undefined; };
+/** One spelling per meaning: an alias read as its registered name (its key kept). Renderers that read by name use this. */
+export const canonicalName = (comp) => { const b = baseOf(comp), r = registered(b); return r && r !== b ? r + String(comp).slice(b.length) : String(comp); };
+/** What a versioned name replaces (light@2 → light), from its definition; null if it says nothing. */
+export const supersedes = (comp) => defOf(comp)?.supersedes ?? null;
 
 export const PENDULUM = { type: "pendulum", axis: [1, 0, 0], amp: 0, period: 2.4, damp: 0.08, maxAmp: 0.9, phase: 0 };

@@ -138,6 +138,7 @@ function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v
   const { can, ...rest } = v; const { fly, generate, ...left } = can; const out: any = { ...rest };
   if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }
 const IMP = "imported:", BANS = "imported-bans:", BEHAVIOR = "imported-behavior:";   // what translate-v1 carries (@7)
+const NSP = "imported/";   // @8: a v1 world's own (unregistered) component comes across as imported/<name> (PROTOCOL §4)
 function unproject(ents0: any) {
   const ents: any = {}, world: any = {};
   for (const [id, comps] of Object.entries<any>(ents0)) {
@@ -165,7 +166,7 @@ function unproject(ents0: any) {
       else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, socket, ...p }) => ({ ...p, to: dec(v.to), ...(socket !== undefined ? { slot: socket } : {}) }))(v) : v; // order: today's sibling order, no v1 field; today's socket is v1's slot
       else if (k.startsWith(IMP) && comps[dec(k.slice(IMP.length))] !== undefined && dec(k.slice(IMP.length)) !== "parent") {}   // folded back below
       else if (k.startsWith(IMP)) e[dec(k.slice(IMP.length))] = v;
-      else (e.comp ??= {})[k === "openable" ? "door" : dec(k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): today's openable is v1's door
+      else (e.comp ??= {})[k === "openable" ? "door" : dec(k.startsWith(NSP) ? k.slice(NSP.length) : k)] = k === "reactions" ? v1Reactions(v) : k === "sockets" ? v1Sockets(v, comps[`${IMP}sockets`]) : v;   // declared (DROPPED comp.door): today's openable is v1's door
     }
     for (const [k, v] of Object.entries<any>(comps)) { const c = k.startsWith(IMP) ? dec(k.slice(IMP.length)) : null;
       if (c && comps[c] !== undefined && c !== "parent" && c !== "sockets") e.comp[c] = { ...e.comp[c], ...v }; }

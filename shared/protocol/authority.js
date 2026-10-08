@@ -11,7 +11,7 @@ import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
-import { COMPONENTS, PENDULUM } from "./componentspec.js";
+import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced } from "./componentspec.js";
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
@@ -868,7 +868,7 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: cap?.kind === "fork-copy" }); // against the state the whole write leaves (parents may come later in a batch)
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
@@ -1090,11 +1090,11 @@ function rolesCheck(st, s, ops) {
   // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
 // Sanity and shape of the values the authority's own engine reads (what the change IS, not which word carried it).
-function valueCheck(s, { id, comp, value: v }) {
+function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
   // meant different things to the authority and the renderer (component review T1a/T1b)
-  const on = COMPONENTS[comp.split(":")[0]]?.on;
+  const on = defOf(comp)?.on;
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
@@ -1168,7 +1168,7 @@ function valueCheck(s, { id, comp, value: v }) {
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
-  schemaCheck(at, comp, v);
+  schemaCheck(at, comp, v, { carry });
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
     if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
@@ -1251,8 +1251,8 @@ export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
     const ob = v && typeof v === "object" && !Array.isArray(v);
     for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (ob && v[f] !== undefined && !allowed.includes(v[f])) return `shape: ${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`;
     return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
-function schemaCheck(at, comp, v) {
-  const name = comp.split(":")[0], def = COMPONENTS[name];
+function schemaCheck(at, comp, v, { carry = false } = {}) {
+  const base = baseOf(comp), name = registered(base) ?? base, def = COMPONENTS[name];
   // `param.<name>`: a number a script writes into a component for something else to read (seat poses that blend by
   // signals). Any object component may carry them at its top level; the rest of the value is checked as usual.
   if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith("param."))) {
@@ -1261,13 +1261,20 @@ function schemaCheck(at, comp, v) {
       if (!isNum(v[k])) refuse("shape", `${at}.${k} is a number (a signal), got ${JSON.stringify(v[k]).slice(0, 40)}`, "a script writes it with world.param(id, component, name, number)"); }
     v = Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("param.")));
   }
-  // round-2 R8: an unregistered bare name is a world's own invention (heart, inscription…) and is admitted, unless
-  // it's a near-miss of a registered name: that's a typo (ligth, transform@2), and it would be a new name forever (L5)
+  // PROTOCOL §4 (review 10-07 H1, R's ruling): a bare name is the registry's. An unregistered one is refused: a typo of
+  // a registered name says "did you mean"; a versioned one (light@2) says a new meaning is registered first; anything
+  // else is someone's own component, which carries a namespace (example.org/heart). Before this they were admitted, and
+  // the registry later promoting the same word (story) would have reread every old value in the new meaning.
+  // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
   if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
-  if (!def) { if (!name.includes("/")) { const near = nearMiss(name);
-      if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${name}')`, { didYouMean: near }); }
-    return; }
+  if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
+    const ver = /^(.*)@[1-9][0-9]*$/.exec(name);
+    if (ver && COMPONENTS[ver[1]]) refuse("schema", `${at}: '${name}' isn't registered yet: a changed meaning of '${ver[1]}' is a new name, registered (saying what it supersedes) before anyone writes it`, `use '${ver[1]}' as it is defined (schema {component: '${ver[1]}'}), or propose ${name} for the registry (shared/protocol/componentspec.js); a meaning of your own goes under your namespace: 'example.org/${name}'`, { didYouMean: [ver[1]] });
+    const near = nearMiss(name);
+    if (near.length) refuse("schema", `${at}: '${name}' isn't a component; did you mean '${near[0]}'?`, `${near[0]}: ${COMPONENTS[near[0]].help ?? ""}. A component of your own carries a namespace (e.g. 'example.org/${name}')`, { didYouMean: near });
+    refuse("schema", `${at}: '${name}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: '<your domain or handle>/${name}', e.g. 'example.org/${name}'. It's kept and shown as it is; schema lists the registered ones`, { didYouMean: [`example.org/${name}`] });
+  }
   // a keyed name written bare, or an unkeyed one written keyed (terrain:base {amp}, light:main {...}), dodged every check
   if (def.keyed !== "optional" && !!def.keyed !== comp.includes(":")) refuse("shape", def.keyed ? `${at}: ${name} is keyed (${name}:<key>)` : `${at}: ${name} isn't keyed; write '${name}', not '${comp}'`, def.help ?? "");
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
@@ -1460,7 +1467,7 @@ function needThing(ctx, id) {
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 function resolve(ctx, id, comp, value, prev) {
-  const def = COMPONENTS[comp] ?? (comp.startsWith("look-at:") ? COMPONENTS["look-at"] : undefined);   // a part's look-at has the whole one's defaults
+  const def = !comp.includes(":") || comp.startsWith("look-at:") ? defOf(comp) : undefined;   // an alias has its registered name's defaults; a part's look-at the whole one's
   if (comp === "transform") {
     const v = { ...COMPONENTS.transform.defaults, ...(prev ?? {}), ...(value ?? {}) };
     if (value && "yaw" in value) { v.q = yawQ(value.yaw).map((n) => r3(n)); delete v.yaw; ctx.notes.push({ id, component: "transform", field: "yaw", sent: value.yaw, kept: v.q, why: "yaw is a convenience; the log stores q" }); }
@@ -1472,7 +1479,7 @@ function resolve(ctx, id, comp, value, prev) {
     const n = Math.hypot(...v.q); if (v.q.length === 4 && n > 1e-6 && Math.abs(n - 1) > 1e-9) v.q = v.q.map((x) => x / n);
     return v;
   }
-  if (!COMPONENTS[comp] && !comp.includes(":")) ctx.notes.push({ id, component: comp, why: `'${comp}' isn't a component this world's engine knows: it is kept (and will be preserved), but nothing will draw or run it`, didYouMean: guess(comp, Object.keys(COMPONENTS)) });
+  if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
   if (comp === "motion" && value && typeof value === "object") { const v = { ...(value.type === "pendulum" ? PENDULUM : {}), ...value }; delete v.pivot;
     if (v.t0 === undefined) { v.t0 = ctx.w.now(); ctx.notes.push({ id, component: "motion", field: "t0", kept: v.t0, why: "stamped by the authority" }); } return v; }
   // a part's motion (motion:<part>) runs on the same clock: without a stamp every client started it from its own first
@@ -1942,8 +1949,11 @@ function installCheck(w, st, s, who, op) {
   if (sc.launch) refuse("shape", `${at}.scope.launch: scripts can't launch sim bodies yet`, "leave launch out");
   if (sc.create && sc.ids !== "subtree") refuse("scope", `${at}: create needs ids: 'subtree' (what it makes must hang under it)`, "");
   // a scope that names a typo of a registered component could never write it (admit refuses the name): say so now
-  for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !COMPONENTS[n] && !n.includes("/") ? nearMiss(n) : [];
-    if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own needs a name that isn't one letter-slip from a registered one (or a domain prefix, e.g. 'my.place/${n}')`, { didYouMean: near }); }
+  for (const c of sc.comps) { const n = sampleOf(c).split(":")[0]; const near = !registered(n) && !n.includes("/") ? nearMiss(n) : [];
+    if (near.length) refuse("schema", `${at}.scope.comps: '${n}' isn't a component; did you mean '${near[0]}'?`, `a component of your own carries a namespace (e.g. 'example.org/${n}')`, { didYouMean: near });
+    // PROTOCOL §4: a script may only ever write what the authority takes, so a bare name nobody registered is refused here,
+    // at install, rather than at every activation
+    if (!registered(n) && !n.includes("/")) refuse("schema", `${at}.scope.comps: '${n}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: 'example.org/${n}'`, { didYouMean: [`example.org/${n}`] }); }
   for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { verb: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
     if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly: narrow the scope, or ask an owner to install or adopt it"); }
   const on = v.on ?? [];
@@ -3308,7 +3318,7 @@ const VERBS = {
     // they bring one (ownerKey: made on their machine; this server never holds its private half); the operator's custody
     // key is tier 1. Without one tier 0 stays empty, and under §13's add-key rule (GOV-5) it can never be filled later:
     // the operator is then the world's top governance key. rewind_window is left at its default (1000 change entries).
-    if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (import-v1/README.md shows how); or leave ownerKey out");
+    if (a.ownerKey !== undefined && !keyOk(a.ownerKey)) refuse("shape", "ownerKey is your own governance key: ed25519:<base64url of 32 bytes> (PROTOCOL §13)", "make one on your own machine (openssl genpkey -algorithm ed25519; PROTOCOL §13, \"Whose key is tier 0\"); or leave ownerKey out");
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
     w.append({ kind: "genesis", actor: "system", verb: "genesis", body: { dialect: DIALECT, v: VERSION, minor: 0, nonce: nonce16(w), owners: [a.ownerKey ? [a.ownerKey] : [], [cu.operator()]], sequencer: cu.sequencer() } });

@@ -129,7 +129,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const set = (component: string, value: unknown) => request(w, me, "set", { id: "cube", component, value }) as any;
   const typo = set("ligth", { intensity: 5 });
   ok(typo.refused?.code === "schema" && typo.refused?.didYouMean?.[0] === "light", "S1 a near-miss of a registered name is a typo: refused, did you mean light", typo.refused);
-  ok(set("heart", { takes: 1 }).ok && set("inscription", { text: "hi" }).ok, "S2 a world's own invention (heart, inscription) is admitted");
+  ok(set("heart", { takes: 1 }).refused?.code === "schema" && set("local/heart", { takes: 1 }).ok && set("example.org/inscription", { text: "hi" }).ok, "S2 a world's own invention carries a namespace (local/heart, example.org/inscription): a bare unregistered name is the registry's, refused (PROTOCOL §4)");
   ok(set("transform@2", { pos: [1e9, 0, 0] }).refused?.code === "schema", "S3 transform@2 is a near-miss too");
   ok(request(w, me, "set", { id: "@world", component: "terrain:base", value: { amp: 0 } }).refused?.code === "shape" && set("light:main", { intnsity: 5 }).refused?.code === "shape",
     "S4 an unkeyed name written keyed (terrain:base, light:main) no longer dodges the schema");

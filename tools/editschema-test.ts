@@ -32,7 +32,7 @@ const dels = (r: any, comp: string) => flat(r.ops).filter((o: any) => o.verb ===
 const val = (r: any, comp: string) => sets(r, comp)[0]?.args.value;
 
 const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: "r", ts: 1,
-  comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} }, side: { pos: [0.4, 0.5, 0], q: [0, 0.479425538604203, 0, 0.8775825618903728], body: {} } }, recipe: { wood: 2 }, lock: true } };   // side: heading 1 rad
+  comp: { sockets: { seat: { pos: [0, 0.5, 0], body: {} }, side: { pos: [0.4, 0.5, 0], q: [0, 0.479425538604203, 0, 0.8775825618903728], body: {} } }, "local/recipe": { wood: 2 }, lock: true } };   // side: heading 1 rad
 // a lamp: a thing with a light component (there are no light-verb lights now)
 const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, important: true } } };
 const swing = { lib: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, comp: { motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } } };
@@ -46,7 +46,7 @@ console.log("\nschema is a function of the record:");
   check("a chair: pos · rot · parent · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","comp"]', JSON.stringify(G));
   check("locked → transform stays editable and says moving it asks first (the door decides, §5)", fieldAt(s, "pos.x")!.disabled !== true && /locked — moving it asks first/.test(fieldAt(s, "pos.x")!.hint), JSON.stringify(fieldAt(s, "pos.x")));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
-  check("unknown comp 'recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
+  check("unknown comp 'local/recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.local/recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
   check("sockets: a list + per-slot channels", fieldAt(s, "sockets.slots")?.t === "list" && Math.abs(fieldAt(s, "sockets.side|rot|1")?.value - 1) < 1e-6);
   const l = inspectSchema(lamp, "lamp");
   check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.important")?.value === true && fieldAt(l, "light.range")?.value === 6);
@@ -105,7 +105,7 @@ console.log("\nedits → the fewest door ops:");
   check("an unknown field is an error, not an op", (() => { const x = editOps(chair, "c1", { "light.intensity": 3 }); return x.errors.length === 1 && !x.ops.length; })());
   check("a viewport gesture (sockets.add) is refused with guidance", /gesture/.test(editOps(chair, "c1", { "sockets.add": 1 }).errors[0] ?? ""));
   const before = JSON.stringify(chair);
-  editOps(chair, "c1", { "sockets.seat|pos|0": 9, "flags.lock": false, "comp.recipe": "{\"wood\":3}" });
+  editOps(chair, "c1", { "sockets.seat|pos|0": 9, "flags.lock": false, "comp.local/recipe": "{\"wood\":3}" });
   check("editOps never mutates the record", JSON.stringify(chair) === before);
 }
 
@@ -129,12 +129,12 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   const r = editOps(swing, "s", { "pos.x": "+=1", "motion.amp": "+=5", "motion.plank|degPerSec": 1 });
   check("editing pos and motion never mutates the record (pos array, motion bags)", JSON.stringify(swing) === before && val(r, "transform").pos[0] === 6);
   const unlocked = { ...chair, comp: { ...chair.comp, lock: undefined } };
-  check("comp.<type> = '' REMOVES the component", dels(editOps(unlocked, "c1", { "comp.recipe": "" }), "recipe").length === 1);
+  check("comp.<type> = '' REMOVES the component", dels(editOps(unlocked, "c1", { "comp.local/recipe": "" }), "local/recipe").length === 1);
   check("flags.lock false → delete lock; 'no'/'off'/'false' strings read as false", dels(editOps(chair, "c1", { "flags.lock": false }), "lock").length === 1
     && (() => { const h = { ...unlocked, comp: { ...unlocked.comp, hidden: true, lock: true } };
       return dels(editOps(h, "c1", { "flags.hidden": "no" }), "hidden").length === 1 && dels(editOps(h, "c1", { "flags.lock": "off" }), "lock").length === 1 && dels(editOps(h, "c1", { "flags.hidden": "false" }), "hidden").length === 1; })());
   check("…and clearing a flag that isn't set sends nothing (no delete of an absent component)", editOps(unlocked, "c1", { "flags.hidden": "no" }).ops.length === 0);
-  check("comp.+ of a type already there is refused; comp.+ '' is ignored", /already has/.test(editOps(unlocked, "c1", { "comp.+": "recipe" }).errors[0] ?? "") && editOps(unlocked, "c1", { "comp.+": "" }).ops.length === 0);
+  check("comp.+ of a type already there is refused; comp.+ '' is ignored", /already has/.test(editOps(unlocked, "c1", { "comp.+": "local/recipe" }).errors[0] ?? "") && editOps(unlocked, "c1", { "comp.+": "" }).ops.length === 0);
   check("sockets.del of a missing slot is an error, nothing sent", editOps(unlocked, "c1", { "sockets.del": "nope" }).ops.length === 0 && /no slot/.test(editOps(unlocked, "c1", { "sockets.del": "nope" }).errors[0] ?? ""));
   const ns = val(editOps(unlocked, "c1", { "sockets.back|pos|1": 0.7 }), "sockets");
   check("a new slot name declares a seat (pos default [0,0.5,0], no rotation, body) and keeps the others", ns.back.pos[1] === 0.7 && ns.back.pos[0] === 0 && ns.back.q === undefined && ns.back.yaw === undefined && !!ns.back.body && !!ns.seat && !!ns.side, JSON.stringify(ns));
@@ -237,7 +237,7 @@ console.log("\nthe JSON escape hatch: every typed group, addressed to its comp, 
   check("editing through the hatch replaces the comp wholesale", val(part, "sockets")?.seat?.part === "seatboard", JSON.stringify(part));
   const url = editOps(ent, "x", { "comp.picture": JSON.stringify({ src: "http://x.example.org/a.png", part: "screen" }) });
   check("comp.picture as JSON still runs normalizePicture: an http link is refused, nothing sent", !url.ops.length && /https/.test(url.errors[0] ?? ""), JSON.stringify(url));
-  const bad = editOps(ent, "x", { "comp.recipe": "{ nope" });
+  const bad = editOps(ent, "x", { "comp.local/recipe": "{ nope" });
   check("invalid JSON is an error, not an op", !bad.ops.length && /not valid JSON/.test(bad.errors[0] ?? ""));
 }
 

@@ -13,7 +13,7 @@ import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION
 import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
-import { COMPONENTS } from "../../../shared/protocol/componentspec.js";
+import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -85,7 +85,7 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@7";
+export const TRANSLATOR = "eidoverse/translate-v1@8";
 // @7 (2026-10-07, the conventional-names pass, R's approved table): the output speaks the renamed protocol. A result entry
 // is kind `change` (was `state`); the translating door's own entries are actor `system` (was `door`), and so is a v1 entry
 // whose actor was v1's "door". Everything carried only from translation is one `imported` family: the act verb `imported`
@@ -162,7 +162,20 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
 const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
-export function project(st, seen = null, who = null) {
+// @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A
+// v1 world's own inventions (a `heart` comp nobody registered) come across under a namespace, `<namespace>/heart` (the
+// translated world's name; "imported" when the caller gives none), so the registry can promote the word later without
+// rereading this world's values in a new meaning. Registered names, and the imported family, stay as they were.
+export const NAMESPACE = "imported";
+/** A world's name as a §3.1 namespace (lowercase letters, digits, '-', '.'), or the default. */
+export const namespaceOf = (name) => { const s = String(name ?? "").toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").replace(/\.{2,}/g, "."); return /^[a-z0-9]/.test(s) ? s.slice(0, 63).replace(/[-.]+$/, "") : NAMESPACE; };
+function namespaceUnknown(c, ns) {
+  for (const k of Object.keys(c)) { const base = k.split(":")[0];
+    if (base.includes("/") || registered(base)) continue;
+    const to = `${ns}/${k}`; if (to in c) continue;   // never overwrite (a world that already used both spellings keeps the bare one)
+    c[to] = c[k]; delete c[k]; }
+}
+export function project(st, seen = null, who = null, ns = NAMESPACE) {
   const out = {};
   const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
   const unsub = (v) => { if (!who || !v || typeof v !== "object" || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };
@@ -206,7 +219,7 @@ export function project(st, seen = null, who = null) {
   const known = new Set(["entities", "sky", "terrain", "grass", "epoch", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   out["@world"] = w; // @world is live from genesis (§2.3)
-  for (const c of Object.values(out)) splitUnknown(c);
+  for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }
 
@@ -228,7 +241,8 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace } = {}) {
+  const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, change: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0, guards: 0, guardsLive: 0 };
   const seen = { guards: new Set() }; // ids whose v1 guard became a lock at some point (§5: their owners should be told)
@@ -245,12 +259,12 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   // an old request as sent keeps its words, but never an account (a grant's sub): that becomes the person's id (R1)
   const noAcct = (a) => (who && a && typeof a === "object" && typeof a.sub === "string" ? { ...a, sub: who(typeof a.id === "string" ? a.id : a.sub, { sub: a.sub }) } : a);
-  let prev = project(v1, seen, who);
+  let prev = project(v1, seen, who, ns);
   for (const e of oldEntries) {
     if (e.verb === "genesis") continue;
     stats.verbs[e.verb] = (stats.verbs[e.verb] ?? 0) + 1;
     foldEntry(v1, e);
-    const now = project(v1, seen, who);
+    const now = project(v1, seen, who, ns);
     const actor = who && !SYSTEM.has(e.actor ?? "door") ? who(String(e.actor), {}) : actorOf(e.actor ?? "door"); if (actor !== e.actor) stats.renamed++;
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the authority's admission time, carried from the old entry
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
@@ -262,6 +276,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: project(v1, null, who), translated: v4project(v4) } };
+  return { out, stats, final: { v1: project(v1, null, who, ns), translated: v4project(v4) } };
 }
 

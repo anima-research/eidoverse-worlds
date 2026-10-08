@@ -158,5 +158,46 @@ await C("K5", "create-world takes the founder's own key for tier 0 (ownerKey); w
 await C("K6", "the import README documents the Commons ceremony: key made on the founder's machine, checked, then translated", () => {
   const t = read("tools/protocol/import-v1/README.md"); const need = ["owner-key", "--founder-key", "openssl", "custody.json", "antra"]; return [need.every((n) => t.includes(n)), need.filter((n) => !t.includes(n))]; });
 
+// ---- N: names (H1, M7) ----
+const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
+await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {
+  const W = world(); mk(W); const r = W.call("set", { id: "box", component: "heart", value: { beat: 1 } });
+  return [!r.ok && r.refused.code === "schema" && /namespace|example\.org\/heart/.test(r.refused.fix + r.refused.reason) && (r.refused.didYouMean ?? []).some((x: string) => x.endsWith("/heart")), r.refused ?? r]; });
+await C("N2", "a namespaced name is anyone's: example.org/heart and mica/heart are admitted (and a create's components too)", () => {
+  const W = world(); mk(W); const a = W.call("set", { id: "box", component: "example.org/heart", value: { beat: 1 } });
+  const b = W.call("set", { id: "box", component: "mica/heart:left", value: 2 }); const c = W.call("create", { id: "c2", model: "crate", components: { "mica/inscription": "here" } });
+  return [a.ok && b.ok && c.ok, [why(a), why(b), why(c)]]; });
+await C("N3", "an unregistered bare name in a create's components is refused too", () => {
+  const W = world(); const r = W.call("create", { id: "c3", model: "crate", components: { inscription: "here" } }); return [!r.ok && r.refused.code === "schema", r.refused ?? r]; });
+await C("N4", "a typo of a registered name still says 'did you mean' (ligth → light)", () => {
+  const W = world(); mk(W); const r = W.call("set", { id: "box", component: "ligth", value: {} }); return [!r.ok && r.refused.didYouMean?.[0] === "light", r.refused]; });
+await C("N5", "light@2 before it's registered: refused as unregistered (a new meaning is registered first), not as a typo of light", () => {
+  const W = world(); mk(W); const r = W.call("set", { id: "box", component: "light@2", value: { kind: "point" } });
+  return [!r.ok && r.refused.code === "schema" && /regist/.test(r.refused.reason + r.refused.fix) && !/did you mean 'light'/.test(r.refused.reason), r.refused]; });
+await C("N6", "a registered name@N is a legal name: checked against its own definition, which says what it supersedes", () => {
+  CAT.COMPONENTS["light@2"] = { ...CAT.COMPONENTS.light, supersedes: "light", fields: { ...CAT.COMPONENTS.light.fields, falloff: "string" }, help: "test: light with a falloff" };
+  try { const W = world(); mk(W); const a = W.call("set", { id: "box", component: "light@2", value: { kind: "point", falloff: "quadratic" } });
+    const b = W.call("set", { id: "box", component: "light@2", value: { kind: "point", bogus: 1 } });
+    return [a.ok && !b.ok && b.refused.code === "schema" && CAT.supersedes?.("light@2") === "light", [why(a), b.refused, typeof CAT.supersedes]]; }
+  finally { delete CAT.COMPONENTS["light@2"]; } });
+await C("N7", "a promoted name keeps its namespaced spelling as an alias: same definition, same checks, one canonical name", () => {
+  CAT.COMPONENTS["test-heart"] = { on: "thing", fields: { beat: "number" }, defaults: { beat: 60 }, aliases: ["example.org/heart"], help: "test" };
+  try { const W = world(); mk(W); const a = W.call("set", { id: "box", component: "example.org/heart", value: {} });
+    const b = W.call("set", { id: "box", component: "example.org/heart", value: { bpm: 1 } });
+    return [a.ok && W.state().entities.box.c["example.org/heart"]?.beat === 60 && !b.ok && b.refused.code === "schema" && CAT.canonicalName?.("example.org/heart:x") === "test-heart:x",
+      [why(a), W.state().entities.box.c["example.org/heart"], b.refused, typeof CAT.canonicalName]]; }
+  finally { delete CAT.COMPONENTS["test-heart"]; } });
+await C("N8", "the translator moves an old world's own inventions under a namespace; registered names stay bare", () => {
+  const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { olive: { role: "owner" } } } },
+    { seq: 1, ts: 2, actor: "olive", verb: "spawn", args: { id: "rock_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: "olive", verb: "comp", args: { id: "rock_1", type: "heart", data: { beat: 1 } } },
+    { seq: 3, ts: 4, actor: "olive", verb: "comp", args: { id: "rock_1", type: "label", data: "a rock" } }];
+  const r = TV1.translate(old, { namespace: "commons" }); const c = r.final.translated[TV1.enc("rock_1")];
+  const bare = Object.keys(c).filter((k) => !k.includes("/") && !CAT.COMPONENTS[k.split(":")[0]]);
+  return [r.stats.divergences === 0 && c["commons/heart"]?.beat === 1 && c.label === "a rock" && !bare.length, [Object.keys(c), r.stats.divergences]]; });
+await C("N9", "§4 says it: bare names are refused unless registered, a namespace is a prefix with '/', promotion keeps an alias, name@N is registered first", () => {
+  const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); const need = ["refuses an unregistered bare name", "alias", "supersedes", "custom elements"];
+  return [need.every((n) => g.includes(n)), need.filter((n) => !g.includes(n))]; });
+
 console.log(`\npretrans: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
