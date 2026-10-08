@@ -355,7 +355,11 @@ included: no write may move, replace or delete it or anything attached to
 it (its `transform`, `parent` or `model`, or the entity itself). Edits that
 don't relocate it stay open. Anyone who may delete the `lock` component
 (builders and owners) may instead send a request with `throughLock: true`;
-the log records only the edit. A lock binds authoring, not motion.
+the log records only the edit. A lock binds authoring, not motion. A lock
+has a level: `true` is builder level, and `{rank: "builder" | "moderator" |
+"owner"}` names one. Only someone at that rank or above, or whoever set the
+lock, may change or remove it or act through it; nobody sets a lock above
+their own rank.
 
 **Requests are open; results are closed.** Anyone may add a request word —
 a verb, a `use` action, a script command — and no request word grants a

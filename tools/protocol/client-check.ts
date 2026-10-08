@@ -210,6 +210,9 @@ try {
   check("S0 Build › Blueprints offers 'save as blueprint' for the selection", await waitFor(`[...${bf}.querySelectorAll('.sp-btn')].some((b) => /save as blueprint/.test(b.textContent) && !b.disabled)`));
   n0 = myActs().length;
   await evalJson(`[...${bf}.querySelectorAll('.sp-btn')].find((b) => /save as blueprint/.test(b.textContent)).click(), true`);
+  // it asks for a name (review 10-07 S5); the person types one and saves
+  check("S1a it asks for a name first", await waitFor(`!!document.querySelector('#confirm-center input')`, 3000));
+  await evalJson(`(() => { const i = document.querySelector('#confirm-center input'); if (!i) return false; i.value = 'tbl'; document.querySelector('#confirm-center .cc-ok').click(); return true; })()`);
   check("S1 it is the authority's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
   const lib = Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));
   check("S2 …this world's library has it (2 parts: the table and its cup)", !!lib && disk().entities["@world"].c[lib].parts === 2, lib && disk().entities["@world"].c[lib]);

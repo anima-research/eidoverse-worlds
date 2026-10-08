@@ -32,6 +32,7 @@ const BUF_MAX = 12;
 // Server-to-local clock offset, smoothed: client/lib/serverclock.js (one clock for every realizer). Re-exported here,
 // where net.js and the body code have always found it.
 export { noteServerTime, serverNow } from './serverclock.js';
+import { serverNow } from './serverclock.js';   // a re-export binds no local name: this module's own frame loop needs it too
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity

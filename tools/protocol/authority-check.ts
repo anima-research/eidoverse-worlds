@@ -149,6 +149,41 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(g.ok && put.ok, "P43 …but a lock set on the table while the cup is in a hand doesn't bind it there: the put settles it (§5: holding suspends parent constraints)", [g.refused, put.refused]);
     hc("bob", "grab", { id: "cup" }); hc("olive", "set", { id: "cup", component: "lock", value: true });
     ok(code(hc("bob", "put", { id: "cup" })) === "locked", "P44 …and its OWN lock, set while held, still binds it (attack H1h3)"); }
+  { // lock levels (R, 10-07): lock {rank} — only that rank and above may change or remove it, or act through it; whoever set
+    // it may always lift it. A plain `true` is a builder-level lock (what every existing lock already meant).
+    const lc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "levels"), actor, verb, args); };
+    const LW = () => openWorld(root, "levels").state();
+    lc("olive", "create-world", { title: "levels" });
+    for (const [who, role] of [["mo", "moderator"], ["bob", "builder"], ["ben", "builder"], ["vic", "visitor"]]) lc("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+    lc("olive", "create", { id: "stage", model: "table", place: { at: [0, 3] } });
+    lc("olive", "create", { id: "mic", model: "ball", place: { on: "stage" } });
+    lc("bob", "create", { id: "crate1", model: "crate", place: { at: [4, 3] } });
+    lc("mo", "create", { id: "booth", model: "crate", place: { at: [8, 3] } });
+    { const r = lc("olive", "set", { id: "stage", component: "lock", value: { rank: "owner" } });
+      ok(r.ok && LW().entities.stage.c.lock?.rank === "owner", "PL1 an owner locks the stage at owner level: lock {rank: 'owner'}", r.refused); }
+    { const r = lc("bob", "set", { id: "stage", component: "transform", value: { pos: [1, 0, 3] }, throughLock: true });
+      ok(code(r) === "locked" && /owner/.test(r.refused.reason + r.refused.fix) && r.refused.rank === "owner", "PL2 a builder can't act through an owner-level lock, and the refusal says whose level it is", r.refused); }
+    ok(code(lc("bob", "delete", { id: "stage", component: "lock" })) === "rank", "PL3 …nor lift it (rank)");
+    ok(code(lc("mo", "delete", { id: "stage", component: "lock" })) === "rank" && code(lc("mo", "delete", { id: "stage", throughLock: true })) === "locked", "PL4 …nor can a moderator, lift it or delete through it");
+    ok(code(lc("bob", "set", { id: "stage", component: "lock", value: true })) === "rank", "PL5 a builder can't lower it to a plain lock either (changing a lock is lifting it)");
+    ok(code(lc("bob", "set", { id: "mic", component: "transform", value: { pos: [0, 1, 0] }, throughLock: true })) === "locked", "PL6 what rides an owner-level lock is held at its level too (the mic on the stage)");
+    ok(lc("olive", "set", { id: "stage", component: "transform", value: { pos: [0, 0, 3.5] }, throughLock: true }).ok && LW().entities.stage.c.lock?.rank === "owner", "PL7 an owner acts through it, and it stays on");
+    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "owner" } })) === "rank" && code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "moderator" } })) === "rank",
+      "PL8 nobody locks above their own rank (a builder can't set a moderator- or owner-level lock)");
+    ok(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder" } }).ok && lc("ben", "set", { id: "crate1", component: "transform", value: { pos: [4, 0, 4] }, throughLock: true }).ok,
+      "PL9 a builder-level lock: another builder acts through it (as with any plain lock)");
+    ok(lc("mo", "set", { id: "booth", component: "lock", value: { rank: "moderator" } }).ok, "PL10 a moderator locks at moderator level");
+    ok(code(lc("bob", "delete", { id: "booth", component: "lock" })) === "rank" && code(lc("bob", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4] }, throughLock: true })) === "locked",
+      "PL11 …a builder can neither lift it nor act through it");
+    lc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "builder" } });   // the locker, demoted
+    ok(lc("mo", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4.5] }, throughLock: true }).ok, "PL12 whoever set a lock may always act through it, even after a demotion below its level");
+    ok(lc("mo", "delete", { id: "booth", component: "lock" }).ok, "PL13 …and lift it");
+    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "king" } })) === "shape" && code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder", why: "x" } })) === "shape"
+      && code(lc("bob", "set", { id: "crate1", component: "lock", value: false })) === "shape", "PL14 a lock is true or {rank: builder|moderator|owner}, nothing else");
+    ok(lc("bob", "set", { id: "crate1", component: "lock", value: true }).ok && lc("ben", "delete", { id: "crate1", component: "lock" }).ok, "PL15 a plain lock is builder-level: any builder may lift it (unchanged)");
+    const i = lc("vic", "inspect", { id: "stage" });
+    ok(i.lock?.rank === "owner" || i.flags?.lock?.rank === "owner" || /owner/.test(JSON.stringify(i.lock ?? i.flags?.lock ?? "")), "PL16 inspect says the lock's level", { lock: i.lock, flags: i.flags });
+  }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
     const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },

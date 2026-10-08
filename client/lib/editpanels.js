@@ -22,7 +22,7 @@ import { creditLine } from '../../shared/libcredits.js';
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { requestDebug, sendRequest, replica } from './net.js';
+import { requestDebug, sendRequest, replica, net } from './net.js';
 import { flashHint, html } from './ui.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -41,7 +41,10 @@ import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
 import { schemaFor, commitEdit, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
-import { channels, fieldAt } from '../../shared/editschema.js';
+import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
+import { askCenter, confirmCenter } from './confirmcenter.js';
+import { xrActive } from './xrask.js';
+import { frontOf, addOnFace } from './facemedia.js';
 import { lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { reindexCollider } from './colliders.js';
@@ -218,8 +221,12 @@ function hierarchyFields() {
     if (bag.hidden === true) badges.push('hidden');
     const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
+    // a child of a locked thing is held by that lock (the authority refuses moving it: "it rides X, which is locked"), so
+    // its row says so instead of showing an open padlock (review 10-07 S3)
+    let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if ((comps.get(p) ?? world[p]?.comp ?? {}).lock) heldBy = p;
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
-      lockable: Edits.mayLift(),   // §5: only builders and owners lock and unlock
+      ...(bag.lock ? { lockLevel: lockLevelOf(bag.lock) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
+      lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id, bag.lock)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
@@ -330,9 +337,24 @@ function duplicate(id) {
     const out = Edits.idOut(nid); flashHint(html`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
-function toggleLock(id) {
-  const locked = !!comps.get(id)?.lock;
-  if (Edits.mayLift()) Edits.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here');
+// lock levels (R, 10-07): who may lift a lock is its level and up, or whoever set it (the authority decides; this only
+// keeps the padlock honest about it)
+const lockLevelOf = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
+const LEVEL_RANK = { builder: 100, moderator: 200, owner: 255 };
+const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : net.myRights?.role === 'owner' ? 255 : net.myRights?.role === 'moderator' ? 200 : 100);
+const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
+const mayLiftLevel = (id, v) => myRank() >= LEVEL_RANK[lockLevelOf(v)] || (!!net.you && lockerOf(id) === net.you);
+async function toggleLock(id) {
+  const lk = comps.get(id)?.lock;
+  if (!Edits.mayLift()) { flashHint('only builders and owners can lock or unlock things here'); return; }
+  if (!lk) { Edits.lock(id, true); return; }
+  // unlocking someone else's lock is a click-through, as moving a locked thing is: say whose it is and at what level
+  const by = lockerOf(id), level = lockLevelOf(lk);
+  if (by && by !== net.you) {
+    const yes = await confirmCenter({ title: 'Unlock it?', body: `${Edits.nameOf(by)} locked this${level === 'builder' ? '' : ` at ${level} level`}. Unlocking lets anyone who may build here move or remove it; History shows who unlocked it.`, ok: 'Unlock', cancel: 'Keep it locked' });
+    if (!yes) return;
+  }
+  Edits.lock(id, false);
 }
 function findSelected() {
   const sel = sceneSelected(); const obj = entities.get(sel); if (!obj) return;
@@ -376,7 +398,7 @@ function multiFields(ids) {
   for (const k of ['lock', 'hidden']) {
     const vals = ids.map((id) => comps.get(id)?.[k] === true);
     const on = vals.every(Boolean), mixed = vals.some(Boolean) && !on;
-    f.push({ t: 'check', k: `ed:flags.${k}`, label: `${k === 'lock' ? 'locked' : 'hidden'}${mixed ? ' ≠' : ''}`, value: on, hint: mixed ? 'differs — checking sets all' : undefined });
+    f.push({ t: 'check', k: `ed:flags.${k}`, label: `${k === 'lock' ? 'locked in place' : 'hidden'}${mixed ? ' ≠' : ''}`, value: on, hint: mixed ? 'differs — checking sets all' : undefined });
   }
   f.push({ t: 'btn', k: 'remove', label: `remove ${ids.length}`, danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
   painted = f;
@@ -456,6 +478,13 @@ function worldFields() {
   ];
   if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
   pushCards(f, schema, WORLD_ID);
+  // no terrain yet: the card's only row pointed elsewhere (review 10-07 S15). Put Build ▸ World's ground shapes in it
+  if (!state.st.terrain) {
+    const at = f.findIndex((x) => x.t === 'info' && /no terrain authored/.test(String(x.value ?? '')));
+    const shapes = Object.keys(groundPal?.shapes ?? {}).filter((k) => k !== 'doc');
+    if (at >= 0 && shapes.length) f.splice(at + 1, 0, { t: 'tiles', k: 'wshape', value: null, options: shapes.map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...(mayShape() === false ? { disabled: true } : {}) });
+    if (at >= 0) f[at] = { ...f[at], value: 'no terrain authored: the default flat ground. Pick a shape:' };
+  }
   const shown = filterFields(f, ifilter);
   painted = shown;
   return shown;
@@ -531,7 +560,7 @@ function inspectorFields() {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
       f.push({ t: 'pop', k: 'c:+pop', label: '+ Add Component', deskOnly: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
-        items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked,
+        items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked, keywords: ADD_WORDS[a.name] ?? [],
           hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
       f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
       for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
@@ -599,6 +628,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
     if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;
     const isDelta = typeof payload === 'object' && payload && 'delta' in payload;   // a VR stepper
@@ -678,6 +708,8 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     repaintAll();
     return;
   }
+  // Add Component › Text on a model: a sign on its front face, its own child (facemedia.js, review 10-07 S4)
+  if (action === 'ed:add.Text' && !live && frontOf(id)) { addOnFace(id, 'text', { text: 'Hello' }); repaintAll(); return; }
   // every other field, from either lane: ch:<group.k> / ed:<group.k> → the shared commit path
   if (action.startsWith('ch:') || action.startsWith('ed:')) {
     const key = action.slice(3);
@@ -890,8 +922,14 @@ function buildDispatch(action, payload) {
     case 'light': holdGhost('@light', 'light'); break;
     case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;
-      const name = ids.length === 1 ? String(foldRecord(ids[0])?.comp?.label ?? ids[0]) : `${ids.length} things`;
-      Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
+      // asked, as Roblox's "Save to Roblox" and SL's Take name what they keep (review 10-07 S5: it saved as "4177f489").
+      // The offer is a person's word for it: its label, else its model's name (the inspector's header), else its id
+      const one = ids.length === 1 ? foldRecord(ids[0]) : null;
+      const offer = ids.length === 1 ? String(one?.comp?.label ?? (one?.lib != null ? libLabels.get(one.lib) ?? libLabel(one.lib) : ids[0])) : `${ids.length} things`;
+      (xrActive() ? Promise.resolve(offer) : askCenter({ title: 'Save as blueprint', body: 'A name for it in Blueprints › saved here, where you place copies of it.', value: offer, ok: 'Save' }))
+        .then((name) => { if (!name) return;
+          Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); });
+      break; }
     case 'libq': searchLibrary(String(payload ?? '').trim()); return;
     case 'place': {
       const m = libModels().find((x) => x.path === payload);

@@ -230,6 +230,8 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 // frames live in [Z_LO..Z_HI]; chrome starts at 27 (#dock) and must stay above
 const Z_LO = 10, Z_HI = 25;
+// builder mode's workspace (editlayout.js): its columns are fixed chrome over the frames' band
+const inWorkspace = () => typeof document !== 'undefined' && document.body?.classList.contains('edit-workspace');
 let zTop = Z_LO;
 let warnedZ = false;
 let locked = localStorage.getItem('ew-ui-locked') === '1';
@@ -502,7 +504,7 @@ export function makeFrame(id, opts = {}) {
       // so edge-docking and fit() were blind to any resize it sat out (Esc, resize,
       // Esc — review C1). Painted first, so it is measurable now.
       if (!fitted) { fitted = true; fit(); } else { project(); fit(); }
-      save(); raise(); shown();
+      save(); raise(); clearColumns(); shown();
       return api;
     },
     /** run `fn` whenever the frame comes back on screen — by show(), and by the paths that un-hide it without
@@ -579,6 +581,18 @@ export function makeFrame(id, opts = {}) {
       }
     }
     root.style.zIndex = String(Math.min(++zTop, Z_HI));
+    // builder mode: the workspace's columns are chrome at z 26 (editlayout.js), so a floating frame raised inside the
+    // band opened UNDER them (review 10-07 B3: World settings' role names hidden under the left column, a grid of
+    // unlabelled checkboxes). While the workspace is up a floating frame stacks above the columns, below the status
+    // strip (45) and the ∃ menu (50); it drops back into the band the next time it is raised outside it.
+    if (!docked && inWorkspace()) root.style.zIndex = String(30 + Math.min(13, zTop - Z_LO));
+  }
+  function clearColumns() {
+    // …and opens clear of the left column (the viewport starts at --edit-left-edge), where its labels would be covered
+    if (docked || !inWorkspace() || state.hidden) return;
+    const edge = parseFloat(getComputedStyle(document.body).getPropertyValue('--edit-left-edge')) || 0;
+    const r = root.getBoundingClientRect();
+    if (edge && r.left < edge) root.style.left = `${Math.round(Math.min(edge + 8, Math.max(8, innerWidth - r.width - 8)))}px`;
   }
   // Plain persistence. It does NOT latch `moved` — that was the first design and
   // it was wrong (show()/hide() call save() too, so it came to mean "was

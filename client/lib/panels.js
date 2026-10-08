@@ -258,20 +258,26 @@ function stepper(value, f, commit) {
   const hard = (w) => Math.min(cur.max ?? Infinity, Math.max(cur.min ?? -Infinity, w));
   const soft = (w) => Math.min(cur.softMax ?? cur.max ?? Infinity, Math.max(cur.softMin ?? cur.min ?? -Infinity, w));
   let wire = +value;
-  const show = (w) => { num.value = toFace(w); };
+  let shownFace = '';   // the text show() last put in the field (onchange: the same text is no edit)
+  const show = (w) => { num.value = toFace(w); shownFace = num.value; };
   show(wire);
   const send = (w, o) => { wire = hard(w); show(wire); commit(wire, o); };
 
-  // typed entry: relative math against the CURRENT face value, hard limits
+  // typed entry: relative math against the CURRENT face value, hard limits. ONE commit per typing: Enter commits and
+  // blurs, and the blur's own native `change` must not commit again with a stale expect (review 10-07 B2: every Enter
+  // wrote the edit, then a second identical set that the authority refused as `changed`, with a red toast). A change
+  // whose text is what the field last showed is no edit at all.
   num.onchange = () => {
+    if (num.value === shownFace) return;
     const face = parseEntry(num.value, +toFace(wire));
     if (face == null) { show(wire); return; }
+    if (face === +toFace(wire)) { show(wire); num.blur(); return; }   // the value it already has: nothing to write
     send(toWire(face));
     num.blur();   // release focus so held repaints resume
   };
   num.onkeydown = (e) => {
     if (e.key === 'Escape') { show(wire); num.blur(); e.stopPropagation(); }
-    else if (e.key === 'Enter') { num.onchange(); }
+    else if (e.key === 'Enter') { e.preventDefault(); num.onchange(); }
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
       const d = (e.key === 'ArrowUp' ? 1 : -1) * cur.step * (e.shiftKey ? 10 : 1);   // keys: scrub
@@ -360,15 +366,19 @@ function openPop(anchor, f, pick) {
   popOpen?.close();
   const LS = `ew-recent-${f.recentKey ?? 'pop'}`;
   let recent = []; try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }
+  // opaque, inside the viewport, one row lit (review 10-07 S10: it drew over the fields behind it, ran off the right and
+  // bottom edges, and every row wore the brand-green button look). Its look is index.html's .sp-pop rules.
   const box = el('div', 'sp-pop');
-  Object.assign(box.style, { position: 'fixed', zIndex: 10000, width: '260px', maxHeight: '360px', display: 'flex', flexDirection: 'column',
-    background: 'var(--panel, #2a2a2a)', border: '1px solid var(--line, #555)', borderRadius: '6px', boxShadow: '0 6px 24px rgba(0,0,0,.45)', padding: '6px' });
+  const W = 260, H = 360, M = 8;
+  Object.assign(box.style, { position: 'fixed', zIndex: 10000, width: `${W}px`, maxHeight: `${Math.min(H, innerHeight - 2 * M)}px`, boxSizing: 'border-box', display: 'flex', flexDirection: 'column' });
   const r = anchor.getBoundingClientRect();
-  box.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 268))}px`;
-  box.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - 368))}px`;
+  const h = Math.min(H, innerHeight - 2 * M);
+  box.style.left = `${Math.round(Math.max(M, Math.min(r.left, innerWidth - W - M)))}px`;
+  // below the button when it fits, else above it, else as low as the viewport allows
+  const top = r.bottom + 4 + h <= innerHeight - M ? r.bottom + 4 : r.top - 4 - h >= M ? r.top - 4 - h : innerHeight - M - h;
+  box.style.top = `${Math.round(Math.max(M, top))}px`;
   const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = 'search components…';
-  Object.assign(inp.style, { width: '100%', boxSizing: 'border-box', marginBottom: '6px' });
-  const list = el('div', 'sp-pop-list'); Object.assign(list.style, { overflowY: 'auto', flex: '1' });
+  const list = el('div', 'sp-pop-list');
   box.append(inp, list);
   const items = f.items ?? [];
   const take = (it) => {
@@ -376,28 +386,32 @@ function openPop(anchor, f, pick) {
     try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
     close(); pick(it.k);
   };
-  let shown = [];
+  let shown = [], active = 0, rows = [];
+  const light = () => { rows.forEach((row, i) => row.classList.toggle('active', i === active)); rows[active]?.scrollIntoView?.({ block: 'nearest' }); };
   const paint = () => {
     const q = inp.value.trim().toLowerCase();
-    list.textContent = '';
-    const hit = (it) => !q || it.label.toLowerCase().includes(q) || String(it.hint ?? '').toLowerCase().includes(q);
-    // a name hit ranks above a description hit ("swi" finds Pendulum by its "swings")
-    const ranked = items.filter(hit).sort((a, b) => (q ? (b.label.toLowerCase().includes(q) - a.label.toLowerCase().includes(q)) : 0));
+    list.textContent = ''; rows = [];
+    const word = (it) => (it.keywords ?? []).some((k) => k.toLowerCase().startsWith(q) || q.startsWith(k.toLowerCase()));
+    const hit = (it) => !q || it.label.toLowerCase().includes(q) || word(it) || String(it.hint ?? '').toLowerCase().includes(q);
+    // a name hit ranks above a search word ("seat" → Sockets), which ranks above a description hit ("swi" finds Pendulum by its "swings")
+    const rank = (it) => (!q ? 0 : it.label.toLowerCase().includes(q) ? 2 : word(it) ? 1 : 0);
+    const ranked = items.filter(hit).sort((a, b) => rank(b) - rank(a));
     const groups = [];
     if (!q) { const rec = recent.map((k) => items.find((it) => it.k === k)).filter(Boolean); if (rec.length) groups.push(['recent', rec]); }
     for (const cat of [...new Set(ranked.map((it) => it.category ?? ''))]) groups.push([cat, ranked.filter((it) => (it.category ?? '') === cat)]);
     shown = q ? ranked : groups.flatMap(([, xs]) => xs);
-    for (const [cat, xs] of groups) {
-      if (cat && !q) { const h = el('div', 'sp-pop-cat', cat); Object.assign(h.style, { opacity: '.6', fontSize: '.8em', margin: '6px 4px 2px', textTransform: 'uppercase' }); list.append(h); }
+    for (const [cat, xs] of (q ? [['', ranked]] : groups)) {
+      if (cat && !q) list.append(el('div', 'sp-pop-cat', cat));
       for (const it of xs) {
-        const row = el('button', 'sp-btn sp-pop-item', it.label);
-        Object.assign(row.style, { display: 'block', width: '100%', textAlign: 'left', margin: '1px 0' });
+        const row = el('button', 'sp-pop-item', it.label);
         row.title = it.hint ?? ''; row.disabled = !!it.disabled;
         row.onclick = () => take(it);
-        list.append(row);
+        const i = rows.length; row.onpointerenter = () => { active = i; light(); };
+        list.append(row); rows.push(row);
       }
     }
     if (!shown.length) list.append(el('div', 'sp-empty', `nothing matches "${inp.value}"`));
+    active = Math.max(0, rows.findIndex((row) => !row.disabled)); light();
   };
   const onDoc = (e) => { if (!box.contains(e.target)) close(); };
   const close = () => { box.remove(); document.removeEventListener('pointerdown', onDoc, true); if (popOpen?.box === box) popOpen = null; };
@@ -405,7 +419,8 @@ function openPop(anchor, f, pick) {
   inp.onkeydown = (e) => {
     e.stopPropagation();   // typing here is not a shortcut (G/E/R, Delete…)
     if (e.key === 'Escape') close();
-    if (e.key === 'Enter') { const it = shown.find((x) => !x.disabled); if (it) take(it); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (rows.length) { active = (active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; light(); } }
+    else if (e.key === 'Enter') { const row = rows[active]; if (row && !row.disabled) row.click(); else { const first = shown.find((x) => !x.disabled); if (first) take(first); } }
   };
   document.addEventListener('pointerdown', onDoc, true);
   document.body.append(box);
@@ -587,12 +602,16 @@ function fieldDOM(f, edit, ro = {}) {
           line.append(eye);
         }
         if (r.locked != null) {
-          const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}`);
-          lock.innerHTML = iconSvg(r.locked ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
-          lock.title = r.locked ? 'locked — click to unlock' : 'click to lock in place';
-          // lockable: false = this viewer may not lift locks (a visitor, §5): the icon still says, the click doesn't
-          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? 'locked (builders and owners can unlock it)' : 'not locked (builders and owners can lock it)'; }
-          lock.onclick = (e) => { e.stopPropagation(); if (!lock.disabled) edit('lock', r.id); };
+          // held: not locked itself, but it rides a locked thing, which holds it just the same (the authority's rule)
+          const held = !r.locked && !!r.heldBy;
+          const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}${held ? ' inherited' : ''}`);
+          lock.innerHTML = iconSvg(r.locked || held ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
+          const lv = r.lockLevel && r.lockLevel !== 'builder' ? ` (${r.lockLevel === 'owner' ? 'owners only' : 'moderators and up'})` : '';
+          lock.title = r.locked ? `locked${lv} — click to unlock` : held ? `held by ${r.heldByLabel ?? r.heldBy}'s lock — it moves only with it; unlock that to move this on its own` : 'click to lock in place';
+          if (held) lock.dataset.heldBy = r.heldBy;
+          // lockable: false = this viewer may not lift locks (a visitor, §5; or a level above their rank): the icon still says, the click doesn't
+          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? `locked${lv} (${r.lockLevel === 'owner' ? 'owners' : r.lockLevel === 'moderator' ? 'moderators and owners' : 'builders and owners'} can unlock it)` : held ? lock.title : 'not locked (builders and owners can lock it)'; }
+          lock.onclick = (e) => { e.stopPropagation(); if (lock.disabled) return; if (held) edit('find', r.heldBy); else edit('lock', r.id); };
           line.append(lock);
         }
         box.append(line);

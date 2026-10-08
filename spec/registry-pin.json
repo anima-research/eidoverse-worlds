@@ -272,7 +272,21 @@
   "keyed": "optional",
   "on": "thing"
  },
- "lock": {},
+ "lock": {
+  "fields": {
+   "rank": "string"
+  },
+  "defaults": {
+   "rank": "builder"
+  },
+  "enums": {
+   "rank": [
+    "builder",
+    "moderator",
+    "owner"
+   ]
+  }
+ },
  "sockets": {
   "on": "thing"
  },
