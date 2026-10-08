@@ -23,7 +23,7 @@ import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { requestDebug, sendRequest, replica } from './net.js';
-import { flashHint } from './ui.js';
+import { flashHint, html } from './ui.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
@@ -134,7 +134,7 @@ function completeRefPick(targetId) {
   if (targetId === id) { flashHint(key === 'parent.to' ? 'a thing can\'t be its own parent' : 'a thing can\'t reference itself', 3000); repaintAll(); return true; }
   const r = commitEdit(id, key, targetId);
   if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
-  else flashHint(`${what} → <b>${targetId}</b>`, 3000);
+  else flashHint(html`${what} → <b>${targetId}</b>`, 3000);
   repaintAll();
   return true;
 }
@@ -251,7 +251,7 @@ function hierarchyFields() {
 function hierarchyDispatch(action, payload, _field, opts = {}) {
   let sel = sceneSelected();
   switch (action) {
-    case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? `${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
+    case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? html`${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
     case 'myshowall': { const n = showAllMine(); flashHint(`${n} shown again`, 2000); repaintAll(); return; }
     case 'wsel': {   // the pinned World row
       if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
@@ -277,7 +277,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     case 'attach': {
       if (arming === payload) { arming = null; flashHint('attach cancelled', 3000); break; }
       arming = payload ?? sel;
-      if (arming) { sceneSelect(arming); flashHint(`now click <b>${arming}</b>'s new parent — a row here, or the thing itself in the world`, 5000); }
+      if (arming) { sceneSelect(arming); flashHint(html`now click <b>${arming}</b>'s new parent — a row here, or the thing itself in the world`, 5000); }
       break;
     }
     case 'detach': reparent(payload ?? sel, null); break;
@@ -324,10 +324,10 @@ function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
-  const nudge = n === 2 && !rec.comp?.['copy-of'] ? ' · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints' : '';
+  const nudge = n === 2 && !rec.comp?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
   // the authority copies it, and what's attached to it: create {from: id}, one act
   Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-    const out = Edits.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+    const out = Edits.idOut(nid); flashHint(html`<b>${out}</b> — a copy of ${id}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
 function toggleLock(id) {
@@ -337,7 +337,7 @@ function toggleLock(id) {
 function findSelected() {
   const sel = sceneSelected(); const obj = entities.get(sel); if (!obj) return;
   const p = obj.getWorldPosition(_wp);
-  flashHint(`<b>${sel}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
+  flashHint(html`<b>${sel}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
 }
 
 // ---------------------------------------------------------------- inspector
@@ -624,7 +624,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     const f = fieldByKey(painted, action);
     if (f?.t === 'ref') {
       if (armingRef && armingRef.id === id && armingRef.key === key) { armingRef = null; flashHint('pick cancelled', 2500); }
-      else { armingRef = { id, key }; flashHint(key === 'parent.to' ? `now click <b>${id}</b>'s new parent — a row here, or the thing itself in the world` : `now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
+      else { armingRef = { id, key }; flashHint(key === 'parent.to' ? html`now click <b>${id}</b>'s new parent — a row here, or the thing itself in the world` : html`now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
       repaintAll();
       return;
     }
@@ -697,7 +697,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); setTimeout(refreshBehaviors, 400); break;
     case 'scripts': watchScript(payload); break;   // a script row → the Console, watching it
     case 'newscript': openNewScript(id).then(async (r) => { if (!r.ok) return; await refreshBehaviors(); watchScript(`${r.id}/${r.name}`);
-      flashHint(`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
+      flashHint(html`script <b>${r.name}</b> is on ${r.id}${r.action ? ` — use it (${r.action}) to run it` : ''}; its log is in the Console`, 5000); }); break;
     default: if (action.startsWith('uncomp:')) commitEdit(id, `comp.${action.slice(7)}`, null);
   }
   repaintAll();
@@ -857,7 +857,7 @@ function pickWorld(action, v) {
   const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: Date.now(), mayShape: mayShape() });
   if (r.errors.length) { flashHint(r.errors.join(' · '), 5000); return r; }
   Edits.sendOps(r.ops, { what: kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`, expect: false });
-  flashHint(kind === 'mow' ? 'field cleared' : `${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);
+  flashHint(kind === 'mow' ? 'field cleared' : html`${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);
   return r;
 }
 
@@ -891,7 +891,7 @@ function buildDispatch(action, payload) {
     case 'bp': placeAhead(payload); break;
     case 'bpsave': { const ids = selection(); if (!ids.length) break;
       const name = ids.length === 1 ? String(foldRecord(ids[0])?.comp?.label ?? ids[0]) : `${ids.length} things`;
-      Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
+      Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
     case 'libq': searchLibrary(String(payload ?? '').trim()); return;
     case 'place': {
       const m = libModels().find((x) => x.path === payload);

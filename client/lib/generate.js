@@ -29,10 +29,14 @@ import { net } from './net.js';
 import { holdGhost } from './build.js';
 import { logChat } from './chat.js';
 
-const ORRERY = CONFIG.params.get('orrery')
-  || localStorage.getItem('ew-orrery-url')
-  || 'https://orrery.animalabs.ai';
-if (CONFIG.params.get('orrery')) localStorage.setItem('ew-orrery-url', ORRERY);
+// a self-hosted Orrery may be named by ?orrery= (remembered); only an http(s) ORIGIN is taken — the value lands in
+// markup and in fetches, and a link someone sends you must not smuggle anything else in (security pass 3). The
+// server's CSP connect-src must also name it (CSP_CONNECT_EXTRA), or the browser refuses the fetch.
+const DEFAULT_ORRERY = 'https://orrery.animalabs.ai';
+const originOf = (v) => { try { const u = new URL(String(v ?? '')); return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.origin : null; } catch { return null; } };
+const asked = originOf(CONFIG.params.get('orrery'));
+const ORRERY = asked ?? originOf(localStorage.getItem('ew-orrery-url')) ?? DEFAULT_ORRERY;
+if (asked) localStorage.setItem('ew-orrery-url', asked);
 
 const api = async (path, opts = {}) => {
   const r = await fetch(`${ORRERY}${path}`, {
@@ -159,7 +163,7 @@ async function paint(body) {
     body.querySelector('#cj-connect').onclick = async () => {
       try {
         const cfg = await api('/api/auth/config');
-        const w = window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680');
+        const w = /^https?:\/\//i.test(String(cfg.login_url ?? '')) ? window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680') : null;   // never a javascript: URL from a service
         // 🔴 DO NOT DEPEND ON postMessage FROM THE POPUP (2026-08-16). Under
         // COOP `same-origin` — which cross-origin isolation requires, and which
         // this server now sends so wasm gets its threads — a cross-origin popup
@@ -229,7 +233,7 @@ async function paint(body) {
     if (j.status === 'waiting_selection') {
       inner = `<div class="cj-pick">${imageCandidates(j).map((c) => `
         <img crossorigin="use-credentials"
-             src="${ORRERY}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
+             src="${esc(ORRERY)}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
              title="use this one (starts the mesh)">`).join('')
         || '<span class="sub">candidates finished but none readable — open orrery</span>'}</div>`;
     } else if (j.status === 'completed') {
@@ -259,7 +263,7 @@ async function paint(body) {
     </div>
     ${genOk ? '' : '<p class="sub">bringing new objects into this world needs the <b>gen</b> capability — ask its owner</p>'}
     <div id="cj-jobs">${rows || '<p class="sub">nothing cooking — your conjures queue here with progress, and pause for your pick of the image candidates before any mesh is spent.</p>'}</div>
-    <p class="sub" style="margin-top:6px"><a href="${ORRERY}/" target="_blank" rel="noopener">open orrery ↗</a> for refs, retries, rigging and the full version tree.</p>`;
+    <p class="sub" style="margin-top:6px"><a href="${esc(ORRERY)}/" target="_blank" rel="noopener">open orrery ↗</a> for refs, retries, rigging and the full version tree.</p>`;
 
   const promptEl = body.querySelector('#cj-prompt');
   const go = async () => {

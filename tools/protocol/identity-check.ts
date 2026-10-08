@@ -448,6 +448,30 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(huge.closed != null, "MA one websocket message past 2 MiB closes the socket (Bun's default took 16 MB)", huge.closed);
   a.close(); b.close(); }
 
+// ---- NM: a name with markup in it is refused at the door (security pass 3, H1's belt-and-braces) ----
+// The client shows names as text now (client/lib/markup.js); a name that IS markup is still refused, so no other reader
+// of the presence plane (an agent's page, a bot, a future sink) ever has to be careful with one. < > and " — the three
+// that open a tag or close an attribute; & and ' stay (Tom & Jerry, O'Brien are names, and escape cleanly).
+{ for (const bad of [`<img src=x onerror="alert(1)">`, "Ann<b>", "x>y", `Ro"wan`]) {
+    const g = await sock(srv.port); const j = await g.join("garden", bad);
+    ok(!j.snapshot && j.errors.some((e) => /name/i.test(e) && /</.test(e)) && !/[{}]/.test(j.errors.join(" ")), `NM a name with markup characters is refused, in words (${JSON.stringify(bad)})`, j.errors);
+    g.close(); }
+  for (const good of ["Tom & Jerry", "O'Brien", "Zoë 🌙"]) {
+    const g = await sock(srv.port); const j = await g.join("garden", good);
+    ok(!!j.snapshot, `NM …and an ordinary name with & ' or an emoji still gets in (${JSON.stringify(good)})`, j.errors);
+    g.close(); }
+  const { nameAtDoor } = await import("../../server/names.ts");
+  ok(nameAtDoor("Ann<b>", { typed: true }).refused && nameAtDoor("Ann<b>", { typed: false }).name === "Annb", "NM a name the identity service gave (not typed here) loses the characters instead of its owner being turned away",
+    [nameAtDoor("Ann<b>", { typed: true }), nameAtDoor("Ann<b>", { typed: false })]); }
+
+// ---- M3: the perf beacon keeps no raw address (security pass 3) ----
+{ const r = await fetch(`http://127.0.0.1:${srv.port}/perflog`, { method: "POST", headers: { "x-real-ip": "203.0.113.77" }, body: JSON.stringify({ kind: "load", ms: 1234 }) });
+  await sleep(100);
+  const f = path.join(W, ".perflogs.jsonl"); const txt = fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "";
+  const last = txt.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).at(-1);
+  ok(r.ok && last?.ms === 1234, "(M3 setup) the beacon line was written", [r.status, last]);
+  ok(!txt.includes("203.0.113.77") && last && !("ip" in last) && /^[0-9a-f]{16,}$/.test(String(last.addr ?? "")), "M3 /perflog stores a hashed address, never the raw IP", last); }
+
 // ---- LC: the world's live state is behind the same door as a join ----
 { const S4 = await start({ JOIN_TOKEN: "door-key" });
   const get = (p, key) => fetch(`http://127.0.0.1:${S4.port}${p}`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);

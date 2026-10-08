@@ -171,11 +171,12 @@ async function paintBuild(body) {
       const card = document.createElement('button');
       card.className = 'card panel';
       const img = it.preview
-        ? `<img alt="" loading="lazy" src="/library/${it.preview}" onerror="this.style.visibility='hidden'">`
+        ? `<img alt="" loading="lazy" src="/library/${escapeHtml(it.preview)}">`   // no inline onerror: the page's CSP refuses inline handlers (hidden below)
         : '<div style="width:100%;aspect-ratio:1"></div>';
       // the picture gets its own positioned box so the status row sits ON the image (bottom-right), clear of the
       // label strip Skye's previews carry along their top edge and of the name below (owner, 09-24)
       card.innerHTML = `<div class="pv" style="position:relative;width:100%;line-height:0">${img}</div><span>${escapeHtml(it.name)}</span>`;   // server-supplied name (§24k hygiene)
+      card.querySelector('img')?.addEventListener('error', (e) => { e.currentTarget.style.visibility = 'hidden'; });
       card.onclick = () => holdGhost(it.path, it.name);
       optBadge(card, it.opt, it.perf, it.perfOriginal, it.path, it.rebuildable, (it.path?.split('/').pop() ?? it.name).replace(/\.glb$/i, '').replace(/_/g, ' '));
       grid.appendChild(card);

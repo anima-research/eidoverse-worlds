@@ -160,7 +160,9 @@ export async function fetchBytes(path) {
 
 // ---- loaders ----------------------------------------------------------------
 
-const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+// the decoder three ships, served by the /node_modules route like the KTX2 transcoder below: no third-party origin at run
+// time (the page's CSP connect-src names none for it; security pass 3 N3)
+const draco = new DRACOLoader().setDecoderPath('/node_modules/three/examples/jsm/libs/draco/gltf/');
 // §20b: ONE KTX2 transcoder for every parse site (VRM, GLB, loadGLBBytes).
 // The transcoder is the vendored basis wasm, served by the /node_modules
 // route. detectSupport at module scope is ordering-safe: core.js top-level-

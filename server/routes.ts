@@ -30,6 +30,7 @@ import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { cspFor, cspForFile } from "./csp.ts";
 // client console tee (see the /clientlog route): a per-world bucket for every world this server KNOWS (loaded in
 // memory, or with a data dir on disk) plus one shared bucket for any other label, plus one global bucket — so a
 // busy world cannot starve the rest, a made-up label cannot buy quota or a file of its own, and the map is
@@ -332,6 +333,8 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   if (!existsSync(path)) return new Response("not found", { status: 404 });
   const f = Bun.file(path);
   const headers: Record<string, string> = { "content-type": contentType(path), ...(opts.headers ?? {}) };
+  // a page carries its Content-Security-Policy, its own inline scripts hashed in (server/csp.ts; security pass 3 N3)
+  if (headers["content-type"].startsWith("text/html")) headers["content-security-policy"] = cspForFile(path, f.lastModified, () => readFileSync(path, "utf8"));
   // ETag from size+mtime: makes no-cache revalidation a 304, not a re-download
   // (an 11MB avatar re-pulled per reload is invisible on localhost and rude
   // over tailnet).
@@ -412,6 +415,24 @@ const perfPair = (rel: string, original: string) => {
   const perf = glbPerfOfFile(s.path);
   return { perf: perf ? { ...perf, servedAs: s.as } : null, perfOriginal: s.path === original ? null : glbPerfOfFile(original) };
 };
+
+// The landing spot for the home node's redirect (GET /auth): the token is in the URL FRAGMENT (never reaches this
+// server's logs); this page posts it back. Its one inline script is hashed into its CSP.
+const AUTH_PAGE = `<!doctype html><meta charset="utf-8"><title>entering…</title>
+<style>body{font:16px/1.5 system-ui;max-width:36rem;margin:15vh auto;padding:0 1rem;color:#ddd;background:#111}</style>
+<p id=m>entering…</p><script>
+(async () => {
+  const m = document.getElementById('m');
+  const tok = new URLSearchParams(location.hash.slice(1)).get('token');
+  if (!tok) { m.textContent = 'no token — start again from the login page'; return; }
+  history.replaceState(null, '', '/auth');
+  const r = await fetch('/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) { m.textContent = 'welcome, ' + j.name; location.replace('/'); }
+  else m.textContent = 'login failed: ' + (j.error ?? r.status) + ' — start again from the login page';
+})();
+</script>`;
+const AUTH_PAGE_CSP = cspFor(AUTH_PAGE);
 
 const ROUTES: Route[] = [
   {
@@ -499,20 +520,7 @@ const ROUTES: Route[] = [
     handler: () =>
       // The landing spot for the home node's redirect. The token is in the URL
       // FRAGMENT (never reaches this server's logs); this page posts it back.
-      new Response(`<!doctype html><meta charset="utf-8"><title>entering…</title>
-<style>body{font:16px/1.5 system-ui;max-width:36rem;margin:15vh auto;padding:0 1rem;color:#ddd;background:#111}</style>
-<p id=m>entering…</p><script>
-(async () => {
-  const m = document.getElementById('m');
-  const tok = new URLSearchParams(location.hash.slice(1)).get('token');
-  if (!tok) { m.textContent = 'no token — start again from the login page'; return; }
-  history.replaceState(null, '', '/auth');
-  const r = await fetch('/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
-  const j = await r.json().catch(() => ({}));
-  if (r.ok) { m.textContent = 'welcome, ' + j.name; location.replace('/'); }
-  else m.textContent = 'login failed: ' + (j.error ?? r.status) + ' — start again from the login page';
-})();
-</script>`, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }),
+      new Response(AUTH_PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": AUTH_PAGE_CSP } }),
   },
   {
     match: (u, req) => u.pathname === "/auth" && req.method === "POST",
@@ -791,8 +799,12 @@ const ROUTES: Route[] = [
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
           const big = existsSync(dest) && Bun.file(dest).size > 5_000_000;
           if (!big) {
+            // the address HASHED, like everywhere else this server keeps one (security pass 3, M3): enough to tell one
+            // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
             const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
-            appendFileSync(dest, JSON.stringify({ ts: Date.now(), ip, ...JSON.parse(body) }) + "\n");
+            const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-perflog:${ip}`).digest("hex").slice(0, 24);
+            const { ts: _t, ip: _i, addr: _a, ...line } = JSON.parse(body) ?? {};
+            appendFileSync(dest, JSON.stringify({ ts: Date.now(), addr, ...line }) + "\n");
           }
         }
       } catch { /* malformed beacon: drop */ }
@@ -1254,6 +1266,8 @@ function isolate(res: Response): Response {
   if (res.status === 101) return res;
   res.headers.set("cross-origin-opener-policy", "same-origin");
   res.headers.set("cross-origin-embedder-policy", "credentialless");
+  // every page carries a CSP: one served without (a future inline-HTML route) gets the policy with no inline script
+  if ((res.headers.get("content-type") ?? "").startsWith("text/html") && !res.headers.has("content-security-policy")) res.headers.set("content-security-policy", cspFor());
   return res;
 }
 

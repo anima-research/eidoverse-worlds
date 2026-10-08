@@ -1,0 +1,175 @@
+// tools/protocol/xss-probe.ts — security pass 3 H1 in a real browser (one headless Chromium against a scratch sequencer,
+// tools/harness.ts scratchBench; test:protocol runs it under the house guards, like the other browser suites).
+//
+// The reviewer's exploit: a guest joins named `<img src=x onerror=…>` and knocks over / grabs / poses a visitor on
+// DEFAULT settings (pushable defaults true); the status bar rendered the name as HTML and the onerror ran.
+//   A   end to end over a raw socket: the hostile name either never gets in (the door refuses it, in words) or, if a
+//       name with markup ever reaches the page, nothing it carries runs
+//   S   the client's own sinks, independent of the door (the input emulated at its seam, the bus): every presence
+//       message that names its sender (knock-over, grab, pose, release, refused drag, broke-free) and the chat/whisper
+//       lines show a hostile name as TEXT — the literal characters on screen, no element made from them, no script run
+//   C   the page runs under a Content-Security-Policy that refuses inline script: an injected inline handler and an
+//       injected <script> do not run, and the browser reports the violation
+// Every stage asserts its trigger FIRED (the hint/line actually shows the name) before it asserts nothing ran — a check
+// whose subject never arrived is not evidence.
+// @ts-nocheck
+import { scratchBench, mkCheck, sleep } from "../harness.ts";
+
+const WORLD = "xss3";
+// the reviewer's payload, and a <svg onload> (fires synchronously on insertion, no network) for the seam stage
+const IMG = `<img src=x onerror="window.__xss=(window.__xss||0)+1">`;
+const SVG = `<svg onload="window.__xss=(window.__xss||0)+1">`;
+const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("xss", { worlds: [WORLD], owner: "owner", cspExpected: true });   // stage C causes violations on purpose; boot asserts none of its own
+const { check: check0, tally } = mkCheck();
+const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
+const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
+// nothing made from a payload: no element carrying an inline handler anywhere in the document, and the flag unset
+const clean = `(window.__xss === undefined && !document.querySelector('[onerror],[onload]'))`;
+const stage = async (id: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
+
+function guest(name: string) {
+  const ws = new WebSocket(BASE.replace("http", "ws") + "/ws"); const msgs: any[] = [];
+  ws.onmessage = (ev) => { try { msgs.push(JSON.parse(String(ev.data))); } catch {} };
+  const opened = new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  return { ws, msgs, opened, send: (m: any) => ws.send(JSON.stringify(m)),
+    async join() { await opened; ws.send(JSON.stringify({ type: "join", world: WORLD, id: name, avatar: "", replica: true }));
+      const t0 = Date.now(); while (Date.now() - t0 < 5000) { const s = msgs.find((m) => m.type === "snapshot"), e = msgs.find((m) => m.type === "error"); if (s || e) return { snap: s, err: e }; await sleep(50); } return {}; } };
+}
+
+try {
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
+    window.__csp = []; document.addEventListener('securitypolicyviolation', (e) => __csp.push({ dir: e.effectiveDirective, blocked: e.blockedURI, sample: e.sample }));` });
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=Victim&world=${WORLD}` });   // a guest, default settings
+  let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
+  check("boot: the client comes up", secs >= 4, `${secs} sections`);
+  if (secs < 4) await die(1, "the page never booted");
+  await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
+  check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
+  check("boot: default settings — pushable (the reviewer's victim)", await evalJson(`import('/lib/consent.js').then((m) => m.pushable())`));
+  const me = await evalJson(`import('/lib/base.js').then((m) => m.CONFIG.name)`);
+  check("boot: my body is in (a knock-over needs one)", await waitFor(`import('/lib/mybody.js').then((m) => !!m.getMe())`, 30000));
+  check("boot: no CSP violation from the client itself", (await evalJson(`__csp`)).length === 0, await evalJson(`__csp`));
+
+  // ---- A: the reviewer's exploit, end to end ----
+  await stage("A", async () => {
+    const eve = guest(IMG);
+    const { snap, err } = await eve.join();
+    if (err) {
+      check("A1 the door refuses a name with markup in it, in words a person reads", /name/i.test(err.error) && !/[{}]|code/.test(err.error), err);
+      check("A2 …and nothing reached the page", await evalJson(clean), await evalJson(`({ xss: window.__xss, hint: ${hint} })`));
+      return;
+    }
+    check("A1 (the door let the name in) the attacker joined", !!snap);
+    await sleep(600);
+    eve.send({ type: "puppet", target: me, ragdoll: true });
+    check("A2 the knock-over reached the victim (the hint names the attacker, as text)", await waitFor(`${hint}.includes(${JSON.stringify(IMG + " knocked you over")})`, 5000), { hint: await evalJson(hint), me, eve: eve.msgs.filter((m) => m.type === "error" || m.type === "arrive").slice(0, 6) });
+    eve.send({ type: "bodydrag", target: me, grab: { joint: "hips" } });
+    check("A3 the grab reached the victim (as text)", await waitFor(`${hint}.includes(${JSON.stringify(IMG + " grabs you")})`, 5000), await evalJson(hint));
+    await sleep(800);   // an <img onerror> fires after its (failed) load
+    check("A4 nothing the name carried ran", await evalJson(clean), await evalJson(`({ xss: window.__xss, hint: document.getElementById('hintbar')?.innerHTML })`));
+    eve.ws.close();
+  });
+
+  // ---- S: every sink that shows a sender's name, fed at the bus (no door in the way) ----
+  await stage("S", async () => {
+    const emit = (ev: string, msg: any) => evalJson(`import('/lib/base.js').then((m) => (m.bus.emit(${JSON.stringify(ev)}, ${JSON.stringify(msg)}), true))`);
+    // stand up first (a previous stage may have left us limp)
+    await evalJson(`import('/lib/localbody.js').then((m) => (m.getUp?.(), true)).catch(() => true)`);
+    const cases: [string, string, any, string][] = [
+      ["S1 knock-over", "puppet", { by: SVG, ragdoll: true }, "knocked you over"],
+      ["S2 grab", "bodydrag", { by: SVG, grab: { joint: "hips" } }, "grabs you"],
+      ["S3 pose", "puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } }, "posed you"],
+      ["S4 release", "puppet", { by: SVG, pose: {} }, "released your pose"],
+    ];
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPosable?.(true), true)).catch(() => true)`);
+    for (const [name, ev, msg, words] of cases) {
+      await emit(ev, msg);
+      const fired = await waitFor(`${hint}.includes(${JSON.stringify(words)})`, 3000);
+      check(`${name}: the hint shows the name as text`, fired && await evalJson(`${hint}.includes(${JSON.stringify(SVG)})`), await evalJson(`document.getElementById('hintbar')?.innerHTML`));
+      check(`${name}: …and nothing ran`, await evalJson(clean), await evalJson(`window.__xss`));
+    }
+    // a refused drag (the victim switched pushable off): a toast
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
+    await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
+    check("S5 a refused drag toasts the name as text", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes(${JSON.stringify(SVG + " tried to drag you")}))`, 3000));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable?.(true), true)).catch(() => true)`);
+    // the chat log and a whisper
+    await evalJson(`import('/lib/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
+    check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000));
+    await sleep(300);
+    check("S7 after all of it, nothing ran", await evalJson(clean), await evalJson(`({ xss: window.__xss, tags: [...document.querySelectorAll('[onerror],[onload]')].map((e) => e.outerHTML.slice(0, 120)) })`));
+  });
+
+  // ---- M: our own markup still renders as markup (text-by-default must not flatten <kbd>) ----
+  await stage("M", async () => {
+    await evalJson(`import('/lib/ui.js').then((m) => (m.flashHint(m.html\`press <kbd>M</kbd> for \${'<b>x</b>'}\`), true))`);
+    check("M1 html`` renders its literal markup and escapes its value", await waitFor(`(() => { const h = document.getElementById('hintbar'); return !!h.querySelector('kbd') && !h.querySelector('b') && h.textContent === 'press M for <b>x</b>'; })()`, 2000),
+      await evalJson(`document.getElementById('hintbar')?.innerHTML`));
+    await evalJson(`import('/lib/base.js').then((m) => (m.bus.emit('esc-quiet', 'closed'), true))`);
+    check("M2 a built-in hint (Esc put the panels away) still shows its key", await waitFor(`!!document.getElementById('hintbar').querySelector('kbd') && /Esc/.test(document.getElementById('hintbar').textContent)`, 2000));
+    await evalJson(`import('/lib/base.js').then((m) => (m.bus.emit('esc-quiet', 'restored'), true))`);
+  });
+
+  // ---- R: what the client legitimately does still runs under the policy ----
+  await stage("R", async () => {
+    const before = (await evalJson(`__csp`)).length;
+    for (const mod of ["terrain.js", "particles.js", "sky_worlds.js"])
+      check(`R1 the eval-hosted toolkit module ${mod} loads`, await evalJson(`import('/lib/assets.js').then((m) => m.loadEidoModule('${mod}')).then(() => true, (e) => String(e))`) === true);
+    // a draco-compressed GLB (as the store's optimize pass makes them) decodes with the self-hosted decoder: its wrapper
+    // and wasm fetched from this server, its worker a blob:, its wasm compiled under the policy
+    const { Document, NodeIO } = await import("@gltf-transform/core");
+    const { KHRDracoMeshCompression } = await import("@gltf-transform/extensions");
+    const draco3d = (await import("draco3dgltf")).default;
+    const doc = new Document(); const buf = doc.createBuffer();
+    const P = [], I = []; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; P.push(Math.cos(a), Math.sin(a), 0); } P.push(0, 0, 0);
+    for (let i = 0; i < 16; i++) I.push(16, i, (i + 1) % 16);
+    const prim = doc.createPrimitive().setAttribute("POSITION", doc.createAccessor().setType("VEC3").setArray(new Float32Array(P)).setBuffer(buf))
+      .setIndices(doc.createAccessor().setType("SCALAR").setArray(new Uint16Array(I)).setBuffer(buf));
+    doc.createScene().addChild(doc.createNode("disc").setMesh(doc.createMesh().addPrimitive(prim)));
+    doc.createExtension(KHRDracoMeshCompression).setRequired(true).setEncoderOptions({});
+    const glb = await new NodeIO().registerExtensions([KHRDracoMeshCompression]).registerDependencies({ "draco3d.encoder": await draco3d.createEncoderModule(), "draco3d.decoder": await draco3d.createDecoderModule() }).writeBinary(doc);
+    check("(setup) the GLB really is draco-compressed", Buffer.from(glb).includes("KHR_draco_mesh_compression"));
+    const b64 = Buffer.from(glb).toString("base64");
+    const dec = await evalJson(`(async () => { const b = Uint8Array.from(atob('${b64}'), (c) => c.charCodeAt(0)); const s = await globalThis.loadGLBBytes(b.buffer);
+      let n = 0; s.traverse((o) => { if (o.isMesh) n += o.geometry.attributes.position.count; }); return n; })().catch((e) => String(e))`);
+    check("R2 a draco GLB decodes with the decoder this server serves (no third-party origin)", dec === 17, dec);
+    check("R3 …and none of it broke the policy", (await evalJson(`__csp`)).length === before, (await evalJson(`__csp`)).slice(before));
+  });
+
+  // ---- D: code that only holds EW can't plant a mod that outlives it (the world-mods note; client/lib/mods.js) ----
+  await stage("D", async () => {
+    const stored = `import('/lib/mods.js').then((m) => m.modsApi.list()).then((l) => l.map((s) => s.name))`;
+    const r1 = await evalJson(`(async () => { try { await EW.mods.put({ name: 'planted', auto: true, source: 'window.__planted = 1' }); return 'stored'; } catch (e) { return String(e.message); } })()`);
+    check("D1 EW.mods.put from code with no click behind it is refused (and says why)", /needs a click/.test(r1) && !(await evalJson(stored)).includes("planted"), r1);
+    const r2 = await evalJson(`(async () => { try { await EW.mods.run('planted', 'window.__planted = 1'); return 'ran'; } catch (e) { return String(e.message); } })()`);
+    check("D2 …and EW.mods.run likewise: nothing ran", /needs a click/.test(r2) && await evalJson(`window.__planted === undefined`), r2);
+    // the control: the same call from a real click (CDP input is a trusted gesture) is the person's own act and works
+    await evalJson(`(() => { const b = document.createElement('button'); b.id = '__byhand'; b.textContent = 'x'; b.style.cssText = 'position:fixed;left:4px;top:4px;width:40px;height:40px;z-index:2147483647';
+      b.onclick = () => { window.__putR = EW.mods.put({ name: 'byhand', auto: false, source: 'export default () => {}' }).then(() => 'stored', (e) => String(e.message)); }; document.body.append(b); return true; })()`);
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: 20, y: 20, button: "left", clickCount: 1 });
+    check("D3 control: from a real click it's stored (the gate is the hand, not a dead switch)", (await evalJson(`window.__putR`)) === "stored" && (await evalJson(stored)).includes("byhand"), await evalJson(`window.__putR ?? null`));
+    await evalJson(`(async () => { document.getElementById('__byhand')?.remove(); const d = await new Promise((r) => { const q = indexedDB.open('ew-mods', 1); q.onsuccess = () => r(q.result); });
+      await new Promise((r) => { const t = d.transaction('scripts', 'readwrite'); t.objectStore('scripts').delete('byhand'); t.oncomplete = r; }); return true; })()`);
+  });
+
+  // ---- C: the page's own policy refuses inline script ----
+  await stage("C", async () => {
+    const before = (await evalJson(`__csp`)).length;
+    await evalJson(`(() => { const d = document.createElement('div'); d.innerHTML = ${JSON.stringify(`<img src="data:," onerror="window.__inline=1">`)}; document.body.append(d);
+      const s = document.createElement('script'); s.textContent = 'window.__inline2 = 1'; document.body.append(s); return true; })()`);
+    await sleep(600);
+    check("C1 an injected inline handler does not run", await evalJson(`window.__inline === undefined`));
+    check("C2 an injected inline <script> does not run", await evalJson(`window.__inline2 === undefined`));
+    check("C3 the browser reports the violations (script-src)", await waitFor(`__csp.length > ${before} && __csp.slice(${before}).some((v) => /script-src/.test(v.dir))`, 2000), await evalJson(`__csp`));
+    const h = await (await fetch(`${BASE}/?world=${WORLD}`)).headers.get("content-security-policy");
+    check("C4 the page is served with a Content-Security-Policy header", !!h && /script-src/.test(h) && !/unsafe-inline'[^;]*script|script-src[^;]*'unsafe-inline'/.test(h), h);
+  });
+
+  check("no page errors along the way", (await evalJson(`__errs`)).length === 0, await evalJson(`__errs`));
+} catch (e) {
+  check("the probe threw", false, String(e?.stack ?? e));
+}
+console.log(`[xss-probe] ${tally.passed} passed, ${tally.failed} failed`);
+await cleanup(tally.failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);
