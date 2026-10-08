@@ -275,12 +275,20 @@ request moves a copy to a newer version, keeping its own overrides.
   a server keeps for late joiners, as `wingsFolded` does; `mic`/`hear` are
   a live reading re-sent with every packet and are never part of it. The
   pose packet's fields are `docs/pose-wire.md`.
-- **Presence touches the log only through checked acts.** Arriving,
-  teleporting, putting something down, letting it go and throwing it are
-  requests the authority checks (against its own cheap track of each body: speed,
-  reach, solids) and records. A release with velocity is a launch. Continuous
-  contact from a body or a held thing gives no unlogged impulse. A disconnect
-  settles at the last accepted state.
+- **Presence touches the log only through checked acts, and only with what
+  the world needs.** The authority checks every body request against its
+  own cheap track of each body (speed, reach, solids). Arriving is presence:
+  it is never logged. A teleport while present is an act (it resets the
+  track), recording who and when, never where from or to, and never what kind
+  of client someone uses. Picking something up, putting it down, letting it
+  go, throwing and punting are acts that record the request about the thing
+  and who handled it, never the body's position or hand: a put's change
+  carries where the thing went, and a launch's `sim` entry where it left and
+  how fast, which the engine needs. A release with velocity is a launch.
+  Continuous contact from a body or a held thing gives no unlogged impulse. A
+  disconnect settles at the last accepted state. (A world whose scripts
+  listen for `enter`/`leave` records who triggered each activation, as every
+  script act does; that is the world's choice, visible in its scripts.)
 - **The plane-transition invariant**: anything returning from live motion
   to rest stamps its absolute state into the log (a put's transform, a
   rest caused by its launch). The log never depends on reconstructing where

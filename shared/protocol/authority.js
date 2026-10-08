@@ -2811,7 +2811,9 @@ function pathBlocked(w, st, from, to) {
   for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
   return null;
 }
-const presenceFacts = (me) => ({ at: me.at.slice(), hand: handOf(me).map(r3), trackTs: me.ts });
+// review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
+// the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
+// and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
 const PHYSICS_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
@@ -2826,9 +2828,12 @@ const PHYSICS_VERBS = {
       if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
         refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
       rateCheck(w, actor);
-      const act = w.append(actOf(w, actor, "move", a, { presence: { from: me?.at ?? null, to, arrival: !me } }));
+      // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
+      // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
+      // track: who did it and when is on the record; never where from, where to, or what kind of client they are
+      const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; w.savePresence();
-      return { ok: true, recorded: true, act, at: to };
+      return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
@@ -2883,7 +2888,7 @@ const PHYSICS_VERBS = {
     // sim, so it goes through the log (Covenant III: presence never feeds the sim otherwise)
     let act = null;
     if ((spec && carried(spec)) || dependents.length) rateCheck(w, actor); // this grab will be logged
-    const actOnce = () => (act ??= w.append(actOf(w, actor, "grab", a, { presence: presenceFacts(me) })));
+    const actOnce = () => (act ??= w.append(actOf(w, actor, "grab", a)));
     if (spec && carried(spec)) { w.append({ kind: "sim", actor, cause: actOnce(), verb: live ? "catch" : "lift", body: { id: a.id } });
       if (live) notes.push({ id: a.id, why: "caught it in the air (logged: the sim had it)" }); }
     if (dependents.length) {
@@ -2908,7 +2913,7 @@ const PHYSICS_VERBS = {
   put(w, actor, a, how = "put") {
     const me = body(w, actor); const h = holdOf(w, actor, a.id);
     const st = w.state(); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
-    const facts = () => ({ handled: h.handled, presence: { ...presenceFacts(me), held: h.pose.pos.map(r3) } });
+    const facts = () => ({ handled: h.handled });
     // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
     // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
     // snap are the holder's settlements too, as a plain put is)
@@ -3010,7 +3015,7 @@ const PHYSICS_VERBS = {
     // is the engine's (L6: no write may touch it in flight), so for a volley the gates above are the whole check.
     if (!flying) admit(w, st, { actor, cap: { kind: "handle", via: "punt", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
     else rateCheck(w, actor);
-    const act = w.append(actOf(w, actor, "punt", a, { presence: presenceFacts(me), ...(flying ? { volley: true } : {}) }));
+    const act = w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
     const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying ? noNeg0(b.yaw) : qYaw(t.q), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
@@ -3199,7 +3204,7 @@ function launch(w, actor, a, verb, g = null) {
   if (g && g.throw !== 1 && verb === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
-  const act = w.append(actOf(w, actor, verb, a, { handled: h.handled, presence: presenceFacts(me) }));
+  const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };

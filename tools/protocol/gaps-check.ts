@@ -99,7 +99,7 @@ const cases = [
       const leap = s.call("vic", "move", { to: [8, 0, 8] }); const put = s.call("vic", "put", { id: "ball", pos: [8, 0, 8] });
       return { grab, leap, put, ball: posOf(s, "ball") }; },
     baseBad: (o) => ok(o.leap) && ok(o.put) && o.ball === "[8,0,8]", nowGood: (o) => ok(o.grab) && code(o.leap) === "too-fast" && code(o.put) === "out-of-reach" && o.ball !== "[8,0,8]" },
-  { id: "G2c", what: "leave and re-arrive INSIDE the room, where the world declares a spawn (arrival is a teleport act)", run(s) { cast(s);
+  { id: "G2c", what: "leave and re-arrive INSIDE the room, where the world declares a spawn (an arrival is presence; refused ones are never recorded either)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8], radius: 2 } });
       for (const [id, p, q] of [["wall-n", [0, 0, -2], W0], ["wall-s", [0, 0, 2], W0], ["wall-w", [-2, 0, 0], W90], ["wall-e", [2, 0, 0], W90]])
         s.call("olive", "create", { id, model: "wall", components: { transform: T0(p, q) } });
@@ -110,15 +110,16 @@ const cases = [
       // round-2 R7 recorded refused requests, but a body's track is presence: a refused move (arrival and teleport included)
       // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s). The accepted arrivals are acts.
       return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused).length, recorded: acts[0]?.body?.presence ?? null }; },
-    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 2 && o.refusedActs === 0 && !!o.recorded },
-  { id: "G2d", guard: true, what: "walking at a plausible speed while carrying still works, and the put records the presence it used", run(s) { cast(s);
+    // review 10-07 M3: an arrival is presence, never logged (it was an act with where from and to); only a teleport while present is
+    baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 0 && o.refusedActs === 0 && !o.recorded },
+  { id: "G2d", guard: true, what: "walking at a plausible speed while carrying still works, and the put records no body position (review 10-07 M3)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
       const walk = [1.5, 2.5, 3.5, 4.5, 5.5].map((z) => s.call("vic", "move", { to: [0, 0, z] }, 500));
       const put = s.call("vic", "put", { id: "ball" });
       const act = s.world().entries.at(-2);
       return { grab, walk, put, ball: posOf(s, "ball"), presence: act?.body?.presence ?? null }; },
-    nowGood: (o) => ok(o.grab) && o.walk.every(ok) && ok(o.put) && o.ball === "[0,0,5.5]" && Array.isArray(o.presence?.at) && Array.isArray(o.presence?.hand) },
+    nowGood: (o) => ok(o.grab) && o.walk.every(ok) && ok(o.put) && o.ball === "[0,0,5.5]" && o.presence === null },
   { id: "G2e", guard: true, what: "teleport while holding something (the 11 m put by another word)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });

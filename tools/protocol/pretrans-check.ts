@@ -315,5 +315,26 @@ await C("R6", "a blueprint's inside links become the copy's own ids (parts' keys
 await C("R7", "the spec scopes ids to their world and writes the merge duplicate-id rule down", () => {
   const need = ["(world id, entity id)", "fork-copy", "rename map", "typed reference"]; return [need.every((n) => SPEC.includes(n)), need.filter((n) => !SPEC.includes(n))]; });
 
+// ---- P: privacy (M3) ----
+const actsBy = (W: any, who: string, verb?: string) => W.entries().filter((e: any) => e.actor === who && e.kind === "act" && (!verb || e.verb === verb));
+const POSKEYS = /"(at|hand|held|trackTs|from|to|client|presence)":/;
+await C("P1", "arriving in a world writes nothing to its log (presence, never history)", () => {
+  const W = world(); const n0 = W.entries().length; const r = W.call("move", { to: [0, 0, 0.5], client: "agent" }, "vic");
+  return [r.ok && W.entries().length === n0 && !r.recorded, [why(r), W.entries().length - n0]]; });
+await C("P2", "a teleport while present is an act on the record, without where from, where to, or what kind of client", () => {
+  const W = world(); W.call("move", { to: [0, 0, 0.5] }, "olive"); const r = W.call("move", { to: [3, 0, 3], teleport: true, client: "human" }, "olive");
+  const a = actsBy(W, "olive", "move").at(-1); return [r.ok && !!a && !POSKEYS.test(JSON.stringify(a.body)) && a.body.request?.teleport === true, a?.body]; });
+await C("P3", "grab, put, throw and punt acts record the request about the thing, never the body's position or hand", () => {
+  const W = world(); W.call("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  W.call("create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
+  W.call("move", { to: [0, 0, 0.5] }, "vic"); const g = W.call("grab", { id: "ball" }, "vic"); const p = W.call("put", { id: "ball" }, "vic");
+  W.call("grab", { id: "ball" }, "vic"); const t = W.call("throw", { id: "ball", v: [0, 1, 1] }, "vic");
+  const acts = actsBy(W, "vic").filter((e: any) => ["grab", "put", "throw", "punt", "drop"].includes(e.verb));
+  const bad = acts.filter((e: any) => JSON.stringify(e.body).match(/"presence"|"hand"|"held"|"trackTs"/));
+  return [g.ok && p.ok && t.ok && acts.length >= 3 && !bad.length, [why(g), why(p), why(t), bad.map((e: any) => e.body)]]; });
+await C("P4", "§5 says what touches the log and what doesn't: arrivals don't; a teleport does, with no position; hands never", () => {
+  const g = SPEC.slice(SPEC.indexOf("## 5."), SPEC.indexOf("## 6.")); const need = ["Arriving is presence", "never logged", "client"];
+  return [need.every((n) => g.includes(n)) && !/Arriving,\s+teleporting, putting something down/.test(g), need.filter((n) => !g.includes(n))]; });
+
 console.log(`\npretrans: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
