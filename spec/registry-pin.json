@@ -32,6 +32,10 @@
  "label": {
   "type": "string"
  },
+ "description": {
+  "type": "string",
+  "on": "thing"
+ },
  "collider": {
   "fields": {
    "shape": "string"
@@ -683,7 +687,25 @@
    "texture": "string",
    "speed": "number",
    "opacity": "number",
-   "lifetime": "number"
+   "lifetime": "number",
+   "effect": "string",
+   "part": "string",
+   "at": "vec3",
+   "playing": "bool",
+   "scale": "number",
+   "params": "object"
+  },
+  "defaults": {
+   "playing": true,
+   "scale": 1
+  },
+  "absentMeans": {
+   "effect": "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names",
+   "part": "it emits from the thing itself, not one node of its model",
+   "at": "[0, 0, 0] in its own frame; in an older value, its origin",
+   "playing": "playing: it emits (the component's presence was its state)",
+   "scale": "1: the effect at its own size",
+   "params": "none: the effect's own defaults (in an older value, its own knobs: see effect)"
   }
  },
  "imported-epoch": {

@@ -14,6 +14,7 @@ import { enc, encName, dec } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
+import { modernize as newParticles } from "../../../shared/particle_effects.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -85,7 +86,11 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@8";
+export const TRANSLATOR = "eidoverse/translate-v1@9";
+// @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
+// `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
+// same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
+// neither spelling knows rides in imported:particles as before. Output differs from @8 on any log with particles.
 // @7 (2026-10-07, the conventional-names pass, R's approved table): the output speaks the renamed protocol. A result entry
 // is kind `change` (was `state`); the translating door's own entries are actor `system` (was `door`), and so is a v1 entry
 // whose actor was v1's "door". Everything carried only from translation is one `imported` family: the act verb `imported`
@@ -190,7 +195,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     c.transform = t;
     if (e.lib !== undefined) c.model = content && typeof e.lib === "string" ? content(e.lib) ?? e.lib : e.lib;
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
-    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : v;
+    for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" || k.startsWith("motion:") ? newMotion(v) : k === "particles" ? newParticles(v) : v;
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
     if (e.parent) c.parent = typeof e.parent.to === "string"

@@ -142,9 +142,14 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   check("channels() carries the group and lists pos before motion", ch[0].group === "pos" && ch.findIndex((c) => c.group === "motion") > ch.findIndex((c) => c.group === "pos"));
   check("a label longer than 80 chars is cut", val(editOps(unlocked, "c1", { "flags.label": "x".repeat(100) }), "label").length === 80);
   const fire = { ...chair, comp: { particles: { preset: "fire", count: 150, origin: [0, 0.25, 0] } } };
-  const pr = editOps(fire, "c1", { "particles.origin|1": "+=0.5", "particles.count": 900, "particles.quality": "low" });
+  // R 10-07: an older value is written back in today's shape on its first edit: origin is at, the knobs are the effect's params
+  const pr = editOps(fire, "c1", { "particles.at|1": "+=0.5", "particles.param|count": 900, "particles.param|quality": "low" });
   const pv = sets(pr, "particles");
-  check("particles: origin cloned+edited, count hard-capped at 600, quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.origin[1] === 0.75 && fire.comp.particles.origin[1] === 0.25 && pv[0].args.value.count === 600 && pv[0].args.value.quality === "low", JSON.stringify(pv));
+  check("particles: an older value is edited in today's shape (at, params), count hard-capped at 600, quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.at[1] === 0.75 && fire.comp.particles.origin[1] === 0.25 && pv[0].args.value.params.count === 600 && pv[0].args.value.params.quality === "low" && pv[0].args.value.effect === "fire" && !("preset" in pv[0].args.value), JSON.stringify(pv));
+  const sw = sets(editOps({ ...chair, comp: { particles: { effect: "fire", params: { count: 90 } } } }, "c1", { "particles.effect": "smoke" }), "particles");
+  check("particles: changing the effect drops the old effect's params (another effect's knobs aren't these)", sw[0]?.args.value.effect === "smoke" && sw[0]?.args.value.params === undefined, JSON.stringify(sw));
+  const st = sets(editOps({ ...chair, comp: { particles: { effect: "fire" } } }, "c1", { "particles.playing": false }), "particles");
+  check("particles: playing off is written (the living finish)", st[0]?.args.value.playing === false, JSON.stringify(st));
   check("particles.out removes it", dels(editOps(fire, "c1", { "particles.out": 1 }), "particles").length === 1);
   const tc = val(editOps(swing, "s", { "motion.type": "spin" }), "motion");
   check("a motion type change keeps t0/axis, DROPS the old type's params, refuses an unknown type", tc.type === "spin" && tc.t0 === 123 && tc.axis && tc.amp === undefined && tc.period === undefined && /type must be/.test(editOps(swing, "s", { "motion.type": "wobble" }).errors[0] ?? ""), JSON.stringify(tc));

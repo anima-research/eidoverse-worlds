@@ -33,6 +33,7 @@ import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
 import * as Edits from './editwrites.js';   // slice 3b: component edits are requests
+import { effectLookup } from './emitters.js';
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -77,6 +78,8 @@ export function liveFor(id) {
     box: boxOf(id),
     // batch 2: this viewer's own choices about a thing's media (mediaprefs.js): never logged
     mutedForMe: isMineMuted(id), untrusted: allowUntrusted(),
+    // the stored particle effects this viewer has (emitters.js): an effect's params are the inspector's knobs
+    effects: effectLookup,
   };
 }
 // The world entity `@world` (design §3, shared/worldentity.js): an alias of

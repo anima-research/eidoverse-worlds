@@ -239,6 +239,7 @@ The ones you'll reach for:
 | `transform` | `{pos, q, scale}`: where it is (local to its parent, if it has one) |
 | `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`) |
 | `label` | its display name (the id never changes) |
+| `description` | how it is described to anyone who reads rather than sees it (alt text, ≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to, socket?}`: it rides another thing (at one of its sockets, with `socket`) |
 | `pivot` | `{pos}`: where it turns and scales from |
 | `light` | `{kind: point\|spot, color, intensity, range, shadows, important, day}` — a light ON anything: model + light = a lamp |
@@ -248,7 +249,7 @@ The ones you'll reach for:
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `lock` | `true`: nobody may move, replace or delete it (below) |
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
-| `particles` | an emitter: fire, embers, smoke… (below) |
+| `particles` | `{effect, part?, at?, seed?, playing?, scale?, params?}`: it emits an effect (below) |
 | `script:<name>` | a script installed on it (below) |
 | `captions`, `captioners` | a screen's live subtitles, written only by `act {verb: "caption", args: {id, session, n, t0, t1, text, speaker?, title?}}` (one line each; `{id, session, end: true}` clears it); `captioners {ids: [<identity>]}` names who may caption that screen, and anyone who may edit it may too (tools/captionbot) |
 
@@ -324,25 +325,29 @@ down.
 
 ```
 act {verb: "set", args: {id: "hearth", component: "particles",
-      value: {preset: "fire", seed: 1234, origin: [0, 0.25, 0], count: 150,
-              texture: "eidoverse/assets/particle_textures/flame_05.png", quality: "auto"}}}
+      value: {effect: "fire", at: [0, 0.25, 0], params: {count: 150, texture: "eidoverse/assets/particle_textures/flame_05.png"}}}}
 ```
 
-`preset` is one of `fire · sparks · embers · smoke · dust · snow · magic ·
-stars · muzzle`. `origin` is ENTITY-RELATIVE metres (bounded to ±8): the
-emitter rides every move its thing makes. `seed` makes the spawn
-deterministic — omit it and one is derived from the entity id — so two
-clients, a reconnect and a late joiner render the same fire. Bounded
-overrides: `count` (≤600), `size`, `opacity`, `speed`, `lifetime`, `area`;
-the authority refuses a value outside the renderer's bounds. `quality`
-(`auto`/`high`/`med`/`low`) is an authored UPPER BOUND on the sprite count;
-each client's perf governor may lower it but never raise it, so **the
-sprite count is the one thing allowed to differ between two people looking
-at the same fire — preset, state, seed and provenance are not.** Emitters
-are expression, not embodiment: they provide no heat, light, sound,
-collision or contact. Text-tier perception names an emitter on the entity
-that owns it (`[hearth] … — emitting fire`), and a change near you arrives
-as one ambient line tagged `eidoverse:world-change` + `eidoverse:particles`.
+`effect` names an effect document: an Essential (`fire · sparks · embers ·
+smoke · dust · snow · magic · stars · muzzle`) or one stored in the world
+(`upload {effect: {kind: "particle-effect", v: 1, emitters: [...]}}` returns
+its address, `sha256:<64 hex>`). `effect {name}` returns any effect's
+document: its emitters are modules in Godot's vocabulary (spawn, shape,
+velocity, forces, rotation, size, color, render) and its `params` are the
+knobs an instance may set (every Essential takes `count` ≤ 600, `size`,
+`opacity`, `speed`, `lifetime`, `area`, `texture`, `quality`). `at` is
+ENTITY-RELATIVE metres (±8): the emitter rides every move its thing makes;
+`part` hangs it on one node of its model. `seed` makes the spawn
+deterministic (omit it and one is derived from the entity id). `playing:
+false` stops new particles (the living finish). `quality` is an authored
+UPPER BOUND on what any viewer draws; each client's perf governor may lower
+it but never raise it, so **the drawn count is the one thing allowed to
+differ between two people looking at the same fire — effect, state, seed and
+provenance are not.** Emitters are expression, not embodiment: they provide
+no heat, light, sound, collision or contact. Text-tier perception names an
+emitter on the entity that owns it (`[hearth] … — emitting fire`), and a
+change near you arrives as one ambient line tagged `eidoverse:world-change`
++ `eidoverse:particles`.
 
 ### Sky and weather
 
