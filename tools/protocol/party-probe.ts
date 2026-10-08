@@ -291,6 +291,10 @@ try {
     await sleep(1500);
     const tail = { before: n0, after: await lines(), end: (await log()).slice(-300) };
     check("M2 /bans lists the mute in force, not only bans", tail.after > tail.before, tail);
+    // someone else is here, so the remote-body frame loop runs: it must not throw (staging 10-07: remotes.js re-exported
+    // serverNow without importing it, and every frame failed while anyone else was present)
+    const frameErrs = await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent).filter((t) => /frame remotes|is not defined/.test(t))`);
+    check("M3 with another person present, the frame loop draws them without an error", frameErrs.length === 0, frameErrs);
     vic.ws.close();
   });
   // ---- X: the leftovers (review 10-07 S14, S15, S11) ----
