@@ -1,4 +1,4 @@
-// tools/protocol/xss-probe.ts — security pass 3 H1 in a real browser (one headless Chromium against a scratch sequencer,
+// tools/protocol/xss-probe.ts — security pass 3 (H1, and H2's client half: P) in a real browser (one headless Chromium against a scratch sequencer,
 // tools/harness.ts scratchBench; test:protocol runs it under the house guards, like the other browser suites).
 //
 // The reviewer's exploit: a guest joins named `<img src=x onerror=…>` and knocks over / grabs / poses a visitor on
@@ -151,6 +151,24 @@ try {
     check("D3 control: from a real click it's stored (the gate is the hand, not a dead switch)", (await evalJson(`window.__putR`)) === "stored" && (await evalJson(stored)).includes("byhand"), await evalJson(`window.__putR ?? null`));
     await evalJson(`(async () => { document.getElementById('__byhand')?.remove(); const d = await new Promise((r) => { const q = indexedDB.open('ew-mods', 1); q.onsuccess = () => r(q.result); });
       await new Promise((r) => { const t = d.transaction('scripts', 'readwrite'); t.objectStore('scripts').delete('byhand'); t.oncomplete = r; }); return true; })()`);
+  });
+
+  // ---- P: the page names the people it reaches by identity (H2): puppet, drag, whisper and typing carry the actor id ----
+  await stage("P", async () => {
+    const wren = guest("Wren");
+    const { snap } = await wren.join();
+    const wrenActor = snap?.cut?.you;
+    check("(P setup) a second person is here, with an identity", /^u-/.test(wrenActor ?? ""), snap ? Object.keys(snap) : null);
+    check("(P setup) …and the page knows it from their arrival", await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
+    await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'whisper', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
+    await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendWhisper('Wren', 'hi'); m.sendTyping('Wren'); return true; })`);
+    const sent = await evalJson(`__sent`);
+    const by = (t: string) => sent.find((m: any) => m.type === t) ?? null;
+    check("P1 puppet and bodydrag name the identity (targetActor) beside the name", by("puppet")?.targetActor === wrenActor && by("bodydrag")?.targetActor === wrenActor, sent);
+    check("P2 whisper and typing name it too (toActor)", by("whisper")?.toActor === wrenActor && by("typing")?.toActor === wrenActor, sent);
+    await sleep(500);
+    check("P3 …and the server delivered them to that identity", wren.msgs.some((m) => m.type === "puppet" && m.by === me) && wren.msgs.some((m) => m.type === "whisper" && m.text === "hi"), wren.msgs.map((m) => m.type).slice(-12));
+    wren.ws.close();
   });
 
   // ---- C: the page's own policy refuses inline script ----

@@ -9,7 +9,8 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
-//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second "Riannon" gets neither the first
+//   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Riannon" is shown
+//       with a disambiguator (pass 3 H2), and gets neither the first
 //       one's held whisper nor her remembered pose; the real one gets both
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
@@ -425,7 +426,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   g.raw({ type: "whisper", to: name, text: "the authority code is 4471" }); await sleep(250);
   const other = await sock(srv.port); const jo = await other.join("garden", name);   // TRUST_NAMES: local:<name>, another account
   await sleep(250);
-  ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you === name, "HB (setup) two accounts, one display name", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
+  // since pass 3 (H2) the second account isn't even SHOWN as her: a name another account claimed gets a disambiguator
+  // (presence-check PN); what it may never get is hers either way — her held whisper and her remembered pose
+  ok(!!j1.snapshot && !!jo.snapshot && you(jo) !== you(j1) && jo.snapshot.you !== name && jo.snapshot.you.startsWith(name), "HB (setup) two accounts asking for one display name: the second is shown with a disambiguator", [you(j1), you(jo), jo.snapshot?.you, name, j1.errors, jo.errors]);
   ok(!other.msgs.some((m) => m.type === "whisper"), "HB a different account wearing an absent person's name doesn't receive her held whisper", other.msgs.filter((m) => m.type === "whisper"));
   ok(!jo.snapshot?.restore, "HB …nor inherit her remembered pose", jo.snapshot?.restore);
   other.close(); await sleep(300);

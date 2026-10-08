@@ -467,7 +467,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
       const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
-        || (!!c.anonymous && dir.claimedName(n));
+        || (!!c.anonymous && dir.claimedName(n))
+        || (!!c.account && dir.claimedByOther(n, c.account));   // H2 (pass 3): nor an account under another account's name, here or not
       if (taken(c.id)) {
         const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${(c.account ?? "").replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`;
         let n = base.slice(0, LIMITS.ID_LEN), k = 2;

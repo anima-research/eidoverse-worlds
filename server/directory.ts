@@ -89,6 +89,9 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */
     claimedName(name: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
+    /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
+     *  account wears in this directory, present or not — the presence plane is read by people, who read names) */
+    claimedByOther(name: string, sub: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; },
     /** id → display name for the ids given (what a client is sent; never subs). */
     names(ids: Iterable<string>): Record<string, string> { const o: Record<string, string> = {};
       for (const id of ids) { const n = get(id)?.name; if (n) o[id] = n; } return o; },

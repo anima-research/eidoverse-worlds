@@ -36,6 +36,19 @@ export const pendingWhispers = new Map<string, unknown[]>();
 export const whisperKey = (world: string, recipientId: string) => `${world}\u0000${recipientId}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 
+/** Who a presence message (puppet, bodydrag, typing, whisper) is FOR (security pass 3, H2). A sender that knows the
+ *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
+ *  embodied leg is the target, whatever name anyone wears, and an actor who isn't here is simply not here (the name
+ *  beside it is NOT a fallback: that would hand the message to whoever wears the name). A sender with no actor id (an
+ *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
+ *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
+const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {
+  const leg = (o: Client) => !o.spectator && (!embodied || (o.surface ?? "world") === "world");
+  if (typeof actor === "string" && ACTOR_ID.test(actor)) return { tc: [...w.clients].find((o) => o.actorId === actor && leg(o)) ?? null, byActor: true, actor };
+  return { tc: name ? [...w.clients].find((o) => o.id === name && leg(o)) ?? null : null, byActor: false, actor: null };
+}
+
 export type MsgCtx = {
   c: Client;
   ws: { send(data: string): void; close?(code?: number, reason?: string): void };
@@ -113,20 +126,23 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (log && c.actorId) {
       if (log.ghostHere(c.actorId) || log.rightsOf(c.actorId).role === "none") { ws.send(JSON.stringify({ type: "error", error: "ghosts and people without a role here don't talk" })); return; }
       const m = log.mutedHere(c.actorId, "chat");
-      if (m) { const mod = [...c.world.clients].some((o) => o.id === to && o.actorId && (() => { const e = log.rightsOf(o.actorId); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })());
+      if (m) { const t0 = presenceTarget(c.world, msg.toActor, to).tc; const mod = !!t0?.actorId && (() => { const e = log.rightsOf(t0.actorId!); return e.role === "owner" || ["mute", "kick", "ban"].some((k) => e.permissions.includes(k)); })();
         if (!mod) { ws.send(JSON.stringify({ type: "error", error: `you're muted in this world's chat until ${new Date(m.until).toISOString().slice(11, 16)} UTC — you may whisper to a moderator` })); return; } }
     }
-    const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
-    // present: names are unique among the people here, so the name finds them (their embodied leg, never an aux leg)
-    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world" && !(log && c.world.isGhost(o)));   // never to a ghost (review 10-07)
+    // present: the identity named (toActor), or the one person here wearing the name (their embodied leg, never an aux leg)
+    const pt = presenceTarget(c.world, msg.toActor, to);
+    const packet = { type: "whisper", from: c.id, ...(c.actorId ? { fromActor: c.actorId } : {}), to: pt.tc?.id ?? to, ...(pt.byActor ? { toActor: pt.actor } : {}), text, ts: Date.now() };
+    const targets = pt.tc && !(log && c.world.isGhost(pt.tc)) ? [pt.tc] : [];   // never to a ghost (review 10-07)
     if (targets.length) {
       for (const t of targets) t.ws.send(JSON.stringify(packet));
       ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
       return;
     }
-    // absent: held for the ONE identity this world knows by that name (whois), never for whoever next wears the name
-    const r: any = whois(c.world, { name: to });
-    const ids: string[] = r?.ok ? r.people.map((p: any) => p.id) : [];
+    // absent: held for the identity named (an account the directory knows), or the ONE identity this world knows by that
+    // name (whois) — never for whoever next wears the name
+    const known = pt.byActor ? directoryFor(WORLDS_DIR).entry(pt.actor!) : null;
+    const r: any = pt.byActor ? null : whois(c.world, { name: to });
+    const ids: string[] = pt.byActor ? (known && known.kind !== "anon" ? [pt.actor!] : []) : r?.ok ? r.people.map((p: any) => p.id) : [];
     if (ids.length !== 1) {
       ws.send(JSON.stringify({ type: "error", error: ids.length ? `more than one person called ${to} has been here — whisper them when they're here` : `nobody called ${to} has been in this world` }));
       return;
@@ -166,7 +182,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // outside. The target decides whether to honour it.
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator && (o.surface ?? "world") === "world");
+    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name (H2)
     if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
@@ -179,7 +195,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     // merge: pose only the bones sent, over what the target already holds.
     // Absent means replace — what every sender meant before the flag existed.
-    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, pose: msg.pose ?? null, merge: msg.merge === true,
+    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}), pose: msg.pose ?? null, merge: msg.merge === true,
       anim: msg.anim ? { ...msg.anim, replace: msg.anim.replace !== false } : null, ragdoll: rag }));
   },
   "bc": ({ c, ws, now, expel }, msg) => {
@@ -218,11 +234,11 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const raw = String(msg.pose ? JSON.stringify(msg.pose) : "");
     if (raw.length > LIMITS.BODYDRAG_POSE_BYTES) return;      // a pose is tiny; anything else is an attack
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
+    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name (H2)
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
     tc.ws.send(JSON.stringify({
-      type: "bodydrag", by: c.id,
+      type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}),
       ...(msg.grab != null ? { grab: msg.grab } : {}),
       ...(msg.end != null ? { end: true } : {}),
       ...(msg.pose != null ? { pose: msg.pose } : {}),
@@ -346,8 +362,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // mic = a live voice is coming from this body right now (R, 23:30)
     const st = typeof msg.state === "string" && ["ear", "think", "tool", "mic"].includes(msg.state) ? msg.state : null;
     // `to` names someone present (presence is about the people here), or nobody
-    const to = typeof msg.to === "string" && [...c.world.clients].some((o) => o.id === msg.to && !o.spectator) ? msg.to : null;
-    c.world.broadcast({ type: "typing", id: c.id, to, ...(st ? { state: st } : {}) }, c);
+    // …by identity when the sender names one (toActor, H2), else by name
+    const tt = presenceTarget(c.world, msg.toActor, typeof msg.to === "string" ? msg.to : "", false).tc;
+    c.world.broadcast({ type: "typing", id: c.id, to: tt?.id ?? null, ...(tt?.actorId ? { toActor: tt.actorId } : {}), ...(st ? { state: st } : {}) }, c);
   },
   "drag": ({ c, ws, now, expel }, msg) => {
     // Transient build feedback. DESIGN.md is explicit that dragging is
