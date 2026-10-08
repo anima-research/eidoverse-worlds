@@ -73,12 +73,12 @@ or null-prototype objects, and a tokenizer that sees duplicate keys, since
 | `body` | an object |
 | `head`, `sig` | the sequencer's chain fields, on chain points (§12) |
 | `for`, `grant` | reserved for acting on someone's behalf; until identities have keys, an entry carrying `for` is malformed |
+| `by` | legacy (the lab's name for `actor`): allowed, and every reader MUST ignore it. Writers MUST NOT write it |
 
 An unknown field, a `seq` field, a missing or non-string `kind`/`actor`/
 `verb`, a non-object `body`, a bad `cause`, or a missing, fractional or
 decreasing `ts` makes the entry malformed: it shapes nothing and the reader
-reports it in diagnostics, never in the world. (The reference reader also
-tolerates a legacy `by` field, which nothing reads.)
+reports it in diagnostics, never in the world.
 
 **The kinds.**
 

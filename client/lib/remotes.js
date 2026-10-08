@@ -29,14 +29,9 @@ const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new
 const INTERP_MS = 110;
 const BUF_MAX = 12;
 
-// Server-to-local clock offset, smoothed. Frames carry the server's `t`.
-let clockOffset = null;
-export function noteServerTime(t) {
-  if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - performance.now();
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
-}
-export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
+// Server-to-local clock offset, smoothed: client/lib/serverclock.js (one clock for every realizer). Re-exported here,
+// where net.js and the body code have always found it.
+export { noteServerTime, serverNow } from './serverclock.js';
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity

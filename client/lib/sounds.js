@@ -50,6 +50,7 @@ import { THREE, camera } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, comps } from './world.js';
 import { audioContext } from './audioctx.js';
+import { serverNow } from './serverclock.js';
 import { playWhenAllowed } from './audiounlock.js';
 import { volumeFor } from './voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
@@ -129,9 +130,9 @@ function teardown(id) {
 }
 
 /** Where the shared playhead is now (seconds), or null: a one-shot that has finished. */
-function playheadOf(sound, dur) {
+export function playheadOf(sound, dur, now = serverNow()) {
   if (!sound.t0 || !Number.isFinite(dur) || dur <= 0) return 0;
-  const elapsed = ((Date.now() - sound.t0) / 1000) * (sound.pitch ?? 1);
+  const elapsed = ((now - sound.t0) / 1000) * (sound.pitch ?? 1);   // t0 is the authority's clock: so is now
   if (sound.loop) return ((elapsed % dur) + dur) % dur;
   return elapsed >= dur ? null : Math.max(0, elapsed);
 }
