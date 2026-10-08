@@ -16,7 +16,7 @@ import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 import { poseChannels } from '../../shared/humanoid.js';
-import { applyPresenceWire, applyVoiceWire, applyBodyWire } from '../../shared/presencewire.js';
+import { applyPresenceWire, applyVoiceWire, applyBodyWire, sampleTime } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
 
 export const remotes = new Map(); // id -> RemoteBody
@@ -194,10 +194,12 @@ export function dropRemote(id, expected) {
 export function pushPose(id, pose, t) {
   const r = remotes.get(id);
   if (!r || !pose) return;
-  const stamp = typeof t === 'number' ? t : serverNow();
+  // its own capture time when the sender stamped one and it's sane against the frame's (shared/presencewire.js sampleTime;
+  // spec/PHYSICS.md §5.1), else the frame's
+  const stamp = sampleTime(pose, typeof t === 'number' ? t : serverNow());
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
-  r.buf.push({ t: stamp, ...pose });
+  r.buf.push({ ...pose, t: stamp });
   setBodySeat(id, pose.seat ?? null);   // a seat rides the frame while it holds (presence; world.js)
   while (r.buf.length > BUF_MAX) r.buf.shift();
   // reach/touch events ride the RAW stream, not the applied one — a touch

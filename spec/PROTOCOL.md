@@ -179,9 +179,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `parent {to, socket?}`,
   `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
-  `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, and on
+  `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
+  `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`,
+  `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
@@ -204,12 +205,24 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   does) never changes; a new meaning is a new versioned name.
 - **Absence means absent.** A reader that gives absence a meaning is naming
   a default, and that default belongs in the component's definition.
+- **A field added later states its meaning of absence.** A value stored
+  before a field existed never holds it, and nothing rewrites the past, so a
+  field added to a registered component after its first registration says
+  in its definition what an older value *without* it means (`absentMeans`).
+  That meaning is the behaviour before the field existed, and it is frozen
+  by the pin like a default: `registry-pin.json` refuses to re-pin a new
+  field with no stated meaning of absence, or one whose meaning changed. A
+  field is therefore safe to add later only if today's behaviour is
+  acceptable forever as the meaning of its absence; when it isn't, the name
+  must be decided now (spec/PHYSICS.md §3.2 decides the physical ones).
 - **Meaning travels with the world.** Two things keep an old world's
   meaning fixed, and neither needs a hash in the world: every parameter is in
   the stored value (above), and the registry's checkable meaning — each
   field's type, each default and when it applies, each enum's members — is
-  pinned in `registry-pin.json` beside this document; the conformance suite
-  fails when one changes, and only additions may be re-pinned. A
+  pinned in `registry-pin.json` beside this document, with each field's
+  meaning of absence where one is stated and each field's grammar where one
+  narrows its type (`physics.shape`); the conformance suite fails when one
+  changes, and only additions may be re-pinned. A
   `schemas:<name>` component on `@world` is **optional**: it holds the content
   hash of that name's written definition (shape, units, prose meaning, what
   absence means, an example), and once set it never changes. It adds what the
@@ -285,10 +298,17 @@ request moves a copy to a newer version, keeping its own overrides.
   and who handled it, never the body's position or hand: a put's change
   carries where the thing went, and a launch's `sim` entry where it left and
   how fast, which the engine needs. A release with velocity is a launch.
-  Continuous contact from a body or a held thing gives no unlogged impulse. A
+  Continuous contact from a body or a held thing gives no unlogged impulse
+  **to the engine**: contact under live simulation authority is presence,
+  and enters history only as a settlement or a launch (spec/PHYSICS.md §4). A
   disconnect settles at the last accepted state. (A world whose scripts
   listen for `enter`/`leave` records who triggered each activation, as every
   script act does; that is the world's choice, visible in its scripts.)
+- **One clock.** Frames carry the world's authority clock (the one that
+  stamps entries' `ts`, never behind the log), and a client measures it by
+  round trip (`clock {t0}` → `{t0, t}`). A presence sample may carry its own
+  capture time `t` on that clock and its sender's count `seq`
+  (spec/PHYSICS.md §5.1).
 - **The plane-transition invariant**: anything returning from live motion
   to rest stamps its absolute state into the log (a put's transform, a
   rest caused by its launch). The log never depends on reconstructing where

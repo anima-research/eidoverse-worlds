@@ -316,7 +316,20 @@
   "fields": {
    "kind": "string",
    "who": "string",
-   "shape": "any"
+   "shape": "any",
+   "mass": "number",
+   "density": "number",
+   "material": "string",
+   "friction": "number",
+   "restitution": "number",
+   "linearDamping": "number",
+   "angularDamping": "number",
+   "centerOfMass": "vec3",
+   "ccd": "bool",
+   "layers": "int",
+   "mask": "int",
+   "frictionCombine": "string",
+   "restitutionCombine": "string"
   },
   "defaults": {
    "kind": "dynamic"
@@ -335,8 +348,40 @@
    "kind": [
     "dynamic",
     "static",
-    "none"
+    "none",
+    "kinematic"
+   ],
+   "frictionCombine": [
+    "average",
+    "min",
+    "multiply",
+    "max"
+   ],
+   "restitutionCombine": [
+    "average",
+    "min",
+    "multiply",
+    "max"
    ]
+  },
+  "absentMeans": {
+   "shape": "no measured shape: the thing is no body to the engine (it neither flies nor collides)",
+   "mass": "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant",
+   "density": "kg/m³; absent, its material's surface density, else 1000 kg/m³ (water)",
+   "material": "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law",
+   "friction": "≥ 0, one coefficient (static = dynamic); absent, its material's, else the engine's own law (eidosim: its fixed constants)",
+   "restitution": "0..1; absent, its material's, else the engine's own law (eidosim: its fixed bounce)",
+   "frictionCombine": "average|min|multiply|max, how its friction meets another's (the higher in that order wins); absent, its material's, else average",
+   "restitutionCombine": "average|min|multiply|max, as frictionCombine; absent, its material's, else max",
+   "linearDamping": "1/s; absent, the engine's own law (eidosim: none)",
+   "angularDamping": "1/s; absent, the engine's own law (eidosim: none; it doesn't spin)",
+   "centerOfMass": "[x, y, z] m in its own frame; absent, the centroid of its stamped shape",
+   "ccd": "true: swept (continuous) collision for this body; absent, the engine's own law (eidosim sweeps every body)",
+   "layers": "32-bit collision layers it is in; absent, 1 (the first)",
+   "mask": "32-bit layers it collides with (both sides must accept); absent, all (0xffffffff)"
+  },
+  "grammar": {
+   "shape": "shape"
   },
   "on": "thing"
  },
@@ -362,6 +407,55 @@
    "tickMs": "int"
   },
   "on": "world"
+ },
+ "surface": {
+  "fields": {
+   "friction": "number",
+   "restitution": "number",
+   "density": "number",
+   "frictionCombine": "string",
+   "restitutionCombine": "string",
+   "label": "string"
+  },
+  "enums": {
+   "frictionCombine": [
+    "average",
+    "min",
+    "multiply",
+    "max"
+   ],
+   "restitutionCombine": [
+    "average",
+    "min",
+    "multiply",
+    "max"
+   ]
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "joint": {
+  "fields": {
+   "to": "ref",
+   "type": "string",
+   "anchor": "vec3",
+   "axis": "axis",
+   "limits": "array",
+   "drive": "object",
+   "breakForce": "number"
+  },
+  "enums": {
+   "type": [
+    "fixed",
+    "hinge",
+    "slider",
+    "ball",
+    "distance",
+    "spring"
+   ]
+  },
+  "keyed": true,
+  "on": "thing"
  },
  "copy-of": {
   "fields": {

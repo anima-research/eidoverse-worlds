@@ -17,6 +17,8 @@ refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
 | `pins`, `reach`, wing-fold, presence | | see their modules (`shared/reachwire.js`, `shared/wingpresence.js`, `shared/presencewire.js`) |
 | `xr` | object | **tracked head + hands (C18, 2026-09-06)** — below |
 | `mic`, `hear` | boolean | this body's mic is live / it is hearing voices — **shared with everyone in the world**, below |
+| `t` | number | this sample's **capture time** on the world's authority clock (ms; spec/PHYSICS.md §5.1). Sent once a `clock` round trip has measured the offset; receivers interpolate at it when it's sane against the frame (not after the frame's `t`, not older than 1 s), else at the frame's `t`. A live reading: never remembered for late joiners |
+| `seq` | integer ≥ 0 | the sender's own count of samples. A live reading, like `t` |
 
 ## `xr` — tracked body, facing-relative
 

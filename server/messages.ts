@@ -24,7 +24,8 @@ import { actorOf as actorIdOf, whois } from "./requestwire.ts";
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide } from "../shared/protocol/consent.js";
-import { worlds, type World, type Client } from "./world.ts";
+import { worlds, type World, type Client, authorityNow } from "./world.ts";
+import { stateSampleError } from "../shared/presencewire.js";
 import { pendingCaptures } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
@@ -408,6 +409,20 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
     c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), by: c.id }, c);
+  },
+  // spec/PHYSICS.md §5.1: a round-trip clock. {t0} (the asker's own clock, echoed untouched) → {t0, t}: t on the
+  // world's AUTHORITY clock, the one that stamps entries' ts and frames' t. The asker's offset is t − (t0 + t1) / 2.
+  "clock": ({ c, ws }, msg) => {
+    const t0 = typeof msg.t0 === "number" && Number.isFinite(msg.t0) ? msg.t0 : null;
+    ws.send(JSON.stringify({ type: "clock", t0, t: c.world ? authorityNow(c.world) : Date.now() }));
+  },
+  // spec/PHYSICS.md §4.3: the state-sync lane, RESERVED. {s: [sample, …]}, each {id, by, aseq, oseq, t, p, q, v, w, sleep}.
+  // Checked now, so no client ships another shape under this name; refused until a live simulation authority exists.
+  "state": ({ c, ws }, msg) => {
+    if (!c.world || c.spectator) return;
+    const list = Array.isArray(msg.s) ? msg.s : null;
+    const why = !list || !list.length || list.length > 64 ? "state is {s: [sample, …]} (1–64 samples)" : list.map(stateSampleError).find((x) => x) ?? null;
+    ws.send(JSON.stringify({ type: "error", error: why ? `state: ${why}` : "state samples are reserved: no live simulation authority runs here yet (PHYSICS §4.3)" }));
   },
   "pose": ({ c, ws, now, expel }, msg) => {
     if (!c.world || c.spectator) return;

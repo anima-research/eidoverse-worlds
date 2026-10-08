@@ -28,6 +28,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
+import { shapeError, isBoxShape } from "./shapes.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
@@ -1171,6 +1172,13 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   mediaCheck(s, id, comp, v, at, obj);
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
+  // spec/PHYSICS.md §3.3: joint:<name> is reserved until the world's engine carries joints (ENGINES[…].joints); stored
+  // now it would be a value nothing honours, and the first engine to read it would inherit whatever builders guessed
+  if (baseOf(comp) === "joint" && !ENGINES[s.entities["@world"]?.c["physics-engine"]?.engine]?.joints)
+    refuse("unsupported", `${at}: this world's engine doesn't carry joints (none this server carries does yet), so a joint would do nothing`, "joint:<name> is reserved (PHYSICS §3.3). parent {to} attaches rigidly; openable animates a door, lid or gate; motion swings a pendulum");
+  // §3.2: a material names one of this world's surfaces
+  if (comp === "physics" && obj && typeof v.material === "string" && !carry && !s.entities["@world"]?.c[`surface:${v.material}`]) { const have = Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("surface:")).map((k) => k.slice(8));
+    refuse("not-found", `${at}.material: this world has no surface '${v.material}'${have.length ? ` (it has ${have.join(", ")})` : " (it has none)"}`, "the owner adds one: set {id: '@world', component: 'surface:<name>', value: {friction, restitution, density}}", { didYouMean: guess(v.material, have) }); }
   if (comp === "terrain-grid") { const ok = v.spacing > 0 && Number.isInteger(v.tile) && v.tile >= 1 && v.tile <= 64 && Array.isArray(v.extent) && v.extent.length === 2 && v.extent.every((n) => Number.isInteger(n) && n >= 1 && n <= 4096)
       && Array.isArray(v.origin) && v.origin.length === 2 && v.origin.every(isNum) && (v.limits === undefined || (Number.isInteger(v.limits.raise) && Number.isInteger(v.limits.lower) && v.limits.raise >= 0 && v.limits.lower >= 0));
     if (!ok) refuse("shape", `${at} must be {spacing > 0, tile 1–64, origin [x, z], extent [nx, nz], limits? {raise, lower} (mm)}`, COMPONENTS["terrain-grid"].help); }
@@ -1297,6 +1305,9 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     unknownKeys(at, v, def.byKind[kind], `${name} {kind: '${kind}'}`); }
   for (const [k, t] of Object.entries(def.fields)) if (v[k] !== undefined && !TYPES[t](v[k])) refuse("shape", `${at}.${k} must be ${t}, got ${JSON.stringify(v[k]).slice(0, 40)}`, def.help);
   for (const k of def.required ?? []) if (v[k] === undefined) refuse("schema", `${at} needs ${k}`, def.help);
+  // a field's grammar narrows its pinned type (physics.shape is `any` in every value ever stored): spec/PHYSICS.md §3.1
+  for (const [k, g] of Object.entries(def.grammar ?? {})) if (v[k] !== undefined && g === "shape") { const why = shapeError(v[k]);
+    if (why) refuse("shape", `${at}.${k}: ${why}`, "PHYSICS §3.1: a box [[min], [max]] or {type: sphere|capsule|cylinder|box|convex|mesh|compound, …}; the authority stamps it from the model"); }
   for (const [k, r] of Object.entries(def.ranges ?? {})) { const x = v[k]; if (x === undefined) continue;
     // batch 2: a length cap on text (counted in graphemes, as a reader counts: a ZWJ family is 1) and a count cap on lists
     if (r.maxLen !== undefined || r.maxItems !== undefined) { const n = typeof x === "string" ? graphemes(x) : Array.isArray(x) ? x.length : 0;
@@ -3182,7 +3193,7 @@ function flyingWorld(st) {
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
 function shaped(e, id) {
-  if (!Array.isArray(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
+  if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
 function releasePos(me, pos) {
@@ -3195,6 +3206,11 @@ function launch(w, actor, a, verb, g = null) {
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
+  // PHYSICS.md §4.2: spin is w, [x, y, z] rad/s in the world frame, everywhere; t is the capture time on the authority's
+  // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim ignores it, as
+  // it ignores roll). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
+  if (a.w !== undefined && !(Array.isArray(a.w) && a.w.length === 3 && a.w.every((n) => Number.isFinite(n) && Math.abs(n) <= 1000))) refuse("shape", "w is [x, y, z]: spin in rad/s about world axes (each within ±1000)", "e.g. w: [0, 6.28, 0] turns once a second about up");
+  if (a.t !== undefined && !Number.isFinite(a.t)) refuse("shape", "t is a time on the authority's clock (ms)", "leave it out if you don't know it");
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
@@ -3205,7 +3221,7 @@ function launch(w, actor, a, verb, g = null) {
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, handled: h.handled } });
+  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }

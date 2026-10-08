@@ -77,6 +77,8 @@ Every message belongs to exactly one plane:
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder (every refusal) + script status; answers `debug`. |
 | `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
+| `clock` | presence | any | `{t0}` | answered `{type: "clock", t0, t}`: `t` on the world's authority clock (spec/PHYSICS.md §5.1). Never logged. |
+| `state` | presence | embodied | `{s: [sample, …]}` | **reserved** (spec/PHYSICS.md §4.3): each sample `{id, by, aseq, oseq, t, p, q, v, w, sleep}`, absolute and latest-wins. Checked (`shared/presencewire.js stateSampleError`) and refused until live simulation authority exists. |
 | `typing` | presence | embodied, or bound voice leg | `{to?, state?}` | state ∈ ear/think/tool/mic (whitelist). |
 | `caption` | presence | embodied, or bound voice leg | `{text≤500, utt?}` | live speech pacing; the finished utterance lands as one `say`. |
 | `drag` | presence | builder+ | `{id, pos, yaw}` | live build feedback; the release is one `set transform` request. |
@@ -117,7 +119,11 @@ Every message belongs to exactly one plane:
 - `moderated` — `{verb, by, text}`: bystanders' line when the authority removed
   someone.
 - `frame` — `{seq, t, poses{id: pose}}`: the ~15Hz stage tick, latest-wins,
-  dropped for clients with >32KB backlog (skip-to-current, never queue).
+  dropped for clients with >32KB backlog (skip-to-current, never queue). `t` is
+  the world's AUTHORITY clock (the one that stamps entries' `ts`; never behind
+  the log), not raw wall time (spec/PHYSICS.md §5.1).
+- `clock` — `{t0, t}`: the answer to a client's `clock {t0}` (`t0` echoed, `t`
+  the authority clock): a round-trip clock sample (`client/lib/serverclock.js`).
 - `arrive` / `leave` — embodied presence transitions.
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
   join/takeover visibility (rtc re-keying, TTS hold capability).

@@ -206,3 +206,7 @@ export function getWorld(name: string): World {
   if (!w) { w = new World(name); worlds.set(name, w); }
   return w;
 }
+
+/** The world's authority clock (spec/PHYSICS.md §5.1): livehost's now(), never behind its log's last ts and never
+ *  backwards, the clock that stamps entries' ts. Frames and clock replies carry it; wall time only for a world with no log. */
+export const authorityNow = (w: any): number => { try { const t = w?.log?.live?.now?.(); if (typeof t === "number" && Number.isFinite(t)) return t; } catch {} return Date.now(); };
