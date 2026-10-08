@@ -269,8 +269,12 @@ updates; VRChat splits them the same way):
   - **The door is the arbiter.** It relays every claim, orders handovers
     optimistically (a local take, corrected by the arbiter), and refuses
     stale ones. It is *not* the edit lease, which governs history.
-  - **Velocity carries across a handover**, and a thrower keeps simulating
-    what it threw until it rests.
+  - **Velocity carries across a handover.** Letting go is a `launch`: the
+    released thing (and anything touching it that live authority had taken)
+    crosses into the engine as one committed intent and belongs to the engine
+    until it rests (§4). The thrower does not keep simulating it — live
+    authority ends at release, so a flight's outcome never depends on a
+    presence-plane fact (Covenant III).
   - **A held object rides its holder's hand**: it travels in the holder's
     pose as which grip and where, never as a separate stream.
   - **Live authority may stream an object's state on a presence lane**
