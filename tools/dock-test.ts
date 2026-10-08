@@ -237,7 +237,8 @@ check("the wrench has a row while gated open", !!row("edit"));
     !!r && r.previousElementSibling?.className === "msep" && r.nextElementSibling?.className === "msep"
       && r.previousElementSibling?.previousElementSibling === row("glyph:xr"), rows.join());
   check("…not under the rail's search entry any more", rows.indexOf("lantern") !== rows.indexOf("search") + 1, rows.join());
-  check("…wearing its own glyph (a lighthouse), not the search glass", !!r && paths("lighthouse").length > 0 && wears(r.innerHTML, "lighthouse") && !wears(r.innerHTML, "magnifying-glass"));
+  check("…wearing its own glyph (a lantern, R 10-08), not the search glass", !!r && paths("lantern").length > 0 && wears(r.innerHTML, "lantern") && !wears(r.innerHTML, "magnifying-glass"));
+  check("…and named the lantern in the row and its tooltip, not the lighthouse", !!r && /\blantern\b/.test(r.textContent ?? "") && !/lighthouse/.test((r.textContent ?? "") + (r.title ?? "")), (r?.textContent ?? "") + " | " + r?.title);
   check("…pinned by default (the pill rests; nothing changes for anyone who leaves it)", !!p && p.classList.contains("on") && L.pillPinned());
   check("…its pin says unpinning keeps the chord", !!p && /Ctrl K|⌘K/.test(p.title) && /still open/.test(p.title), p?.title);
   p?.click();

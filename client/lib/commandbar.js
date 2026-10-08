@@ -303,9 +303,9 @@ function paintRest() {
   pill?.classList.toggle('quiet', quiet);
 }
 
-// the bar wears the same lighthouse its Panels row does, so the two read as one thing (owner, 10-01: "make sure the
+// the bar wears the same lantern its Panels row does, so the two read as one thing (owner, 10-01: "make sure the
 // icon actually makes it down to the bar"); the ∃ stays the menu's
-const EMARK = () => fsvg('lighthouse', 20) || '∃';
+const EMARK = () => fsvg('lantern', 20) || '∃';
 
 function paintPill() {
   const fresh = pill.classList.contains('fresh');

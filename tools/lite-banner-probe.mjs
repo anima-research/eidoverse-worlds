@@ -178,7 +178,7 @@ try {
     ok('∃ menu: a row\'s tooltip shows beside the menu, level with its row, off the rows', T.show && T.clear && T.level, JSON.stringify(T));
     await p.mouse.move(5, 600); await p.waitForTimeout(300);
     ok('…and goes when the pointer leaves the row', await p.evaluate(() => !document.getElementById('tipchip').classList.contains('show')));
-    ok('the bar at the bottom wears the lighthouse (the Panels row\'s icon), not the ∃', await p.evaluate(() => { const g = document.querySelector('#lantern-pill .lp-glyph')?.innerHTML ?? ''; return /M208,80/.test(g) && !/M4\.675 3/.test(g); }));
+    ok('the bar at the bottom wears the lantern (the Panels row\'s icon, R 10-08), not the ∃ or the old lighthouse', await p.evaluate(() => { const g = document.querySelector('#lantern-pill .lp-glyph')?.innerHTML ?? ''; return /M76,92V72/.test(g) && !/M208,80/.test(g) && !/M4\.675 3/.test(g); }));
     // Enter on the FOCUSED cancel button cancels (review #212: Enter used to mean yes whatever had focus); Tab stays in the card
     ok('…the menu reopens for the next press', await menuRow()); await p.locator('#emenu .mrow[data-item=lite]').click();
     await p.keyboard.press('Tab');

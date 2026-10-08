@@ -1080,7 +1080,7 @@ function paintEMenu() {
     pin.setAttribute('aria-pressed', String(on));
     if (pin.disabled) continue;
     pin.title = id === 'lantern'
-      ? (on ? `hide the resting line — ${CHORD} and the rail's search still open the lighthouse` : 'rest the line bottom-centre again')
+      ? (on ? `hide the resting line — ${CHORD} and the rail's search still open the lantern` : 'rest the line bottom-centre again')
       : id.startsWith('glyph:')
       ? (on ? `detach ${pin.dataset.nm} from the rail` : `attach ${pin.dataset.nm} to the rail`)
       : (on ? 'unpin from rail' : 'pin to rail');
@@ -1097,7 +1097,7 @@ export function resetHudLayout() { resetLayout(); resetPillPlace(); }
 // differentiate)"). A group of its own between the voice rows and the windows ("It's not *quite* a conventional panel
 // so it can't get docked"): the row opens the lantern, and its pin keeps the pill bottom-centre (commandbar.js
 // setPillPinned — its own key, ew-lantern-pinned, like the glyphs'). Unpinned, the lantern is still one chord away.
-const LANTERN_GLYPH = 'lighthouse';   // the owner's pick (10-01); its own glyph, so it reads apart from the search glass
+const LANTERN_GLYPH = 'lantern';   // R 10-08 (was the lighthouse, the 10-01 stand-in: Phosphor has no lantern); its own glyph, so it reads apart from the search glass
 function pinButton(id, onclick) {
   const pin = document.createElement('button');
   pin.className = 'mpin'; pin.dataset.pin = id;
@@ -1108,8 +1108,8 @@ function pinButton(id, onclick) {
 function lanternRow() {
   const row = document.createElement('button');
   row.className = 'mrow'; row.dataset.row = 'lantern'; row.dataset.lanternToggle = '';
-  row.innerHTML = `${fsvg(LANTERN_GLYPH, 15)}<span class="mname">lighthouse</span>`;
-  row.title = `the lighthouse — type or say anything (${CHORD}). Its pin keeps the resting line bottom-centre; unpinned, ${CHORD} and the rail's search still open it`;
+  row.innerHTML = `${fsvg(LANTERN_GLYPH, 15)}<span class="mname">lantern</span>`;
+  row.title = `the lantern — type or say anything (${CHORD}). Its pin keeps the resting line bottom-centre; unpinned, ${CHORD} and the rail's search still open it`;
   row.onclick = () => { isLanternOpen() ? closeLantern() : openLantern(); paintEMenu(); };
   row.appendChild(pinButton('lantern', () => setPillPinned(!pillPinned())));
   return row;
@@ -1122,7 +1122,7 @@ function buildPanels(s) {
   const lay = document.createElement('button');
   lay.className = 'mrow'; lay.dataset.layout = ''; lay.setAttribute('role', 'menuitemcheckbox');
   lay.innerHTML = `${fsvg('arrows-out-cardinal', 15)}<span class="mname">HUD layout mode</span>`;
-  lay.title = 'move panels, the rail (its grip) and the lighthouse\'s resting line — Esc or a click out in the world ends it';
+  lay.title = 'move panels, the rail (its grip) and the lantern\'s resting line — Esc or a click out in the world ends it';
   lay.onclick = () => setLayoutMode(!isLayoutMode());
   s.appendChild(lay);
   s.appendChild(sep());
@@ -1195,7 +1195,7 @@ function buildPanels(s) {
   const reset = document.createElement('button');
   reset.className = 'mrow'; reset.dataset.reset = '';
   reset.innerHTML = `${fsvg('sparkle', 15)}<span class="mname">reset layout</span>`;
-  reset.title = 'put every window back where it started, and the lighthouse\'s resting line';
+  reset.title = 'put every window back where it started, and the lantern\'s resting line';
   reset.onclick = () => { resetHudLayout(); paintDock(); paintEMenu(); };
   s.appendChild(reset);
 }
