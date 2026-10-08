@@ -66,6 +66,10 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/li
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.01;
+/** E1: a walk asks the authority for the next stretch (PERMIT_STEP m; its track takes 4 m at most at once) when the body is
+ *  within PERMIT_AHEAD m of the end of what it has accepted, so a walk at RUN never waits on a local server. */
+const PERMIT_STEP = 2, PERMIT_AHEAD = 1;
+type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean };
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -205,6 +209,21 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
+  // ---- the authority's track of this body (E1, tools audit 10-07: "two bodies") ----
+  // The authority keeps its own body for every actor (authority.js PHYSICS_VERBS.move: 6 m/s, 4 m at most in one go, not
+  // through what it calls solid) and every hand verb measures from it. A person's client streams `move` steps to it
+  // (client/lib/thingphysics.js track); this body walks the same way: it asks the authority for each stretch BEFORE it
+  // walks it, so a wall the authority refuses stops this body exactly where the authority's stops.
+  /** the authority knows this body (its arrival was accepted); every snapshot forgets it (leaving drops the track) */
+  private trackArrived = false;
+  /** where the authority last accepted this body, [x, y, z] */
+  private trackAt: number[] | null = null;
+  /** the current walk's gate: 'sync' = waiting for the authority to know where we stand; 'tracked' = walk only as far as it
+   *  has accepted (permit); 'open' = this authority keeps no body track (an older server): walk as before */
+  private walkGate: WalkGate | null = null;
+  /** why the last walk stopped short, in the authority's words (the move tool reports it); a note it should mention */
+  lastWalkRefusal: { code: string; reason: string; fix?: string } | null = null;
+  lastWalkNote: string | null = null;
   /** The VIEW of this body's own fold of the world (shared/protocol/view.js viewState over shared/protocol/replica.js), plus the
    *  chat window. The maps below are DERIVED VIEWS reconciled from it after every change; side effects (percepts,
    *  supports, pings) run in a separate pass that never touches it. */
@@ -730,6 +749,8 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
+            // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
+            this.trackArrived = false; this.trackAt = null;
             for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, !!p.agent); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
             // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
             // chat window (chat isn't world state): its lines land in the inbox once, as history
@@ -1759,9 +1780,16 @@ export class WorldAgent {
         }
       } else {
         const sp = this.target.run ? RUN : WALK;
-        this.speed = sp; this.clip = this.target.run ? "run" : "walk";
+        const g = this.walkGate;
+        let step = g?.mode === "sync" ? 0 : Math.min(dist, sp * dt);   // 'sync': the authority doesn't know where we stand yet
+        if (g?.mode === "tracked") {
+          // walk only as far as the authority has accepted (E1): the permit is a point on this leg it said yes to
+          const room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
+          step = Math.min(step, room);
+          if (!g.busy && room < PERMIT_AHEAD && !this.permitAtTarget(g)) this.extendPermit(g);
+        }
+        this.speed = step > 0 ? sp : 0; this.clip = this.target.run ? "run" : "walk";
         this.yaw = Math.atan2(dx, dz);
-        const step = Math.min(dist, sp * dt);
         this.pos.x += (dx / dist) * step;
         this.pos.z += (dz / dist) * step;
       }
@@ -2507,13 +2535,83 @@ export class WorldAgent {
     } catch { this.legs = []; }
     const first = this.legs.shift();
     this.target = first ? { x: first.x, z: first.z, run, tolerance } : { x, z, run, tolerance };
+    // E1: the authority walks this body too, and a stretch it refuses (a wall, too fast) isn't walked (see trackHere)
+    this.lastWalkRefusal = null; this.lastWalkNote = null;
+    const gate: WalkGate = { mode: "sync", permit: null, busy: false };
+    this.walkGate = gate;
+    void this.trackHere().then((t) => {
+      if (this.walkGate !== gate) return;
+      if ("open" in t) { gate.mode = "open"; return; }
+      if (!t.ok) { this.refuseWalk(t.refused); return; }
+      gate.mode = "tracked"; gate.permit = this.trackAt;
+    });
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
     });
   }
 
-  stop() { this.target = null; this.legs = []; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+  stop() { this.target = null; this.legs = []; this.walkGate = null; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+
+  // ---- E1: walking the authority's body ----
+  /** Bring the authority's track of this body to where it stands: arrive (an unlogged teleport, as a person's first move
+   *  is); a short step if it lags; re-arrive (`teleport: true`, an act on the record) when the track is stale (a flight, a
+   *  drag, a seat moved this body without walking it), as a person's client does. A visitor in a world with a spawn arrives
+   *  at the spawn, as a person does. {open} = this authority keeps no body track: walk as before. */
+  private async trackHere(): Promise<{ ok: true } | { ok: false; refused: any } | { open: true }> {
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
+    const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
+    if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
+    let r = await this.request("move", { to, ...(this.trackArrived ? {} : { client: "agent" }) });
+    if (r?.ok) return take(r, to);
+    let code = r?.refused?.code;
+    if (code === "not-joined" || code === "unknown-verb") return { open: true };
+    if (code === "not-here") {   // the authority forgot this body (it left): arrive again
+      this.trackArrived = false; r = await this.request("move", { to, client: "agent" });
+      if (r?.ok) return take(r, to); code = r?.refused?.code; }
+    if (code === "spawn") {
+      const sp = (this.replica?.st?.entities?.["@world"]?.c as any)?.spawn;
+      const at = Array.isArray(sp?.pos) && sp.pos.length === 3 && sp.pos.every(Number.isFinite) ? sp.pos.map(Number) : null;
+      if (at) { r = await this.request("move", { to: at, client: "agent" });
+        if (r?.ok) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2];
+          this.lastWalkNote = `this world's arrivals are at its spawn (${at.map((n: number) => n.toFixed(1)).join(", ")}): you arrived there and walked on from it`;
+          return take(r, at); } }
+    }
+    if (code === "too-fast" || code === "solid") {
+      r = await this.request("move", { to, teleport: true });
+      if (r?.ok) { this.lastWalkNote = "the authority's track of your body was behind where you stood (a flight, a seat or a drag moved you): it re-arrived you here (a teleport, on the record)"; return take(r, to); }
+    }
+    return { ok: false, refused: r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" } };
+  }
+  private permitAtTarget(g: { permit: number[] | null }): boolean {
+    return !!(g.permit && this.target && Math.hypot(g.permit[0] - this.target.x, g.permit[2] - this.target.z) < 1e-6);
+  }
+  /** Ask the authority for the next stretch of this leg, from where it last accepted this body. */
+  private extendPermit(g: WalkGate) {
+    const from = this.trackAt, T = this.target; if (!from || !T) return;
+    const dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz);
+    if (d < 1e-3) { g.permit = [T.x, from[1], T.z]; return; }   // the authority already has it at this leg's end
+    const last = d <= PERMIT_STEP;
+    const nx = last ? T.x : from[0] + dx * PERMIT_STEP / d, nz = last ? T.z : from[2] + dz * PERMIT_STEP / d;
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    const to = [r3(nx), r3(this.heightAt(nx, nz)), r3(nz)];
+    g.busy = true;
+    void this.request("move", { to }).then((r: any) => {
+      if (this.walkGate !== g) return;
+      g.busy = false;
+      if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
+      this.trackAt = Array.isArray(r.at) ? r.at : to;
+      g.permit = last && this.target === T ? [T.x, to[1], T.z] : this.trackAt;   // the leg's exact end (the track rounds to mm)
+    });
+  }
+  /** The authority refused this body the next stretch: it stops where the authority has it, and the walk says why. */
+  private refuseWalk(ref: any) {
+    this.lastWalkRefusal = { code: String(ref?.code ?? "refused"), reason: String(ref?.reason ?? ""), ...(ref?.fix ? { fix: String(ref.fix) } : {}) };
+    if (Array.isArray(ref?.at)) this.trackAt = ref.at;
+    this.walkGate = null; this.target = null; this.legs = []; this.speed = 0; this.clip = "idle";
+    this.walkDone?.(false); this.walkDone = null;
+  }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
@@ -3186,8 +3284,9 @@ export class WorldAgent {
       // on the same entity say the words.
       // locked = nailed down: the authority refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused round-trip.
-      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: act {verb: "delete", args: {id, component: "lock"}}; or act through it with throughLock: true)`);
-      if (c.hidden === true) aff.push(`hidden (not drawn; act {verb: "delete", args: {id, component: "hidden"}} shows it)`);
+      // the real tool where there is one (audit 10-07: look taught the act hatch for edit's own fields)
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: edit {id: "${e.id}", set: {"flags.lock": false}}; or edit through it with throughLock: true)`);
+      if (c.hidden === true) aff.push(`hidden (not drawn; edit {id: "${e.id}", set: {"flags.hidden": false}} shows it)`);
       // a placed blueprint copy (or one of its parts) says which blueprint it
       // follows — the link, read through the one shared reading
       const copy = c["copy-of"] ? this.copyLine(e.id) : null;
