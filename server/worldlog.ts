@@ -57,6 +57,8 @@ export type LogHost = {
   present?(): { id: string; at: number[] | null }[];
   /** the log stream: `msg` to everyone, `ghostMsg` (says emptied) to a ghost (PLAN 10-06: a ghost can't read chat) */
   broadcastLog?(msg: unknown, ghostMsg: unknown): void;
+  /** send to one identity's embodied leg(s); false when they aren't here */
+  toActor?(actor: string, msg: unknown): boolean;
 };
 
 export class WorldLog {
@@ -131,7 +133,20 @@ export class WorldLog {
     const t0 = performance.now(); const r = authorityRequest(this.live, actor, verb, args); if (r && typeof r === "object") authorityTime.set(r, performance.now() - t0);
     if (this.live.entries.length > from) this.afterWrite(from);
     if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() });
+    this.forwardInbox();
     return r;
+  }
+  /** The authority's body inbox (asks, replies, acts, revocations: PROTOCOL L6) reaches its person: what's new since we
+   *  last sent is pushed to their socket as {type: "body-inbox", messages} (tools audit 10-07: it was written and never
+   *  delivered). The inbox itself is left as the authority keeps it, so `inbox` still answers an agent that polls. */
+  private inboxSent = new Map<string, number>();
+  private forwardInbox() {
+    const box = this.live.presence?.inbox as Record<string, unknown[]> | undefined; if (!box || !this.host?.toActor) return;
+    for (const [who, msgs] of Object.entries(box)) {
+      let sent = this.inboxSent.get(who) ?? 0; if (msgs.length < sent) sent = 0;   // read and emptied by `inbox` since
+      if (msgs.length > sent && this.host.toActor(who, { type: "body-inbox", world: this.name, messages: msgs.slice(sent) })) this.inboxSent.set(who, msgs.length);
+    }
+    for (const who of this.inboxSent.keys()) if (!box[who]) this.inboxSent.delete(who);
   }
   /** Who holds what (the authority's presence plane, design 20 P2): {id: {by}}. Never logged; every client draws a held thing
    *  in its holder's hand, so it is sent whenever it changes, and in every join cut. */

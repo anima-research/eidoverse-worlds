@@ -4,6 +4,10 @@
 //   PN  nobody appears under a name another ACCOUNT has claimed in the directory, present or not: an account-holder
 //       arriving as an absent person's name (or one that folds to it) is shown with a disambiguator, as a present
 //       collision already was; the claimant themself still arrives as themself
+//   BC  body consent at the server (tools audit 10-07 "Body consent"): a puppet (ragdoll → shove, pose/anim → pose) and a
+//       bodydrag grab (→ move) are checked against the TARGET's consent table (shared/protocol/consent.js; silence is
+//       Normal: strangers' shove/pose/move are nobody) and a sane range BEFORE they're forwarded; 'ask' refuses with how to
+//       ask; the authority's body inbox (asks, replies, acts) is pushed to its person's socket
 //   PR  puppet / bodydrag / typing / whisper reach the IDENTITY the sender named (targetActor / toActor, the opaque
 //       u-… id every arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is
 //       refused (or, for a whisper, held for exactly that identity); a sender with no actor id still reaches by name
@@ -35,8 +39,12 @@ async function sock(name) {
   ws.send(JSON.stringify({ type: "join", world: "glade", id: name, avatar: "", replica: true }));
   for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
   const snap = msgs.find((m) => m.type === "snapshot");
-  return { ws, msgs, snap, id: snap?.you ?? snap?.cut?.youName ?? null, actor: snap?.cut?.you ?? null, send: (m) => ws.send(JSON.stringify(m)), close: () => ws.close(),
-    since: (k) => msgs.slice(k) };
+  let rn = 0;
+  return { ws, msgs, snap, actor: snap?.cut?.you ?? null, send: (m) => ws.send(JSON.stringify(m)), close: () => ws.close(),
+    since: (k) => msgs.slice(k),
+    at: (x, z) => ws.send(JSON.stringify({ type: "pose", pose: { p: [x, 0, z], yaw: 0, speed: 0, clip: "idle" } })),
+    req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));
+      for (let i = 0; i < 80; i++) { const r = msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return { ok: false, timeout: true }; } };
 }
 const named = (s) => s.snap?.you;   // the display name the server settled on
 
@@ -49,6 +57,9 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 
 // ---- PR: presence targets resolve by identity ----
 { const bob = await sock("Bob"), carol = await sock("Carol"), mal = await sock("Mallory");
+  // within reach, and both open pose and move to strangers (BC: the server checks a body's consent before forwarding)
+  bob.at(0, 0); carol.at(1, 0); mal.at(0.5, 0.5);
+  for (const s2 of [bob, carol]) for (const cls of ["pose", "move"]) await s2.req("consent", { set: { class: cls, tier: "strangers", mode: "everyone" } });
   await sleep(300);
   ok(/^u-/.test(bob.actor ?? "") && /^u-/.test(carol.actor ?? ""), "(PR setup) every joiner knows its own actor id", [bob.actor, carol.actor]);
   const arrive = mal.msgs.find((m) => m.type === "arrive" && m.id === "Carol") ?? null;
@@ -84,6 +95,53 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   ok(bob.since(kb).some((m) => m.type === "puppet" && m.by === "Mallory"), "PR a name alone (no actor id) still reaches its person", bob.since(kb).map((m) => m.type));
   ok(bob.since(kb).find((m) => m.type === "puppet")?.byActor === mal.actor, "PR the receiver is told the sender's identity too (byActor), not only a name", bob.since(kb).find((m) => m.type === "puppet"));
   bob.close(); carol2.close(); mal.close(); }
+
+// ---- BC: body consent and range at the server, before anything is forwarded ----
+{ const vic = await sock("Vic"), sly = await sock("Sly");
+  vic.at(0, 0); sly.at(1, 0); await sleep(300);
+  const got = (k, t) => vic.since(k).filter((m) => m.type === t);
+  let k = vic.msgs.length, ks = sly.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error) && /consent|isn't taking/.test(m.error)),
+    "BC1 a stranger's knock-over of a body that never set a table (Normal: shove nobody) is refused at the server, never forwarded", { vic: got(k, "puppet"), sly: sly.since(ks).filter((m) => m.type === "error") });
+  k = vic.msgs.length; ks = sly.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await sleep(300);
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), "BC1 …and a pose likewise (pose nobody)", sly.since(ks));
+  k = vic.msgs.length; ks = sly.msgs.length;
+  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await sleep(300);
+  ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise (move nobody)", got(k, "bodydrag"));
+  // Vic opens shove and move to everyone: now it's forwarded, within reach
+  const r1 = await vic.req("consent", { set: { class: "shove", tier: "strangers", mode: "everyone" } });
+  const r2 = await vic.req("consent", { set: { class: "move", tier: "strangers", mode: "everyone" } });
+  ok(r1?.ok && r2?.ok, "(BC setup) Vic opens shove and move to strangers through the authority's consent verb", [r1, r2]);
+  k = vic.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
+  ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
+  k = vic.msgs.length;
+  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await sleep(300);
+  ok(got(k, "bodydrag").length === 1, "BC2 …and the grab", vic.since(k).map((m) => m.type));
+  // range: from 20 m, no
+  sly.at(20, 0); await sleep(300); k = vic.msgs.length; ks = sly.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), "BC3 a knock-over from 20 m is refused (out of reach), whatever the table says", sly.since(ks));
+  // ask: refused, saying how to ask
+  sly.at(1, 0); await vic.req("consent", { set: { class: "pose", tier: "strangers", mode: "ask" } }); await sleep(300);
+  k = vic.msgs.length; ks = sly.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await sleep(300);
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /ask/.test(m.error) && /body/.test(m.error)), "BC4 'ask' is refused with how to ask (body {to, kind}), not forwarded", sly.since(ks));
+  // the ask path delivers: the authority's inbox reaches Vic's socket
+  const mv = [await vic.req("move", { to: [0, 0, 0] }), await sly.req("move", { to: [1, 0, 0] })];   // the authority's body track (a client's first move is its arrival)
+  ok(mv.every((r) => r?.ok), "(BC5 setup) both bodies are on the authority's track", mv);
+  k = vic.msgs.length;
+  const asked = await sly.req("body", { to: vic.actor, kind: "pose", spec: { head: [0, 0, 0, 1] } });
+  await sleep(300);
+  ok(asked?.outcome === "asked" && vic.since(k).some((m) => m.type === "body-inbox" && m.messages?.some((x) => x.type === "body-ask")), "BC5 an ask through the authority (body {to, kind}) reaches the asked person's socket (the inbox is forwarded)",
+    { asked, vic: vic.since(k).filter((m) => m.type === "body-inbox") });
+  // yourself: always
+  k = vic.msgs.length;
+  vic.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await sleep(300);
+  ok(got(k, "puppet").length === 1, "BC6 your own body is always yours to knock over", vic.since(k).map((m) => m.type));
+  vic.close(); sly.close(); }
 
 try { proc.kill(); } catch {}
 console.log(`[presence-check] ${pass} passed, ${fail} failed`);

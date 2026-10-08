@@ -28,7 +28,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
-import { posable, pushable } from './consent.js';
+import { posable, pushable, bodyTable, onConsentChange } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
@@ -479,6 +479,12 @@ function applyShove(lean, by) {
 
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
+
+  // my two switches, as the authority's consent table for my body: the server checks it before it forwards anyone's
+  // knock-over, pose or grab (consent.js bodyTable). Every arrival (a world's presence plane is its own), every change.
+  const syncConsent = () => { if (CONFIG.renderer || CONFIG.spectate) return;
+    for (const [cls, mode] of bodyTable()) sendRequest('consent', { set: { class: cls, tier: 'strangers', mode } }).catch?.(() => {}); };
+  bus.on('hydrated', syncConsent); onConsentChange(syncConsent);
 
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to

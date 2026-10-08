@@ -160,6 +160,12 @@ try {
     const wrenActor = snap?.cut?.you;
     check("(P setup) a second person is here, with an identity", /^u-/.test(wrenActor ?? ""), snap ? Object.keys(snap) : null);
     check("(P setup) …and the page knows it from their arrival", await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
+    // Wren stands beside me and takes poses and drags from strangers (the server checks a body's consent and reach first)
+    const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
+    wren.send({ type: "pose", pose: { p: [mine[0] + 1, mine[1], mine[2]], yaw: 0, speed: 0, clip: "idle" } });
+    let rq = 0; const wreq = (verb: string, args: any) => { const id = `w${++rq}`; wren.send({ type: "request", id, verb, args }); };
+    wreq("consent", { set: { class: "pose", tier: "strangers", mode: "everyone" } }); wreq("consent", { set: { class: "move", tier: "strangers", mode: "everyone" } });
+    await sleep(500);
     await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'whisper', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
     await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendWhisper('Wren', 'hi'); m.sendTyping('Wren'); return true; })`);
     const sent = await evalJson(`__sent`);
@@ -169,6 +175,16 @@ try {
     await sleep(500);
     check("P3 …and the server delivered them to that identity", wren.msgs.some((m) => m.type === "puppet" && m.by === me) && wren.msgs.some((m) => m.type === "whisper" && m.text === "hi"), wren.msgs.map((m) => m.type).slice(-12));
     wren.ws.close();
+  });
+
+  // ---- K: my switches are my body's consent table at the authority (the server checks it before forwarding) ----
+  await stage("K", async () => {
+    const table = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table?.strangers ?? null)`;
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), m.setPosable(false), true))`);
+    check("K1 by default (pushable on, posable off) my table says strangers may shove and drag me, not pose me", await waitFor(`${table}.then((t) => t && t.shove === 'everyone' && t.move === 'everyone' && t.pose === 'nobody')`, 5000), await evalJson(table));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(false), true))`);
+    check("K2 switching pushable off closes shove and move at the authority", await waitFor(`${table}.then((t) => t && t.shove === 'nobody' && t.move === 'nobody')`, 5000), await evalJson(table));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
   });
 
   // ---- C: the page's own policy refuses inline script ----

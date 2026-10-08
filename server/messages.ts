@@ -23,6 +23,7 @@ import { actorOf as actorIdOf, whois } from "./requestwire.ts";
 // the authority's role ladder (shared/protocol/authority.js RANK), for the presence gates that mirror a door rule
 const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
+import { decide as consentDecide } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client } from "./world.ts";
 import { pendingCaptures } from "./routes.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
@@ -43,6 +44,26 @@ export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
  *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
  *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
 const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+
+/** Body consent at the server (PROTOCOL L6; tools audit 10-07 "Body consent"): a presence act on someone else's body is
+ *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js — a body that never sent
+ *  one is Normal: strangers' shove, pose and move are nobody) and a sane range, BEFORE it's forwarded. The target's
+ *  client still has the last word; this is so a stranger's packet never reaches a body that said no. 'ask' is refused
+ *  with how to ask (the authority's `body` verb asks and delivers). Returns the refusal, or null to forward. */
+export const BODY_RANGE: Record<string, number> = { shove: 3, move: 3, pose: 10 };   // m between the two bodies' last frames
+function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "move", kind: string): string | null {
+  if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
+  const live = c.world?.log?.live;
+  if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
+  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, live.now());
+  if (d.mode === "nobody") return `${tc.id} isn't taking ${cls} from you (their consent says nobody)`;
+  if (d.mode === "ask") return `${tc.id} asks first for ${cls}: ask with the body request — body {to: "${tc.actorId}", kind: "${kind}"}`;
+  const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
+  if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
+  const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (${cls} reaches ${r} m) — walk closer`;
+  return null;
+}
 function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {
   const leg = (o: Client) => !o.spectator && (!embodied || (o.surface ?? "world") === "world");
   if (typeof actor === "string" && ACTOR_ID.test(actor)) return { tc: [...w.clients].find((o) => o.actorId === actor && leg(o)) ?? null, byActor: true, actor };
@@ -193,6 +214,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const lean = ((msg.ragdoll as { lean: unknown[] }).lean).map(Number);
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
+    // consent and range at the server (L6): a knock-over is a shove, a pose or an animation is a pose
+    const why = (rag ? bodyRefusal(c, tc, "shove", "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose", msg.anim ? "anim" : "pose") : null);
+    if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
     // merge: pose only the bones sent, over what the target already holds.
     // Absent means replace — what every sender meant before the flag existed.
     tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}), pose: msg.pose ?? null, merge: msg.merge === true,
@@ -237,6 +261,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name (H2)
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
+    // a grab takes someone's body (move, L6): their consent and reach, at the server; the stream and release that follow
+    // only ever go to a body that accepted the grab (its client answers with end otherwise)
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "move", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
     tc.ws.send(JSON.stringify({
       type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}),
       ...(msg.grab != null ? { grab: msg.grab } : {}),
