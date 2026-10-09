@@ -80,7 +80,8 @@ function setStatic(sim, id, ent) {
   const col = ent ? collider(sim, ent) : null;
   if (!col || !vec3ok(ent.pos)) { delete sim.statics[id]; return; }
   const q = quatOf(ent);
-  sim.statics[id] = { uid: sim.statics[id]?.uid ?? nextUid(sim), c: centreOf(ent.pos, q, col.off), q, half: col.half, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}), ...material(ent) };
+  sim.statics[id] = { uid: sim.statics[id]?.uid ?? nextUid(sim), c: centreOf(ent.pos, q, col.off), q, half: col.half, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}),
+    ...(ent.kind === 'dynamic' ? { dyn: true, off: col.off } : {}), ...material(ent) };
 }
 
 export function simEntry(sim, entry, st) {
@@ -157,8 +158,10 @@ function reachBox(b, dt, slack) {
 function hydrate(sim, keep = null) {
   const rows = [];
   for (const id of Object.keys(sim.statics)) { const s = sim.statics[id]; if (keep && !keep.has(id)) continue;
-    rows.push({ spec: { uid: s.uid, shape: s.shape ?? 'box', half: s.half, radius: s.radius, ...(s.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: s.c, rot: s.q, static: true, friction: s.friction, frictionCombine: s.frictionCombine },
-      p: s.c, q: s.q, v: [0, 0, 0], w: [0, 0, 0], awake: false, sleepTime: 0, sleepTag: null }); }
+    // stage 2: a dynamic thing at rest is a SLEEPING body (its own island, tag 's<uid>'; the engine's are 'step:root'),
+    // so a flyer that reaches it wakes it the engine's own way; anything else at rest is a static collider
+    rows.push({ spec: { uid: s.uid, shape: s.shape ?? 'box', half: s.half, radius: s.radius, ...(s.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: s.c, rot: s.q, ...(s.dyn ? { ccd: true } : { static: true }), friction: s.friction, frictionCombine: s.frictionCombine },
+      p: s.c, q: s.q, v: [0, 0, 0], w: [0, 0, 0], awake: false, sleepTime: 0, sleepTag: s.dyn ? `s${s.uid}` : null }); }
   const ids = [];
   for (const id of Object.keys(sim.bodies)) { const b = sim.bodies[id]; if (b.resting) continue; ids.push(id);
     rows.push({ spec: { uid: b.uid, shape: b.shape ?? 'box', half: b.half, radius: b.radius, ...(b.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: b.c, rot: b.q, ccd: true, friction: b.friction, frictionCombine: b.frictionCombine },
@@ -197,12 +200,18 @@ export function advanceSim(sim, toTick) {
     const before = keep.size < Object.keys(sim.statics).length ? JSON.stringify(sim.e2) : null;
     ({ W, ids, index } = hydrate(sim, keep));
     W.step(dt);
+    const woke = [...keep].filter((id) => sim.statics[id].dyn && W.bodies[index.get(sim.statics[id].uid)].awake);
     if (before !== null) {
-      const swept = ids.map((id) => { const b = sim.bodies[id], e = W.bodies[index.get(b.uid)], r = Math.sqrt(b.half[0] ** 2 + b.half[1] ** 2 + b.half[2] ** 2) + 0.05;
+      const movers = [...ids.map((id) => sim.bodies[id]), ...woke.map((id) => sim.statics[id])];
+      const swept = movers.map((b) => { const e = W.bodies[index.get(b.uid)], r = Math.sqrt(b.half[0] ** 2 + b.half[1] ** 2 + b.half[2] ** 2) + 0.05;
         return [Math.min(b.c[0], e.p[0]) - r, Math.min(b.c[1], e.p[1]) - r, Math.min(b.c[2], e.p[2]) - r, Math.max(b.c[0], e.p[0]) + r, Math.max(b.c[1], e.p[1]) + r, Math.max(b.c[2], e.p[2]) + r]; });
       const missed = Object.keys(sim.statics).some((id) => !keep.has(id) && swept.some((s) => hits(s, sbox(id))));
-      if (missed) { cullStats.redo++; sim.e2 = JSON.parse(before); ({ W, ids, index } = hydrate(sim)); W.step(dt); }
+      if (missed) { cullStats.redo++; sim.e2 = JSON.parse(before); ({ W, ids, index } = hydrate(sim)); W.step(dt);
+        woke.length = 0; for (const id of Object.keys(sim.statics)) if (sim.statics[id].dyn && W.bodies[index.get(sim.statics[id].uid)].awake) woke.push(id); }
     }
+    // woken: it flies now, as part of the latest launch still in the air (engine-defined, PHYSICS §1: a launch's rest
+    // covers every body its flight set moving); it rests and is logged under that launch
+    const by = Math.max(...flyers.map((b) => b.seq));
     sim.tick++;
     let flying = 0, rested = 0;
     for (const id of ids) {
@@ -213,6 +222,11 @@ export function advanceSim(sim, toTick) {
       if (!e.awake || sim.tick - b.born > MAX_FLIGHT_TICKS) { restBody(sim, id, b); rested++; }
       else flying++;
     }
+    for (const id of woke) { const s = sim.statics[id], e = W.bodies[index.get(s.uid)];
+      delete sim.statics[id];
+      sim.bodies[id] = { uid: s.uid, c: e.p.slice(), q: e.q.slice(), v: e.v.slice(), w: e.w.slice(), half: s.half, off: s.off, ...(s.shape === 'sphere' ? { shape: 'sphere', radius: s.radius } : {}),
+        friction: s.friction, frictionCombine: s.frictionCombine, p: originOf(e.p, e.q, s.off), resting: false, seq: by, born: sim.tick, awake: true, sleepTime: e.sleepTime, sleepTag: null, woken: true };
+      flying++; }
     save();
     if (!flying) break;
   }
@@ -221,8 +235,10 @@ export function advanceSim(sim, toTick) {
 }
 // at rest it is a static again where it lies (eidosim@0.x's law, stage 1), keeping its uid
 function restBody(sim, id, b) {
-  b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false;
-  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), friction: b.friction, frictionCombine: b.frictionCombine };
+  // the engine's sleep tag ('step:root') names an island by a body's index in that tick's world, which culling changes;
+  // at rest it's a static here and carries no tag (stage 2's sleepers get 's<uid>' when hydrated)
+  b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false; b.sleepTag = null;
+  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), dyn: true, off: b.off, friction: b.friction, frictionCombine: b.frictionCombine };
 }
 
 export function simPose(sim, id) { const b = sim.bodies[id]; return b ? { p: b.p, q: b.q, resting: b.resting } : null; }

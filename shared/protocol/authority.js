@@ -3133,9 +3133,10 @@ function recentRests(w, now) {
   const X = actIndexOf(w); const E = w.entries; const out = [];
   for (let k = X.rests.length - 1; k >= 0 && out.length < 8; k--) { const seq = X.rests[k]; const e = E[seq]; const when = e.ts ?? 0;
     if (!(now - when < 60000)) break;
-    const c = E[e.cause]; const op = opsQuiet(e).find((o) => o.comp === "transform" && o.id === c.body.id);
+    // PHYSICS §1: a launch's rest covers every body its flight set moving; each transform in it is one body's rest
+    const c = E[e.cause]; const ops = opsQuiet(e).filter((o) => o.comp === "transform" && typeof o.id === "string" && o.value?.pos);
     const ai = X.restAfter.get(seq); const after = ai === undefined ? null : E[ai];
-    out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor], when,
+    for (const op of ops.reverse()) out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: c.body.handled ?? [c.actor], when,
       ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) }); }
   return out.reverse();
 }

@@ -125,4 +125,26 @@ const schedules = (mkf: () => any, T: number) => {
   rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
   ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
 }
+{ // S8 stage 2: what flies knocks what rests. A dynamic thing at rest is a sleeping body the engine wakes on contact; it
+  // flies under the launch that woke it and rests as that launch's. A static-kind one is a collider and never moves.
+  const sc = (kind: any) => ({ a: { pos: [2, 0, 0], yaw: 0, lib: "crate", scale: 1, ...(kind ? { kind } : {}) }, b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" } });
+  const L = [{ id: "b", p: [-1, 0.6, 0], v: [6, 1, 0] }];   // mk numbers launches seq 1..
+  const run = (kind: any) => { const s2: any = mk(sc(kind), L); let woke: any = null;
+    for (let t = 1; t <= 600; t++) { S.advanceSim(s2, t); if (!woke && s2.bodies.a && !s2.bodies.a.resting) woke = { t, seq: s2.bodies.a.seq };
+      if (Object.values(s2.bodies).every((x: any) => x.resting)) break; } return { s2, woke }; };
+  { const { s2, woke } = run("dynamic"); const a = s2.bodies.a;
+    ok(!!woke && woke.seq === 1 && a?.resting && Math.hypot(a.c[0] - 2, a.c[2]) > 0.1, "S8 a thrown crate knocks a dynamic crate: it moves and rests, under the throw's launch", { woke, at: a?.c }); }
+  { const { s2 } = run(undefined); ok(!s2.bodies.a && J(s2.statics.a.c) === J([2, 0.25, 0]), "S8 …a thing that isn't dynamic is a collider: it doesn't move", { c: s2.statics.a?.c }); }
+  let seed = 3; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let bad = 0, sched = 0, knocked = 0;
+  for (let n = 0; n < 8; n++) { const ents: any = {}, Ls: any[] = [], ns = 10 + Math.floor(rnd() * 50), R = 2 + rnd() * 4;
+    for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, lib: "crate", scale: 1, ...(rnd() < 0.7 ? { kind: "dynamic" } : {}) };
+    for (const [k, y] of [["st1", 0], ["st2", 0.5], ["st3", 1]] as const) ents[k] = { pos: [0, y, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" };
+    for (let i = 0; i < 2; i++) { const p = ents["s" + i].pos; Ls.push({ id: "s" + i, p: [p[0], 1, p[2]], v: [-p[0] * 2 + rnd() - 0.5, 2, -p[2] * 2 + rnd() - 0.5], w: [rnd() * 4 - 2, rnd() * 4 - 2, rnd() * 4 - 2] }); }
+    const a = mk(ents, Ls), b = mk(ents, Ls); let div = false;
+    for (let t = 1; t <= 200; t++) { S._cull.off = true; S.advanceSim(a, t); S._cull.off = false; S.advanceSim(b, t); if (!div && J(S.simSnapshot(a)) !== J(S.simSnapshot(b))) { bad++; div = true; } }
+    if (Object.values(b.bodies).some((x: any) => x.woken)) knocked++;
+    const j = mk(ents, Ls); S.advanceSim(j, 200); if (J(S.simSnapshot(j)) !== J(S.simSnapshot(b))) sched++; }
+  ok(bad === 0 && sched === 0 && knocked >= 6, "S8 crate fields: culled = whole world every tick, one jump = ticks, and things get knocked", { bad, sched, knocked, of: 8 });
+}
 console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

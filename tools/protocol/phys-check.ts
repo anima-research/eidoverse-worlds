@@ -151,6 +151,24 @@ function playground(name) {
     ok(!!r7 && Math.abs(cy - 0.11) < ON && Math.abs(st7.q[3]) < 0.99 && st7.pos[2] > 2,
       "D7 …it rolled: its centre rests at its radius on the ground, well past where it landed, turned", { rest: !!r7, pos: st7.pos, q: st7.q, centreY: cy });
   }
+  if (RIGID) { // stage 2: a thrown crate knocks a resting dynamic crate; both rests are logged under the throw, a carrier agrees,
+    // and a locked crate and the (static) table don't move
+    const W8 = playground("pc-d8");
+    call(W8, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 2.2] } });
+    call(W8, "rowan", "create", { id: "fix", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, lock: true }, place: { at: [1.4, 2.2] } });
+    const before = fold(log(W8)).entities; const tgt0 = before.tgt.c.transform.pos, fix0 = before.fix.c.transform.pos, tab0 = before["table-1"].c.transform.pos;
+    call(W8, "rowan", "move", { to: [2, 0, -0.5] }); const g8 = call(W8, "rowan", "grab", { id: "crate-1" });
+    call(W8, "rowan", "move", { to: [0, 0, 0.4] });
+    const t8 = call(W8, "rowan", "throw", { id: "crate-1", v: [0, 1.5, 5] });
+    ok(g8.ok && t8.ok, "D8 setup: crate in hand and thrown at the target", { g: g8.refused, t: t8.refused });
+    call(W8, "rowan", "wait", {}, 20000);
+    const L8 = log(W8), R8 = rests(L8), E8 = fold(L8).entities, v8 = view(W8);
+    const rt = R8.find((r) => r.id === "tgt"), rc = R8.find((r) => r.id === "crate-1");
+    ok(!!rt && !!rc && rt.cause === rc.cause && L8[rt.cause].verb === "launch" && L8[rt.cause].body.id === "crate-1" && JSON.stringify(E8.tgt.c.transform.pos) !== JSON.stringify(tgt0),
+      "D8 the target was knocked: its rest is logged under the throw's launch, beside the thrown crate's", { rests: R8.map((r) => [r.id, r.cause]), tgt: E8.tgt.c.transform.pos });
+    ok(v8.checks.agree >= 2 && !v8.checks.disagree.length, "D8 …and a carrier re-folding the log agrees with both rests", v8.checks);
+    ok(JSON.stringify(E8.fix.c.transform.pos) === JSON.stringify(fix0) && JSON.stringify(E8["table-1"].c.transform.pos) === JSON.stringify(tab0), "D8 a locked crate and the table stay put", { fix: E8.fix.c.transform.pos, table: E8["table-1"].c.transform.pos });
+  }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
   const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);

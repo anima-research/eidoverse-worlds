@@ -11,7 +11,7 @@
 // pinned constant instead of a read of the files at import time — tools/protocol/run.ts recomputes it from the files and
 // fails if they changed without a new engine name (Covenant II).
 import { sha256 } from "./hash.js";
-import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed } from "./fold.js";
+import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, PURGED } from "./fold.js";
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import * as sim2 from "../sim2.js";
@@ -27,7 +27,7 @@ export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "
   { build: EIDOSIM, module: eidosim, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
 // eidosim2: rigid bodies with full rotation, Box3D-style soft contacts, a height-field ground (shared/sim2.js over shared/eidosim2.js)
 // sha256(sim2.js ‖ NUL ‖ eidosim2.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const SIM2_BUILD = "7eba3b74289b6991";
+export const SIM2_BUILD = "0e6be40cdb37fdad";
 export const SIM2_FILES = ["shared/sim2.js", "shared/eidosim2.js", "shared/simmath.js", "shared/terrainmath.js"];
 ENGINES[sim2.SIM_ID] = { build: SIM2_BUILD, module: sim2, rotates: true, about: "eidosim2: rigid boxes that tumble, soft contacts (after Box3D), swept against colliders, terrain", maxSpeed: 20 };
 const engineOf = (name) => ENGINES[name]?.module ?? eidosim;
@@ -60,7 +60,11 @@ function engineEntity(st, id, models = MODELS) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics)) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along for engines that read one (eidosim@0.x reads lib only)
-  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}) };
+  // kind: a dynamic thing at rest can be knocked by what flies (engines that collide moving bodies with resting ones);
+  // a locked one is fixed, as it is to every hand (lock, any truthy value)
+  const lock = e.c.lock, locked = lock !== undefined && lock !== PURGED && !!lock;   // as authority.lockedC
+  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
+    ...(e.c.physics?.kind === "dynamic" && !locked ? { kind: "dynamic" } : {}) };
 }
 function engineViewM(st, models = MODELS) {
   const entities = {};
@@ -112,6 +116,11 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       if (!flying.length) { E().advanceSim(out.sim, target); break; }
       E().advanceSim(out.sim, out.sim.tick + 1);
       for (const id of flying) if (out.sim.bodies[id]?.resting && out.launched[id]) out.launched[id].restTick ??= out.sim.tick;
+      // a body a flight woke is that launch's to rest (PHYSICS §1): it rests and is logged under the launch the engine names
+      for (const [id, b] of Object.entries(out.sim.bodies)) if (b.woken && !b.resting && out.launched[id]?.seq !== b.seq) {
+        const src = Object.values(out.launched).find((l) => l.seq === b.seq);
+        out.launched[id] = { seq: b.seq, cause: src?.cause, by: src?.by, handled: src?.handled ?? [], woken: true };
+      }
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
@@ -132,7 +141,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         if (causeE.verb !== "launch") disagree({ seq, why: `caused by a ${causeE.verb}, which starts no motion` });
         else for (const id of ids) {
           const b = out.sim.bodies[id], l = out.launched[id];
-          if (id !== causeE.body.id) disagree({ seq, id, why: "a rest may only move the body its launch threw" });
+          if (id !== causeE.body.id && !l?.woken) disagree({ seq, id, why: "a rest may only move the bodies its launch set moving" });
           else if (!l || l.seq !== e.cause) disagree({ seq, id, why: "its launch is not this body's current flight (caught, re-thrown or moved since)" });
           else if (!b || !b.resting) disagree({ seq, id, why: "the engine still has it in flight" });
           else { const wp = worldPose(after, id), mine = wp?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p) || (b.q && JSON.stringify(wp?.q) !== JSON.stringify(b.q))) disagree({ seq, id, logged: mine, engine: b.p, ...(b.q ? { loggedQ: wp?.q, engineQ: b.q } : {}) }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
