@@ -16,7 +16,7 @@ const LOOP = 'globalThis.requestAnimationFrame(this[P_SESSION].onDeviceFrame)';
 if (IWER_RAW.split(LOOP).length !== 2) throw new Error('IWER loop pattern did not match exactly once: the patch would silently not apply');
 const IWER = `globalThis.__iwerNativeRAF = globalThis.requestAnimationFrame.bind(globalThis);\n` + IWER_RAW.replace(LOOP, 'globalThis.__iwerNativeRAF(this[P_SESSION].onDeviceFrame)');
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ worlds: [WORLD], env: { SKIP_OPT_SWEEP: '1' } });
 let browser = null;
 const peers = [];
 const errs = [], conErrs = [];
@@ -26,7 +26,7 @@ function peer(id, pose) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key }));
+    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, replica: true }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   peers.push(p);
