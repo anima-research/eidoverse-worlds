@@ -519,7 +519,7 @@ export function compRefusal(type, data, ent = null) {
     return null;
   }
   if (type === 'collider') {
-    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box')) return 'a collider component is {shape: "exact"} (its triangles) or {shape: "box"} (its bounding box); remove it (data: null) to let the size decide';
+    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box' && data.shape !== 'sphere')) return 'a collider component is {shape: "exact"} (its triangles), {shape: "box"} (its bounding box) or {shape: "sphere"} (a ball, for physics); remove it (data: null) to let the size decide';
     return null;
   }
   return null;

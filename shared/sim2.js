@@ -21,6 +21,9 @@ export const SIM_ID = VERSION;
 const MIN_TICK_MS = 16, MAX_TICK_MS = 1000;
 const MAX_FLIGHT_TICKS = 20000;   // runaway backstop, as eidosim@0.x: force rest
 const SUBSTEPS = 4, DENSITY = 1000, FRICTION = 0.6, GRAVITY = [0, -9.81, 0];
+// a sphere's rolling resistance (Box3D's model: the rolling torque is ROLLING × radius × the normal force): with none, a
+// thrown ball would roll until the runaway backstop. 0.05 stops a 2 m/s ball in ~6 s (decel μr·g/1.4 = 0.35 m/s²)
+const ROLLING = 0.05;
 const MAX_SPEED = 20;
 // the law caps spin as the authority caps v: a corner may not move faster than MAX_SPEED (|w|·|half| ≤ 20 m/s), else a
 // spun throw rolls off at any speed (review of 49d4fb0d #2: w 1000 rad/s sent a crate 330 m at 54 m/s). + − × ÷ √ only.
@@ -53,6 +56,18 @@ function geometry(box, scale) {
   // a box with no extent on an axis is given a sliver (a 2 cm-thick sign is still a thing you can hit)
   return { half: half.map((h) => (h > 0.005 ? h : 0.005)), off };
 }
+// a thing's collider: a stamped sphere ({type: 'sphere', radius, pos?}: radius × its largest |scale|, centred at pos in
+// its own frame, the origin when absent, as PHYSICS.md §3.1 reads), else its model's box. half is the sphere's bounding
+// half extent, so everything that bounds a body by half (spin cap, cull reach) stays conservative for it.
+function collider(sim, ent) {
+  const sc = scale3(ent.scale3 ?? ent.scale), sh = ent.shape;
+  if (sh && sh.type === 'sphere' && Number.isFinite(sh.radius) && sh.radius > 0) {
+    const r = sh.radius * Math.max(sc[0], sc[1], sc[2]), at = vec3ok(sh.pos) ? sh.pos : [0, 0, 0];
+    return { shape: 'sphere', radius: r, half: [r, r, r], off: [at[0] * sc[0], at[1] * sc[1], at[2] * sc[2]] };
+  }
+  const box = typeof ent.lib === 'string' ? sim.boxes[ent.lib] : null; if (!box) return null;
+  return { shape: 'box', ...geometry(box, sc) };
+}
 const centreOf = (pos, q, off) => { const r = qrot(q, off); return [pos[0] + r[0], pos[1] + r[1], pos[2] + r[2]]; };
 const originOf = (c, q, off) => { const r = qrot(q, off); return [c[0] - r[0], c[1] - r[1], c[2] - r[2]]; };
 // the entity view's rotation: its q when the view carries one, else its yaw (the older view), as a quaternion
@@ -62,10 +77,10 @@ function nextUid(sim) { const u = sim.e2.nextUid; sim.e2.nextUid = u + 1; return
 function material(ent) { const m = ent?.material ?? {}; return { friction: Number.isFinite(m.friction) ? m.friction : FRICTION, frictionCombine: typeof m.frictionCombine === 'string' ? m.frictionCombine : 'average' }; }
 
 function setStatic(sim, id, ent) {
-  const box = ent && typeof ent.lib === 'string' ? sim.boxes[ent.lib] : null;
-  if (!box || !vec3ok(ent.pos)) { delete sim.statics[id]; return; }
-  const q = quatOf(ent), { half, off } = geometry(box, scale3(ent.scale3 ?? ent.scale));
-  sim.statics[id] = { uid: sim.statics[id]?.uid ?? nextUid(sim), c: centreOf(ent.pos, q, off), q, half, ...material(ent) };
+  const col = ent ? collider(sim, ent) : null;
+  if (!col || !vec3ok(ent.pos)) { delete sim.statics[id]; return; }
+  const q = quatOf(ent);
+  sim.statics[id] = { uid: sim.statics[id]?.uid ?? nextUid(sim), c: centreOf(ent.pos, q, col.off), q, half: col.half, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}), ...material(ent) };
 }
 
 export function simEntry(sim, entry, st) {
@@ -92,13 +107,13 @@ export function simEntry(sim, entry, st) {
   }
   if (entry.verb === 'launch') {   // {id, p (origin), v, q?, w?}: the thing leaves the statics and flies from exactly this state
     const ent = st?.entities?.[a.id]; if (!ent || !vec3ok(a.p) || !vec3ok(a.v)) return;
-    const box = typeof ent.lib === 'string' ? sim.boxes[ent.lib] : null; if (!box) return;
+    const col = collider(sim, ent); if (!col) return;
     advanceSim(sim, tickOf(sim, entry.ts));
-    const q = quatOk(a.q) ? a.q.slice() : quatOf(ent), { half, off } = geometry(box, scale3(ent.scale3 ?? ent.scale));
+    const q = quatOk(a.q) ? a.q.slice() : quatOf(ent), { half, off } = col;
     const uid = sim.statics[a.id]?.uid ?? sim.bodies[a.id]?.uid ?? nextUid(sim);
     delete sim.statics[a.id]; delete sim.bodies[a.id];   // re-insert: order follows the last intent, as eidosim@0.x does
     const c = centreOf(a.p, q, off);
-    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: spinCap(vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half), half, off, ...material(ent),
+    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: spinCap(vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half), half, off, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}), ...material(ent),
       p: a.p.slice(), resting: false, seq: entry.seq, born: sim.tick, awake: true, sleepTime: 0, sleepTag: null };
     return;
   }
@@ -142,11 +157,11 @@ function reachBox(b, dt, slack) {
 function hydrate(sim, keep = null) {
   const rows = [];
   for (const id of Object.keys(sim.statics)) { const s = sim.statics[id]; if (keep && !keep.has(id)) continue;
-    rows.push({ spec: { uid: s.uid, shape: 'box', half: s.half, pos: s.c, rot: s.q, static: true, friction: s.friction, frictionCombine: s.frictionCombine },
+    rows.push({ spec: { uid: s.uid, shape: s.shape ?? 'box', half: s.half, radius: s.radius, ...(s.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: s.c, rot: s.q, static: true, friction: s.friction, frictionCombine: s.frictionCombine },
       p: s.c, q: s.q, v: [0, 0, 0], w: [0, 0, 0], awake: false, sleepTime: 0, sleepTag: null }); }
   const ids = [];
   for (const id of Object.keys(sim.bodies)) { const b = sim.bodies[id]; if (b.resting) continue; ids.push(id);
-    rows.push({ spec: { uid: b.uid, shape: 'box', half: b.half, pos: b.c, rot: b.q, ccd: true, friction: b.friction, frictionCombine: b.frictionCombine },
+    rows.push({ spec: { uid: b.uid, shape: b.shape ?? 'box', half: b.half, radius: b.radius, ...(b.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: b.c, rot: b.q, ccd: true, friction: b.friction, frictionCombine: b.frictionCombine },
       p: b.c, q: b.q, v: b.v, w: b.w, awake: b.awake, sleepTime: b.sleepTime, sleepTag: b.sleepTag }); }
   rows.sort((x, y) => x.spec.uid - y.spec.uid);
   const W = createWorld({ gravity: GRAVITY, substeps: SUBSTEPS, friction: FRICTION, density: DENSITY, ground: groundOf(sim) },
@@ -207,7 +222,7 @@ export function advanceSim(sim, toTick) {
 // at rest it is a static again where it lies (eidosim@0.x's law, stage 1), keeping its uid
 function restBody(sim, id, b) {
   b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false;
-  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, friction: b.friction, frictionCombine: b.frictionCombine };
+  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), friction: b.friction, frictionCombine: b.frictionCombine };
 }
 
 export function simPose(sim, id) { const b = sim.bodies[id]; return b ? { p: b.p, q: b.q, resting: b.resting } : null; }

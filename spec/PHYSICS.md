@@ -133,12 +133,17 @@ fixed before any engine writes a shape that isn't a box
   carries boxes only: `simlayer.engineBox`); it never misreads one shape as
   another.
 - **`collider.shape` is a request; `physics.shape` is the result.**
-  `collider.shape` (`exact` | `box`) says how a thing's geometry is to be
+  `collider.shape` (`exact` | `box` | `sphere`) says how a thing's geometry is to be
   derived for walking collision and, under engines that read it, for the
   sim; `physics.shape` is what the authority measured and stamped. A future
-  request vocabulary (`sphere`, `capsule`, `convex` …) is added to
+  request vocabulary (`capsule`, `convex` …) is added to
   `collider.shape`, and its stamp is the tagged object above: one
   vocabulary for what is asked, one grammar for what is recorded.
+- **`sphere`** (the first such request): the authority fits a sphere to the
+  model's measured box, centred on it, radius its largest half extent, and
+  stamps `{type: "sphere", radius, pos}`. eidosim2 flies it as a sphere (it
+  rolls, with rolling resistance); eidosim@0.x carries boxes only and treats
+  it as its catalogue box.
 
 ### 3.2. Physical properties
 

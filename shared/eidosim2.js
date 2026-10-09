@@ -57,7 +57,7 @@ function makeBody(spec, index, density) {
   const st = !!spec.static;
   const b = { index, uid: spec.uid ?? index, shape: spec.shape, half: spec.half, radius: spec.radius, static: st, noSleep: !!spec.noSleep, ccd: !!spec.ccd,
     p: spec.pos.slice(), q: qnorm(spec.rot ?? [0, 0, 0, 1]), v: (spec.vel ?? [0, 0, 0]).slice(), w: (spec.angVel ?? [0, 0, 0]).slice(),
-    friction: spec.friction, combine: spec.frictionCombine ?? "average", invMass: 0, invIl: [0, 0, 0], sleepTime: 0, awake: !st };
+    friction: spec.friction, combine: spec.frictionCombine ?? "average", rolling: spec.rollingResistance ?? 0, invMass: 0, invIl: [0, 0, 0], sleepTime: 0, awake: !st };
   if (!st) {
     let m, I;
     if (b.shape === "sphere") { const r = b.radius; m = spec.mass || density * (4 / 3) * PI * r * r * r; const i = 0.4 * m * r * r; I = [i, i, i]; }
@@ -78,6 +78,15 @@ function updateInertia(b) {
 }
 const mv = (m, x) => [m[0] * x[0] + m[1] * x[1] + m[2] * x[2], m[3] * x[0] + m[4] * x[1] + m[5] * x[2], m[6] * x[0] + m[7] * x[1] + m[8] * x[2]];
 const invI = (b, x) => mv(b.iw, x);
+// inverse of a symmetric 3×3 (row-major) by cofactors; a singular one gives zero (no constraint)
+function inv3(m) {
+  const c0 = m[4] * m[8] - m[5] * m[7], c1 = m[5] * m[6] - m[3] * m[8], c2 = m[3] * m[7] - m[4] * m[6], det = m[0] * c0 + m[1] * c1 + m[2] * c2;
+  if (!(Math.abs(det) > 0)) return [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const d = 1 / det;
+  return [c0 * d, (m[2] * m[7] - m[1] * m[8]) * d, (m[1] * m[5] - m[2] * m[4]) * d,
+          c1 * d, (m[0] * m[8] - m[2] * m[6]) * d, (m[2] * m[3] - m[0] * m[5]) * d,
+          c2 * d, (m[1] * m[6] - m[0] * m[7]) * d, (m[0] * m[4] - m[1] * m[3]) * d];
+}
 const skewMS = (r, M) => {   // −[r]× M [r]× (3×3, row-major)
   const S = [0, -r[2], r[1], r[2], 0, -r[0], -r[1], r[0], 0], T = new Array(9), o = new Array(9);
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) T[i * 3 + j] = M[i * 3] * S[j] + M[i * 3 + 1] * S[3 + j] + M[i * 3 + 2] * S[6 + j];
@@ -261,7 +270,7 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
   const bodyOf = (i) => (i < 0 ? WORLD : bodies[i]);
   // ground: a height function y = height(x, z) (exact ops, so every runtime agrees), a static collider under everything.
   // Not part of exportState: whoever restores a world passes the same function again.
-  const GROUND = ground ? { uid: -2, index: -2, shape: "field", height: ground.height, static: true, invMass: 0, invIl: [0, 0, 0], iw: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  const GROUND = ground ? { uid: -2, index: -2, shape: "field", height: ground.height, static: true, rolling: ground.rollingResistance ?? 0, invMass: 0, invIl: [0, 0, 0], iw: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     p: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], awake: false, dR: [1, 0, 0, 0, 1, 0, 0, 0, 1], p0: [0, 0, 0], q0c: [0, 0, 0, 1], ext: 0, half: [0, 0, 0], friction: ground.friction ?? friction, combine: ground.frictionCombine ?? "average" } : null;
   let manifolds = [], prevImpulses = new Map(), prevManifold = new Map(), prevByPair = new Map();
   const W = {
@@ -367,9 +376,13 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
       const k11 = mm + dot(rtA1, invI(A, rtA1)) + dot(rtB1, invI(B, rtB1)), k22 = mm + dot(rtA2, invI(A, rtA2)) + dot(rtB2, invI(B, rtB2));
       const k12 = dot(rtA1, invI(A, rtA2)) + dot(rtB1, invI(B, rtB2)), det = k11 * k22 - k12 * k12, id = det !== 0 ? 1 / det : 0;
       const tw = dot(n, add(invI(A, n), invI(B, n))), mkey = `${A.uid}:${B.uid}`, pm = prevManifold.get(mkey);
+      // rolling resistance (Box3D contact.c:689, contact_solver.c:609): max of the two materials × the rounded radius (a
+      // box's is 0), an angular impulse on the relative spin bounded by rr × the normal impulse
+      const rr = Math.max(A.rolling, B.rolling) * Math.max(A.shape === "sphere" ? A.radius : 0, B.shape === "sphere" ? B.radius : 0);
       manifolds.push({ A, B, n, t1, t2, mu, points, soft: A.static || B.static ? softStatic : soft, key: mkey,
         cA, cB, tm: [k22 * id, -k12 * id, k11 * id], twm: tw > 0 ? 1 / tw : 0,
         f1: pm ? dot(pm.f, t1) : 0, f2: pm ? dot(pm.f, t2) : 0, twist: pm ? pm.twist : 0,
+        rr, ...(rr > 0 ? { rm: inv3(A.iw.map((x, k) => x + B.iw[k])), roll: pm?.roll ? pm.roll.slice() : [0, 0, 0] } : {}),
         pA0: A.p.slice(), qA0: A.q.slice(), pB0: B.p.slice(), qB0: B.q.slice() });
     };
     for (const [i, j] of pairs) {
@@ -457,6 +470,7 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
         for (const p of m.points) { imp(m.A, -1, p.ln, m.n, p.rA); imp(m.B, 1, p.ln, m.n, p.rB); }
         const F = add(scl(m.t1, m.f1), scl(m.t2, m.f2)); apply(m.A, scl(F, -1), m.cA); apply(m.B, F, m.cB);
         applyAng(m.A, scl(m.n, -m.twist)); applyAng(m.B, scl(m.n, m.twist));
+        if (m.rr > 0) { applyAng(m.A, scl(m.roll, -1)); applyAng(m.B, m.roll); }
       }
       for (const j of jact) solveJoint(j, true);
       const rev = s & 1;   // symmetric Gauss-Seidel: alternate point order per substep
@@ -484,6 +498,10 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
         { const ts = dot(m.n, sub(m.B.w, m.A.w)), lim = m.mu * twistLimit;
           const nt = Math.max(-lim, Math.min(lim, m.twist - m.twm * ts)), d = nt - m.twist; m.twist = nt;
           applyAng(m.A, scl(m.n, -d)); applyAng(m.B, scl(m.n, d)); }
+        if (m.rr > 0) { const dw = sub(m.B.w, m.A.w), r = m.rm, old = m.roll;
+          let nr = [old[0] - (r[0] * dw[0] + r[1] * dw[1] + r[2] * dw[2]), old[1] - (r[3] * dw[0] + r[4] * dw[1] + r[5] * dw[2]), old[2] - (r[6] * dw[0] + r[7] * dw[1] + r[8] * dw[2])];
+          const lim = m.rr * total, l2 = dot(nr, nr); if (l2 > lim * lim) nr = scl(nr, lim / Math.sqrt(l2));
+          const d = sub(nr, old); m.roll = nr; applyAng(m.A, scl(d, -1)); applyAng(m.B, d); }
         { const vt1 = relv(m, m.cA, m.cB, m.t1), vt2 = relv(m, m.cA, m.cB, m.t2);
           let n1 = m.f1 - (m.tm[0] * vt1 + m.tm[1] * vt2), n2 = m.f2 - (m.tm[1] * vt1 + m.tm[2] * vt2);
           const lim = m.mu * total, l2 = n1 * n1 + n2 * n2;
@@ -533,7 +551,7 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
     for (const m of manifolds) {
       for (const p of m.points) prevImpulses.set(p.key, { ln: p.ln });
       prevByPair.set(m.key, m.points.map((p) => ({ local: p.local, ln: p.ln })));
-      prevManifold.set(m.key, { f: add(scl(m.t1, m.f1), scl(m.t2, m.f2)), twist: m.twist });
+      prevManifold.set(m.key, { f: add(scl(m.t1, m.f1), scl(m.t2, m.f2)), twist: m.twist, ...(m.rr > 0 ? { roll: m.roll } : {}) });
     }
     // sleep bookkeeping
     for (const b of bodies) if (live(b)) {

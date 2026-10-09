@@ -767,8 +767,8 @@ function addOwnOps(ent, id, name, value) {
   if (name === 'Collider') {
     if (ent?.lib == null) return { ops: [], errors: [`a collider needs a model to collide as (${id} has none)`] };
     if (c.collider != null) return { ops: [], errors: [`${id} already has a collider`] };
-    const shape = value === 'box' ? 'box' : value == null || value === '' || value === 'exact' ? 'exact' : null;
-    if (!shape) return { ops: [], errors: ['a collider shape is "exact" or "box"'] };
+    const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'exact' ? 'exact' : null;
+    if (!shape) return { ops: [], errors: ['a collider shape is "exact", "box" or "sphere"'] };
     return { ops: [OP.set(id, 'collider', { shape })], errors: [] };
   }
   // write-new-on-edit, the way a Light is added: its fields spelled out from shared/grab.js DEFAULTS (the data, never a

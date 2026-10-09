@@ -25,7 +25,7 @@ export const COMPONENTS = {
   // registry's (PROTOCOL §4), with the meaning it already had
   // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
   // its box; and the caption bot's speaker mark (shared/components.js Stage). Registered 10-07 with the meanings they had
-  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box)}; absent, its size decides" },
+  collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
   stage:     { on: "thing", fields: { speaker: "any" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
   hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },

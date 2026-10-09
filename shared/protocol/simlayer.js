@@ -27,7 +27,7 @@ export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "
   { build: EIDOSIM, module: eidosim, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
 // eidosim2: rigid bodies with full rotation, Box3D-style soft contacts, a height-field ground (shared/sim2.js over shared/eidosim2.js)
 // sha256(sim2.js ‖ NUL ‖ eidosim2.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const SIM2_BUILD = "91728eb7b046dacc";
+export const SIM2_BUILD = "7eba3b74289b6991";
 export const SIM2_FILES = ["shared/sim2.js", "shared/eidosim2.js", "shared/simmath.js", "shared/terrainmath.js"];
 ENGINES[sim2.SIM_ID] = { build: SIM2_BUILD, module: sim2, rotates: true, about: "eidosim2: rigid boxes that tumble, soft contacts (after Box3D), swept against colliders, terrain", maxSpeed: 20 };
 const engineOf = (name) => ENGINES[name]?.module ?? eidosim;
@@ -59,7 +59,8 @@ export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 function engineEntity(st, id, models = MODELS) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics)) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
-  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale };
+  const sh = e.c.physics?.shape;   // a tagged shape rides along for engines that read one (eidosim@0.x reads lib only)
+  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}) };
 }
 function engineViewM(st, models = MODELS) {
   const entities = {};

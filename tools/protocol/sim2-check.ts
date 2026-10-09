@@ -76,4 +76,31 @@ const schedules = (mkf: () => any, T: number) => {
   const r1 = S.cullStats.redo, starved = run({ slack: -1000 });
   ok(starved === 0 && S.cullStats.redo > r1, "S4 …and a cull that keeps nothing is caught after the step and redone whole", { bad: starved, redos: S.cullStats.redo - r1 });
 }
+{ // S5: a stamped sphere is a sphere (it rolls), not its model's box. Bars set before the first run.
+  const SPH = { type: "sphere", radius: 0.2, pos: [0, 0.2, 0] };
+  const flat = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.5, 0], v: [0, 0, 0] }]);
+  for (let k = 0; k < 400 && !flat.bodies.b.resting; k++) S.advanceSim(flat, flat.tick + 1);
+  ok(flat.bodies.b.resting && flat.bodies.b.shape === "sphere" && Math.abs(flat.bodies.b.c[1] - 0.2) < 0.006, "S5a a dropped sphere rests with its centre at its radius", { c: flat.bodies.b.c, shape: flat.bodies.b.shape });
+  // launched sliding at v0 with no spin on flat ground: friction spins it up until it rolls, at 5/7·v0 with w·r = v.
+  // the same thing as a box just stops (μg ≈ 5.9 m/s², from 3 m/s in ~0.5 s)
+  const slide = (shape: any, T: number) => { const sim = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, ...(shape ? { shape } : {}) } },
+      [{ id: "b", p: [0, 0.001, 0], v: [3, 0, 0] }]); S.advanceSim(sim, T);
+    const b = sim.bodies.b; return { v: b.v[0], w: b.w[2], resting: b.resting, x: b.c[0] }; };
+  const r = slide(SPH, 5);   // ~0.17 s: rolling by then; rolling resistance slows it after
+  ok(Math.abs(r.v - 3 * 5 / 7) / (3 * 5 / 7) < 0.05 && Math.abs(Math.abs(r.w) * 0.2 - Math.abs(r.v)) / Math.abs(r.v) < 0.05,
+    "S5b a sphere launched sliding settles to rolling: v = 5/7·v0 and w·r = v (each within 5%)", { ...r, want: 3 * 5 / 7 });
+  const bx = slide(null, 30);
+  ok(Math.abs(bx.v) < 0.05 && bx.x < 1, "S5c the same thing as a box slides to a stop", bx);
+  // ...and then it slows by its rolling resistance (0.05: μr·g/1.4 = 0.350 m/s²) and comes to rest, rather than rolling
+  // until the runaway backstop holds the world in flight
+  { const s5 = mk({ b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH } }, [{ id: "b", p: [0, 0.001, 0], v: [3, 0, 0] }]);
+    S.advanceSim(s5, 30); const v30 = s5.bodies.b.v[0]; S.advanceSim(s5, 60); const a = (v30 - s5.bodies.b.v[0]) / (30 * 0.033);
+    let k = 60; while (!s5.bodies.b.resting && k < 1000) S.advanceSim(s5, ++k);
+    ok(Math.abs(a - 0.05 * 9.81 / 1.4) / (0.05 * 9.81 / 1.4) < 0.1 && s5.bodies.b.resting && k * 0.033 < 15,
+      "S5e a rolling ball slows by its rolling resistance and comes to rest", { decel: a, restsAfter_s: k * 0.033, at: s5.bodies.b.c }); }
+  const ents = { a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: SPH }, c: { pos: [1, 0, 0], yaw: 0, lib: "crate", scale: 1 } };
+  const L = [{ id: "a", p: [-2, 1, 0], v: [3, 2, 0], w: [0, 0, -4] }];
+  for (const T of [40, 120]) { const [j, t, c, s2] = schedules(() => mk(ents, L), T);
+    ok(j === t && t === c && c === s2, `S5d spheres: every schedule agrees at tick ${T}`); }
+}
 console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

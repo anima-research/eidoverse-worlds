@@ -1426,19 +1426,24 @@ function commit(w, actor, verb, args, build) {
 //   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
 //     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
 const r4 = (n) => Math.round(n * 1e4) / 1e4;
-const shapeFor = (model) => { const m = geomOf(model); return m ? boxOfM(m).map((c) => c.map(r4)) : null; };
+// the authority's measurement of a model as a collider. A sphere is asked for with collider.shape "sphere" (PHYSICS §3.1:
+// the request vocabulary; the stamp is the tagged shape): fitted to the measured box, centred on it, radius its largest
+// half extent (a ball's box is a cube, so this is the ball)
+const shapeFor = (model, req) => { const m = geomOf(model); if (!m) return null; const b = boxOfM(m);
+  if (req === "sphere") return { type: "sphere", radius: r4(Math.max(...[0, 1, 2].map((k) => (b[1][k] - b[0][k]) / 2))), pos: [0, 1, 2].map((k) => r4((b[0][k] + b[1][k]) / 2)) };
+  return b.map((c) => c.map(r4)); };
 function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
-  for (const o of ops) if (o.verb === "set" && (o.comp === "physics" || o.comp === "model")) ids.add(o.id);
+  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider")) ids.add(o.id);
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
   const out = ops.slice(); const stamped = [];
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;
-    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model) : null;
+    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : null;
     let next;
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
@@ -3266,6 +3271,7 @@ function shaped(e, id, spec = null) {
   // and never rest (review of 49d4fb0d #6). Today the shape check below refuses it anyway (a modelless thing keeps no
   // measured shape; phys-check D6); this holds if a shape can ever be set without a model
   if (spec && ENGINES[spec.engine]?.rotates && typeof e.c.model !== "string") refuse("no-shape", `${id} has no model, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
+  if (spec && ENGINES[spec.engine]?.rotates && e.c.physics?.shape?.type === "sphere" && !shapeError(e.c.physics.shape)) return;   // a rigid engine flies a sphere
   if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body

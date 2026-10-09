@@ -128,6 +128,29 @@ function playground(name) {
     ok(!c6.ok || ((!t6 || t6.refused?.code === "no-shape") && (!p6 || p6.refused?.code === "no-shape")),
       "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
   }
+  { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
+    // is never taken, Covenant III); under eidosim2 it flies as a sphere: thrown, it rolls, and rests turned on the ground
+    const W7 = playground("pc-d7");
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+    const ph7 = fold(log(W7)).entities.rb?.c.physics?.shape;
+    ok(c7.ok && JSON.stringify(ph7) === JSON.stringify({ type: "sphere", radius: 0.11, pos: [0, 0.11, 0] }), "D7 collider sphere: the authority stamps a sphere fitted to the ball's box", { shape: ph7, refused: c7.refused });
+    const box7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "box" } }), back7 = fold(log(W7)).entities.rb?.c.physics?.shape;
+    const sph7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "sphere" } });
+    ok(box7.ok && sph7.ok && JSON.stringify(back7) === JSON.stringify([[-0.11, 0, -0.11], [0.11, 0.22, 0.11]]), "D7 …asking for a box again re-stamps the box", { back7 });
+  }
+  if (RIGID) {
+    const W7 = playground("pc-d7r");
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+    const g7 = call(W7, "rowan", "grab", { id: "rb" }), t7 = call(W7, "rowan", "throw", { id: "rb", v: [0, 1, 3] });
+    ok(c7.ok && g7.ok && t7.ok, "D7 setup: a ball stamped as a sphere is made, picked up and thrown", { c: c7.refused, g: g7.refused, t: t7.refused });
+    call(W7, "rowan", "wait", {}, 15000);
+
+    const r7 = rests(log(W7)).find((r) => r.id === "rb"), st7 = fold(log(W7)).entities.rb.c.transform;
+    // a rolled ball's origin (its bottom, as modelled) has turned with it: the claim is about its CENTRE, origin + q·(0, r, 0)
+    const [qx, qy, qz, qw] = st7.q, cy = st7.pos[1] + 0.11 * (1 - 2 * (qx * qx + qz * qz));
+    ok(!!r7 && Math.abs(cy - 0.11) < ON && Math.abs(st7.q[3]) < 0.99 && st7.pos[2] > 2,
+      "D7 …it rolled: its centre rests at its radius on the ground, well past where it landed, turned", { rest: !!r7, pos: st7.pos, q: st7.q, centreY: cy });
+  }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
   const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);
