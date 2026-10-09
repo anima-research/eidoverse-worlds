@@ -332,9 +332,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
     out.shapes = [!sim.boxes || (shapes.length > 0 && !noShape.length), noShape.slice(0, 5)];
     // R 2026-10-08: a thing the v1 log punts is a dynamic collider, every other one static (the ruling itself: this fact
     // states it, it can't independently derive it)
-    // per incarnation: a punt counts for the thing its id names since its last spawn
-    const lastSpawn = (id: string) => L.reduce((k: number, e: any, i: number) => (e.verb === "spawn" && e.args?.id === id && !(e.args.lib != null && !e.args.lib) ? i : k), -1);
-    const punted = (id: string) => L.some((e: any, i: number) => e.verb === "punt" && e.args?.id === id && i > lastSpawn(id));
+    // per thing (the v1 fold's own identity), from the translator's one statement of the rule
+    const lives = TV1.puntedLives(L), lt = TV1.lifeTracker(); for (const e of L) lt.step(e);
+    const punted = (id: string) => lives.has(`${id}#${lt.of(id)}`);
     const wrongKind = shapes.filter(([id]) => E[TV1.enc(id)]?.c.physics?.kind !== (punted(id) ? "dynamic" : "static")).map(([id]) => id);
     out.kinds = [!sim.boxes || !wrongKind.length, wrongKind.slice(0, 5)];
     // the live host opens it (the code the cutover runs) and its own sim layer agrees with every logged rest
@@ -434,6 +434,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
     // a spawn the v1 fold ignores (lib "") is no new thing: what was punted stays dynamic (review r4 #5)
     const noop = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "" } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
     ok(noop?.kind === "dynamic", "EP4 a spawn the v1 fold ignores (lib \"\") makes no new thing: the punted crate stays dynamic", noop);
+    // the v1 fold's own identity (fold.js bornOf): a same-lib re-spawn with no remove between is the same thing (review r5)
+    const again = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
+    ok(again?.kind === "dynamic", "EP4 a same-lib re-spawn with no remove between is the same thing (the v1 fold's own identity): still dynamic", again);
     ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
       && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
       "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",

@@ -80,4 +80,17 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
     const top = side.pos[1] + qr(side.q, [0, 0.3, 0])[1] + 0.3;   // the 0.6 m lab crate: its centre, then half a side up
     ok(p.ok && Math.abs(L.pos[1] - top) < 0.02 && Math.abs(Math.hypot(...L.q) - 1) < 1e-9,
       "K6 a lamp placed on a crate lying on its side stands on its true top, with a unit rotation", { placed: p.ok ?? p.refused, lampY: L.pos[1], top, qn: Math.hypot(...L.q) }); } }
+// K7 (review r5): an empty UPRIGHT surface list (a door, a wall) says nothing about lying: laid flat, its top face is a
+// surface, as the walker has it; a round thing (a ball) offers none in any pose
+{ const root3 = fs.mkdtempSync(root + "/flat-") + "/"; let now = 1800000000000; const dir = root3 + "w/"; fs.mkdirSync(dir);
+  const w = openLive(dir, "w", { now: () => now, custodyFile: root3 + "custody.json", nameOf: () => null, kindOf: () => "human" });
+  const c = (a, v, args = {}, step = 100) => { now += step; return request(w, a, v, args); };
+  c("rowan", "create-world", { title: "flat" }); c("rowan", "move", { to: [0, 0, 6] });
+  const made = ["door", "wall"].map((m, i) => c("rowan", "create", { id: m, model: m, place: { at: [i * 5, 0], lying: true } }).ok);
+  c("rowan", "create", { id: "bell", model: "bell", place: { at: [9, 9] } });
+  const onDoor = c("rowan", "place", { id: "bell", on: "door" }), onWall = c("rowan", "place", { id: "bell", on: "wall" });
+  c("rowan", "create", { id: "ball", model: "ball", components: { transform: { pos: [-5, 0, 0], q: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] } } });
+  const ballS = c("rowan", "measure", { id: "ball" }).surfaces;
+  ok(made.every(Boolean) && onDoor.ok && onWall.ok && Array.isArray(ballS) && ballS.length === 0,
+    "K7 a door or a wall laid flat has its top as a surface (a bell goes on it); a ball on its side still offers none", { made, door: onDoor.ok ?? onDoor.refused, wall: onWall.ok ?? onWall.refused, ball: ballS }); }
 console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

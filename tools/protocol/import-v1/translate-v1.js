@@ -264,6 +264,23 @@ function physical(st, sim, recorded, out, dynamic = () => false) {
   if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { kind: dynamic(id) ? "dynamic" : "static", shape: clone(sim.boxes[e.lib]) }; }
   return out;
 }
+/** Which thing an id names, as the v1 fold tells them apart (fold.js bornOf): a spawn it accepts (an id, and a lib that's
+ *  absent or real) is a NEW thing when the id was free (never spawned, or removed) or held a different lib or a light; a
+ *  same-lib re-spawn is the same thing. `of(id)` is the id's life count. R 2026-10-08's "punted → dynamic" is per thing. */
+export function lifeTracker() {
+  const lib = new Map(), n = {};
+  return { of: (id) => n[id] ?? 0, step(e) { const id = e?.args?.id; if (typeof id !== "string") return;
+    if (e.verb === "remove") lib.delete(id);
+    else if (e.verb === "light") lib.set(id, "\0light");
+    else if (e.verb === "spawn" && id && !(e.args.lib != null && !e.args.lib)) { const l = e.args.lib ?? null;
+      if (!lib.has(id) || lib.get(id) !== l) n[id] = (n[id] ?? 0) + 1; lib.set(id, l); } } };
+}
+/** The things (`id#life`) a v1 log ever punts: R 2026-10-08, these come across `dynamic`, every other collider `static`. */
+export function puntedLives(entries) {
+  const t = lifeTracker(), out = new Set();
+  for (const e of entries) { t.step(e); if (e?.verb === "punt" && typeof e.args?.id === "string") out.add(`${e.args.id}#${t.of(e.args.id)}`); }
+  return out;
+}
 /** Whether a v1 log enters a physics epoch (the v1 fold's own test: a sim name and an integer tick). */
 export const hasEpoch = (oldEntries) => oldEntries.some((e) => e?.verb === "epoch" && typeof e.args?.sim === "string" && Number.isInteger(e.args?.tickMs));
 
@@ -317,12 +334,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // R 2026-10-08: a thing the v1 log ever punts is a dynamic collider, every other one static. Known up front, so the
   // kind is right from the moment its collider appears (no static → dynamic flip at the punt, which an undo of the
   // punt's act would then take back), and per incarnation: an id spawned again is a new thing (review of b398d7e3 #2, #4)
-  // a spawn the v1 fold accepts (an id, and a lib that's absent or real: fold.js's own test) makes a new thing
-  const born = (e) => e.verb === "spawn" && !!e.args?.id && !(e.args.lib != null && !e.args.lib);
-  const life = {}; const puntedLives = new Set();
-  for (const e of oldEntries) { const id = e?.args?.id; if (typeof id !== "string") continue;
-    if (born(e)) life[id] = (life[id] ?? 0) + 1; else if (e.verb === "punt") puntedLives.add(`${id}#${life[id] ?? 0}`); }
-  const lifeNow = {}; const dynamic = (id) => puntedLives.has(`${id}#${lifeNow[id] ?? 0}`);
+  const lives = puntedLives(oldEntries); const lifeNow = lifeTracker(); const dynamic = (id) => lives.has(`${id}#${lifeNow.of(id)}`);
   if (physics) Object.assign(stats, { launches: 0, rests: 0, worldDivergences: 0 });
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
@@ -354,7 +366,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the authority's admission time, carried from the old entry
     if (sim.epoch && ts !== undefined) { stepTo(eidosim.tickOf(sim, ts)); logRests(Math.max(ts, clock())); }
     foldEntry(v1, e); eidosim.simEntry(sim, e, v1);
-    if (born(e) && typeof e.args.id === "string") lifeNow[e.args.id] = (lifeNow[e.args.id] ?? 0) + 1;
+    lifeNow.step(e);
     const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
       : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });

@@ -632,7 +632,7 @@ export function raySegment(origin, dir, far) {
           continue;
         }
         let box = F.box;
-        if (e.pillar) {
+        if (F.pillar) {
           const mx = (F.box.min.x + F.box.max.x) / 2, mz = (F.box.min.z + F.box.max.z) / 2;
           _rsPost.min.set(mx - 0.25, F.box.min.y, mz - 0.25);
           _rsPost.max.set(mx + 0.25, F.box.max.y, mz + 0.25);

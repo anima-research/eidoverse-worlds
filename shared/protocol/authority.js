@@ -343,7 +343,7 @@ function surfacesOf(st, id) {
   const t = worldT(st, id);
   const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
   if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
-    if (Array.isArray(m.surfaces) && !m.surfaces.length) return [];   // a model that declares no surfaces (a ball, a lamp) gains none by falling over
+    if (m.round) return [];   // a round thing (a ball, a bell) offers no face in any pose; an empty UPRIGHT list (a door, a wall) says nothing about lying
     const out = [];
     for (const o of obbs(st, id)) for (let j = 0; j < 3; j++) {
       const u = o.ax[j][1]; if (Math.abs(u) < UPRIGHT) continue;

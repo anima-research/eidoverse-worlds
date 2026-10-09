@@ -296,5 +296,14 @@ console.log('\nthe camera ray, a refit, the spatial index, a fallen post:');
   check('a fallen tall thing is its whole box, not a post at its centre', C.colliders.get('tree').pillar && log.onto === 'tree' && Math.abs(log.y - 0.3) < 1e-6, JSON.stringify(log));
 }
 
+// review r5: the camera ray reads a fallen tall thing as the walker does (a log, not a post at its middle)
+{
+  const g = new THREE.BoxGeometry(0.6, 3, 0.6); g.translate(0, 1.5, 0); const m = new THREE.Mesh(g, undefined); m.updateMatrixWorld(true);
+  C.fitCollider('trunk', m, { collide: 'box' }); const s2 = Math.SQRT1_2;
+  m.quaternion.set(0, 0, -s2, s2); m.position.set(200, 0.3, 0); m.updateMatrixWorld(true); C.reindexCollider('trunk');   // x 200..203, y 0..0.6
+  let t: any; try { t = C.raySegment(new THREE.Vector3(202.8, 0.3, -2), new THREE.Vector3(0, 0, 1), 10); } catch (e) { t = String(e); }
+  check('the camera ray meets a fallen trunk near its end (it is a log to the ray too)', C.colliders.get('trunk').pillar && typeof t === 'number' && Math.abs(t - 1.7) < 1e-6, String(t));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -21,7 +21,7 @@ import path from "node:path";
 import { ENGINE } from "./common.ts";
 import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
-import { translate as translateV1, DROPPED, hasEpoch } from "./import-v1/translate-v1.js";
+import { translate as translateV1, DROPPED, hasEpoch, puntedLives, lifeTracker } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
@@ -229,10 +229,9 @@ for (const p of logs.sort()) {
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
   const v1 = v1Empty(); const now = emptyState(); let k = -1, loss: any = null;
   // which things the log ever punts, per incarnation (the spawn it follows): known from the whole log, as the importer reads it
-  const born: Record<string, number> = {}, flown = new Set<string>();
-  for (const e of L) { const id = e?.args?.id; if (typeof id !== "string") continue; if (e.verb === "spawn" && !(e.args.lib != null && !e.args.lib)) born[id] = (born[id] ?? 0) + 1; else if (e.verb === "punt") flown.add(`${id}@${born[id] ?? 0}`); }
-  const alive: Record<string, number> = {};
-  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {}, dynamic: (id: string) => flown.has(`${id}@${alive[id] ?? 0}`) } : null;
+  // (the ruling's rule, from the translator's one statement of it: this reference checks the projection, not the rule)
+  const flown = puntedLives(L), alive = lifeTracker();
+  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {}, dynamic: (id: string) => flown.has(`${id}#${alive.of(id)}`) } : null;
   const settle = (tick: number) => { if (!phys?.sim.epoch) return; eidosim.advanceSim(phys.sim, tick);   // schedule-independent: one jump is exact
     for (const [id, b] of Object.entries<any>(phys.sim.bodies)) if (b.resting) phys.restAt[id] = b.p.slice();
     for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
@@ -240,7 +239,7 @@ for (const p of logs.sort()) {
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) has no old entry
       if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
-      compareAt(k); k++; foldEntry(v1, body[k]); if (body[k].verb === "spawn" && typeof body[k].args?.id === "string" && !(body[k].args.lib != null && !body[k].args.lib)) alive[body[k].args.id] = (alive[body[k].args.id] ?? 0) + 1;
+      compareAt(k); k++; alive.step(body[k]); foldEntry(v1, body[k]);
       if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does

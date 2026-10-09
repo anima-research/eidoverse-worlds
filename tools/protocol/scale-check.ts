@@ -493,7 +493,10 @@ async function sameAsBase() {
   // fields are additions the base never wrote, generated from components it also had. Compared without them, on both sides
   // 2026-10-09 (review of b398d7e3): a rotation the authority writes is made unit after rounding (the base wrote 0.707 per
   // axis, which isn't): compared as the rotation it means, normalised then rounded, on both sides
-  const unitQ = (v: any) => { const n = Math.hypot(...v); return v.map((x: number) => Math.round((x / n) * 1000) / 1000); };
+  const unitQ = (v: any) => { const n = Math.hypot(...v); return v.map((x: number) => Math.round((x / n) * 1e6) / 1e6); };
+  const qs: number[][] = []; JSON.stringify(a, (k, v) => { if (k === "q" && Array.isArray(v) && v.length === 4) qs.push(v); return v; });
+  const notUnit = qs.find((q) => Math.abs(Math.hypot(...q) - 1) > 1e-9);   // ours must BE unit, not merely compare as one
+  if (notUnit) return { same: false, replies: a.length, notUnit };
   const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined
     : k === "q" && Array.isArray(v) && v.length === 4 && v.every(Number.isFinite) ? unitQ(v) : v));
   const diff = a.findIndex((x: any, i: number) => noA11y(x) !== noA11y(b[i]));
