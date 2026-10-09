@@ -1372,7 +1372,7 @@ export function updateXR(dtSec = 1 / 72) {
       if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? (ent?.interactable ? ent.dist : 1.8));
         if (dotVisible(xrPrefs.dotVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, surface: !!ent })) placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null, hit: ent }); else hideSurfaceDot(hand.dot);
         continue; }
-      // GRIP (my collaborator, 10-08, merging the pointer pass into v4): aimed at a panel, grip takes the PANEL (tryGrab below: background,
+      // GRIP (my collaborator, 10-08, merging the pointer pass into the protocol branch): aimed at a panel, grip takes the PANEL (tryGrab below: background,
       // title, a corner to resize); aimed anywhere else, it takes a grabbable THING (thingphysics.js xrHand: near, else along
       // the laser). A hand holding a thing is busy — no beam, no dot, no panel chord; its trigger uses the thing.
       { const gh = grabHand(side, { pos: hand.grip.getWorldPosition(_v), grip, mayTake: panelNow == null && !held && !resizing, trig, pick: () => rayHitEntity(ray, 10), scale: getSelf()?.userScale ?? 1, haptic: (v, ms) => haptic(side, v, ms) });
