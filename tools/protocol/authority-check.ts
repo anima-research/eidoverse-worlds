@@ -896,5 +896,14 @@ const w0 = () => openWorld(root, "tier0");
   ok(iw("ann", "set", { id: "box", component: "imported:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");
   { const d = iw("ann", "delete", { id: "box", component: "imported:note" }); ok(d.ok, "IM3 …and deleting one is an ordinary edit (a keyed record is its creator's or an owner's to delete)", d.refused); } }
 
+// BZ: bounds must enclose a volume. World Settings › Places once saved {min:[0,0,0],max:[0,0,0]} on a world with none
+// (every translated world): accepted, it refused every agent move and sent every landing throw back as "lost" (audit 10-09 A).
+{ const name = "bounds-zero";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: "bounds" });
+ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [0, 0, 0], max: [0, 0, 0] } })) === "shape", "BZ1 a zero-size bounds box is refused");
+ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-5, 0, -5], max: [5, 0, 5] } })) === "shape", "BZ2 a box flat on one axis (min = max) is refused");
+ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 40, 50] } }).ok, "BZ3 a real box is accepted"); }
+
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

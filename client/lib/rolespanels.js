@@ -230,10 +230,21 @@ function paintPlaces(body) {
     + `<h4 class="rp-h">Bounds</h4><label class="rp-field">min ${v3('min', bd?.min)}</label><label class="rp-field">max ${v3('max', bd?.max)}</label>`
     + (edit ? '<button type="button" class="rp-btn" data-save>Save</button>' : ro('the owner (or someone with editWorld)'));
   body.querySelectorAll('input').forEach((x) => x.addEventListener('keydown', (e) => e.stopPropagation()));
-  const read = (k) => [0, 1, 2].map((i) => Number(body.querySelector(`[data-k=${k}][data-i="${i}"]`).value || 0));
-  body.querySelector('[data-save]')?.addEventListener('click', () => act('batch', { ops: [
-    { verb: 'set', args: { id: '@world', component: 'spawn', value: { pos: read('spawn'), ...(body.querySelector('[data-k=radius]').value ? { radius: Number(body.querySelector('[data-k=radius]').value) } : {}) } } },
-    { verb: 'set', args: { id: '@world', component: 'bounds', value: { min: read('min'), max: read('max') } } }], label: 'places' }, 'places', () => paintPlaces(body)));
+  // A section is written only when it's filled in: blank fields used to read as 0, so a world with no bounds saved a
+  // zero-size box that refused every move. A half-filled one is said, not guessed.
+  const raw = (k) => [0, 1, 2].map((i) => body.querySelector(`[data-k=${k}][data-i="${i}"]`).value.trim());
+  const read = (k) => { const v = raw(k); if (v.every((x) => x === '')) return null; if (v.some((x) => x === '')) return 'partial'; return v.map(Number); };
+  body.querySelector('[data-save]')?.addEventListener('click', () => {
+    const pos = read('spawn'), radius = body.querySelector('[data-k=radius]').value.trim(), min = read('min'), max = read('max');
+    if (pos === 'partial') return toast('Spawn: fill in x, y and z (or leave all three empty)', 'warn');
+    if (min === 'partial' || max === 'partial' || (min === null) !== (max === null)) return toast('Bounds: fill in all six numbers (or leave them all empty for no bounds)', 'warn');
+    if (pos === null && radius !== '') return toast('Spawn: a radius needs a place (x, y, z)', 'warn');
+    const ops = [];
+    if (pos) ops.push({ verb: 'set', args: { id: '@world', component: 'spawn', value: { pos, ...(radius !== '' ? { radius: Number(radius) } : {}) } } });
+    if (min) ops.push({ verb: 'set', args: { id: '@world', component: 'bounds', value: { min, max } } });
+    if (!ops.length) return toast('Places: nothing to save', 'info');
+    act('batch', { ops, label: 'places' }, 'places', () => paintPlaces(body));
+  });
 }
 // what translation carried from an older world: imported:<k>, imported-behavior:<k>, imported-bans:<id>, imported-epoch
 const IMPORTED = /^imported(?:-[a-z]+)?(?::|$)/;
@@ -268,4 +279,4 @@ export function initRolesPanels() {
   bus.on('roster', () => { if (sections.bans?.isOpen) paintBans(sections.bans.body); });
   syncModeration();
 }
-export const _test = { paintRoles, paintAccess, syncModeration, sections };
+export const _test = { paintRoles, paintAccess, paintPlaces, syncModeration, sections };

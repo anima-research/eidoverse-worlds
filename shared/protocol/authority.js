@@ -1170,8 +1170,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     // 0 makes every child's transform divide by zero (review T0e)
     if (Math.hypot(...v.q) < 1e-6) refuse("shape", `${at}.q is all zeros, which isn't a rotation`, "no rotation is [0, 0, 0, 1]");
     if (v.scale.some((x) => Math.abs(x) < 1e-4)) refuse("shape", `${at}.scale has a 0 in it; a thing can't be flat to nothing`, "to hide something, delete it or give it a tiny scale like 0.01"); }
-  if (comp === "bounds") { if (!obj || !nums(v.min, 3) || !nums(v.max, 3) || Object.keys(v).some((k) => !["min", "max"].includes(k)) || v.min.some((x, i) => x > v.max[i]))
-    refuse("shape", `${at} must be {min: [x,y,z], max: [x,y,z]} with min ≤ max on every axis`, "e.g. {min: [-20, 0, -20], max: [20, 12, 20]}"); }
+  if (comp === "bounds") { if (!obj || !nums(v.min, 3) || !nums(v.max, 3) || Object.keys(v).some((k) => !["min", "max"].includes(k)) || v.min.some((x, i) => x >= v.max[i]))
+    refuse("shape", `${at} must be {min: [x,y,z], max: [x,y,z]} with min < max on every axis (a box with room inside)`, "e.g. {min: [-20, 0, -20], max: [20, 12, 20]}"); }
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
