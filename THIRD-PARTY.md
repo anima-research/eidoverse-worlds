@@ -44,13 +44,13 @@ SOFTWARE.
 
 ## Box3D (MIT)
 
-- **What:** the physics in eidosim2 was studied from Box3D's source and written fresh in JavaScript; no file was
+- **What:** the physics in eidosim was studied from Box3D's source and written fresh in JavaScript; no file was
   copied. Some parts follow Box3D's structure closely enough that this notice is carried to be safe: the soft-step
   stage order and its softness coefficients (`solver.h` `b3MakeSoft`), central (manifold) friction and twist
   friction (`contact_solver.c`), the contact-stiffness cap by substep rate (`physics_world.c`), speculative
   margins, the continuous-collision rules (`solver.c` time of impact against statics), the joint softness defaults
   (`joint.c`), and the implicit gyroscopic step.
-- **Where:** `shared/eidosim2.js` (its header credits Box3D, Catto's "Solver2D" (2024) and Ross Nordby's soft
+- **Where:** `shared/eidosim.js` (its header credits Box3D, Catto's "Solver2D" (2024) and Ross Nordby's soft
   constraint coefficients).
 - **Source:** https://github.com/erincatto/box3d, commit `5d83df83ab47172c2c745b44315e7538ead02397` (2026-10-07).
 - **Licence:** MIT.

@@ -290,7 +290,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } }); same("built");
-  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
   { const th = call("rowan", "throw", { id: "ball", v: [0, 2, 3] }); ok(th.ok, "L throw accepted", th.refused ?? th); }
   call("rowan", "look", {}, 300); same("mid-flight (a read advanced the sim first)");
@@ -890,7 +890,7 @@ const w0 = () => openWorld(root, "tier0");
 { const iw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imported"), actor, verb, args); };
   iw("ann", "create-world", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
-  const tries = [["box", "imported-guard", true], ["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported-epoch", { sim: "eidosim@0.5.0" }]];
+  const tries = [["box", "imported-guard", true], ["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported-epoch", { sim: "eidosim@1.0.0" }]];
   const by = tries.map(([id, component, value]) => code(iw("bob", "set", { id, component, value })));
   ok(by.every((c) => c === "imported"), "IM1 a builder can't write an imported guard, an imported field, an old binding, an imported ban or an imported epoch", by);
   ok(iw("ann", "set", { id: "box", component: "imported:note", value: "kept" }).ok, "IM2 …an owner can (a copy of an imported world writes them; a repair)");

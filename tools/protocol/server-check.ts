@@ -415,7 +415,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 // a person who leaves while holding something drops it into the world ----
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", REPLICA); await sleep(100);
-  ok((await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } })).ok, "SP Ann turns physics on");
+  ok((await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "SP Ann turns physics on");
   ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
   const b = await client(srv.port, "pitch", "Bob", REPLICA); await sleep(150); const B = b.snapshot?.cut?.you;
   ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
@@ -423,7 +423,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(a.of("holds").at(-1)?.holds?.ball?.by === B, "SP1 everyone is told who holds it (holds: presence, never logged)", a.of("holds"));
   const c = await client(srv.port, "pitch", "Cy", REPLICA);
   ok(c.snapshot?.cut?.holds?.ball?.by === B, "SP2 a joiner's cut says who holds what", c.snapshot?.cut?.holds);
-  ok(c.snapshot?.cut?.sim?.spec?.engine === "eidosim@0.5.0" && c.snapshot.cut.sim.sim?.epoch, "SP2 …and carries the sim where the authority's clock stands (a joiner folds later launches with it)", c.snapshot?.cut?.sim?.spec);
+  ok(c.snapshot?.cut?.sim?.spec?.engine === "eidosim@1.0.0" && c.snapshot.cut.sim.sim?.epoch, "SP2 …and carries the sim where the authority's clock stands (a joiner folds later launches with it)", c.snapshot?.cut?.sim?.spec);
   // the hold record (grabbable, slice 3): which hand rides the same presence message, so every client draws it there
   ok((await b.req("grab", { id: "ball", hand: "left" })).ok, "SP5 Bob moves it to his left hand (presence: nothing logged)"); await sleep(200);
   ok(a.of("holds").at(-1)?.holds?.ball?.hand === "left" && a.of("holds").at(-1)?.holds?.ball?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
@@ -435,7 +435,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   let wr = null; for (let i = 0; i < 20; i++) { await sleep(500); wr = await a.req("wait", {}); if (!Object.keys(wr?.inFlight ?? {}).length) break; }
   let k = null; for (let i = 0; i < 40; i++) { await sleep(100); k = heldBy(c); if (k?.sim?.checks?.agree >= 1) break; } // (the rest's log reaching Cy)
   const rest = fold(readLog(fs.readFileSync(path.join(W4, "pitch", "world.jsonl")))).entities.ball.c.transform.pos;
-  ok(rest[1] === 0 && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the authority's rest", [rest, k?.sim?.checks, wr]);
+  // (a tumbling engine may land a cube on its side, so its origin needn't be at y 0: the authority's word is "on ground")
+  ok(wr?.cameToRest?.some((r: any) => r.id === "ball" && r.on === "ground") && k?.sim?.checks?.agree >= 1 && !k.sim.checks.disagree.length, "SP4 it rests on the ground, and Cy's own fold (from his cut) agrees with the authority's rest", [rest, k?.sim?.checks, wr]);
   a.close(); c.close(); }
 for (const c of [ann, bob, vic, spec]) c.close();
 await sleep(200);
@@ -498,7 +499,7 @@ srv.proc.kill();
 { ok(tool(["found", "crash", "--owner", "Ann"]).code === 0, "SK found a physics world");
   const srvA = await startServer(ENGINE, W4, OPT, "sk");
   const a = await client(srvA.port, "crash", "Ann", REPLICA); await sleep(100);
-  await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } });
   await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.4, 1] } });
   const b = await client(srvA.port, "crash", "Bob", REPLICA); await sleep(150);

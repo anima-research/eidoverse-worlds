@@ -145,7 +145,7 @@ attacks.push({ id: "H4f", what: "a log with no owner at all: roles:bob says buil
 // ---- H2: the rest check verifies a copy, not the fact (P1a–d, P4), run on each server's own physics log ----
 function physLog(d) {
   const s = session(d, "atk-phys"); T = 1800000000000;
-  s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   s.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   s.call("rowan", "move", { to: [0, 0, -0.5] }); s.call("rowan", "grab", { id: "ball" }); s.call("rowan", "throw", { id: "ball", v: [0, 2, 3] });
   T += 6000; s.call("rowan", "wait", {});

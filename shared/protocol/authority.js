@@ -3262,7 +3262,7 @@ function stampHomes(ctx, ops) {
 }
 function flyingWorld(st) {
   const spec = st.entities["@world"]?.c["physics-engine"];
-  if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}}");
+  if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
   return spec;
 }
@@ -3287,8 +3287,8 @@ function launch(w, actor, a, verb, g = null) {
   shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
   // PHYSICS.md §4.2: spin is w, [x, y, z] rad/s in the world frame, everywhere; t is the capture time on the authority's
-  // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim ignores it, as
-  // it ignores roll). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
+  // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim does, with its
+  // spin cap). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
   if (a.w !== undefined && !(Array.isArray(a.w) && a.w.length === 3 && a.w.every((n) => Number.isFinite(n) && Math.abs(n) <= 1000))) refuse("shape", "w is [x, y, z]: spin in rad/s about world axes (each within ±1000)", "e.g. w: [0, 6.28, 0] turns once a second about up");
   if (a.t !== undefined && !Number.isFinite(a.t)) refuse("shape", "t is a time on the authority's clock (ms)", "leave it out if you don't know it");
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
@@ -3478,7 +3478,7 @@ const VERBS = {
           "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {

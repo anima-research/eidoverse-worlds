@@ -15,8 +15,8 @@ import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles } from "../../../shared/particle_effects.js";
-import * as eidosim from "../../../shared/sim.js";
-import { simFolder, digestOf, ENGINES } from "../../../shared/protocol/simlayer.js";
+import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
+import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
 // The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
 // from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
@@ -95,7 +95,12 @@ export const TRANSLATOR = "eidoverse/translate-v1@9";
 // re-checks (design 20, P5/L3), the epoch is @world physics-engine and each collider's stamped box its physics.shape.
 // Before this, @9 kept a punt only as an imported act and left the thing where it was punted FROM. A log with no epoch
 // that her sim enters translates byte-for-byte as @9 did, so it keeps @9's name: the name says which output you got.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@10";
+// @11 (2026-10-09, R 04:18: "stomp the existing eidosim engine"): the runtime no longer carries her engine, so her
+// flights are no longer replayed by readers. Her sim still runs here, beside the v1 fold, and still says where each punt
+// came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
+// (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
+// `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@11";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -247,13 +252,13 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
 // last LOGGED rest, P5: resting or flying again, it's the log's word); and a thing whose v1 lib has a stamped box carries
 // it as physics.shape (Covenant III: geometry enters the sim only through the log). Keyed by the v1 lib, not the model
 // value, which may be a content address by now. With no epoch ever entered this returns project()'s value untouched.
-function physical(st, sim, recorded, out) {
+function physical(st, sim, recorded, out, punted = new Set()) {
   if (!st.epoch && !recorded.size && !sim.boxes) return out;
   const w = out["@world"];
   delete w["imported-epoch"];
-  if (st.epoch) w["physics-engine"] = { engine: st.epoch.sim, build: ENGINES[st.epoch.sim]?.build ?? null, tickMs: st.epoch.tickMs };
+  if (st.epoch) w["physics-engine"] = { engine: DEFAULT_ENGINE, build: ENGINES[DEFAULT_ENGINE].build, tickMs: st.epoch.tickMs };
   for (const [id, p] of recorded) { const c = out[enc(id)]; if (sim.bodies[id] && c) c.transform = { ...c.transform, pos: p.slice() }; }
-  if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { shape: clone(sim.boxes[e.lib]) }; }
+  if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { kind: punted.has(id) ? "dynamic" : "static", shape: clone(sim.boxes[e.lib]) }; }
   return out;
 }
 /** Whether a v1 log enters a physics epoch (the v1 fold's own test: a sim name and an integer tick). */
@@ -306,15 +311,11 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const launchSeq = {};           // v1 id → the seq of the launch its current flight came from
   const restLogged = new Set();   // bodies whose CURRENT flight's rest is logged
   const restTicks = {};           // v1 id → the tick it came to rest
-  if (physics) Object.assign(stats, { launches: 0, rests: 0, worldDivergences: 0, flightDivergences: 0, simDisagreements: 0 });
-  // the authority's own sim layer over what we've written so far, started at the first epoch and fed incrementally: it is
-  // what checks every flight against hers while we translate, and makes the digest each rest carries (no catalogue of its
-  // own, as the live server runs it: geometry only through physics.shape)
-  let folder = null, fed = 0;
-  const layer = (ts) => { if (!folder) folder = simFolder(out, { models: {} }); for (; fed < out.length; fed++) folder.feed(fed); return folder.view(ts); };
+  const punted = new Set();       // v1 ids her sim ever flew: dynamic colliders (R 2026-10-08)
+  if (physics) Object.assign(stats, { launches: 0, rests: 0, worldDivergences: 0 });
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
-  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr));
+  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr), punted);
   const stepTo = (tick) => { // single steps while anything flies, so each rest's real tick is known
     while (sim.epoch && !sim.epoch.foreign && sim.tick < tick) {
       const flying = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -329,9 +330,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const fresh = Object.keys(sim.bodies).filter((id) => sim.bodies[id].resting && launchSeq[id] !== undefined && !restLogged.has(id))
       .sort((a, b) => restTicks[a] - restTicks[b]);
     for (const id of fresh) {
-      // L3: the engine digest is its own sim entry; the rest is a plain change entry caused by the launch
-      const sf = layer(ts);
-      push({ kind: "sim", actor: "sim", ts, cause: launchSeq[id], verb: "digest", body: { digest: sf.sim ? digestOf(sf.sim) : null } });
+      // her sim's rest: a plain change by `sim`, caused by the punt's imported act (@11: no launch, no digest)
       recorded.set(id, sim.bodies[id].p.slice()); restLogged.add(id);
       const now = view(); const ops = diff(prev, now); prev = now;
       push({ kind: "change", actor: "sim", ts, cause: launchSeq[id], ...changeBody(unNegZero(ops)) }); stats.change++; stats.ops += ops.length;
@@ -348,8 +347,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
       : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];
-    if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: a launch with its exact state
-      launchSeq[e.args.id] = push({ kind: "sim", actor, cause: tl, verb: "launch", body: unNegZero({ id: enc(e.args.id), p: b.p.slice(), yaw: b.yaw, v: b.v.slice() }), ...(ts !== undefined ? { ts } : {}) });
+    if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: its rest will be caused by this act
+      launchSeq[e.args.id] = tl; punted.add(e.args.id);
       restLogged.delete(e.args.id); stats.launches++;
     }
     for (const id of [...recorded.keys(), ...Object.keys(launchSeq)]) if (!sim.bodies[id]) { recorded.delete(id); restLogged.delete(id); delete launchSeq[id]; } // released by her law
@@ -357,13 +356,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const ops = diff(prev, now);
     if (ops.length) { push({ kind: "change", actor, cause: tl, ...changeBody(unNegZero(ops)), ...(ts !== undefined ? { ts } : {}) }); stats.change++; stats.ops += ops.length; }
     if (canon(v4project(v4)) !== canon(now)) { diverged("worldDivergences", e); if (stats.divergences === 1) onDivergence?.(e, now, v4project(v4)); }
-    if (folder || sim.epoch) { // every body in flight, bit for bit, against the authority's sim layer (and every digest it re-checked)
-      const sf = layer(clock());
-      for (const [id, bd] of Object.entries(sim.bodies)) if (!bd.resting) {
-        const mine = sf.sim?.bodies[enc(id)];
-        if (!mine || !eq(mine.p, bd.p) || !eq(mine.v, bd.v)) diverged("flightDivergences", e, { id, theirs: bd.p, mine: mine?.p ?? null }); }
-      while (sf.checks.disagree.length > stats.simDisagreements) diverged("simDisagreements", e, { disagree: sf.checks.disagree[stats.simDisagreements] });
-    }
     prev = now;
   }
   // settle, as her replaybench does: far past the last entry, then log what came to rest
@@ -371,11 +363,10 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     stepTo(sim.tick + 100000);
     const tsAt = (tick) => sim.epoch.ts + tick * sim.epoch.tickMs;
     logRests(Math.max(clock(), ...Object.values(restTicks).map(tsAt)));
-    if (folder) { const sf = layer(clock()); while (sf.checks.disagree.length > stats.simDisagreements) diverged("simDisagreements", null, { disagree: sf.checks.disagree[stats.simDisagreements] }); }
   }
   stats.out = out.length;
   if (addr) { stats.modelsRewritten = [...seenModels.values()].filter(Boolean).length; stats.modelsKept = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr)), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), punted), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }
 

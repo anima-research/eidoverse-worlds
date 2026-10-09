@@ -272,8 +272,8 @@ const file = path.join(tmp, "worlds", ".directory.json");
 // through the real importer (translateV1World, in a child with a scratch library: epoch-probe.ts) with the founder's key,
 // directory identities and content addresses, and is compared with HER sim (shared/sim.js beside the v1 fold, as sweep §3).
 { const { emptyState: v1Empty, foldEntry } = await import("./import-v1/fold.js");
-  const eidosim = await import("../../shared/sim.js");
-  const { simFold } = await import("../../shared/protocol/simlayer.js");
+  const eidosim = await import("./import-v1/eidosim-v1.js");   // HER engine: what the v1 log means
+  const { simFold, DEFAULT_ENGINE } = await import("../../shared/protocol/simlayer.js");
   const { readLog, fold } = await import("../../shared/protocol/fold.js");
   const TV1 = await import("./import-v1/translate-v1.js");
   const crypto = await import("node:crypto");
@@ -309,8 +309,12 @@ const file = path.join(tmp, "worlds", ".directory.json");
     // every thing her sim does NOT hold stands where her instant fold has it (the instant fold owns it)
     const off = Object.entries<any>(st.entities).filter(([id, e]) => !sim.bodies[id] && !e.parent && JSON.stringify(E[TV1.enc(id)]?.c.transform?.pos) !== JSON.stringify(e.pos ?? [0, 0, 0])).map(([id]) => id);
     out.others = [!off.length, off.slice(0, 5)];
+    // @11: her flights are plain logged writes: no launch, no digest; every flight of hers rests on the record; the world
+    // runs today's eidosim from her epoch on; the sim layer reads the history without a disagreement
+    const flown = t.lines.filter((e: any) => e.kind === "sim").length;
     const sf = simFold(t.lines, endOf(t.lines), { models: {} });
-    out.carrier = [t.r.sim && sf.checks.agree === t.r.sim.rests && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches), { checks: sf.checks, sim: t.r.sim }];
+    out.carrier = [t.r.sim && !flown && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches)
+      && (!t.r.sim.engine || t.r.sim.engine.engine === DEFAULT_ENGINE), { flown, checks: sf.checks, sim: t.r.sim }];
     out.strict = [t.back.status === "ok" && !t.back.diagnostics.some(([, c]: any) => String(c).startsWith("malformed")), t.back.diagnostics.slice(0, 3)];
     out.founder = [JSON.stringify(t.lines[0].body.owners[0]) === JSON.stringify([founder]), t.lines[0].body.owners];
     out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
@@ -326,9 +330,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const shapes = sim.boxes ? Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && sim.boxes[e.lib]) : [];
     const noShape = shapes.filter(([id, e]) => JSON.stringify(E[TV1.enc(id)]?.c.physics?.shape) !== JSON.stringify(sim.boxes[e.lib])).map(([id]) => id);
     out.shapes = [!sim.boxes || (shapes.length > 0 && !noShape.length), noShape.slice(0, 5)];
+    // R 2026-10-08: a thing her sim flew is a dynamic collider, every other one static
+    const flew = new Set(L.filter((e: any) => e.verb === "punt").map((e: any) => e.args?.id));
+    const wrongKind = shapes.filter(([id]) => E[TV1.enc(id)]?.c.physics?.kind !== (flew.has(id) && sim.bodies[id] ? "dynamic" : flew.has(id) ? E[TV1.enc(id)]?.c.physics?.kind : "static")).map(([id]) => id);
+    out.kinds = [!sim.boxes || !wrongKind.length, wrongKind.slice(0, 5)];
     // the live host opens it (the code the cutover runs) and its own sim layer agrees with every logged rest
     const live: any = openLive(t.at, "new", { now: () => endOf(t.lines) + 1000, custodyFile: path.join(path.dirname(t.at), CUSTODY_FILE) });
-    const ls = live.sim(); out.live = [ls.checks.agree === t.r.sim?.rests && !ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
+    const ls = live.sim(); out.live = [!ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
     return out;
   };
   const report = (id: string, what: string, f: Record<string, [boolean, unknown]>) => { const broken = Object.entries(f).filter(([, [p]]) => !p);
@@ -356,7 +364,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const W = t.back?.entities ?? {};
     f.released = [Object.entries<any>(sim.bodies).every(([id, b]) => JSON.stringify(W[id]?.c.transform?.pos) === JSON.stringify(b.p)), Object.keys(sim.bodies)];
     f.off = [!W["@world"]?.c["physics-engine"] && !Object.values<any>(W).some((e) => e.c.physics), { engine: W["@world"]?.c["physics-engine"], physics: Object.keys(W).filter((k) => W[k].c.physics) }];
-    f.inert = [t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").length === 4, null];
+    f.inert = [t.r.sim?.launches === 4, t.r.sim];   // her four flights; the punt after the exit is v1's instant cause: no flight
     f.layerOff = [t.lines.length > 0 && !simFold(t.lines, endOf(t.lines), { models: {} }).sim, null];
     report("EP2", "leaving the epoch (epoch {sim: null}) after the sequencer's epoch-release places: every body stands where it was released, physics is off (no engine, no shapes), and a later punt is inert", f);
     // …and with no release places (her sim drops its bodies at the exit): the instant fold owns them again, as in her fold

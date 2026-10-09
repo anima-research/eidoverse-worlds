@@ -11,7 +11,7 @@ unchanged, and how physics meets the log was redone: launches are `sim`
 entries, and the log records where things come to rest.*
 
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
-reference implementation: `shared/sim.js` (eidosim), `shared/simmath.js`,
+reference implementation: `shared/sim.js` over `shared/eidosim.js` (eidosim), `shared/simmath.js`,
 `shared/terrainmath.js`, and the sim layer `shared/protocol/simlayer.js`. MUST /
 SHOULD / MAY are RFC-2119. Parts marked **reserved** are names, shapes and rules
 fixed now, before an implementation, because the log, the registry pin or shipped
@@ -42,7 +42,7 @@ the world depends on carrying the engine; only watching the flight does.
 A change entry whose `cause` is a launch IS the rest of the bodies that
 launch set moving: the launched body and, under engines that collide moving
 bodies with resting ones, any body its flight set moving through contact
-(engine-defined; under eidosim@0.x exactly the launched body). Each of its
+(engine-defined: eidosim names the launch whose flight touched it). Each of its
 `transform` values MUST equal where the engine has that body. A carrier
 checks this; a disagreement is evidence against the authority, not a second
 truth.
@@ -81,9 +81,9 @@ versioned in the log itself:
 - `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
   sets `engine`; the **authority stamps `build`**, the hash of the exact files
   that implement it (determinism is per binary). The reference authority carries
-  `eidosim@0.1.0` through `0.5.0` in one build (`EIDOSIM_BUILD` in
-  `shared/protocol/simlayer.js`; `bun run test:protocol` recomputes it from the files
-  and fails if they changed without a new name).
+  `eidosim@1.0.0` (`EIDOSIM_BUILD` in `shared/protocol/simlayer.js`;
+  `bun run test:protocol` recomputes it from the files and fails if they changed
+  without a new build).
 - **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
@@ -93,23 +93,35 @@ versioned in the log itself:
   flight, rather than guessing. A wrong answer is worse than a missing
   animation.
 
-The eidosim laws, each kept exactly as written:
+eidosim@1.0.0, the law (its constants are its version):
 
-- **0.5.0 — continuing contacts.** After each contact the remaining tick
-  time is swept again, so a body touching a deck slides horizontally and
-  can fall from its edge; the remaining movement still meets walls, and the
-  ground support plane participates. At most eight contacts per body per
-  tick; exhausting that budget leaves the body at its last safe contact.
-  When the last body rests, idle ticks are skipped without changing state.
-- **0.4.0 — swept collisions.** The body's box is swept along each tick's
-  displacement against every static (a slab test in exact ops) and the
-  earliest contact resolved, so a fast body can't cross a thin wall
-  between two tick endpoints.
-- **0.3.0 — the world's things are colliders.** Each thing's shape enters
-  the sim only as stamped by the authority into the log (`physics.shape`, its
-  measured box): a static's top is ground, its side is a wall.
-- **0.2.0 — terrain-aware ground** (`shared/terrainmath.js`).
-- **0.1.0 — ballistic flight** with bounces on a flat ground plane.
+- **Rigid bodies** (boxes and spheres) with full rotation, mass from a fixed
+  density, and gyroscopic motion, stepped at the world's `tickMs` with four
+  substeps per tick.
+- **Soft contacts after Box3D**: per substep, integrate velocities, warm start,
+  a soft push, integrate positions, a rigid relax with friction (the pinned
+  combine rule, §3.2), twist friction and rolling resistance; restitution after
+  the substeps. Contact slop 5 mm; speculative distance 2 cm.
+- **Swept collisions**: a moving body is swept against everything at rest
+  (colliders and sleeping bodies) by conservative advancement, so a fast body
+  doesn't cross a thin wall between ticks.
+- **A height-field ground** (`shared/terrainmath.js`).
+- **Waking and knocking**: a dynamic thing at rest that no hand rule holds fixed
+  (not locked, under nothing locked, holding nothing locked) is a sleeping body.
+  It wakes when a moving body touches it (a contact within the speculative
+  distance, as Box3D and Jolt both wake), flies under the launch whose flight
+  touched it, and rests as that launch's (§1). Everything else at rest is a
+  collider.
+- **Rest**: a body that sleeps comes to rest and is a collider (or a sleeper)
+  again. A runaway backstop rests a body after 20000 ticks. A launch's spin is
+  capped so no corner moves faster than 20 m/s, as `v` is.
+
+Its state is plain JSON and exact: advancing it to a tick in one jump, tick by
+tick, or with a JSON copy between ticks gives the same bits (Covenant IV).
+
+The first eidosim (`eidosim@0.1.0`–`0.5.0`, PROTOCOL_v2 dialect 3: ballistic
+boxes, yaw only) is not carried. An old world that ran it is imported with its
+rests written as plain changes (the importer runs that engine itself, once).
 
 ### 3.1. Shapes
 
@@ -133,7 +145,7 @@ fixed before any engine writes a shape that isn't a box
   blob its triangles (static colliders only, for engines that say so), a
   compound blob its children `[{shape, pos?, q?}]`.
 - A new type is an addition to this grammar, never a change to an old one.
-  An engine that can't carry a shape treats the thing as no body (eidosim
+  An engine that can't carry a shape treats the thing as no body (the boxes table
   carries boxes only: `simlayer.engineBox`); it never misreads one shape as
   another.
 - **`collider.shape` is a request; `physics.shape` is the result.**
@@ -145,9 +157,8 @@ fixed before any engine writes a shape that isn't a box
   vocabulary for what is asked, one grammar for what is recorded.
 - **`sphere`** (the first such request): the authority fits a sphere to the
   model's measured box, centred on it, radius its largest half extent, and
-  stamps `{type: "sphere", radius, pos}`. eidosim2 flies it as a sphere (it
-  rolls, with rolling resistance); eidosim@0.x carries boxes only and treats
-  it as its catalogue box.
+  stamps `{type: "sphere", radius, pos}`. eidosim flies it as a sphere (it
+  rolls, with rolling resistance).
 
 ### 3.2. Physical properties
 
@@ -298,7 +309,7 @@ updates; VRChat splits them the same way):
 A `throw` or `drop` MAY carry `w` (spin, rad/s, world frame) and `t` (the
 moment the hand let go, on the authority's clock, §5.1). The act records the
 request as sent; the launch carries `w` for engines that spin things (eidosim
-ignores it, as it ignores roll), and `q` (the thing's orientation as it was
+does, capped as in §3), and `q` (the thing's orientation as it was
 let go) for engines that rotate them; a rest under such an engine writes the
 engine's `q` beside its `pos`. `t` is for validation and for smoothing the
 thrower's own view of their flight, **never a backdated sim input**: a launch
@@ -374,14 +385,15 @@ accepted state, or released into the sim.
 
 ## 6. Scope and open questions
 
-Today (eidosim, all versions): boxes, yaw only; flying bodies don't collide
-with each other; a resting body is not woken by a hit, so stacks don't
-topple; things don't spin. ⚑ Open: collisions between moving bodies;
-rotation; shared live physics between several hands (two people genuinely
-holding one thing is unsolved everywhere: Entanglement queues the second
-hand, Photon forbids it). `motion` is never integrated by the sim: it is a
-closed form of time, which an engine that can carries as a kinematic
-collider (§3.3).
+Today (eidosim@1.0.0): boxes and spheres, full rotation, stacks that topple,
+free dynamic things knocked by what flies. ⚑ Open: joints in the log (the
+engine has them; no component names them yet); capsules, convex and compound
+shapes; flying bodies colliding with each other mid-flight under two
+different launches is engine-defined attribution (the touching launch);
+shared live physics between several hands (two people genuinely holding one
+thing is unsolved everywhere: Entanglement queues the second hand, Photon
+forbids it). `motion` is never integrated by the sim: it is a closed form of
+time, which an engine that can carries as a kinematic collider (§3.3).
 
 ## 7. Other engines — moddable physics
 

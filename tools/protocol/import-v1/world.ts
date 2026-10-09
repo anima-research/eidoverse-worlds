@@ -66,12 +66,14 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
   if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
-  // a physics-era world: a carrier re-checks every rest (L3) on the sealed text, with no catalogue of its own (livehost.ts):
-  // each rest must be where the engine has the body, every digest the engine's, and none missing
+  // a physics-era world (translate-v1@11): her sim's outcomes are plain logged writes, so nothing in the text may ask a
+  // reader to fly an engine (no launch, no digest), and the live host's sim layer (livehost.ts: no catalogue of its own)
+  // must read the whole history without one disagreement
   let sim: Any = null;
   if (r.stats.launches !== undefined) {
     const lines = readLog(text); const sf = simFold(lines, Math.max(0, ...lines.map((e: Any) => (Number.isFinite(e?.ts) ? e.ts : 0))), { models: {} });
-    if (sf.checks.disagree.length || sf.checks.agree !== r.stats.rests) throw new Error(`the translated world's sim layer disagrees with its logged rests (${sf.checks.agree}/${r.stats.rests} agree; ${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
+    const flown = lines.filter((e: Any) => e?.kind === "sim").length;
+    if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
     sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
   }
   fs.mkdirSync(destDir, { recursive: true });

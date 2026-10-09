@@ -1,12 +1,12 @@
-// eidosim2 v0: our own rigid-body engine. Plain JS float64, no build.
+// eidosim: our own rigid-body engine. Plain JS float64, no build.
 // COVENANT (DESIGN.md): only + − × ÷ Math.sqrt, comparisons, Math.abs/min/max/floor. No Math.hypot, no transcendentals
 // (simmath.js when they're needed). Fixed iteration order everywhere: creation index, and pairs sorted (a, b).
 // Constants are the version.
 // Solver: Box3D's soft step, studied from source with credit (erincatto/box3d, MIT; Catto, "Solver2D", 2024; soft
 // constraint coefficients after Ross Nordby). Per substep: integrate velocities → warm start → push (normal only, soft)
 // → integrate positions → relax (normal rigid + friction). See DESIGN.md "Studied 2026-10-09".
-export const VERSION = "eidosim2@0.1.0";
-export const _test = {};   // internals exposed to eidosim2/test only
+export const VERSION = "eidosim@1.0.0";
+export const _test = {};   // internals exposed to the engine's tests only
 
 const LINEAR_SLOP = 0.005, SPECULATIVE = 4 * LINEAR_SLOP;
 const CONTACT_HERTZ = 30, CONTACT_ZETA = 10, CONTACT_SPEED = 3;
@@ -349,7 +349,15 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
     for (let changed = true; changed;) {
       changed = false;
       const reach = (x, y) => { if (!x.static && x.awake && !y.static && !y.awake && y.sleepTag !== undefined) { wakeTag(y.sleepTag, x.wokeBy ?? x.uid); changed = true; } };
-      for (const [i, j] of pairs) { reach(bodies[i], bodies[j]); reach(bodies[j], bodies[i]); }
+      // a sleeper wakes when an awake body TOUCHES it: a contact manifold with points (shapes within the speculative
+      // distance), as Box3D (contact begins touching → b3LinkContact wakes the set) and Jolt (contact constraint added →
+      // bodies activated) both do. Not on box proximity: a rotated box's AABB reaches well past the box.
+      const sleeper = (y) => !y.static && !y.awake && y.sleepTag !== undefined;
+      for (const [i, j] of pairs) { const A = bodies[i], B = bodies[j];
+        const awake = (x) => !x.static && x.awake;
+        if (!((awake(A) && sleeper(B)) || (awake(B) && sleeper(A))) || jointed.has(`${i}:${j}`)) continue;
+        const m = collide(A, B, SPECULATIVE); if (!m || !m.pts.length) continue;
+        reach(A, B); reach(B, A); }
       for (const jt of joints) if (jt.alive && jt.a >= 0 && jt.b >= 0) { reach(bodies[jt.a], bodies[jt.b]); reach(bodies[jt.b], bodies[jt.a]); }
       if (changed) pairs = findPairs();
     }

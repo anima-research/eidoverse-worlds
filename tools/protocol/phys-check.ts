@@ -21,10 +21,10 @@ const copyOf = (L) => readLog(L.map((e) => JSON.stringify(e)).join("\n") + "\n")
 // insert an entry at position i: later entries move up one, and every cause at or after i follows them
 const insertAt = (L, i, e) => { const C = copyOf(L).map((x) => (typeof x.cause === "number" && x.cause >= i ? { ...x, cause: x.cause + 1 } : x)); C.splice(i, 0, e); return copyOf(C); };
 const rests = (L) => restsOf(L);
-const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@0.5.0" };
-// v1 slides things like pucks and stands them exactly on their support; a rigid-body engine rests them inside its contact
-// slop (eidosim2: 5 mm) and a box doesn't slide far. Each bar below is exact for v1 and says what it means for the rest.
-const RIGID = ENG.engine.startsWith("eidosim2@"), ON = RIGID ? 0.005 : 1e-9;
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
+// a rigid-body engine rests things inside its contact slop (eidosim: 5 mm) and a box doesn't slide far (the first eidosim
+// slid things like pucks and stood them exactly on their support; these bars were exact for it)
+const RIGID = true, ON = 0.005;
 
 function playground(name) {
   fresh(name);
@@ -129,7 +129,7 @@ function playground(name) {
       "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
   }
   { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
-    // is never taken, Covenant III); under eidosim2 it flies as a sphere: thrown, it rolls, and rests turned on the ground
+    // is never taken, Covenant III); under eidosim it flies as a sphere: thrown, it rolls, and rests turned on the ground
     const W7 = playground("pc-d7");
     const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
     const ph7 = fold(log(W7)).entities.rb?.c.physics?.shape;
@@ -171,7 +171,7 @@ function playground(name) {
   }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
-  const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);
+  const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: 16 } }, 100);
   ok(calm.ok && !calm.notes?.some((n) => n.frozen), "D at rest, the cut is free (nothing to freeze)", calm);
 }
 
@@ -254,7 +254,7 @@ function playground(name) {
 // K — a foreign engine: this server can't run it, so nothing flies; the world is still fully readable.
 {
   const W = fresh("pc-k"); call(W, "rowan", "create-world", { title: W });
-  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", build: "deadbeefdeadbeef" } });
+  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "deadbeefdeadbeef" } });
   ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a foreign build is accepted with a note", s);
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, 0.5] }); call(W, "rowan", "grab", { id: "ball" });
@@ -291,7 +291,7 @@ function playground(name) {
   ok(lostOne?.lost, "L a throw out of the world is reported lost", after);
   ok(JSON.stringify(call(W, "rowan", "inspect", { id: "crate-1" }).world.pos) === JSON.stringify(before), "L …and it's back where it was picked up");
   ok(view(W).checks.disagree.length === 0, "L carriers still agree (lost rests included)", view(W).checks);
-  const sch = call(W, "rowan", "schema", { component: "physics" }); ok(/does NOT push or topple/.test(JSON.stringify(sch)), "L the schema says what physics doesn't do");
+  const sch = call(W, "rowan", "schema", { component: "physics" }); ok(/knocks over dynamic things it hits unless a lock holds them/.test(JSON.stringify(sch)), "L the schema says what a throw does to what it hits, and what a lock keeps");
   const c = call(W, "rowan", "create", { id: "ball-2", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [3, 3] } });
   ok(c.ok && !(c.notes ?? []).some((n) => /isn't a component/.test(n.why ?? "")), "L physics is a known component now (no false note)", c.notes);
 }

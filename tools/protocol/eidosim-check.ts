@@ -1,8 +1,8 @@
-// tools/protocol/sim2-check.ts — the eidosim2 adapter (shared/sim2.js) keeps the sim API's laws.
-// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/sim2-check.ts
+// tools/protocol/eidosim-check.ts — eidosim's adapter (shared/sim.js over shared/eidosim.js) keeps the sim API's laws.
+// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/eidosim-check.ts
 // S1 (Covenant IV): any advance schedule reaching tick T gives the same bits: one jump, tick by tick, split, and
 //    with a JSON clone between ticks. Review 49d4fb0d #1: a body resting mid-call stayed dynamic in the live world.
-import * as S from "../../shared/sim2.js";
+import * as S from "../../shared/sim.js";
 import { restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
 import { makeReplica } from "../../shared/protocol/replica.js";
 let pass = 0, fail = 0;
@@ -117,10 +117,10 @@ const schedules = (mkf: () => any, T: number) => {
   ok(r.length === 2 && r[0].id === "a" && r[1].id === "b" && J(r[1].at) === J([2, 0, 0]) && r[1].onto === "deck" && !r[0].onto,
     "S6 a rest that moved two bodies is two rests, each with its own settle", r);
   const one = restsOf([L[0], { kind: "change", actor: "sim", cause: 0, verb: "set", body: { id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }]);
-  ok(one.length === 1 && one[0].id === "a" && J(one[0].at) === J([1, 0, 0]), "S6 …and the one-body rest every eidosim@0.x log holds reads as before", one);
+  ok(one.length === 1 && one[0].id === "a" && J(one[0].at) === J([1, 0, 0]), "S6 …and the one-body rest every older log holds reads as before", one);
 }
 { // S7 (audit FIX-2): a joiner decides for itself whether it carries the cut's engine build
-  const name = Object.keys(ENGINES).find((k) => k.startsWith("eidosim2@"))!;
+  const name = Object.keys(ENGINES).find((k) => k.startsWith("eidosim@"))!;
   const rep: any = makeReplica();
   rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
   ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
@@ -170,4 +170,4 @@ const schedules = (mkf: () => any, T: number) => {
     for (let k = 1; k <= 15; k++) S.advanceSim(sim, k); return sim; };
   const st = run(null), dy = run("dynamic");
   ok(st.bodies.ball.p[0] < 0 && dy.bodies.ball.p[0] < 0.5 && !!dy.bodies.wall, "S11 a 20 m/s ball stops at a 10 cm wall, static or knockable (and knocks the knockable one)", { static: st.bodies.ball.p[0], dynamic: dy.bodies.ball.p[0], wallMoved: !!dy.bodies.wall }); }
-console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);
+console.log(`eidosim-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

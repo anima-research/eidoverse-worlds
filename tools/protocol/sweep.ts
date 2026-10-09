@@ -23,9 +23,9 @@ import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED, hasEpoch } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
-import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, SIM2_BUILD, SIM2_FILES } from "../../shared/protocol/simlayer.js";
+import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
-import * as eidosim from "../../shared/sim.js";
+import * as eidosim from "./import-v1/eidosim-v1.js";   // HER engine (the first eidosim): what v1 logs mean
 import { localOf } from "../../shared/hierarchy.js";
 
 let pass = 0, fail = 0;
@@ -49,8 +49,6 @@ check("the native path is the one in use under bun", typeof (globalThis as any).
 // ---- 2. the engine's name is its exact build ----
 const build = sha256(EIDOSIM_FILES.map((f: string) => fs.readFileSync(ENGINE + f, "utf8")).join("\0")).slice(0, 16);
 check("EIDOSIM_BUILD names the sim files in this checkout (change them → a new engine name)", build === EIDOSIM_BUILD, `${build} vs ${EIDOSIM_BUILD}`);
-const build2 = sha256(SIM2_FILES.map((f: string) => fs.readFileSync(ENGINE + f, "utf8")).join("\0")).slice(0, 16);
-check("SIM2_BUILD names eidosim2's files in this checkout (change them → a new build)", build2 === SIM2_BUILD, `${build2} vs ${SIM2_BUILD}`);
 
 // ---- 3. her dialect-3 fixtures through translate-d3 ----
 const golden = JSON.parse(fs.readFileSync(ENGINE + "spec/fixtures/replay/.replaybench.json", "utf8"));
@@ -62,17 +60,20 @@ for (const name of Object.keys(golden)) {
   const { tick: _t, ...norm } = eidosim.simSnapshot(s0) as Record<string, unknown>;
   check(`${name}: her sim golden reproduces`, sha256(JSON.stringify(norm)).slice(0, 16) === golden[name].simDigest);
   const r = translateD3(old), r2 = translateD3(old);
-  check(`${name}: 0 divergences (world ${r.stats.worldDivergences}, flight ${r.stats.flightDivergences})`, !r.stats.worldDivergences && !r.stats.flightDivergences, JSON.stringify(r.stats.first));
-  check(`${name}: every punt a launch, every launch a rest`, r.stats.launches > 0 && r.stats.launches === r.stats.rests, `${r.stats.launches}/${r.stats.rests}`);
+  check(`${name}: 0 divergences (world ${r.stats.worldDivergences})`, !r.stats.worldDivergences, JSON.stringify(r.stats.first));
+  check(`${name}: every flight of hers (a punt) rests on the record`, r.stats.launches > 0 && r.stats.launches === r.stats.rests, `${r.stats.launches}/${r.stats.rests}`);
   check(`${name}: deterministic`, sha256(text(r.out)) === sha256(text(r2.out)));
   const back = replica(readLog(text(r.out)));
   check(`${name}: strict read-back ok, 0 malformed`, back.status === "ok" && !back.diagnostics.some(([, k]: any) => k.startsWith("malformed")), JSON.stringify(back.diagnostics.filter(([, k]: any) => k.startsWith("malformed")).slice(0, 3)));
   const where = Object.entries(s0.bodies).every(([id, b]: [string, any]) => c(back.entities?.[id]?.c.transform.pos) === c(b.p));
   check(`${name}: with no engine at all, everything rests where hers rests`, where);
-  // re-checked as the live host runs the sim layer (server/livehost.ts, the replica: no catalogue of its own, geometry only
-  // through physics.shape): the digest each rest carries covers the engine's boxes table, so it is the live one's
+  // @11: nothing asks a reader to fly her engine (no launch, no digest), the world runs today's eidosim, and the live
+  // host's sim layer (server/livehost.ts: no catalogue of its own) reads the whole history without a disagreement
   const sf = simFold(readLog(text(r.out)), Math.max(...r.out.map((e: any) => e.ts ?? 0)), { models: {} });
-  check(`${name}: a carrier re-checks every rest`, sf.checks.agree === r.stats.rests && !sf.checks.disagree.length, JSON.stringify(sf.checks).slice(0, 200));
+  const flown = r.out.filter((e: any) => e.kind === "sim");
+  check(`${name}: no launch or digest; the world runs ${DEFAULT_ENGINE}; its sim layer reads the history clean`,
+    !flown.length && back.entities?.["@world"]?.c["physics-engine"]?.engine === DEFAULT_ENGINE && !sf.checks.disagree.length && !!sf.sim,
+    JSON.stringify({ flown: flown.length, engine: back.entities?.["@world"]?.c["physics-engine"], checks: sf.checks }).slice(0, 240));
 }
 
 // ---- 4. every local world log through translate-v1 ----
@@ -118,7 +119,7 @@ function oldNorm(st: any, phys: any = null) {
     if (n.comp) for (const [k, m] of Object.entries<any>(n.comp)) if ((k === "motion" || k.startsWith("motion:")) && m && typeof m === "object" && "rpm" in m) {
       const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
-    if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { shape: phys.sim.boxes[e0.lib] } };
+    if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.punted?.has(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what her sim flew is dynamic (R 10-08)
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
   }
@@ -129,7 +130,7 @@ function oldNorm(st: any, phys: any = null) {
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     world.sky = sky; }
-  if (phys && world.epoch) world.epoch = { sim: world.epoch.sim, tickMs: world.epoch.tickMs };
+  if (phys && world.epoch) world.epoch = { sim: DEFAULT_ENGINE, tickMs: world.epoch.tickMs };   // @11: the epoch runs today's eidosim (declared)
   return { ents, world };
 }
 // today's body socket is v1's seat (translate-v1's sockets mapping)
@@ -225,7 +226,7 @@ for (const p of logs.sort()) {
   // the inverse, aligned by act: the k-th act/say in the log is the k-th non-genesis old entry
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
   const v1 = v1Empty(); const now = emptyState(); let k = -1, loss: any = null;
-  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {} } : null;
+  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {}, punted: new Set() } : null;
   const settle = (tick: number) => { if (!phys?.sim.epoch) return; eidosim.advanceSim(phys.sim, tick);   // schedule-independent: one jump is exact
     for (const [id, b] of Object.entries<any>(phys.sim.bodies)) if (b.resting) phys.restAt[id] = b.p.slice();
     for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
@@ -233,7 +234,8 @@ for (const p of logs.sort()) {
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) has no old entry
       if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
-      compareAt(k); k++; foldEntry(v1, body[k]); if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
+      compareAt(k); k++; foldEntry(v1, body[k]); if (phys) { eidosim.simEntry(phys.sim, body[k], v1);
+        if (body[k].verb === "punt" && phys.sim.bodies[body[k].args?.id]?.seq === body[k].seq) phys.punted.add(body[k].args.id); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does
   compareAt(k); if (loss) lossy++;

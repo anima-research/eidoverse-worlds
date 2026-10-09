@@ -1,6 +1,6 @@
 // @ts-nocheck
-// tools/protocol/sim2live-check.ts — eidosim2 at the authority: who may be knocked, knocked children, and spheres on the
-// live host (no lab catalogue). Review of 8377ec52 #1 #3 #4 #5 #6. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/sim2live-check.ts
+// tools/protocol/eidosim-live-check.ts — eidosim at the authority: who may be knocked, knocked children, and spheres on the
+// live host (no lab catalogue). Review of 8377ec52 #1 #3 #4 #5 #6. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/eidosim-live-check.ts
 import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
@@ -8,10 +8,10 @@ import { openLive } from "../../server/livehost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, worldPose, ENGINES } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
-const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim2@")) };
+const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
 let pass = 0, fail = 0;
 const ok = (c, name, info) => { if (c) pass++; else { fail++; console.log("FAIL", name, info === undefined ? "" : JSON.stringify(info)); } };
-const root = scratch("sim2live");
+const root = scratch("eidosim-live");
 let T = 1800000000000; const at = (ms) => { T += ms; process.env.PROTOCOL_NOW = String(T); };
 const call = (w, a, v, args = {}, step = 100) => { at(step); return request(openWorld(root, w), a, v, args); };
 const log = (w) => openWorld(root, w).entries;
@@ -58,4 +58,4 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const flying = !!w.sim().sim.bodies.rb; c("rowan", "wait", {}, 15000);
   const R = restsOf(readLog(fs.readFileSync(dir + "world.jsonl"))), p = w.state().entities.rb.c.transform.pos;
   ok(g.ok && t.ok && flying && R.some((r) => r.id === "rb") && p[2] > 1, "K5 live host: a sphere is a body, flies, and its rest is logged", { g: g.ok, t: t.ok, flying, rests: R.map((r) => r.id), pos: p }); }
-console.log(`sim2live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);
+console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

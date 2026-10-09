@@ -141,7 +141,7 @@ const cases = [
       return { accepted: rs.filter(ok).length, first: rs.findIndex(refused), code: code(rs.find(refused)) }; },
     baseBad: (o) => o.accepted === 80, nowGood: (o) => o.accepted === 20 && o.code === "rate" },
   { id: "G3c", what: "grab/throw is unmetered: 40 throws in 8 s = 80 acts + 80 sim entries", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.3] });
       let thrown = 0, stopped = null;
@@ -156,7 +156,7 @@ const cases = [
     nowGood: (o) => o.accepted === 60 && code(o.last) === "rate" && ok(o.bob) },
 
   { id: "G3e", guard: true, what: "a holder at the rate limit still settles on leaving (a disconnect is the authority's duty, not a request)", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.3] }); s.call("vic", "grab", { id: "ball" });
       const says = Array.from({ length: 70 }, (_, i) => s.call("vic", "say", { text: `${i}` }, 50));
@@ -172,7 +172,7 @@ const cases = [
       return { snatch, annPut: s.call("ann", "put", { id: "ball" }) }; },
     baseBad: (o) => ok(o.snatch) && refused(o.annPut), nowGood: (o) => code(o.snatch) === "out-of-reach" && ok(o.annPut) },
   { id: "G4b", guard: true, what: "two bodies lean on an unheld engine crate: no log entry, no engine change (no unlogged impulse)", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "cart", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       const n0 = s.world().entries.length; const p0 = posOf(s, "cart");
       s.call("ann", "move", { to: [-0.6, 0, 0] }); s.call("bob", "move", { to: [0.6, 0, 0] });
@@ -206,7 +206,7 @@ const cases = [
       s.call("bob", "move", { to: [-2, 0, 0.3] }); s.call("bob", "grab", { id: "ball-1" }); s.call("bob", "throw", { id: "ball-1", v: [0, 6, 0] });
       const pin = s.call("ann", "set", { id: "ball-1", component: "lock", value: true }, 100);
       s.call("vic", "move", { to: [2, 0, 0.3] }, 10000); s.call("vic", "grab", { id: "ball-3" }); s.call("vic", "throw", { id: "ball-3", v: [0, 4, 0] });
-      const w = s.call("vic", "wait", {}, 20000); const cut = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.4.0" } });
+      const w = s.call("vic", "wait", {}, 20000); const cut = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: 16 } });
       return { pin, cut, rests: restIds(s), waitSaw: (w.cameToRest ?? []).map((r) => r.id) }; },
     baseBad: (o) => ok(o.pin) && ok(o.cut) && !o.rests.includes("ball-3"), nowGood: (o) => code(o.pin) === "in-flight" && ok(o.cut) && o.rests.includes("ball-1") && o.rests.includes("ball-3") },
   { id: "R2b", what: "…the same stall by another road: the table under a held ball is locked while it's held, then the ball is thrown", run(s) { phys(s);
@@ -267,7 +267,7 @@ const cases = [
       const r = s.call("vic", "say", { text: "y".repeat(1100000) }); return { r: show(r) }; },
     baseBad: (o) => /CRASH/.test(o.r), nowGood: (o) => /refused too-big/.test(o.r) },
 ];
-function phys(s) { cast(s); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+function phys(s) { cast(s); s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   for (const [i, x] of [[1, -2], [2, 0], [3, 2]]) s.call("olive", "create", { id: `ball-${i}`, model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [x, 0] } }); }
 const restIds = (s) => doors.now.sim.restsOf(s.world().entries).map((r) => r.id);
 

@@ -455,8 +455,9 @@ trigger. `grabbable.who` says who may pick it up (default visitor),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:
-'physics-engine', value: {engine: 'eidosim@0.5.0'}}` (owner). Then a launch is a `sim`
-entry, the engine (eidosim: deterministic, yaw-only boxes) flies it, and
+'physics-engine', value: {engine: 'eidosim@1.0.0'}}` (owner). Then a launch is a `sim`
+entry, the engine (eidosim: deterministic rigid bodies that tumble, roll and knock over
+free dynamic things they hit) flies it, and
 the authority LOGS where it came to rest (a change entry caused by the launch);
 `wait` reports rests. Every client folds the same launch with the same
 engine, so what you see in the air is where it lands, bit for bit

@@ -326,7 +326,7 @@ function drawFlights(wall, now) {
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
     const flat = Math.hypot(b.v[0], b.v[2]); const sh = sp.shape; const q = sp.q;
-    if (b.q) {   // a rigid engine (eidosim2) carries the body's own rotation: draw that, nothing invented
+    if (b.q) {   // a rigid engine (eidosim) carries the body's own rotation: draw that, nothing invented
       q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k));
       setWorldPose(obj, _p, q);
       if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
