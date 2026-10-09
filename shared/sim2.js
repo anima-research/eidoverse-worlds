@@ -122,9 +122,26 @@ function groundOf(sim) {
 
 // Build the eidosim2 world from the state: statics and flying bodies in uid order (so the engine's pair order is the
 // uid order, the same in every runtime and across any rebuild).
-function hydrate(sim) {
+// a static's world box (its centre c, turn q, half extents), for culling
+function staticBox(s) {
+  const [x, y, z, w] = s.q, h = s.half;
+  const m = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)], [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]];
+  const e = [0, 1, 2].map((k) => Math.abs(m[k][0]) * h[0] + Math.abs(m[k][1]) * h[1] + Math.abs(m[k][2]) * h[2]);
+  return [s.c[0] - e[0], s.c[1] - e[1], s.c[2] - e[2], s.c[0] + e[0], s.c[1] + e[1], s.c[2] + e[2]];
+}
+const SBOX = new WeakMap();   // a static row's world box, cached on the row object (a clone recomputes; rows are never edited in place)
+const hits = (a, b) => !(a[0] > b[3] || a[3] < b[0] || a[1] > b[4] || a[4] < b[1] || a[2] > b[5] || a[5] < b[2]);
+const CULL_SLACK = 1;   // m beyond a flyer's reach in one tick; a miss is caught after the step and the tick redone whole
+// the region a flyer could touch this tick: its box now, grown by how far any point of it can go in dt, plus slack
+function reachBox(b, dt, slack) {
+  const r = Math.sqrt(b.half[0] * b.half[0] + b.half[1] * b.half[1] + b.half[2] * b.half[2]);
+  const sp = Math.sqrt(b.v[0] * b.v[0] + b.v[1] * b.v[1] + b.v[2] * b.v[2]) + Math.sqrt(b.w[0] * b.w[0] + b.w[1] * b.w[1] + b.w[2] * b.w[2]) * r;
+  const g = r + (2 * sp + 9.81 * dt) * dt + slack;
+  return [b.c[0] - g, b.c[1] - g, b.c[2] - g, b.c[0] + g, b.c[1] + g, b.c[2] + g];
+}
+function hydrate(sim, keep = null) {
   const rows = [];
-  for (const id of Object.keys(sim.statics)) { const s = sim.statics[id];
+  for (const id of Object.keys(sim.statics)) { const s = sim.statics[id]; if (keep && !keep.has(id)) continue;
     rows.push({ spec: { uid: s.uid, shape: 'box', half: s.half, pos: s.c, rot: s.q, static: true, friction: s.friction, frictionCombine: s.frictionCombine },
       p: s.c, q: s.q, v: [0, 0, 0], w: [0, 0, 0], awake: false, sleepTime: 0, sleepTag: null }); }
   const ids = [];
@@ -138,6 +155,8 @@ function hydrate(sim) {
   return { W, ids, index };
 }
 
+export const cullStats = { redo: 0 };   // how often a culled tick was redone whole (tests read it)
+export const _cull = { off: false, slack: null };   // tests only: hold every static, or force a cull slack
 export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign || !sim.e2) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
   const live = () => Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -145,10 +164,31 @@ export function advanceSim(sim, toTick) {
   // the live world is exactly what hydrate(sim) would build, so long as nothing rests: a rest turns a body into a
   // static in the JSON, so the world is rebuilt from the JSON before the next tick (else one jump would solve it as
   // the sleeping dynamic body it was, and differ from tick-by-tick; review of 49d4fb0d #1)
-  let { W, ids, index } = hydrate(sim); const dt = sim.epoch.tickMs / 1000;
+  // Each tick the world holds only the statics a flyer could reach in that tick (review of 49d4fb0d #4: hydrating
+  // every static cost 20 ms/tick at 3000). Exact by construction: contact pairs are found from the bodies' boxes at
+  // the start of the step, and the swept (continuous) test only looks inside each flyer's start→end box; after the
+  // step, if any static left out touches a flyer's swept box, the tick is redone with every static.
+  const dt = sim.epoch.tickMs / 1000; let W, ids, index;
   const save = () => { const ex = W.exportState(); sim.e2.stepNo = ex.stepNo; sim.e2.impulses = ex.impulses; sim.e2.manifolds = ex.manifolds; sim.e2.pairs = ex.pairs; };
+  const sbox = (id) => { const row = sim.statics[id]; let b = SBOX.get(row); if (!b) SBOX.set(row, (b = staticBox(row))); return b; };
   while (sim.tick < toTick) {
-    W.step(dt); sim.tick++;
+    const flyers = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting).map((id) => sim.bodies[id]);
+    const reach = flyers.map((b) => reachBox(b, dt, _cull.slack ?? CULL_SLACK)), keep = new Set();
+    // a static named in any kept warm start stays too: the engine keeps a resting pair's impulses only while both of
+    // its bodies are in the world, and a rested thing thrown again (same uid) warm-starts from them
+    const named = new Set();
+    for (const M of [sim.e2.impulses, sim.e2.manifolds, sim.e2.pairs]) for (const [key] of M) { const [i, j] = key.split(":"); named.add(+i); named.add(+j); }
+    for (const id of Object.keys(sim.statics)) if (_cull.off || named.has(sim.statics[id].uid) || reach.some((r) => hits(r, sbox(id)))) keep.add(id);
+    const before = keep.size < Object.keys(sim.statics).length ? JSON.stringify(sim.e2) : null;
+    ({ W, ids, index } = hydrate(sim, keep));
+    W.step(dt);
+    if (before !== null) {
+      const swept = ids.map((id) => { const b = sim.bodies[id], e = W.bodies[index.get(b.uid)], r = Math.sqrt(b.half[0] ** 2 + b.half[1] ** 2 + b.half[2] ** 2) + 0.05;
+        return [Math.min(b.c[0], e.p[0]) - r, Math.min(b.c[1], e.p[1]) - r, Math.min(b.c[2], e.p[2]) - r, Math.max(b.c[0], e.p[0]) + r, Math.max(b.c[1], e.p[1]) + r, Math.max(b.c[2], e.p[2]) + r]; });
+      const missed = Object.keys(sim.statics).some((id) => !keep.has(id) && swept.some((s) => hits(s, sbox(id))));
+      if (missed) { cullStats.redo++; sim.e2 = JSON.parse(before); ({ W, ids, index } = hydrate(sim)); W.step(dt); }
+    }
+    sim.tick++;
     let flying = 0, rested = 0;
     for (const id of ids) {
       const b = sim.bodies[id]; if (b.resting) continue;
@@ -158,10 +198,9 @@ export function advanceSim(sim, toTick) {
       if (!e.awake || sim.tick - b.born > MAX_FLIGHT_TICKS) { restBody(sim, id, b); rested++; }
       else flying++;
     }
+    save();
     if (!flying) break;
-    if (rested && sim.tick < toTick) { save(); ({ W, ids, index } = hydrate(sim)); }
   }
-  save();
   if (toTick > sim.tick) sim.tick = toTick;
   return sim;
 }

@@ -3079,7 +3079,7 @@ const PHYSICS_VERBS = {
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
-    shaped(e, a.id);
+    shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
     if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
@@ -3261,7 +3261,11 @@ function flyingWorld(st) {
   return spec;
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
-function shaped(e, id) {
+function shaped(e, id, spec = null) {
+  // a rotating engine finds a thing's collider through its model (the epoch's boxes): with no model it would fly nothing
+  // and never rest (review of 49d4fb0d #6). Today the shape check below refuses it anyway (a modelless thing keeps no
+  // measured shape; phys-check D6); this holds if a shape can ever be set without a model
+  if (spec && ENGINES[spec.engine]?.rotates && typeof e.c.model !== "string") refuse("no-shape", `${id} has no model, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
   if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
@@ -3273,7 +3277,7 @@ function releasePos(me, pos) {
 function launch(w, actor, a, verb, g = null) {
   const me = body(w, actor); const h = holdOf(w, actor, a.id);
   const spec = flyingWorld(w.state());
-  shaped(w.state().entities[a.id], a.id);
+  shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
   // PHYSICS.md §4.2: spin is w, [x, y, z] rad/s in the world frame, everywhere; t is the capture time on the authority's
   // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim ignores it, as

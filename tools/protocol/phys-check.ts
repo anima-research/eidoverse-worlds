@@ -120,6 +120,14 @@ function playground(name) {
     const q = op?.value?.q ?? [0, 0, 0, 1];
     ok(f3.ok && Math.abs(q[3]) < 0.9999, "D3 a forced cut logs a tumbling crate as the engine had it turned, not as it was thrown", { q, ok: f3.ok });
   }
+  if (RIGID) { // review of 49d4fb0d #6: a thing with a shape and no model has no collider in a rotating engine: refused, not silent
+    const W6 = playground("pc-d6");
+    const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
+    const p6 = c6.ok ? call(W6, "rowan", "punt", { id: "ghost", power: 2 }) : null;   // punt first: a held thing is refused as "held"
+    const g6 = c6.ok ? call(W6, "rowan", "grab", { id: "ghost" }) : null, t6 = g6?.ok ? call(W6, "rowan", "throw", { id: "ghost", v: [0, 2, 1] }) : null;
+    ok(!c6.ok || ((!t6 || t6.refused?.code === "no-shape") && (!p6 || p6.refused?.code === "no-shape")),
+      "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
+  }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
   const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);

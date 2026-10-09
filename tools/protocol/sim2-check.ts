@@ -54,4 +54,26 @@ const schedules = (mkf: () => any, T: number) => {
   const b = mk({ m: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, scale3: [2, 1, 1] } }, [{ id: "m", p: [0, 1, 0], v: [0, 0, 0] }]);
   ok(J(a.bodies.m.half) === J(b.bodies.m.half) && a.bodies.m.half[0] === 0.5, "S3 negative scale sizes the collider by its magnitude", { mirrored: a.bodies.m.half, plain: b.bodies.m.half });
 }
+{ // S4: culling statics a flyer can't reach is exact (review #4): bit-identical to a world holding every static, every
+  // tick; and the safety net binds (a reach box that keeps nothing is redone whole, and still exact)
+  const SLAB = [[-3, 0, -3], [3, 0.2, 3]];
+  const mk2 = (ents: any, L: any[], terrain: any) => { const sim: any = S.emptySim(), view = { entities: ents, terrain };
+    S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { crate: BOX, plank: PLANK, slab: SLAB } } }, view);
+    L.forEach((l, i) => S.simEntry(sim, { seq: 1 + i, ts: 0, verb: "launch", args: l }, view)); return sim; };
+  let seed = 11; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const run = (opt: any) => { let bad = 0; seed = 11;
+    for (let n = 0; n < 12; n++) { const ents: any = {}, L: any[] = [], ns = 20 + Math.floor(rnd() * 150), R = 2 + rnd() * 10;
+      for (let i = 0; i < ns; i++) ents["s" + i] = { pos: [rnd() * 2 * R - R, rnd() < 0.2 ? rnd() * 1.5 : 0, rnd() * 2 * R - R], yaw: rnd() * 6.28, lib: ["crate", "crate", "plank", "slab"][Math.floor(rnd() * 4)], scale: 1 };
+      const k = 1 + Math.floor(rnd() * 4);
+      for (let i = 0; i < k; i++) { const p = ents["s" + i].pos; L.push({ id: "s" + i, p: [p[0], 0.5 + rnd() * 3, p[2]], v: [rnd() * 16 - 8, rnd() * 8, rnd() * 16 - 8], w: [rnd() * 8 - 4, rnd() * 8 - 4, rnd() * 8 - 4] }); }
+      const terr = rnd() < 0.5 ? { amplitude: 0 } : { amplitude: 0.4, seed: n };
+      const a = mk2(ents, L, terr), b = mk2(ents, L, terr);
+      for (let t = a.tick + 1; t <= 300; t++) { S._cull.off = true; S.advanceSim(a, t); S._cull.off = false; S._cull.slack = opt.slack; S.advanceSim(b, t); S._cull.slack = null;
+        if (J(S.simSnapshot(a)) !== J(S.simSnapshot(b))) { bad++; break; } } }
+    return bad; };
+  const r0 = S.cullStats.redo, bad = run({ slack: null });
+  ok(bad === 0, "S4 culled statics: every tick bit-identical to the whole world (12 scenes, up to 170 statics, 1–4 flyers)", { bad });
+  const r1 = S.cullStats.redo, starved = run({ slack: -1000 });
+  ok(starved === 0 && S.cullStats.redo > r1, "S4 …and a cull that keeps nothing is caught after the step and redone whole", { bad: starved, redos: S.cullStats.redo - r1 });
+}
 console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);
