@@ -41,3 +41,40 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Box3D (MIT)
+
+- **What:** the physics in eidosim2 was studied from Box3D's source and written fresh in JavaScript; no file was
+  copied. Some parts follow Box3D's structure closely enough that this notice is carried to be safe: the soft-step
+  stage order and its softness coefficients (`solver.h` `b3MakeSoft`), central (manifold) friction and twist
+  friction (`contact_solver.c`), the contact-stiffness cap by substep rate (`physics_world.c`), speculative
+  margins, the continuous-collision rules (`solver.c` time of impact against statics), the joint softness defaults
+  (`joint.c`), and the implicit gyroscopic step.
+- **Where:** `shared/eidosim2.js` (its header credits Box3D, Catto's "Solver2D" (2024) and Ross Nordby's soft
+  constraint coefficients).
+- **Source:** https://github.com/erincatto/box3d, commit `5d83df83ab47172c2c745b44315e7538ead02397` (2026-10-07).
+- **Licence:** MIT.
+
+```
+MIT License
+
+Copyright (c) 2026 Erin Catto
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
