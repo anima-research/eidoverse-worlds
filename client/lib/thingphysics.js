@@ -34,7 +34,7 @@ import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf } from '../../shared/sim.js';
+import { advanceSim, tickOf } from '../../shared/protocol/simlayer.js';
 import { onWorldChange } from './state.js';
 import { plain } from './plainwords.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
@@ -308,7 +308,8 @@ function drawFlights(wall, now) {
   if (pres.tick !== tickSeen) prev.clear();
   if (pres.tick < target) {
     if (pres.tick < target - 1) advanceSim(pres, target - 1);
-    for (const id in pres.bodies) { const b = pres.bodies[id]; let pv = prev.get(id); if (!pv) prev.set(id, (pv = [0, 0, 0])); pv[0] = b.p[0]; pv[1] = b.p[1]; pv[2] = b.p[2]; }
+    for (const id in pres.bodies) { const b = pres.bodies[id]; let pv = prev.get(id); if (!pv) prev.set(id, (pv = [0, 0, 0])); pv[0] = b.p[0]; pv[1] = b.p[1]; pv[2] = b.p[2];
+      if (b.q) { if (!pv.q) pv.q = new THREE.Quaternion(); pv.q.set(b.q[0], b.q[1], b.q[2], b.q[3]); } }
     advanceSim(pres, target);
   }
   tickSeen = pres.tick;
@@ -325,6 +326,12 @@ function drawFlights(wall, now) {
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
     const flat = Math.hypot(b.v[0], b.v[2]); const sh = sp.shape; const q = sp.q;
+    if (b.q) {   // a rigid engine (eidosim2) carries the body's own rotation: draw that, nothing invented
+      q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k));
+      setWorldPose(obj, _p, q);
+      if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
+      continue;
+    }
     if (sh?.ball && !b.resting && flat > 0.01 && sh.arm < 0.5) {
       // a ball ROLLS with its travel (and spins in the air): physobj streamed this as q so a ball never slid
       _axis.set(b.v[2], 0, -b.v[0]).normalize(); _dq.setFromAxisAngle(_axis, (flat * dt) / Math.max(0.05, sh.r)); q.premultiply(_dq);

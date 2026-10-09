@@ -14,8 +14,7 @@
 // what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, text,
 // to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
-import { simFolder, simCutOf } from "./simlayer.js";
-import { advanceSim, tickOf } from "../sim.js";
+import { simFolder, simCutOf, advanceSim, tickOf } from "./simlayer.js";
 import { viewState } from "./view.js";
 import { dec, learnNames, actorName } from "./names.js";
 

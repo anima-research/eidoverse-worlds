@@ -37,7 +37,7 @@ function live(clock = "pinned") {
     const r = call(actor, "move", { to: [at[0] + (to[0] - at[0]) * k, to[1], at[2] + (to[2] - at[2]) * k] }, 1000); if (!r.ok) return r; } };
   return { w, call, L, walk, at: () => now, step: (ms) => { now += ms; } };
 }
-const ENG = { engine: "eidosim@0.5.0" };
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@0.5.0" };
 const near = (a, b, e = 1e-9) => Array.isArray(a) && Array.isArray(b) && a.every((x, i) => Math.abs(x - b[i]) <= e);
 function playground(clock = "pinned") {
   const x = live(clock); const { call } = x;

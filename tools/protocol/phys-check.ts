@@ -21,7 +21,10 @@ const copyOf = (L) => readLog(L.map((e) => JSON.stringify(e)).join("\n") + "\n")
 // insert an entry at position i: later entries move up one, and every cause at or after i follows them
 const insertAt = (L, i, e) => { const C = copyOf(L).map((x) => (typeof x.cause === "number" && x.cause >= i ? { ...x, cause: x.cause + 1 } : x)); C.splice(i, 0, e); return copyOf(C); };
 const rests = (L) => restsOf(L);
-const ENG = { engine: "eidosim@0.5.0" };
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@0.5.0" };
+// v1 slides things like pucks and stands them exactly on their support; a rigid-body engine rests them inside its contact
+// slop (eidosim2: 5 mm) and a box doesn't slide far. Each bar below is exact for v1 and says what it means for the rest.
+const RIGID = ENG.engine.startsWith("eidosim2@"), ON = RIGID ? 0.005 : 1e-9;
 
 function playground(name) {
   fresh(name);
@@ -50,7 +53,8 @@ function playground(name) {
   ok(v.restTicks[rest[0].seq] < 150, "A rest tick (the engine's, re-derived by a carrier) is when it stopped, not when the authority noticed", v.restTicks);
   ok(v.checks.agree >= 1 && !v.checks.disagree.length, "A a carrier re-folding the log agrees (digest + resting place)", v.checks);
   const blind = fold(L); // a reader with no engine at all
-  ok(!blind.entities.ball.c.parent && blind.entities.ball.c.transform.pos[1] === 0 && blind.entities.ball.c.transform.pos[2] > 3,
+  const bz = blind.entities.ball.c.transform.pos[2];   // table at z 4, 0.8 deep: its near edge is z 3.6; the thrower stands at z -0.5
+  ok(!blind.entities.ball.c.parent && Math.abs(blind.entities.ball.c.transform.pos[1]) < ON && (RIGID ? bz > 0.5 && bz < 3.6 : bz > 3),
     "A non-carrier: short of the table, on the ground, from the log alone", blind.entities.ball.c.transform);
   call(W, "rowan", "move", { to: [0, 0, 2.6] }); call(W, "rowan", "grab", { id: "ball" });
   call(W, "rowan", "move", { to: [0, 0, 3.9] }); const d = call(W, "rowan", "drop", { id: "ball" });
@@ -58,7 +62,7 @@ function playground(name) {
   const b2 = fold(log(W)).entities.ball.c;
   ok(b2.parent?.to === "table-1", "A a dropped ball rests on the table, and the log says so (parent: it rides with it)", b2);
   const r2 = rests(log(W)).at(-1);
-  ok(Math.abs(r2.at[1] - 0.75) < 1e-9 && r2.onto === "table-1", "A on the table top (0.75); the authority's attach is its own entry", r2);
+  ok(Math.abs(r2.at[1] - 0.75) < ON && r2.onto === "table-1", "A on the table top (0.75); the authority's attach is its own entry", r2);
   const f1 = view(W), f2 = view(W); ok(JSON.stringify(f1.sim) === JSON.stringify(f2.sim) && f1.checks.agree === 2, "A folding the same log twice: same sim state, both rests verified", f1.checks);
 
 }
@@ -170,7 +174,7 @@ function playground(name) {
   ok(l.ok && l.dropped.length === 1 && l.dropped[0].ok, "H leaving drops what was held", l);
   call(W, "jo", "wait", {}, 4000);
   const r = rests(log(W)).at(-1);
-  ok(r && Math.abs(r.at[1]) < 1e-9, "H it fell to the ground and that's logged", r);
+  ok(r && Math.abs(r.at[1]) < ON, "H it fell to the ground and that's logged", r);
 }
 
 // I — determinism of the whole pipeline: the same requests at the same times give the same log, byte for byte.

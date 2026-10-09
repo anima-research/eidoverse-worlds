@@ -14,6 +14,7 @@ import { sha256 } from "./hash.js";
 import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed } from "./fold.js";
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
+import * as sim2 from "../sim2.js";
 import { isBoxShape } from "./shapes.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
@@ -23,7 +24,17 @@ export const EIDOSIM_FILES = ["shared/sim.js", "shared/simmath.js", "shared/terr
 const EIDOSIM = EIDOSIM_BUILD;
 // one build carries all five laws (her CARRIED set), so all five names resolve to it
 export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"].map((v) => [`eidosim@${v}`,
-  { build: EIDOSIM, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
+  { build: EIDOSIM, module: eidosim, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
+// eidosim2: rigid bodies with full rotation, Box3D-style soft contacts, a height-field ground (shared/sim2.js over shared/eidosim2.js)
+// sha256(sim2.js ‖ NUL ‖ eidosim2.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
+export const SIM2_BUILD = "5cb13968db441b50";
+export const SIM2_FILES = ["shared/sim2.js", "shared/eidosim2.js", "shared/simmath.js", "shared/terrainmath.js"];
+ENGINES[sim2.SIM_ID] = { build: SIM2_BUILD, module: sim2, rotates: true, about: "eidosim2: rigid boxes that tumble, soft contacts (after Box3D), swept against colliders, terrain", maxSpeed: 20 };
+const engineOf = (name) => ENGINES[name]?.module ?? eidosim;
+const modOf = (sim) => engineOf(sim?.epoch?.sim);
+// a sim state advanced by the engine whose epoch it is (readers that hold a clone: the replica, the client's flights)
+export const advanceSim = (sim, tick) => modOf(sim).advanceSim(sim, tick);
+export const tickOf = (sim, ts) => modOf(sim).tickOf(sim, ts);
 export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.build;
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
@@ -48,7 +59,7 @@ export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 function engineEntity(st, id, models = MODELS) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics)) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
-  return { pos: t.pos, yaw: yawOf(t.q), lib: e.c.model, scale: t.scale[1] };
+  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale };
 }
 function engineViewM(st, models = MODELS) {
   const entities = {};
@@ -89,15 +100,16 @@ export function simFold(entries, now, opts = {}) {
 export function simFolder(entries, { models = MODELS, from = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
   const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
-  const tickOf = (ts) => (out.sim ? eidosim.tickOf(out.sim, ts) : 0);
+  const E = () => modOf(out.sim);
+  const tickOf = (ts) => (out.sim ? E().tickOf(out.sim, ts) : 0);
   const advance = (ts) => {
     if (!out.sim) return;
     // step while anything flies, so each body's real rest tick is known (advanceSim jumps once all are at rest)
     const target = tickOf(ts);
     while (out.sim.tick < target) {
       const flying = Object.keys(out.sim.bodies).filter((id) => !out.sim.bodies[id].resting);
-      if (!flying.length) { eidosim.advanceSim(out.sim, target); break; }
-      eidosim.advanceSim(out.sim, out.sim.tick + 1);
+      if (!flying.length) { E().advanceSim(out.sim, target); break; }
+      E().advanceSim(out.sim, out.sim.tick + 1);
       for (const id of flying) if (out.sim.bodies[id]?.resting && out.launched[id]) out.launched[id].restTick ??= out.sim.tick;
     }
   };
@@ -122,7 +134,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
           if (id !== causeE.body.id) disagree({ seq, id, why: "a rest may only move the body its launch threw" });
           else if (!l || l.seq !== e.cause) disagree({ seq, id, why: "its launch is not this body's current flight (caught, re-thrown or moved since)" });
           else if (!b || !b.resting) disagree({ seq, id, why: "the engine still has it in flight" });
-          else { const mine = worldPose(after, id)?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p)) disagree({ seq, id, logged: mine, engine: b.p }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
+          else { const wp = worldPose(after, id), mine = wp?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p) || (b.q && JSON.stringify(wp?.q) !== JSON.stringify(b.q))) disagree({ seq, id, logged: mine, engine: b.p, ...(b.q ? { loggedQ: wp?.q, engineQ: b.q } : {}) }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
         }
       } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)
         const cut = ops.some((o) => o.id === "@world" && o.comp === "physics-engine"); // an epoch cut may freeze it (P6, force)
@@ -135,15 +147,15 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {
-          out.sim = eidosim.emptySim();
-          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
+          const M = engineOf(spec.engine); out.sim = M.emptySim();
+          M.simEntry(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
         }
         return;
       }
       if (!out.sim) return;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
-          if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
+          if (o.comp === "terrain") { E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
           continue; }
         const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
@@ -152,7 +164,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
         for (const id of ids) {
           const view = engineView(st); const gone = !view.entities[id];
-          eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
+          E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }
       }
@@ -163,13 +175,14 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // her punt makes the body (order, statics, box); then the launch's stamped state is set EXACTLY — through
         // dir/power it would be renormalised, which can move it by an ulp, and dialect 3 has no zero-power "let go"
-        eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "punt", args: { id: a.id, dir: [0, -1, 0], power: 1 } }, view);
-        const b = out.sim.bodies[a.id]; if (b) { b.p = a.p.slice(); b.v = a.v.slice(); }
+        if (E() === sim2) sim2.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "launch", args: { id: a.id, p: a.p, v: a.v, q: a.q, w: a.w } }, view);
+        else { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "punt", args: { id: a.id, dir: [0, -1, 0], power: 1 } }, view);
+          const b = out.sim.bodies[a.id]; if (b) { b.p = a.p.slice(); b.v = a.v.slice(); } }
         out.launched[a.id] = { seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
       } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
         // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
         // it's put down (an authored transform reseats it) or thrown (a launch)
-        eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
+        E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
         delete out.launched[a.id];
       }
     }
@@ -179,7 +192,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     out.clock = clock;
     out.rested = [];
     if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
-      const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, tick: l.restTick ?? out.sim.tick });
+      const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, ...(b.q ? { q: b.q } : {}), tick: l.restTick ?? out.sim.tick });
     }
     out.rested.sort((x, y) => x.tick - y.tick);
     return out;
@@ -216,15 +229,15 @@ export function simCutOf(sf, entries) {
   const launches = {}; for (const l of Object.values(launched)) if (entries[l.seq]) launches[l.seq] = entries[l.seq];
   return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches };
 }
-export const digestOf = (sim) => sha256(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
+export const digestOf = (sim) => sha256(JSON.stringify(modOf(sim).simSnapshot(sim))).slice(0, 16);
 // A cut, in our own format: the engine state as plain JSON, restorable. (For eidosim the format IS its snapshot.)
-export const snapshotOf = (sim) => JSON.parse(JSON.stringify(eidosim.simSnapshot(sim)));
+export const snapshotOf = (sim) => JSON.parse(JSON.stringify(modOf(sim).simSnapshot(sim)));
 // Predict when everything now in flight will be at rest (a carrier can look ahead; a barrier waits for it).
 export function restEta(sf) {
   if (!sf.sim) return null;
   const s = JSON.parse(JSON.stringify(sf.sim)); const live = () => Object.values(s.bodies).filter((b) => !b.resting).length;
   if (!live()) return 0;
   const t0 = s.tick; let k = t0;
-  while (live() && k < t0 + 20000) { k++; eidosim.advanceSim(s, k); }
+  const M = modOf(s); while (live() && k < t0 + 20000) { k++; M.advanceSim(s, k); }
   return (k - t0) * sf.spec.tickMs;
 }

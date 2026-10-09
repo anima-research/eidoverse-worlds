@@ -1382,6 +1382,7 @@ function restCheck(w, cap, after) {
   const sf = w.sim(); const id = cap.ids[0]; const b = sf.sim?.bodies[id];
   if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
   if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
+  if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, "");
 }
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
@@ -2811,7 +2812,7 @@ function settleSim(w) {
   for (let guard = 0; guard < 64; guard++) {
     const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
     const st = w.state(); const t = worldT(st, r.id);
-    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: t.q, scale: t.scale })];
+    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })];
     let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
     catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
     w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
@@ -2972,7 +2973,7 @@ const PHYSICS_VERBS = {
       if (live) notes.push({ id: a.id, why: "caught it in the air (logged: the sim had it)" }); }
     if (dependents.length) {
       if (spec && carried(spec)) {
-        for (const k of dependents) w.append({ kind: "sim", actor, cause: actOnce(), verb: "launch", body: { id: k, p: worldT(st, k).pos.slice(), yaw: qYaw(worldT(st, k).q), v: [0, 0, 0], handled: [actor] } });
+        for (const k of dependents) w.append({ kind: "sim", actor, cause: actOnce(), verb: "launch", body: { id: k, p: worldT(st, k).pos.slice(), yaw: qYaw(worldT(st, k).q), ...(ENGINES[st.entities["@world"]?.c["physics-engine"]?.engine]?.rotates ? { q: worldT(st, k).q.slice() } : {}), v: [0, 0, 0], handled: [actor] } });
         notes.push({ fell: dependents, why: `they were resting on ${a.id}; picking it up let them fall (physics will log where they land)` });
       } else {
         changeEntry(w, plan, actOnce());
@@ -3096,7 +3097,7 @@ const PHYSICS_VERBS = {
     else rateCheck(w, actor);
     const act = w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
-    const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying ? noNeg0(b.yaw) : qYaw(t.q), v: v.map(noNeg0), handled: [actor] } });
+    const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying && !b.q ? noNeg0(b.yaw) : qYaw(flying ? b.q : t.q), ...(ENGINES[sf.spec.engine]?.rotates ? { q: (flying ? b.q : t.q).slice(), ...(flying ? { w: b.w.slice() } : {}) } : {}), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
   },
   // a holder who leaves: what they held is dropped (into the sim if there is one), attributed to them (orphans, 18a)
@@ -3289,7 +3290,7 @@ function launch(w, actor, a, verb, g = null) {
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }

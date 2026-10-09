@@ -199,7 +199,7 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 const tf = (s: any, id: string) => s.w().state().entities[id]?.c.transform;
 const held = (s: any, id: string) => s.w().presence.holds[id] ?? null;
-const ENG = { engine: "eidosim@0.5.0" };
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@0.5.0" };
 // owner olive (the founder), builder bob, visitors vic and ann
 function cast(s: any, sim = false) {
   s.call("olive", "create-world", { title: s.name });
