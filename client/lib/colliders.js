@@ -118,7 +118,7 @@ const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
 function bucketAdd(id, entry) {
   // an OBB can straddle cells — register in every cell its footprint touches
-  const { obj, box } = entry;
+  const { obj } = entry; const { box } = frameOf(entry);   // a thing lying down is filed by its true footprint
   const s = obj.scale?.x || 1; // imports land wrong-sized and get resized in-world
   const r = Math.max(
     Math.abs(box.min.x), Math.abs(box.max.x),
@@ -615,7 +615,7 @@ export function raySegment(origin, dir, far) {
         if (_rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || e.camGhost || e.mask || !F.box) continue;
+        if (!e || e.camGhost || e.mask || !e.box) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const F = frameOf(e); const yaw = F.yaw;
@@ -686,17 +686,19 @@ const _cp = {};
 const UPRIGHT = Math.cos(10 * Math.PI / 180);
 const _fm = new THREE.Matrix4(), _fy = new THREE.Matrix4();
 export function frameOf(e) {
-  const o = e.obj, r = o.rotation, f = (e._f ??= { yaw: 0, box: e.box, exact: e.exact, qx: NaN, qy: NaN, qz: NaN, qw: NaN });
-  if (!r || (!r.x && !r.z) || !o.quaternion) { f.yaw = r?.y ?? 0; f.box = e.box; f.exact = e.exact; f.qx = NaN; return f; }
+  const o = e.obj, r = o.rotation, f = (e._f ??= { yaw: 0, box: e.box, exact: e.exact, pillar: e.pillar, grid: e.grid, qx: NaN, qy: NaN, qz: NaN, qw: NaN });
+  if (!r || (!r.x && !r.z) || !o.quaternion) { f.yaw = r?.y ?? 0; f.box = e.box; f.exact = e.exact; f.pillar = e.pillar; f.grid = e.grid; f.qx = NaN; return f; }
   const q = o.quaternion;
-  if (q.x === f.qx && q.y === f.qy && q.z === f.qz && q.w === f.qw && f.src === e.box) return f;
+  // keyed on everything a refit (decide) may change in place: the box, its exactness, its pillar and grid readings
+  if (q.x === f.qx && q.y === f.qy && q.z === f.qz && q.w === f.qw && f.src === e.box && f.ex === e.exact && f.pi === e.pillar && f.gr === e.grid) return f;
   const te = _fm.makeRotationFromQuaternion(q).elements;   // column k (a local axis in the world) = te[4k..4k+2]
   const ups = [te[1], te[5], te[9]].map(Math.abs); const k = ups.indexOf(Math.max(...ups)); const j = k === 0 ? 1 : 0;
   f.yaw = Math.atan2(-te[4 * j + 2], te[4 * j]);
   const standing = k === 1 && te[5] > UPRIGHT;
-  if (standing) { f.box = e.box; f.exact = e.exact; }
-  else { f.box = e.box.clone().applyMatrix4(_fy.makeRotationY(-f.yaw).multiply(_fm)); f.exact = null; }
-  f.qx = q.x; f.qy = q.y; f.qz = q.z; f.qw = q.w; f.src = e.box;
+  // lying, it is its box: no trimesh, no slim post (a fallen tree is a log), no heightfield (measured upright)
+  if (standing) { f.box = e.box; f.exact = e.exact; f.pillar = e.pillar; f.grid = e.grid; }
+  else { f.box = e.box.clone().applyMatrix4(_fy.makeRotationY(-f.yaw).multiply(_fm)); f.exact = null; f.pillar = false; f.grid = null; }
+  f.qx = q.x; f.qy = q.y; f.qz = q.z; f.qw = q.w; f.src = e.box; f.ex = e.exact; f.pi = e.pillar; f.gr = e.grid;
   return f;
 }
 
@@ -713,7 +715,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
   const probeY = Math.min(HIP, tall * 0.5);  // mid-body, not "hip"
   const spanY = Math.max(r, tall * 0.26);    // how far up/down a wall hit counts
   for (const e0 of near(pos.x, pos.z)) {
-    const { obj, pillar, grid, mask, support } = e0; const { yaw, box, exact } = frameOf(e0);
+    const { obj, mask, support } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
     if (mask) continue;   // a grass-mask footprint is not a solid (see fitStructureBoxes)
     if (support) {
       // A DECLARED FLOOR IS SUPPORT, NEVER AN OBSTACLE — the same contract the
@@ -860,7 +862,7 @@ export function findSeat(pos, range = 1.2) {
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
   for (const [id, e0] of nearColliders(pos.x, pos.z, range)) {
-    const { obj, pillar, grid, mask } = e0; const { yaw, box, exact } = frameOf(e0);
+    const { obj, mask } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
     if (mask) continue;
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
@@ -888,7 +890,7 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
   // a surface UNDER the point must have its footprint over the point — the
   // point's own cell holds every such entry (grid-bounded, §14.2 6a)
   for (const [id, e0] of nearColliders(x, z, 0.5)) {
-    const { obj, pillar, mask } = e0; const { yaw, box, exact } = frameOf(e0);
+    const { obj, mask } = e0; const { yaw, box, exact, pillar } = frameOf(e0);
     if (pillar || mask || id === skipId) continue;
     if (exact) {
       // dropped things land on the actual surface (stair tread, mezzanine)

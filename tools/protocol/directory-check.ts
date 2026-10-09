@@ -330,9 +330,10 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const shapes = sim.boxes ? Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && sim.boxes[e.lib]) : [];
     const noShape = shapes.filter(([id, e]) => JSON.stringify(E[TV1.enc(id)]?.c.physics?.shape) !== JSON.stringify(sim.boxes[e.lib])).map(([id]) => id);
     out.shapes = [!sim.boxes || (shapes.length > 0 && !noShape.length), noShape.slice(0, 5)];
-    // R 2026-10-08: a thing her sim flew is a dynamic collider, every other one static
+    // R 2026-10-08: a thing the v1 log punts is a dynamic collider, every other one static (the ruling itself: this fact
+    // states it, it can't independently derive it)
     // per incarnation: a punt counts for the thing its id names since its last spawn
-    const lastSpawn = (id: string) => L.reduce((k: number, e: any, i: number) => (e.verb === "spawn" && e.args?.id === id ? i : k), -1);
+    const lastSpawn = (id: string) => L.reduce((k: number, e: any, i: number) => (e.verb === "spawn" && e.args?.id === id && !(e.args.lib != null && !e.args.lib) ? i : k), -1);
     const punted = (id: string) => L.some((e: any, i: number) => e.verb === "punt" && e.args?.id === id && i > lastSpawn(id));
     const wrongKind = shapes.filter(([id]) => E[TV1.enc(id)]?.c.physics?.kind !== (punted(id) ? "dynamic" : "static")).map(([id]) => id);
     out.kinds = [!sim.boxes || !wrongKind.length, wrongKind.slice(0, 5)];
@@ -426,6 +427,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
       { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }];
     const W5 = (L: any[]) => fold(readLog(TV1.translate(L, {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["@world"]?.c ?? {};
     const own = W5(log("eidosim@0.5.0", 66)), other = W5(log("otherphys@2.0.0", 66)), refused = W5(log("eidosim@0.5.0", 5));
+    // a LATER epoch she refuses (her 66 ms law runs on): today's eidosim at HER tick, not the refused one (review r4 #3)
+    const later = W5([...log("eidosim@0.5.0", 66).slice(0, 3), { seq: 3, ts: 1040, actor: "fx", verb: "epoch", args: { sim: "eidosim@0.5.0", tickMs: 5 } },
+      { seq: 4, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }]);
+    ok(later["physics-engine"]?.engine === DEFAULT_ENGINE && later["physics-engine"]?.tickMs === 66, "EP5 …and a later epoch she refused doesn't replace hers: today's eidosim at her 66 ms", later["physics-engine"]);
+    // a spawn the v1 fold ignores (lib "") is no new thing: what was punted stays dynamic (review r4 #5)
+    const noop = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "" } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
+    ok(noop?.kind === "dynamic", "EP4 a spawn the v1 fold ignores (lib \"\") makes no new thing: the punted crate stays dynamic", noop);
     ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
       && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
       "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",

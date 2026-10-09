@@ -262,5 +262,39 @@ console.log('\ntumbled and quaternion-yawed things:');
   check('…and its mirror image (where rotation.y alone puts it) is open floor', f2.push < 1e-9 && f2.ground === 0, JSON.stringify(f2));
 }
 
+// ---- review r4 of 0b74548f: the camera ray, a refit, the index, a fallen post ----
+console.log('\nthe camera ray, a refit, the spatial index, a fallen post:');
+{
+  const s2 = Math.SQRT1_2;
+  const box = (id: string, w: number, h: number, d: number, q: number[], at: number[]) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(0, h / 2, 0);
+    const m = new THREE.Mesh(g, undefined); m.updateMatrixWorld(true); C.fitCollider(id, m, { collide: 'box' });
+    m.quaternion.set(q[0], q[1], q[2], q[3]); m.position.set(at[0], at[1], at[2]); m.updateMatrixWorld(true); C.reindexCollider(id); return m; };
+  // the third-person camera casts this every frame
+  box('rayc', 1, 1, 1, [0, 0, 0, 1], [60, 0, 3]);
+  let hit: any; try { hit = C.raySegment(new THREE.Vector3(60, 0.5, 0), new THREE.Vector3(0, 0, 1), 10); } catch (e) { hit = String(e); }
+  check('the camera ray stops at a crate (2.5 m away), and never throws', typeof hit === 'number' && Math.abs(hit - 2.5) < 1e-6, String(hit));
+  box('rayl', 1, 2, 0.5, [0, 0, s2, s2], [70, 0.5, 3]);   // lying: x 68..70, y 0..1 at z 2.75..3.25
+  let hl: any; try { hl = C.raySegment(new THREE.Vector3(69, 0.5, 0), new THREE.Vector3(0, 0, 1), 10); } catch (e) { hl = String(e); }
+  check('…and at a slab lying on its side, where it lies', typeof hl === 'number' && Math.abs(hl - 2.75) < 1e-6, String(hl));
+  // a refit changes exactness in place; a thing yawed past 90° (x = z = π in three's Euler) must not keep the old answer
+  const parts: any[] = []; const add = (w: number, h: number, d: number, x: number, y: number, z: number) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); parts.push(g); };
+  add(0.5, 0.01, 0.5, 0, 0.005, 0); add(0.01, 0.3, 0.5, -0.25, 0.15, 0); add(0.01, 0.3, 0.5, 0.25, 0.15, 0); add(0.5, 0.3, 0.01, 0, 0.15, -0.25);
+  const house = new THREE.Mesh(mergeGeometries(parts, false), undefined); house.updateMatrixWorld(true); C.fitCollider('house', house, {});
+  house.quaternion.set(0, 1, 0, 0); house.position.set(100, 0, 0); house.updateMatrixWorld(true); C.reindexCollider('house');
+  const he = C.colliders.get('house'); const before = !!C.frameOf(he).exact;
+  house.scale.setScalar(30); house.updateMatrixWorld(true); C.refitCollider('house'); const he2 = C.colliders.get('house');
+  const inside = new THREE.Vector3(100, 0.3, 2); C.resolveColliders(inside, flat);
+  check('a refit that makes a 180°-yawed room exact is read as exact (a body inside stays inside)', !before && !!he2.exact && !!C.frameOf(he2).exact && Math.abs(inside.z - 2) < 1e-6,
+    JSON.stringify({ before, exact: !!he2.exact, frame: !!C.frameOf(he2).exact, z: inside.z }));
+  // filed by its true footprint: a 2.3 m slab lying along +x from its origin is found at its far end
+  box('far', 1, 2.3, 0.5, [0, 0, -s2, s2], [126.5, 0.5, 0]);   // local +y → world +x: x 126.5..128.8
+  const end = C.surfaceUnder(128.7, 0, flat);
+  check('a long thing lying down is found at its far end (filed by where it lies)', end.onto === 'far' && Math.abs(end.y - 1) < 1e-6, JSON.stringify(end));
+  // a tall thing is a slim post while it stands; fallen, it's a log (its whole box), not a post at its centre
+  box('tree', 0.3, 3, 0.3, [0, 0, s2, s2], [150, 0.15, 0]);    // x 147..150, y 0..0.3
+  const log = C.surfaceUnder(147.4, 0, flat);
+  check('a fallen tall thing is its whole box, not a post at its centre', C.colliders.get('tree').pillar && log.onto === 'tree' && Math.abs(log.y - 0.3) < 1e-6, JSON.stringify(log));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
