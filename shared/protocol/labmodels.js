@@ -15,6 +15,6 @@ export const MODELS = {
   "swing-seat":  { size: [0.6, 0.05, 0.3], surfaces: [{ y: 0.05 }], sockets: { seat: { pos: [0, 0.05, 0], body: { action: "sit", pose: "sit" } } }, label: "a plank swing seat on ropes" },
   bed:         { size: [1.0, 0.5, 2.0],   surfaces: [{ y: 0.5 }], label: "a single bed" },
   rug:         { size: [2.0, 0.01, 1.4],  surfaces: [{ y: 0.01 }], label: "a woven rug" },
-  ball:        { size: [0.22, 0.22, 0.22], surfaces: [], label: "a rubber ball" },
-  bell:        { size: [0.25, 0.3, 0.25], surfaces: [], label: "a brass hand bell" },
+  ball:        { size: [0.22, 0.22, 0.22], surfaces: [], round: true, label: "a rubber ball" },
+  bell:        { size: [0.25, 0.3, 0.25], surfaces: [], round: true, label: "a brass hand bell" },
 };

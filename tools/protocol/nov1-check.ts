@@ -44,7 +44,6 @@ const UNRELATED = [
   ["server/directory.ts", /directory|v1 → v2|v1 keyed an agent/, "the authority directory's own file format version (v1 → v2), not the protocol"],
   ["shared/blueprint.js", /blueprint|v1 = an original|nested cop/, "the blueprint RECORD format's version (kind eido.blueprint, v: 1)"],
   ["client/lib/seatcore.js", /SEAT_METHOD/, "a seat-measuring method's name"],
-  ["shared/sim.js", /semantics whole|\bV1\b/, "the engine's hashed source (EIDOSIM_BUILD covers its bytes): V1 is eidosim@0.1.0's law, and rewording a comment renames the engine, so these wait for its next real change"],
   ["server/store-variants.ts", /LOD v1|v1 contract/, "the geometry-LOD contract's version"],
   ["server/optimize.ts", /./, "glTF / encoder format versions"],
   ["server/sfu", /./, "SFU / dependency API versions"],
@@ -57,7 +56,7 @@ const UNRELATED = [
   ["client/index.html", /./, "a library version"],
 ];
 // the wire rules' own exceptions, each with why
-const RULES_EXEMPT = [["shared/sim.js", /foldEntry/, "the engine's hashed source (EIDOSIM_BUILD): its conformance comment names the old fold's call order; it waits for the engine's next real change"]];
+const RULES_EXEMPT: [string, RegExp, string][] = [];   // (the first eidosim's entries retired 2026-10-09: it lives in the importer now)
 const IMPORTS = [
   /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'`](\.{1,2}\/[^"'`$]+)["'`]/g,     // static, side-effect, dynamic, template (up to a ${), require
   /new\s+URL\s*\(\s*["'`](\.{1,2}\/[^"'`$]+)["'`]\s*,\s*import\.meta\.url/g,                  // workers and assets resolved from the module

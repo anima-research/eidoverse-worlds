@@ -8,7 +8,7 @@
 // RELEASE — the authored word wins; REFUSAL — a foreign epoch is recorded,
 // never recomputed.
 
-import { emptySim, simEntry, advanceSim, tickOf, simPose, simSnapshot, SIM_ID } from "../shared/sim.js";
+import { emptySim, simEntry, advanceSim, tickOf, simPose, simSnapshot, SIM_ID } from "./eidosim-v1.js";
 
 // The engine reads an "instant fold" beside its entries: st.entities[id].{lib, pos, yaw, scale} and st.terrain (the
 // shape shared/protocol/simlayer.js's v1View hands it). This is that view, for exactly the dialect-3 verbs these scripts
@@ -110,7 +110,7 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
 
 { // eidosim@0.2.0: terrain-aware ground (§24t-3 — the epoch bump the 0.1
   // header scheduled, unblocked by shared/terrainmath.js)
-  const { makeHeightField, terrainParams } = await import("../shared/terrainmath.js");
+  const { makeHeightField, terrainParams } = await import("../../../shared/terrainmath.js");
   const TARGS = { seed: 7, size: 160, segments: 8, amplitude: 2.6, flatRadius: 16 };
   const HILLS: LogEntry[] = [
     mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),

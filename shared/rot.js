@@ -68,3 +68,23 @@ export function qWithHeading(q, yaw) {
 export function orientOf(ent) {
   return ent?.q ?? qFromYaw(ent?.yaw ?? 0);
 }
+
+// A thing lying down (a tumbling engine lays things on their sides): the yaw of its horizontal axes and its local box
+// [min, max] turned into that yawed frame, for readers that work root-local with a yaw (the walker, an agent's support).
+// null while it stands (its own up within 10° of the world's): read it by its yaw as always. Exact when it lies on a
+// face; the bounding box when it balances on an edge. Yaw in three's convention (rotation.y; +x turns toward -z).
+const UPRIGHT = Math.cos(10 * Math.PI / 180);
+export function lyingFrame(q, min, max) {
+  const [x, y, z, w] = q;
+  const R = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+    [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+    [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]];
+  const ups = [0, 1, 2].map((k) => Math.abs(R[1][k])); const k = ups.indexOf(Math.max(...ups));
+  if (k === 1 && R[1][1] > UPRIGHT) return null;
+  const j = k === 0 ? 1 : 0; const yaw = Math.atan2(-R[2][j], R[0][j]); const c = Math.cos(yaw), s = Math.sin(yaw);
+  const M = [0, 1, 2].map((r) => [0, 1, 2].map((col) => (r === 0 ? c * R[0][col] - s * R[2][col] : r === 2 ? s * R[0][col] + c * R[2][col] : R[1][col])));
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const cx of [min[0], max[0]]) for (const cy of [min[1], max[1]]) for (const cz of [min[2], max[2]])
+    for (let r = 0; r < 3; r++) { const v = M[r][0] * cx + M[r][1] * cy + M[r][2] * cz; if (v < lo[r]) lo[r] = v; if (v > hi[r]) hi[r] = v; }
+  return { yaw, min: lo, max: hi };
+}

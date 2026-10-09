@@ -313,7 +313,7 @@ const cases: Case[] = [
       return { r: st(s, r), pos: JSON.stringify(comp(s, "statue", "transform")?.pos) }; },
     good: (o) => o.r === "refused locked" && o.pos === "[0,0,0]" },
   { id: "B10", what: "41 #12 in flight: a lever's script writes the transform of a ball the engine is carrying", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "lever", "yank", onUse(`world.set("ball", "transform", { pos: [5, 0, 5], q: [0, 0, 0, 1], scale: [1, 1, 1] });`), { scope: { ids: ["ball"], comps: ["transform"] }, on: ["use"] });

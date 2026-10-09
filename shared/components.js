@@ -486,7 +486,8 @@ export function lightOf(ent) {
 
 /** The collider preference the browser hands fitCollider: comp.collider.shape
  *  when it is "exact" or "box", else the legacy spawn `collide` verbatim (as
- *  the browser always passed it), else undefined (= decide by size). */
+ *  the browser always passed it), else undefined (= decide by size). "sphere" is a physics request (PHYSICS §3.1): to
+ *  walk on, a ball is what its size decides. */
 export function colliderOf(ent) {
   const s = isBag(ent?.comp?.collider) ? ent.comp.collider.shape : undefined;
   if (s === 'exact' || s === 'box') return s;
@@ -519,7 +520,7 @@ export function compRefusal(type, data, ent = null) {
     return null;
   }
   if (type === 'collider') {
-    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box')) return 'a collider component is {shape: "exact"} (its triangles) or {shape: "box"} (its bounding box); remove it (data: null) to let the size decide';
+    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box' && data.shape !== 'sphere')) return 'a collider component is {shape: "exact"} (its triangles), {shape: "box"} (its bounding box) or {shape: "sphere"} (a ball, for physics); remove it (data: null) to let the size decide';
     return null;
   }
   return null;

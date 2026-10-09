@@ -45,7 +45,7 @@ ok("SH4", sr({ kind: "static", shape: "banana" }) && sr({ kind: "static", shape:
   "the authority's schema check refuses a malformed physics.shape (it was `any`: anything was admitted)", [sr({ kind: "static", shape: "banana" }), sr({ kind: "static", shape: { type: "sphere" } })]);
 const SL = await imp("shared/protocol/simlayer.js");
 ok("SH5", typeof SL.engineBox === "function" && JSON.stringify(SL.engineBox({ shape: [[0, 0, 0], [1, 1, 1]] })) === "[[0,0,0],[1,1,1]]" && SL.engineBox({ shape: { type: "sphere", radius: 1 } }) === null && SL.engineBox({ shape: [[0, 0], [1, 1, 1]] }) === null,
-  "eidosim is handed boxes only: a tagged shape is no body to an engine that can't carry it (it was passed through as a box)");
+  "the boxes table holds bare boxes only: a tagged shape is never misread as a box (eidosim reads a sphere through the entity view's shape)");
 ok("SH6", typeof SH.shapeVolume === "function" && Math.abs(SH.shapeVolume([[0, 0, 0], [1, 2, 3]]) - 6) < 1e-12 && Math.abs(SH.shapeVolume({ type: "sphere", radius: 1 }) - 4 / 3 * Math.PI) < 1e-12
   && Math.abs(SH.shapeVolume({ type: "capsule", radius: 1, halfHeight: 1 }) - (2 * Math.PI + 4 / 3 * Math.PI)) < 1e-12 && SH.shapeVolume({ type: "convex", blob: `sha256:${H64}` }) === null,
   "a primitive's volume is defined (mass absent = density × volume); a blob shape's is its baked geometry's");
@@ -82,7 +82,7 @@ function live() {
 function playground() {
   const x = live(); const { call } = x;
   call("rowan", "create-world", { title: "pg" });
-  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0" } });
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call("rowan", "move", { to: [0, 0, -0.5] });
   return x;

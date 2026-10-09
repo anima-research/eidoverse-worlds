@@ -14,8 +14,7 @@
 // what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, text,
 // to?}): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, PURGED, Malformed } from "./fold.js";
-import { simFolder, simCutOf } from "./simlayer.js";
-import { advanceSim, tickOf } from "../sim.js";
+import { simFolder, simCutOf, advanceSim, tickOf, carried } from "./simlayer.js";
 import { viewState } from "./view.js";
 import { dec, learnNames, actorName } from "./names.js";
 
@@ -56,7 +55,11 @@ export function makeReplica() {
   const startSim = (snap) => {
     E = []; const cut = snap.sim ?? null;
     for (const [q, e] of Object.entries(cut?.launches ?? {})) E[Number(q)] = e;
-    folder = simFolder(E, { models: {}, from: { st: stateFromView(snap.state), clock: cut?.clock ?? 0, spec: cut?.spec ?? null, foreign: !!cut?.foreign, sim: cut?.sim ?? null, launched: cut?.launched ?? {} } });
+    // a joiner decides for itself whether it carries the cut's engine build (audit FIX-2): the sender's word isn't evidence
+    // …and a cut with no engine state (its sender doesn't carry the build) can't be flown here either: mid-epoch, a sim
+    // is only ever started from a cut (review of 8377ec52 #10)
+    const spec = cut?.spec ?? null, foreign = !!spec && (!carried(spec) || !cut?.sim);
+    folder = simFolder(E, { models: {}, from: { st: stateFromView(snap.state), clock: cut?.clock ?? 0, spec, foreign, sim: foreign ? null : cut?.sim ?? null, launched: cut?.launched ?? {} } });
     v.sim = folder.view(); v.simVersion++;
   };
   v.adopt = (snap) => {

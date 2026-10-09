@@ -25,9 +25,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@10 runs it
-  // beside the v1 fold (a punt is a launch, every rest a logged result), and below, the sealed text is re-checked by the
-  // authority's own sim layer, as the live host runs it, before anything is written. (Until 2026-10-08 such a log was
+  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
+  // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
+  // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
   // refused here: the importer compared only against the instant fold and left every punted thing where it started.)
   // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/custody.ts)
   // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the
@@ -66,12 +66,14 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
   if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
-  // a physics-era world: a carrier re-checks every rest (L3) on the sealed text, with no catalogue of its own (livehost.ts):
-  // each rest must be where the engine has the body, every digest the engine's, and none missing
+  // a physics-era world (translate-v1@11): her sim's outcomes are plain logged writes, so nothing in the text may ask a
+  // reader to fly an engine (no launch, no digest), and the live host's sim layer (livehost.ts: no catalogue of its own)
+  // must read the whole history without one disagreement
   let sim: Any = null;
   if (r.stats.launches !== undefined) {
     const lines = readLog(text); const sf = simFold(lines, Math.max(0, ...lines.map((e: Any) => (Number.isFinite(e?.ts) ? e.ts : 0))), { models: {} });
-    if (sf.checks.disagree.length || sf.checks.agree !== r.stats.rests) throw new Error(`the translated world's sim layer disagrees with its logged rests (${sf.checks.agree}/${r.stats.rests} agree; ${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
+    const flown = lines.filter((e: Any) => e?.kind === "sim").length;
+    if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
     sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
   }
   fs.mkdirSync(destDir, { recursive: true });

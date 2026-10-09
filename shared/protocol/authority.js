@@ -28,7 +28,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -235,6 +235,9 @@ const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURG
 export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
 export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
 const r3 = (n) => Math.round(n * 1000) / 1000;
+// a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
+// and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
+const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
 const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
@@ -271,7 +274,7 @@ function worldT(st, id, depth = 0) {
 function localFrom(st, parentId, wt) {
   const pt = worldT(st, parentId);
   const d = qrot(qinv(pt.q), wt.pos.map((v, i) => v - pt.pos[i]));
-  return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qmul(qinv(pt.q), wt.q).map(r3), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
+  return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qr3(qmul(qinv(pt.q), wt.q)), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
 }
 function aabb(st, id) {
   const e = st.entities[id]; const m = geomE(e); if (!m) return null;
@@ -330,14 +333,45 @@ const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
 });
 const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
 
+// A surface is where something can stand. The model's measured surfaces are in its own frame with its own up, so they
+// hold while the thing stands (its up within UPRIGHT of the world's); a thing a tumbling engine laid on its side or upside
+// down has instead the face of each oriented box that now faces up (none, balanced on an edge). Heights and footprints
+// come from the full rotation (yaw-only reading put a tumbled crate's top half its height off).
+const UPRIGHT = Math.cos(10 * Math.PI / 180);
 function surfacesOf(st, id) {
   const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
+  const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
+  if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
+    if (m.round) return [];   // a round thing (a ball, a bell) offers no face in any pose; an empty UPRIGHT list (a door, a wall) says nothing about lying
+    const out = []; const boxes = obbs(st, id);
+    // a point inside one of the thing's own boxes (a face flush under its back panel is no place to put anything)
+    const buried = (p, self) => boxes.some((o, k) => k !== self && o.ax.every((ax, i) => Math.abs(dot([p[0] - o.c[0], p[1] - o.c[1], p[2] - o.c[2]], ax)) < o.h[i] - 1e-6));
+    for (const [bi, o] of boxes.entries()) for (let j = 0; j < 3; j++) {
+      const u = o.ax[j][1]; if (Math.abs(u) < UPRIGHT) continue;
+      const n = o.ax[j].map((v) => v * Math.sign(u)); const top = o.c.map((v, i) => v + n[i] * o.h[j]);
+      if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
+      const [a, c] = [0, 1, 2].filter((k) => k !== j);
+      const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
+      out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
+    }
+    // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
+    // Faces within 1e-6 of each other are one height (float noise): each group takes its highest y, so the levels stay
+    // bottom to top however they're rounded, and orders by the face's own area (not its footprint, which grows with
+    // yaw), larger last: a shelf face-down offers its back, not its 3 cm side strips (reviews r7, r8)
+    out.sort((p, q) => p.y - q.y);
+    for (let i = 0; i < out.length;) { let k = i + 1; while (k < out.length && out[k].y - out[i].y <= 1e-6) k++;
+      const y = out[k - 1].y; const g = out.slice(i, k).map((x) => ({ ...x, y })).sort((p, q) => p.ar - q.ar); out.splice(i, k - i, ...g); i = k; }
+    return out.map(({ ar, ...x }, i) => ({ ...x, level: i }));
+  }
+  const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
+  const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
     if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
-      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => { const p = qrot(t.q, [x * t.scale[0], s.y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[2] + t.pos[2]]; });
-      return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[1])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[1])) - k] }; }
-    return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
+      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => at(x, s.y, z));
+      return { id, level: i, y: yawOnly ? yOf(s.y) : Math.max(...cs.map((c) => c[1])), min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[2])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[2])) - k] };
+    }
+    return { id, level: i, y: yOf(s.y), min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
 }
 // ---------- the spatial index (review 10-06 S0-2 / security pass 2 H-A) ----------
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
@@ -1382,6 +1416,7 @@ function restCheck(w, cap, after) {
   const sf = w.sim(); const id = cap.ids[0]; const b = sf.sim?.bodies[id];
   if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
   if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
+  if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, "");
 }
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
@@ -1425,19 +1460,24 @@ function commit(w, actor, verb, args, build) {
 //   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
 //     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
 const r4 = (n) => Math.round(n * 1e4) / 1e4;
-const shapeFor = (model) => { const m = geomOf(model); return m ? boxOfM(m).map((c) => c.map(r4)) : null; };
+// the authority's measurement of a model as a collider. A sphere is asked for with collider.shape "sphere" (PHYSICS §3.1:
+// the request vocabulary; the stamp is the tagged shape): fitted to the measured box, centred on it, radius its largest
+// half extent (a ball's box is a cube, so this is the ball)
+const shapeFor = (model, req) => { const m = geomOf(model); if (!m) return null; const b = boxOfM(m);
+  if (req === "sphere") return { type: "sphere", radius: r4(Math.max(...[0, 1, 2].map((k) => (b[1][k] - b[0][k]) / 2))), pos: [0, 1, 2].map((k) => r4((b[0][k] + b[1][k]) / 2)) };
+  return b.map((c) => c.map(r4)); };
 function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
-  for (const o of ops) if (o.verb === "set" && (o.comp === "physics" || o.comp === "model")) ids.add(o.id);
+  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider")) ids.add(o.id);
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
   const out = ops.slice(); const stamped = [];
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;
-    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model) : null;
+    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : null;
     let next;
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
@@ -1778,7 +1818,7 @@ function buildPlace(ctx, a) {
   if (!a.on && !a.beside && !a.hang && !a.__mounted) { if (a.facing && !a.against) yaw = faceYaw(pos); const sup = supportBelow(st, pos[0], pos[2], a.__level ?? a.at?.[2] ?? 10, fam); pos[1] = sup.y; support = sup.id;
     const hit = free(pos[0], pos[1], pos[2], yaw, new Set()); if (hit) relaxed.push(`overlaps ${hit}: nothing nearer was free`); }
   const off = qrot(yawQ(yaw), C); const restsAt = pos[1];
-  const wt = { pos: [pos[0] - off[0], pos[1] - lo[1], pos[2] - off[2]].map(r3), q: qmul(yawQ(yaw), tilt).map(r3), scale };
+  const wt = { pos: [pos[0] - off[0], pos[1] - lo[1], pos[2] - off[2]].map(r3), q: qr3(qmul(yawQ(yaw), tilt)), scale };
   const ops = [];
   if (a.attach && support !== "ground") {
     ops.push(setOp(a.id, "parent", { to: support, order: "a0" }));
@@ -2399,7 +2439,9 @@ function indexEntry(x, E, i) {
     if (e.verb !== "undo" && e.actor !== "system") x.lastAct = i;
     if (e.actor === "system" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
   if (e.kind === "change") { x.changes.push(i);
-    if (Number.isInteger(e.cause) && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
+    // what the sim writes (a rest) is physics, never an act's undoable result: live, a rest is caused by a launch entry;
+    // in an imported world (translate-v1@11) by the old punt's act, which must not make it undoable (review of b398d7e3 #2)
+    if (Number.isInteger(e.cause) && e.actor !== "sim" && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
     for (const id of new Set(opsQuiet(e).map((o) => o.id))) { let a = x.touch.get(id); if (!a) x.touch.set(id, (a = [])); a.push(i); }
     const c = E[e.cause]; if (isE(c) && c.kind === "sim" && c.verb === "launch") x.rests.push(i); }
 }
@@ -2811,7 +2853,7 @@ function settleSim(w) {
   for (let guard = 0; guard < 64; guard++) {
     const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
     const st = w.state(); const t = worldT(st, r.id);
-    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: t.q, scale: t.scale })];
+    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })];
     let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
     catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
     w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
@@ -2837,7 +2879,7 @@ function settleSim(w) {
 function buildEpoch(ctx, v, a) {
   const sf = ctx.w.sim(); const live = [...new Set([...Object.keys(livePoses(sf)), ...sf.rested.map((r) => r.id)])]; // at rest but not on the record counts (33 F2): P6's "free" needs every result logged
   if (live.length && !a.force) refuse("busy", `${live.length} thing(s) are still in flight or not yet on the record (${live.join(", ")}); all at rest in about ${r3((restEta(sf) ?? 0) / 1000)} s`, "try again then, or force: true to freeze them where they are now (they'll be logged there)");
-  const ops = live.map((id) => setOp(id, "transform", { ...worldT(sf.st, id), pos: sf.sim.bodies[id].p.slice() }));
+  const ops = live.map((id) => { const b = sf.sim.bodies[id]; return setOp(id, "transform", { ...worldT(sf.st, id), pos: b.p.slice(), ...(b.q ? { q: b.q.slice() } : {}) }); }); // a rigid engine's origin only means something with its own q
   for (const id of live) ctx.refs.add(id);
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
@@ -2846,6 +2888,10 @@ function buildEpoch(ctx, v, a) {
   const known = ENGINES[v.engine];
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
+  // the engine never starts an epoch outside its tick range, so a throw would be logged and then fly nowhere, forever
+  // (review of b398d7e3 #3)
+  if (v.tickMs !== undefined && !(Number.isInteger(v.tickMs) && v.tickMs >= TICK_MS.min && v.tickMs <= TICK_MS.max))
+    refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, "leave it out for 33 (30 steps a second), or e.g. tickMs: 16");
   if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
   if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
   ctx.refs.add("@world");
@@ -2972,7 +3018,7 @@ const PHYSICS_VERBS = {
       if (live) notes.push({ id: a.id, why: "caught it in the air (logged: the sim had it)" }); }
     if (dependents.length) {
       if (spec && carried(spec)) {
-        for (const k of dependents) w.append({ kind: "sim", actor, cause: actOnce(), verb: "launch", body: { id: k, p: worldT(st, k).pos.slice(), yaw: qYaw(worldT(st, k).q), v: [0, 0, 0], handled: [actor] } });
+        for (const k of dependents) w.append({ kind: "sim", actor, cause: actOnce(), verb: "launch", body: { id: k, p: worldT(st, k).pos.slice(), yaw: qYaw(worldT(st, k).q), ...(ENGINES[st.entities["@world"]?.c["physics-engine"]?.engine]?.rotates ? { q: worldT(st, k).q.slice() } : {}), v: [0, 0, 0], handled: [actor] } });
         notes.push({ fell: dependents, why: `they were resting on ${a.id}; picking it up let them fall (physics will log where they land)` });
       } else {
         changeEntry(w, plan, actOnce());
@@ -2981,7 +3027,7 @@ const PHYSICS_VERBS = {
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
     const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
-    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };
+    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: (live && sf.sim.bodies[a.id]?.q) ? sf.sim.bodies[a.id].q.slice() : t.q, scale: t.scale }, handled, ...how }; // caught mid-air: as it's turned now
     w.savePresence();
     heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
     return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };
@@ -3010,7 +3056,7 @@ const PHYSICS_VERBS = {
     const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
     if (snap.to) {
       const hs = worldT(st, snap.to.to).scale;
-      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
+      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: qr3(socketQ(snap.to.sock)), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: { to: snap.to.to, socket: snap.to.slot } }));
       const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, socket: snap.to.slot, seq: act });
@@ -3078,7 +3124,7 @@ const PHYSICS_VERBS = {
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
-    shaped(e, a.id);
+    shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
     if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
@@ -3096,7 +3142,7 @@ const PHYSICS_VERBS = {
     else rateCheck(w, actor);
     const act = w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
-    const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying ? noNeg0(b.yaw) : qYaw(t.q), v: v.map(noNeg0), handled: [actor] } });
+    const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying && !b.q ? noNeg0(b.yaw) : qYaw(flying ? b.q : t.q), ...(ENGINES[sf.spec.engine]?.rotates ? { q: (flying ? b.q : t.q).slice(), ...(flying ? { w: b.w.slice() } : {}) } : {}), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
   },
   // a holder who leaves: what they held is dropped (into the sim if there is one), attributed to them (orphans, 18a)
@@ -3127,9 +3173,10 @@ function recentRests(w, now) {
   const X = actIndexOf(w); const E = w.entries; const out = [];
   for (let k = X.rests.length - 1; k >= 0 && out.length < 8; k--) { const seq = X.rests[k]; const e = E[seq]; const when = e.ts ?? 0;
     if (!(now - when < 60000)) break;
-    const c = E[e.cause]; const op = opsQuiet(e).find((o) => o.comp === "transform" && o.id === c.body.id);
+    // PHYSICS §1: a launch's rest covers every body its flight set moving; each transform in it is one body's rest
+    const c = E[e.cause]; const ops = opsQuiet(e).filter((o) => o.comp === "transform" && typeof o.id === "string" && o.value?.pos);
     const ai = X.restAfter.get(seq); const after = ai === undefined ? null : E[ai];
-    out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor], when,
+    for (const op of ops.reverse()) out.push({ seq, id: op.id, cause: e.cause, at: op.value.pos, handled: c.body.handled ?? [c.actor], when,
       ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) }); }
   return out.reverse();
 }
@@ -3255,12 +3302,18 @@ function stampHomes(ctx, ops) {
 }
 function flyingWorld(st) {
   const spec = st.entities["@world"]?.c["physics-engine"];
-  if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}}");
-  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
+  if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
+  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`,
+    `put it down instead; the owner can move the world to an engine this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
   return spec;
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest
-function shaped(e, id) {
+function shaped(e, id, spec = null) {
+  // a rotating engine finds a thing's collider through its model (the epoch's boxes): with no model it would fly nothing
+  // and never rest (review of 49d4fb0d #6). Today the shape check below refuses it anyway (a modelless thing keeps no
+  // measured shape; phys-check D6); this holds if a shape can ever be set without a model
+  if (spec && ENGINES[spec.engine]?.rotates && typeof e.c.model !== "string") refuse("no-shape", `${id} has no model, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
+  if (spec && ENGINES[spec.engine]?.rotates && e.c.physics?.shape?.type === "sphere" && !shapeError(e.c.physics.shape)) return;   // a rigid engine flies a sphere
   if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
@@ -3272,11 +3325,11 @@ function releasePos(me, pos) {
 function launch(w, actor, a, verb, g = null) {
   const me = body(w, actor); const h = holdOf(w, actor, a.id);
   const spec = flyingWorld(w.state());
-  shaped(w.state().entities[a.id], a.id);
+  shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
   // PHYSICS.md §4.2: spin is w, [x, y, z] rad/s in the world frame, everywhere; t is the capture time on the authority's
-  // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim ignores it, as
-  // it ignores roll). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
+  // clock. The act keeps the request as sent; the launch carries w for engines that spin things (eidosim does, with its
+  // spin cap). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
   if (a.w !== undefined && !(Array.isArray(a.w) && a.w.length === 3 && a.w.every((n) => Number.isFinite(n) && Math.abs(n) <= 1000))) refuse("shape", "w is [x, y, z]: spin in rad/s about world axes (each within ±1000)", "e.g. w: [0, 6.28, 0] turns once a second about up");
   if (a.t !== undefined && !Number.isFinite(a.t)) refuse("shape", "t is a time on the authority's clock (ms)", "leave it out if you don't know it");
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
@@ -3289,7 +3342,7 @@ function launch(w, actor, a, verb, g = null) {
   const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
@@ -3466,7 +3519,7 @@ const VERBS = {
           "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
-        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {

@@ -21,7 +21,10 @@ const copyOf = (L) => readLog(L.map((e) => JSON.stringify(e)).join("\n") + "\n")
 // insert an entry at position i: later entries move up one, and every cause at or after i follows them
 const insertAt = (L, i, e) => { const C = copyOf(L).map((x) => (typeof x.cause === "number" && x.cause >= i ? { ...x, cause: x.cause + 1 } : x)); C.splice(i, 0, e); return copyOf(C); };
 const rests = (L) => restsOf(L);
-const ENG = { engine: "eidosim@0.5.0" };
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
+// a rigid-body engine rests things inside its contact slop (eidosim: 5 mm) and a box doesn't slide far (the first eidosim
+// slid things like pucks and stood them exactly on their support; these bars were exact for it)
+const RIGID = true, ON = 0.005;
 
 function playground(name) {
   fresh(name);
@@ -50,7 +53,8 @@ function playground(name) {
   ok(v.restTicks[rest[0].seq] < 150, "A rest tick (the engine's, re-derived by a carrier) is when it stopped, not when the authority noticed", v.restTicks);
   ok(v.checks.agree >= 1 && !v.checks.disagree.length, "A a carrier re-folding the log agrees (digest + resting place)", v.checks);
   const blind = fold(L); // a reader with no engine at all
-  ok(!blind.entities.ball.c.parent && blind.entities.ball.c.transform.pos[1] === 0 && blind.entities.ball.c.transform.pos[2] > 3,
+  const bz = blind.entities.ball.c.transform.pos[2];   // table at z 4, 0.8 deep: its near edge is z 3.6; the thrower stands at z -0.5
+  ok(!blind.entities.ball.c.parent && Math.abs(blind.entities.ball.c.transform.pos[1]) < ON && (RIGID ? bz > 0.5 && bz < 3.6 : bz > 3),
     "A non-carrier: short of the table, on the ground, from the log alone", blind.entities.ball.c.transform);
   call(W, "rowan", "move", { to: [0, 0, 2.6] }); call(W, "rowan", "grab", { id: "ball" });
   call(W, "rowan", "move", { to: [0, 0, 3.9] }); const d = call(W, "rowan", "drop", { id: "ball" });
@@ -58,7 +62,7 @@ function playground(name) {
   const b2 = fold(log(W)).entities.ball.c;
   ok(b2.parent?.to === "table-1", "A a dropped ball rests on the table, and the log says so (parent: it rides with it)", b2);
   const r2 = rests(log(W)).at(-1);
-  ok(Math.abs(r2.at[1] - 0.75) < 1e-9 && r2.onto === "table-1", "A on the table top (0.75); the authority's attach is its own entry", r2);
+  ok(Math.abs(r2.at[1] - 0.75) < ON && r2.onto === "table-1", "A on the table top (0.75); the authority's attach is its own entry", r2);
   const f1 = view(W), f2 = view(W); ok(JSON.stringify(f1.sim) === JSON.stringify(f2.sim) && f1.checks.agree === 2, "A folding the same log twice: same sim state, both rests verified", f1.checks);
 
 }
@@ -105,9 +109,69 @@ function playground(name) {
   const v = view(W); ok(!v.sim, "D no epoch after the cut");
   const after = call(W, "rowan", "look", {}, 3000).things.find((x) => x.id === "ball");
   ok(!after.moving && after.at[1] > 0.5, "D frozen where it was: logged as a plain result", after);
+  if (RIGID) { // review of 49d4fb0d #3: a rigid engine's origin is only where it was WITH its own turn; frozen pre-launch q floats it
+    const W3 = playground("pc-d3");
+    call(W3, "rowan", "move", { to: [2, 0, -0.5] });
+    const g3 = call(W3, "rowan", "grab", { id: "crate-1" }), t3 = call(W3, "rowan", "throw", { id: "crate-1", v: [0, 5, 0], w: [0, 0, 6] });
+    ok(g3.ok && t3.ok, "D3 setup: the crate is in hand and thrown", { g3: g3.refused, t3: t3.refused });
+    const f3 = call(W3, "rowan", "delete", { id: "@world", component: "physics-engine", force: true }, 400);
+    const L3 = log(W3), cut = [...L3].reverse().find((e) => e.kind === "change" && JSON.stringify(e).includes('"crate-1"') && JSON.stringify(e).includes('"transform"'));
+    const op = (cut?.body?.ops ?? [cut?.body]).find((o) => o?.id === "crate-1" && o.comp === "transform");
+    const q = op?.value?.q ?? [0, 0, 0, 1];
+    ok(f3.ok && Math.abs(q[3]) < 0.9999, "D3 a forced cut logs a tumbling crate as the engine had it turned, not as it was thrown", { q, ok: f3.ok });
+  }
+  if (RIGID) { // review of 49d4fb0d #6: a thing with a shape and no model has no collider in a rotating engine: refused, not silent
+    const W6 = playground("pc-d6");
+    const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
+    const p6 = c6.ok ? call(W6, "rowan", "punt", { id: "ghost", power: 2 }) : null;   // punt first: a held thing is refused as "held"
+    const g6 = c6.ok ? call(W6, "rowan", "grab", { id: "ghost" }) : null, t6 = g6?.ok ? call(W6, "rowan", "throw", { id: "ghost", v: [0, 2, 1] }) : null;
+    ok(!c6.ok || ((!t6 || t6.refused?.code === "no-shape") && (!p6 || p6.refused?.code === "no-shape")),
+      "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
+  }
+  { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
+    // is never taken, Covenant III); under eidosim it flies as a sphere: thrown, it rolls, and rests turned on the ground
+    const W7 = playground("pc-d7");
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+    const ph7 = fold(log(W7)).entities.rb?.c.physics?.shape;
+    ok(c7.ok && JSON.stringify(ph7) === JSON.stringify({ type: "sphere", radius: 0.11, pos: [0, 0.11, 0] }), "D7 collider sphere: the authority stamps a sphere fitted to the ball's box", { shape: ph7, refused: c7.refused });
+    const box7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "box" } }), back7 = fold(log(W7)).entities.rb?.c.physics?.shape;
+    const sph7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "sphere" } });
+    ok(box7.ok && sph7.ok && JSON.stringify(back7) === JSON.stringify([[-0.11, 0, -0.11], [0.11, 0.22, 0.11]]), "D7 …asking for a box again re-stamps the box", { back7 });
+  }
+  if (RIGID) {
+    const W7 = playground("pc-d7r");
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+    const g7 = call(W7, "rowan", "grab", { id: "rb" }), t7 = call(W7, "rowan", "throw", { id: "rb", v: [0, 1, 3] });
+    ok(c7.ok && g7.ok && t7.ok, "D7 setup: a ball stamped as a sphere is made, picked up and thrown", { c: c7.refused, g: g7.refused, t: t7.refused });
+    call(W7, "rowan", "wait", {}, 15000);
+
+    const r7 = rests(log(W7)).find((r) => r.id === "rb"), st7 = fold(log(W7)).entities.rb.c.transform;
+    // a rolled ball's origin (its bottom, as modelled) has turned with it: the claim is about its CENTRE, origin + q·(0, r, 0)
+    const [qx, qy, qz, qw] = st7.q, cy = st7.pos[1] + 0.11 * (1 - 2 * (qx * qx + qz * qz));
+    ok(!!r7 && Math.abs(cy - 0.11) < ON && Math.abs(st7.q[3]) < 0.99 && st7.pos[2] > 2,
+      "D7 …it rolled: its centre rests at its radius on the ground, well past where it landed, turned", { rest: !!r7, pos: st7.pos, q: st7.q, centreY: cy });
+  }
+  if (RIGID) { // stage 2: a thrown crate knocks a resting dynamic crate; both rests are logged under the throw, a carrier agrees,
+    // and a locked crate and the (static) table don't move
+    const W8 = playground("pc-d8");
+    call(W8, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 2.2] } });
+    call(W8, "rowan", "create", { id: "fix", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, lock: true }, place: { at: [1.4, 2.2] } });
+    const before = fold(log(W8)).entities; const tgt0 = before.tgt.c.transform.pos, fix0 = before.fix.c.transform.pos, tab0 = before["table-1"].c.transform.pos;
+    call(W8, "rowan", "move", { to: [2, 0, -0.5] }); const g8 = call(W8, "rowan", "grab", { id: "crate-1" });
+    call(W8, "rowan", "move", { to: [0, 0, 0.4] });
+    const t8 = call(W8, "rowan", "throw", { id: "crate-1", v: [0, 1.5, 5] });
+    ok(g8.ok && t8.ok, "D8 setup: crate in hand and thrown at the target", { g: g8.refused, t: t8.refused });
+    call(W8, "rowan", "wait", {}, 20000);
+    const L8 = log(W8), R8 = rests(L8), E8 = fold(L8).entities, v8 = view(W8);
+    const rt = R8.find((r) => r.id === "tgt"), rc = R8.find((r) => r.id === "crate-1");
+    ok(!!rt && !!rc && rt.cause === rc.cause && L8[rt.cause].verb === "launch" && L8[rt.cause].body.id === "crate-1" && JSON.stringify(E8.tgt.c.transform.pos) !== JSON.stringify(tgt0),
+      "D8 the target was knocked: its rest is logged under the throw's launch, beside the thrown crate's", { rests: R8.map((r) => [r.id, r.cause]), tgt: E8.tgt.c.transform.pos });
+    ok(v8.checks.agree >= 2 && !v8.checks.disagree.length, "D8 …and a carrier re-folding the log agrees with both rests", v8.checks);
+    ok(JSON.stringify(E8.fix.c.transform.pos) === JSON.stringify(fix0) && JSON.stringify(E8["table-1"].c.transform.pos) === JSON.stringify(tab0), "D8 a locked crate and the table stay put", { fix: E8.fix.c.transform.pos, table: E8["table-1"].c.transform.pos });
+  }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
-  const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);
+  const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: 16 } }, 100);
   ok(calm.ok && !calm.notes?.some((n) => n.frozen), "D at rest, the cut is free (nothing to freeze)", calm);
 }
 
@@ -170,7 +234,7 @@ function playground(name) {
   ok(l.ok && l.dropped.length === 1 && l.dropped[0].ok, "H leaving drops what was held", l);
   call(W, "jo", "wait", {}, 4000);
   const r = rests(log(W)).at(-1);
-  ok(r && Math.abs(r.at[1]) < 1e-9, "H it fell to the ground and that's logged", r);
+  ok(r && Math.abs(r.at[1]) < ON, "H it fell to the ground and that's logged", r);
 }
 
 // I — determinism of the whole pipeline: the same requests at the same times give the same log, byte for byte.
@@ -188,9 +252,15 @@ function playground(name) {
 }
 
 // K — a foreign engine: this server can't run it, so nothing flies; the world is still fully readable.
+{ // review of b398d7e3 #3: an epoch the engine would never start is refused, not accepted to fly nowhere
+  const W = fresh("pc-tick"); call(W, "rowan", "create-world", { title: W });
+  const bad = [5, 15, 1001, 33.5].map((t) => call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: t } }));
+  const good = [16, 1000].map((t) => call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: t } }));
+  ok(bad.every((r) => r.refused?.code === "bounds") && good.every((r) => r.ok), "K a tickMs outside the engine's range (16..1000 whole ms) is refused; its ends are fine", [...bad, ...good].map((r) => r.ok ?? r.refused?.code));
+}
 {
   const W = fresh("pc-k"); call(W, "rowan", "create-world", { title: W });
-  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", build: "deadbeefdeadbeef" } });
+  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "deadbeefdeadbeef" } });
   ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a foreign build is accepted with a note", s);
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, 0.5] }); call(W, "rowan", "grab", { id: "ball" });
@@ -227,7 +297,7 @@ function playground(name) {
   ok(lostOne?.lost, "L a throw out of the world is reported lost", after);
   ok(JSON.stringify(call(W, "rowan", "inspect", { id: "crate-1" }).world.pos) === JSON.stringify(before), "L …and it's back where it was picked up");
   ok(view(W).checks.disagree.length === 0, "L carriers still agree (lost rests included)", view(W).checks);
-  const sch = call(W, "rowan", "schema", { component: "physics" }); ok(/does NOT push or topple/.test(JSON.stringify(sch)), "L the schema says what physics doesn't do");
+  const sch = call(W, "rowan", "schema", { component: "physics" }); ok(/knocks over dynamic things it hits unless a lock holds them/.test(JSON.stringify(sch)), "L the schema says what a throw does to what it hits, and what a lock keeps");
   const c = call(W, "rowan", "create", { id: "ball-2", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [3, 3] } });
   ok(c.ok && !(c.notes ?? []).some((n) => /isn't a component/.test(n.why ?? "")), "L physics is a known component now (no false note)", c.notes);
 }

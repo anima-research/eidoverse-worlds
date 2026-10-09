@@ -18,8 +18,7 @@ import { execFileSync } from "node:child_process";
 const ROOT = path.resolve(import.meta.dir, "../..");
 const N = "4";   // the current protocol number (the genesis `v`); spelled apart so this file doesn't name itself
 // lines where the same spelling names something else: file → a pattern the line must match, and why
-const UNRELATED = [["shared/sim.js", new RegExp(`eidosim@0\\.${N}\\.0|\\bV1, V2, V3, V${N}\\b|name === V${N}|\\bv${N} = law|\\(v${N} &&`),
-  "eidosim's law numbers (law N = eidosim@0.N.0), not the protocol; and the engine's hashed source (EIDOSIM_BUILD covers its bytes)"],
+const UNRELATED = [
   ["server/keyfiles.ts", /^export const OLD_NAMES: Record/, "the one-time rename of a worlds dir's key files saved before the names pass names their old names (once, here)"],
   ["tools/protocol/scale-check.ts", /^const \w+ = await imp1\(/, "--tree <an older checkout>: the first path that loads, today's or the base commit's own (before the names pass)"],
   ["tools/protocol/authority-check.ts", new RegExp(`"V${N} a component set`), "a check id in the V series (V1, V2, …)"],

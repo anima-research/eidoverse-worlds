@@ -272,8 +272,8 @@ const file = path.join(tmp, "worlds", ".directory.json");
 // through the real importer (translateV1World, in a child with a scratch library: epoch-probe.ts) with the founder's key,
 // directory identities and content addresses, and is compared with HER sim (shared/sim.js beside the v1 fold, as sweep §3).
 { const { emptyState: v1Empty, foldEntry } = await import("./import-v1/fold.js");
-  const eidosim = await import("../../shared/sim.js");
-  const { simFold } = await import("../../shared/protocol/simlayer.js");
+  const eidosim = await import("./import-v1/eidosim-v1.js");   // HER engine: what the v1 log means
+  const { simFold, DEFAULT_ENGINE } = await import("../../shared/protocol/simlayer.js");
   const { readLog, fold } = await import("../../shared/protocol/fold.js");
   const TV1 = await import("./import-v1/translate-v1.js");
   const crypto = await import("node:crypto");
@@ -309,8 +309,12 @@ const file = path.join(tmp, "worlds", ".directory.json");
     // every thing her sim does NOT hold stands where her instant fold has it (the instant fold owns it)
     const off = Object.entries<any>(st.entities).filter(([id, e]) => !sim.bodies[id] && !e.parent && JSON.stringify(E[TV1.enc(id)]?.c.transform?.pos) !== JSON.stringify(e.pos ?? [0, 0, 0])).map(([id]) => id);
     out.others = [!off.length, off.slice(0, 5)];
+    // @11: her flights are plain logged writes: no launch, no digest; every flight of hers rests on the record; the world
+    // runs today's eidosim from her epoch on; the sim layer reads the history without a disagreement
+    const flown = t.lines.filter((e: any) => e.kind === "sim").length;
     const sf = simFold(t.lines, endOf(t.lines), { models: {} });
-    out.carrier = [t.r.sim && sf.checks.agree === t.r.sim.rests && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches), { checks: sf.checks, sim: t.r.sim }];
+    out.carrier = [t.r.sim && !flown && !sf.checks.disagree.length && t.r.sim.rests === t.r.sim.launches && (launches < 0 || t.r.sim.launches === launches)
+      && (!t.r.sim.engine || t.r.sim.engine.engine === DEFAULT_ENGINE), { flown, checks: sf.checks, sim: t.r.sim }];
     out.strict = [t.back.status === "ok" && !t.back.diagnostics.some(([, c]: any) => String(c).startsWith("malformed")), t.back.diagnostics.slice(0, 3)];
     out.founder = [JSON.stringify(t.lines[0].body.owners[0]) === JSON.stringify([founder]), t.lines[0].body.owners];
     out.stamp = [t.lines[1].body.from.translator === TV1.TRANSLATOR_SIM, t.lines[1].body.from.translator];
@@ -326,9 +330,16 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const shapes = sim.boxes ? Object.entries<any>(st.entities).filter(([, e]) => typeof e.lib === "string" && sim.boxes[e.lib]) : [];
     const noShape = shapes.filter(([id, e]) => JSON.stringify(E[TV1.enc(id)]?.c.physics?.shape) !== JSON.stringify(sim.boxes[e.lib])).map(([id]) => id);
     out.shapes = [!sim.boxes || (shapes.length > 0 && !noShape.length), noShape.slice(0, 5)];
+    // R 2026-10-08: a thing the v1 log punts is a dynamic collider, every other one static (the ruling itself: this fact
+    // states it, it can't independently derive it)
+    // per thing (the v1 fold's own identity), from the translator's one statement of the rule
+    const lives = TV1.puntedLives(L), lt = TV1.lifeTracker(); for (const e of L) lt.step(e);
+    const punted = (id: string) => lives.has(`${id}#${lt.of(id)}`);
+    const wrongKind = shapes.filter(([id]) => E[TV1.enc(id)]?.c.physics?.kind !== (punted(id) ? "dynamic" : "static")).map(([id]) => id);
+    out.kinds = [!sim.boxes || !wrongKind.length, wrongKind.slice(0, 5)];
     // the live host opens it (the code the cutover runs) and its own sim layer agrees with every logged rest
     const live: any = openLive(t.at, "new", { now: () => endOf(t.lines) + 1000, custodyFile: path.join(path.dirname(t.at), CUSTODY_FILE) });
-    const ls = live.sim(); out.live = [ls.checks.agree === t.r.sim?.rests && !ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
+    const ls = live.sim(); out.live = [!ls.checks.disagree.length && JSON.stringify(live.state().entities) === JSON.stringify(t.back.entities), ls.checks];
     return out;
   };
   const report = (id: string, what: string, f: Record<string, [boolean, unknown]>) => { const broken = Object.entries(f).filter(([, [p]]) => !p);
@@ -356,7 +367,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
     const W = t.back?.entities ?? {};
     f.released = [Object.entries<any>(sim.bodies).every(([id, b]) => JSON.stringify(W[id]?.c.transform?.pos) === JSON.stringify(b.p)), Object.keys(sim.bodies)];
     f.off = [!W["@world"]?.c["physics-engine"] && !Object.values<any>(W).some((e) => e.c.physics), { engine: W["@world"]?.c["physics-engine"], physics: Object.keys(W).filter((k) => W[k].c.physics) }];
-    f.inert = [t.lines.filter((e: any) => e.kind === "sim" && e.verb === "launch").length === 4, null];
+    f.inert = [t.r.sim?.launches === 4, t.r.sim];   // her four flights; the punt after the exit is v1's instant cause: no flight
     f.layerOff = [t.lines.length > 0 && !simFold(t.lines, endOf(t.lines), { models: {} }).sim, null];
     report("EP2", "leaving the epoch (epoch {sim: null}) after the sequencer's epoch-release places: every body stands where it was released, physics is off (no engine, no shapes), and a later punt is inert", f);
     // …and with no release places (her sim drops its bodies at the exit): the instant fold owns them again, as in her fold
@@ -403,7 +414,64 @@ const file = path.join(tmp, "worlds", ".directory.json");
         const a = TV1.translate(C, { nonce }).out, b = TV1.translate(X, { nonce }).out; const k = b.findIndex((e: any) => e.kind === "act" && e.body?.verb === "epoch");
         const same = k > 2 && b.slice(2, k).every((e: any, i: number) => JSON.stringify(e) === JSON.stringify(a[i + 2])) && JSON.stringify(a[0]) !== undefined;
         ok(same && a[1].body.from.translator === TV1.TRANSLATOR && b[1].body.from.translator === TV1.TRANSLATOR_SIM, `EP3 …and the ${k - 2} entries before the epoch are byte-for-byte what the copy alone translates to`, { k }); }
+
     } }
+
+  // EP5 (review of b398d7e3 #3): an epoch is what HER sim made of it. Her own law → today's eidosim; an engine she didn't
+  // carry (nothing flew) → that name with no build (nothing flies here either); an epoch she refused (tickMs 5: it never
+  // started) → no physics at all, the epoch kept as a record
+  { const B = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
+    const log = (sim: string, tickMs: number) => [{ seq: 0, ts: 1000, actor: "world", verb: "genesis", args: { v: 3, dialect: "eidoverse-log" } },
+      { seq: 1, ts: 1020, actor: "fx", verb: "epoch", args: { sim, tickMs, boxes: { "crate.glb": B } } },
+      { seq: 2, ts: 1030, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box: B } },
+      { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }];
+    const W5 = (L: any[]) => fold(readLog(TV1.translate(L, {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["@world"]?.c ?? {};
+    const own = W5(log("eidosim@0.5.0", 66)), other = W5(log("otherphys@2.0.0", 66)), refused = W5(log("eidosim@0.5.0", 5));
+    // a LATER epoch she refuses (her 66 ms law runs on): today's eidosim at HER tick, not the refused one (review r4 #3)
+    const later = W5([...log("eidosim@0.5.0", 66).slice(0, 3), { seq: 3, ts: 1040, actor: "fx", verb: "epoch", args: { sim: "eidosim@0.5.0", tickMs: 5 } },
+      { seq: 4, ts: 1500, actor: "fx", verb: "punt", args: { id: "crate", power: 8, dir: [1, 0.3, 0] } }]);
+    ok(later["physics-engine"]?.engine === DEFAULT_ENGINE && later["physics-engine"]?.tickMs === 66, "EP5 …and a later epoch she refused doesn't replace hers: today's eidosim at her 66 ms", later["physics-engine"]);
+    // a spawn the v1 fold ignores (lib "") is no new thing: what was punted stays dynamic (review r4 #5)
+    const noop = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "" } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
+    ok(noop?.kind === "dynamic", "EP4 a spawn the v1 fold ignores (lib \"\") makes no new thing: the punted crate stays dynamic", noop);
+    // the v1 fold's own identity (fold.js bornOf): a same-lib re-spawn with no remove between is the same thing (review r5)
+    const again = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
+    ok(again?.kind === "dynamic", "EP4 a same-lib re-spawn with no remove between is the same thing (the v1 fold's own identity): still dynamic", again);
+    // the v1 fold reads an id as a property key: remove {id: 7} removes "7" (review r6)
+    const numid = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "remove", args: { id: 7 } },
+      { seq: 5, ts: 9100, actor: "fx", verb: "spawn", args: { id: "7", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }].map((e: any) => (e.args?.id === "crate" ? { ...e, args: { ...e.args, id: "7" } } : e)), {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["7"]?.c.physics;
+    ok(numid?.kind === "static", "EP4 an id is a property key, as the v1 fold reads it: remove {id: 7} ends \"7\", and the next \"7\" is a new, static thing", numid);
+    // a falsy id is no thing to the v1 fold's spawn (!a?.id): spawn {id: 0}, punt "0", then a real spawn "0" — that "0" was never punted (review r7)
+    const zero = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66).slice(0, 2), { seq: 2, ts: 1030, actor: "fx", verb: "spawn", args: { id: 0, lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box: B } },
+      { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "0", power: 8, dir: [1, 0.3, 0] } },
+      { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "0", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["0"]?.c.physics;
+    ok(zero?.kind === "static", "EP4 a spawn with a falsy id makes nothing (the v1 fold's rule): a punt before the real spawn of \"0\" isn't its punt", zero);
+    // remove {id: null} deletes the thing named "null" in the v1 fold (entities[null]): the next "null" is new (review r8)
+    const nul = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66)].map((e: any) => (e.args?.id === "crate" ? { ...e, args: { ...e.args, id: "null" } } : e)).concat([
+      { seq: 4, ts: 9000, actor: "fx", verb: "remove", args: { id: null } }, { seq: 5, ts: 9100, actor: "fx", verb: "spawn", args: { id: "null", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }]), {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["null"]?.c.physics;
+    ok(nul?.kind === "static", "EP4 remove {id: null} ends the thing named \"null\", as the v1 fold has it: the next is new and static", nul);
+    ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
+      && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
+      "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",
+      { own: own["physics-engine"], other: other["physics-engine"], refused: { engine: refused["physics-engine"], record: refused["imported-epoch"] } }); }
+
+  // EP4 (review of b398d7e3 #2 #4): an id removed and spawned again is a new thing: never punted, it's static. And her
+  // physics is not anyone's act to take back: undo of an imported punt's act changes nothing (the rest is the sim's)
+  { const F = parseLog(path.join(FIX, "eidosim-0.5", "log.jsonl")); const box = F.find((e: any) => e.verb === "epoch").args.boxes["crate.glb"];
+    let seq = F.at(-1).seq, ts = F.at(-1).ts + 20_000;
+    const X = [...F, { seq: ++seq, ts: (ts += 10), actor: "fixture", verb: "remove", args: { id: "crate" } },
+      { seq: ++seq, ts: (ts += 10), actor: "fixture", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [9, 0, -9], yaw: 0, box } }];
+    const lib = fixtureLib(); const t = importer("respawn", X, { lib }); const W4 = t.back?.entities ?? {};
+    ok(t.ok && W4.crate?.c.physics?.kind === "static" && W4.ball?.c.physics?.kind === "dynamic",
+      "EP4 a punted thing removed and spawned again under its id is a new, static thing (what she punted stays dynamic)", { crate: W4.crate?.c.physics, ball: W4.ball?.c.physics, err: t.err });
+    const G = [F[0], { seq: 0.5, ts: F[0].ts + 1, actor: "world", verb: "grant", args: { id: "fixture", role: "owner" } }, ...F.slice(1)];
+    const u = importer("undo", G, { lib });
+    const live: any = u.ok ? openLive(u.at, "new", { now: () => endOf(u.lines) + 1000, custodyFile: path.join(path.dirname(u.at), CUSTODY_FILE) }) : null;
+    const punts = u.ok ? u.lines.map((e: any, i: number) => [e, i]).filter(([e]: any) => e.kind === "act" && e.body?.verb === "punt") : [];
+    const { request } = await import("../../shared/protocol/authority.js");
+    const answers = punts.map(([e, i]: any) => request(live, e.actor, "undo", { act: i, dry: true }));
+    ok(punts.length === 4 && answers.every((r: any) => r.refused?.code === "nothing"),
+      "EP4 …and undo of an imported punt's act changes nothing: where her sim rested it, and its kind, are no one's act", answers.map((r: any) => r.refused?.code ?? r.would)); }
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

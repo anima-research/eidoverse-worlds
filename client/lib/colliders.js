@@ -118,7 +118,7 @@ const cellKey = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
 
 function bucketAdd(id, entry) {
   // an OBB can straddle cells — register in every cell its footprint touches
-  const { obj, box } = entry;
+  const { obj } = entry; const { box } = frameOf(entry);   // a thing lying down is filed by its true footprint
   const s = obj.scale?.x || 1; // imports land wrong-sized and get resized in-world
   const r = Math.max(
     Math.abs(box.min.x), Math.abs(box.max.x),
@@ -515,10 +515,10 @@ export function entityWorldCenter(id, out = new THREE.Vector3()) {
   const c = colliders.get(id);
   const obj = c?.obj;
   if (!c?.box || !obj) return null;
-  const sc = obj.scale ?? _ecV.set(1, 1, 1);
-  out.copy(c.box.min).add(c.box.max).multiplyScalar(0.5)
+  const sc = obj.scale ?? _ecV.set(1, 1, 1); const F = frameOf(c);
+  out.copy(F.box.min).add(F.box.max).multiplyScalar(0.5)
     .multiply(_ecV.set(sc.x || 1, sc.y || 1, sc.z || 1))
-    .applyAxisAngle(UP, obj.rotation?.y ?? 0)
+    .applyAxisAngle(UP, F.yaw)
     .add(obj.position);
   return out;
 }
@@ -618,24 +618,24 @@ export function raySegment(origin, dir, far) {
         if (!e || e.camGhost || e.mask || !e.box) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
-        const yaw = o.rotation?.y ?? 0;
+        const F = frameOf(e); const yaw = F.yaw;
         _rsO.copy(origin).sub(o.position);
         _rsD.copy(dir);
         if (yaw) { _rsO.applyAxisAngle(UP, -yaw); _rsD.applyAxisAngle(UP, -yaw); }
         _rsO.divideScalar(s);
         const lfar = Math.min(far, bestT) / s;
-        if (e.exact?.bvh) {
+        if (F.exact?.bvh) {
           _rsRay.origin.copy(_rsO);
           _rsRay.direction.copy(_rsD);
-          const hit = e.exact.bvh.raycastFirst(_rsRay, THREE.DoubleSide);
+          const hit = F.exact.bvh.raycastFirst(_rsRay, THREE.DoubleSide);
           if (hit && hit.distance <= lfar) bestT = hit.distance * s;
           continue;
         }
-        let box = e.box;
-        if (e.pillar) {
-          const mx = (e.box.min.x + e.box.max.x) / 2, mz = (e.box.min.z + e.box.max.z) / 2;
-          _rsPost.min.set(mx - 0.25, e.box.min.y, mz - 0.25);
-          _rsPost.max.set(mx + 0.25, e.box.max.y, mz + 0.25);
+        let box = F.box;
+        if (F.pillar) {
+          const mx = (F.box.min.x + F.box.max.x) / 2, mz = (F.box.min.z + F.box.max.z) / 2;
+          _rsPost.min.set(mx - 0.25, F.box.min.y, mz - 0.25);
+          _rsPost.max.set(mx + 0.25, F.box.max.y, mz + 0.25);
           box = _rsPost;
         }
         const t = slabT(_rsO, _rsD, box, lfar);
@@ -673,6 +673,35 @@ const _cp = {};
 // `climbs`: may this body mantle what blocks it (sets lastBlockedTop)? Defaults to "a full-height body", which is what
 // the old `tall >= TALL` test meant; the walking avatar passes true explicitly, so a SMALLER chosen size (bodyscale.js
 // colliderFor: tall = 1.9 × size) keeps its mantle while a ragdoll joint still never climbs.
+// ---- a thing's frame for the yaw-only readers below ----------------------------
+// Every reader here works in "root-local, yaw only": subtract position, un-rotate
+// by a yaw, divide by scale, and test the root-local box. That is exact while a
+// thing stands (rotation.x and .z are 0). A tumbling engine lays things on their
+// sides (review of b398d7e3 #1), and a quaternion yawed past 90° reads back from
+// three's XYZ Euler as x = z = π with rotation.y = π − θ, so neither can be read
+// through rotation.y. For those, the frame is the true yaw of the thing's
+// horizontal axes plus its box turned into that frame: exact when it lies on a
+// face, the bounding box when it balances on an edge. A tumbled thing loses its
+// exact (trimesh) collision and collides as that box.
+const UPRIGHT = Math.cos(10 * Math.PI / 180);
+const _fm = new THREE.Matrix4(), _fy = new THREE.Matrix4();
+export function frameOf(e) {
+  const o = e.obj, r = o.rotation, f = (e._f ??= { yaw: 0, box: e.box, exact: e.exact, pillar: e.pillar, grid: e.grid, qx: NaN, qy: NaN, qz: NaN, qw: NaN });
+  if (!r || (!r.x && !r.z) || !o.quaternion) { f.yaw = r?.y ?? 0; f.box = e.box; f.exact = e.exact; f.pillar = e.pillar; f.grid = e.grid; f.qx = NaN; return f; }
+  const q = o.quaternion;
+  // keyed on everything a refit (decide) may change in place: the box, its exactness, its pillar and grid readings
+  if (q.x === f.qx && q.y === f.qy && q.z === f.qz && q.w === f.qw && f.src === e.box && f.ex === e.exact && f.pi === e.pillar && f.gr === e.grid) return f;
+  const te = _fm.makeRotationFromQuaternion(q).elements;   // column k (a local axis in the world) = te[4k..4k+2]
+  const ups = [te[1], te[5], te[9]].map(Math.abs); const k = ups.indexOf(Math.max(...ups)); const j = k === 0 ? 1 : 0;
+  f.yaw = Math.atan2(-te[4 * j + 2], te[4 * j]);
+  const standing = k === 1 && te[5] > UPRIGHT;
+  // lying, it is its box: no trimesh, no slim post (a fallen tree is a log), no heightfield (measured upright)
+  if (standing) { f.box = e.box; f.exact = e.exact; f.pillar = e.pillar; f.grid = e.grid; }
+  else { f.box = e.box.clone().applyMatrix4(_fy.makeRotationY(-f.yaw).multiply(_fm)); f.exact = null; f.pillar = false; f.grid = null; }
+  f.qx = q.x; f.qy = q.y; f.qz = q.z; f.qw = q.w; f.src = e.box; f.ex = e.exact; f.pi = e.pillar; f.gr = e.grid;
+  return f;
+}
+
 export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs = tall >= TALL) {
   blockedTop = null;
   let ground = terrainAt(pos.x, pos.z);
@@ -685,7 +714,8 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
   const step = Math.min(STEP, tall * 0.3);   // a ragdoll does not climb stairs
   const probeY = Math.min(HIP, tall * 0.5);  // mid-body, not "hip"
   const spanY = Math.max(r, tall * 0.26);    // how far up/down a wall hit counts
-  for (const { obj, box, pillar, exact, grid, mask, support } of near(pos.x, pos.z)) {
+  for (const e0 of near(pos.x, pos.z)) {
+    const { obj, mask, support } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
     if (mask) continue;   // a grass-mask footprint is not a solid (see fitStructureBoxes)
     if (support) {
       // A DECLARED FLOOR IS SUPPORT, NEVER AN OBSTACLE — the same contract the
@@ -701,7 +731,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
       // floor doesn't need the heuristic — it knows what it is.
       const ss = obj.scale?.x || 1;
       _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
-        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(ss);
+        .applyAxisAngle(UP, -yaw).divideScalar(ss);
       if (_local.x > box.min.x && _local.x < box.max.x
           && _local.z > box.min.z && _local.z < box.max.z) {
         const topY = obj.position.y + box.max.y * ss;
@@ -717,7 +747,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
       // exactly as the browser's exact triangles would have it.
       const gs = obj.scale?.x || 1;
       _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
-        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(gs);
+        .applyAxisAngle(UP, -yaw).divideScalar(gs);
       const gx = Math.floor(((_local.x - grid.minX) / grid.w) * grid.n);
       const gz = Math.floor(((_local.z - grid.minZ) / grid.d) * grid.n);
       if (gx >= 0 && gx < grid.n && gz >= 0 && gz < grid.n) {
@@ -733,7 +763,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
       // work in entity-local space (yaw-only rotation, uniform scale)
       const s = obj.scale.x || 1;
       _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
-        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(s);
+        .applyAxisAngle(UP, -yaw).divideScalar(s);
       const localY = (pos.y - obj.position.y) / s;
       // floor: nearest surface below the feet (+step allowance) IS the ground
       _ray.origin.set(_local.x, localY + step / s, _local.z);
@@ -751,7 +781,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
         const dy = Math.abs(_hip.y - res.point.y) * s;
         const dh = Math.hypot(dx, dz);
         if (dh < r && dy < spanY && dh > 1e-6) {
-          _push.set(dx / dh, 0, dz / dh).applyAxisAngle(UP, obj.rotation.y)
+          _push.set(dx / dh, 0, dz / dh).applyAxisAngle(UP, yaw)
             .multiplyScalar(r - dh);
           pos.x += _push.x; pos.z += _push.z;
         }
@@ -760,7 +790,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
     }
     const bs = obj.scale?.x || 1;
     _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
-      .applyAxisAngle(UP, -obj.rotation.y).divideScalar(bs);
+      .applyAxisAngle(UP, -yaw).divideScalar(bs);
     const br = r / bs;
     let minX = box.min.x, maxX = box.max.x, minZ = box.min.z, maxZ = box.max.z;
     if (pillar) {
@@ -808,7 +838,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
     // everything becomes passable.
     if (bottomY > ground + 0.05
         && (pos.y + tall) - bottomY <= Math.max(0.05, tall * 0.08)) continue;
-    _push.set(best.x, 0, best.z).applyAxisAngle(UP, obj.rotation.y).multiplyScalar(best.d * bs);
+    _push.set(best.x, 0, best.z).applyAxisAngle(UP, yaw).multiplyScalar(best.d * bs);
     pos.x += _push.x; pos.z += _push.z;
     // pillars aren't mantleable — and neither is anything, to a body that
     // cannot climb. The ragdoll runs this routine once per JOINT per frame;
@@ -831,7 +861,8 @@ export function findSeat(pos, range = 1.2) {
   // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
-  for (const [id, { obj, box, pillar, exact, grid, mask }] of nearColliders(pos.x, pos.z, range)) {
+  for (const [id, e0] of nearColliders(pos.x, pos.z, range)) {
+    const { obj, mask } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
     if (mask) continue;
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
@@ -841,11 +872,11 @@ export function findSeat(pos, range = 1.2) {
     if (rise < 0.25 || rise > 0.85) continue;            // not seat height
     // centre of the top face, in world space
     _local.set((box.min.x + box.max.x) / 2 * sc, 0, (box.min.z + box.max.z) / 2 * sc)
-      .applyAxisAngle(UP, obj.rotation.y);
+      .applyAxisAngle(UP, yaw);
     const cx = obj.position.x + _local.x, cz = obj.position.z + _local.z;
     const d = Math.hypot(cx - pos.x, cz - pos.z);
     if (d > range) continue;
-    if (!best || d < best.d) best = { d, id, x: cx, z: cz, y: topY, yaw: obj.rotation.y };
+    if (!best || d < best.d) best = { d, id, x: cx, z: cz, y: topY, yaw: yaw };
   }
   return best;
 }
@@ -858,13 +889,14 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
   let onto = null;
   // a surface UNDER the point must have its footprint over the point — the
   // point's own cell holds every such entry (grid-bounded, §14.2 6a)
-  for (const [id, { obj, box, pillar, exact, mask }] of nearColliders(x, z, 0.5)) {
+  for (const [id, e0] of nearColliders(x, z, 0.5)) {
+    const { obj, mask } = e0; const { yaw, box, exact, pillar } = frameOf(e0);
     if (pillar || mask || id === skipId) continue;
     if (exact) {
       // dropped things land on the actual surface (stair tread, mezzanine)
       const s = obj.scale.x || 1;
       _local.set(x - obj.position.x, 0, z - obj.position.z)
-        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(s);
+        .applyAxisAngle(UP, -yaw).divideScalar(s);
       const fromY = (Math.min(maxY, obj.position.y + box.max.y * s) - obj.position.y) / s;
       _ray.origin.set(_local.x, fromY + 0.01, _local.z);
       _ray.direction.set(0, -1, 0);
@@ -876,7 +908,7 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
       continue;
     }
     const sc2 = obj.scale?.x || 1;
-    _local.set(x - obj.position.x, 0, z - obj.position.z).applyAxisAngle(UP, -obj.rotation.y).divideScalar(sc2);
+    _local.set(x - obj.position.x, 0, z - obj.position.z).applyAxisAngle(UP, -yaw).divideScalar(sc2);
     if (_local.x < box.min.x || _local.x > box.max.x || _local.z < box.min.z || _local.z > box.max.z) continue;
     const topY = obj.position.y + box.max.y * sc2;
     if (topY > y && topY <= maxY) { y = topY; onto = id; }

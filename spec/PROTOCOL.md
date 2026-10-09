@@ -348,7 +348,7 @@ request moves a copy to a newer version, keeping its own overrides.
   payload**.
 - An actor is an **identity** (§3.1); `system` (the authority itself: genesis, its
   own follow-ups such as sending a released thing home); `sim` (the physics
-  engine's digests); `world`; or `script:<entity>` (a script installed on that entity, acting with its
+  engine: its launches, digests and rests); `world`; or `script:<entity>` (a script installed on that entity, acting with its
   sponsor's rights, §8). Doors MUST refuse a client claiming a reserved
   actor.
 - Display names are a view, kept outside the log. A stranger who takes your

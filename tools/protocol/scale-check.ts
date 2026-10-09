@@ -491,7 +491,17 @@ async function sameAsBase() {
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
   // R 10-07: look and inspect read a thing as its name, description, what it can do and its state (shared/a11y.js): those
   // fields are additions the base never wrote, generated from components it also had. Compared without them, on both sides
-  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined : v));
+  // 2026-10-09 (review of b398d7e3): a rotation the authority writes is made unit after rounding (the base wrote 0.707 per
+  // axis, which isn't): compared as the rotation it means, normalised then rounded, on both sides
+  const unitQ = (v: any) => { const n = Math.hypot(...v); return v.map((x: number) => Math.round((x / n) * 1e6) / 1e6); };
+  // the rotations this tree WROTE: a transform's q (in after / would), not a value a request carried and a reply echoes
+  const qs: number[][] = []; JSON.stringify(a, (k, v) => { if (k === "transform" && v && Array.isArray(v.q) && v.q.length === 4) qs.push(v.q);
+    if (v && v.comp === "transform" && Array.isArray(v.value?.q) && v.value.q.length === 4) qs.push(v.value.q); return v; });   // after.<id>.transform, and a dry run's would op
+  if (!qs.length) return { same: false, replies: a.length, why: "no written rotation to check (the scan would be vacuous)" };
+  const notUnit = qs.find((q) => Math.abs(Math.hypot(...q) - 1) > 1e-9);   // ours must BE unit, not merely compare as one
+  if (notUnit) return { same: false, replies: a.length, notUnit };
+  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" ? undefined
+    : k === "q" && Array.isArray(v) && v.length === 4 && v.every(Number.isFinite) ? unitQ(v) : v));
   const diff = a.findIndex((x: any, i: number) => noA11y(x) !== noA11y(b[i]));
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }
