@@ -208,10 +208,13 @@ export function restsOf(entries) {
   entries.forEach((e, seq) => {
     if (!isEntry(e) || e.kind !== "change") return; const c = entries[e.cause];
     if (!isEntry(c) || c.kind !== "sim" || c.verb !== "launch") return;
-    const op = opsSafe(e).find((o) => o.comp === "transform" && o.id === c.body.id);
-    const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "system" && x.body?.rest === seq);
-    out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor],
-      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) });
+    // PHYSICS §1: a launch's rest covers every body its flight set moving (one under eidosim@0.x): each transform is one
+    const ops = opsSafe(e).filter((o) => o.comp === "transform" && typeof o.id === "string");
+    for (const op of ops.length ? ops : [{ id: c.body.id }]) {
+      const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "system" && x.body?.rest === seq && (x.body?.id ?? c.body.id) === op.id);
+      out.push({ seq, id: op.id, cause: e.cause, at: op.value?.pos, handled: c.body.handled ?? [c.actor],
+        ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) });
+    }
   });
   return out;
 }

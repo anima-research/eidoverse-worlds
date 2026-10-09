@@ -3,6 +3,8 @@
 // S1 (Covenant IV): any advance schedule reaching tick T gives the same bits: one jump, tick by tick, split, and
 //    with a JSON clone between ticks. Review 49d4fb0d #1: a body resting mid-call stayed dynamic in the live world.
 import * as S from "../../shared/sim2.js";
+import { restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
+import { makeReplica } from "../../shared/protocol/replica.js";
 let pass = 0, fail = 0;
 const ok = (c: boolean, name: string, info?: unknown) => { if (c) pass++; else { fail++; console.log("FAIL", name, info === undefined ? "" : JSON.stringify(info)); } };
 const J = (x: unknown) => JSON.stringify(x), clone = (x: any) => JSON.parse(J(x));
@@ -102,5 +104,25 @@ const schedules = (mkf: () => any, T: number) => {
   const L = [{ id: "a", p: [-2, 1, 0], v: [3, 2, 0], w: [0, 0, -4] }];
   for (const T of [40, 120]) { const [j, t, c, s2] = schedules(() => mk(ents, L), T);
     ok(j === t && t === c && c === s2, `S5d spheres: every schedule agrees at tick ${T}`); }
+}
+{ // S6 (audit FIX-1, PHYSICS §1): a launch's rest covers every body its flight set moving: restsOf reads each transform
+  const L: any[] = [
+    { kind: "sim", actor: "ann", verb: "launch", body: { id: "a", p: [0, 1, 0], v: [1, 0, 0], handled: ["ann"] } },
+    { kind: "change", actor: "sim", cause: 0, verb: "batch", body: { ops: [
+      { verb: "set", id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } },
+      { verb: "set", id: "b", comp: "transform", value: { pos: [2, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } }] } },
+    { kind: "act", actor: "system", verb: "settle", body: { id: "b", onto: "deck", rest: 1 } },
+  ];
+  const r = restsOf(L);
+  ok(r.length === 2 && r[0].id === "a" && r[1].id === "b" && J(r[1].at) === J([2, 0, 0]) && r[1].onto === "deck" && !r[0].onto,
+    "S6 a rest that moved two bodies is two rests, each with its own settle", r);
+  const one = restsOf([L[0], { kind: "change", actor: "sim", cause: 0, verb: "set", body: { id: "a", comp: "transform", value: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }]);
+  ok(one.length === 1 && one[0].id === "a" && J(one[0].at) === J([1, 0, 0]), "S6 …and the one-body rest every eidosim@0.x log holds reads as before", one);
+}
+{ // S7 (audit FIX-2): a joiner decides for itself whether it carries the cut's engine build
+  const name = Object.keys(ENGINES).find((k) => k.startsWith("eidosim2@"))!;
+  const rep: any = makeReplica();
+  rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
+  ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
 }
 console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

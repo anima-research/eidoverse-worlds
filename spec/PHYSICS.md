@@ -39,9 +39,13 @@ the world depends on carrying the engine; only watching the flight does.
   the engine `@world.physics-engine` names. It owns what is in the air between a launch
   and its rest. It never writes the log; the authority does, from its own copy.
 
-A change entry whose `cause` is a launch IS that body's rest, and its value
-MUST equal where the engine has the body. A carrier checks this; a
-disagreement is evidence against the authority, not a second truth.
+A change entry whose `cause` is a launch IS the rest of the bodies that
+launch set moving: the launched body and, under engines that collide moving
+bodies with resting ones, any body its flight set moving through contact
+(engine-defined; under eidosim@0.x exactly the launched body). Each of its
+`transform` values MUST equal where the engine has that body. A carrier
+checks this; a disagreement is evidence against the authority, not a second
+truth.
 
 ## 2. Covenant I — owned numerics
 
@@ -294,7 +298,9 @@ updates; VRChat splits them the same way):
 A `throw` or `drop` MAY carry `w` (spin, rad/s, world frame) and `t` (the
 moment the hand let go, on the authority's clock, §5.1). The act records the
 request as sent; the launch carries `w` for engines that spin things (eidosim
-ignores it, as it ignores roll). `t` is for validation and for smoothing the
+ignores it, as it ignores roll), and `q` (the thing's orientation as it was
+let go) for engines that rotate them; a rest under such an engine writes the
+engine's `q` beside its `pos`. `t` is for validation and for smoothing the
 thrower's own view of their flight, **never a backdated sim input**: a launch
 takes effect at its own entry's tick (Covenant IV), because backdating turns
 into rollback the moment bodies collide.
