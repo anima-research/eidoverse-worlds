@@ -437,6 +437,10 @@ const file = path.join(tmp, "worlds", ".directory.json");
     // the v1 fold's own identity (fold.js bornOf): a same-lib re-spawn with no remove between is the same thing (review r5)
     const again = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "crate", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities.crate?.c.physics;
     ok(again?.kind === "dynamic", "EP4 a same-lib re-spawn with no remove between is the same thing (the v1 fold's own identity): still dynamic", again);
+    // the v1 fold reads an id as a property key: remove {id: 7} removes "7" (review r6)
+    const numid = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66), { seq: 4, ts: 9000, actor: "fx", verb: "remove", args: { id: 7 } },
+      { seq: 5, ts: 9100, actor: "fx", verb: "spawn", args: { id: "7", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }].map((e: any) => (e.args?.id === "crate" ? { ...e, args: { ...e.args, id: "7" } } : e)), {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["7"]?.c.physics;
+    ok(numid?.kind === "static", "EP4 an id is a property key, as the v1 fold reads it: remove {id: 7} ends \"7\", and the next \"7\" is a new, static thing", numid);
     ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
       && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
       "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",

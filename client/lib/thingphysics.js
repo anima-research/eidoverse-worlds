@@ -188,7 +188,7 @@ function palmOf(actorId, side, out) {
   return out;
 }
 // a thing's visual centre, local to its origin (its collider box): held by its middle, not its base
-const _c = new THREE.Vector3(), _gq = new THREE.Quaternion();
+const _c = new THREE.Vector3(), _cq = new THREE.Quaternion();
 function localCentre(id, obj) {
   const b = colliders.get(id)?.box; if (!b) return _c.set(0, 0.1, 0);
   const s = obj.scale ?? { x: 1, y: 1, z: 1 };
@@ -404,7 +404,7 @@ export async function throwHeld(arg) {
 export async function grabNear(at, within = 0.6) {
   const f = feet(); if (!f) return null; let best = null, bd = within;
   for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
-    const c = obj.getWorldPosition(new THREE.Vector3()).add(localCentre(id, obj).applyQuaternion(obj.getWorldQuaternion(_gq))); const d = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]);
+    const c = obj.getWorldPosition(new THREE.Vector3()).add(localCentre(id, obj).applyQuaternion(obj.getWorldQuaternion(_cq))); const d = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]);
     if (d < bd && inHand(c.toArray(), f, id) !== null) { bd = d; best = id; } }
   return best ? grab(best) : null;
 }

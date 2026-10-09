@@ -344,15 +344,19 @@ function surfacesOf(st, id) {
   const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
   if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
     if (m.round) return [];   // a round thing (a ball, a bell) offers no face in any pose; an empty UPRIGHT list (a door, a wall) says nothing about lying
-    const out = [];
-    for (const o of obbs(st, id)) for (let j = 0; j < 3; j++) {
+    const out = []; const boxes = obbs(st, id);
+    // a point inside one of the thing's own boxes (a face flush under its back panel is no place to put anything)
+    const buried = (p, self) => boxes.some((o, k) => k !== self && o.ax.every((ax, i) => Math.abs(dot([p[0] - o.c[0], p[1] - o.c[1], p[2] - o.c[2]], ax)) < o.h[i] - 1e-6));
+    for (const [bi, o] of boxes.entries()) for (let j = 0; j < 3; j++) {
       const u = o.ax[j][1]; if (Math.abs(u) < UPRIGHT) continue;
       const n = o.ax[j].map((v) => v * Math.sign(u)); const top = o.c.map((v, i) => v + n[i] * o.h[j]);
+      if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
       const [a, c] = [0, 1, 2].filter((k) => k !== j);
       const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
-      out.push({ id, level: out.length, y: top[1], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
+      out.push({ id, level: 0, y: top[1], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
     }
-    return out;
+    // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
+    return out.sort((p, q) => p.y - q.y).map((x, i) => ({ ...x, level: i }));
   }
   const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
   const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
@@ -3046,7 +3050,7 @@ const PHYSICS_VERBS = {
     const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos);
     if (snap.to) {
       const hs = worldT(st, snap.to.to).scale;
-      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: socketQ(snap.to.sock).map(r3), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
+      const ops = [setOp(a.id, "parent", { to: snap.to.to, socket: snap.to.slot, order: "a0" }), setOp(a.id, "transform", { pos: snap.to.sock.pos.slice(), q: qr3(socketQ(snap.to.sock)), scale: t.scale.map((v, i) => r3(v / hs[i])) })];
       const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
       const act = w.append(actOf(w, actor, "put", a, { ...facts(), release: "snap", socket: { to: snap.to.to, socket: snap.to.slot } }));
       const seq = changeEntry(w, plan, act); delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: "snap", to: snap.to.to, socket: snap.to.slot, seq: act });

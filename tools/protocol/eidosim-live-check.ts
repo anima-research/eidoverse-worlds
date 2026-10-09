@@ -93,4 +93,27 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const ballS = c("rowan", "measure", { id: "ball" }).surfaces;
   ok(made.every(Boolean) && onDoor.ok && onWall.ok && Array.isArray(ballS) && ballS.length === 0,
     "K7 a door or a wall laid flat has its top as a surface (a bell goes on it); a ball on its side still offers none", { made, door: onDoor.ok ?? onDoor.refused, wall: onWall.ok ?? onWall.refused, ball: ballS }); }
+// K8, K9 (review r6): a socket's rotation is written unit (it was rounded only: 0.707); a thing laid down offers its
+// levels bottom to top with no face buried under its own parts, so the default (the last) is its top and has room
+{ const root4 = fs.mkdtempSync(root + "/r6-") + "/"; let now = 1800000000000; const dir = root4 + "w/"; fs.mkdirSync(dir);
+  const w = openLive(dir, "w", { now: () => now, custodyFile: root4 + "custody.json", nameOf: () => null, kindOf: () => "human" });
+  const c = (a, v, args = {}, step = 1000) => { now += step; return request(w, a, v, args); };
+  c("rowan", "create-world", { title: "r6" });
+  c("rowan", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
+  c("rowan", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+  c("rowan", "move", { to: [0.8, 0, 0.6] }); c("rowan", "grab", { id: "key" }); const d = c("rowan", "drop", { id: "key", pos: [0.1, 0.75, 0.05] });
+  const kq = w.state().entities.key?.c.transform?.q; const kp = w.state().entities.key?.c.parent?.to;
+  ok(d.ok && kp === "rack" && Array.isArray(kq) && Math.abs(Math.hypot(...kq) - 1) < 1e-12, "K8 a thing snapped into a turned socket is written with a unit rotation", { ok: d.ok ?? d.refused, parent: kp, q: kq, n: kq && Math.hypot(...kq) });
+  c("rowan", "move", { to: [0, 0, 12] });
+  c("rowan", "create", { id: "sh", model: "shelf", place: { at: [0, 0], lying: true } }); c("rowan", "create", { id: "fr", model: "swing-frame", place: { at: [6, 0], lying: true } });
+  c("rowan", "create", { id: "bl", model: "ball", place: { at: [9, 9] } });
+  const lv = (id: string) => c("rowan", "measure", { id }).surfaces ?? [];
+  const asc = (L: any[]) => L.every((x, i) => i === 0 || x.y >= L[i - 1].y);
+  const top = (id: string) => Math.max(...lv(id).map((x: any) => x.y));
+  const onSh = c("rowan", "place", { id: "bl", on: "sh", dry: true }), onFr = c("rowan", "place", { id: "bl", on: "fr", dry: true });
+  const shL = lv("sh"), frL = lv("fr");
+  // (a lying A-frame's faces are all 10 cm beams: no room for a 22 cm ball, refused honestly, at its top level)
+  ok(onSh.ok && onFr.refused?.code === "no-room" && new RegExp(`level ${frL.length - 1} `).test(onFr.refused.reason) && asc(shL) && asc(frL) && shL.length > 0 && Math.abs(shL.at(-1).y - top("sh")) < 1e-9 && Math.abs(frL.at(-1).y - top("fr")) < 1e-9,
+    "K9 a shelf or a swing-frame laid down lists its levels bottom to top, no face buried under its own parts; the default is its top (the shelf's takes a ball; the frame's beam honestly has no room)",
+    { sh: onSh.ok ?? onSh.refused?.reason, fr: onFr.ok ?? onFr.refused?.reason, shY: shL.map((x: any) => x.y), frY: frL.map((x: any) => x.y) }); }
 console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

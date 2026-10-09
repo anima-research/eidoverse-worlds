@@ -268,17 +268,18 @@ function physical(st, sim, recorded, out, dynamic = () => false) {
  *  absent or real) is a NEW thing when the id was free (never spawned, or removed) or held a different lib or a light; a
  *  same-lib re-spawn is the same thing. `of(id)` is the id's life count. R 2026-10-08's "punted → dynamic" is per thing. */
 export function lifeTracker() {
-  const lib = new Map(), n = {};
-  return { of: (id) => n[id] ?? 0, step(e) { const id = e?.args?.id; if (typeof id !== "string") return;
+  // an id is a property key to the v1 fold (st.entities[a.id]): 7 and "7" name one thing
+  const lib = new Map(), n = new Map();
+  return { of: (id) => n.get(String(id)) ?? 0, step(e) { const raw = e?.args?.id; if (raw == null || raw === "") return; const id = String(raw);
     if (e.verb === "remove") lib.delete(id);
     else if (e.verb === "light") lib.set(id, "\0light");
     else if (e.verb === "spawn" && id && !(e.args.lib != null && !e.args.lib)) { const l = e.args.lib ?? null;
-      if (!lib.has(id) || lib.get(id) !== l) n[id] = (n[id] ?? 0) + 1; lib.set(id, l); } } };
+      if (!lib.has(id) || lib.get(id) !== l) n.set(id, (n.get(id) ?? 0) + 1); lib.set(id, l); } } };
 }
 /** The things (`id#life`) a v1 log ever punts: R 2026-10-08, these come across `dynamic`, every other collider `static`. */
 export function puntedLives(entries) {
   const t = lifeTracker(), out = new Set();
-  for (const e of entries) { t.step(e); if (e?.verb === "punt" && typeof e.args?.id === "string") out.add(`${e.args.id}#${t.of(e.args.id)}`); }
+  for (const e of entries) { t.step(e); const id = e?.args?.id; if (e?.verb === "punt" && id != null && id !== "") out.add(`${String(id)}#${t.of(id)}`); }
   return out;
 }
 /** Whether a v1 log enters a physics epoch (the v1 fold's own test: a sim name and an integer tick). */
