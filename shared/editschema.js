@@ -247,10 +247,10 @@ export function inspectSchema(ent, id, live = {}) {
   // `collide` has no verb but spawn, and re-spawning would re-author the thing.
   if (isBag(c.collider) || ent.collide != null) {
     const shape = isBag(c.collider) ? c.collider.shape : ent.collide;
-    const opts = ['exact', 'box'];
+    const opts = ['exact', 'box', 'sphere'];
     groups.push({ group: 'collider', label: 'collider', ...(isBag(c.collider) ? { types: ['collider'] } : {}), fields: [
       { t: 'enum', k: 'shape', label: 'shape', value: shape, options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
-        hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box; remove the component to let its size decide'
+        hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide'
           : 'set by its spawn; changing it here writes a collider component, which takes precedence' },
     ] });
   }

@@ -124,6 +124,9 @@ const schedules = (mkf: () => any, T: number) => {
   const rep: any = makeReplica();
   rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
   ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
+  const rep2: any = makeReplica();   // review of 8377ec52 #10: a carried build but no engine state in the cut can't fly here either
+  rep2.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: (ENGINES as any)[name].build, tickMs: 33 }, foreign: true, sim: null, clock: 0, launches: {}, launched: {} } });
+  ok(rep2.sim?.foreign === true, "S7 …and a cut of a carried build with no engine state is foreign too (a mid-epoch sim only starts from a cut)", { foreign: rep2.sim?.foreign });
 }
 { // S8 stage 2: what flies knocks what rests. A dynamic thing at rest is a sleeping body the engine wakes on contact; it
   // flies under the launch that woke it and rests as that launch's. A static-kind one is a collider and never moves.
@@ -147,4 +150,24 @@ const schedules = (mkf: () => any, T: number) => {
     const j = mk(ents, Ls); S.advanceSim(j, 200); if (J(S.simSnapshot(j)) !== J(S.simSnapshot(b))) sched++; }
   ok(bad === 0 && sched === 0 && knocked >= 6, "S8 crate fields: culled = whole world every tick, one jump = ticks, and things get knocked", { bad, sched, knocked, of: 8 });
 }
+{ // S9 (review of 8377ec52 #7): a woken thing is the launch's that reached it, not the newest launch anywhere
+  const ents: any = { vase: { pos: [2, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" }, a: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" }, c: { pos: [0, 0, 40], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" } };
+  const sim: any = mk(ents, [{ id: "a", p: [-1, 0.6, 0], v: [6, 1, 0] }, { id: "c", p: [0, 3, 40], v: [0, 4, 0] }]);   // seq 1: at the vase; seq 2: 40 m away
+  let seqAt = -1; for (let t = 1; t <= 60 && seqAt < 0; t++) { S.advanceSim(sim, t); if (sim.bodies.vase && !sim.bodies.vase.resting) seqAt = sim.bodies.vase.seq; }
+  ok(seqAt === 1, "S9 a crate knocked by A's throw is A's (launch 1), not C's toss 40 m away (2)", { seqAt }); }
+{ // S10 (#8): a scaled sphere sits on the ground (its centre scales with its radius)
+  const SPH = { type: "sphere", radius: 0.11, pos: [0, 0.11, 0] }, ys: number[] = [];
+  for (const sc of [[1, 1, 1], [3, 1, 1], [1, 3, 1]]) { const sim: any = S.emptySim(), view = { entities: { b: { pos: [0, 0, 0], yaw: 0, lib: "crate", scale: sc[1], scale3: sc, shape: SPH, kind: "dynamic" } }, terrain: { amplitude: 0 } };
+    S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { crate: BOX } } }, view);
+    S.simEntry(sim, { seq: 1, ts: 0, verb: "launch", args: { id: "b", p: [0, 0, 0], v: [0, 0, 0] } }, view);
+    let k = 0; while (!sim.bodies.b.resting && k < 500) S.advanceSim(sim, ++k); ys.push(sim.bodies.b.p[1]); }
+  ok(ys.every((y) => Math.abs(y) < 0.006), "S10 a sphere at scale 1, [3,1,1] and [1,3,1] rests with its bottom on the ground", ys); }
+{ // S11 (#2): a fast ball doesn't pass through a resting knockable wall
+  const THIN = [[-0.05, 0, -1], [0.05, 1, 1]];
+  const run = (kind: any) => { const sim: any = S.emptySim(), view = { entities: { wall: { pos: [0, 0, 0], yaw: 0, lib: "thin", scale: 1, ...(kind ? { kind } : {}) }, ball: { pos: [-3, 0, 0], yaw: 0, lib: "crate", scale: 1, shape: { type: "sphere", radius: 0.1, pos: [0, 0.1, 0] } } }, terrain: { amplitude: 0 } };
+    S.simEntry(sim, { seq: 0, ts: 0, verb: "epoch", args: { sim: S.SIM_ID, tickMs: 33, boxes: { thin: THIN, crate: BOX } } }, view);
+    S.simEntry(sim, { seq: 5, ts: 0, verb: "launch", args: { id: "ball", p: [-3, 0.4, 0], v: [20, 0, 0] } }, view);
+    for (let k = 1; k <= 15; k++) S.advanceSim(sim, k); return sim; };
+  const st = run(null), dy = run("dynamic");
+  ok(st.bodies.ball.p[0] < 0 && dy.bodies.ball.p[0] < 0.5 && !!dy.bodies.wall, "S11 a 20 m/s ball stops at a 10 cm wall, static or knockable (and knocks the knockable one)", { static: st.bodies.ball.p[0], dynamic: dy.bodies.ball.p[0], wallMoved: !!dy.bodies.wall }); }
 console.log(`sim2-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

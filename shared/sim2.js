@@ -62,8 +62,10 @@ function geometry(box, scale) {
 function collider(sim, ent) {
   const sc = scale3(ent.scale3 ?? ent.scale), sh = ent.shape;
   if (sh && sh.type === 'sphere' && Number.isFinite(sh.radius) && sh.radius > 0) {
-    const r = sh.radius * Math.max(sc[0], sc[1], sc[2]), at = vec3ok(sh.pos) ? sh.pos : [0, 0, 0];
-    return { shape: 'sphere', radius: r, half: [r, r, r], off: [at[0] * sc[0], at[1] * sc[1], at[2] * sc[2]] };
+    // a sphere scales as a sphere: radius and centre both by its largest |scale| (a squashed ball isn't a sphere; per-axis
+    // centre with a max radius floated or buried it, review of 8377ec52 #8)
+    const k = Math.max(sc[0], sc[1], sc[2]), r = sh.radius * k, at = vec3ok(sh.pos) ? sh.pos : [0, 0, 0];
+    return { shape: 'sphere', radius: r, half: [r, r, r], off: [at[0] * k, at[1] * k, at[2] * k] };
   }
   const box = typeof ent.lib === 'string' ? sim.boxes[ent.lib] : null; if (!box) return null;
   return { shape: 'box', ...geometry(box, sc) };
@@ -114,7 +116,7 @@ export function simEntry(sim, entry, st) {
     const uid = sim.statics[a.id]?.uid ?? sim.bodies[a.id]?.uid ?? nextUid(sim);
     delete sim.statics[a.id]; delete sim.bodies[a.id];   // re-insert: order follows the last intent, as eidosim@0.x does
     const c = centreOf(a.p, q, off);
-    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: spinCap(vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half), half, off, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}), ...material(ent),
+    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: spinCap(vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half), half, off, ...(col.shape === 'sphere' ? { shape: 'sphere', radius: col.radius } : {}), dyn: ent.kind === 'dynamic', ...material(ent),
       p: a.p.slice(), resting: false, seq: entry.seq, born: sim.tick, awake: true, sleepTime: 0, sleepTag: null };
     return;
   }
@@ -209,9 +211,11 @@ export function advanceSim(sim, toTick) {
       if (missed) { cullStats.redo++; sim.e2 = JSON.parse(before); ({ W, ids, index } = hydrate(sim)); W.step(dt);
         woke.length = 0; for (const id of Object.keys(sim.statics)) if (sim.statics[id].dyn && W.bodies[index.get(sim.statics[id].uid)].awake) woke.push(id); }
     }
-    // woken: it flies now, as part of the latest launch still in the air (engine-defined, PHYSICS §1: a launch's rest
-    // covers every body its flight set moving); it rests and is logged under that launch
-    const by = Math.max(...flyers.map((b) => b.seq));
+    // woken: it flies now, under the launch whose flight woke it — the engine names the awake body that started the
+    // cascade (wokeBy), and that body's launch is the cause (PHYSICS §1: through contact). Review of 8377ec52 #7: the
+    // newest launch anywhere was blamed for a crate 40 m away.
+    const seqOfUid = new Map(Object.values(sim.bodies).filter((b) => !b.resting).map((b) => [b.uid, b.seq]));
+    const latest = Math.max(...flyers.map((b) => b.seq));
     sim.tick++;
     let flying = 0, rested = 0;
     for (const id of ids) {
@@ -225,7 +229,7 @@ export function advanceSim(sim, toTick) {
     for (const id of woke) { const s = sim.statics[id], e = W.bodies[index.get(s.uid)];
       delete sim.statics[id];
       sim.bodies[id] = { uid: s.uid, c: e.p.slice(), q: e.q.slice(), v: e.v.slice(), w: e.w.slice(), half: s.half, off: s.off, ...(s.shape === 'sphere' ? { shape: 'sphere', radius: s.radius } : {}),
-        friction: s.friction, frictionCombine: s.frictionCombine, p: originOf(e.p, e.q, s.off), resting: false, seq: by, born: sim.tick, awake: true, sleepTime: e.sleepTime, sleepTag: null, woken: true };
+        friction: s.friction, frictionCombine: s.frictionCombine, p: originOf(e.p, e.q, s.off), resting: false, seq: seqOfUid.get(e.wokeBy) ?? latest, born: sim.tick, dyn: true, awake: true, sleepTime: e.sleepTime, sleepTag: null, woken: true };
       flying++; }
     save();
     if (!flying) break;
@@ -238,7 +242,7 @@ function restBody(sim, id, b) {
   // the engine's sleep tag ('step:root') names an island by a body's index in that tick's world, which culling changes;
   // at rest it's a static here and carries no tag (stage 2's sleepers get 's<uid>' when hydrated)
   b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false; b.sleepTag = null;
-  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), dyn: true, off: b.off, friction: b.friction, frictionCombine: b.frictionCombine };
+  sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), ...(b.dyn ? { dyn: true, off: b.off } : {}), friction: b.friction, frictionCombine: b.frictionCombine };
 }
 
 export function simPose(sim, id) { const b = sim.bodies[id]; return b ? { p: b.p, q: b.q, resting: b.resting } : null; }

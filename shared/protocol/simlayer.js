@@ -15,7 +15,7 @@ import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed, PURGED } fr
 import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import * as sim2 from "../sim2.js";
-import { isBoxShape } from "./shapes.js";
+import { isBoxShape, shapeError } from "./shapes.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
 // sha256(sim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
@@ -27,7 +27,7 @@ export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "
   { build: EIDOSIM, module: eidosim, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
 // eidosim2: rigid bodies with full rotation, Box3D-style soft contacts, a height-field ground (shared/sim2.js over shared/eidosim2.js)
 // sha256(sim2.js ‖ NUL ‖ eidosim2.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const SIM2_BUILD = "0e6be40cdb37fdad";
+export const SIM2_BUILD = "ad0068c27c5552a5";
 export const SIM2_FILES = ["shared/sim2.js", "shared/eidosim2.js", "shared/simmath.js", "shared/terrainmath.js"];
 ENGINES[sim2.SIM_ID] = { build: SIM2_BUILD, module: sim2, rotates: true, about: "eidosim2: rigid boxes that tumble, soft contacts (after Box3D), swept against colliders, terrain", maxSpeed: 20 };
 const engineOf = (name) => ENGINES[name]?.module ?? eidosim;
@@ -56,19 +56,28 @@ export function worldPose(st, id, depth = 0) {
 // shape is no body to it (rather than a tagged object misread as [[min], [max]]). An engine that carries spheres reads them.
 export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
 // The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
-function engineEntity(st, id, models = MODELS) {
-  const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics)) || e.c.physics?.kind === "none") return null;
+const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };   // as authority.lockedC
+const sphereShape = (ph) => ph?.shape?.type === "sphere" && !shapeError(ph.shape);
+// what a flying thing may knock (engines that collide moving bodies with resting ones): a dynamic thing that no hand rule
+// holds fixed — not locked, under nothing locked, and holding nothing locked (a hand can't take those either:
+// authority grab/punt/lift check the same three). Everything else at rest is a collider.
+function fixedSet(st) {
+  const fixed = new Set(), up = (k) => st.entities[k]?.c.parent?.to;
+  for (const id of Object.keys(st.entities)) { if (!lockedC(st.entities[id].c)) continue;
+    fixed.add(id); for (let p = up(id), n = 0; p && n++ < 32; p = up(p)) fixed.add(p); }   // locked, and all it sits under
+  for (const id of Object.keys(st.entities)) for (let p = up(id), n = 0; p && n++ < 32; p = up(p)) if (lockedC(st.entities[p]?.c)) { fixed.add(id); break; }   // under a lock
+  return fixed;
+}
+function engineEntity(st, id, models = MODELS, fixed = null) {
+  const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along for engines that read one (eidosim@0.x reads lib only)
-  // kind: a dynamic thing at rest can be knocked by what flies (engines that collide moving bodies with resting ones);
-  // a locked one is fixed, as it is to every hand (lock, any truthy value)
-  const lock = e.c.lock, locked = lock !== undefined && lock !== PURGED && !!lock;   // as authority.lockedC
   return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
-    ...(e.c.physics?.kind === "dynamic" && !locked ? { kind: "dynamic" } : {}) };
+    ...(e.c.physics?.kind === "dynamic" && !(fixed ?? fixedSet(st)).has(id) ? { kind: "dynamic" } : {}) };
 }
 function engineViewM(st, models = MODELS) {
-  const entities = {};
-  for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models); if (v) entities[id] = v; }
+  const entities = {}, fixed = fixedSet(st);
+  for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models, fixed); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
   return { entities, terrain: terr ?? { amplitude: 0 } }; // worlds stand on y = 0 unless they declare terrain
 }
@@ -116,6 +125,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       if (!flying.length) { E().advanceSim(out.sim, target); break; }
       E().advanceSim(out.sim, out.sim.tick + 1);
       for (const id of flying) if (out.sim.bodies[id]?.resting && out.launched[id]) out.launched[id].restTick ??= out.sim.tick;
+      for (const [id, l] of Object.entries(out.launched)) if (l.restTick !== undefined && out.sim.bodies[id] && !out.sim.bodies[id].resting) delete l.restTick;   // woken again before its rest was logged (review #9)
       // a body a flight woke is that launch's to rest (PHYSICS §1): it rests and is logged under the launch the engine names
       for (const [id, b] of Object.entries(out.sim.bodies)) if (b.woken && !b.resting && out.launched[id]?.seq !== b.seq) {
         const src = Object.values(out.launched).find((l) => l.seq === b.seq);
@@ -163,6 +173,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         return;
       }
       if (!out.sim) return;
+      let relock = false;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
           if (o.comp === "terrain") { E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
@@ -170,14 +181,23 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
         const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
+        if (o.comp === "lock" || o.comp === "parent") relock = true;
         if (!whole && !PHYSICAL.has(o.comp)) continue;
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
         for (const id of ids) {
+          // a thing under it that a launch set moving is the engine's until its own rest is LOGGED (L6), flying or come to
+          // rest unlogged: its parent's rest or a write to its parent doesn't cancel it (review of 8377ec52 #6)
+          if (id !== o.id && out.launched[id] && out.sim.bodies[id]) continue;
           const view = engineView(st); const gone = !view.entities[id];
           E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }
       }
+      // a lock or a parent changed: what may be knocked changes for the thing, what's under it and what it's under.
+      // Re-seat every thing at rest whose knockability no longer matches (review of 8377ec52 #3–#5)
+      if (relock && E() === sim2) { const view = engineView(st);
+        for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
+          E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
     } else if (e.kind === "sim" && out.sim) {
       const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {

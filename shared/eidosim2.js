@@ -340,12 +340,15 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
     // WAKE WHOLE ISLANDS (as Box3D's persistent islands; review 10-09 #3): a sleeping island remembers its tag; if any
     // member was woken (API) or an awake body reaches one (AABB pair or joint), the whole tagged island wakes BEFORE
     // contacts are built, so its internal contacts exist this step and warm-start from their kept impulses
-    const wakeTag = (t) => { for (const b of bodies) if (b.sleepTag === t) { b.awake = true; b.sleepTime = 0; b.sleepTag = undefined; } };
-    for (const b of bodies) if (!b.static && b.awake && b.sleepTag !== undefined) wakeTag(b.sleepTag);
+    // wokeBy (transient, read by a host right after the step): the uid of the awake body whose reach woke this one,
+    // carried down a cascade to the body that started it; never exported, never an input
+    for (const b of bodies) b.wokeBy = undefined;
+    const wakeTag = (t, by) => { for (const b of bodies) if (b.sleepTag === t) { b.awake = true; b.sleepTime = 0; b.sleepTag = undefined; b.wokeBy = by; } };
+    for (const b of bodies) if (!b.static && b.awake && b.sleepTag !== undefined) wakeTag(b.sleepTag, b.uid);
     let pairs = findPairs();
     for (let changed = true; changed;) {
       changed = false;
-      const reach = (x, y) => { if (!x.static && x.awake && !y.static && !y.awake && y.sleepTag !== undefined) { wakeTag(y.sleepTag); changed = true; } };
+      const reach = (x, y) => { if (!x.static && x.awake && !y.static && !y.awake && y.sleepTag !== undefined) { wakeTag(y.sleepTag, x.wokeBy ?? x.uid); changed = true; } };
       for (const [i, j] of pairs) { reach(bodies[i], bodies[j]); reach(bodies[j], bodies[i]); }
       for (const jt of joints) if (jt.alive && jt.a >= 0 && jt.b >= 0) { reach(bodies[jt.a], bodies[jt.b]); reach(bodies[jt.b], bodies[jt.a]); }
       if (changed) pairs = findPairs();
@@ -528,7 +531,7 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
       const lo = [Math.min(b.p0[0], end[0]) - r, Math.min(b.p0[1], end[1]) - r, Math.min(b.p0[2], end[2]) - r], hi = [Math.max(b.p0[0], end[0]) + r, Math.max(b.p0[1], end[1]) + r, Math.max(b.p0[2], end[2]) + r];
       let tMin = 1;
       for (const o of bodies) {
-        if (o === b || !o.static) continue;
+        if (o === b || (!o.static && live(o))) continue;   // statics and SLEEPING bodies (they don't move this step): a fast body must not pass through a resting one
         const ob = aabb(o); if (ob[0] > hi[0] || ob[3] < lo[0] || ob[1] > hi[1] || ob[4] < lo[1] || ob[2] > hi[2] || ob[5] < lo[2]) continue;
         pose(0); if (distLB(b, o) <= 0) continue;   // already overlapping: not a tunnel
         let t = 0, hit = false;
