@@ -353,12 +353,16 @@ function surfacesOf(st, id) {
       if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
       const [a, c] = [0, 1, 2].filter((k) => k !== j);
       const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
-      out.push({ id, level: 0, y: top[1], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
+      out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
     }
     // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
-    // (at one height, the larger face last: a shelf face-down offers its back, not its 3 cm side strips; review r7)
-    const area = (x) => (x.max[0] - x.min[0]) * (x.max[1] - x.min[1]);
-    return out.sort((p, q) => (Math.abs(p.y - q.y) > 1e-6 ? p.y - q.y : area(p) - area(q))).map((x, i) => ({ ...x, level: i }));
+    // Faces within 1e-6 of each other are one height (float noise): each group takes its highest y, so the levels stay
+    // bottom to top however they're rounded, and orders by the face's own area (not its footprint, which grows with
+    // yaw), larger last: a shelf face-down offers its back, not its 3 cm side strips (reviews r7, r8)
+    out.sort((p, q) => p.y - q.y);
+    for (let i = 0; i < out.length;) { let k = i + 1; while (k < out.length && out[k].y - out[i].y <= 1e-6) k++;
+      const y = out[k - 1].y; const g = out.slice(i, k).map((x) => ({ ...x, y })).sort((p, q) => p.ar - q.ar); out.splice(i, k - i, ...g); i = k; }
+    return out.map(({ ar, ...x }, i) => ({ ...x, level: i }));
   }
   const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
   const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);

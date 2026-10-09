@@ -117,5 +117,16 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   // (a lying A-frame's faces are all 10 cm beams: no room for a 22 cm ball, refused honestly, at its top level)
   ok(!shOn && onSh.ok && onFr.refused?.code === "no-room" && new RegExp(`level ${frL.length - 1} `).test(onFr.refused.reason) && asc(shL) && asc(frL) && shL.length > 0 && Math.abs(shL.at(-1).y - top("sh")) < 1e-9 && Math.abs(frL.at(-1).y - top("fr")) < 1e-9,
     "K9 a shelf or a swing-frame laid down lists its levels bottom to top, no face buried under its own parts; the default is its top (the shelf's takes a ball; the frame's beam honestly has no room)",
-    { sh: onSh.ok ?? onSh.refused?.reason, fr: onFr.ok ?? onFr.refused?.reason, shY: shL.map((x: any) => x.y), frY: frL.map((x: any) => x.y) }); }
+    { sh: onSh.ok ? true : onSh.refused?.reason, fr: onFr.ok ? true : onFr.refused?.reason, shY: shL.map((x: any) => x.y), frY: frL.map((x: any) => x.y) }); }
+// K10 (review r8): faces at one height are one level height, so measure's rounded list stays bottom to top (a shelf at
+// scale 0.9 face-down at yaw 0.3 put its 0.1575 front edge on a rounding half: [3.158, 3.157, 3.158])
+{ const root5 = fs.mkdtempSync(root + "/r8-") + "/"; let now = 1800000000000; const dir = root5 + "w/"; fs.mkdirSync(dir);
+  const w = openLive(dir, "w", { now: () => now, custodyFile: root5 + "custody.json", nameOf: () => null, kindOf: () => "human" });
+  const c = (a, v, args = {}, step = 1000) => { now += step; return request(w, a, v, args); };
+  c("rowan", "create-world", { title: "r8" }); c("rowan", "create", { id: "sh", model: "shelf", place: { at: [0, 0] } });
+  const qm = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+  const q = qm([0, Math.sin(0.15), 0, Math.cos(0.15)], [Math.sin(Math.PI / 4), 0, 0, Math.cos(Math.PI / 4)]);
+  c("rowan", "set", { id: "sh", component: "transform", value: { pos: [0, 3, 0], q, scale: [0.9, 0.9, 0.9] } });
+  const L = c("rowan", "measure", { id: "sh" }).surfaces ?? [];
+  ok(L.length > 1 && L.every((x, i) => i === 0 || x.y >= L[i - 1].y), "K10 measure's levels read bottom to top however they round (faces at one height share it)", L.map((x) => x.y)); }
 console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

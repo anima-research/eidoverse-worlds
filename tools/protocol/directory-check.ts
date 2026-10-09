@@ -446,6 +446,10 @@ const file = path.join(tmp, "worlds", ".directory.json");
       { seq: 3, ts: 1500, actor: "fx", verb: "punt", args: { id: "0", power: 8, dir: [1, 0.3, 0] } },
       { seq: 4, ts: 9000, actor: "fx", verb: "spawn", args: { id: "0", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }], {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["0"]?.c.physics;
     ok(zero?.kind === "static", "EP4 a spawn with a falsy id makes nothing (the v1 fold's rule): a punt before the real spawn of \"0\" isn't its punt", zero);
+    // remove {id: null} deletes the thing named "null" in the v1 fold (entities[null]): the next "null" is new (review r8)
+    const nul = fold(readLog(TV1.translate([...log("eidosim@0.5.0", 66)].map((e: any) => (e.args?.id === "crate" ? { ...e, args: { ...e.args, id: "null" } } : e)).concat([
+      { seq: 4, ts: 9000, actor: "fx", verb: "remove", args: { id: null } }, { seq: 5, ts: 9100, actor: "fx", verb: "spawn", args: { id: "null", lib: "crate.glb", pos: [3, 0, 3], yaw: 0, box: B } }]), {}).out.map((e: any) => JSON.stringify(e)).join("\n"))).entities["null"]?.c.physics;
+    ok(nul?.kind === "static", "EP4 remove {id: null} ends the thing named \"null\", as the v1 fold has it: the next is new and static", nul);
     ok(own["physics-engine"]?.engine === DEFAULT_ENGINE && other["physics-engine"]?.engine === "otherphys@2.0.0" && other["physics-engine"]?.build === null
       && !refused["physics-engine"] && refused["imported-epoch"]?.tickMs === 5,
       "EP5 her law becomes today's eidosim; an engine she didn't carry keeps its name and no build (nothing flies); an epoch she refused stays a record",

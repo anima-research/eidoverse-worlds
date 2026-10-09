@@ -270,8 +270,9 @@ function physical(st, sim, recorded, out, dynamic = () => false) {
 export function lifeTracker() {
   // an id is a property key to the v1 fold (st.entities[a.id]): 7 and "7" name one thing
   const lib = new Map(), n = new Map();
-  return { of: (id) => n.get(String(id)) ?? 0, step(e) { const raw = e?.args?.id; if (raw == null) return; const id = String(raw);
-    if (e.verb === "remove") { lib.delete(id); return; }
+  return { of: (id) => n.get(String(id)) ?? 0, step(e) { const raw = e?.args?.id;
+    if (e?.verb === "remove") { lib.delete(String(raw)); return; }   // the fold deletes entities[a.id] whatever a.id is (null → "null")
+    if (raw == null) return; const id = String(raw);
     if (!raw) return;   // spawn and light ignore a falsy id (fold.js: !a?.id), as remove does not
     else if (e.verb === "light") lib.set(id, "\0light");
     else if (e.verb === "spawn" && id && !(e.args.lib != null && !e.args.lib)) { const l = e.args.lib ?? null;
