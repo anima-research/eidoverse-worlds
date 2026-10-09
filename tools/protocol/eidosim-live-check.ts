@@ -105,15 +105,17 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const kq = w.state().entities.key?.c.transform?.q; const kp = w.state().entities.key?.c.parent?.to;
   ok(d.ok && kp === "rack" && Array.isArray(kq) && Math.abs(Math.hypot(...kq) - 1) < 1e-12, "K8 a thing snapped into a turned socket is written with a unit rotation", { ok: d.ok ?? d.refused, parent: kp, q: kq, n: kq && Math.hypot(...kq) });
   c("rowan", "move", { to: [0, 0, 12] });
-  c("rowan", "create", { id: "sh", model: "shelf", place: { at: [0, 0], lying: true } }); c("rowan", "create", { id: "fr", model: "swing-frame", place: { at: [6, 0], lying: true } });
+  // the shelf on clear ground (review r7: K8's crate was under it, and the default passed by a float tie-break)
+  c("rowan", "create", { id: "sh", model: "shelf", place: { at: [-6, 0], lying: true } }); c("rowan", "create", { id: "fr", model: "swing-frame", place: { at: [6, 0], lying: true } });
   c("rowan", "create", { id: "bl", model: "ball", place: { at: [9, 9] } });
   const lv = (id: string) => c("rowan", "measure", { id }).surfaces ?? [];
+  const shOn = w.state().entities.sh?.c.parent?.to ?? null;   // must be on the ground, not on something
   const asc = (L: any[]) => L.every((x, i) => i === 0 || x.y >= L[i - 1].y);
   const top = (id: string) => Math.max(...lv(id).map((x: any) => x.y));
   const onSh = c("rowan", "place", { id: "bl", on: "sh", dry: true }), onFr = c("rowan", "place", { id: "bl", on: "fr", dry: true });
   const shL = lv("sh"), frL = lv("fr");
   // (a lying A-frame's faces are all 10 cm beams: no room for a 22 cm ball, refused honestly, at its top level)
-  ok(onSh.ok && onFr.refused?.code === "no-room" && new RegExp(`level ${frL.length - 1} `).test(onFr.refused.reason) && asc(shL) && asc(frL) && shL.length > 0 && Math.abs(shL.at(-1).y - top("sh")) < 1e-9 && Math.abs(frL.at(-1).y - top("fr")) < 1e-9,
+  ok(!shOn && onSh.ok && onFr.refused?.code === "no-room" && new RegExp(`level ${frL.length - 1} `).test(onFr.refused.reason) && asc(shL) && asc(frL) && shL.length > 0 && Math.abs(shL.at(-1).y - top("sh")) < 1e-9 && Math.abs(frL.at(-1).y - top("fr")) < 1e-9,
     "K9 a shelf or a swing-frame laid down lists its levels bottom to top, no face buried under its own parts; the default is its top (the shelf's takes a ball; the frame's beam honestly has no room)",
     { sh: onSh.ok ?? onSh.refused?.reason, fr: onFr.ok ?? onFr.refused?.reason, shY: shL.map((x: any) => x.y), frY: frL.map((x: any) => x.y) }); }
 console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

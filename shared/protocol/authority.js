@@ -356,7 +356,9 @@ function surfacesOf(st, id) {
       out.push({ id, level: 0, y: top[1], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
     }
     // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
-    return out.sort((p, q) => p.y - q.y).map((x, i) => ({ ...x, level: i }));
+    // (at one height, the larger face last: a shelf face-down offers its back, not its 3 cm side strips; review r7)
+    const area = (x) => (x.max[0] - x.min[0]) * (x.max[1] - x.min[1]);
+    return out.sort((p, q) => (Math.abs(p.y - q.y) > 1e-6 ? p.y - q.y : area(p) - area(q))).map((x, i) => ({ ...x, level: i }));
   }
   const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
   const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);

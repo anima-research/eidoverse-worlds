@@ -495,7 +495,8 @@ async function sameAsBase() {
   // axis, which isn't): compared as the rotation it means, normalised then rounded, on both sides
   const unitQ = (v: any) => { const n = Math.hypot(...v); return v.map((x: number) => Math.round((x / n) * 1e6) / 1e6); };
   // the rotations this tree WROTE: a transform's q (in after / would), not a value a request carried and a reply echoes
-  const qs: number[][] = []; JSON.stringify(a, (k, v) => { if (k === "transform" && v && Array.isArray(v.q) && v.q.length === 4) qs.push(v.q); return v; });
+  const qs: number[][] = []; JSON.stringify(a, (k, v) => { if (k === "transform" && v && Array.isArray(v.q) && v.q.length === 4) qs.push(v.q);
+    if (v && v.comp === "transform" && Array.isArray(v.value?.q) && v.value.q.length === 4) qs.push(v.value.q); return v; });   // after.<id>.transform, and a dry run's would op
   if (!qs.length) return { same: false, replies: a.length, why: "no written rotation to check (the scan would be vacuous)" };
   const notUnit = qs.find((q) => Math.abs(Math.hypot(...q) - 1) > 1e-9);   // ours must BE unit, not merely compare as one
   if (notUnit) return { same: false, replies: a.length, notUnit };
