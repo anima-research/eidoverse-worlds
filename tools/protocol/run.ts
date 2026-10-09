@@ -17,6 +17,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
   ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physseeds", "physseeds-check.ts", 1], // research physics-seeds 10-07: shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
+  ["sim2", "sim2-check.ts", 1], // eidosim2 adapter: any schedule reaching tick T gives the same bits; spin capped like v; a mirror is the same box
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],             // the old-world importer (tools/protocol/import-v1/) on every local old world log + her dialect-3 goldens + pins

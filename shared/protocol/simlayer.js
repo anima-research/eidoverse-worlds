@@ -27,7 +27,7 @@ export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "
   { build: EIDOSIM, module: eidosim, about: "antra's reference sim (PROTOCOL_v2, dialect 3): ballistic boxes, swept contacts, yaw only", maxSpeed: 20 }]));
 // eidosim2: rigid bodies with full rotation, Box3D-style soft contacts, a height-field ground (shared/sim2.js over shared/eidosim2.js)
 // sha256(sim2.js ‖ NUL ‖ eidosim2.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const SIM2_BUILD = "5cb13968db441b50";
+export const SIM2_BUILD = "9fb060db3e69c4ab";
 export const SIM2_FILES = ["shared/sim2.js", "shared/eidosim2.js", "shared/simmath.js", "shared/terrainmath.js"];
 ENGINES[sim2.SIM_ID] = { build: SIM2_BUILD, module: sim2, rotates: true, about: "eidosim2: rigid boxes that tumble, soft contacts (after Box3D), swept against colliders, terrain", maxSpeed: 20 };
 const engineOf = (name) => ENGINES[name]?.module ?? eidosim;

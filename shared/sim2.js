@@ -1,7 +1,7 @@
 // sim2: eidosim2 behind the sim API the protocol's sim layer drives (emptySim, tickOf, simEntry, advanceSim, simSnapshot,
-// simPose), replacing eidosim v1 (shared/sim.js). R 2026-10-09: "stomp the existing eidosim engine".
+// simPose), replacing the first eidosim (shared/sim.js). R 2026-10-09: "stomp the existing eidosim engine".
 //
-// What a body is here, and what it isn't yet (the foundation, stage 1): the participation model is v1's. Only a LAUNCHED
+// What a body is here, and what it isn't yet (the foundation, stage 1): the participation model is the first eidosim's. Only a LAUNCHED
 // thing is a moving body; every other modelled thing with a box is a static collider; a body that comes to rest becomes a
 // static again and is not woken by a hit. What changed is the law inside a flight: a rigid box with full rotation (q, w),
 // oriented-box statics, a height-field ground, contacts solved with Box3D's soft step, swept against statics (CCD).
@@ -10,7 +10,7 @@
 // STATE IS PLAIN JSON and is the truth. Readers clone it (restEta), hand it to joiners (simCutOf) and digest it; an
 // eidosim2 world is built from it for each advance and written back. Per body the truth is the CENTRE pose (c, q, v, w)
 // plus the engine's sleep record; `p` (the entity origin, what readers compare a rest against) is derived from it and never
-// read back, so any advance schedule reaching tick T gives the same bits (v1's Covenant IV). No yaw is stored: readers
+// read back, so any advance schedule reaching tick T gives the same bits (Covenant IV). No yaw is stored: readers
 // derive it from q (a host atan2 inside digested state could differ between runtimes).
 
 import { createWorld, VERSION } from './eidosim2.js';
@@ -19,9 +19,16 @@ import { sinT, cosT } from './simmath.js';
 
 export const SIM_ID = VERSION;
 const MIN_TICK_MS = 16, MAX_TICK_MS = 1000;
-const MAX_FLIGHT_TICKS = 20000;   // runaway backstop, as v1: force rest
+const MAX_FLIGHT_TICKS = 20000;   // runaway backstop, as eidosim@0.x: force rest
 const SUBSTEPS = 4, DENSITY = 1000, FRICTION = 0.6, GRAVITY = [0, -9.81, 0];
-const MAX_SPEED = 20;             // m/s: launches are clamped by the authority (ENGINES[].maxSpeed); the sim trusts them
+const MAX_SPEED = 20;
+// the law caps spin as the authority caps v: a corner may not move faster than MAX_SPEED (|w|·|half| ≤ 20 m/s), else a
+// spun throw rolls off at any speed (review of 49d4fb0d #2: w 1000 rad/s sent a crate 330 m at 54 m/s). + − × ÷ √ only.
+function spinCap(w, half) {
+  const r = Math.sqrt(half[0] * half[0] + half[1] * half[1] + half[2] * half[2]), m = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+  if (!(r > 0) || m * r <= MAX_SPEED) return w;
+  const k = MAX_SPEED / (m * r); return [w[0] * k, w[1] * k, w[2] * k];
+}             // m/s: launches are clamped by the authority (ENGINES[].maxSpeed); the sim trusts them
 
 export const emptySim = () => ({ epoch: null, tick: 0, bodies: {}, terrain: null, boxes: {}, statics: {}, e2: null });
 
@@ -34,7 +41,7 @@ export function tickOf(sim, ts) {
 const vec3ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
 const quatOk = (q) => Array.isArray(q) && q.length === 4 && q.every(Number.isFinite) && q.some((x) => x !== 0);
 const boxOk = (b) => Array.isArray(b) && b.length === 2 && vec3ok(b[0]) && vec3ok(b[1]) && b[0].every((x, i) => x <= b[1][i]);
-const scale3 = (s) => (vec3ok(s) ? s.map((x) => (x > 0 ? x : 1)) : Number.isFinite(s) && s > 0 ? [s, s, s] : [1, 1, 1]);
+const scale3 = (s) => (vec3ok(s) ? s.map((x) => (Math.abs(x) > 0 ? Math.abs(x) : 1)) : Number.isFinite(s) && s !== 0 ? [Math.abs(s), Math.abs(s), Math.abs(s)] : [1, 1, 1]); // a mirror is the same box
 const qrot = (q, v) => {
   const tx = 2 * (q[1] * v[2] - q[2] * v[1]), ty = 2 * (q[2] * v[0] - q[0] * v[2]), tz = 2 * (q[0] * v[1] - q[1] * v[0]);
   return [v[0] + q[3] * tx + (q[1] * tz - q[2] * ty), v[1] + q[3] * ty + (q[2] * tx - q[0] * tz), v[2] + q[3] * tz + (q[0] * ty - q[1] * tx)];
@@ -48,7 +55,7 @@ function geometry(box, scale) {
 }
 const centreOf = (pos, q, off) => { const r = qrot(q, off); return [pos[0] + r[0], pos[1] + r[1], pos[2] + r[2]]; };
 const originOf = (c, q, off) => { const r = qrot(q, off); return [c[0] - r[0], c[1] - r[1], c[2] - r[2]]; };
-// the entity view's rotation: its q when the view carries one, else its yaw (v1's view), as a quaternion
+// the entity view's rotation: its q when the view carries one, else its yaw (the older view), as a quaternion
 const quatOf = (ent) => (quatOk(ent?.q) ? ent.q.slice() : [0, sinT((ent?.yaw ?? 0) / 2), 0, cosT((ent?.yaw ?? 0) / 2)]);
 
 function nextUid(sim) { const u = sim.e2.nextUid; sim.e2.nextUid = u + 1; return u; }
@@ -89,9 +96,9 @@ export function simEntry(sim, entry, st) {
     advanceSim(sim, tickOf(sim, entry.ts));
     const q = quatOk(a.q) ? a.q.slice() : quatOf(ent), { half, off } = geometry(box, scale3(ent.scale3 ?? ent.scale));
     const uid = sim.statics[a.id]?.uid ?? sim.bodies[a.id]?.uid ?? nextUid(sim);
-    delete sim.statics[a.id]; delete sim.bodies[a.id];   // re-insert: order follows the last intent, as v1
+    delete sim.statics[a.id]; delete sim.bodies[a.id];   // re-insert: order follows the last intent, as eidosim@0.x does
     const c = centreOf(a.p, q, off);
-    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half, off, ...material(ent),
+    sim.bodies[a.id] = { uid, c, q, v: a.v.slice(), w: spinCap(vec3ok(a.w) ? a.w.slice() : [0, 0, 0], half), half, off, ...material(ent),
       p: a.p.slice(), resting: false, seq: entry.seq, born: sim.tick, awake: true, sleepTime: 0, sleepTag: null };
     return;
   }
@@ -135,26 +142,30 @@ export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign || !sim.e2) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
   const live = () => Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
   if (!live().length) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
-  const { W, ids, index } = hydrate(sim), dt = sim.epoch.tickMs / 1000;
+  // the live world is exactly what hydrate(sim) would build, so long as nothing rests: a rest turns a body into a
+  // static in the JSON, so the world is rebuilt from the JSON before the next tick (else one jump would solve it as
+  // the sleeping dynamic body it was, and differ from tick-by-tick; review of 49d4fb0d #1)
+  let { W, ids, index } = hydrate(sim); const dt = sim.epoch.tickMs / 1000;
+  const save = () => { const ex = W.exportState(); sim.e2.stepNo = ex.stepNo; sim.e2.impulses = ex.impulses; sim.e2.manifolds = ex.manifolds; sim.e2.pairs = ex.pairs; };
   while (sim.tick < toTick) {
     W.step(dt); sim.tick++;
-    let flying = 0;
+    let flying = 0, rested = 0;
     for (const id of ids) {
       const b = sim.bodies[id]; if (b.resting) continue;
       const e = W.bodies[index.get(b.uid)];
       b.c = e.p.slice(); b.q = e.q.slice(); b.v = e.v.slice(); b.w = e.w.slice(); b.awake = e.awake; b.sleepTime = e.sleepTime; b.sleepTag = e.sleepTag ?? null;
       b.p = originOf(b.c, b.q, b.off);
-      if (!e.awake || sim.tick - b.born > MAX_FLIGHT_TICKS) restBody(sim, id, b);
+      if (!e.awake || sim.tick - b.born > MAX_FLIGHT_TICKS) { restBody(sim, id, b); rested++; }
       else flying++;
     }
     if (!flying) break;
+    if (rested && sim.tick < toTick) { save(); ({ W, ids, index } = hydrate(sim)); }
   }
-  const ex = W.exportState();
-  sim.e2.stepNo = ex.stepNo; sim.e2.impulses = ex.impulses; sim.e2.manifolds = ex.manifolds; sim.e2.pairs = ex.pairs;
+  save();
   if (toTick > sim.tick) sim.tick = toTick;
   return sim;
 }
-// at rest it is a static again where it lies (v1's law, stage 1), keeping its uid
+// at rest it is a static again where it lies (eidosim@0.x's law, stage 1), keeping its uid
 function restBody(sim, id, b) {
   b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false;
   sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, friction: b.friction, frictionCombine: b.frictionCombine };

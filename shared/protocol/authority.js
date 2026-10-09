@@ -2838,7 +2838,7 @@ function settleSim(w) {
 function buildEpoch(ctx, v, a) {
   const sf = ctx.w.sim(); const live = [...new Set([...Object.keys(livePoses(sf)), ...sf.rested.map((r) => r.id)])]; // at rest but not on the record counts (33 F2): P6's "free" needs every result logged
   if (live.length && !a.force) refuse("busy", `${live.length} thing(s) are still in flight or not yet on the record (${live.join(", ")}); all at rest in about ${r3((restEta(sf) ?? 0) / 1000)} s`, "try again then, or force: true to freeze them where they are now (they'll be logged there)");
-  const ops = live.map((id) => setOp(id, "transform", { ...worldT(sf.st, id), pos: sf.sim.bodies[id].p.slice() }));
+  const ops = live.map((id) => { const b = sf.sim.bodies[id]; return setOp(id, "transform", { ...worldT(sf.st, id), pos: b.p.slice(), ...(b.q ? { q: b.q.slice() } : {}) }); }); // a rigid engine's origin only means something with its own q
   for (const id of live) ctx.refs.add(id);
   if (live.length) ctx.notes.push({ frozen: live, why: "forced cut: stopped mid-air and logged where they were" });
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
@@ -2982,7 +2982,7 @@ const PHYSICS_VERBS = {
     }
     const handled = [...new Set([...(prev?.handled ?? []), actor])];
     const hand = handOf(me); // in your hand now (a VR client would send the hand's pose)
-    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: t.q, scale: t.scale }, handled, ...how };
+    w.presence.holds[a.id] = { by: actor, since: w.now(), pose: { pos: hand, q: (live && sf.sim.bodies[a.id]?.q) ? sf.sim.bodies[a.id].q.slice() : t.q, scale: t.scale }, handled, ...how }; // caught mid-air: as it's turned now
     w.savePresence();
     heldEvent(w, "grab", a.id, { by: actor, hand: how.hand, ...(how.grip ? { grip: how.grip } : {}), ...(act !== null ? { seq: act } : {}) });
     return { ok: true, recorded: act !== null, holding: a.id, inHandAt: hand.map(r3), ...how, ...(notes.length ? { notes } : {}) };

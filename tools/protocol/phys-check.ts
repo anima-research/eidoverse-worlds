@@ -109,6 +109,17 @@ function playground(name) {
   const v = view(W); ok(!v.sim, "D no epoch after the cut");
   const after = call(W, "rowan", "look", {}, 3000).things.find((x) => x.id === "ball");
   ok(!after.moving && after.at[1] > 0.5, "D frozen where it was: logged as a plain result", after);
+  if (RIGID) { // review of 49d4fb0d #3: a rigid engine's origin is only where it was WITH its own turn; frozen pre-launch q floats it
+    const W3 = playground("pc-d3");
+    call(W3, "rowan", "move", { to: [2, 0, -0.5] });
+    const g3 = call(W3, "rowan", "grab", { id: "crate-1" }), t3 = call(W3, "rowan", "throw", { id: "crate-1", v: [0, 5, 0], w: [0, 0, 6] });
+    ok(g3.ok && t3.ok, "D3 setup: the crate is in hand and thrown", { g3: g3.refused, t3: t3.refused });
+    const f3 = call(W3, "rowan", "delete", { id: "@world", component: "physics-engine", force: true }, 400);
+    const L3 = log(W3), cut = [...L3].reverse().find((e) => e.kind === "change" && JSON.stringify(e).includes('"crate-1"') && JSON.stringify(e).includes('"transform"'));
+    const op = (cut?.body?.ops ?? [cut?.body]).find((o) => o?.id === "crate-1" && o.comp === "transform");
+    const q = op?.value?.q ?? [0, 0, 0, 1];
+    ok(f3.ok && Math.abs(q[3]) < 0.9999, "D3 a forced cut logs a tumbling crate as the engine had it turned, not as it was thrown", { q, ok: f3.ok });
+  }
   const W2 = playground("pc-d2");
   call(W2, "rowan", "grab", { id: "ball" }); call(W2, "rowan", "throw", { id: "ball", v: [0, 2, 0] }); call(W2, "rowan", "wait", {}, 5000);
   const calm = call(W2, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@0.5.0", tickMs: 16 } }, 100);

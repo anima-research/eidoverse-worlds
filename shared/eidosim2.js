@@ -484,8 +484,8 @@ export function createWorld({ gravity = [0, -9.81, 0], substeps = 4, friction = 
         { const ts = dot(m.n, sub(m.B.w, m.A.w)), lim = m.mu * twistLimit;
           const nt = Math.max(-lim, Math.min(lim, m.twist - m.twm * ts)), d = nt - m.twist; m.twist = nt;
           applyAng(m.A, scl(m.n, -d)); applyAng(m.B, scl(m.n, d)); }
-        { const v1 = relv(m, m.cA, m.cB, m.t1), v2 = relv(m, m.cA, m.cB, m.t2);
-          let n1 = m.f1 - (m.tm[0] * v1 + m.tm[1] * v2), n2 = m.f2 - (m.tm[1] * v1 + m.tm[2] * v2);
+        { const vt1 = relv(m, m.cA, m.cB, m.t1), vt2 = relv(m, m.cA, m.cB, m.t2);
+          let n1 = m.f1 - (m.tm[0] * vt1 + m.tm[1] * vt2), n2 = m.f2 - (m.tm[1] * vt1 + m.tm[2] * vt2);
           const lim = m.mu * total, l2 = n1 * n1 + n2 * n2;
           if (l2 > lim * lim) { const sc = lim / Math.sqrt(l2); n1 *= sc; n2 *= sc; }
           const d1 = n1 - m.f1, d2 = n2 - m.f2; m.f1 = n1; m.f2 = n2;

@@ -23,7 +23,7 @@ import { sha256, sha256Portable, utf8Hex } from "../../shared/protocol/hash.js";
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED, hasEpoch } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
-import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/protocol/simlayer.js";
+import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, SIM2_BUILD, SIM2_FILES } from "../../shared/protocol/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "../../shared/sim.js";
 import { localOf } from "../../shared/hierarchy.js";
@@ -49,6 +49,8 @@ check("the native path is the one in use under bun", typeof (globalThis as any).
 // ---- 2. the engine's name is its exact build ----
 const build = sha256(EIDOSIM_FILES.map((f: string) => fs.readFileSync(ENGINE + f, "utf8")).join("\0")).slice(0, 16);
 check("EIDOSIM_BUILD names the sim files in this checkout (change them → a new engine name)", build === EIDOSIM_BUILD, `${build} vs ${EIDOSIM_BUILD}`);
+const build2 = sha256(SIM2_FILES.map((f: string) => fs.readFileSync(ENGINE + f, "utf8")).join("\0")).slice(0, 16);
+check("SIM2_BUILD names eidosim2's files in this checkout (change them → a new build)", build2 === SIM2_BUILD, `${build2} vs ${SIM2_BUILD}`);
 
 // ---- 3. her dialect-3 fixtures through translate-d3 ----
 const golden = JSON.parse(fs.readFileSync(ENGINE + "spec/fixtures/replay/.replaybench.json", "utf8"));
