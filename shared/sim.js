@@ -2,11 +2,11 @@
 // simEntry, advanceSim, simSnapshot, simPose). It replaced the first eidosim here (R 2026-10-09: "stomp the existing
 // eidosim engine"; "eidosim is eidosim").
 //
-// What a body is here, and what it isn't yet (the foundation, stage 1): the participation model is the first eidosim's. Only a LAUNCHED
-// thing is a moving body; every other modelled thing with a box is a static collider; a body that comes to rest becomes a
-// static again and is not woken by a hit. What changed is the law inside a flight: a rigid box with full rotation (q, w),
-// oriented-box statics, a height-field ground, contacts solved with Box3D's soft step, swept against statics (CCD).
-// Stage 2 (resting dynamic things woken by contact, multi-body rests) needs PHYSICS.md's widened rest rule.
+// What a body is here: a LAUNCHED thing flies; a dynamic thing at rest that no lock holds is a sleeping body, woken when
+// a moving body touches it, and flies under the launch that touched it (PHYSICS.md §1's widened rest rule); every other
+// modelled thing with a box is a static collider. A body that comes to rest is a collider (or a sleeper) again. The law
+// inside a flight: rigid boxes and spheres with full rotation (q, w), oriented-box statics, a height-field ground,
+// contacts solved with Box3D's soft step, swept against what rests (CCD).
 //
 // STATE IS PLAIN JSON and is the truth. Readers clone it (restEta), hand it to joiners (simCutOf) and digest it; an
 // engine world is built from it for each advance and written back. Per body the truth is the CENTRE pose (c, q, v, w)
@@ -20,6 +20,7 @@ import { sinT, cosT } from './simmath.js';
 
 export const SIM_ID = VERSION;
 const MIN_TICK_MS = 16, MAX_TICK_MS = 1000;
+export const TICK_MS = { min: MIN_TICK_MS, max: MAX_TICK_MS };   // an epoch outside these never starts: the authority refuses it
 const MAX_FLIGHT_TICKS = 20000;   // runaway backstop: force rest
 const SUBSTEPS = 4, DENSITY = 1000, FRICTION = 0.6, GRAVITY = [0, -9.81, 0];
 // a sphere's rolling resistance (Box3D's model: the rolling torque is ROLLING × radius × the normal force): with none, a

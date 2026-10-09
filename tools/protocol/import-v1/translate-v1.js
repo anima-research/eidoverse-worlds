@@ -252,13 +252,16 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
 // last LOGGED rest, P5: resting or flying again, it's the log's word); and a thing whose v1 lib has a stamped box carries
 // it as physics.shape (Covenant III: geometry enters the sim only through the log). Keyed by the v1 lib, not the model
 // value, which may be a content address by now. With no epoch ever entered this returns project()'s value untouched.
-function physical(st, sim, recorded, out, punted = new Set()) {
+function physical(st, sim, recorded, out, dynamic = () => false) {
   if (!st.epoch && !recorded.size && !sim.boxes) return out;
   const w = out["@world"];
-  delete w["imported-epoch"];
-  if (st.epoch) w["physics-engine"] = { engine: DEFAULT_ENGINE, build: ENGINES[DEFAULT_ENGINE].build, tickMs: st.epoch.tickMs };
+  // what her sim made of the epoch (review of b398d7e3 #3): her own law (carried) → today's eidosim runs from here on;
+  // an engine she didn't carry (foreign: nothing flew) → that name, with no build, so nothing flies here either; an
+  // epoch her sim refused (a bad tickMs: it never started) → no physics, only the imported record
+  if (sim.epoch && !sim.epoch.foreign) { delete w["imported-epoch"]; w["physics-engine"] = { engine: DEFAULT_ENGINE, build: ENGINES[DEFAULT_ENGINE].build, tickMs: st.epoch.tickMs }; }
+  else if (sim.epoch?.foreign) { delete w["imported-epoch"]; w["physics-engine"] = { engine: sim.epoch.sim, build: null, tickMs: sim.epoch.tickMs }; }
   for (const [id, p] of recorded) { const c = out[enc(id)]; if (sim.bodies[id] && c) c.transform = { ...c.transform, pos: p.slice() }; }
-  if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { kind: punted.has(id) ? "dynamic" : "static", shape: clone(sim.boxes[e.lib]) }; }
+  if (sim.boxes) for (const [id, e] of Object.entries(st.entities ?? {})) { const c = out[enc(id)]; if (c && typeof e?.lib === "string" && sim.boxes[e.lib]) c.physics = { kind: dynamic(id) ? "dynamic" : "static", shape: clone(sim.boxes[e.lib]) }; }
   return out;
 }
 /** Whether a v1 log enters a physics epoch (the v1 fold's own test: a sim name and an integer tick). */
@@ -311,11 +314,17 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const launchSeq = {};           // v1 id → the seq of the launch its current flight came from
   const restLogged = new Set();   // bodies whose CURRENT flight's rest is logged
   const restTicks = {};           // v1 id → the tick it came to rest
-  const punted = new Set();       // v1 ids her sim ever flew: dynamic colliders (R 2026-10-08)
+  // R 2026-10-08: a thing the v1 log ever punts is a dynamic collider, every other one static. Known up front, so the
+  // kind is right from the moment its collider appears (no static → dynamic flip at the punt, which an undo of the
+  // punt's act would then take back), and per incarnation: an id spawned again is a new thing (review of b398d7e3 #2, #4)
+  const life = {}; const puntedLives = new Set();
+  for (const e of oldEntries) { const id = e?.args?.id; if (typeof id !== "string") continue;
+    if (e.verb === "spawn") life[id] = (life[id] ?? 0) + 1; else if (e.verb === "punt") puntedLives.add(`${id}#${life[id] ?? 0}`); }
+  const lifeNow = {}; const dynamic = (id) => puntedLives.has(`${id}#${lifeNow[id] ?? 0}`);
   if (physics) Object.assign(stats, { launches: 0, rests: 0, worldDivergences: 0 });
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
-  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr), punted);
+  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr), dynamic);
   const stepTo = (tick) => { // single steps while anything flies, so each rest's real tick is known
     while (sim.epoch && !sim.epoch.foreign && sim.tick < tick) {
       const flying = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -343,12 +352,13 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     const ts = Number.isInteger(e.ts) ? e.ts : undefined; // §2.1: the authority's admission time, carried from the old entry
     if (sim.epoch && ts !== undefined) { stepTo(eidosim.tickOf(sim, ts)); logRests(Math.max(ts, clock())); }
     foldEntry(v1, e); eidosim.simEntry(sim, e, v1);
+    if (e.verb === "spawn" && typeof e.args?.id === "string") lifeNow[e.args.id] = (lifeNow[e.args.id] ?? 0) + 1;
     const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
       : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];
     if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: its rest will be caused by this act
-      launchSeq[e.args.id] = tl; punted.add(e.args.id);
+      launchSeq[e.args.id] = tl;
       restLogged.delete(e.args.id); stats.launches++;
     }
     for (const id of [...recorded.keys(), ...Object.keys(launchSeq)]) if (!sim.bodies[id]) { recorded.delete(id); restLogged.delete(id); delete launchSeq[id]; } // released by her law
@@ -367,6 +377,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   stats.out = out.length;
   if (addr) { stats.modelsRewritten = [...seenModels.values()].filter(Boolean).length; stats.modelsKept = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), punted), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }
 

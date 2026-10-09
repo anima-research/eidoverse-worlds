@@ -20,11 +20,12 @@ import { isBoxShape, shapeError } from "./shapes.js";
 
 // Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
 // sha256(sim.js ‖ NUL ‖ eidosim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const EIDOSIM_BUILD = "a3203bdd20a56afb";
+export const EIDOSIM_BUILD = "be543899cfedf430";
 export const EIDOSIM_FILES = ["shared/sim.js", "shared/eidosim.js", "shared/simmath.js", "shared/terrainmath.js"];
 export const ENGINES = { [eidosim.SIM_ID]: { build: EIDOSIM_BUILD, module: eidosim, rotates: true, maxSpeed: 20,
   about: "eidosim: rigid boxes and spheres that tumble and roll, soft contacts (after Box3D), swept against what rests, terrain; free dynamic things at rest can be knocked" } };
 export const DEFAULT_ENGINE = eidosim.SIM_ID;
+export const TICK_MS = eidosim.TICK_MS;
 // a sim state advanced by its engine (readers that hold a clone: the replica, the client's flights)
 export const advanceSim = (sim, tick) => eidosim.advanceSim(sim, tick);
 export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);

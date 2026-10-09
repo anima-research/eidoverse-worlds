@@ -252,6 +252,12 @@ function playground(name) {
 }
 
 // K — a foreign engine: this server can't run it, so nothing flies; the world is still fully readable.
+{ // review of b398d7e3 #3: an epoch the engine would never start is refused, not accepted to fly nowhere
+  const W = fresh("pc-tick"); call(W, "rowan", "create-world", { title: W });
+  const bad = [5, 15, 1001, 33.5].map((t) => call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: t } }));
+  const good = [16, 1000].map((t) => call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: t } }));
+  ok(bad.every((r) => r.refused?.code === "bounds") && good.every((r) => r.ok), "K a tickMs outside the engine's range (16..1000 whole ms) is refused; its ends are fine", [...bad, ...good].map((r) => r.ok ?? r.refused?.code));
+}
 {
   const W = fresh("pc-k"); call(W, "rowan", "create-world", { title: W });
   const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "deadbeefdeadbeef" } });

@@ -28,7 +28,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -235,6 +235,9 @@ const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURG
 export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
 export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
 const r3 = (n) => Math.round(n * 1000) / 1000;
+// a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
+// and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
+const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
 const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
@@ -271,7 +274,7 @@ function worldT(st, id, depth = 0) {
 function localFrom(st, parentId, wt) {
   const pt = worldT(st, parentId);
   const d = qrot(qinv(pt.q), wt.pos.map((v, i) => v - pt.pos[i]));
-  return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qmul(qinv(pt.q), wt.q).map(r3), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
+  return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qr3(qmul(qinv(pt.q), wt.q)), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
 }
 function aabb(st, id) {
   const e = st.entities[id]; const m = geomE(e); if (!m) return null;
@@ -330,14 +333,34 @@ const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
 });
 const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
 
+// A surface is where something can stand. The model's measured surfaces are in its own frame with its own up, so they
+// hold while the thing stands (its up within UPRIGHT of the world's); a thing a tumbling engine laid on its side or upside
+// down has instead the face of each oriented box that now faces up (none, balanced on an edge). Heights and footprints
+// come from the full rotation (yaw-only reading put a tumbled crate's top half its height off).
+const UPRIGHT = Math.cos(10 * Math.PI / 180);
 function surfacesOf(st, id) {
   const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
+  const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
+  if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
+    const out = [];
+    for (const o of obbs(st, id)) for (let j = 0; j < 3; j++) {
+      const u = o.ax[j][1]; if (Math.abs(u) < UPRIGHT) continue;
+      const n = o.ax[j].map((v) => v * Math.sign(u)); const top = o.c.map((v, i) => v + n[i] * o.h[j]);
+      const [a, c] = [0, 1, 2].filter((k) => k !== j);
+      const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
+      out.push({ id, level: out.length, y: top[1], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
+    }
+    return out;
+  }
+  const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
+  const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
     if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
-      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => { const p = qrot(t.q, [x * t.scale[0], s.y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[2] + t.pos[2]]; });
-      return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[1])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[1])) - k] }; }
-    return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
+      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => at(x, s.y, z));
+      return { id, level: i, y: yawOnly ? yOf(s.y) : Math.max(...cs.map((c) => c[1])), min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[2])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[2])) - k] };
+    }
+    return { id, level: i, y: yOf(s.y), min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
 }
 // ---------- the spatial index (review 10-06 S0-2 / security pass 2 H-A) ----------
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
@@ -1784,7 +1807,7 @@ function buildPlace(ctx, a) {
   if (!a.on && !a.beside && !a.hang && !a.__mounted) { if (a.facing && !a.against) yaw = faceYaw(pos); const sup = supportBelow(st, pos[0], pos[2], a.__level ?? a.at?.[2] ?? 10, fam); pos[1] = sup.y; support = sup.id;
     const hit = free(pos[0], pos[1], pos[2], yaw, new Set()); if (hit) relaxed.push(`overlaps ${hit}: nothing nearer was free`); }
   const off = qrot(yawQ(yaw), C); const restsAt = pos[1];
-  const wt = { pos: [pos[0] - off[0], pos[1] - lo[1], pos[2] - off[2]].map(r3), q: qmul(yawQ(yaw), tilt).map(r3), scale };
+  const wt = { pos: [pos[0] - off[0], pos[1] - lo[1], pos[2] - off[2]].map(r3), q: qr3(qmul(yawQ(yaw), tilt)), scale };
   const ops = [];
   if (a.attach && support !== "ground") {
     ops.push(setOp(a.id, "parent", { to: support, order: "a0" }));
@@ -2405,7 +2428,9 @@ function indexEntry(x, E, i) {
     if (e.verb !== "undo" && e.actor !== "system") x.lastAct = i;
     if (e.actor === "system" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
   if (e.kind === "change") { x.changes.push(i);
-    if (Number.isInteger(e.cause) && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
+    // what the sim writes (a rest) is physics, never an act's undoable result: live, a rest is caused by a launch entry;
+    // in an imported world (translate-v1@11) by the old punt's act, which must not make it undoable (review of b398d7e3 #2)
+    if (Number.isInteger(e.cause) && e.actor !== "sim" && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
     for (const id of new Set(opsQuiet(e).map((o) => o.id))) { let a = x.touch.get(id); if (!a) x.touch.set(id, (a = [])); a.push(i); }
     const c = E[e.cause]; if (isE(c) && c.kind === "sim" && c.verb === "launch") x.rests.push(i); }
 }
@@ -2852,6 +2877,10 @@ function buildEpoch(ctx, v, a) {
   const known = ENGINES[v.engine];
   const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : 33 };
   if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
+  // the engine never starts an epoch outside its tick range, so a throw would be logged and then fly nowhere, forever
+  // (review of b398d7e3 #3)
+  if (v.tickMs !== undefined && !(Number.isInteger(v.tickMs) && v.tickMs >= TICK_MS.min && v.tickMs <= TICK_MS.max))
+    refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, "leave it out for 33 (30 steps a second), or e.g. tickMs: 16");
   if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
   if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
   ctx.refs.add("@world");
@@ -3263,7 +3292,8 @@ function stampHomes(ctx, ops) {
 function flyingWorld(st) {
   const spec = st.entities["@world"]?.c["physics-engine"];
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
-  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
+  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`,
+    `put it down instead; the owner can move the world to an engine this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
   return spec;
 }
 // a thing with no stamped shape is no body in the engine (stampShapes): launched, it would never fly or rest

@@ -58,4 +58,26 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const flying = !!w.sim().sim.bodies.rb; c("rowan", "wait", {}, 15000);
   const R = restsOf(readLog(fs.readFileSync(dir + "world.jsonl"))), p = w.state().entities.rb.c.transform.pos;
   ok(g.ok && t.ok && flying && R.some((r) => r.id === "rb") && p[2] > 1, "K5 live host: a sphere is a body, flies, and its rest is logged", { g: g.ok, t: t.ok, flying, rests: R.map((r) => r.id), pos: p }); }
+// K6 (review of b398d7e3 #1): a tumbling engine lays things on their sides, so a surface is read from the full rotation:
+// a lamp placed on a crate resting on its side stands on its true top (yaw-only reading floated it half a crate higher),
+// and what the authority writes composes to a unit rotation
+{ const { worldPose: wp } = await import("../../shared/protocol/simlayer.js");
+  const qr = (q, v) => { const [x, y, z, w] = q; const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
+    return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]; };
+  const root2 = fs.mkdtempSync(root + "/side-") + "/"; let now = 1800000000000; const dir = root2 + "w/"; fs.mkdirSync(dir);
+  const w = openLive(dir, "w", { now: () => now, custodyFile: root2 + "custody.json", nameOf: () => null, kindOf: () => "human" });
+  const c = (a, v, args = {}, step = 100) => { now += step; return request(w, a, v, args); };
+  c("rowan", "create-world", { title: "side" }); c("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  c("rowan", "create", { id: "cr", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
+  c("rowan", "create", { id: "lamp", model: "table-lamp", place: { at: [5, 5] } }); c("rowan", "move", { to: [0, 0, -0.6] });
+  let side = null;
+  for (const spin of [[0, 0, 9], [0, 0, 6], [7, 0, 0], [0, 0, 12]]) {
+    c("rowan", "grab", { id: "cr" }); c("rowan", "throw", { id: "cr", v: [0, 2, 2], w: spin }); c("rowan", "wait", {}, 20000);
+    const t = w.state().entities.cr.c.transform; if (Math.abs(qr(t.q, [0, 1, 0])[1]) < 0.5) { side = t; break; }
+    c("rowan", "move", { to: [t.pos[0], 0, t.pos[2] - 0.6] }); }
+  if (!side) ok(false, "K6 setup: a thrown crate came to rest on its side", null);
+  else { const p = c("rowan", "place", { id: "lamp", on: "cr" }); const st = w.state(); const L = wp(st, "lamp");
+    const top = side.pos[1] + qr(side.q, [0, 0.3, 0])[1] + 0.3;   // the 0.6 m lab crate: its centre, then half a side up
+    ok(p.ok && Math.abs(L.pos[1] - top) < 0.02 && Math.abs(Math.hypot(...L.q) - 1) < 1e-9,
+      "K6 a lamp placed on a crate lying on its side stands on its true top, with a unit rotation", { placed: p.ok ?? p.refused, lampY: L.pos[1], top, qn: Math.hypot(...L.q) }); } }
 console.log(`eidosim-live-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

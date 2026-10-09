@@ -39,6 +39,7 @@ const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
   TOUCH_GAP, sameReach } from "../shared/reachwire.js";
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
+import { lyingFrame } from "../shared/rot.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
@@ -1681,6 +1682,15 @@ export class WorldAgent {
     }
     this.dropSupport(id);
     const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
+    // lying down (a tumbling engine's rest, or a hand's tilt): its box turned into the frame of its own yaw, and no
+    // decks or grid (those are measured upright); read by its yaw alone it was a phantom deck where it no longer stands
+    const lying = Array.isArray(e.q) && e.q.length === 4 && g.bbox?.min ? lyingFrame(e.q, g.bbox.min, g.bbox.max) : null;
+    if (lying) {
+      const bid = `${this.world}/${id}`;
+      void registerSupport(this.supportHolder, bid, lying.min, lying.max, { ...xform, yaw: lying.yaw });
+      this.supportIds.set(id, [bid]);
+      return;
+    }
     const [w, h, d] = [g.bbox.size[0] * s, g.bbox.size[1] * s, g.bbox.size[2] * s];
     const ids: string[] = [];
     const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
@@ -1742,7 +1752,9 @@ export class WorldAgent {
       for (const sid in sim.bodies) {
         const b = sim.bodies[sid]; const id = idOut(sid);
         const e = this.entities.get(id);
+        // a body's origin means something only with its rotation (a tumbling engine lays things down): take both
         if (e && Array.isArray(b.p)) e.pos = [b.p[0], b.p[1], b.p[2]];
+        if (e && Array.isArray(b.q) && b.q.length === 4) e.q = [b.q[0], b.q[1], b.q[2], b.q[3]];
         if (b.resting && !this.simRested.has(id)) {
           this.simRested.add(id);
           if (e) this.trackSupport(this.syncSupport(id));

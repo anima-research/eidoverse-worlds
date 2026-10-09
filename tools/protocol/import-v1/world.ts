@@ -25,9 +25,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey }
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const old = fs.readFileSync(src, "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@10 runs it
-  // beside the v1 fold (a punt is a launch, every rest a logged result), and below, the sealed text is re-checked by the
-  // authority's own sim layer, as the live host runs it, before anything is written. (Until 2026-10-08 such a log was
+  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
+  // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
+  // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
   // refused here: the importer compared only against the instant fold and left every punted thing where it started.)
   // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/custody.ts)
   // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the

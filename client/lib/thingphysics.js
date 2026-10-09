@@ -19,14 +19,13 @@
 //   the body   the authority measures reach from its own track of your body (L6, 25d M3). A person's client keeps that
 //              track current with `move` requests (presence: unlogged), arriving once when the world has physics.
 //
-// Presentation only, like hair: the tumble of a flying crate and the roll of a ball. The engine is yaw-only; the
-// orientation the log records at rest is the realizer's to draw once the rest arrives.
+// The engine (eidosim) carries each body's whole rotation: a flying crate's tumble and a ball's roll are drawn as the
+// engine has them, slerped between ticks; the rotation the log records at rest is the realizer's once the rest arrives.
 
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { entities } from './world.js';
 import { remotes, serverNow } from './remotes.js';
-import { heightAt } from './terrain.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
 import { replica, net, sendRequest, identities } from './net.js';
@@ -278,24 +277,13 @@ function poseHolders() {
 function heldPos(id) { const obj = entities.get(id); if (!obj) return null; obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()); }
 
 // ---------------------------------------------------------------- flights (the engine's, at display time)
-let pres = null, presV = -1, tickSeen = -1, lastAt = 0;
+let pres = null, presV = -1, tickSeen = -1;
 const prev = new Map();      // id -> [x, y, z] at the tick before pres.tick (the interval's start)
 const spins = new Map();     // id -> presentation state {q, kind, r, arm, box}
 const presOwns = (id) => !!pres?.bodies?.[id];
-const _axis = new THREE.Vector3(), _dq = new THREE.Quaternion(), _upq = new THREE.Quaternion(), _p = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
-const TUMBLE = 2.2;          // rad/s while airborne (simworld's)
+const _dq = new THREE.Quaternion(), _p = new THREE.Vector3();
 /** Console/probe surface: the displayed sim (a copy), and the canonical fold's view. */
 export const simShown = () => pres;
-function shapeKind(id, obj) {
-  const b = colliders.get(id)?.box; if (!b) return null;
-  const s = obj.scale ?? { x: 1, y: 1, z: 1 };
-  const d = [(b.max.x - b.min.x) * (s.x || 1), (b.max.y - b.min.y) * (s.y || 1), (b.max.z - b.min.z) * (s.z || 1)].sort((a, c) => a - c);
-  const arm = Math.hypot((b.min.x + b.max.x) / 2 * (s.x || 1), (b.min.z + b.max.z) / 2 * (s.z || 1));
-  // physobj's law: round-ish in all three AND ball-sized rolls; anything else tumbles like a crate
-  const ball = d[0] > 0.01 && d[2] / d[0] < 1.25 && d[2] < 0.9;
-  return { ball, r: ball ? (d[0] + d[1] + d[2]) / 6 : d[1] / 2, arm, box: b };
-}
 function drawFlights(wall, now) {
   const canon = replica.sim;
   if (!canon?.sim || canon.foreign) { if (pres) { for (const id of Object.keys(pres.bodies)) suspendCollider(id, false); } pres = null; prev.clear(); return; }
@@ -314,38 +302,18 @@ function drawFlights(wall, now) {
   }
   tickSeen = pres.tick;
   const k = Math.min(1, Math.max(0, (wall - pres.epoch.ts) / pres.epoch.tickMs - (pres.tick - 1)));
-  const dt = Math.min(0.1, (now - (lastAt || now)) / 1000); lastAt = now;
   for (const id in pres.bodies) {
     // (a body here is a launch folded AFTER any grab: a grab is a lift, which takes the body out, so the engine wins
     //  over a hold the authority hasn't yet said is over)
     const b = pres.bodies[id]; const obj = entities.get(id); if (!obj) continue;
     let sp = spins.get(id);
-    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone(), shape: null, box: undefined }; spins.set(id, sp); suspendCollider(id, true); }
-    const box = colliders.get(id)?.box ?? null; if (box !== sp.box) { sp.box = box; sp.shape = shapeKind(id, obj); }
+    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone() }; spins.set(id, sp); suspendCollider(id, true); }
     const pv = b.resting ? undefined : prev.get(id);
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
-    const flat = Math.hypot(b.v[0], b.v[2]); const sh = sp.shape; const q = sp.q;
-    if (b.q) {   // a rigid engine (eidosim) carries the body's own rotation: draw that, nothing invented
-      q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k));
-      setWorldPose(obj, _p, q);
-      if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
-      continue;
-    }
-    if (sh?.ball && !b.resting && flat > 0.01 && sh.arm < 0.5) {
-      // a ball ROLLS with its travel (and spins in the air): physobj streamed this as q so a ball never slid
-      _axis.set(b.v[2], 0, -b.v[0]).normalize(); _dq.setFromAxisAngle(_axis, (flat * dt) / Math.max(0.05, sh.r)); q.premultiply(_dq);
-    } else if (sh && !sh.ball && !b.resting && b.v[1] !== 0 && flat > 0.05 && sh.arm < 0.5) {
-      _axis.set(b.v[2], 0, -b.v[0]).normalize(); _dq.setFromAxisAngle(_axis, TUMBLE * dt); q.premultiply(_dq);
-    } else if (!sh?.ball) {
-      // grounded (the engine zeroes v[1] at contact): right itself to the engine's yaw, as the log will have it
-      _upq.setFromAxisAngle(UP, b.yaw); q.slerp(_upq, Math.min(1, 6 * dt));
-    }
-    // the engine stands the ORIGIN on its ground; a far-offset mesh (the barrels group) lifts by the terrain difference
-    // under its visual centre (simworld's §24t-6 rule), presentation only
-    if (sh && !b.on) { const cx = (sh.box.min.x + sh.box.max.x) / 2, cz = (sh.box.min.z + sh.box.max.z) / 2;
-      const c = Math.cos(b.yaw), s = Math.sin(b.yaw); const wx = _p.x + cx * c + cz * s, wz = _p.z - cx * s + cz * c;
-      try { _p.y += heightAt(wx, wz) - heightAt(_p.x, _p.z); } catch { /* no terrain */ } }
+    const q = sp.q;
+    // the engine carries the body's own rotation: draw that, nothing invented (a body without one keeps the rotation it has)
+    if (b.q) { q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k)); }
     setWorldPose(obj, _p, q);
     if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
   }

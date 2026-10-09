@@ -236,5 +236,31 @@ console.log('\nfloor-shaped things with lying tops (the blanket rule, issue #11)
   check('collide:"box" still wins over the blanket rule', !C.colliders.get('forced').exact);
 }
 
+// ---- a thing a tumbling engine laid down (review of b398d7e3 #1) ----
+// Every reader here works root-local with a yaw. A 1×2×0.5 slab lying on its side (90° about z) is 2 m long in -x and
+// 1 m tall; read through rotation.y alone it was still a 2 m-tall column at its origin: an invisible wall beside it and
+// no floor where it really is. A box yawed 180° by quaternion reads back from three's Euler as x = z = π, rotation.y 0.
+console.log('\ntumbled and quaternion-yawed things:');
+{
+  const lay = (id: string, q: number[], at: number[], tx = 0) => { const g = new THREE.BoxGeometry(1, 2, 0.5); g.translate(tx, 1, 0);
+    const m = new THREE.Mesh(g, undefined); m.updateMatrixWorld(true); C.fitCollider(id, m, { collide: 'box' });
+    m.quaternion.set(q[0], q[1], q[2], q[3]); m.position.set(at[0], at[1], at[2]); m.updateMatrixWorld(true); C.reindexCollider(id); return m; };
+  const s2 = Math.SQRT1_2;
+  lay('side', [0, 0, s2, s2], [20, 0.5, 0]);       // local +y → world -x: x in [18, 20], y in [0, 1], z in [-0.25, 0.25]
+  const on = at(19, 1.0, 0);
+  check('lying on its side: its true top is floor (y 1)', Math.abs(on.ground - 1) < 1e-6 && on.push < 1e-9, JSON.stringify(on));
+  const beside = at(20.6, 0, 0);
+  check('…and beside its origin, where it no longer stands, is open floor', beside.push < 1e-9 && beside.ground === 0, JSON.stringify(beside));
+  const under = C.surfaceUnder(18.5, 0, flat);
+  check('…a thing dropped over it lands on that top', under.onto === 'side' && Math.abs(under.y - 1) < 1e-6, JSON.stringify(under));
+  const c = C.entityWorldCenter('side');
+  check('…and its world centre is where the slab is', c && Math.abs(c.x - 19) < 1e-6 && Math.abs(c.y - 0.5) < 1e-6, JSON.stringify(c));
+  lay('flip', [0, 1, 0, 0], [40, 0, 0], 0.5 + 0.25);   // geometry x in [0.25, 1.25]; yawed 180°: world x in [38.75, 39.75]
+  const f1 = at(39.25, 2.0, 0);
+  check('yawed 180° by quaternion: its top is floor where it really is', Math.abs(f1.ground - 2) < 1e-6, JSON.stringify(f1));
+  const f2 = at(40.75, 0, 0);
+  check('…and its mirror image (where rotation.y alone puts it) is open floor', f2.push < 1e-9 && f2.ground === 0, JSON.stringify(f2));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

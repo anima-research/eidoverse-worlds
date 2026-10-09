@@ -119,7 +119,7 @@ function oldNorm(st: any, phys: any = null) {
     if (n.comp) for (const [k, m] of Object.entries<any>(n.comp)) if ((k === "motion" || k.startsWith("motion:")) && m && typeof m === "object" && "rpm" in m) {
       const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
-    if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.punted?.has(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what her sim flew is dynamic (R 10-08)
+    if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
     if (n.comp && !Object.keys(n.comp).length) delete n.comp;
     ents[id] = n;
   }
@@ -130,7 +130,9 @@ function oldNorm(st: any, phys: any = null) {
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
     world.sky = sky; }
-  if (phys && world.epoch) world.epoch = { sim: DEFAULT_ENGINE, tickMs: world.epoch.tickMs };   // @11: the epoch runs today's eidosim (declared)
+  // @11 (declared): her own law becomes today's eidosim; an engine she didn't carry keeps its name (nothing flies); an epoch
+  // her sim refused never started, so it stays a record
+  if (phys?.sim.epoch && world.epoch) world.epoch = { sim: phys.sim.epoch.foreign ? world.epoch.sim : DEFAULT_ENGINE, tickMs: world.epoch.tickMs };
   return { ents, world };
 }
 // today's body socket is v1's seat (translate-v1's sockets mapping)
@@ -226,7 +228,11 @@ for (const p of logs.sort()) {
   // the inverse, aligned by act: the k-th act/say in the log is the k-th non-genesis old entry
   const body = L.filter((e: any) => e.verb !== "genesis"); const every = body.length > 2000 ? 250 : 1;
   const v1 = v1Empty(); const now = emptyState(); let k = -1, loss: any = null;
-  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {}, punted: new Set() } : null;
+  // which things the log ever punts, per incarnation (the spawn it follows): known from the whole log, as the importer reads it
+  const born: Record<string, number> = {}, flown = new Set<string>();
+  for (const e of L) { const id = e?.args?.id; if (typeof id !== "string") continue; if (e.verb === "spawn") born[id] = (born[id] ?? 0) + 1; else if (e.verb === "punt") flown.add(`${id}@${born[id] ?? 0}`); }
+  const alive: Record<string, number> = {};
+  const phys: any = hasEpoch(L) ? { sim: eidosim.emptySim(), restAt: {}, dynamic: (id: string) => flown.has(`${id}@${alive[id] ?? 0}`) } : null;
   const settle = (tick: number) => { if (!phys?.sim.epoch) return; eidosim.advanceSim(phys.sim, tick);   // schedule-independent: one jump is exact
     for (const [id, b] of Object.entries<any>(phys.sim.bodies)) if (b.resting) phys.restAt[id] = b.p.slice();
     for (const id of Object.keys(phys.restAt)) if (!phys.sim.bodies[id]) delete phys.restAt[id]; };
@@ -234,8 +240,8 @@ for (const p of logs.sort()) {
   for (let s = 1; s < r.out.length && !loss; s++) { const e = r.out[s];
     if ((e.kind === "act" && e.verb !== "translated") || e.kind === "say") { // `translated` (genesis's companion, translate-v1@3) has no old entry
       if (phys && Number.isInteger(body[k + 1]?.ts)) settle(eidosim.tickOf(phys.sim, body[k + 1].ts));   // her rests up to the next act are logged before it
-      compareAt(k); k++; foldEntry(v1, body[k]); if (phys) { eidosim.simEntry(phys.sim, body[k], v1);
-        if (body[k].verb === "punt" && phys.sim.bodies[body[k].args?.id]?.seq === body[k].seq) phys.punted.add(body[k].args.id); settle(phys.sim.tick); } }
+      compareAt(k); k++; foldEntry(v1, body[k]); if (body[k].verb === "spawn" && typeof body[k].args?.id === "string") alive[body[k].args.id] = (alive[body[k].args.id] ?? 0) + 1;
+      if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does
   compareAt(k); if (loss) lossy++;
