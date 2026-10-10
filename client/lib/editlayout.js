@@ -95,7 +95,7 @@ function build() {
     // the tool's hidden keys, in its tooltip (keyhints.js): the gizmo's Ctrl-snap, select's Ctrl/Shift-click, all the letters
     b.title = withKeys(withKeys(t.title, { select: 'selectExtend', move: 'gizmo', rotate: 'gizmo', scale: 'gizmo', pivot: 'gizmo' }[t.id]), 'toolKeys');
     // the select tool also says how the camera moves; the three transform tools say how to reset what they change
-    b.title = withKeys(b.title, t.id === 'select' ? 'editCamera' : 'resetTransform');
+    b.title = withKeys(b.title, { select: 'editCamera', move: 'resetTransform', rotate: 'resetTransform', scale: 'resetTransform', pivot: 'resetTransform' }[t.id]);
     b.onclick = () => setTool(t.id);
     // right-click: the tool's spaces (Maya's marking menu, as a plain menu): one click picks, the tool comes with it
     if (SPACES[t.id]?.length > 1) b.oncontextmenu = (e) => {

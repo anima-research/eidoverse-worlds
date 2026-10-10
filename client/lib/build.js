@@ -556,7 +556,7 @@ addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
-  if (e.altKey) return;                     // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   keys: editCamera
+  if (e.altKey) return;   // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   // keys: editCamera
   // an armed seat placement outranks everything, the ghost included
   if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
