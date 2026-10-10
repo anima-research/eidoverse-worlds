@@ -440,6 +440,27 @@ try {
   check("FC5 the Body switch is the reset: the camera is my body's again, the pose ends", !s5.free && !s5.pose && s5.sw.join() === "body", s5);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
+  // ---- RB: a row's menu as a button, for where there is no right-click (R, 10-10: "buttons in VR to the right of
+  // anywhere that would get a right-click menu, hidden on desktop") ----
+  await stage("RB", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`); await sleep(500);
+  const r = await evalJson(`(() => { const I = document.querySelector('[data-frame="inspector"]'), H = document.querySelector('[data-frame="hierarchy"]');
+    const row = [...I.querySelectorAll('.sp-row.sp-f-num')].find((x) => /^scale x/.test(x.querySelector('.sp-label')?.textContent ?? '')), b = row?.querySelector('.sp-ctxbtn');
+    const hb = [...H.querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'cuball')?.querySelector('.sp-ctxbtn');
+    const probe = document.createElement('div'); const had = document.getElementById('xr-stage'); if (!had) probe.id = 'xr-stage'; (had ?? document.body).appendChild(probe);
+    const c = document.createElement('button'); c.className = 'sp-ctxbtn'; probe.appendChild(c); const staged = getComputedStyle(c).display; probe.remove();
+    return { field: !!b, fieldShown: b ? getComputedStyle(b).display : null, tree: !!hb, treeShown: hb ? getComputedStyle(hb).display : null, staged }; })()`);
+  check("RB1 every row with a menu carries a menu button; on the desktop it isn't drawn; on a headset-staged frame it is", r?.field && r.tree && r.fieldShown === "none" && r.treeShown === "none" && r.staged === "inline-flex", r);
+  await evalJson(`(() => { const I = document.querySelector('[data-frame="inspector"]'); [...I.querySelectorAll('.sp-row.sp-f-num')].find((x) => /^scale x/.test(x.querySelector('.sp-label')?.textContent ?? ''))?.querySelector('.sp-ctxbtn')?.click(); return true; })()`);
+  const fm = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
+  await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
+  await evalJson(`([...document.querySelector('[data-frame="hierarchy"]').querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'cuball')?.querySelector('.sp-ctxbtn')?.click(), true)`);
+  const tm = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
+  await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
+  check("RB2 the button opens the row's own menu: a field's (copy value…), a thing's (rename, duplicate…)", fm?.some((t: string) => /copy value/.test(t)) && tm?.some((t: string) => /^rename/.test(t)) && tm?.some((t: string) => /^duplicate/.test(t)), { fm, tm });
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {

@@ -441,6 +441,17 @@ function openPop(anchor, f, pick) {
   paint(); inp.focus();
 }
 
+/** The row's menu as a BUTTON (R, 10-10: "buttons in VR to the right of anywhere that would get a right-click menu,
+ *  hidden on desktop"; Resonite's inspector does the same: a small button per field opens its menu, no right-click).
+ *  It opens exactly what a right-click on the row opens. CSS shows it only on a frame staged for a headset
+ *  (#xr-stage: domquad.js), so the desktop row is unchanged. */
+function menuButton(row) {
+  const b = el('button', 'sp-ctxbtn', '⋯'); b.tabIndex = -1; b.title = 'menu'; b.setAttribute('aria-label', 'menu for this row');
+  b.onpointerdown = (e) => e.stopPropagation();   // not a scrub, not a drag of the row
+  b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect();
+    row.oncontextmenu?.(new MouseEvent('contextmenu', { bubbles: false, cancelable: true, clientX: r.left, clientY: r.bottom })); };
+  return b;
+}
 function fieldDOM(f, edit, ro = {}) {
   const row = el('div', `sp-row sp-f-${f.t}`);   // sp-f- prefix: never collide with element classes
   const ax = /(?:^|:)(?:pos|rot|scale)\.s?([xyz])$/.exec(f.k ?? '');   // pos.x, rot.y, pos.sz (scale's channels)
@@ -618,6 +629,7 @@ function fieldDOM(f, edit, ro = {}) {
         const items = r.menu ?? f.menu;
         if (items?.length) line.oncontextmenu = (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, items, (k) => (k === 'rename' && beginRename ? beginRename() : edit(k, r.id))); };
         line.append(main);
+        if (items?.length) line.append(menuButton(line));
         if (r.mine != null) {   // 👁: hidden in MY view only (myview.js) — never the shared component
           const eye = el('button', `sp-mini sp-eye${r.mine ? ' on' : ''}`);
           eye.innerHTML = iconSvg(r.mine ? 'eye-slash' : 'eye', 14);
@@ -844,6 +856,7 @@ function fieldDOM(f, edit, ro = {}) {
         })();
       });
     };
+    row.append(menuButton(row));
   }
   // revert-to-default (Godot's ↺ / Blender's Backspace): a field that declares `def` grows a
   // small ↺ while its value differs; clicking commits the default through the same edit path
