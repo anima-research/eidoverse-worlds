@@ -67,9 +67,14 @@ bus.on('edit-refused', ({ text }) => {
 
 // a physics act refused (grab, put, drop, throw, punt, use, move): the desk says it in chat, which a headset doesn't show;
 // without this a refused throw in VR did nothing visible, and a bug looks like a rule (ship audit 10-09, blocker 5)
-bus.on('thingphysics-refused', ({ text }) => {
+// Play isn't a dialog (review of 5a978cc0): the card goes by itself after PLAY_CARD_MS; OK only puts it away sooner. A
+// request that timed out or went nowhere wasn't refused, and may yet land: it says so.
+const PLAY_CARD_MS = 4000;
+bus.on('thingphysics-refused', ({ text, refused: x }) => {
   if (!xrActive() || pending || !text) return;
-  chooseXR({ title: 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
+  const lost = x?.code === 'timeout' || x?.code === 'offline';
+  chooseXR({ title: lost ? "didn't go through" : 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
+  const mine = pending; setTimeout(() => { if (pending === mine) settle('ok'); }, PLAY_CARD_MS);
 });
 
 // a warning on a write that went through, likewise (the desk shows it as a toast)

@@ -108,8 +108,18 @@ async function track(force = false) {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await sendRequest('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
-      else if (r?.refused) refused('move', r);   // said like any other refusal (it was an event nobody heard)
-      return arrived;
+      if (arrived) return true;
+      // refused (review of 5a978cc0: this retried every 200 ms, forever). Back off as a refused step does; and when the
+      // server still has me somewhere else (a takeover reconnect keeps the body: too-fast) or calls my spot solid,
+      // re-arrive as a teleport, which it allows when nothing is in my hands (at most once in 3 s, as the step's)
+      stuck = { at: to, until: performance.now() + 2000 };
+      if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
+        lastTeleport = performance.now();
+        const t = await sendRequest('move', { to: to.map(r3), teleport: true, client: 'human' }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
+        if (t?.ok) { arrived = true; trackedAt = t.at ?? to; return true; }
+        if (t?.refused) refused('move', t);
+      } else if (r?.refused) refused('move', r);
+      return false;
     }
     const d = trackedAt ? Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) : Infinity;
     if (!force && d < TRACK_MIN) return true;
@@ -335,7 +345,12 @@ function frame(wall) {
 
 // ---------------------------------------------------------------- acts (requests)
 const say = (t) => logChat('*', t);
-const refused = (what, r) => { const x = r?.refused, text = plain(what, r); say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
+// the same refusal again within REPEAT_MS is said once (a squeeze repeated, a retry): words are for news, not a metronome
+const REPEAT_MS = 5000, saidAt = new Map();
+const refused = (what, r) => { const x = r?.refused, text = plain(what, r), now = performance.now();
+  if (now - (saidAt.get(text) ?? -Infinity) < REPEAT_MS) return r;
+  saidAt.set(text, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
+  say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
@@ -541,7 +556,7 @@ async function vrTake(side, id, far, haptic) {
     const g = grabOf(compsOf(id)); const off = !far && !Object.keys(g?.grips ?? {}).length ? offsetIn(side, id) : null;
     await track(true);
     const r = await sendRequest('grab', { id, hand: side, ...(off ? { offset: off } : {}) });
-    if (r?.ok) haptic(0.4, 30); else refused('grab', r);
+    if (r?.ok) haptic(0.4, 30); else { haptic(0.25, 25); setTimeout(() => haptic(0.25, 25), 90); refused('grab', r); }   // a refusal is two short pulses in the hand that asked
     H.busy = false;
     // a quick tap: the grip let go before the authority answered. Press-to-hold means it lets go now (it never stays stuck)
     if (r?.ok && !H.grip && grabOf(compsOf(id))?.hold !== 'toggle') await vrLetGo(side, id);

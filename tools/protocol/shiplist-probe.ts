@@ -39,8 +39,8 @@ const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
 
 try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
-    window.__refused = []; window.__warned = [];
-    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-warned', (e) => __warned.push(e)); });` });
+    window.__refused = []; window.__warned = []; window.__phys = [];
+    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-warned', (e) => __warned.push(e)); m.bus.on('thingphysics-refused', (e) => __phys.push({ verb: e.verb, code: e.refused?.code })); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
@@ -122,13 +122,20 @@ try {
   check("(setup) a crate that can't be picked up, beside me", made?.ok, made);
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('anchor'))`);
   await page(`const c = await import('/lib/core.js'); Object.defineProperty(c.renderer.xr, 'isPresenting', { get: () => true, configurable: true }); return true;`);
-  const g = await page(`const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok, code: r?.refused?.code ?? null };`);
+  const grab = `const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok, code: r?.refused?.code ?? null };`;
+  const n0 = await evalJson(`__phys.length`);
+  const g = await page(grab);
   check("(setup) the authority refuses the grab", g && !g.ok && g.code, g);
   check("VP1 in a headset, a refused grab rides the XR quad: 'refused', in the person's words, with OK", await waitFor(`import('/lib/xrask.js').then((m) => { const s = m.xrAskState(); return !!s && /refused/.test(s.title) && /anchor|Anchor/.test(s.body) && s.choices.includes('ok'); })`, 4000),
     await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
-  await page(`const m = await import('/lib/xrask.js'); m.xrAnswer('ok'); const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
-  const g2 = await page(`const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok };`);
-  check("VP2 on the desk, the same refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
+  await page(grab); await page(grab);
+  check("VP2 the same refusal three times running is said once (a squeeze repeated, a retry): one event, one chat line", (await evalJson(`__phys.length`)) - n0 === 1, await evalJson(`__phys.slice(${n0})`));
+  check("VP3 …and the card goes by itself (play isn't a dialog): gone within 6 s, nobody pressed OK", await waitFor(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`, 6500),
+    await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
+  await page(`const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
+  await sleep(5200);   // past the repeat window: the desk grab below is a fresh refusal
+  const g2 = await page(grab);
+  check("VP4 on the desk, a refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
   });
 
   // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
@@ -159,6 +166,18 @@ try {
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
   check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
+  // ---- VA: the body's arrival refused (a takeover reconnect: the server still has my body where it was, and the client
+  // re-arrives with a plain move from far away). Review of 5a978cc0: the arrival retried at 5 Hz, forever ----
+  await stage("VA", async () => {
+  const on = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });`);
+  check("(setup) physics on (the body is tracked only in a physics world)", on?.ok, on);
+  check("(setup) my body arrives", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 10000), await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`));
+  const n0 = await evalJson(`__phys.length`);
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  await sleep(3000);
+  const b = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`), said = (await evalJson(`__phys.length`)) - n0;
+  check("VA1 re-arriving 8 m from where the server last had me: the body arrives again (a teleport re-arrival), said at most once", b?.arrived && said <= 1, { said, body: b, events: await evalJson(`__phys.slice(${n0}, ${n0} + 3)`) });
   });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
