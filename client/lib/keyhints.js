@@ -14,6 +14,8 @@ export const KEYHINTS = {
   undo:          { before: 'Ctrl+Z undo · Ctrl+Shift+Z or Ctrl+Y redo', during: null },
   jsonCommit:    { before: 'Ctrl+Enter commits · Esc reverts', during: null },
   duplicate:     { before: 'Ctrl+D (or Alt+D) duplicates the selection: an independent copy · Save as blueprint for copies that stay in step', during: null },
+  editCamera:    { before: 'camera: drag bare space or Alt+drag to orbit · middle-drag pans · Alt+right-drag or the wheel dollies · F frames the selection', during: null },
+  resetTransform: { before: 'Alt+G resets translate · Alt+E rotate · Alt+R scale · Ctrl+G all three (or right-click a channel)', during: null },
   toolKeys:      { before: 'Q select · G move · E rotate · R scale · P pivot · the same key again switches world/object axes', during: null },
   seatTurn:      { before: 'Q / E turn the seat (Shift: a little)', during: '<kbd>Q</kbd> / <kbd>E</kbd> turn · <kbd>Shift</kbd> a little · <kbd>Esc</kbd> done' },
   ghostKeys:     { before: 'while placing: Q / E turn it 15° · , / . size it (Shift: a little) · click places · Esc cancels', during: 'click places · <kbd>Q</kbd> / <kbd>E</kbd> turn · <kbd>,</kbd> / <kbd>.</kbd> size · <kbd>Shift</kbd> a little · <kbd>Esc</kbd> cancels' },

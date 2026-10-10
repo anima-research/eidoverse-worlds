@@ -360,6 +360,23 @@ try {
   await evalJson(`([...document.querySelectorAll('.sp-ctx-item')].find((b) => /reset the 2 selected/.test(b.textContent))?.click(), true)`);
   check("CB5 right-click offers 'reset the 2 selected channels', and it sets both to their defaults (y stays)", items?.some((t: string) => /reset the 2 selected channels/.test(t))
     && await waitDisk(() => { const p = disk().entities.cuball.c.transform.pos; return p[0] === 0 && p[2] === 0 && p[1] === 0.25; }), { items, pos: disk().entities.cuball.c.transform.pos });
+  // the reset keys follow the tools' letters (G move, E rotate, R scale): Alt+G / Alt+E / Alt+R, and Ctrl+G for all
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [3, 0.25, 4], q: [0, 0.3826834, 0, 0.9238795], scale: [0.5, 0.5, 0.5] } }); (await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`);
+  await sleep(600);
+  const key = (code: string, mods: string) => evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code.slice(3).toLowerCase()}', bubbles: true, cancelable: true, ${mods} })), true)`);
+  const tr = () => disk().entities.cuball.c.transform;
+  const chans = await evalJson(`Promise.all([import('/lib/inspect.js'), import('/shared/editschema.js')]).then(([i, e]) => e.channels(i.schemaFor('cuball')).map((c) => c.key))`);
+  const n0 = entries().length;
+  await key("KeyG", "altKey: true");
+  check("CB6 Alt+G resets translate alone (rotate and scale stay), in ONE act", await waitDisk(() => tr().pos.every((v: number) => v === 0)) && tr().scale?.[0] === 0.5 && Math.abs((tr().q?.[1] ?? 0) - 0.3826834) < 1e-6 && entries().length - n0 <= 2, { tr: tr(), chans, acts: entries().length - n0 });
+  await key("KeyE", "altKey: true");
+  check("CB7 Alt+E resets rotate", await waitDisk(() => { const q = tr().q; return !q || (Math.abs(q[1]) < 1e-9 && Math.abs(Math.abs(q[3]) - 1) < 1e-9) ; }) && tr().scale?.[0] === 0.5, tr());
+  await key("KeyR", "altKey: true");
+  check("CB8 Alt+R resets scale", await waitDisk(() => { const s = tr().scale; return s === undefined || s === 1 || (Array.isArray(s) && s.every((v: number) => v === 1)); }), tr());
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [3, 0.25, 4], q: [0, 0.3826834, 0, 0.9238795], scale: [0.5, 0.5, 0.5] } }); return true;`);
+  await sleep(600);
+  await key("KeyG", "ctrlKey: true");
+  check("CB9 Ctrl+G resets all three at once", await waitDisk(() => { const t = tr(), s = t.scale, q = t.q; return t.pos.every((v: number) => v === 0) && (!q || Math.abs(q[1]) < 1e-9) && (s === undefined || s === 1 || (Array.isArray(s) && s.every((v: number) => v === 1))); }), tr());
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their

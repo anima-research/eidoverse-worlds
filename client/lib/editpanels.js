@@ -40,7 +40,7 @@ import { structureTools, currentTool as structureTool, setTool as setStructureTo
 import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
-import { schemaFor, commitEdit, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
+import { schemaFor, commitEdit, commitMany, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from './xrask.js';
@@ -384,6 +384,21 @@ function findSelected() {
   const box = new THREE.Box3().setFromObject(obj), c = box.isEmpty() ? p.clone() : box.getCenter(new THREE.Vector3()), r = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length() / 2;
   frameOn(c, r);
   flashHint(html`<b>${sel}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
+}
+
+/** Reset the selection's transform to its defaults (R, 10-10, after Rhythm and Hues' `g`): 'pos' → translate 0,
+ *  'rot' → rotate 0, 'scale' → scale 1, 'all' → the three. The keys follow the tools': G move, E rotate, R scale, so
+ *  Alt+G / Alt+E / Alt+R; Ctrl+G is all of it. One request per thing, so one Ctrl+Z each. */
+const RESET = { pos: { 'pos.x': 0, 'pos.y': 0, 'pos.z': 0 }, rot: { 'rot.x': 0, 'rot.y': 0, 'rot.z': 0 }, scale: { 'pos.sx': 1, 'pos.sy': 1, 'pos.sz': 1 } };
+function resetTransform(what) {
+  const ids = selection(); if (!ids.length) { flashHint('select something first: Alt+G resets its translate, Alt+E rotate, Alt+R scale, Ctrl+G all three', 3500); return; }
+  const want = what === 'all' ? { ...RESET.pos, ...RESET.rot, ...RESET.scale } : RESET[what]; if (!want) return;
+  for (const id of ids) {
+    // only the channels this thing has (quaternion order has no rotate x/y/z)
+    const have = new Set(channels(schemaFor(id)).map((c) => c.key)); const edits = Object.fromEntries(Object.entries(want).filter(([k]) => have.has(k)));
+    if (Object.keys(edits).length) commitMany(id, edits, what === 'all' ? 'transform reset' : `${{ pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset`);
+  }
+  flashHint(`${what === 'all' ? 'transform' : { pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset${ids.length > 1 ? ` on ${ids.length} things` : ''} — Ctrl+Z undoes`, 2200);
 }
 
 // ---------------------------------------------------------------- inspector
@@ -1100,6 +1115,7 @@ export function initEditPanels() {
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(selection()));
   bus.on('edit-find', () => findSelected());              // F in the viewport
+  bus.on('edit-reset', (what) => resetTransform(what));   // Alt+G / Alt+E / Alt+R, Ctrl+G in the viewport
   bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark
     if (!shown || e.code !== 'KeyD' || !(e.ctrlKey || e.metaKey || e.altKey)) return;   // keys: duplicate
     if (sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }

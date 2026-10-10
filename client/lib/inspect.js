@@ -147,6 +147,16 @@ export function commitEdit(id, key, value, opts = {}) {
   return { ok: !errors.length, errors, ops, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };
 }
 
+/** Several channels of one thing in ONE request (so one undo step): {'pos.x': 0, 'pos.y': 0, …}, FACE values (degrees
+ *  for rotate), as editOps takes them. The transform's reset keys use it. */
+export function commitMany(id, edits, what) {
+  const rec = foldRecord(id); if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
+  const { ops, errors, euler } = editOps(rec, id, edits, liveFor(id));
+  if (ops.length) Edits.sendOps(ops, { what: `${what} of ${id}`, revert: () => Edits.revertPose(id) });
+  if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
+  return { ok: !errors.length, errors, ops };
+}
+
 /** Every editor as html+wire for the legacy section: the registered html
  *  editors, then the schema's component groups rendered by the factory. */
 export function editorsFor(ctx) {

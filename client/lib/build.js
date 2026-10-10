@@ -556,7 +556,7 @@ addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
-  if (e.altKey) return;                     // Alt+drag is the camera's (controller.js: orbit / pan / dolly)
+  if (e.altKey) return;                     // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   keys: editCamera
   // an armed seat placement outranks everything, the ghost included
   if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
@@ -681,6 +681,10 @@ bus.on('key', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
   if (!editMode) return;
 
+  // reset the selection's transform (editpanels.resetTransform): the tools' own letters with Alt, and Ctrl+G for all
+  // three. Before the tool keys, which ignore modifiers.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && ['KeyG', 'KeyE', 'KeyR'].includes(e.code)) { e.preventDefault(); bus.emit('edit-reset', { KeyG: 'pos', KeyE: 'rot', KeyR: 'scale' }[e.code]); return; }   // keys: resetTransform
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyG') { e.preventDefault(); bus.emit('edit-reset', 'all'); return; }   // keys: resetTransform
   // the thing in hand holds Q / E and , / . before the tools do (they'd switch tool mid-aim)
   if (ghostKey(e)) return;
   // a selected seat anchor holds the editing keys before things do
