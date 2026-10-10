@@ -201,6 +201,17 @@ try {
   const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
   check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
+  // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
+  // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
+  await stage("NP", async () => {
+  const r = await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws);
+    ws.send = (m) => { if (!/"verb":"look"/.test(m)) send(m); };   // this one request never reaches the authority
+    const t0 = performance.now(); const p = n.sendRequest('look', {}); setTimeout(() => ws.close(), 300);
+    const out = await Promise.race([p, new Promise((z) => setTimeout(() => z('still waiting at 2 s'), 2000))]);
+    return { out, ms: Math.round(performance.now() - t0) };`);
+  check("NP1 a request in flight when the socket drops is answered at once (offline), not 15 s later", r?.out?.ok === false && r?.out?.refused?.code === "offline" && r.ms < 1500, r);
+  check("NP2 …and the client reconnects", await waitFor(`import('/lib/net.js').then((m) => m.net.joined)`, 15000));
+  });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[shiplist-probe] ${tally.passed} passed, ${tally.failed} failed`);
