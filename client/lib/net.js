@@ -279,9 +279,15 @@ export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
   const id = ++requestSeq;
   return new Promise((resolve) => {
     const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
-    pendingRequests.set(id, { resolve, timer });
+    pendingRequests.set(id, { resolve, timer, verb });
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
+}
+// The socket closed: no reply can come on it (request ids don't carry over to the next one), so every request still in flight
+// is answered now, not by its 15 s timer (which held the body track that long after a reconnect, then spoke a stale timeout)
+function failPending() {
+  for (const [id, p] of pendingRequests) { pendingRequests.delete(id); clearTimeout(p.timer);
+    p.resolve({ ok: false, refused: { code: 'offline', reason: `the connection dropped before the authority answered '${p.verb}'`, fix: 'it may have landed: look before trying again' } }); }
 }
 function onReply(msg) {
   const p = pendingRequests.get(msg.id); if (!p) return;
@@ -537,6 +543,7 @@ function wireSocket(ws) {
   ws.onclose = (ev) => {
     clearInterval(clockTimer); clockTimer = null;
     net.joined = false;
+    failPending();
     if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
     // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
     // would kick THAT session and ping-pong forever.
