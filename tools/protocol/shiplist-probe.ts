@@ -332,6 +332,36 @@ try {
   check("DK4 leaving edit mode gives the dock back whole, with no ⋯", back.panels === play.panels && !back.more, { play, back });
   await evalJson(`(localStorage.removeItem('ew.edit.dock'), true)`);
   });
+  // ---- CB: the channel box, after Maya's (R, 10-10): plain numbers, scale coloured, the name a handle, reset in the menu ----
+  await stage("CB", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [7.5, 0.25, 6], scale: [0.5, 0.5, 0.5] } }); (await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`);
+  const I = `document.querySelector('[data-frame="inspector"]')`;
+  const rows = () => evalJson(`[...${I}.querySelectorAll('.sp-row.sp-f-num')].map((r) => ({ label: r.querySelector('.sp-label')?.textContent, v: r.querySelector('.sp-num')?.value, axis: r.dataset.axis ?? null, sel: r.classList.contains('chan-sel'), revert: !!r.querySelector('.sp-revert:not([hidden])') })).filter((r) => /^(translate|rotate|scale) [xyz]/.test(r.label ?? ''))`);
+  await waitFor(`[...${I}.querySelectorAll('.sp-label')].some((l) => /^translate x/.test(l.textContent))`, 5000); await sleep(500);
+  const r0 = await rows(); const v = (l: string, rs = r0) => rs?.find((r: any) => r.label.startsWith(l));
+  check("CB1 numbers are plain: 7.5 not 7.50, 0.25, 6 not 6.00, a bare 0, 0.5 not 0.50", v("translate x")?.v === "7.5" && v("translate y")?.v === "0.25" && v("translate z")?.v === "6" && v("rotate x")?.v === "0" && v("scale x")?.v === "0.5", r0?.map((r: any) => `${r.label}=${r.v}`));
+  check("CB2 scale's channels are coloured by axis like the others, and none shows a ↺", ["x", "y", "z"].every((a) => v(`scale ${a}`)?.axis === a) && r0?.every((r: any) => !r.revert), r0);
+  // the NAME is a handle: a drag on it scrubs, a click selects
+  const onLabel = (name: string, kind: string, o = "") => page(`const l = [...${I}.querySelectorAll('.sp-row.sp-f-num .sp-label')].find((x) => x.textContent.startsWith('${name}')); const b = l.getBoundingClientRect(), x = b.left + 8, y = b.top + b.height / 2;
+    const ev = (t, dx = 0, more = {}) => new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientX: x + dx, clientY: y, ...more });
+    if ('${kind}' === 'drag') { l.dispatchEvent(ev('pointerdown')); for (const dx of [6, 20, 40, 60]) l.dispatchEvent(ev('pointermove', dx)); l.dispatchEvent(ev('pointerup', 60)); }
+    else if ('${kind}' === 'menu') l.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    else { l.dispatchEvent(ev('pointerdown', 0, { ${o} })); l.dispatchEvent(ev('pointerup', 0, { ${o} })); }
+    return true;`);
+  await onLabel("translate x", "drag"); await sleep(600);
+  const r1 = await rows();
+  check("CB3 a drag on the name 'translate x' scrubs its value", +v("translate x", r1)?.v > 7.6 && Math.abs(disk().entities.cuball.c.transform.pos[0] - +v("translate x", r1).v) < 0.01, { face: v("translate x", r1)?.v, disk: disk().entities.cuball.c.transform.pos });
+  await onLabel("translate x", "click"); await onLabel("translate z", "click", "ctrlKey: true"); await sleep(200);
+  const r2 = await rows();
+  check("CB4 a click on a name selects the channel; Ctrl-click adds another", v("translate x", r2)?.sel && v("translate z", r2)?.sel && !v("translate y", r2)?.sel, r2?.filter((r: any) => r.sel).map((r: any) => r.label));
+  await onLabel("translate z", "menu");
+  const items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
+  await evalJson(`([...document.querySelectorAll('.sp-ctx-item')].find((b) => /reset the 2 selected/.test(b.textContent))?.click(), true)`);
+  check("CB5 right-click offers 'reset the 2 selected channels', and it sets both to their defaults (y stays)", items?.some((t: string) => /reset the 2 selected channels/.test(t))
+    && await waitDisk(() => { const p = disk().entities.cuball.c.transform.pos; return p[0] === 0 && p[2] === 0 && p[1] === 0.25; }), { items, pos: disk().entities.cuball.c.transform.pos });
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {

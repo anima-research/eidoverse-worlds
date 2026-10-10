@@ -246,6 +246,13 @@ export const SCRUB_TIP = KEYHINTS.scrub.before;
 // while scrubbing, the keys go on the status line (keyhints.js); the speed rides along
 function scrubHint(on) { if (on) engage('scrub'); else release(); }
 
+/** A number as edit mode writes it (R, 10-10, after Maya's channel box): no trailing zeros, a bare 0, a leading 0 before
+ *  a fraction: 0.5 not 0.50, 0 not 0.00, 0.15 not .15, 2 not 2.00. `dp` is the most decimals shown. */
+export function trimNum(v, dp = 2) {
+  let s = (+v).toFixed(dp);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
 function stepper(value, f, commit) {
   const cur = { step: 0.1, dp: 2, ...f };   // options are LIVE: update() refreshes them (a typed value past softMax raises the next drag's cap)
   const { unit, deg, compact, disabled } = cur;
@@ -253,7 +260,7 @@ function stepper(value, f, commit) {
   const num = el('input', 'sp-num');
   num.type = 'text'; num.inputMode = 'decimal'; num.autocomplete = 'off'; num.spellcheck = false;
   if (disabled) num.disabled = true;
-  const toFace = (w) => (deg ? w * R2D : w).toFixed(deg ? 0 : cur.dp);
+  const toFace = (w) => trimNum(deg ? w * R2D : w, deg ? 0 : cur.dp);
   const toWire = (face) => (deg ? face / R2D : face);
   const hard = (w) => Math.min(cur.max ?? Infinity, Math.max(cur.min ?? -Infinity, w));
   const soft = (w) => Math.min(cur.softMax ?? cur.max ?? Infinity, Math.max(cur.softMin ?? cur.min ?? -Infinity, w));
@@ -297,16 +304,19 @@ function stepper(value, f, commit) {
     const d = drag; drag = null;
     document.removeEventListener('keydown', onDragKey, true);
     num.classList.remove('scrub');
-    try { num.releasePointerCapture(d.id); } catch { /* already released */ }
+    try { (d.src ?? num).releasePointerCapture(d.id); } catch { /* already released */ }
     scrubHint(false);
     if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; }
   };
-  num.addEventListener('pointerdown', (e) => {
+  // the same drag from the value box and from the channel's NAME (R, 10-10: "make the channel lines themselves
+  // selectable and scrub-able just like their value boxes. This is a Maya feature that I love")
+  const bindScrub = (src, onClick) => {
+  src.addEventListener('pointerdown', (e) => {
     if (disabled || e.button !== 0) return;
-    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false };
+    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false, src, onClick };
   });
-  num.addEventListener('pointermove', (e) => {
-    if (!drag) return;
+  src.addEventListener('pointermove', (e) => {
+    if (!drag || drag.src !== src) return;
     const dx = e.clientX - drag.lastX; drag.lastX = e.clientX;
     // accumulate BEFORE the arm check (Godot :113 then :117): the pixels
     // inside the click slop still count, or a drag that wanders back lands
@@ -315,7 +325,7 @@ function stepper(value, f, commit) {
     if (!drag.armed) {
       if (Math.abs(e.clientX - drag.x0) < 4) return;           // click-vs-drag slop
       drag.armed = true;
-      try { num.setPointerCapture(drag.id); } catch { /* no capture here */ }
+      try { src.setPointerCapture(drag.id); } catch { /* no capture here */ }
       num.classList.add('scrub');
       num.blur();
       scrubHint(true);
@@ -328,19 +338,22 @@ function stepper(value, f, commit) {
     commit(w, { live: true });
   });
   const endDrag = (e) => {
-    if (!drag) return;
+    if (!drag || drag.src !== src) return;
     const d = drag; drag = null;
     if (d.armed) {
       document.removeEventListener('keydown', onDragKey, true);
       num.classList.remove('scrub');
       scrubHint(false);
-      try { num.releasePointerCapture(d.id); } catch { /* fine */ }
+      try { src.releasePointerCapture(d.id); } catch { /* fine */ }
       if (d.cur != null && d.cur !== d.w0) commit(d.cur); else if (d.cur != null) commit(d.w0, { live: true });
-    } else if (e.type === 'pointerup') { num.focus(); num.select(); }   // a click: type
+    } else if (e.type === 'pointerup') { if (d.onClick) d.onClick(e); else { num.focus(); num.select(); } }   // a click: type (the box), select (the name)
   };
-  num.addEventListener('pointerup', endDrag);
-  num.addEventListener('pointercancel', endDrag);
-  num.addEventListener('lostpointercapture', () => { if (drag?.armed) endDrag({ type: 'lost' }); });
+  src.addEventListener('pointerup', endDrag);
+  src.addEventListener('pointercancel', endDrag);
+  src.addEventListener('lostpointercapture', () => { if (drag?.armed && drag.src === src) endDrag({ type: 'lost' }); });
+  };
+  bindScrub(num, null);
+  wrap.bindScrub = bindScrub;
 
   if (!compact) {
     const minus = el('button', 'sp-bump', '−');
@@ -430,7 +443,7 @@ function openPop(anchor, f, pick) {
 
 function fieldDOM(f, edit, ro = {}) {
   const row = el('div', `sp-row sp-f-${f.t}`);   // sp-f- prefix: never collide with element classes
-  const ax = /(?:^|:)(?:pos|rot|scale)\.([xyz])$/.exec(f.k ?? '');
+  const ax = /(?:^|:)(?:pos|rot|scale)\.s?([xyz])$/.exec(f.k ?? '');   // pos.x, rot.y, pos.sz (scale's channels)
   if (ax) row.dataset.axis = ax[1];   // the channel's axis: edit chrome colours its label x/y/z
   if (f.disabled) row.classList.add('disabled');
   if (f.dim) { row.style.opacity = '0.55'; row.style.fontSize = '0.9em'; }   // secondary: an id beside its name
@@ -471,6 +484,16 @@ function fieldDOM(f, edit, ro = {}) {
         d.style.cursor = 'pointer'; d.onpointerdown = (e) => e.stopPropagation(); d.onclick = (e) => { e.stopPropagation(); edit('goto', f.driven); }; st.prepend(d); }
       row.append(st);
       row.update = (nf) => { setLabel(nf); st.update(nf); };
+      if (label && ro.icons && !f.disabled) {   // edit chrome: the channel's name is a handle too
+        label.classList.add('sp-chan');
+        st.bindScrub(label, (e) => {   // a click on the name selects the channel; Shift/Ctrl adds or removes it
+          const sel = [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])];
+          if (e.shiftKey || e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); return; }   // keys: selectExtend
+          const only = sel.length === 1 && sel[0] === row;
+          for (const r of sel) r.classList.remove('chan-sel');
+          if (!only) row.classList.add('chan-sel');
+        });
+      }
       break;
     }
     case 'range': {
@@ -478,10 +501,10 @@ function fieldDOM(f, edit, ro = {}) {
       // --p drives the progress fill) — the same control the desk's dials use
       const lo = f.min ?? 0, hi = f.max ?? 1, st = f.step ?? 0.01, dp = f.dp ?? 2;
       const sl = el('input', 'sp-range'); sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = f.value ?? lo;
-      const out = el('span', 'sp-range-val', `${(+sl.value).toFixed(dp)}${f.unit ?? ''}`);
+      const out = el('span', 'sp-range-val', `${trimNum(+sl.value, dp)}${f.unit ?? ''}`);
       const paint = () => sl.style.setProperty('--p', `${((sl.value - lo) / (hi - lo || 1)) * 100}%`);
       paint();
-      const face = () => { paint(); out.textContent = `${(+sl.value).toFixed(dp)}${f.unit ?? ''}`; };
+      const face = () => { paint(); out.textContent = `${trimNum(+sl.value, dp)}${f.unit ?? ''}`; };
       // the panels contract: a drag PREVIEWS (opts.live), the release commits once
       sl.oninput = () => { face(); edit(f.k, +sl.value, null, { live: true }); };
       sl.onchange = () => { face(); edit(f.k, +sl.value); };
@@ -793,6 +816,8 @@ function fieldDOM(f, edit, ro = {}) {
     let live = f;
     const upd = row.update;
     row.update = (nf) => { live = nf; upd?.(nf); };
+    // a selected channel resets with the others (dry: would it change anything?)
+    row._reset = (dry = false) => { const can = live.def !== undefined && live.value !== live.def && !live.disabled; if (can && !dry) edit(live.k, live.def); return can; };
     row.oncontextmenu = (e) => {
       if (/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '') && e.target.type !== 'checkbox' && e.target.type !== 'color') return;   // keep the native text menu in a text box
       e.preventDefault();
@@ -801,19 +826,30 @@ function fieldDOM(f, edit, ro = {}) {
         { k: 'copy', label: 'copy value' },
         ...(canPaste ? [{ k: 'paste', label: `paste value  (${String(fieldClip.value).slice(0, 18)})` }] : []),
         ...(live.path ? [{ k: 'path', label: `copy path  (${live.path})` }] : []),
-        ...(live.def !== undefined && live.value !== live.def && !live.disabled ? [{ k: 'reset', label: 'reset to default' }] : []),
+        ...((() => { const many = row.classList.contains('chan-sel') ? [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])].filter((r) => r._reset?.(true)) : [];
+          return many.length > 1 ? [{ k: 'resetsel', label: `reset the ${many.length} selected channels` }] : live.def !== undefined && live.value !== live.def && !live.disabled ? [{ k: 'reset', label: 'reset to default' }] : []; })()),
       ];
       contextMenu(e.clientX, e.clientY, items, (k) => {
         if (k === 'copy') { fieldClip = { value: live.value }; try { navigator.clipboard?.writeText?.(typeof live.value === 'string' ? live.value : JSON.stringify(live.value)); } catch { /* the in-page clip is enough */ } }
         else if (k === 'paste') edit(live.k, fieldClip.value);
         else if (k === 'path') { fieldClip = { value: live.path }; try { navigator.clipboard?.writeText?.(live.path); } catch { /* ok */ } }
         else if (k === 'reset') edit(live.k, live.def);
+        else if (k === 'resetsel') void (async () => {
+          // one after another: each write names the value it replaces, so the next must see the last one land (two at once
+          // and the authority refuses the second as 'changed'; seen in the probe: x reset, z did not)
+          for (const r of [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])]) {
+            if (!r._reset?.()) continue;
+            for (let t = 0; t < 30 && r._reset?.(true); t++) await new Promise((z) => setTimeout(z, 50));
+          }
+        })();
       });
     };
   }
   // revert-to-default (Godot's ↺ / Blender's Backspace): a field that declares `def` grows a
   // small ↺ while its value differs; clicking commits the default through the same edit path
-  if (f.def !== undefined && ['num', 'enum', 'color', 'range'].includes(f.t)) {
+  // …except the transform's channels: there the reset is the right-click menu's (R, 10-10: "why does only scale get
+  // the 'reset to default'? it feels like a right-click menu item anyway")
+  if (f.def !== undefined && ['num', 'enum', 'color', 'range'].includes(f.t) && !/(?:^|:)(?:pos|rot)\./.test(f.k ?? '')) {
     const same = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)) : a === b);
     const face = f.t === 'color' ? '#' + (+f.def).toString(16).padStart(6, '0') : f.deg ? `${Math.round(f.def * R2D)}°` : String(f.def);
     const rv = el('button', 'sp-revert', '↺'); rv.tabIndex = -1; rv.title = `revert to default (${face})`;
@@ -1026,7 +1062,7 @@ export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12,
         g.fillStyle = C.well; roundRect(g, vx, ty - 4, tw, 8, 4); g.fill();
         g.fillStyle = C.accent; roundRect(g, vx, ty - 4, Math.max(8, tw * frac), 8, 4); g.fill();
         g.beginPath(); g.arc(vx + tw * frac, ty, 9, 0, Math.PI * 2); g.fillStyle = C.text; g.fill();
-        font(15); g.fillStyle = C.text; g.textAlign = 'right'; g.fillText(`${v.toFixed(dp)}${f.unit ?? ''}`, width - pad, y + rowH * 0.62); g.textAlign = 'left';
+        font(15); g.fillStyle = C.text; g.textAlign = 'right'; g.fillText(`${trimNum(v, dp)}${f.unit ?? ''}`, width - pad, y + rowH * 0.62); g.textAlign = 'left';
         // one region for the whole track: the hit's fraction along it is the value
         regions.push({ x: vx - 6, y: y + 4, w: tw + 12, h: rowH - 8, action: f.k, slider: { lo, hi, st } });
         break;
@@ -1055,7 +1091,7 @@ function paintStepper(g, regions, f, val, x, y, rowH, k, axis, dp = 2, w = 150) 
   g.fillText('−', x + 8, y + rowH * 0.62);
   g.fillText('+', x + bump + mid + 7, y + rowH * 0.62);
   g.font = '500 14px system-ui';
-  const face = f.deg ? `${Math.round(val * R2D)}°` : val.toFixed(dp) + (f.unit ? ` ${f.unit}` : '');
+  const face = f.deg ? `${Math.round(val * R2D)}°` : trimNum(val, dp) + (f.unit ? ` ${f.unit}` : '');
   g.fillText(face, x + bump + 8, y + rowH * 0.62);
   // deltas are on the WIRE scale (radians for deg fields): the dispatcher adds
   // them to the current value and never has to know what the face showed

@@ -120,9 +120,9 @@ export function inspectSchema(ent, id, live = {}) {
   const tf = { disabled: !!partRide, hint: locked ? 'locked — moving it asks first' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
   const pos = pv.pos ?? [0, 0, 0];
   const transform = [
-    { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'z', label: 'translate z', value: round(pos[2]), step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'z', label: 'translate z', value: round(pos[2]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
   ];
   const rotation = [];
   let gimbal = false;
@@ -150,7 +150,7 @@ export function inspectSchema(ent, id, live = {}) {
       let e;
       if (!pv.q) e = [0, pv.yaw ?? 0, 0];
       else { const r = eulerFromQ(pv.q, order, live.euler ?? uprightHint(pv)); e = r.e; gimbal = r.locked; }
-      ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), step: 5, deg: true, ...tf }));
+      ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), def: 0, step: 5, deg: true, ...tf }));
     }
     ['x', 'y', 'z', 'w'].forEach((a, i) => rotation.push({ t: 'num', k: `q${a}`, label: `quat ${a}`, value: round(q[i], 6), step: 0.01, dp: 4, min: -1, max: 1, row: 'quat', ...tf,
       hint: tf.hint ?? 'the stored orientation (unit quaternion x y z w); normalized on commit' }));

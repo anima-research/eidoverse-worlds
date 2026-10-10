@@ -1757,6 +1757,14 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit input::placeholder, body.edit-workspace .frame.docked input::placeholder { color: var(--e-faint); }
 .frame.edit .sp-text { flex: 1 1 auto; }
 .frame.edit .sp-num.scrub { border-color: var(--e-accent); }
+/* the channel box, after Maya's (R, 10-10): rows pushed together, no outline on a box until the hand is on it, the
+   channel's name a handle (drag scrubs, click selects) */
+.frame.edit .sp-f-num.sp-row { min-height: 22px; }
+.frame.edit .sp-f-num.sp-row + .sp-f-num.sp-row { margin-top: 0; }
+.frame.edit .sp-step.compact .sp-num { height: 20px; border-color: transparent; }
+.frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
+.frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 4px; margin: 0 -4px; }
+.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: var(--e-accent-bg); box-shadow: inset 0 0 0 1px var(--e-accent); }
 /* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
 .frame.edit .sp-step { position: relative; }
 .frame.edit .sp-step .sp-unit { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); margin: 0; color: var(--e-faint); font-size: 11px; pointer-events: none; }
