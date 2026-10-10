@@ -57,7 +57,9 @@ canvas.addEventListener('mousedown', (e) => { press = (e.button === 0 || e.butto
 addEventListener('mouseup', (e) => {
   const p = press; press = null;
   if (!p || e.button !== p.b || off() || Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TRAVEL || performance.now() - p.t > CLICK_MS) return;
-  const id = thingAt(e.clientX, e.clientY); if (!id) return;
+  // with something in my hand, a click that lands on nothing is about IT (R, 10-10, holding the wrecking ball: "left-click
+  // doesn't drop it ... How do I drop this thing??": in third person my own body hides what I hold, so there is nothing to aim at)
+  const id = thingAt(e.clientX, e.clientY) ?? physicsApi.mine()[0]; if (!id) return;
   const offers = offersOf(id); if (!offers.length) return;
   if (p.b === 0) { void offers[0].run(); return; }
   contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label })), (k) => { void offers.find((o) => o.k === k)?.run(); });

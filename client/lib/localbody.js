@@ -15,6 +15,8 @@ import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
 import { plain } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
+import { handsHint, physicsApi as _phys } from './thingphysics.js';
+const myHoldsNow = () => _phys.mine().length > 0;
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { mergePose } from '../../shared/humanoid.js';
@@ -312,6 +314,8 @@ export function updateSeatHint(dt) {
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
       : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
   else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
+  // my hands come first: what I hold and how to let go (it must never be a secret), else what's in reach to pick up
+  if (!downed) { const hh = handsHint(); if (hh && (myHoldsNow() || !hint)) hint = hh; }
   if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
   setAmbientHint(hint);
 }

@@ -35,7 +35,9 @@ import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf } from '../../shared/protocol/simlayer.js';
 import { onWorldChange } from './state.js';
-import { plain } from './plainwords.js';
+import { plain, nameOf } from './plainwords.js';
+import { html } from './markup.js';
+import { xrActive } from './xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
 const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
@@ -589,6 +591,17 @@ bus.on('key', (e) => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || hooks?.editing?.()) return;
   KEYS.find((k) => k.code === e.code)?.run();
 });
+
+/** The hint bar's line about my hands (localbody.js updateSeatHint): what I hold and how to let go, else what's in reach
+ *  to pick up. R, 10-10: "there's no help option to assist me while I'm holding anything". Null in a headset, in edit mode,
+ *  outside a world. */
+export function handsHint() {
+  if (!replica.active || hooks?.editing?.() || xrActive()) return null;
+  const held = myHolds()[0];
+  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click or <kbd>T</kbd> to put it down · <kbd>C</kbd> throws · right-click for more`;
+  const near = nearest(inHand, grabbableIds(), prioOf);
+  return near ? html`click or <kbd>T</kbd> to pick up <b>${nameOf(near) ?? near}</b>` : null;
+}
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown,

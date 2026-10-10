@@ -238,7 +238,22 @@ try {
   await sleep(1200);
   await click(0);
   check("CU4 left-click on it is its primary use: I hold it", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
-  await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.put('cuball'); return true;`);
+  // letting go (R, holding the wrecking ball: "left-click doesn't drop it and there's no help option to assist me")
+  await sleep(800);
+  const hint = await waitFor(`/holding/.test(document.body.innerText) && /put it down/.test(document.body.innerText)`, 3000);
+  check("CU5 while I hold it the hint bar says so, and how to let go", hint, await evalJson(`[...document.querySelectorAll('*')].filter((e) => !e.children.length && /holding|pick up/.test(e.textContent)).map((e) => e.textContent).slice(0, 3)`));
+  // a click on NOTHING (in third person my own body hides what I hold): scan for a pixel no usable thing is under
+  const bare = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'); const r = c.canvas.getBoundingClientRect(); let at = null;
+    for (let gy = 1; gy < 12 && !at; gy++) for (let gx = 1; gx < 16 && !at; gx++) { const x = r.left + r.width * gx / 16, y = r.top + r.height * gy / 12; if (cu.thingAt(x, y) === null) at = [x, y]; }
+    if (!at) return null;
+    const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: at[0], clientY: at[1] });
+    c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return at;`);
+  check("CU6 holding it, a left-click on nothing puts it down", bare && await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000), { bare, holds: await holds() });
+  await sleep(1500);
+  await click(0);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000); await sleep(800);
+  await click(0);
+  check("CU7 …and so does a left-click on the thing itself", await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
   });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
