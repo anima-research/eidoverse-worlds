@@ -433,7 +433,7 @@ export async function release(v = [0, 0, 0], name) {
   await track(true);
   const pos = heldPos(id); const still = v.every((n) => Math.abs(n) < 0.05);
   const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
-  return r?.ok ? r : refused(still ? 'drop' : 'throw', r);
+  return r?.ok ? r : refused(still ? 'drop' : 'throw', r, id);
 }
 /** /punt [thing] [power]: kick the named thing, or the nearest at your feet, through it from where you stand. */
 export async function punt(arg) {
