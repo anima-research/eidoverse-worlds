@@ -114,7 +114,17 @@ function loadWorldDefs() {
 }
 // the world's display name: @world's about.name, else the name in its address
 const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
-const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
+// R, 10-10: "make it clear what the 'World' is in the Hierarchy. Either World: (gym, in this case) or at least tooltip
+// the world entity, or maybe put the 'world' icon in-line with it": all three.
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'planet', label: `World: ${worldName()}`, sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel,
+  title: 'the world itself: its sky, weather, rules and settings. Click to edit them in the Inspector.' }] });
+// HIERARCHY VIEW OPTIONS (R, 10-10: "the list in the hierarchy is still hella busy. I would only have the name in the
+// list proper, more info (like id) when you hover over it, and a drop-down ... 'display by id', checkboxes for 'list
+// components'"). Off by default; kept per browser.
+const HOPTS = { ids: 'show ids', kinds: 'show kinds', comps: 'list components' };
+let hopts = { ids: false, kinds: false, comps: false };
+try { Object.assign(hopts, JSON.parse(localStorage.getItem('ew.hierarchy.view') ?? '{}')); } catch { /* a private window, or a bad value: the defaults */ }
+const saveHopts = () => { try { localStorage.setItem('ew.hierarchy.view', JSON.stringify(hopts)); } catch { /* no storage */ } };
 
 // ---------------------------------------------------------------- multi-selection
 // The PRIMARY selection stays exactly what build.js/scenegraph own (one id,
@@ -210,13 +220,18 @@ function hierarchyFields() {
   const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
-  const labelOf = (id) => { const l = comps.get(id)?.label ?? world[id]?.comp?.label; return typeof l === 'string' && l ? `${l}  (${id})` : id; };
+  const nameOnly = (id) => { const l = comps.get(id)?.label ?? world[id]?.comp?.label; return typeof l === 'string' && l ? l : null; };
+  const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
   const matches = q ? (id) => [id, world[id]?.comp?.label ?? '', world[id]?.lib ?? '', kindHint(world[id]), ...Object.keys(world[id]?.comp ?? {})].join(' ').toLowerCase().includes(q) : null;
   const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: !q || r.toLowerCase().includes(q) }));
-  const rows = treeRows(world, { collapsed, matches, extra: ridersOf }).map((t) => {
+  // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
+  const compsOfRow = (id) => (hopts.comps ? Object.keys(comps.get(id) ?? world[id]?.comp ?? {}).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: !q || k.toLowerCase().includes(q) })) : []);
+  const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
+  const rows = treeRows(world, { collapsed, matches, extra: underOf }).map((t) => {
+    if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
     if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
     const id = t.id; const bag = comps.get(id) ?? world[id]?.comp ?? {};
-    const badges = badgesFor(id);
+    const badges = hopts.kinds ? badgesFor(id) : [];   // what it carries (grabbable · physics) is 'show kinds'; state badges below always show
     if (!entities.get(id)) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
     const bpLink = world[id]?.comp?.['copy-of'];
@@ -224,13 +239,15 @@ function hierarchyFields() {
     // a child of a locked thing is held by that lock (the authority refuses moving it: "it rides X, which is locked"), so
     // its row says so instead of showing an open padlock (review 10-07 S3)
     let heldBy = null; for (let p = world[id]?.parent?.to, n = 0; p && n < 32 && !heldBy; p = world[p]?.parent?.to, n++) if ((comps.get(p) ?? world[p]?.comp ?? {}).lock) heldBy = p;
-    return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
+    // the row says the name; the rest is on hover (and in the row with 'show ids' / 'show kinds')
+    const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
+    return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
       ...(bag.lock ? { lockLevel: lockLevelOf(bag.lock) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
       lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id, bag.lock)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
-    if (String(r.id).startsWith('rider:')) continue;
+    if (String(r.id).startsWith('rider:') || String(r.id).startsWith('comp:')) continue;
     const mounted = !!world[r.id]?.parent;
     const lab = comps.get(r.id)?.label;
     r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row shows its id
@@ -246,18 +263,21 @@ function hierarchyFields() {
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
   }
-  visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:')).map((r) => r.id);
+  visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:') && !String(r.id).startsWith('comp:')).map((r) => r.id);
   return [
     worldRowFields(),   // pinned: the world entity, always first, never filtered out (design §3)
     // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on)
     ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
+    { t: 'pop', k: 'hopts', label: `View${Object.keys(HOPTS).some((k) => hopts[k]) ? `: ${Object.keys(HOPTS).filter((k) => hopts[k]).map((k) => HOPTS[k].replace(/^(show|list) /, '')).join(', ')}` : ''} ▾`, deskOnly: true, hint: 'what each row shows: names only by default', placeholder: 'what rows show…', recentKey: 'hierarchy-view',
+      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '☑' : '☐'} ${HOPTS[k]}` })) },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
 function hierarchyDispatch(action, payload, _field, opts = {}) {
   let sel = sceneSelected();
   switch (action) {
+    case 'hopt:ids': case 'hopt:kinds': case 'hopt:comps': { const k = action.slice(5); hopts[k] = !hopts[k]; saveHopts(); repaintAll(); return; }
     case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? html`${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
     case 'myshowall': { const n = showAllMine(); flashHint(`${n} shown again`, 2000); repaintAll(); return; }
     case 'wsel': {   // the pinned World row
@@ -267,6 +287,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     }
     case 'sel': {
       if (String(payload).startsWith('rider:')) return;
+      if (String(payload).startsWith('comp:')) payload = payload.slice(5, payload.lastIndexOf(':'));   // a component's row selects its thing
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
       if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); sceneSelect(child); break; }
       if (opts.extend) { extendSelection(payload); return; }

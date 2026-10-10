@@ -72,7 +72,7 @@ import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';
-import { svg as iconSvg } from './icons.js';
+import { svg as iconSvg, rsvg, has as hasIcon } from './icons.js';
 import { KEYHINTS, engage, release, withKeys } from './keyhints.js';
 export { parseEntry };
 
@@ -377,7 +377,7 @@ function openPop(anchor, f, pick) {
   // below the button when it fits, else above it, else as low as the viewport allows
   const top = r.bottom + 4 + h <= innerHeight - M ? r.bottom + 4 : r.top - 4 - h >= M ? r.top - 4 - h : innerHeight - M - h;
   box.style.top = `${Math.round(Math.max(M, top))}px`;
-  const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = 'search components…';
+  const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = f.placeholder ?? 'search components…';
   const list = el('div', 'sp-pop-list');
   box.append(inp, list);
   const items = f.items ?? [];
@@ -546,6 +546,7 @@ function fieldDOM(f, edit, ro = {}) {
       box.ondrop = dropOn(null);
       for (const r of f.rows ?? []) {
         const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
+        if (r.id != null) line.dataset.id = String(r.id);   // every row is findable by what it is (component rows too)
         if (!r.noDrag) {
           line.draggable = true;
           line.ondragstart = (e) => { treeDrag = r.id; line.classList.add('dragging'); box.classList.add('dragging'); e.dataTransfer?.setData('text/plain', String(r.id)); };
@@ -566,7 +567,7 @@ function fieldDOM(f, edit, ro = {}) {
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
         if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
         main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // keys: selectExtend
-        main.title = withKeys(r.sub ? `${r.label} — ${r.sub}` : r.label, 'selectExtend');
+        main.title = withKeys(r.title ?? (r.sub ? `${r.label} — ${r.sub}` : r.label), 'selectExtend');   // r.title: what the row left out (its id, its kind)
         // inline rename (Godot F2 / Blender double-click): a row that carries `rename` (its
         // current label) swaps the label for an input; Enter or blur commits
         // edit('rename', id, f, {value}), Esc cancels. The panel holds repaints while it's focused.
@@ -769,8 +770,10 @@ function fieldDOM(f, edit, ro = {}) {
         const line = el('div', `sp-item${r.active ? ' active' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
         const main = el('span', 'sp-item-main');
+        if (r.icon) { const i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : rsvg)(r.icon, 13); main.append(i); }   // the World row's planet
         main.append(el('span', 'sp-item-label', r.label));
         if (r.sub) main.append(el('span', 'sp-item-sub', r.sub));
+        if (r.title) main.title = r.title;
         main.onclick = () => edit(f.k ?? 'row', r.id);   // a keyed list routes its rows; unkeyed lists keep 'row'
         line.append(main);
         for (const a of r.actions ?? []) {

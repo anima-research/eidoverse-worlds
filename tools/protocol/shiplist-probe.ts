@@ -275,6 +275,29 @@ try {
   const c5 = await cam();
   check("EC6 leaving edit mode gives the camera back to the body: no pan, no further than play allows", Math.hypot(...c5.pan) === 0 && c5.dist <= 16, c5);
   });
+  // ---- HQ: a quieter hierarchy (R, 10-10: names only, the id on hover, a View menu for ids / kinds / components; and
+  // the World row says which world it is) ----
+  await stage("HQ", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
+  const H = `document.querySelector('[data-frame="hierarchy"]')`;
+  const row = () => evalJson(`(() => { const l = [...${H}.querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'cuball'); const m = l?.querySelector('.sp-item-main'); return l ? { label: m.querySelector('.sp-item-label')?.textContent, sub: m.querySelector('.sp-item-sub')?.textContent ?? null, title: m.title } : null; })()`);
+  await waitFor(`!!${H}?.querySelector('.sp-tree-row')`, 5000);
+  const w = await evalJson(`(() => { const l = ${H}.querySelector('.sp-list .sp-item-main'); return { label: l?.querySelector('.sp-item-label')?.textContent, icon: !!l?.querySelector('.sp-ico svg'), title: l?.title }; })()`);
+  check("HQ1 the World row says which world it is, with the planet icon and a tooltip", /^World: \S/.test(w?.label ?? "") && w?.icon && /world itself/.test(w?.title ?? ""), w);
+  const r0 = await row();
+  check("HQ2 a row is the name alone; its id and kind are on hover", r0?.label === "Clicker" && r0.sub === null && /id cuball/.test(r0.title), r0);
+  const pick = async (k: string) => { await evalJson(`(${H}.querySelector('.sp-pop-btn').click(), true)`); await waitFor(`!!document.querySelector('.sp-pop-item')`, 2000);
+    await evalJson(`([...document.querySelectorAll('.sp-pop-item')].find((b) => b.textContent.includes('${k}'))?.click(), true)`); await sleep(400); };
+  await pick("show ids");
+  const r1 = await row();
+  check("HQ3 View ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
+  await pick("list components");
+  const cs = await evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:cuball:')).map((x) => x.querySelector('.sp-item-label').textContent)`);
+  check("HQ4 View ▸ list components: its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
+  await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {
