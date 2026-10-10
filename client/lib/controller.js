@@ -573,6 +573,13 @@ export function updateMe(dt, me) {
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
   wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
+  // walking brings the edit camera home (R, 10-10: "when you use 'f' to frame, can you make it so that using WASD
+  // automatically resets the camera back to your character?"): the pan eases out and a far pull-back comes in
+  if (moving && editingNow() && (editPan.lengthSq() > 0 || camDist > PLAY_DIST)) {
+    const k = Math.exp(-dt / 0.12);
+    editPan.multiplyScalar(k); if (editPan.lengthSq() < 1e-4) editPan.set(0, 0, 0);
+    if (camDist > PLAY_DIST) camDist = Math.max(PLAY_DIST, PLAY_DIST + (camDist - PLAY_DIST) * k - 0.01);
+  }
   const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.

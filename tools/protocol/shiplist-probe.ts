@@ -286,6 +286,13 @@ try {
   check("EC4 a left-drag on bare space orbits, and keeps what was selected", d4?.at && Math.abs(c4.yaw - c3.yaw) > 0.2 && s0 === "cuball" && s1 === "cuball", { d4, c3, c4, s0, s1 });
   await drag("bare", 0, false, 0, 0);
   check("EC5 …and a left CLICK on bare space (no travel) deselects, as before", (await sel()) === null, await sel());
+  // F frames something far off; then walking brings the camera home
+  await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); c.frameOn(new k.THREE.Vector3(c.myState.pos.x + 30, 2, c.myState.pos.z + 30), 4); return true;`);
+  const far = await cam();
+  await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true })), true)`); await sleep(900);
+  await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true })), true)`);
+  const home = await cam();
+  check("EC7 after F frames a far thing, walking (W) brings the camera back to my body", Math.hypot(...far.pan) > 30 && Math.hypot(...home.pan) < 0.05, { far: far.pan, home: home.pan });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   const c5 = await cam();
   check("EC6 leaving edit mode gives the camera back to the body: no pan, no further than play allows", Math.hypot(...c5.pan) === 0 && c5.dist <= 16, c5);
