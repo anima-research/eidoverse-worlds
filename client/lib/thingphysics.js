@@ -45,7 +45,11 @@ const THROW = { speed: 8, arc: 0.45 };            // a desktop throw: along the 
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
 
 let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing(): bool }
-export function initThingPhysics(h) { hooks = h; pushHostHook(frame); }
+// The frame loop hands every hook its own clock (main.js: updateAutoSystems(t), SECONDS since boot). frame() takes a
+// SERVER time in ms (a probe's seam), so the bare function as the hook read "12.3" as the wall clock: tick 0, and the
+// displayed flights never advanced between folds (R, 10-10: "object location updates every few seconds", a domino
+// "stuck in this tilted position"). Every probe passed its own wall, so none saw it.
+export function initThingPhysics(h) { hooks = h; pushHostHook(() => frame()); }
 // Am I in a headset? xr.js binds this (it imports this module, never the other way round): a tracked body holds with
 // its own hands, so the hold pose's arms are only for a body without them.
 let presenting = () => false;

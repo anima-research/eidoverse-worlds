@@ -201,6 +201,26 @@ try {
   const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
   check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
+  // ---- FL: flights are drawn on the page's OWN frames (R, 10-10: "object location updates every few seconds", a domino
+  // "stuck in this tilted position"). Every other check hands the applier a wall clock; this one doesn't, on purpose. ----
+  await stage("FL", async () => {
+  // step clear of VA2's crate, let my body arrive, and put a small crate at my feet
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 6; c.myState.pos.z += 6; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  check("(setup) my body arrives clear of the crate", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000));
+  await sleep(800);
+  const here = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'flcrate', model: '${CRATE}', components: { label: 'Flyer', physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${here[0]}, 0, ${here[1]} + 0.5], scale: 0.3 } } });`);
+  check("(setup) a small loose crate at my feet", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('flcrate'))`); await sleep(800);
+  // look every 50 ms for a second, in the page (a round trip per look is slower than the flight)
+  const seen = await page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('flcrate'), v = new T.Vector3(), out = [];
+    const r = await t.physicsApi.punt('flcrate 6');
+    for (let i = 0; i < 20; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); out.push({ tick: t.simShown()?.tick ?? null, p: [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)].join() }); await new Promise((z) => setTimeout(z, 50)); }
+    return { ok: !!r?.ok, code: r?.refused?.code ?? null, out };`);
+  const ticks = (seen?.out?.at(-1)?.tick ?? 0) - (seen?.out?.[0]?.tick ?? 0), places = new Set(seen?.out?.map((x: any) => x.p)).size;
+  check("FL1 a punted thing moves on every frame: the displayed sim's clock runs (about 30 ticks a second) and it is seen in many places on the way", seen?.ok && ticks >= 20 && places >= 6, { ok: seen?.ok, code: seen?.code, ticks, places, path: seen?.out?.map((x: any) => x.p).filter((p: string, i: number, a: string[]) => p !== a[i - 1]).slice(0, 8) });
+  await sleep(2500);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {
