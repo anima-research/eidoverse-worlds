@@ -1778,10 +1778,10 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-bump:hover { background: var(--e-hover); color: var(--e-text); }
 .frame.edit .sp-vec { gap: 4px; }
 /* checkbox: never the native control (it rasterises differently on a VR quad) */
-.frame.edit input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none;
+.frame.edit input[type=checkbox], .edit-selbar input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none;
   background: var(--e-well); border: 1px solid #4a4a52; border-radius: 3px; cursor: pointer; }
-.frame.edit input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
-.frame.edit input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
+.frame.edit input[type=checkbox]:checked, .edit-selbar input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
+.frame.edit input[type=checkbox]:focus-visible, .edit-selbar input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
 .frame.edit input[type=checkbox]:disabled { opacity: .45; cursor: not-allowed; }
 /* select: a field with a chevron */
 .frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
@@ -1908,6 +1908,10 @@ body.edit-workspace .frame.docked { --panel-a: 1; }
    beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
 body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
+.edit-camsw { display: inline-flex; margin-right: 6px; border: 1px solid var(--e-line); border-radius: 4px; overflow: hidden; }
+.edit-camsw .edit-cam { border: none; border-radius: 0; padding: 0 8px; height: 22px; }
+.edit-camsw .edit-cam.on { background: var(--e-accent-bg); color: var(--e-text); box-shadow: inset 0 -2px 0 var(--e-accent); }
+.edit-selbar .sp-ico { display: inline-flex; vertical-align: -2px; }
 body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); }   /* the dock is open: ⋯ folds it again */
 /* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the
    wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /

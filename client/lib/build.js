@@ -16,6 +16,7 @@
 // seat-anchor grammar in seatedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
+import { svg as iconSvg } from './icons.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { mintId } from '../../shared/protocol/ids.js';
 import { THREE, scene, camera, canvas } from './core.js';
@@ -172,7 +173,7 @@ let inspector = null;
 function ensureInspector() {
   if (!inspector) {
     inspector = document.createElement('div');
-    inspector.className = 'panel';
+    inspector.className = 'panel edit-selbar';
     inspector.style.cssText = `position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
       z-index:7; padding:9px 13px; font-size:var(--fs-sm); display:flex; gap:14px; align-items:center;`;
     document.body.appendChild(inspector);
@@ -193,11 +194,12 @@ function showInspector(id) {
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
     (locked
-        ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
+        ? `<span style="color:var(--dim)">locked — nothing moves or removes it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag up/down · ` +
           `<kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>F</kbd> find · <kbd>X</kbd> remove · <kbd>Esc</kbd> done</span>`) +
     `<label title="nail it down: while locked, nobody's drags, verbs or scripts can move, replace or remove it (server-enforced) — sitting on it and content edits stay open" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
-    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}> 🔒 lock</label>` +
+    // an icon, never an emoji (R, 10-10: "ONLY use emotes in the Chat and Emote panes. They are illegal pretty much everywhere else")
+    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>` +
     `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes">+ seat</button>`;
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;

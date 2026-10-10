@@ -397,7 +397,7 @@ try {
   const v0 = await vis(); const items = await pickV("isolate selected"); const v1 = await vis();
   check("VM1 Viewport ▸ isolate selected: only the selection is drawn (in my view)", items?.length === 4 && v0.anchor && v0.gate && v1.cuball && v1.anchor === false && v1.gate === false, { items, v0, v1 });
   const after = await pickV("isolate selected"); const v2 = await vis();
-  check("VM2 …it shows as ticked, and choosing it again brings everything back", /☑ isolate/.test(after?.[0] ?? "") && v2.anchor && v2.gate, { after, v2 });
+  check("VM2 …it shows as ticked, and choosing it again brings everything back", /✓ isolate/.test(after?.[0] ?? "") && v2.anchor && v2.gate, { after, v2 });
   await pickV("flat shaded");
   const flat = await evalJson(`import('/lib/core.js').then((c) => ({ over: !!c.scene.overrideMaterial, flat: c.scene.overrideMaterial?.flatShading === true }))`);
   await pickV("wireframe");
@@ -407,6 +407,38 @@ try {
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(300);
   const out = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => ({ over: !!c.scene.overrideMaterial, anchor: w.entities.get('anchor')?.visible }))`);
   check("VM4 leaving edit mode puts the view back: no override, nothing isolated away", out && !out.over && out.anchor, out);
+  });
+  // ---- FC: the free camera (R, 10-10: Body | Free on the top line; WASD flies it; the body holds an "I'm working" pose;
+  // B steps back into the body and keeps the spot; Body resets) ----
+  await stage("FC", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(300);
+  const st = () => evalJson(`Promise.all([import('/lib/controller.js'), import('/lib/core.js')]).then(([c, k]) => ({ free: c.isFreeCam(), focus: c.freeCamState().focus, body: c.myState.pos.toArray(), pose: !!c.myState.pose, cam: k.camera.position.toArray(), sw: [...document.querySelectorAll('.edit-camsw .edit-cam.on')].map((b) => b.dataset.cam) }))`);
+  const hold = async (code: string, ms: number) => { await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', bubbles: true })), true)`); await sleep(ms); await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', bubbles: true })), true)`); };
+  const s0 = await st();
+  await evalJson(`(document.querySelector('.edit-camsw .edit-cam[data-cam="free"]').click(), true)`); await sleep(500);
+  const s1 = await st();
+  if (process.env.SHOT_DIR) { const r = await cdp.send<any>("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(`${process.env.SHOT_DIR}/freecam-pose.png`, Buffer.from(r.data, "base64")); }
+  // the pose, measured (the bench has no GPU to look with): both hands in front of the chest, below the shoulders, above the hips
+  const limbs = await page(`const { getMe } = await import('/lib/mybody.js'); const me = getMe(); const T = (await import('/lib/core.js')).THREE; me.root.updateMatrixWorld(true); me.update?.(0);
+    const h = me.vrm.humanoid, at = (b) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); return n.getWorldPosition(new T.Vector3()); };
+    const yaw = me.root.rotation.y, f = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), hips = at('hips');
+    const rel = (b) => { const p = at(b).sub(hips); return { fwd: +p.dot(f).toFixed(2), up: +p.y.toFixed(2), side: +p.dot(new T.Vector3(f.z, 0, -f.x)).toFixed(2) }; };
+    return { leftHand: rel('leftHand'), rightHand: rel('rightHand'), leftShoulder: rel('leftUpperArm'), head: rel('head') };`);
+  check("FC1b the working pose: both hands forward of the body, between hip and shoulder height, on their own sides", limbs && limbs.leftHand.fwd > 0.15 && limbs.rightHand.fwd > 0.15 && limbs.leftHand.up > 0.05 && limbs.leftHand.up < limbs.leftShoulder.up && limbs.rightHand.up < limbs.leftShoulder.up && limbs.leftHand.side * limbs.rightHand.side < 0, limbs);
+  check("FC1 the Free switch: the camera is its own, the switch shows it, and my body holds a pose", s0.sw.join() === "body" && s1.free && s1.sw.join() === "free" && s1.pose && !s0.pose, { s0, s1 });
+  await hold("KeyW", 700); const s2 = await st();
+  const d = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  check("FC2 W flies the camera's centre; my body stays where it stood", d(s2.focus, s1.focus) > 1 && d(s2.body, s1.body) < 1e-6 && s2.pose, { moved: d(s2.focus, s1.focus), body: d(s2.body, s1.body) });
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(600);
+  const s3 = await st();
+  check("FC3 B (leaving edit mode) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(600);
+  const s4 = await st();
+  check("FC4 B again returns to where I left the camera, pose and all", s4.free && s4.pose && d(s4.focus, s2.focus) < 1e-6, { s4: s4.focus, s2: s2.focus });
+  await evalJson(`(document.querySelector('.edit-camsw .edit-cam[data-cam="body"]').click(), true)`); await sleep(400);
+  const s5 = await st();
+  check("FC5 the Body switch is the reset: the camera is my body's again, the pose ends", !s5.free && !s5.pose && s5.sw.join() === "body", s5);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----

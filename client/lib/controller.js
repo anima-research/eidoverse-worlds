@@ -267,7 +267,24 @@ let dragging = false, dragBtn = 0, dragMode = 'orbit';
 // The offset is from the BODY, so walking carries the view along; leaving edit mode drops it.
 export const editPan = new THREE.Vector3();
 const EDIT_DIST = 80, PLAY_DIST = 16;
-const _panR = new THREE.Vector3(), _panU = new THREE.Vector3();
+// FREE CAMERA (R, 10-10: "maybe we need an 'editor camera' mode on the top line ... fly the camera in free mode with
+// WASD ... the character can hit an 'I'm working on this' pose"). Edit mode only. The orbit's centre is a point in the
+// WORLD, not an offset from my body: WASD flies that point, the body stays where it stood, and walls don't push the eye.
+// Leaving edit mode (B) puts the view back on the body at once and KEEPS the spot: B again returns to it. The Body/Free
+// switch is the full reset.
+const freeCam = { on: false, focus: new THREE.Vector3(), dist: 6, yaw: 0, pitch: 0.32, saved: false };
+export const isFreeCam = () => freeCam.on && editingNow();
+export const freeCamState = () => ({ on: freeCam.on, focus: freeCam.focus.toArray(), dist: freeCam.dist });
+export function setFreeCam(on) {
+  on = !!on && editingNow();
+  if (on === freeCam.on) return on;
+  if (on) { freeCam.focus.set(myState.pos.x, myState.pos.y + deskEyeY(), myState.pos.z).add(editPan); editPan.set(0, 0, 0); }
+  else { editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); freeCam.saved = false; }
+  freeCam.on = on;
+  bus.emit('edit-freecam', on);
+  return on;
+}
+const _panR = new THREE.Vector3(), _panU = new THREE.Vector3(), _flyF = new THREE.Vector3();
 export const mouse = new THREE.Vector2();
 export let firstPerson = false;
 export let photoMode = false;
@@ -423,10 +440,16 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 bus.on('edit-mode', (on) => { if (on && locked) document.exitPointerLock(); });
-bus.on('edit-mode', (on) => { if (!on) { editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); camPitch = THREE.MathUtils.clamp(camPitch, -0.9, 1.2); } });
+bus.on('edit-mode', (on) => {
+  if (!on) {
+    if (freeCam.on) { Object.assign(freeCam, { dist: camDist, yaw: camYaw, pitch: camPitch, saved: true }); bus.emit('edit-freecam', false); }   // B: back in my body, the spot kept
+    editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); camPitch = THREE.MathUtils.clamp(camPitch, -0.9, 1.2);
+  } else if (freeCam.on && freeCam.saved) { camDist = freeCam.dist; camYaw = freeCam.yaw; camPitch = freeCam.pitch; freeCam.saved = false; bus.emit('edit-freecam', true); }   // B again: where I left the camera
+});
 /** Frame a point (F on a selection): the orbit centres on it, far enough back to see `radius` of it. Edit mode only. */
 export function frameOn(point, radius = 1) {
   if (!editingNow()) return false;
+  if (freeCam.on) freeCam.focus.copy(point); else
   editPan.set(point.x - myState.pos.x, point.y - (myState.pos.y + deskEyeY()), point.z - myState.pos.z);
   camDist = THREE.MathUtils.clamp(radius * 2.6 + 1, 1.5, EDIT_DIST);
   return true;
@@ -458,7 +481,7 @@ addEventListener('mousemove', (e) => {
     // along the view's own right and up, a screen's worth per screen at this distance
     camera.matrixWorld.extractBasis(_panR, _panU, _dir);
     const k = Math.max(camDist, 1) * 0.0016;
-    editPan.addScaledVector(_panR, -e.movementX * k).addScaledVector(_panU, e.movementY * k);
+    (freeCam.on ? freeCam.focus : editPan).addScaledVector(_panR, -e.movementX * k).addScaledVector(_panU, e.movementY * k);
   } else if (dragging && dragMode === 'dolly') {
     camDist = THREE.MathUtils.clamp(camDist * Math.exp((e.movementY - e.movementX) * 0.006), 0.8, EDIT_DIST);
   } else if (locked || dragging) {
@@ -571,6 +594,16 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
+  if (isFreeCam()) {
+    // WASD flies the camera's centre: forward is where the camera looks (so W climbs when you look up), the speed grows
+    // with the distance you've pulled back, Shift is three times faster
+    if (Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08) {
+      camera.matrixWorld.extractBasis(_panR, _panU, _flyF);
+      const sp = Math.max(camDist, 3) * 1.1 * (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 3 : 1) * dt;
+      freeCam.focus.addScaledVector(_flyF, -fwd * sp).addScaledVector(_panR, strafe * sp);
+    }
+    fwd = 0; strafe = 0;   // the body stays where it stood
+  }
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
   wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
   // walking brings the edit camera home (R, 10-10: "when you use 'f' to frame, can you make it so that using WASD
@@ -779,6 +812,8 @@ export function updateFollowCamera(dt, me) {
   if (xrPresenting()) return;   // the rig carries the camera; the body stays visible (own head hidden by layers)
   const headY = deskEyeY(me?.userScale);   // 1.45 m for a 100% body; the chosen size lifts or lowers the eye
   const focus = _eye.set(myState.pos.x, myState.pos.y + headY, myState.pos.z);
+  const free = isFreeCam();
+  if (free) focus.copy(freeCam.focus); else
   if (editingNow() && !firstPerson) focus.add(editPan);   // the edit camera's centre (pan, frame)
 
   if (firstPerson) {
@@ -826,13 +861,13 @@ export function updateFollowCamera(dt, me) {
   // with three fresh Vector3s per frame, to learn this one number.
   const farD = focus.distanceTo(want);
   _cdir.copy(want).sub(focus).normalize();
-  const hitT = raySegment(focus, _cdir, farD);
+  const hitT = free ? null : raySegment(focus, _cdir, farD);   // the free camera is an editor's: it passes through
   const allowed = hitT !== null ? Math.min(farD, hitT - 0.22) : farD;
   if (allowed < farD) {
     want.copy(focus).addScaledVector(_cdir, Math.max(0.35, allowed));
   }
   // never let the eye go under the floor
-  want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
+  if (!free) want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
 
   camera.position.lerp(want, 1 - Math.exp(-(allowed < farD ? 26 : 14) * dt));
   camera.lookAt(focus.x + shoulder.x * 0.5, focus.y - 0.1, focus.z + shoulder.z * 0.5);

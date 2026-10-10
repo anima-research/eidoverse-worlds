@@ -295,6 +295,18 @@ export function trySitOn(arg, slot = null) {
   return true;
 }
 
+// "I'm working on this" (R, 10-10): while my camera is free of my body in edit mode, the body holds a working pose, so
+// the people around it can see I've stepped out: forearms raised as at a console, head bent to it. Mine to give up: it
+// ends when the camera comes back (the Body switch, or B), and any pose I held before is not restored (moving ends a
+// pose anyway).
+const WORKING_POSE = { leftUpperArm: [0, 0, -0.5736, 0.8192], rightUpperArm: [0, 0, 0.5736, 0.8192], leftLowerArm: [0, -0.8434, 0, 0.5373], rightLowerArm: [0, 0.8434, 0, 0.5373], head: [0.1219, 0, 0, 0.9925] };
+let working = false;
+bus.on('edit-freecam', (on) => {
+  const me = getMe(); if (!me) return;
+  if (on && !working) { working = true; me.setPose(WORKING_POSE); myState.pose = WORKING_POSE; }
+  else if (!on && working) { working = false; if (myState.pose === WORKING_POSE) { myState.pose = null; me.clearPose(); } }
+});
+
 // The world's standing offer, kept current at a walk: when a declared seat
 // is within reach the hint bar says so — an affordance nobody can discover
 // is indistinguishable from one that doesn't exist. Checked ~2×/s.

@@ -28,6 +28,7 @@ import { structureTools, currentTool as structureTool } from './structure_ui.js'
 import { TABS, openingTab, useTab } from './edittabs.js';
 import { placeStatusChips } from './statuschips.js';
 import { replica } from './net.js';
+import { setFreeCam, freeCamState } from './controller.js';
 import { selection } from './editpanels.js';
 import { flashHint } from './ui.js';
 import { isolating, setIsolate } from './myview.js';
@@ -145,7 +146,7 @@ function build() {
   const view = el('div', 'edit-viewbtns');
   // VIEWPORT menu (R, 10-10: "start a 'viewport options' menu ... isolate selected ... wireframe (probably also
   // 'wireframe on shaded' and 'flat shaded')"). What MY render shows; nothing in the world changes, all of it off on exit.
-  const tick = (on) => (on ? '☑ ' : '☐ ');
+  const tick = (on) => (on ? '✓ ' : '   ');   // a plain check mark: ☑ draws as a colour emoji on some systems
   const vmenu = menu('Viewport', () => [
     { label: `${tick(isolating())}isolate selected`, title: 'show only what is selected (with what it rides and what rides it), in your view only', run: () => toggleIsolate() },
     { label: `${tick(shade === 'shaded')}shaded`, run: () => setShade('shaded') },
@@ -159,7 +160,16 @@ function build() {
   const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen (F11 also works)'; full.dataset.view = 'full';
   full.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); };
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
-  view.append(vmenu, wire, full);
+  // Body | Free: whose camera this is (controller.js FREE CAMERA)
+  const camSw = el('span', 'edit-camsw');
+  for (const [k, label, title] of [['body', 'Body', 'the camera orbits your body; WASD walks'], ['free', 'Free', 'the camera is on its own: WASD flies it, your body waits where it stood. B steps back into your body and keeps this spot; Body resets it']]) {
+    const b = el('button', 'edit-btn edit-cam', label); b.dataset.cam = k; b.title = title;
+    b.onclick = () => { setFreeCam(k === 'free'); paintCam(); };
+    camSw.append(b);
+  }
+  const paintCam = () => { for (const b of camSw.children) b.classList.toggle('on', (b.dataset.cam === 'free') === freeCamState().on); };
+  bus.on('edit-freecam', paintCam); paintCam();
+  view.append(camSw, vmenu, wire, full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's
   // dock, mictoggle.placeMic — which folds them to the ∃'s right, the HUD's own layout); this

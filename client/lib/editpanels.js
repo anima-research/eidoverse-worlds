@@ -270,7 +270,7 @@ function hierarchyFields() {
     ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     { t: 'pop', k: 'hopts', label: `View${Object.keys(HOPTS).some((k) => hopts[k]) ? `: ${Object.keys(HOPTS).filter((k) => hopts[k]).map((k) => HOPTS[k].replace(/^(show|list) /, '')).join(', ')}` : ''} ▾`, deskOnly: true, hint: 'what each row shows: names only by default', placeholder: 'what rows show…', recentKey: 'hierarchy-view',
-      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '☑' : '☐'} ${HOPTS[k]}` })) },
+      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : '·'} ${HOPTS[k]}` })) },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
