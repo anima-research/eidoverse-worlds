@@ -258,41 +258,35 @@ function paintTools() {
   for (const b of els.tools.querySelectorAll('.edit-tool')) b.classList.toggle('on', b.dataset.tool === getTool());
 }
 
-/** The dock in builder mode: every pinned panel button stays, and the trailing ones fold under one ⋯ when the column
- *  would push the tools off the screen (a 1366×768 laptop leaves ~650 px). The ∃, the wrench and the tools never fold.
+/** The dock in builder mode (R, 10-10: "a collapsible dock in Edit mode with a special '...' icon that you could click
+ *  to expand into the full dock, and click again to shrink to just E and the wrench"). Folded (the default): the ∃,
+ *  the ⋯ and the wrench. Open: every pinned panel button; if the column would still push the tools off the screen
+ *  (a 1366×768 laptop leaves ~650 px) the trailing ones stay hidden, and HUD Panels ▾ in the bar has them all.
  *  Returns the dock's bottom edge. */
 const TOOLS_H = () => TOOLS.length * 36 + 16;
+let dockOpen = false;
+try { dockOpen = localStorage.getItem('ew.edit.dock') === 'open'; } catch { /* no storage: folded */ }
 function fitDock(TOP) {
   const dock = document.getElementById('dock'); if (!dock) return TOP;
   const wrench = dock.querySelector('button[data-toggles="edit"]');
   let more = dock.querySelector('.dock-more');
   if (!more) {
-    more = document.createElement('button'); more.className = 'dock-more'; more.textContent = '⋯'; more.hidden = true;
-    more.onclick = (e) => { e.stopPropagation(); openMore(more); };
+    more = document.createElement('button'); more.className = 'dock-more'; more.textContent = '⋯';
+    more.onclick = (e) => { e.stopPropagation(); dockOpen = !dockOpen; try { localStorage.setItem('ew.edit.dock', dockOpen ? 'open' : 'folded'); } catch { /* no storage */ } apply(); };
     dock.insertBefore(more, wrench ?? dock.querySelector('.dock-grip'));
   }
   for (const b of dock.querySelectorAll('.edit-overflow')) b.classList.remove('edit-overflow');
-  more.hidden = true;
   const panelBtns = [...dock.querySelectorAll('button[data-toggles]')].filter((b) => !b.hidden && b !== wrench);
-  const limit = innerHeight - TOOLS_H();
+  more.hidden = !panelBtns.length;
+  more.classList.toggle('on', dockOpen);
+  more.setAttribute('aria-expanded', String(dockOpen));
   const bottom = () => dock.getBoundingClientRect().bottom;
-  for (let i = panelBtns.length - 1; i >= 0 && bottom() > limit; i--) { panelBtns[i].classList.add('edit-overflow'); more.hidden = false; }
+  if (!dockOpen) { for (const b of panelBtns) b.classList.add('edit-overflow'); more.title = `show the ${panelBtns.length} panel buttons`; return bottom(); }
+  const limit = innerHeight - TOOLS_H();
+  for (let i = panelBtns.length - 1; i >= 0 && bottom() > limit; i--) panelBtns[i].classList.add('edit-overflow');
   const folded = dock.querySelectorAll('.edit-overflow').length;
-  more.title = `${folded} more panel${folded === 1 ? '' : 's'} — or HUD Panels ▾ in the bar`;
+  more.title = folded ? `fold the panel buttons away (${folded} didn't fit: HUD Panels ▾ in the bar has them)` : 'fold the panel buttons away';
   return bottom();
-}
-function openMore(anchor) {
-  closeMenus();
-  const pop = el('div', 'edit-menu-pop edit-space-pop');
-  for (const b of document.querySelectorAll('#dock .edit-overflow')) {
-    const row = el('button', 'edit-menu-item');
-    row.append(el('span', '', b.getAttribute('title') ?? b.dataset.toggles));
-    row.onclick = () => { pop.remove(); b.click(); const f = getFrame(b.dataset.toggles); if (f?.visible) f.el.style.zIndex = '30'; };
-    pop.append(row);
-  }
-  const r = anchor.getBoundingClientRect();
-  Object.assign(pop.style, { position: 'fixed', left: `${r.right + 4}px`, top: `${r.top}px`, zIndex: 40 });
-  document.body.append(pop);
 }
 function unfitDock() {
   const dock = document.getElementById('dock');

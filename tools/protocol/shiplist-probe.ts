@@ -298,6 +298,25 @@ try {
   await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
+  // ---- DK: the dock folds in edit mode (R, 10-10: a "..." that expands to the full dock and shrinks to just the ∃ and the wrench) ----
+  await stage("DK", async () => {
+  await evalJson(`(localStorage.removeItem('ew.edit.dock'), true)`);
+  const shown = () => evalJson(`(() => { const d = document.getElementById('dock'); const vis = (b) => getComputedStyle(b).display !== 'none' && !b.hidden;
+    return { panels: [...d.querySelectorAll('button[data-toggles]')].filter((b) => b.dataset.toggles !== 'edit' && vis(b)).length, wrench: !!d.querySelector('button[data-toggles="edit"]') && vis(d.querySelector('button[data-toggles="edit"]')), more: !!d.querySelector('.dock-more') && vis(d.querySelector('.dock-more')) }; })()`);
+  const play = await shown();
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(500);
+  const folded = await shown();
+  check("DK1 entering edit mode, the dock is folded: the wrench and the ⋯, no panel buttons", play.panels > 0 && folded.panels === 0 && folded.wrench && folded.more, { play, folded });
+  await evalJson(`(document.querySelector('#dock .dock-more').click(), true)`); await sleep(300);
+  const open = await shown();
+  check("DK2 the ⋯ opens it: the panel buttons are back", open.panels > 0 && open.wrench && open.more, open);
+  await evalJson(`(document.querySelector('#dock .dock-more').click(), true)`); await sleep(300);
+  check("DK3 …and the ⋯ again folds it", (await shown()).panels === 0, await shown());
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(500);
+  const back = await shown();
+  check("DK4 leaving edit mode gives the dock back whole, with no ⋯", back.panels === play.panels && !back.more, { play, back });
+  await evalJson(`(localStorage.removeItem('ew.edit.dock'), true)`);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {

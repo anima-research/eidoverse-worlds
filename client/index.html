@@ -1900,6 +1900,7 @@ body.edit-workspace .frame.docked { --panel-a: 1; }
    beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
 body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
+body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); }   /* the dock is open: ⋯ folds it again */
 /* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the
    wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /
    ear / goggles are NOT moved here: mictoggle.placeMic folds them to the ∃'s right exactly as it does
