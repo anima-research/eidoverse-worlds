@@ -240,6 +240,41 @@ try {
   check("CU4 left-click on it is its primary use: I hold it", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
   await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.put('cuball'); return true;`);
   });
+  // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
+  // left-click hold and move wherever there's a bare space (not even this last one works)") ----
+  await stage("EC", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  const cam = () => evalJson(`import('/lib/controller.js').then((c) => ({ yaw: c.camYaw, pitch: c.camPitch, dist: c.camDist, pan: c.editPan.toArray() }))`);
+  // a drag: press at (x, y), three moves, release. where: 'cuball' = a pixel on that thing, 'bare' = a pixel no thing is under
+  const drag = (where: string, button: number, alt: boolean, mx: number, my: number) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE;
+    const r = c.canvas.getBoundingClientRect(), R = new T.Raycaster(), all = [...w.entities.values()].filter(Boolean);
+    const under = (x, y) => { R.setFromCamera(new T.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), c.camera); let o = R.intersectObjects(all, true)[0]?.object; while (o && !o.userData.entityId) o = o.parent; return o?.userData.entityId ?? null; };
+    let at = null;
+    for (let gy = 1; gy < 16 && !at; gy++) for (let gx = 1; gx < 24 && !at; gx++) { const x = r.left + r.width * gx / 24, y = r.top + r.height * gy / 16, u = under(x, y); if (${where === "bare" ? "u === null" : `u === '${where}'`}) at = [x, y]; }
+    if (!at) return { at: null };
+    const ev = (t, o = {}) => new MouseEvent(t, { bubbles: true, cancelable: true, button: ${button}, altKey: ${alt}, clientX: at[0], clientY: at[1], ...o });
+    c.canvas.dispatchEvent(ev('mousedown'));
+    for (let i = 0; i < 3; i++) window.dispatchEvent(ev('mousemove', { movementX: ${mx} / 3, movementY: ${my} / 3, clientX: at[0] + ${mx} * (i + 1) / 3, clientY: at[1] + ${my} * (i + 1) / 3, buttons: 1 }));
+    window.dispatchEvent(ev('mouseup', { clientX: at[0] + ${mx}, clientY: at[1] + ${my} }));
+    return { at };`);
+  const sel = () => evalJson(`import('/lib/build.js').then((m) => (m.hasSelection() ? 'cuball' : null))`);
+  const p0 = await page(`const w = await import('/lib/world.js'); return w.entities.get('cuball').position.toArray();`);
+  const c0 = await cam(); const d1 = await drag("cuball", 0, true, 90, 0); const c1 = await cam();
+  const p1 = await page(`const w = await import('/lib/world.js'); return w.entities.get('cuball').position.toArray();`);
+  check("EC1 Alt+left-drag over a thing orbits the camera and leaves the thing where it was", d1?.at && Math.abs(c1.yaw - c0.yaw) > 0.2 && Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) < 1e-6, { d1, c0, c1, p0, p1 });
+  const d2 = await drag("bare", 1, false, 120, 60); const c2 = await cam();
+  check("EC2 middle-drag pans: the orbit's centre leaves my body, the angles stay", d2?.at && Math.hypot(...c2.pan) > 0.2 && Math.abs(c2.yaw - c1.yaw) < 1e-9, { d2, c1, c2 });
+  const d3 = await drag("bare", 2, true, 0, 150); const c3 = await cam();
+  check("EC3 Alt+right-drag dollies: the distance changes, nothing else", d3?.at && Math.abs(c3.dist - c2.dist) > 0.5 && Math.abs(c3.yaw - c2.yaw) < 1e-9, { c2, c3 });
+  await evalJson(`import('/lib/build.js').then((m) => (m.select('cuball'), true))`);
+  const s0 = await sel(); const d4 = await drag("bare", 0, false, 100, 0); const c4 = await cam(); const s1 = await sel();
+  check("EC4 a left-drag on bare space orbits, and keeps what was selected", d4?.at && Math.abs(c4.yaw - c3.yaw) > 0.2 && s0 === "cuball" && s1 === "cuball", { d4, c3, c4, s0, s1 });
+  await drag("bare", 0, false, 0, 0);
+  check("EC5 …and a left CLICK on bare space (no travel) deselects, as before", (await sel()) === null, await sel());
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  const c5 = await cam();
+  check("EC6 leaving edit mode gives the camera back to the body: no pan, no further than play allows", Math.hypot(...c5.pan) === 0 && c5.dist <= 16, c5);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {

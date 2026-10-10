@@ -262,7 +262,12 @@ let vy = 0, grounded = true, mantle = null, airborneFor = 0, jumped = false, wan
 // camera
 export let camYaw = 0, camPitch = 0.32, camDist = 4.2;
 const _lastFinitePos = new THREE.Vector3();
-let dragging = false, dragBtn = 0;
+let dragging = false, dragBtn = 0, dragMode = 'orbit';
+// EDIT CAMERA: in edit mode the orbit's centre may leave the body (pan, frame) and the camera may pull far back.
+// The offset is from the BODY, so walking carries the view along; leaving edit mode drops it.
+export const editPan = new THREE.Vector3();
+const EDIT_DIST = 80, PLAY_DIST = 16;
+const _panR = new THREE.Vector3(), _panU = new THREE.Vector3();
 export const mouse = new THREE.Vector2();
 export let firstPerson = false;
 export let photoMode = false;
@@ -358,10 +363,22 @@ function toggleSit() {
 
 canvas.addEventListener('mousedown', (e) => {
   if (pointerClaimed()) return;
-  // In edit mode a left-drag belongs to the object under it; look with the
-  // right button (or leave edit mode). Outside it, either button looks.
-  if (e.button === 2 || (e.button === 0 && !editingNow())) { dragging = true; dragBtn = e.button; }
+  // Outside edit mode either button looks. In edit mode a left-drag belongs to the object under it, so the camera
+  // has an editor's controls (R, 10-10: "we need camera moving controls in edit mode. I would suggest Blender or Maya"):
+  //   Alt+left  orbit (over anything)      middle, or Alt+middle  pan      Alt+right  dolly      right  orbit
+  //   left on bare space  orbit (build.js says so: 'edit-bare-press')       wheel  dolly      F  frame the selection
+  if (editingNow()) {
+    if (e.button === 1) { e.preventDefault(); dragging = true; dragMode = 'pan'; }
+    else if (e.altKey) { e.preventDefault(); dragging = true; dragMode = e.button === 2 ? 'dolly' : 'orbit'; }
+    else if (e.button === 2) { dragging = true; dragMode = 'orbit'; }
+    if (dragging) dragBtn = e.button;
+    return;
+  }
+  if (e.button === 2 || e.button === 0) { dragging = true; dragBtn = e.button; dragMode = 'orbit'; }
 });
+bus.on('edit-bare-press', () => { dragging = true; dragBtn = 0; dragMode = 'orbit'; });   // a left press on nothing, in edit mode
+addEventListener('keyup', (e) => { if (e.key === 'Alt' && editingNow()) e.preventDefault(); });   // a bare Alt release would focus the browser's menu bar mid-edit
+canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });   // no autoscroll / paste on a middle press
 // set by build.js so the controller doesn't have to import it (build imports us)
 let editingNow = () => false;
 export function setEditingProbe(fn) { editingNow = fn; }
@@ -406,6 +423,14 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 bus.on('edit-mode', (on) => { if (on && locked) document.exitPointerLock(); });
+bus.on('edit-mode', (on) => { if (!on) { editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); camPitch = THREE.MathUtils.clamp(camPitch, -0.9, 1.2); } });
+/** Frame a point (F on a selection): the orbit centres on it, far enough back to see `radius` of it. Edit mode only. */
+export function frameOn(point, radius = 1) {
+  if (!editingNow()) return false;
+  editPan.set(point.x - myState.pos.x, point.y - (myState.pos.y + deskEyeY()), point.z - myState.pos.z);
+  camDist = THREE.MathUtils.clamp(radius * 2.6 + 1, 1.5, EDIT_DIST);
+  return true;
+}
 
 addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat) return;
@@ -429,16 +454,24 @@ function relock() {
 }
 
 addEventListener('mousemove', (e) => {
-  if (locked || dragging) {
+  if (dragging && dragMode === 'pan') {
+    // along the view's own right and up, a screen's worth per screen at this distance
+    camera.matrixWorld.extractBasis(_panR, _panU, _dir);
+    const k = Math.max(camDist, 1) * 0.0016;
+    editPan.addScaledVector(_panR, -e.movementX * k).addScaledVector(_panU, e.movementY * k);
+  } else if (dragging && dragMode === 'dolly') {
+    camDist = THREE.MathUtils.clamp(camDist * Math.exp((e.movementY - e.movementX) * 0.006), 0.8, EDIT_DIST);
+  } else if (locked || dragging) {
     camYaw -= e.movementX * 0.005;
-    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, -0.9, 1.2);
+    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, editingNow() ? -1.45 : -0.9, editingNow() ? 1.45 : 1.2);
   }
   if (!locked) mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // right-drag orbit
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, 16);
+  // in edit mode the wheel is proportional (a step far out covers more ground) and reaches further
+  camDist = editingNow() ? THREE.MathUtils.clamp(camDist * Math.exp(e.deltaY * 0.0012), 0.8, EDIT_DIST) : THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, PLAY_DIST);
   const wasFP = firstPerson;
   // Hysteresis: enter FP under 0.4m, don't leave until past 0.7m. A single
   // threshold flickers 1P/3P at the boundary — nauseating, and loudest for
@@ -739,6 +772,7 @@ export function updateFollowCamera(dt, me) {
   if (xrPresenting()) return;   // the rig carries the camera; the body stays visible (own head hidden by layers)
   const headY = deskEyeY(me?.userScale);   // 1.45 m for a 100% body; the chosen size lifts or lowers the eye
   const focus = _eye.set(myState.pos.x, myState.pos.y + headY, myState.pos.z);
+  if (editingNow() && !firstPerson) focus.add(editPan);   // the edit camera's centre (pan, frame)
 
   if (firstPerson) {
     // Seated/lying (and any held ragdoll pose) put the head somewhere the

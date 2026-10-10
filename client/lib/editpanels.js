@@ -46,7 +46,7 @@ import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from './xrask.js';
 import { frontOf, addOnFace } from './facemedia.js';
 import { lightCasting } from './lights.js';
-import { myState } from './controller.js';
+import { myState, frameOn } from './controller.js';
 import { reindexCollider } from './colliders.js';
 import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
@@ -359,6 +359,9 @@ async function toggleLock(id) {
 function findSelected() {
   const sel = sceneSelected(); const obj = entities.get(sel); if (!obj) return;
   const p = obj.getWorldPosition(_wp);
+  // F frames it (Maya, Blender's numpad .): the edit camera centres on its bounds
+  const box = new THREE.Box3().setFromObject(obj), c = box.isEmpty() ? p.clone() : box.getCenter(new THREE.Vector3()), r = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length() / 2;
+  frameOn(c, r);
   flashHint(html`<b>${sel}</b> is ${p.distanceTo(myState.pos).toFixed(0)}m away at (${p.x.toFixed(0)}, ${p.z.toFixed(0)})`, 5000);
 }
 

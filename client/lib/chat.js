@@ -994,7 +994,7 @@ export function initChat({ send, whisper, typing, people, person }) {
   getPeople = people ?? (() => []);
 
   frame = makeFrame('chat', {
-    title: 'chat',
+    title: 'Chat',
     x: 10, y: -10, w: 390, h: 200, minW: 240, minH: 100,
       className: 'chat-frame',
       // THE ARROWS NEVER RE-EVALUATED ON A RESIZE. paintArrows compares
@@ -1392,7 +1392,7 @@ bus.on('pinged', () => {
 // Honest about the gap in its title.
 const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
 export const chatXRPanel = {
-  id: 'chat', title: 'chat',
+  id: 'chat', title: 'Chat',
   fields: () => [
     ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
                       : [{ t: 'info', label: '·', value: 'nothing said yet' }]),

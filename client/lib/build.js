@@ -547,8 +547,16 @@ function removeSelected() {
 
 // ============================================================ pointer
 
+let barePress = null;
+addEventListener('mouseup', (e) => {
+  const p = barePress; barePress = null;
+  if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
+  if (selected) deselect(); if (seatSelected()) deselectSeat();
+});
+
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
+  if (e.altKey) return;                     // Alt+drag is the camera's (controller.js: orbit / pan / dolly)
   // an armed seat placement outranks everything, the ghost included
   if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
@@ -565,7 +573,9 @@ canvas.addEventListener('mousedown', (e) => {
   const targets = [];
   for (const o of entities.values()) if (o) targets.push(o);
   const hit = raycaster.intersectObjects(targets, true)[0];
-  if (!hit) { if (selected) deselect(); if (seatSelected()) deselectSeat(); return; }
+  // a press on nothing: a DRAG from here orbits the camera; only a click that didn't travel deselects (an orbit that
+  // threw away the selection every time would make looking around a thing impossible)
+  if (!hit) { barePress = { x: e.clientX, y: e.clientY }; bus.emit('edit-bare-press'); return; }
   if (seatSelected()) deselectSeat();
   let root = hit.object;
   while (root && !root.userData.entityId) root = root.parent;
