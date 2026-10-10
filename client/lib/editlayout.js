@@ -27,6 +27,10 @@ import * as Edits from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 import { placeStatusChips } from './statuschips.js';
+import { replica } from './net.js';
+import { selection } from './editpanels.js';
+import { flashHint } from './ui.js';
+import { isolating, setIsolate } from './myview.js';
 
 const LS = 'ew-edit-layout';
 // the left column's top pane is one frame at a time, picked by tab (edittabs.js TABS): B opens
@@ -139,12 +143,23 @@ function build() {
   const undoBtn = el('button', 'edit-btn'); undoBtn.innerHTML = `${iconSvg('undo2', 14)}<span>undo</span>`; undoBtn.title = 'Ctrl+Z'; undoBtn.onclick = undo;
   // viewport buttons: what the render does, not what the world is
   const view = el('div', 'edit-viewbtns');
+  // VIEWPORT menu (R, 10-10: "start a 'viewport options' menu ... isolate selected ... wireframe (probably also
+  // 'wireframe on shaded' and 'flat shaded')"). What MY render shows; nothing in the world changes, all of it off on exit.
+  const tick = (on) => (on ? '☑ ' : '☐ ');
+  const vmenu = menu('Viewport', () => [
+    { label: `${tick(isolating())}isolate selected`, title: 'show only what is selected (with what it rides and what rides it), in your view only', run: () => toggleIsolate() },
+    { label: `${tick(shade === 'shaded')}shaded`, run: () => setShade('shaded') },
+    { label: `${tick(shade === 'wire')}wireframe`, run: () => setShade('wire') },
+    { label: `${tick(shade === 'flat')}flat shaded`, title: 'every face lit flat, in one grey: the forms without their textures', run: () => setShade('flat') },
+  ]);
+  vmenu.dataset.menu = 'viewport';
   const wire = el('button', 'edit-vbtn'); wire.innerHTML = iconSvg('box', 16); wire.title = 'wireframe'; wire.dataset.view = 'wire';
-  wire.onclick = () => { setWireframe(!wireOn); wire.classList.toggle('on', wireOn); };
+  wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
+  shadeBtn = wire;
   const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen (F11 also works)'; full.dataset.view = 'full';
   full.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); };
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
-  view.append(wire, full);
+  view.append(vmenu, wire, full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's
   // dock, mictoggle.placeMic — which folds them to the ∃'s right, the HUD's own layout); this
@@ -199,16 +214,26 @@ function paintStrip() {
   els.strip.lastChild.append(el('kbd', '', 'Esc'), document.createTextNode(' to drop'));
 }
 
-// wireframe = one override material on the scene; the renderer draws every
-// mesh with it and nothing in the world is touched. Off on exit.
-let wireOn = false;
-let wireMat = null;
-function setWireframe(v) {
-  wireOn = !!v;
-  if (wireOn) {
-    wireMat ??= new THREE.MeshBasicNodeMaterial({ color: 0xbfc4cc, wireframe: true, toneMapped: false });
-    scene.overrideMaterial = wireMat;
-  } else if (scene.overrideMaterial === wireMat) scene.overrideMaterial = null;
+// shading = one override material on the scene; the renderer draws every mesh with it and nothing in the world is
+// touched. 'shaded' is the world as it is.
+let shade = 'shaded', shadeBtn = null;
+const shadeMats = {};
+function setShade(v) {
+  const was = shadeMats[shade];
+  shade = ['wire', 'flat'].includes(v) ? v : 'shaded';
+  if (shade === 'wire') shadeMats.wire ??= new THREE.MeshBasicNodeMaterial({ color: 0xbfc4cc, wireframe: true, toneMapped: false });
+  if (shade === 'flat') shadeMats.flat ??= new THREE.MeshStandardNodeMaterial({ color: 0xb9bdc4, roughness: 0.85, metalness: 0, flatShading: true });
+  if (shade !== 'shaded') scene.overrideMaterial = shadeMats[shade];
+  else if (!scene.overrideMaterial || scene.overrideMaterial === was) scene.overrideMaterial = null;
+  shadeBtn?.classList.toggle('on', shade === 'wire');
+}
+function toggleIsolate() {
+  const all = Object.keys(replica.st?.entities ?? {}), parentOf = (id) => replica.st?.entities?.[id]?.c?.parent?.to ?? null;
+  if (isolating()) { setIsolate(null, parentOf, all); flashHint('isolate off: everything is shown again', 2000); return; }
+  const ids = selection();
+  if (!ids.length) { flashHint('select something first, then Viewport ▸ isolate selected', 3000); return; }
+  const n = setIsolate(ids, parentOf, all);
+  flashHint(`isolated: ${n} thing${n === 1 ? '' : 's'} shown, in your view only — Viewport ▸ isolate selected again shows the rest`, 4000);
 }
 
 const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
@@ -370,8 +395,8 @@ function exit() {
   document.body.classList.remove('edit-workspace');
   unfitDock();
   dispatchEvent(new CustomEvent('dockmoved'));   // …and back beside the HUD's ∃
-  setWireframe(false);
-  if (els.top.querySelector('.edit-vbtn[data-view="wire"]')) els.top.querySelector('.edit-vbtn[data-view="wire"]').classList.remove('on');
+  setShade('shaded');
+  if (isolating()) setIsolate(null, (id) => replica.st?.entities?.[id]?.c?.parent?.to ?? null, Object.keys(replica.st?.entities ?? {}));   // the view is whole again outside edit mode
   const c = getFrame('chat');
   for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace

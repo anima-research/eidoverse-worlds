@@ -386,6 +386,28 @@ try {
   check("CB9 Ctrl+G resets all three at once", await waitDisk(() => { const t = tr(), s = t.scale, q = t.q; return t.pos.every((v: number) => v === 0) && (!q || Math.abs(q[1]) < 1e-9) && (s === undefined || s === 1 || (Array.isArray(s) && s.every((v: number) => v === 1))); }), tr());
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
+  // ---- VM: the Viewport menu (R, 10-10: isolate selected, wireframe, flat shaded) ----
+  await stage("VM", async () => {
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`); await sleep(300);
+  const vis = () => evalJson(`import('/lib/world.js').then((w) => ({ cuball: w.entities.get('cuball')?.visible, anchor: w.entities.get('anchor')?.visible, gate: w.entities.get('gate')?.visible }))`);
+  const pickV = async (word: string) => { await evalJson(`(document.querySelector('.edit-menu[data-menu="viewport"] .edit-btn').click(), true)`); await sleep(150);
+    const items = await evalJson(`[...document.querySelectorAll('.edit-menu[data-menu="viewport"] .edit-menu-item')].map((b) => b.textContent)`);
+    await evalJson(`([...document.querySelectorAll('.edit-menu[data-menu="viewport"] .edit-menu-item')].find((b) => b.textContent.includes('${word}'))?.click(), true)`); await sleep(300); return items; };
+  const v0 = await vis(); const items = await pickV("isolate selected"); const v1 = await vis();
+  check("VM1 Viewport ▸ isolate selected: only the selection is drawn (in my view)", items?.length === 4 && v0.anchor && v0.gate && v1.cuball && v1.anchor === false && v1.gate === false, { items, v0, v1 });
+  const after = await pickV("isolate selected"); const v2 = await vis();
+  check("VM2 …it shows as ticked, and choosing it again brings everything back", /☑ isolate/.test(after?.[0] ?? "") && v2.anchor && v2.gate, { after, v2 });
+  await pickV("flat shaded");
+  const flat = await evalJson(`import('/lib/core.js').then((c) => ({ over: !!c.scene.overrideMaterial, flat: c.scene.overrideMaterial?.flatShading === true }))`);
+  await pickV("wireframe");
+  const wire = await evalJson(`import('/lib/core.js').then((c) => ({ wire: c.scene.overrideMaterial?.wireframe === true }))`);
+  check("VM3 flat shaded and wireframe draw the scene through one override material", flat?.flat && wire?.wire, { flat, wire });
+  await pickV("isolate selected");
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(300);
+  const out = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => ({ over: !!c.scene.overrideMaterial, anchor: w.entities.get('anchor')?.visible }))`);
+  check("VM4 leaving edit mode puts the view back: no override, nothing isolated away", out && !out.over && out.anchor, out);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {
