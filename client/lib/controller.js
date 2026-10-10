@@ -267,6 +267,15 @@ let dragging = false, dragBtn = 0, dragMode = 'orbit';
 // The offset is from the BODY, so walking carries the view along; leaving edit mode drops it.
 export const editPan = new THREE.Vector3();
 const EDIT_DIST = 80, PLAY_DIST = 16;
+let autoWalk = null; const _autoV = new THREE.Vector3();
+/** Walk my body toward (x, z) as if the keys were held, until `until()` is true (or I'm there). Resolves 'arrived',
+ *  'cancelled' (a move key, edit mode), 'blocked' (no progress for 0.9 s) or 'timeout'. One walk at a time. */
+export function walkTo(x, z, { until = null, ms = 12000 } = {}) {
+  endAutoWalk('cancelled');
+  return new Promise((done) => { const now = performance.now(); autoWalk = { x, z, until, ms, t0: now, best: Infinity, bestAt: now, done, run: Math.hypot(x - myState.pos.x, z - myState.pos.z) > 3.5 }; });
+}
+function endAutoWalk(why) { const a = autoWalk; if (!a) return; autoWalk = null; a.done(why); }
+export const isAutoWalking = () => !!autoWalk;
 // FREE CAMERA (R, 10-10: "maybe we need an 'editor camera' mode on the top line ... fly the camera in free mode with
 // WASD ... the character can hit an 'I'm working on this' pose"). Edit mode only. The orbit's centre is a point in the
 // WORLD, not an offset from my body: WASD flies that point, the body stays where it stood, and walls don't push the eye.
@@ -594,6 +603,19 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
+  // AUTO-WALK (R, 10-10: click something out of reach and "your avatar could sprint/walk over until it's in grabbing
+  // distance and get it"). The same inputs a hand on the keys would give, so everything downstream (speed, collision,
+  // the walk clip, what the authority sees) is ordinary walking. Any real input ends it; so does arriving, getting
+  // nowhere, or running out of time.
+  if (autoWalk) {
+    const a = autoWalk, dx = a.x - myState.pos.x, dz = a.z - myState.pos.z, d = Math.hypot(dx, dz), now = performance.now();
+    if (Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08 || editingNow()) endAutoWalk('cancelled');
+    else if (a.until?.() || d < 0.12) endAutoWalk('arrived');
+    else if (now - a.t0 > a.ms) endAutoWalk('timeout');
+    else { if (d < a.best - 0.05) { a.best = d; a.bestAt = now; }
+      if (now - a.bestAt > 900) endAutoWalk('blocked');
+      else { _autoV.set(dx / d, 0, dz / d).applyAxisAngle(UP, -camYaw); strafe = _autoV.x; fwd = -_autoV.z; } }
+  }
   if (isFreeCam()) {
     // WASD flies the camera's centre: forward is where the camera looks (so W climbs when you look up), the speed grows
     // with the distance you've pulled back, Shift is three times faster
@@ -613,7 +635,7 @@ export function updateMe(dt, me) {
     editPan.multiplyScalar(k); if (editPan.lengthSq() < 1e-4) editPan.set(0, 0, 0);
     if (camDist > PLAY_DIST) camDist = Math.max(PLAY_DIST, PLAY_DIST + (camDist - PLAY_DIST) * k - 0.01);
   }
-  const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || !!autoWalk?.run;   // a long auto-walk runs
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.
   const creeping = keys.has('AltLeft') || keys.has('AltRight');

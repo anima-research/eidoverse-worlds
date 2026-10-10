@@ -15,6 +15,7 @@ import { bodyOf } from '../../shared/components.js';
 import { physicsApi } from './thingphysics.js';
 import { actionsOf, useThing } from './useprompt.js';
 import { trySitOn } from './localbody.js';
+import { walkTo } from './controller.js';
 
 const CLICK_TRAVEL = 5, CLICK_MS = 500, HOVER_MS = 100, NEAR = 0.15;   // px, ms: more than this and the press was a drag
 let hooks = null;   // { editing(): bool, busy(): bool }
@@ -52,6 +53,18 @@ export function thingAt(clientX, clientY) {
   return root?.userData.entityId ?? null;
 }
 
+// A click on something to pick up that is out of reach: walk over and take it (what a click-to-use game does; R, 10-10).
+// Too far to be what you meant: say so, in the status bar. A move key on the way cancels, quietly.
+const WALK_MAX = 14;   // m along the floor
+async function fetchIt(id, offer) {
+  if (physicsApi.inReach(id)) return offer.run();
+  const w = physicsApi.whereFromMe(id); if (!w) return offer.run();
+  if (w.flat > WALK_MAX) { flashHint(`${nameOf(id) ?? id} is ${w.flat.toFixed(0)} m away — too far to walk over for it; go closer`, 3800, 'attn'); return null; }
+  const why = await walkTo(w.at[0], w.at[2], { until: () => physicsApi.inReach(id) });
+  if (why === 'arrived' && physicsApi.inReach(id)) return offer.run();
+  if (why === 'blocked' || why === 'timeout' || why === 'arrived') flashHint(`couldn't get to ${nameOf(id) ?? id}: something is in the way`, 3800, 'attn');
+  return null;
+}
 let press = null;
 canvas.addEventListener('mousedown', (e) => { press = (e.button === 0 || e.button === 2) && !off() ? { x: e.clientX, y: e.clientY, t: performance.now(), b: e.button } : null; });
 addEventListener('mouseup', (e) => {
@@ -61,7 +74,7 @@ addEventListener('mouseup', (e) => {
   // doesn't drop it ... How do I drop this thing??": in third person my own body hides what I hold, so there is nothing to aim at)
   const id = thingAt(e.clientX, e.clientY) ?? physicsApi.mine()[0]; if (!id) return;
   const offers = offersOf(id); if (!offers.length) return;
-  if (p.b === 0) { void offers[0].run(); return; }
+  if (p.b === 0) { void (offers[0].k === 'grab' ? fetchIt(id, offers[0]) : offers[0].run()); return; }
   contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label })), (k) => { void offers.find((o) => o.k === k)?.run(); });
 });
 let hoverAt = 0, hand = '';

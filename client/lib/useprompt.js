@@ -8,9 +8,10 @@ import { THREE } from './core.js';
 import { comps, entities } from './world.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
-import { send } from './editwrites.js';
 import { xrActive } from './xrask.js';
-import { nameOf } from './plainwords.js';
+import { nameOf, plain } from './plainwords.js';
+import { sendRequest } from './net.js';
+import { flashHint } from './ui.js';
 import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
 
@@ -59,7 +60,10 @@ export function actionsOf(id) {
 }
 /** Use one action of one thing (the mouse: clickuse.js). The door's reply. */
 export async function useThing(id, action, verb = action) {
-  const r = await send(OP.use(id, action), { what: `${verb} ${id}`, record: false });
+  // a use that doesn't work says why in the status bar, in the attention colour, every time (R, 10-10: "same goes for
+  // objects you click to use but it doesn't work for some reason"); it was a 9 s toast
+  const req = OP.use(id, action), what = `${verb} ${id}`; const r = await sendRequest(req.verb, req.args);
+  if (r && !r.ok && r.refused) { const text = plain(what, r); flashHint(text, 4200, 'attn'); bus.emit('edit-refused', { what, refused: r.refused, text, agentText: text }); }
   bus.emit('use-prompt', { id, action, ok: !!r?.ok });
   return r;
 }
@@ -72,9 +76,7 @@ export function usePromptHint() {
 /** Use what E points at. Returns the door's reply (or null when there's nothing in reach). */
 export async function useNearest() {
   const u = usable(); if (!u) return null;
-  const r = await send(OP.use(u.id, u.action), { what: `${u.verb} ${u.id}`, record: false });   // a use isn't an edit: no undo step
-  bus.emit('use-prompt', { id: u.id, action: u.action, ok: !!r?.ok });
-  return r;
+  return useThing(u.id, u.action, u.verb);   // a use isn't an edit: no undo step
 }
 
 registerAction({ id: 'body:use', key: 'E', title: 'use what\'s in front of you (open a door, ring a bell)', keywords: ['use', 'open', 'interact', 'press'], icon: 'hand', group: 'body', run: () => { void useNearest(); } });

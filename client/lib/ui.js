@@ -124,9 +124,12 @@ bus.on('esc-quiet', (did) => {
   else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
 });
 /** Borrow the hint bar for a moment. `line` is text unless built with html`` (markup.js). */
-export function flashHint(line, ms = 2600) {
+export function flashHint(line, ms = 2600, tone = null) {
   delete el.hint.dataset.keyhint;   // a flash takes the bar from an engaged gesture's keys
   paint(el.hint, line);
+  // tone 'attn': something you asked for didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status
+  // bar at the bottom that fades away after a few seconds"), every time you ask
+  el.hint.classList.toggle('attn', tone === 'attn');
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
   el.hint._t = setTimeout(endFlash, ms);
@@ -140,6 +143,7 @@ addEventListener('ew-keyhint', (e) => {
 function endFlash() {
   clearTimeout(el.hint._t);
   el.hint._t = null;
+  el.hint.classList.remove('attn');
   if (ambientHint) paint(el.hint, ambientHint);
   else el.hint.classList.add('gone');
 }

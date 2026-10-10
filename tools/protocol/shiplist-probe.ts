@@ -284,9 +284,40 @@ try {
   check("HP2 put down, it rests ON the floor (its centre one radius up), in front of me and clear of my body", r?.put && Math.abs(r.down.y - 0.35) < 0.03 && r.down.flat >= 0.35 + 0.32, r);
   check("HP3 …and putting it down does not shove me (the camera rides my body)", r?.put && r.shoved < 0.15, { shoved: r?.shoved });
   });
+  // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
+  // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
+  await stage("WG", async () => {
+  const bar = () => evalJson(`(() => { const h = document.getElementById('hintbar'); return { attn: h.classList.contains('attn'), gone: h.classList.contains('gone'), text: h.textContent }; })()`);
+  const lines0 = await evalJson(`document.querySelectorAll('.chat-log .line').length`);
+  await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('anchor'); return true;`); const b1 = await bar();
+  await evalJson(`(document.getElementById('hintbar').classList.remove('attn'), true)`);
+  await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('anchor'); return true;`); const b2 = await bar();
+  check("WG1 a grab that is refused says why in the status bar, in the attention colour, and again the very next time (no 5 s hush), with no chat line", b1.attn && !b1.gone && /Anchor/.test(b1.text) && b2.attn && /Anchor/.test(b2.text) && (await evalJson(`document.querySelectorAll('.chat-log .line').length`)) === lines0, { b1, b2 });
+  // something to pick up 5 m ahead of me, where the camera looks; a real click on it
+  const far = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return { at: [c.myState.pos.x + d.x / h * 5, c.myState.pos.z + d.z / h * 5], me: [c.myState.pos.x, c.myState.pos.z] };`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'wgcrate', model: '${CRATE}', components: { label: 'Far crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${far.at[0]}, 0, ${far.at[1]}], scale: 0.3 } } });`);
+  check("(setup) a small crate 5 m ahead, out of reach", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('wgcrate'))`); await sleep(800);
+  const cl = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('wgcrate'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height, found = cu.thingAt(x, y) === 'wgcrate';
+    for (let k = 1; k <= 12 && !found; k++) for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const xx = x + ax * k * 4, yy = y + ay * k * 4; if (cu.thingAt(xx, yy) === 'wgcrate') { x = xx; y = yy; found = true; break; } }
+    const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup'));
+    return { found, walking: (await import('/lib/controller.js')).isAutoWalking() };`);
+  const got = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('wgcrate'))`, 9000);
+  const end = await page(`const c = await import('/lib/controller.js'); return { me: [c.myState.pos.x, c.myState.pos.z], walking: c.isAutoWalking() };`);
+  check("WG2 a click on it out of reach walks me over and picks it up", cl?.found && cl.walking && got && Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) > 2.5 && !end.walking, { cl, got, walked: Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) });
+  await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.put('wgcrate'); return true;`); await sleep(600);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
+  // the earlier stages punted the crate away, walked me off and left things at my feet: step to clear ground and put
+  // the crate in the camera's view (ahead of my body along the way the camera looks, once the camera has followed)
+  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 20; c.myState.pos.z += 20; b.bus.emit('cut-adopted'); return true;`);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1500);
+  const put = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'), n = await import('/lib/net.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+    const r = await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [c.myState.pos.x + d.x / h * 1.5, 0, c.myState.pos.z + d.z / h * 1.5], scale: [0.3, 0.3, 0.3] } }); return { ok: !!r?.ok, code: r?.refused?.code ?? null, dir: [d.x, d.y, d.z] };`); await sleep(2500);
+  check("(setup) the crate is back in view, on clear ground", put?.ok, put);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   const cam = () => evalJson(`import('/lib/controller.js').then((c) => ({ yaw: c.camYaw, pitch: c.camPitch, dist: c.camDist, pan: c.editPan.toArray() }))`);
   // a drag: press at (x, y), three moves, release. where: 'cuball' = a pixel on that thing, 'bare' = a pixel no thing is under

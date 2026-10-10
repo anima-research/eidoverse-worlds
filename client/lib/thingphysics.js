@@ -365,10 +365,15 @@ const say = (t) => logChat('*', t);
 const REPEAT_MS = 5000, saidAt = new Map();
 // (keyed by the words with their numbers taken out: a too-fast or solid reason names a distance or a spot that changes
 // every step, so the same refusal never matched itself; review round 2)
-const refused = (what, r, id = '') => { const x = r?.refused, text = plain(what, r), now = performance.now(), key = `${what}|${id}|${x?.code ?? ''}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;   // + the thing: 'crate 2' and 'crate 3' stay two (review round 3)
+const refused = (what, r, id = '') => { const x = r?.refused, text = plain(what, r), now = performance.now();
+  // at a desk: the status bar, in the attention colour, EVERY time you ask (R, 10-10: the chat line came "not every time
+  // I try - only every 5s or so"; it is no longer a chat line). The event below (a headset's card, the probes) keeps
+  // its once-per-5-s rule: a squeeze repeated is not news.
+  if (!xrActive()) flashHint(text, 3800, 'attn');
+  const key = `${what}|${id}|${x?.code ?? ''}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;   // + the thing: 'crate 2' and 'crate 3' stay two (review round 3)
   if (now - (saidAt.get(key) ?? -Infinity) < REPEAT_MS) return r;
   saidAt.delete(key); saidAt.set(key, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
-  say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
+  bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
@@ -622,7 +627,11 @@ export function handsHint() {
 }
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown,
+/** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
+const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
+/** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
+const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, inReach, whereFromMe,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
