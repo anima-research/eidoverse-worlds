@@ -86,7 +86,13 @@ onWorldChange((ev) => {
 });
 export const holdsNow = () => holds;
 /** What I hold, per the authority. */
-export const myHolds = () => Object.keys(holds).filter((id) => holds[id].by === net.you);
+// newest first: what I picked up last is what I put down, throw or use first (R, 10-10: "you drop the last thing you
+// picked up first"). The order is this client's own (when it first saw each hold); the wire carries none.
+const heldSeen = new Map(); let heldN = 0;
+export const myHolds = () => { const mine = Object.keys(holds).filter((id) => holds[id].by === net.you);
+  for (const id of mine) if (!heldSeen.has(id)) heldSeen.set(id, ++heldN);
+  for (const id of heldSeen.keys()) if (!mine.includes(id)) heldSeen.delete(id);
+  return mine.sort((a, b) => heldSeen.get(b) - heldSeen.get(a)); };
 function released(id) {
   // the realizer re-asserts where the log has it on its next change; until the fold or the sim owns it again, the
   // last drawn pose stays (a put's change entry and a throw's launch both arrive BEFORE this message: server order)

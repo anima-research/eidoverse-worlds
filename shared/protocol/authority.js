@@ -1447,6 +1447,14 @@ function commit(w, actor, verb, args, build) {
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
+  // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
+  // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
+  // after was refused from a hand the two no longer agreed on.)
+  { let let_go = false;
+    for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h) continue;
+      if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent")) {
+        delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
+    if (let_go) w.savePresence(); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
@@ -2841,6 +2849,7 @@ const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities
 // ---------- physics (design 20) ----------
 const REACH = 1.5;   // m from your body: arm plus a step
 const HAND_Y = 1.1; // where a held thing sits above your feet
+const MAX_HELD = 2; // things in your hands at once
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
@@ -2985,6 +2994,9 @@ const PHYSICS_VERBS = {
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
+    // two hands, two things (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two things")
+    { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
+      if (mine.length >= MAX_HELD) refuse("hands-full", `you are already holding ${mine.length} things (${mine.join(", ")}); you have two hands`, `put one down first: put {id: '${mine.at(-1)}'}`); }
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
     // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
@@ -3072,10 +3084,13 @@ const PHYSICS_VERBS = {
       // thing set down there shoved the body aside, R 10-10), else straight down from the hand.
       // Its BOTTOM rests on the support, not its origin: a ball's origin is its centre, and one put down by its origin
       // sat half in the floor (R's gym, 10-10). The bottom is the thing's own box under its origin, as it last stood.
+      // What it lands on is what is under its CENTRE (a thing resting by a sliver of its footprint on a neighbour hung in
+      // the air beside it), and never a thing in someone's hand: a held thing is still in the log where it was picked
+      // up, and crates put down there floated on nothing (R's gym, 10-10; the second was so before `at` existed).
       const fam = new Set([a.id, ...descendants(st, a.id)]); const x = a.at ? a.at[0] : h.pose.pos[0], z = a.at ? a.at[1] : h.pose.pos[2];
+      for (const k of Object.keys(w.presence.holds)) if (st.entities[k]) for (const d of [k, ...descendants(st, k)]) fam.add(d);
       const q = spatial(st).rec.get(a.id)?.q; const under = q ? Math.max(0, t.pos[1] - q.min[1]) : 0;
-      const hx = q ? (q.max[0] - q.min[0]) / 2 : 0, hz = q ? (q.max[2] - q.min[2]) / 2 : 0;
-      const sup = q ? supportUnder(st, { min: [x - hx, h.pose.pos[1], z - hz], max: [x + hx, h.pose.pos[1], z + hz] }, fam) : supportBelow(st, x, z, h.pose.pos[1], fam);
+      const sup = supportBelow(st, x, z, h.pose.pos[1], fam);
       pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
     const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
@@ -3083,7 +3098,11 @@ const PHYSICS_VERBS = {
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-    const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
+    const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")))
+      .filter((x) => !(x.with && w.presence.holds[x.with]));   // not "inside" a thing that is in someone's hand (the log has it where it was picked up)
+    // set down where it doesn't fit (against a neighbour, on a ledge): in a world that runs physics a loose thing is let
+    // go there instead, from the hand's height, and physics finds where it rests. Only for the plain put (no pos claimed).
+    if (bad.length && a.pos === undefined && !stay && fliesIn(st, a.id)) return PHYSICS_VERBS.drop(w, actor, { id: a.id, pos: [pos[0], r3(h.pose.pos[1]), pos[2]] });
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the authority checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = changeEntry(w, plan, act);

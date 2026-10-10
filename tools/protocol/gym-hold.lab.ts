@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, sleep } from "../harness.ts";
 process.env.TRUST_NAMES = "1";
-const SRC = "/home/claude/eido/scratch-worlds/v4-garden";
+const SRC = process.env.WORLDS_SRC; if (!SRC) { console.error("set WORLDS_SRC=<a worlds dir holding gym/ and its .custody.json, .directory.json> (copied, never written)"); process.exit(2); }
 const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymhold", {
   prepare: (scratch) => { const w = path.join(scratch, "worlds"); fs.mkdirSync(w, { recursive: true });
     for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f));
