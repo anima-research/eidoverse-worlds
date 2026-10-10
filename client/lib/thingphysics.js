@@ -28,6 +28,7 @@ import { entities } from './world.js';
 import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
+import { colliderFor } from './bodyscale.js';
 import { replica, net, sendRequest, identities } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -239,7 +240,14 @@ function heldPose(id, h, obj) {
   obj.getWorldScale(_ws);
   if (!tracked(h.by) && g && bothArms(holdPoseOf(g, sizeOf(id, obj))) && !grip) {
     const a = palmOf(h.by, 'right', P1), b = palmOf(h.by, 'left', P2);
-    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); return { p: _tp.copy(a.p).lerp(b.p, 0.5).sub(_held), q: null }; }
+    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); _tp.copy(a.p).lerp(b.p, 0.5);
+      // carried in both arms it sits AGAINST the body, not around it: its centre goes out in front by what it is deep,
+      // less the arm's reach to the palms (R, 10-10: a wrecking ball held by its centre swallowed the avatar)
+      const av = avatarOf(h.by), sz = sizeOf(id, obj);
+      if (av?.root && Array.isArray(sz)) { const fx = _tp.x - av.root.position.x, fz = _tp.z - av.root.position.z, fl = Math.hypot(fx, fz);
+        const push = Math.max(0, Math.max(sz[0], sz[2]) / 2 - Math.max(0, fl - 0.12));
+        if (fl > 1e-3 && push > 0) { _tp.x += fx / fl * push; _tp.z += fz / fl * push; } }
+      return { p: _tp.sub(_held), q: null }; }
   }
   const palm = (grip || h.offset) ? palmOf(h.by, side, P1) : null;
   if (palm && grip) {
@@ -399,7 +407,13 @@ export async function grab(name) {
 export async function put(name) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
-  const r = await sendRequest('put', { id });
+  // in front of my feet, clear of my body (the authority's default is under the hand, which is inside my own footprint:
+  // a wrecking ball set down there shoved me 0.67 m aside, and the camera with me; R, 10-10). The authority works out
+  // the height and what it lands on.
+  const f = feet(), yaw = hooks?.myState?.()?.yaw, obj = entities.get(id), sz = obj ? sizeOf(id, obj) : null;
+  const out = Math.min(1.2, colliderFor(hooks?.me?.()?.userScale).r + (Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15) + 0.12);   // my walking capsule + its half-width + a gap
+  const at = f && Number.isFinite(yaw) ? [r3(f[0] + Math.sin(yaw) * out), r3(f[2] + Math.cos(yaw) * out)] : null;
+  const r = await sendRequest('put', { id, ...(at ? { at } : {}) });
   return r?.ok ? r : refused('put', r, id);
 }
 /** Let go: it falls (with physics) from where your hand is. */

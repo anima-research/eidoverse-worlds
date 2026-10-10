@@ -268,6 +268,22 @@ try {
   check("FL1 a punted thing moves on every frame: the displayed sim's clock runs (about 30 ticks a second) and it is seen in many places on the way", seen?.ok && ticks >= 20 && places >= 6, { ok: seen?.ok, code: seen?.code, ticks, places, path: seen?.out?.map((x: any) => x.p).filter((p: string, i: number, a: string[]) => p !== a[i - 1]).slice(0, 8) });
   await sleep(2500);
   });
+  // ---- HP: holding and putting down something big whose origin is its centre (R's gym, 10-10: the wrecking ball
+  // was held around her body, sat half in the floor when put down, and putting it down shoved her and the camera) ----
+  await stage("HP", async () => {
+  const here = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hpball', model: 'props/ball.glb', components: { label: 'Big ball', grabbable: {}, physics: { kind: 'dynamic' }, collider: { shape: 'sphere' }, transform: { pos: [${here[0]} + Math.sin(${here[2]}) * 1.0, 0.35, ${here[1]} + Math.cos(${here[2]}) * 1.0] } } });`);
+  check("(setup) a 0.7 m ball in front of me (its origin is its centre)", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('hpball'))`); await sleep(1200);
+  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('hpball'), v = new T.Vector3();
+    const where = () => { o.updateWorldMatrix(true, false); o.getWorldPosition(v); const me = c.myState.pos; return { flat: +Math.hypot(v.x - me.x, v.z - me.z).toFixed(3), y: +v.y.toFixed(3), me: [+me.x.toFixed(3), +me.z.toFixed(3)] }; };
+    const g = await t.physicsApi.grab('hpball'); await new Promise((z) => setTimeout(z, 1500)); const held = where();
+    const p = await t.physicsApi.put('hpball'); await new Promise((z) => setTimeout(z, 1500)); const down = where();
+    return { grab: !!g?.ok, put: !!p?.ok, code: p?.refused?.code ?? null, held, down, shoved: +Math.hypot(down.me[0] - held.me[0], down.me[1] - held.me[1]).toFixed(3) };`);
+  check("HP1 held in both arms it sits against my body, not around it (its near side at least 5 cm out from my centre line)", r?.grab && r.held.flat - 0.35 >= 0.05, r);
+  check("HP2 put down, it rests ON the floor (its centre one radius up), in front of me and clear of my body", r?.put && Math.abs(r.down.y - 0.35) < 0.03 && r.down.flat >= 0.35 + 0.32, r);
+  check("HP3 …and putting it down does not shove me (the camera rides my body)", r?.put && r.shoved < 0.15, { shoved: r?.shoved });
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

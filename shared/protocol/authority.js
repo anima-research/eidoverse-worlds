@@ -3066,9 +3066,17 @@ const PHYSICS_VERBS = {
     const stay = g?.release === "stay";
     let pos = a.pos;
     if (pos === undefined && stay) pos = h.pose.pos.map(r3);
-    if (pos === undefined) { // no pose given: straight down from where it's held, onto what's below (the authority resolves)
-      const fam = new Set([a.id, ...descendants(st, a.id)]); const sup = supportBelow(st, h.pose.pos[0], h.pose.pos[2], h.pose.pos[1], fam);
-      pos = [r3(h.pose.pos[0]), sup.y, r3(h.pose.pos[2])]; }
+    if (a.at !== undefined && (!Array.isArray(a.at) || a.at.length !== 2 || a.at.some((n) => !Number.isFinite(n)))) refuse("shape", "put takes at: [x, z] (set it down there, on whatever is below)", "");
+    if (pos === undefined) { // no pose given: onto what's below, the authority resolves the height. Where: `at` (the
+      // holder says where on the floor, e.g. in front of their feet: the hand is INSIDE the body's footprint, and a big
+      // thing set down there shoved the body aside, R 10-10), else straight down from the hand.
+      // Its BOTTOM rests on the support, not its origin: a ball's origin is its centre, and one put down by its origin
+      // sat half in the floor (R's gym, 10-10). The bottom is the thing's own box under its origin, as it last stood.
+      const fam = new Set([a.id, ...descendants(st, a.id)]); const x = a.at ? a.at[0] : h.pose.pos[0], z = a.at ? a.at[1] : h.pose.pos[2];
+      const q = spatial(st).rec.get(a.id)?.q; const under = q ? Math.max(0, t.pos[1] - q.min[1]) : 0;
+      const hx = q ? (q.max[0] - q.min[0]) / 2 : 0, hz = q ? (q.max[2] - q.min[2]) / 2 : 0;
+      const sup = q ? supportUnder(st, { min: [x - hx, h.pose.pos[1], z - hz], max: [x + hx, h.pose.pos[1], z + hz] }, fam) : supportBelow(st, x, z, h.pose.pos[1], fam);
+      pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
     const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
     const q = a.q ?? h.pose.q; const value = { pos, q, scale: t.scale };
