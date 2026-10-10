@@ -136,6 +136,12 @@ try {
   await sleep(5200);   // past the repeat window: the desk grab below is a fresh refusal
   const g2 = await page(grab);
   check("VP4 on the desk, a refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
+  // VP5 (review round 3): two things whose names differ only by a digit are two refusals, both said
+  for (const n of ["Crate 2", "Crate 3"]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${n.replace(" ", "-").toLowerCase()}', model: '${CRATE}', components: { label: '${n}', grabbable: { enabled: false }, transform: { pos: [${at[0]} - 2, 0, ${at[1]} + ${n.endsWith("2") ? 3 : 5}] } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('crate-2') && m.entities.has('crate-3'))`);
+  const n5 = await evalJson(`__phys.length`);
+  await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.grab('crate-2'); await m.physicsApi.grab('crate-3'); return true;`);
+  check("VP5 'Crate 2' then 'Crate 3' refused: both said (the repeat check keeps two things two)", (await evalJson(`__phys.length`)) - n5 === 2, await evalJson(`__phys.slice(${n5})`));
   });
 
   // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
@@ -178,6 +184,14 @@ try {
   await sleep(3000);
   const b = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`), said = (await evalJson(`__phys.length`)) - n0;
   check("VA1 re-arriving 8 m from where the server last had me: the body arrives again (a teleport re-arrival), said at most once", b?.arrived && said <= 1, { said, body: b, events: await evalJson(`__phys.slice(${n0}, ${n0} + 3)`) });
+  // VA3 (review round 3): a fresh re-arrival (refused too-fast, then a teleport), and a walk straight after: the refusal's
+  // back-off (2 s) must not outlive the arrival, so my body follows within 1.2 s
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  const re = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 1500);
+  const t0 = (await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`))?.trackedAt;
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 3; return true;`);
+  const followed = await waitFor(`import('/lib/thingphysics.js').then((m) => { const t = m.physicsApi.body().trackedAt; return !!t && Math.abs(t[0] - ${t0?.[0] ?? 0} - 3) < 0.3; })`, 1200);
+  check("VA3 …re-arrived, then walking 3 m at once: the body follows within 1.2 s (no leftover back-off)", re && t0 && followed, { re, t0, now: await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`) });
   // VA2 (review round 2): an arrival that keeps being refused while the person WALKS (inside a crate: the step and the
   // teleport are both "solid", and the reason names coordinates, so no two texts match): said a couple of times, not 5 a second
   const crate = await evalJson(`import('/lib/world.js').then((m) => { const o = m.entities.get('anchor'); return o ? o.position.toArray() : null; })`);

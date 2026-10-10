@@ -108,7 +108,7 @@ async function track(force = false) {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await sendRequest('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
-      if (arrived) { arriveFails = 0; return true; }
+      if (arrived) { arriveFails = 0; stuck = null; return true; }   // arrived: no leftover back-off (review round 3)
       // refused (review of 5a978cc0: this retried every 200 ms, forever). Back off as a refused step does; and when the
       // server still has me somewhere else (a takeover reconnect keeps the body: too-fast) or calls my spot solid,
       // re-arrive as a teleport, which it allows when nothing is in my hands (at most once in 3 s, as the step's)
@@ -118,7 +118,7 @@ async function track(force = false) {
       if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
         lastTeleport = performance.now();
         const t = await sendRequest('move', { to: to.map(r3), teleport: true, client: 'human' }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
-        if (t?.ok) { arrived = true; arriveFails = 0; trackedAt = t.at ?? to; return true; }
+        if (t?.ok) { arrived = true; arriveFails = 0; stuck = null; trackedAt = t.at ?? to; return true; }
         if (t?.refused) refused('move', t);
       } else if (r?.refused) refused('move', r);
       return false;
@@ -137,7 +137,7 @@ async function track(force = false) {
     if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && (force || performance.now() - lastTeleport > 3000)) {
       lastTeleport = performance.now();
       r = await sendRequest('move', { to: to.map(r3), teleport: true }); lastMove = { teleport: true, ok: !!r?.ok, refused: r?.refused?.code, reason: r?.refused?.reason };
-      if (r?.ok) { trackedAt = r.at ?? to; return true; }
+      if (r?.ok) { trackedAt = r.at ?? to; stuck = null; return true; }
     }
     return false;
   };
@@ -351,7 +351,7 @@ const say = (t) => logChat('*', t);
 const REPEAT_MS = 5000, saidAt = new Map();
 // (keyed by the words with their numbers taken out: a too-fast or solid reason names a distance or a spot that changes
 // every step, so the same refusal never matched itself; review round 2)
-const refused = (what, r) => { const x = r?.refused, text = plain(what, r), now = performance.now(), key = `${what}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;
+const refused = (what, r, id = '') => { const x = r?.refused, text = plain(what, r), now = performance.now(), key = `${what}|${id}|${x?.code ?? ''}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;   // + the thing: 'crate 2' and 'crate 3' stay two (review round 3)
   if (now - (saidAt.get(key) ?? -Infinity) < REPEAT_MS) return r;
   saidAt.delete(key); saidAt.set(key, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
   say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
@@ -385,7 +385,7 @@ export async function grab(name) {
   if (!id) return say('nothing here you can pick up within reach (things with a grabbable component)');
   await track(true);
   const r = await sendRequest('grab', { id });
-  if (!r?.ok) return refused('grab', r);
+  if (!r?.ok) return refused('grab', r, id);
   flashHint(`holding ${id}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, C throws`);
   return r;
 }
@@ -394,14 +394,14 @@ export async function put(name) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
   const r = await sendRequest('put', { id });
-  return r?.ok ? r : refused('put', r);
+  return r?.ok ? r : refused('put', r, id);
 }
 /** Let go: it falls (with physics) from where your hand is. */
 export async function drop(name) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
   const pos = heldPos(id); const r = await sendRequest('drop', { id, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
-  return r?.ok ? r : refused('drop', r);
+  return r?.ok ? r : refused('drop', r, id);
 }
 /** Throw what you hold along your view, from your hand. */
 export async function throwHeld(arg) {
@@ -416,7 +416,7 @@ export async function throwHeld(arg) {
   await track(true);
   const pos = heldPos(id);
   const r = await sendRequest('throw', { id, v, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
-  return r?.ok ? r : refused('throw', r);
+  return r?.ok ? r : refused('throw', r, id);
 }
 /** A hand's grab (VR grip, or any caller with a hand position [x, y, z]): the nearest thing it can carry within reach of
  *  that point and of the authority's hand. The same request the desktop key sends. */
@@ -445,7 +445,7 @@ export async function punt(arg) {
   if (!id) return say('nothing at your feet to punt (things with physics {kind: dynamic})');
   await track(true);
   const r = await sendRequest('punt', { id, power });
-  if (!r?.ok) return refused('punt', r);
+  if (!r?.ok) return refused('punt', r, id);
   flashHint(`you punt ${id}${r.volley ? ' (a volley)' : ''}`);
   return r;
 }
@@ -466,7 +466,7 @@ export async function useHeld(phase = 'down', name) {
   else { if (pressing === id) pressing = null; if (st?.useHeld?.id === id) st.useHeld = null; }
   if (!g?.use || !(phase === 'down' ? g.use.down : g.use.up)) return { ok: true, recorded: false, note: `nothing happens on use ${phase}` };
   const r = await sendRequest('use', { id, args: { held: true, hand: h?.hand ?? 'right', phase } });
-  return r?.ok ? r : refused('use', r);
+  return r?.ok ? r : refused('use', r, id);
 }
 // every holder pressing use on what they hold, from presence (mine: myState; theirs: the latest sample of their pose)
 function drawPressFx() {
@@ -560,7 +560,7 @@ async function vrTake(side, id, far, haptic) {
     const g = grabOf(compsOf(id)); const off = !far && !Object.keys(g?.grips ?? {}).length ? offsetIn(side, id) : null;
     await track(true);
     const r = await sendRequest('grab', { id, hand: side, ...(off ? { offset: off } : {}) });
-    if (r?.ok) haptic(0.4, 30); else { haptic(0.25, 25); setTimeout(() => haptic(0.25, 25), 90); refused('grab', r); }   // a refusal is two short pulses in the hand that asked
+    if (r?.ok) haptic(0.4, 30); else { haptic(0.25, 25); setTimeout(() => haptic(0.25, 25), 90); refused('grab', r, id); }   // a refusal is two short pulses in the hand that asked
     H.busy = false;
     // a quick tap: the grip let go before the authority answered. Press-to-hold means it lets go now (it never stays stuck)
     if (r?.ok && !H.grip && grabOf(compsOf(id))?.hold !== 'toggle') await vrLetGo(side, id);
