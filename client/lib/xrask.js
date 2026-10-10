@@ -65,6 +65,13 @@ bus.on('edit-refused', ({ text }) => {
   chooseXR({ title: 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
+// a physics act refused (grab, put, drop, throw, punt, use, move): the desk says it in chat, which a headset doesn't show;
+// without this a refused throw in VR did nothing visible, and a bug looks like a rule (ship audit 10-09, blocker 5)
+bus.on('thingphysics-refused', ({ text }) => {
+  if (!xrActive() || pending || !text) return;
+  chooseXR({ title: 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
+});
+
 // a warning on a write that went through, likewise (the desk shows it as a toast)
 bus.on('edit-warned', ({ text }) => {
   if (!xrActive() || pending) return;

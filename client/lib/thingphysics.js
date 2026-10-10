@@ -108,7 +108,7 @@ async function track(force = false) {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await sendRequest('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
-      else if (r?.refused) bus.emit('thingphysics-refused', { verb: 'move', refused: r.refused });
+      else if (r?.refused) refused('move', r);   // said like any other refusal (it was an event nobody heard)
       return arrived;
     }
     const d = trackedAt ? Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) : Infinity;
@@ -335,7 +335,7 @@ function frame(wall) {
 
 // ---------------------------------------------------------------- acts (requests)
 const say = (t) => logChat('*', t);
-const refused = (what, r) => { const x = r?.refused; say(plain(what, r)); bus.emit('thingphysics-refused', { verb: what, refused: x }); return r; };   // a person's words (plainwords.js)
+const refused = (what, r) => { const x = r?.refused, text = plain(what, r); say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)

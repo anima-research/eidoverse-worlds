@@ -115,6 +115,22 @@ try {
   check("V3 OK answers it", await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`));
   });
 
+  // ---- VP: a physics act refused in a headset (audit 10-09 blocker 5: thingphysics-refused had no listener, so a refused
+  // grab or throw in VR showed nothing at all: you can't tell a bug from a rule) ----
+  await stage("VP", async () => {
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'anchor', model: '${CRATE}', components: { label: 'Anchor', grabbable: { enabled: false }, transform: { pos: [${at[0]}, 0, ${at[1]} + 1.5] } } });`);
+  check("(setup) a crate that can't be picked up, beside me", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('anchor'))`);
+  await page(`const c = await import('/lib/core.js'); Object.defineProperty(c.renderer.xr, 'isPresenting', { get: () => true, configurable: true }); return true;`);
+  const g = await page(`const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok, code: r?.refused?.code ?? null };`);
+  check("(setup) the authority refuses the grab", g && !g.ok && g.code, g);
+  check("VP1 in a headset, a refused grab rides the XR quad: 'refused', in the person's words, with OK", await waitFor(`import('/lib/xrask.js').then((m) => { const s = m.xrAskState(); return !!s && /refused/.test(s.title) && /anchor|Anchor/.test(s.body) && s.choices.includes('ok'); })`, 4000),
+    await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
+  await page(`const m = await import('/lib/xrask.js'); m.xrAnswer('ok'); const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
+  const g2 = await page(`const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok };`);
+  check("VP2 on the desk, the same refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
+  });
+
   // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
   await stage("E", async () => {
   const insp = `document.querySelector('[data-frame="inspector"]')`;
