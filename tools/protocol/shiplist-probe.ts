@@ -201,6 +201,45 @@ try {
   const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
   check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
+  // ---- CU: the mouse on things (R, 10-10: "'grab one' ... left-clicking on them doesn't do anything"). Left-click is a
+  // thing's primary use; right-click is the menu of everything it offers; a drag stays the camera's ----
+  await stage("CU", async () => {
+  // VA2 left me standing inside a crate with my body refused: step well clear and let it arrive
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 6; c.myState.pos.z += 6; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  check("(setup) my body arrives clear of the crate", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000), await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`));
+  await sleep(800);
+  // 1 m ahead of me along the camera's heading, so it is in reach AND in view
+  const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h, c.myState.pos.z + d.z / h];`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'cuball', model: '${CRATE}', components: { label: 'Clicker', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.3 } } });`);
+  check("(setup) a small crate I may pick up, within reach", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('cuball'))`);
+  await sleep(600);
+  // where it is on screen, and a real press there (down and up on the canvas, no travel)
+  const click = (button: number, dx = 0) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE;
+    const o = w.entities.get('cuball'); o.updateWorldMatrix(true, true); const b = new T.Box3().setFromObject(o), p = b.getCenter(new T.Vector3()).project(c.camera);
+    const r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
+    // the bench has other usable things about (a gate): take a pixel near its centre where IT is what the pointer is on
+    const cu = await import('/lib/clickuse.js'); let found = cu.thingAt(x, y) === 'cuball';
+    for (let k = 1; k <= 12 && !found; k++) for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const xx = x + ax * k * 6, yy = y + ay * k * 6; if (cu.thingAt(xx, yy) === 'cuball') { x = xx; y = yy; found = true; break; } }
+    const ev = (t, xx) => new MouseEvent(t, { bubbles: true, cancelable: true, button: ${button}, buttons: 0, clientX: xx, clientY: y });
+    c.canvas.dispatchEvent(ev('mousedown', x)); c.canvas.dispatchEvent(ev('mouseup', x + ${dx}));
+    return { x, y, onScreen: found };`);
+  const holds = () => evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine())`);
+  const at0 = await click(0, 60);
+  await sleep(700);
+  check("CU1 a press that travels 60 px is a drag (the camera's), not a click: nothing is picked up", at0?.onScreen && !(await holds())?.includes("cuball"), { at0, holds: await holds() });
+  await click(2);
+  const menu = await waitFor(`!!document.querySelector('.sp-ctx')`, 2000), items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
+  check("CU2 right-click on it opens its menu: pick up first, kick among the rest", menu && /^pick up/.test(items?.[0] ?? "") && items?.some((t: string) => /^kick/.test(t)), items);
+  await evalJson(`(document.querySelector('.sp-ctx-item')?.click(), true)`);
+  check("CU3 …and choosing 'pick up' there picks it up", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), { holds: await holds(), said: await evalJson(`__phys.slice(-2)`) });
+  await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.put('cuball'); return true;`);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000);
+  await sleep(1200);
+  await click(0);
+  check("CU4 left-click on it is its primary use: I hold it", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
+  await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.put('cuball'); return true;`);
+  });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----
   await stage("NP", async () => {

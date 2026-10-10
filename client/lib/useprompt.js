@@ -38,17 +38,30 @@ export function usable() {
     if (s < bestS) { bestS = s; best = id; }
   }
   if (!best) return null;
-  const bag = comps.get(best); const rx = bag.reactions;
+  const all = actionsOf(best);
   // the action: one open to everyone if there is one (a builder-only bolt beside a door isn't what E does)
-  const action = Object.keys(rx).find((k) => !rx[k]?.who) ?? Object.keys(rx)[0];
-  const h = rx[action] ?? {};
-  const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;
-  const field = h.kind === 'toggle' ? (h.field ?? ((h.component ?? 'openable') === 'openable' ? 'open' : undefined)) : undefined;   // same rule as the door's toggleOf
-  const cur = comp && field && isBag(bag[comp]) ? bag[comp][field] === true : null;
-  // a door that's open says "close" (ProximityPrompt's ActionText follows the state)
-  const verb = comp === 'openable' && field === 'open' ? (cur ? 'close' : 'open') : action;
-  const barred = h.kind === 'toggle' && h.unless && isBag(bag[comp]) && bag[comp][h.unless] === true ? h.unless : null;
-  return { id: best, action, verb, ...(barred ? { barred } : {}) };
+  const u = all.find((a) => !a.who) ?? all[0];
+  return { id: best, action: u.action, verb: u.verb, ...(u.barred ? { barred: u.barred } : {}) };
+}
+/** Every action a thing offers (its reactions), in its own order: [{action, verb, who?, barred?}]. */
+export function actionsOf(id) {
+  const bag = comps.get(id), rx = bag?.reactions; if (!isBag(rx)) return [];
+  return Object.keys(rx).map((action) => {
+    const h = rx[action] ?? {};
+    const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;
+    const field = h.kind === 'toggle' ? (h.field ?? ((h.component ?? 'openable') === 'openable' ? 'open' : undefined)) : undefined;   // same rule as the door's toggleOf
+    const cur = comp && field && isBag(bag[comp]) ? bag[comp][field] === true : null;
+    // a door that's open says "close" (ProximityPrompt's ActionText follows the state)
+    const verb = comp === 'openable' && field === 'open' ? (cur ? 'close' : 'open') : action;
+    const barred = h.kind === 'toggle' && h.unless && isBag(bag[comp]) && bag[comp][h.unless] === true ? h.unless : null;
+    return { action, verb, ...(h.who ? { who: h.who } : {}), ...(barred ? { barred } : {}) };
+  });
+}
+/** Use one action of one thing (the mouse: clickuse.js). The door's reply. */
+export async function useThing(id, action, verb = action) {
+  const r = await send(OP.use(id, action), { what: `${verb} ${id}`, record: false });
+  bus.emit('use-prompt', { id, action, ok: !!r?.ok });
+  return r;
 }
 
 /** The hint bar's line for it, or null. */
