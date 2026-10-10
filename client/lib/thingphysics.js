@@ -93,12 +93,12 @@ function presenceIdOf(actorId) {
 }
 
 // ---------------------------------------------------------------- the body the authority tracks
-let arrived = false, moving = null, lastTrack = 0, trackedAt = null, lastMove = null, lastTeleport = 0;
+let arrived = false, moving = null, lastTrack = 0, trackedAt = null, lastMove = null, lastTeleport = 0, arriveFails = 0;
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
-bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; });
+bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
   if (!replica.active || !net.joined) return false;
@@ -108,15 +108,17 @@ async function track(force = false) {
     if (!arrived) {   // arriving: one act on the record, as an agent's first move is
       const r = await sendRequest('move', { to: to.map(r3), client: 'human' }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
-      if (arrived) return true;
+      if (arrived) { arriveFails = 0; return true; }
       // refused (review of 5a978cc0: this retried every 200 ms, forever). Back off as a refused step does; and when the
       // server still has me somewhere else (a takeover reconnect keeps the body: too-fast) or calls my spot solid,
       // re-arrive as a teleport, which it allows when nothing is in my hands (at most once in 3 s, as the step's)
-      stuck = { at: to, until: performance.now() + 2000 };
+      // the back-off holds by TIME only, doubling (2, 4, 8, 16 s): walking on doesn't clear it as it clears a step's
+      // (an arrival that can't succeed would otherwise go back to 5 a second the moment I move; review round 2)
+      arriveFails++; stuck = { at: to, until: performance.now() + 2000 * 2 ** Math.min(arriveFails - 1, 3), arrival: true };
       if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
         lastTeleport = performance.now();
         const t = await sendRequest('move', { to: to.map(r3), teleport: true, client: 'human' }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
-        if (t?.ok) { arrived = true; trackedAt = t.at ?? to; return true; }
+        if (t?.ok) { arrived = true; arriveFails = 0; trackedAt = t.at ?? to; return true; }
         if (t?.refused) refused('move', t);
       } else if (r?.refused) refused('move', r);
       return false;
@@ -146,7 +148,7 @@ let stuck = null;   // {at, until}: a refused step isn't re-sent until I've move
 function tickTrack(now) {
   if (!replica.active || moving || now - lastTrack < TRACK_MS) return;
   if (hooks?.seated?.()) return;   // a seated body is where its seat is; it walks again when it stands
-  if (stuck) { const f = feet(); if (now < stuck.until && f && Math.hypot(f[0] - stuck.at[0], f[2] - stuck.at[2]) < 0.3) return; stuck = null; }
+  if (stuck) { const f = feet(); if (now < stuck.until && (stuck.arrival || (f && Math.hypot(f[0] - stuck.at[0], f[2] - stuck.at[2]) < 0.3))) return; stuck = null; }
   if (!arrived) { if (worldHasPhysics()) track(); else lastTrack = now; return; }
   const to = feet(); if (!to || !trackedAt) return;
   if (Math.hypot(to[0] - trackedAt[0], to[1] - trackedAt[1], to[2] - trackedAt[2]) >= TRACK_MIN) track();
@@ -347,9 +349,11 @@ function frame(wall) {
 const say = (t) => logChat('*', t);
 // the same refusal again within REPEAT_MS is said once (a squeeze repeated, a retry): words are for news, not a metronome
 const REPEAT_MS = 5000, saidAt = new Map();
-const refused = (what, r) => { const x = r?.refused, text = plain(what, r), now = performance.now();
-  if (now - (saidAt.get(text) ?? -Infinity) < REPEAT_MS) return r;
-  saidAt.set(text, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
+// (keyed by the words with their numbers taken out: a too-fast or solid reason names a distance or a spot that changes
+// every step, so the same refusal never matched itself; review round 2)
+const refused = (what, r) => { const x = r?.refused, text = plain(what, r), now = performance.now(), key = `${what}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;
+  if (now - (saidAt.get(key) ?? -Infinity) < REPEAT_MS) return r;
+  saidAt.delete(key); saidAt.set(key, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
   say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}

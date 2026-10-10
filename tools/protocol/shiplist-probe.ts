@@ -178,6 +178,14 @@ try {
   await sleep(3000);
   const b = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`), said = (await evalJson(`__phys.length`)) - n0;
   check("VA1 re-arriving 8 m from where the server last had me: the body arrives again (a teleport re-arrival), said at most once", b?.arrived && said <= 1, { said, body: b, events: await evalJson(`__phys.slice(${n0}, ${n0} + 3)`) });
+  // VA2 (review round 2): an arrival that keeps being refused while the person WALKS (inside a crate: the step and the
+  // teleport are both "solid", and the reason names coordinates, so no two texts match): said a couple of times, not 5 a second
+  const crate = await evalJson(`import('/lib/world.js').then((m) => { const o = m.entities.get('anchor'); return o ? o.position.toArray() : null; })`);
+  const n1 = await evalJson(`__phys.length`);
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.set(${crate?.[0] ?? 0}, 0, ${crate?.[2] ?? 0}); const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  for (let i = 0; i < 15; i++) { await page(`const c = await import('/lib/controller.js'); c.myState.pos.x = ${crate?.[0] ?? 0} + ${i % 2 ? 0.35 : -0.35}; return true;`); await sleep(200); }
+  const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
+  check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
