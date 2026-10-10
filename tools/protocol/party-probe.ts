@@ -127,6 +127,8 @@ try {
   // ---- B3: World settings in builder mode ----
   await stage("B3", async () => {
     await editMode(true);
+    // the dock is folded in builder mode since 10-10 (∃, ⋯, wrench): open it to reach the panel buttons
+    await evalJson(`(() => { const m = document.querySelector('#dock .dock-more'); if (m && m.getAttribute('aria-expanded') !== 'true') m.click(); return true; })()`); await sleep(300);
     await clickEl(`document.querySelector('#dock button[data-toggles="world-settings"]')`);
     await waitFor(`!!document.querySelector('[data-frame="world-settings"]') && getComputedStyle(document.querySelector('[data-frame="world-settings"]')).display !== 'none'`, 4000);
     await sleep(1200);

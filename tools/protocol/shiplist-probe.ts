@@ -255,6 +255,19 @@ try {
   await click(0);
   check("CU7 …and so does a left-click on the thing itself", await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
   });
+  // ---- FL: flights are drawn on the page's OWN frames (R, 10-10: "object location updates every few seconds", a domino
+  // "stuck in this tilted position"). Every other check hands the applier a wall clock; this one doesn't, on purpose. ----
+  await stage("FL", async () => {
+  await page(`const t = await import('/lib/thingphysics.js'); if (t.physicsApi.mine().length) await t.physicsApi.put(); return true;`); await sleep(1200);
+  // look every 50 ms for a second, in the page (a round trip per look is slower than the flight)
+  const seen = await page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('cuball'), v = new T.Vector3(), out = [];
+    const r = await t.physicsApi.punt('cuball 6');
+    for (let i = 0; i < 20; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); out.push({ tick: t.simShown()?.tick ?? null, p: [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)].join() }); await new Promise((z) => setTimeout(z, 50)); }
+    return { ok: !!r?.ok, code: r?.refused?.code ?? null, out };`);
+  const ticks = (seen?.out?.at(-1)?.tick ?? 0) - (seen?.out?.[0]?.tick ?? 0), places = new Set(seen?.out?.map((x: any) => x.p)).size;
+  check("FL1 a punted thing moves on every frame: the displayed sim's clock runs (about 30 ticks a second) and it is seen in many places on the way", seen?.ok && ticks >= 20 && places >= 6, { ok: seen?.ok, code: seen?.code, ticks, places, path: seen?.out?.map((x: any) => x.p).filter((p: string, i: number, a: string[]) => p !== a[i - 1]).slice(0, 8) });
+  await sleep(2500);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
