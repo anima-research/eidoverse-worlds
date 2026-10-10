@@ -39,8 +39,8 @@ const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
 
 try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
-    window.__refused = []; window.__warned = [];
-    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-warned', (e) => __warned.push(e)); });` });
+    window.__refused = []; window.__warned = []; window.__phys = [];
+    import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-warned', (e) => __warned.push(e)); m.bus.on('thingphysics-refused', (e) => __phys.push({ verb: e.verb, code: e.refused?.code })); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
@@ -115,6 +115,35 @@ try {
   check("V3 OK answers it", await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`));
   });
 
+  // ---- VP: a physics act refused in a headset (audit 10-09 blocker 5: thingphysics-refused had no listener, so a refused
+  // grab or throw in VR showed nothing at all: you can't tell a bug from a rule) ----
+  await stage("VP", async () => {
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'anchor', model: '${CRATE}', components: { label: 'Anchor', grabbable: { enabled: false }, transform: { pos: [${at[0]}, 0, ${at[1]} + 1.5] } } });`);
+  check("(setup) a crate that can't be picked up, beside me", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('anchor'))`);
+  await page(`const c = await import('/lib/core.js'); Object.defineProperty(c.renderer.xr, 'isPresenting', { get: () => true, configurable: true }); return true;`);
+  const grab = `const m = await import('/lib/thingphysics.js'); const r = await m.physicsApi.grab('anchor'); return { ok: !!r?.ok, code: r?.refused?.code ?? null };`;
+  const n0 = await evalJson(`__phys.length`);
+  const g = await page(grab);
+  check("(setup) the authority refuses the grab", g && !g.ok && g.code, g);
+  check("VP1 in a headset, a refused grab rides the XR quad: 'refused', in the person's words, with OK", await waitFor(`import('/lib/xrask.js').then((m) => { const s = m.xrAskState(); return !!s && /refused/.test(s.title) && /anchor|Anchor/.test(s.body) && s.choices.includes('ok'); })`, 4000),
+    await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
+  await page(grab); await page(grab);
+  check("VP2 the same refusal three times running is said once (a squeeze repeated, a retry): one event, one chat line", (await evalJson(`__phys.length`)) - n0 === 1, await evalJson(`__phys.slice(${n0})`));
+  check("VP3 …and the card goes by itself (play isn't a dialog): gone within 6 s, nobody pressed OK", await waitFor(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`, 6500),
+    await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState())`));
+  await page(`const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
+  await sleep(5200);   // past the repeat window: the desk grab below is a fresh refusal
+  const g2 = await page(grab);
+  check("VP4 on the desk, a refusal raises no headset card (the chat line says it there)", g2 && !g2.ok && (await evalJson(`import('/lib/xrask.js').then((m) => m.xrAskState() === null)`)));
+  // VP5 (review round 3): two things whose names differ only by a digit are two refusals, both said
+  for (const n of ["Crate 2", "Crate 3"]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${n.replace(" ", "-").toLowerCase()}', model: '${CRATE}', components: { label: '${n}', grabbable: { enabled: false }, transform: { pos: [${at[0]} - 2, 0, ${at[1]} + ${n.endsWith("2") ? 3 : 5}] } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('crate-2') && m.entities.has('crate-3'))`);
+  const n5 = await evalJson(`__phys.length`);
+  await page(`const m = await import('/lib/thingphysics.js'); await m.physicsApi.grab('crate-2'); await m.physicsApi.grab('crate-3'); return true;`);
+  check("VP5 'Crate 2' then 'Crate 3' refused: both said (the repeat check keeps two things two)", (await evalJson(`__phys.length`)) - n5 === 2, await evalJson(`__phys.slice(${n5})`));
+  });
+
   // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
   await stage("E", async () => {
   const insp = `document.querySelector('[data-frame="inspector"]')`;
@@ -143,6 +172,34 @@ try {
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
   check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities.box1?.c.openable?.open === false && disk().entities.box1?.c.reactions?.open?.kind === "toggle"), { c: disk().entities.box1?.c });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  });
+  // ---- VA: the body's arrival refused (a takeover reconnect: the server still has my body where it was, and the client
+  // re-arrives with a plain move from far away). Review of 5a978cc0: the arrival retried at 5 Hz, forever ----
+  await stage("VA", async () => {
+  const on = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });`);
+  check("(setup) physics on (the body is tracked only in a physics world)", on?.ok, on);
+  check("(setup) my body arrives", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 10000), await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`));
+  const n0 = await evalJson(`__phys.length`);
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  await sleep(3000);
+  const b = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`), said = (await evalJson(`__phys.length`)) - n0;
+  check("VA1 re-arriving 8 m from where the server last had me: the body arrives again (a teleport re-arrival), said at most once", b?.arrived && said <= 1, { said, body: b, events: await evalJson(`__phys.slice(${n0}, ${n0} + 3)`) });
+  // VA3 (review round 3): a fresh re-arrival (refused too-fast, then a teleport), and a walk straight after: the refusal's
+  // back-off (2 s) must not outlive the arrival, so my body follows within 1.2 s
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  const re = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 1500);
+  const t0 = (await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`))?.trackedAt;
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 3; return true;`);
+  const followed = await waitFor(`import('/lib/thingphysics.js').then((m) => { const t = m.physicsApi.body().trackedAt; return !!t && Math.abs(t[0] - ${t0?.[0] ?? 0} - 3) < 0.3; })`, 1200);
+  check("VA3 …re-arrived, then walking 3 m at once: the body follows within 1.2 s (no leftover back-off)", re && t0 && followed, { re, t0, now: await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`) });
+  // VA2 (review round 2): an arrival that keeps being refused while the person WALKS (inside a crate: the step and the
+  // teleport are both "solid", and the reason names coordinates, so no two texts match): said a couple of times, not 5 a second
+  const crate = await evalJson(`import('/lib/world.js').then((m) => { const o = m.entities.get('anchor'); return o ? o.position.toArray() : null; })`);
+  const n1 = await evalJson(`__phys.length`);
+  await page(`const c = await import('/lib/controller.js'); c.myState.pos.set(${crate?.[0] ?? 0}, 0, ${crate?.[2] ?? 0}); const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
+  for (let i = 0; i < 15; i++) { await page(`const c = await import('/lib/controller.js'); c.myState.pos.x = ${crate?.[0] ?? 0} + ${i % 2 ? 0.35 : -0.35}; return true;`); await sleep(200); }
+  const said2 = (await evalJson(`__phys.length`)) - n1, b2 = await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`);
+  check("VA2 an arrival refused again and again while I walk (inside a crate) is said at most twice in 3 s, not 5 a second", crate && !b2?.arrived && said2 <= 2, { crate, said2, lastMove: b2?.lastMove, events: await evalJson(`__phys.slice(${n1}, ${n1} + 4)`) });
   });
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
