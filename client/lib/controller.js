@@ -267,11 +267,23 @@ let dragging = false, dragBtn = 0, dragMode = 'orbit';
 // The offset is from the BODY, so walking carries the view along; leaving edit mode drops it.
 export const editPan = new THREE.Vector3();
 const EDIT_DIST = 80, PLAY_DIST = 16;
+// THE WORLD'S EDGE (R, 10-10 23:00: she ran 44 m out in a world bounded at ±20; the authority refuses every move outside
+// its bounds, so its track of her body stopped at the edge and every put and throw after was '25 m from you'). The body
+// stops at @world.bounds as at a wall, less its capsule, and says so once in the status bar.
+let boundsSrc = () => null, edgeSaidAt = 0;
+export function setBoundsHook(fn) { boundsSrc = typeof fn === 'function' ? fn : () => null; }
+export function worldBounds() { const B = boundsSrc(); const ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  return B && ok(B.min) && ok(B.max) ? B : null; }
+export function clampToBounds(x, z, pad = 0.25) { const B = worldBounds(); if (!B) return [x, z];
+  return [Math.min(B.max[0] - pad, Math.max(B.min[0] + pad, x)), Math.min(B.max[2] - pad, Math.max(B.min[2] + pad, z))]; }
+function keepInBounds() { const [x, z] = clampToBounds(myState.pos.x, myState.pos.z);
+  if (x === myState.pos.x && z === myState.pos.z) return; myState.pos.x = x; myState.pos.z = z;
+  const now = performance.now(); if (now - edgeSaidAt > 4000) { edgeSaidAt = now; flashHint("that's the edge of this world", 2500); } }
 let autoWalk = null; const _autoV = new THREE.Vector3();
 /** Walk my body toward (x, z) as if the keys were held, until `until()` is true (or I'm there). Resolves 'arrived',
  *  'cancelled' (a move key, edit mode), 'blocked' (no progress for 0.9 s) or 'timeout'. One walk at a time. */
 export function walkTo(x, z, { until = null, ms = 12000 } = {}) {
-  endAutoWalk('cancelled');
+  endAutoWalk('cancelled'); [x, z] = clampToBounds(x, z);
   return new Promise((done) => { const now = performance.now(); autoWalk = { x, z, until, ms, t0: now, best: Infinity, bestAt: now, done, run: Math.hypot(x - myState.pos.x, z - myState.pos.z) > 3.5 }; });
 }
 function endAutoWalk(why) { const a = autoWalk; if (!a) return; autoWalk = null; a.done(why); }
@@ -656,6 +668,7 @@ export function updateMe(dt, me) {
     const targetYaw = Math.atan2(_dir.x, _dir.z);
     myState.yaw += angleDelta(myState.yaw, targetYaw) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw));   // the accumulator wraps too (the owner's recorder: root 7.62 = 1.34 + 2π after setCamYaw already wrapped)
     myState.pos.addScaledVector(_dir, myState.speed * dt);
+    keepInBounds();
     const R = 78; // stay on the island
     const r = Math.hypot(myState.pos.x, myState.pos.z);
     if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }

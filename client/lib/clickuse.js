@@ -15,7 +15,7 @@ import { bodyOf } from '../../shared/components.js';
 import { physicsApi } from './thingphysics.js';
 import { actionsOf, useThing } from './useprompt.js';
 import { trySitOn } from './localbody.js';
-import { walkTo } from './controller.js';
+import { walkTo, clampToBounds } from './controller.js';
 
 const CLICK_TRAVEL = 5, CLICK_MS = 500, HOVER_MS = 100, NEAR = 0.15;   // px, ms: more than this and the press was a drag
 let hooks = null;   // { editing(): bool, busy(): bool, myPos(): Vector3 }
@@ -98,6 +98,7 @@ function onTop(id, spot) {
 /** Holding something, a click on a spot: set it down THERE (R, 10-10: "my assumption is that my character would try to
  *  drop it where the cursor is, not right at their feet"), walking over first when it is out of reach. */
 async function putAtSpot(id, spot) {
+  { const [x, z] = clampToBounds(spot[0], spot[2], 0); if (x !== spot[0] || z !== spot[2]) { flashHint("that's past the edge of this world", 3200, 'attn'); return null; } }
   if (!physicsApi.canPutAt(spot[0], spot[1], spot[2])) {
     const me = hooks?.myPos?.(); const flat = me ? Math.hypot(spot[0] - me.x, spot[2] - me.z) : Infinity;
     if (flat > WALK_MAX) { flashHint(`that spot is ${flat.toFixed(0)} m away — too far to carry it over; go closer`, 3800, 'attn'); return null; }

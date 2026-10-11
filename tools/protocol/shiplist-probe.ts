@@ -303,6 +303,25 @@ try {
     return { grab: !!g?.ok, why: g?.refused ?? g?.why ?? null, body: b0 == null ? null : +wrap(b1 - b0).toFixed(3), crate: +wrap(c1 - c0).toFixed(3) };`);
   check("HT1 holding a crate, I turn a quarter: it turns the same quarter with me (within 0.1 rad)", r?.grab && r.body != null && Math.abs(r.body) > 1.2 && Math.abs(wrap(r.crate - r.body)) < 0.1, r);
   });
+  // ---- WB: the world's edge (R, 10-10 23:00: walked 44 m out of a ±20 m world; the authority's track of her stayed at
+  // the edge, and every put and throw after was "25 m from you") ----
+  await stage("WB", async () => {
+  const me0 = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z];`);
+  const edge = +(me0[0] + 3).toFixed(2);
+  const b = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'bounds', value: { min: [-60, 0, -60], max: [${edge}, 30, 60] } });`);
+  check("(setup) this world's edge 3 m to my +x", b?.ok, b);
+  await sleep(800);
+  const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
+    const why = await c.walkTo(${me0[0] + 12}, ${me0[1]}, { ms: 6000 }); await new Promise((z) => setTimeout(z, 800));
+    const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [c.myState.pos.x - 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
+    await new Promise((z) => setTimeout(z, 1500)); const g = await t.physicsApi.grab('wbcrate'); await new Promise((z) => setTimeout(z, 800));
+    const p = await t.physicsApi.put('wbcrate');
+    return { why, x: +c.myState.pos.x.toFixed(3), made: !!mk?.ok, grab: g?.ok ?? g?.refused?.code ?? null, put: p?.ok ? true : (p?.refused?.reason ?? p?.why ?? JSON.stringify(p)?.slice(0, 200) ?? null) };`);
+  check("WB1 walking at this world's edge stops me at it (as a wall), so the authority still has me where I am: a grab and a put there work", r && r.x <= edge && r.x > edge - 1 && r.grab === true && r.put === true, { edge, ...r });
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: '@world', component: 'bounds' });`).catch(() => null);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'wbcrate' });`).catch(() => null);
+  await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); return true;`);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {

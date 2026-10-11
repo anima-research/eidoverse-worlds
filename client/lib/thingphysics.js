@@ -446,7 +446,12 @@ export async function put(name, spot = null) {
   // the height and what it lands on.
   const f = feet(), yaw = hooks?.myState?.()?.yaw, obj = entities.get(id), sz = obj ? sizeOf(id, obj) : null;
   const out = Math.min(1.2, colliderFor(hooks?.me?.()?.userScale).r + (Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15) + 0.12);   // my walking capsule + its half-width + a gap
-  const at = f && Number.isFinite(yaw) ? [r3(f[0] + Math.sin(yaw) * out), r3(f[2] + Math.cos(yaw) * out)] : null;
+  // in front of me; facing the world's edge, beside me, else behind (the authority refuses a spot past its bounds)
+  const B = compsOf('@world')?.bounds, half = Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15;
+  const inside = (x, z) => !B?.min || (x - half >= B.min[0] && x + half <= B.max[0] && z - half >= B.min[2] && z + half <= B.max[2]);
+  let at = null;
+  if (f && Number.isFinite(yaw)) for (const turn of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) { const x = f[0] + Math.sin(yaw + turn) * out, z = f[2] + Math.cos(yaw + turn) * out;
+    if (inside(x, z)) { at = [r3(x), r3(z)]; break; } }
   const r = await sendRequest('put', { id, ...(at ? { at } : {}) });
   return r?.ok ? r : refused('put', r, id);
 }
