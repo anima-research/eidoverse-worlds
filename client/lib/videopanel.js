@@ -11,7 +11,7 @@ import { makeSection, flashHint } from './ui.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
   AVATAR_DETAILS, getAvatarDetail, setAvatarDetail } from './governor.js';
-import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './lightrig.js';
+import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOICES, getCasterCeiling, setCasterCeiling } from './lightrig.js';
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
@@ -74,7 +74,7 @@ function videoFields() {
   return [
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
-    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution')] : []),
+    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution'), pick('casters', CASTER_CHOICES, getCasterCeiling(), 'shadow casters')] : []),
     pick('particles', PARTICLE_TIERS, getParticleTier(), 'particles'),
     pick('foliage', FOLIAGE_MODES, getFoliageMode(), 'textured transparency'),
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
@@ -87,6 +87,7 @@ function videoDispatch(k, v) {
   if (k === 'scale') setRenderScale(v);
   else if (k === 'shadows') setShadows(!!v);
   else if (k === 'shadowres') setShadowRes(+v);
+  else if (k === 'casters') setCasterCeiling(+v);
   else if (k === 'particles') setParticleTier(v);
   else if (k === 'foliage') setFoliageMode(v);
   else if (k === 'detail') setAvatarDetail(v);
@@ -149,10 +150,16 @@ export function initVideoPanel() {
       SHADOW_RES.map((v) => [v, `${v}²`]), shadowRes(),
       (v) => { setShadowRes(+v); flashHint(`shadow resolution: ${v}²`); });
     resRow.hidden = !shadowsOn();
+    const castRow = selectRow('shadow casters',
+      'How many things near you cast shadows at once (the nearest win; the rest still receive them). More looks richer and costs a shadow draw each. Under load the engine sheds some and brings them back after.',
+      CASTER_CHOICES.map((v) => [v, `${v} nearest`]), getCasterCeiling(),
+      (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
+    castRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',
       'All cast shadows — the sun’s and the lamp shadow. Off is the cheapest single change on a weak GPU; flipping it recompiles nothing.',
-      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
+      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; castRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
     body.appendChild(resRow);
+    body.appendChild(castRow);
 
     body.appendChild(selectRow('particles',
       'How many sprites particle effects draw. auto lets the engine thin them under load and restore them after.',

@@ -19,7 +19,7 @@
 
 import { bus } from './base.js';
 import { getFrame, allFrames } from './windows.js';
-import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace } from './build.js';
+import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost } from './build.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
@@ -29,7 +29,7 @@ import { TABS, openingTab, useTab } from './edittabs.js';
 import { placeStatusChips } from './statuschips.js';
 import { replica } from './net.js';
 import { setFreeCam, freeCamState } from './controller.js';
-import { selection } from './editpanels.js';
+import { selection, openWorldCard } from './editpanels.js';
 import { flashHint } from './ui.js';
 import { LAYERS, LAYER_HINT } from '../../shared/layers.js';
 import { layerOn, setLayerOn } from './selectmask.js';
@@ -136,6 +136,21 @@ function build() {
       { label: 'set home here', run: () => { const sel = selection(); if (!sel.length) return flashHint('select something first', 3000, 'attn'); void Edits.setHomeHere(sel); },
         title: 'Where a reset button sends the selected things back to: where they stand now.' },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },
+    ]),
+    // CREATE (R 10-11: "a Create panel on the top line… to the RIGHT of Edit. Same as Maya. File, then Edit, then Create…
+    // empty entity, model primitives, lights, blueprints, whatever we want to call the sky/ground/grass/weather stuff since
+    // that seems to be all one suite"). Every item opens a path that already exists: the ghost in hand (build.js
+    // holdGhost), the Build tab's library and blueprints, the World's cards and presets. The suite is Environment (Godot's
+    // WorldEnvironment; SkyeSharkie's "environment… sky system").
+    menu('Create', () => [
+      { label: 'Empty', run: () => holdGhost('@empty', 'empty'), title: 'a bare entity: a place to parent things under (Unity\'s Create Empty)' },
+      { label: 'Light', run: () => holdGhost('@light', 'light'), title: 'a point light, placed where you click' },
+      { label: 'Model from the library…', run: () => { L = useTab(L, 'build'); save(); apply(); setTimeout(() => document.querySelector('[data-frame="build"] input[type="text"], [data-frame="build"] input')?.focus(), 50); },
+        title: 'the Build tab: search the library, click a model, click the world' },
+      { label: 'Blueprint…', run: () => { L = useTab(L, 'build'); save(); apply(); }, title: 'the Build tab\'s Blueprints: saved groups of things, placed as copies' },
+      { label: '— Environment —', run: () => {}, title: 'the world\'s sky, weather, ground and grass' },
+      ...[['sky', 'Sky'], ['weather', 'Weather'], ['terrain', 'Terrain'], ['grass', 'Grass']].map(([k, lab]) => ({ label: `   ${lab}`, run: () => { L = useTab(L, 'build'); save(); apply(); openWorldCard(k); },
+        title: `the world's ${lab.toLowerCase()}: its card in the Inspector, its presets in Build ▸ World` })),
     ]),
     menu('Layout', () => [   // was 'View' (R, 10-10: say what it holds: the workspace's own arrangement)
       { label: 'reset workspace layout', run: () => { L = { ...DEF }; save(); apply(); } },

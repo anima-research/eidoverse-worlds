@@ -56,7 +56,7 @@ import { CONFIG, bus } from './base.js';
 import { busy as budgetBusy, setShare, budgetStats } from './framebudget.js';
 import { promoteTailPending, modelQuality } from './realize/models.js';
 import { setSlotCap, getSlotCap, maxSlots, litCount,
-  setCasterBudget, getCasterBudget, casterCount, shadowsOn, shadowRes } from './lightrig.js';
+  setCasterBudget, getCasterBudget, getCasterCeiling, casterCount, shadowsOn, shadowRes } from './lightrig.js';
 import { setEmitterQuality, emitterQuality, emitterCount } from './emitters.js';
 import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
 import { setLodBias } from './remotes.js';
@@ -159,7 +159,6 @@ export function setAvatarDetail(v) {
 if (avatarDetail !== 'auto') setLodBias(AVATAR_DETAILS[avatarDetail]);
 
 const EMITTER_TIERS = ['auto', 'med', 'low'];
-const CASTER_STEPS = [12, 6, 2];
 const GRASS_STEPS = [1, 0.6, 0.35];
 
 // Each lever: shed() / restore() return whether they moved a notch. The
@@ -174,15 +173,13 @@ const LEVERS = [
     shed() {
       if (casterCount() === 0) return false;   // nothing casting → no relief,
                                                // don't burn the shed window
-      const next = CASTER_STEPS.find((s) => s < getCasterBudget());
-      if (next === undefined) return false;
-      setCasterBudget(next);
+      const cur = getCasterBudget(); if (cur <= 2) return false;   // halve toward 2 (the ceiling is the person's Video setting)
+      setCasterBudget(Math.max(2, Math.floor(cur / 2)));
       return true;
     },
     restore() {
-      const next = [...CASTER_STEPS].reverse().find((s) => s > getCasterBudget());
-      if (next === undefined) return false;
-      setCasterBudget(next);
+      const cur = getCasterBudget(), top = getCasterCeiling(); if (cur >= top) return false;
+      setCasterBudget(Math.min(top, cur * 2));
       return true;
     },
   },

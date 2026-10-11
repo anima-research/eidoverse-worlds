@@ -286,6 +286,8 @@ export async function holdGhost(lib, label) {
     if (lib === '@light') {
       obj = makeLightGizmo(0xffd9a0);
       obj.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.7; } });
+    } else if (lib === '@empty') {   // Create ▸ Empty (R 10-11): a bare entity, a parent for others; shown as its axes
+      obj = new THREE.AxesHelper(0.5);
     } else {
       obj = await loadGLB(lib);
       ghostify(obj);
@@ -293,10 +295,10 @@ export async function holdGhost(lib, label) {
     ghost = { obj, lib, yaw: 0, scale: 1 };
     scene.add(obj);
     collapseAll();
-    flashHint(lib === '@light'
-      ? html`placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel`
+    flashHint(lib === '@light' || lib === '@empty'
+      ? html`placing ${lib === '@light' ? html`a <b>light</b>` : html`an <b>empty</b>`} — click to place · <kbd>Esc</kbd> cancel`
       : html`placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
-    if (lib !== '@light') engage('ghostKeys');   // the status line keeps the keys while it's in hand
+    if (lib !== '@light' && lib !== '@empty') engage('ghostKeys');   // the status line keeps the keys while it's in hand
   } catch (e) { report('ghost', e); }
 }
 
@@ -364,7 +366,7 @@ const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1
 /** The thing in hand, for tests and the hint: {yaw, scale} or null. */
 export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib, bp: ghost.bp?.hash ?? null } : null);
 function ghostKey(e) {
-  if (!ghost || ghost.lib === '@light' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
+  if (!ghost || ghost.lib === '@light' || ghost.lib === '@empty' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
   const fine = !!e.shiftKey;   // keys: ghostKeys
   if (e.code === 'KeyQ' || e.code === 'KeyE') ghost.yaw += (e.code === 'KeyQ' ? 1 : -1) * (fine ? GHOST_TURN_FINE : GHOST_TURN);
   else if (e.code === 'Comma' || e.code === 'Period') { const k = fine ? GHOST_SIZE_FINE : GHOST_SIZE; ghost.scale = THREE.MathUtils.clamp(ghost.scale * (e.code === 'Period' ? k : 1 / k), 0.1, 12); }
@@ -497,12 +499,13 @@ bus.on('drag', ({ id, pos, yaw, q }) => {
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = mintId(ghost.lib === '@light' ? 'light' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
+  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
   let sent;
   if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
+  else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot

@@ -750,7 +750,13 @@ function updateShadow() {
 // blob shadows until measured (§12.5).
 
 const casters = new Map();   // id -> { obj, meshes, casting, warm, released }
-let casterBudget = 12;
+// how many things may cast at most: a Video setting (R 10-11: "Any idea why shadows are limited to the 10~ closest objects?
+// … That should probably be a setting in Settings>Video"); the governor sheds below it under load and climbs back to it
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
+let casterCeiling = (() => { try { const v = +localStorage.getItem('ew-shadow-casters'); return CASTER_CHOICES.includes(v) ? v : 24; } catch { return 24; } })();
+let casterBudget = casterCeiling;
+export const getCasterCeiling = () => casterCeiling;
+export function setCasterCeiling(k) { if (!CASTER_CHOICES.includes(+k)) return; casterCeiling = +k; casterBudget = casterCeiling; try { localStorage.setItem('ew-shadow-casters', String(k)); } catch { /* private window */ } }
 let lastCasterPass = 0;
 
 /** The models realizer registers every realized model here; retire releases. */
@@ -765,7 +771,7 @@ export function releaseCaster(id) {
   casters.delete(id);
 }
 export const casterCount = () => casters.size;
-export function setCasterBudget(k) { casterBudget = Math.max(0, k); }
+export function setCasterBudget(k) { casterBudget = Math.max(0, Math.min(casterCeiling, k)); }
 export const getCasterBudget = () => casterBudget;
 
 function casterPass() {
@@ -773,9 +779,12 @@ function casterPass() {
     .map((c) => ({ c, d: c.obj.getWorldPosition(_p).distanceToSquared(camera.getWorldPosition(_cw)) }))
     .sort((a, b) => a.d - b.d);
   let enables = 0;
+  // hysteresis: something already casting keeps casting until it's well past the edge (1.25× the last caster's distance),
+  // so walking along a row of crates doesn't make shadows blink on and off at the boundary (R: 'instead of popping')
+  const edge = casterBudget > 0 && ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
   for (let i = 0; i < ranked.length; i++) {
-    const { c } = ranked[i];
-    const want = i < casterBudget;
+    const { c, d } = ranked[i];
+    const want = i < casterBudget || (c.casting && d <= edge && i < casterBudget + 4);
     if (want === c.casting) continue;
     if (!want) {                          // disables are free — flip now
       c.casting = false;

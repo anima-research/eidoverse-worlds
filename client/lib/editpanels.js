@@ -108,6 +108,13 @@ let visibleRows = [];          // the rows as last painted, for ↑/↓
 // scenegraph selection. Selecting it clears the thing selection and shows its
 // components in the Inspector; selecting any thing clears it again.
 let worldSel = false;
+/** Create ▸ Environment (editlayout.js): select the world with one of its cards open and the Build tab's World presets
+ *  in view — the same places a click on the World row and on Build ▸ World lead to. */
+export function openWorldCard(key) {
+  const g = key === 'weather' ? 'weather' : key; if (g && !isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g);
+  if (buildFolds.world) buildFolds.world = false;
+  envFocus = key ?? null; selectWorld();
+}
 function selectWorld() {
   arming = null; armingRef = null;
   if (sceneSelected()) deselectAll();   // sg:selected(null) — which leaves worldSel alone
