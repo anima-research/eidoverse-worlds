@@ -482,12 +482,15 @@ function cardRow(schema, id, addr) {
 }
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
-function pushCards(f, schema, id, { locked = false, afterTransform = [] } = {}) {
+function pushCards(f, schema, id, opts = {}) {
+  const { locked = false, afterTransform = [] } = opts;
   const touched = id !== WORLD_ID ? authorityInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
+    if (sec.type === 'Parent' && !opts.withParent) continue;   // R 10-10: parenting is the Hierarchy's (and Attributes')
     const key = `c:${sec.key ?? sec.type}`;
     const prov = sec.present !== false ? touchLine(touched[wireOf(sec)]) : null;
-    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
+    const acts = sec.removable && sec.key ? [{ k: `ed:remove.${sec.key}`, icon: 'x', title: `remove ${sec.title}`, danger: true }] : [];
+    f.push({ t: 'group', k: key, actions: acts, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
     // the channel box: an alias (pos.yaw, the heading) stays addressable for
     // agents but is not drawn; the Quaternion row folds under its own header,
@@ -505,7 +508,7 @@ function pushCards(f, schema, id, { locked = false, afterTransform = [] } = {}) 
       f.push({ t: 'group', k: qk, label: 'Advanced', hint: 'rotation order and the quaternion (the rotation as it is stored: four numbers that never gimbal-lock) — rarely needed until rigs', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
       f.push(...quat);
     }
-    if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
+    if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true, vrOnly: true });   // desktop: the ✕ on the title line
     // R 10-10: Add Component and New Script sit right under Transform (Blender's Add Modifier), not at the foot of a long list
     if (sec.type === 'Transform' && afterTransform.length) f.push(...afterTransform);
   }
@@ -586,7 +589,11 @@ function inspectorFields() {
   // owning its fields by their unchanged group.k address, then Add Component.
   if (schema.sections) {
     // the name leads (Unity's name box), the id under it; the rest of the header after the facts
-    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.')) { if (a === 'flags.label') f.unshift(r); else f.push(r); } }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
+    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') f.unshift(r); else f.push(r); } }
+    // R 10-10: the eye, as in the Hierarchy: hidden in MY view only. Hidden for everyone lives in Attributes, by that name.
+    { const mine = isMineHidden(id);
+      f.splice(Math.min(f.length, 2), 0, { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: mine ? 'hidden for you' : 'shown for you', bar: true, deskOnly: true,
+        hint: mine ? 'Hidden in YOUR view only; everyone else still sees it. Click to show it again.' : 'Click to hide it in YOUR view only. Nobody else is affected (the eye in the Hierarchy is the same switch).' }); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {
       const q = pendingAsk.ask;
       f.push({ t: 'group', k: 'c:ask', label: q.kind === 'confirm' ? `Remove ${q.type}?` : `${q.component} needs a choice`, open: true });
@@ -679,6 +686,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
@@ -1052,6 +1060,33 @@ function historyDispatch(action, value) {
   else if (typeof action === 'string' && action.startsWith('who:')) { hist.mode = 'person'; hist.who = action.slice(4); repaintAll(); }
 }
 
+// ---------------------------------------------------------------- Attributes (R 10-10: Maya's Attribute Editor beside
+// the Inspector's channel box): everything about the selection, including what the Inspector leaves out — its id, its
+// parent, whether it is hidden for EVERYONE, and every component as JSON.
+let attrPainted = [];
+function attributesFields() {
+  const id = worldSel ? null : sceneSelected();
+  if (!id || !entities.has(id)) { attrPainted = [{ t: 'info', label: 'selection', value: 'nothing selected — Attributes lists everything about the selected thing, including what the Inspector leaves out' }]; return attrPainted; }
+  const schema = schemaFor(id); const bag = comps.get(id) ?? {}; const f = [];
+  f.push({ t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this' });
+  const hid = cardRow(schema, id, 'flags.hidden');
+  if (hid) f.push({ ...hid, label: 'hidden for all', hint: 'Hidden from EVERYONE in this world (a world edit). The eye in the Inspector and the Hierarchy hides it in your view only.' });
+  const lk = cardRow(schema, id, 'flags.lock'); if (lk) f.push({ ...lk, label: 'locked' });
+  const parentSec = schema.sections?.list?.find((s) => s.type === 'Parent');
+  if (parentSec) { f.push({ t: 'group', k: 'a:parent', label: 'Parent', open: isOpen(id, 'a:parent') }); for (const addr of parentSec.fields) { const r = cardRow(schema, id, addr); if (r) f.push(r); } }
+  f.push({ t: 'group', k: 'a:json', label: 'Components as JSON', open: isOpen(id, 'a:json'), hint: 'every component on it, as it is stored. A saved edit replaces that component whole.' });
+  for (const type of Object.keys(bag).sort()) {
+    if (bag[type] === undefined) continue;
+    f.push({ t: 'json', k: `ed:comp.${type}`, path: `comp.${type}`, label: type, value: JSON.stringify(bag[type], null, 2), collapsed: true, hint: `the whole ${type} component as JSON` });
+  }
+  attrPainted = f;
+  return f;
+}
+function attributesDispatch(action, payload, field, opts = {}) {
+  const keep = painted; painted = attrPainted;
+  try { return inspectorDispatch(action, payload, field, opts); } finally { painted = keep; }
+}
+
 // ---------------------------------------------------------------- mounting
 const PANELS = [
   { id: 'hierarchy', title: 'Hierarchy', theme: 'edit', fields: hierarchyFields, dispatch: hierarchyDispatch, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },   // x clears the dock rail (left:10 + 34px buttons + padding)
@@ -1060,6 +1095,8 @@ const PANELS = [
   { id: 'inspector', title: 'Inspector', theme: 'edit', fields: inspectorFields, dispatch: inspectorDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
   // docked as a tab beside the Inspector by editlayout.js (Inspector | History)
   { id: 'history', title: 'History', theme: 'edit', fields: historyFields, dispatch: historyDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
+  // docked as a third tab (Inspector | Attributes | History): Maya's Attribute Editor to the Inspector's channel box
+  { id: 'attributes', title: 'Attributes', theme: 'edit', fields: attributesFields, dispatch: attributesDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
   // optional: never auto-shown on entering edit mode (View ▸ console, or a script row in the inspector)
   { id: 'console', title: 'Console', theme: 'edit', fields: consoleFields, dispatch: consoleDispatch, optional: true, frame: { x: 'center', y: -24, w: 560, h: 240, minW: 320, minH: 120 } },
 ];

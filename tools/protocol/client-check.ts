@@ -378,7 +378,8 @@ try {
   await sleep(600);
   const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
   check("I1 the Inspector leads with the name, then the id", labels?.[0] === "name" && labels?.[1] === "id", labels);
-  check("I2 …no lib line (the Model card has it), no filter box; the Parent card shows its parent, not its children", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
+  // R 10-10: parent moved to the Attributes tab ("I don't think we should show 'parent' here at all - this seems like a Hierarchy thing")
+  check("I2 …no lib line (the Model card has it), no filter box; no Parent card (it lives in Attributes now)", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && !labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
   check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
   check("I4 …rotation order sits inside the folded Advanced group, not in the main Transform", await evalJson(`![...${insp}.querySelectorAll('.sp-row .sp-label')].some((l) => /order/i.test(l.textContent))`), labels);
   check("I5 Add Component is ONE button", await evalJson(`[...${insp}.querySelectorAll('.sp-pop-btn')].length === 1 && ![...${insp}.querySelectorAll('.sp-btn')].some((b) => /^\\+ (Light|Pendulum|Spin)/.test(b.textContent))`), await evalJson(`[...${insp}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
@@ -548,7 +549,7 @@ try {
   // History (R 10-04, research 56): a tab beside the Inspector; the 'last change' line opens it; one thing's acts, Older… pages
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pt')`, 3000);
-  check("HT1 the right column has Inspector | History tabs", await evalJson(`JSON.stringify([...document.querySelectorAll('.edit-rtabs .edit-tab')].map((b) => b.textContent)) === '["Inspector","History"]'`));
+  check("HT1 the right column has Inspector | Attributes | History tabs (Attributes: R 10-10)", await evalJson(`JSON.stringify([...document.querySelectorAll('.edit-rtabs .edit-tab')].map((b) => b.textContent)) === '["Inspector","Attributes","History"]'`));
   await waitFor(`[...document.querySelectorAll('[data-frame="inspector"] .sp-btn')].some((b) => /History ›/.test(b.textContent))`, 4000);
   await evalJson(`([...document.querySelectorAll('[data-frame="inspector"] .sp-btn')].find((b) => /History ›/.test(b.textContent)).click(), true)`);
   check("HT2 the Inspector's 'last change … History ›' opens the History tab", await waitFor(`document.querySelector('.edit-right')?.dataset.tab === 'history' && getComputedStyle(document.querySelector('[data-frame="history"]')).display !== 'none' && getComputedStyle(document.querySelector('[data-frame="inspector"]')).display === 'none'`, 3000));

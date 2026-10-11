@@ -1811,7 +1811,15 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-group:hover { background: var(--e-hover); }
 /* tree rows (Hierarchy): 24px, faint indent guides, name + dim kind on one line; selected = accent-bg + a 2px accent bar */
 .frame.edit .sp-tree { gap: 0; max-height: none; }
+.frame.edit .sp-row.sp-f-tree > .sp-tree { flex: 1 1 auto; min-width: 0; }   /* the rows span the panel (a short list shrank to its longest name, and the eye sat mid-row) */
 /* the Add Component / New Script bar under Transform: two buttons on one line, its own little area */
+/* a card's title-line actions (remove …): on the right, shown while the line is hovered or focused */
+.frame.edit .sp-row.sp-f-group.has-acts { position: relative; }
+.frame.edit .sp-gacts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; }
+.frame.edit .sp-row.sp-f-group:hover .sp-gacts, .frame.edit .sp-row.sp-f-group:focus-within .sp-gacts { display: inline-flex; }
+.frame.edit .sp-gact { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 3px; background: none; color: var(--e-dim); cursor: pointer; }
+.frame.edit .sp-gact:hover { background: var(--e-bg1); color: var(--e-text); }
+.frame.edit .sp-gact.danger:hover { color: var(--e-danger, #ff6b6b); }
 .frame.edit .sp-row.sp-bar { display: inline-flex; vertical-align: top; margin: 6px 6px 6px 0 !important; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
 .frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 24px; gap: 4px; }
 .frame.edit .sp-item:hover { background: var(--e-hover); }
@@ -2029,7 +2037,8 @@ body.edit-workspace .sp-ctx-item.danger { color: var(--e-danger); }
 .edit-left > :is([data-frame="hierarchy"], [data-frame="build"]) > .fr-head { display: none !important; }
 .edit-left[data-tab="hierarchy"] > [data-frame="build"], .edit-left[data-tab="build"] > [data-frame="hierarchy"] { display: none !important; }
 .edit-right > :is([data-frame="inspector"], [data-frame="history"]) > .fr-head { display: none !important; }
-.edit-right[data-tab="inspector"] > [data-frame="history"], .edit-right[data-tab="history"] > [data-frame="inspector"] { display: none !important; }
+.edit-right[data-tab="inspector"] > :is([data-frame="history"], [data-frame="attributes"]), .edit-right[data-tab="history"] > :is([data-frame="inspector"], [data-frame="attributes"]),
+.edit-right[data-tab="attributes"] > :is([data-frame="inspector"], [data-frame="history"]) { display: none !important; }
 /* tiles (panels.js 'tiles'): a grid; an icon or a picture over a short label. Quiet at rest, hover fill,
    armed = press fill + an accent glyph — the tool rail's look */
 .frame.edit .sp-f-tiles.sp-row { display: block; margin: 2px 0 4px; }

@@ -22,7 +22,8 @@ try {
   const m = await page(`const f = document.querySelector('[data-frame="inspector"]'); const R = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width)]; };
     const rows = [...f.querySelectorAll('.sp-row')].slice(0, 60).map((r) => { const l = r.querySelector('.sp-label'); const c = l?.nextElementSibling; return { t: (l?.textContent ?? '').trim().slice(0, 18), label: l ? R(l) : null, ctl: c ? [c.className.split(' ')[0], ...R(c)] : null }; });
     const groups = [...f.querySelectorAll('.sp-group')].map((g) => g.textContent.trim().slice(0, 30));
-    const order = [...f.querySelectorAll('.sp-group, .sp-bar')].map((e) => e.classList.contains('sp-bar') ? '[' + e.textContent.trim().slice(0, 18) + ']' : e.textContent.trim().slice(0, 16)); return { frame: R(f), groups, order, rows };`);
+    const eye = f.querySelector('.sp-bar')?.textContent?.trim() ?? null; const hasHidden = [...f.querySelectorAll('.sp-label')].some((l) => l.textContent.trim() === 'hidden');
+    const order = [...f.querySelectorAll('.sp-group, .sp-bar')].map((e) => e.classList.contains('sp-bar') ? '[' + e.textContent.trim().slice(0, 18) + ']' : e.textContent.trim().slice(0, 16)); return { frame: R(f), groups, order, rows, eye, hasHidden };`);
   fs.writeFileSync(`${OUT}/rows.json`, JSON.stringify(m, null, 1));
   const b = await evalJson(`(() => { const r = document.querySelector('[data-frame="inspector"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
   const s = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: Math.min(b[3], 1000 - b[1]), scale: 1 } }); fs.writeFileSync(`${OUT}/inspector.png`, Buffer.from(s.data, "base64"));
@@ -30,5 +31,17 @@ try {
     for (const [k, v] of [['physics.friction', '0.25'], ['physics.restitution', '0.8'], ['physics.mass', ''], ['physics.restitution', '2'], ['physics.kind', 'static']]) { const r = I.commitEdit('pallet-spin', k, v); out[k + '=' + v] = r?.errors?.length ? r.errors.join('; ') : 'ok'; await new Promise((z) => setTimeout(z, 900)); }
     const w = await import('/lib/world.js'); out.after = w.comps.get('pallet-spin')?.physics; return out;`);
   console.log("EDITS", JSON.stringify(ed));
-  console.log("groups", JSON.stringify(m.groups)); console.log("order", JSON.stringify(m.order));
+  await page(`const t = [...document.querySelectorAll('button, [role=tab]')].find((b) => b.textContent.trim() === 'Hierarchy'); t?.click(); return true;`); await sleep(700);
+  { const r3 = await evalJson(`(() => { const r = document.querySelector('[data-frame="hierarchy"]').getBoundingClientRect(); return [r.left, r.top, r.width, Math.min(r.height, 300)]; })()`);
+    const s3 = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: r3[0], y: r3[1], width: Math.max(1, r3[2]), height: Math.max(1, r3[3]), scale: 1 } }); fs.writeFileSync(`${OUT}/hierarchy.png`, Buffer.from(s3.data, "base64"));
+    console.log("HROW", JSON.stringify(await evalJson(`(() => { const R = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width)]; }; const row = document.querySelector('[data-frame="hierarchy"] [data-id="pallet-spin"]');
+      return { frame: R(document.querySelector('[data-frame="hierarchy"]')), tree: R(row?.parentElement), row: R(row), kids: [...(row?.children ?? [])].map((k) => [k.className, ...R(k)]) }; })()`)));
+    console.log("HEYE", JSON.stringify(await evalJson(`(() => { const e = document.querySelector('[data-frame="hierarchy"] .sp-eye'); return e ? { svg: !!e.querySelector('svg'), shown: getComputedStyle(e).display, opacity: getComputedStyle(e).opacity } : null; })()`))); }
+  await page(`(await import('/lib/base.js')).bus.emit('edit-righttab', 'attributes'); return true;`); await sleep(900);
+  { const b2 = await evalJson(`(() => { const r = document.querySelector('[data-frame="attributes"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+    const s2 = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: b2[0], y: b2[1], width: Math.max(1, b2[2]), height: Math.max(1, Math.min(b2[3], 1000 - b2[1])), scale: 1 } }); fs.writeFileSync(`${OUT}/attributes.png`, Buffer.from(s2.data, "base64"));
+    const at = await page(`const f = document.querySelector('[data-frame="attributes"]'); return { rows: [...f.querySelectorAll('.sp-label')].map((l) => l.textContent.trim()).slice(0, 20), insp: getComputedStyle(document.querySelector('[data-frame="inspector"]')).display };`);
+    console.log("ATTR", JSON.stringify(at)); }
+  await page(`(await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); return true;`); await sleep(600);
+  console.log("groups", JSON.stringify(m.groups)); console.log("order", JSON.stringify(m.order)); console.log("EYE", JSON.stringify({ eye: m.eye, hiddenCheckbox: m.hasHidden }));
 } finally { await cleanup(); }

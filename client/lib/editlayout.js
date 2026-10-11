@@ -50,7 +50,7 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
   { id: 'pivot', icon: 'locateFixed', key: 'P', title: 'pivot (P) — drag where it turns and scales from; it snaps to the model\'s centre, base, corners and faces. The thing never moves' },
 ];
 
-const RTABS = [['inspector', 'Inspector'], ['history', 'History']];
+const RTABS = [['inspector', 'Inspector'], ['attributes', 'Attributes'], ['history', 'History']];
 let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip }
 let prevChat = null;     // chat's visibility before docking, restored on exit
 let prevWorld = null;    // the World panel's, likewise
@@ -385,7 +385,7 @@ function apply() {
 
 let seatTimer = 0;
 // the HUD's own panels, not the workspace's columns (those dock into it) nor the World panel (parked separately)
-const WORKSPACE_OWN = new Set(['build', 'hierarchy', 'inspector', 'history', 'chat', 'world']);
+const WORKSPACE_OWN = new Set(['build', 'hierarchy', 'inspector', 'attributes', 'history', 'chat', 'world']);
 const loosePanels = () => allFrames().filter((f) => f?.id && !WORKSPACE_OWN.has(f.id) && typeof f.show === 'function');
 let playPanels = null;
 const PANELS_KEY = 'ew.edit.panels';
@@ -401,9 +401,9 @@ function enter() {
   const bd = getFrame('build'), h = getFrame('hierarchy'), i = getFrame('inspector'), c = getFrame('chat');
   bd?.dock(left); h?.dock(left);
   left.prepend(tabs, ...[bd?.el, h?.el].filter(Boolean));   // tabs, then both pages, above the splitter
-  const hs = getFrame('history');
-  i?.dock(right); hs?.dock(right);
-  right.prepend(rtabs, ...[i?.el, hs?.el].filter(Boolean));   // tabs, then both pages
+  const hs = getFrame('history'), at = getFrame('attributes');
+  i?.dock(right); at?.dock(right); hs?.dock(right);
+  right.prepend(rtabs, ...[i?.el, at?.el, hs?.el].filter(Boolean));   // tabs, then the pages
   if (c) { prevChat = c.visible; c.dock(left); if (!c.visible) c.show(); }
   // each mode keeps its own open panels (R, 10-10: "collapse all other HUD panels" on entering; Blender's workspaces):
   // play's are put away and remembered, edit's last set comes back (none, the first time). What you open in edit mode
@@ -435,7 +435,7 @@ function exit() {
   setShade('shaded');
   if (isolating()) setIsolate(null, (id) => replica.st?.entities?.[id]?.c?.parent?.to ?? null, Object.keys(replica.st?.entities ?? {}));   // the view is whole again outside edit mode
   const c = getFrame('chat');
-  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
+  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('attributes'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace
   savePanels(loosePanels().filter((f) => f.visible).map((f) => f.id));
   for (const f of loosePanels()) if (f.visible) f.hide();

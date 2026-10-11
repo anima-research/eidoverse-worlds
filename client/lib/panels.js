@@ -72,7 +72,10 @@ import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';
-import { svg as iconSvg, rsvg, has as hasIcon } from './icons.js';
+import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill } from './icons.js';
+// a name from either set: the line icons (24 grid) or the filled ones (the eye, R 10-10: the Hierarchy's eye drew nothing,
+// 'eye' being a filled-set name the line-set function didn't know)
+const iconSvg = (name, size = 18) => (hasIcon(name) ? strokeSvg(name, size) : hasFill(name) ? fsvg(name, size) : '');
 import { KEYHINTS, engage, release, withKeys } from './keyhints.js';
 export { parseEntry };
 
@@ -568,6 +571,15 @@ function fieldDOM(f, edit, ro = {}) {
       const h = put(el('button', 'sp-group'), `${f.open === false ? '▸' : '▾'} ${f.label}`, ro.icons);
       h.onclick = () => edit('fold', f.k);
       row.innerHTML = ''; row.append(h);
+      // a card's own actions on its title line, shown on hover (R 10-10: 'delete components right from the title line,
+      // like an x that shows up on the line when you hover over it'); the VR quad keeps its remove row instead
+      if (f.actions?.length) {
+        const acts = el('span', 'sp-gacts');
+        for (const a of f.actions) { const b = el('button', `sp-gact${a.danger ? ' danger' : ''}`); b.type = 'button'; b.title = a.title ?? a.label ?? ''; b.setAttribute('aria-label', b.title);
+          if (a.icon && hasIcon(a.icon)) b.innerHTML = iconSvg(a.icon, 13); else b.textContent = a.label ?? '';
+          b.onclick = (e) => { e.stopPropagation(); edit(a.k); }; acts.append(b); }
+        row.append(acts); row.classList.add('has-acts');
+      }
       row.update = (nf) => { put(h, `${nf.open === false ? '▸' : '▾'} ${nf.label}`, ro.icons); };
       break;
     }

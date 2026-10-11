@@ -432,6 +432,25 @@ try {
   const n = await page(`const c = await import('/lib/chat.js'); for (let i = 0; i < 3; i++) c.noteHistoryContext({ total: null, shown: 40 }); return document.querySelectorAll('.hist-note').length;`);
   check("CH1 three rejoins leave ONE history note in the chat, not three", n === 1, { notes: n });
   });
+  // ---- AT: the Attributes tab, the Inspector's eye, a card's ✕ (R, 10-10 18:55) ----
+  await stage("AT", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'atbox', model: '${CRATE}', components: { label: 'Attr box', transform: { pos: [${me[0]} + 3, 0, ${me[1]} + 3], scale: 0.3 } } });
+    return await m.sendRequest('set', { id: 'atbox', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 30 } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('atbox'))`); await sleep(600);
+  const r = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('atbox'); await new Promise((z) => setTimeout(z, 900));
+    const insp = document.querySelector('[data-frame="inspector"]'); const labels = [...insp.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
+    const eye = [...insp.querySelectorAll('.sp-bar button')].find((b) => /for you/.test(b.textContent)); const hasEyeIcon = !!eye?.querySelector('svg');
+    const spinX = [...insp.querySelectorAll('.sp-row.sp-f-group')].find((g) => /^▾?[ ]*Spin/.test(g.textContent.trim()))?.querySelector('.sp-gact');
+    (await import('/lib/base.js')).bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
+    const at = document.querySelector('[data-frame="attributes"]'); const al = [...at.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
+    (await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); await new Promise((z) => setTimeout(z, 300));   // back to the Inspector whatever happens (VM2b measures it)
+    let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).comps.get('atbox')?.motion; }
+    (await import('/lib/build.js')).setEditMode(false);
+    return { hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.textContent?.trim() ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
+  check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
+  check("AT2 a removable card's title line carries a ✕ that removes it (Spin)", r.spinX && r.removed === true, r);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
