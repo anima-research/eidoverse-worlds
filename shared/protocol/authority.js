@@ -2886,7 +2886,10 @@ function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
   for (let guard = 0; guard < 64; guard++) {
-    const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
+    // the lowest first (R 10-10 23:23, the gym log): pyr-9 settled onto pyr-6, and then pyr-6's own rest in the same view
+    // moved pyr-6 and dragged pyr-9, now its child, 19 cm into pyr-7. A support rests before what it carries.
+    const sf = w.sim(); let r = null;
+    for (const x of sf.rested) if (!skip.has(`${x.id}@${x.seq}`) && (!r || x.p[1] < r.p[1] - 1e-6)) r = x; if (!r) return;
     const st = w.state(); const t = worldT(st, r.id);
     const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })];
     let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
