@@ -36,6 +36,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
   ["reset", "reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
+  ["settle", "settle-check.ts", 1],     // what a thing at rest is attached to
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the authority at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)

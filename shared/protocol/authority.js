@@ -2902,8 +2902,12 @@ function settleSim(w) {
       continue;
     }
     // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
-    const fam = new Set([r.id, ...descendants(st2, r.id)]); const sup = supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
-    if (sup.id === "ground") continue;
+    // ON = what its footprint touches (R 10-10: a pyramid's top crate sits over the gap between two crates; read under its
+    // centre, the gap led down to the crate a row lower, and the top crate was parented 0.5 m above it: carry that one
+    // and it rode along in mid-air). Nothing within 3 cm under its footprint: not parented.
+    const fam = new Set([r.id, ...descendants(st2, r.id)]); const bx = aabb(st2, r.id);
+    const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
+    if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
     const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
     const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
     const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
