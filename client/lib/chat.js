@@ -147,6 +147,8 @@ function prependLine(who, text, ts, seq) {
  *  bot's telemetry looks like everything that has ever happened here. */
 export function noteHistoryContext({ total = null, shown = 0, spanMs = null } = {}) {
   if (!logEl) return;
+  // one note, ever: every rejoin (each server restart) prepended another, until the pane was a column of them (R 10-10)
+  logEl.querySelectorAll('.hist-note').forEach((n) => n.remove());
   // `total` is unknown for worlds folded before it was recorded. Saying
   // "showing 40 of 0" would be worse than saying nothing; saying "there is
   // more" is true either way.

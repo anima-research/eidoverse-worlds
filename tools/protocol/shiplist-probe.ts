@@ -427,6 +427,11 @@ try {
     return { a, b, inEdit1, inPlay, inEdit2 };`);
   check("EP1 entering edit mode puts play's panels away; what I open in edit mode comes back next time; play's come back on leaving", JSON.stringify(r.inEdit1) === "[false,false]" && JSON.stringify(r.inPlay) === "[true,false]" && JSON.stringify(r.inEdit2) === "[false,true]", r);
   });
+  // ---- CH: the chat's "scroll up for earlier" note appears once, however many times I rejoin (R, 10-10) ----
+  await stage("CH", async () => {
+  const n = await page(`const c = await import('/lib/chat.js'); for (let i = 0; i < 3; i++) c.noteHistoryContext({ total: null, shown: 40 }); return document.querySelectorAll('.hist-note').length;`);
+  check("CH1 three rejoins leave ONE history note in the chat, not three", n === 1, { notes: n });
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
