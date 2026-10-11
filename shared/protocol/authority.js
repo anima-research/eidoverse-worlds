@@ -3041,6 +3041,11 @@ const PHYSICS_VERBS = {
     const over = new Set(); if (!live) for (const s of spatial(st).rec.get(a.id)?.surfs ?? []) for (const k of near(st, [s.min[0], s.y - 0.02, s.min[1]], [s.max[0], Infinity, s.max[1]])) over.add(k);   // only what stands over its surfaces (the index)
     const dependents = live ? [] : Object.keys(st.entities).filter((k) => { if (fam.has(k) || !over.has(k)) return false; const b = aabb(st, k);
       return b && !st.entities[k].c.parent && supportUnder(st, b, familyOf(st, k)).id === a.id; });
+    // R 10-10: what the physics stacked on it (a dynamic child, its rest attached it) does NOT come along unless it carries
+    // ('can carry other entities', a tray): picking up the bottom crate of a stack takes that crate; the rest fall and
+    // tumble. A builder's attachment (a child that isn't dynamic) still rides.
+    const physW = !!(st.entities["@world"]?.c["physics-engine"] && carried(st.entities["@world"].c["physics-engine"]));
+    if (physW && !live && !g.carries) for (const k of descendants(st, a.id)) if (st.entities[k]?.c.physics?.kind === "dynamic" && !dependents.includes(k)) dependents.push(k);
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
       if (!may(st, actor, "editOthers") && !(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }

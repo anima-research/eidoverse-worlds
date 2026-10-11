@@ -22,5 +22,14 @@ const box = (W, id, pos, scale = [1, 1, 1]) => call(W, "rowan", "create", { id, 
   ok(made.every(Boolean) && p.ok && ["l", "r"].includes(t.parent?.to), "SE1 a crate at rest across two crates is attached to one of them, not to the slab under the gap between them", { made, punt: p.ok ?? p.refused, parent: t.parent, pos: t.transform.pos });
   call(W, "vic", "move", { to: [0, 0, 0.7] }); call(W, "vic", "punt", { id: "slab", v: [0, 0.5, 0.2] }); T += 6000; call(W, "vic", "look", {});
   ok(st(W).entities.slab.c.parent === undefined, "SE2 a thing on the ground stays unattached", st(W).entities.slab.c.parent); }
+for (const carries of [false, true]) { const W = carries ? "tray" : "book";
+  call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "bot", [0, 0, 0]); box(W, "mid", [0, 0.6, 0]); call(W, "rowan", "set", { id: "bot", component: "grabbable", value: carries ? { carries: true } : {} });
+  call(W, "vic", "move", { to: [0, 0, -0.7] }); call(W, "vic", "punt", { id: "mid", v: [0, 1, 0] }); T += 6000; call(W, "vic", "look", {});
+  const stacked = st(W).entities.mid.c.parent?.to === "bot";
+  call(W, "vic", "move", { to: [0, 0, -0.75] }); const g = call(W, "vic", "grab", { id: "bot" }); call(W, "vic", "move", { to: [0, 0, -3] }); T += 6000; call(W, "vic", "look", {});
+  const m = st(W).entities.mid.c; const fell = (g.notes ?? []).some((n) => n.fell?.includes("mid"));
+  if (!carries) ok(stacked && g.ok && fell && !m.parent && m.transform.pos[1] < 0.05, "SE3 picking up the bottom of a stack takes that one: what the physics stacked on it falls off and lands (a book from a pile)", { stacked, grab: g.ok ?? g.refused, fell, mid: m.transform.pos, parent: m.parent });
+  else ok(stacked && g.ok && !fell && m.parent?.to === "bot", "SE4 grabbable.carries ('can carry other entities', a tray): what rests on it comes along", { stacked, grab: g.ok ?? g.refused, fell, parent: m.parent }); }
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

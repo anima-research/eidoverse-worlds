@@ -383,6 +383,7 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'enum', k: 'hold', label: 'hold', value: g.hold, def: GRAB_DEFAULTS.hold, options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) },
       { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
       { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' },
+      { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
       { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' },
       { t: 'enum', k: 'release', label: 'let go', value: g.release, def: GRAB_DEFAULTS.release, options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) },
       { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: 'Left lying around for this many seconds, it returns to its home spot. 0 = it never returns on its own.' },
@@ -1064,7 +1065,7 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'grabbable': {
         const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
-        if (['enabled', 'steal', 'twoHanded'].includes(k)) next[k] = bool(raw);
+        if (['enabled', 'steal', 'twoHanded', 'carries'].includes(k)) next[k] = bool(raw);
         else if (['range', 'priority', 'throw', 'returnAfter'].includes(k)) { const n = num(f, raw); if (n == null) break; next[k] = k === 'priority' ? Math.round(n) : round(n); }
         else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
         else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
