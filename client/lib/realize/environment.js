@@ -28,11 +28,11 @@ function reconcileEnvironment() {
 function onWorld({ key, ts }) {
   const st = state.st;
   switch (key) {
-    case 'terrain': applyTerrainState(st.terrain); break;
+    case 'terrain': applyTerrainState(st.terrain ?? null); break;   // removed: the default flat ground
     // a mown lawn folds to null; the realizer is told to clear
     case 'grass': applyGrassState(st.grass ?? { clear: true }); break;
     // the fold merged this change into st.sky already; its ts anchors live transition timing
-    case 'sky': applySkyFolded(st.sky, ts ?? st.sky?.ts); break;
+    case 'sky': applySkyFolded(st.sky ?? {}, ts ?? st.sky?.ts); break;   // removed: the default sky
     case 'assets': for (const a of st.assets ?? []) applyAssetState(a); break;
   }
 }

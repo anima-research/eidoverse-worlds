@@ -3,7 +3,7 @@
 // Today: identity up top (portrait = presence control, header), and four tabs.
 // satchel / worlds / friends have no server surface yet — R, 2026-09-11: "I would make them fully clickable panels ... aspirational so someone (maybe us!) can build it some day".
 
-import { CONFIG, bus, colorFor } from './base.js';
+import { CONFIG, bus, colorFor, setName } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
 import { getMyAvatarName, getMe } from './mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
@@ -78,7 +78,7 @@ function paint() {
       <button class="pf-portrait" data-presence="${st}" title="presence · ${st} — click to change" aria-haspopup="menu" aria-expanded="false"
         style="--who:${colorFor(CONFIG.name)}">${fsvg('user-circle', 20)}<span class="pf-portrait-dot"></span></button>
       <div class="pf-who">
-        <b>${escape(CONFIG.name)}</b>
+        <span class="pf-namerow"><b class="pf-name">${escape(CONFIG.name)}</b><button class="pf-rename" type="button" title="change the name you show — you stay the same person: your roles and your things stay yours">rename</button></span>
         <span>in <b>${escape(CONFIG.world)}</b> · wearing <b>${escape(avatar)}</b> · <i class="pf-state">${st}</i></span>
       </div>
     </div>
@@ -111,6 +111,20 @@ function paint() {
     addEventListener('pointerdown', close, true);
     addEventListener('keydown', onKey, true);
     dismissRef = dismiss;
+  };
+
+  // rename (R 10-11: "I can't seem to change the display name anywhere"): the account stays (base.js CONFIG.account),
+  // only the shown name changes; the door takes it on the next join, so the page reconnects
+  const rn = frame.body.querySelector('.pf-rename');
+  rn.onclick = () => {
+    const b = frame.body.querySelector('.pf-name'); const inp = document.createElement('input');
+    inp.className = 'pf-name-in'; inp.value = CONFIG.name; inp.maxLength = 32; b.replaceWith(inp); rn.hidden = true; inp.focus(); inp.select();
+    const done = (ok) => { const v = inp.value.trim();
+      if (!ok || !v || v === CONFIG.name) { paint(); return; }
+      if (/[<>"]/.test(v)) { inp.setCustomValidity('< > and " can\'t be part of a name'); inp.reportValidity(); return; }
+      setName(v); const u = new URL(location.href); if (u.searchParams.has('name')) u.searchParams.set('name', v); history.replaceState(null, '', u); location.reload(); };   // a ?name= would win over the new one: carry the new one in it
+    inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); };
+    inp.onblur = () => done(false);
   };
 
   // tabs

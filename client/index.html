@@ -6,7 +6,12 @@
 <!-- the favicon: the hand-set 32 and 16 px masters (notes: logo small/mark-{32,16}.svg; 16 has no room for
      the peg's head, so its peg is a bar), inline so it costs no request. Brand mint on a dark tab strip, a
      deeper mint on a light one (mint on white all but vanishes). /favicon.ico (server/routes.ts) is the 32. -->
-<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
+<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}/* rename in the profile header (R 10-11) */
+.pf-namerow { display: flex; align-items: baseline; gap: 8px; }
+.pf-rename { background: none; border: 0; padding: 0; color: var(--ink-dim, #9aa); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
+.pf-rename:hover { color: var(--brand, #7cf); }
+.pf-name-in { font: inherit; font-weight: 700; width: 14em; background: rgba(255,255,255,.06); color: inherit; border: 1px solid var(--brand, #7cf); border-radius: 4px; padding: 1px 4px; }
+</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
 <style>
@@ -1964,6 +1969,12 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 #xr-stage .sp-ctxbtn { display: inline-flex; align-items: center; justify-content: center; }
 .sp-item-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sp-item-head .sp-ico { display: inline-flex; flex: none; color: var(--e-accent, var(--brand)); }
+/* the world's environment rows hang under the World row (R 10-11): indented, quieter glyph, ✕ on hover */
+.sp-item-sub-row { padding-left: 22px; }
+.sp-item-sub-row .sp-item-head .sp-ico { color: var(--e-dim, var(--ink-dim)); }
+.sp-item .sp-mini.sp-hov { opacity: 0; margin-left: auto; }
+.sp-item:hover .sp-mini.sp-hov, .sp-item .sp-mini.sp-hov:focus-visible { opacity: 1; }
+#xr-stage .sp-item .sp-mini.sp-hov { opacity: 1; }
 .sp-item-head .sp-item-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-item-kind { font-weight: 400; color: var(--e-dim, var(--dim)); margin-right: 6px; text-transform: uppercase; font-size: .82em; letter-spacing: .06em; }
 .edit-selbar .sp-ico { display: inline-flex; vertical-align: -2px; }
@@ -2149,13 +2160,15 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const world = params.get('world') || 'commons';
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
     const avatar = wantAvatar;   // resolved above, and published for lite.js to match
-    const sent = { world, id: name, avatar, token };
+    // the account kept apart from the shown name (base.js says the same; R 10-11)
+    const account = params.get('account') || localStorage.getItem('ew-account') || (/^guest-/.test(name) ? '' : name);
+    const sent = { world, id: name, avatar, token, ...(account ? { account } : {}) };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
     globalThis.__ewEarlySocket = stash;
     // replica: a world sends this page its own log stream (slice 3b; net.js sendJoin says the same, and
     // a v1 world ignores it)
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, ...(account ? { account } : {}), replica: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path

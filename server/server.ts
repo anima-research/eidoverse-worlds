@@ -452,7 +452,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         c.ws.close?.(4004, "reserved name");
         return null;
       }
-      if (!account && TRUST_NAMES) account = `local:${c.id.toLowerCase()}`;
+      // a private door: the account is the one the client keeps (msg.account), else the typed name — so a person can show a
+      // new name and stay who they are (R 10-11). Typed, so the door's markup rule holds for it too.
+      if (!account && TRUST_NAMES) { const keep = typeof msg.account === "string" ? nameAtDoor(msg.account.trim().slice(0, LIMITS.ID_LEN), { typed: false }).name : "";
+        account = `local:${(keep || c.id).toLowerCase()}`; }
       // a connection that has joined stays who it proved it was: travel keeps the identity; a new one needs a new socket
       if (c.account !== undefined && c.account !== account) {
         ws.send(JSON.stringify({ type: "error", error: "this connection already joined as someone else — reconnect to join as another identity" }));

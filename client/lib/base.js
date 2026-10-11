@@ -49,6 +49,12 @@ export const CONFIG = {
 };
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
+// the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (R 10-11: renaming herself
+// "Rab" made her a stranger with no role in her own world). Fixed at the first real name this browser used; ?account=
+// overrides. A server with sign-in ignores it: the session is the account there.
+{ let acct = params.get('account') || store?.getItem('ew-account') || '';
+  if (!acct && !/^guest-/.test(CONFIG.name)) acct = CONFIG.name;
+  CONFIG.account = acct || null; if (acct) store?.setItem('ew-account', acct); }
 
 /** Rename in place (the front-door panel calls this before connecting). */
 export function setName(name) {

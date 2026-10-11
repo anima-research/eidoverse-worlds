@@ -264,6 +264,7 @@ export function sendJoin() {
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
     token: CONFIG.token,
+    ...(CONFIG.account ? { account: CONFIG.account } : {}),
     // this client folds the world's log stream itself (the server refuses a client that doesn't)
     replica: true,
   }));
@@ -509,7 +510,7 @@ export async function connect() {
   globalThis.__ewEarlySocket = null;
   if (early) {
     const wantJoin = JSON.stringify({ world: CONFIG.world, id: CONFIG.name,
-      avatar: hooks.myAvatarPath(), token: CONFIG.token });
+      avatar: hooks.myAvatarPath(), token: CONFIG.token, ...(CONFIG.account ? { account: CONFIG.account } : {}) });
     if (!early.failed && early.ws.readyState <= 1 && JSON.stringify(early.sent) === wantJoin) {
       net.status = 'connecting';
       bus.emit('net', net);

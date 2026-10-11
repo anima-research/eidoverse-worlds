@@ -129,7 +129,7 @@ let lastGrassArgs = null;
 /** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
  *  a re-join replaying the same world does not regenerate identical ground. */
 export function applyTerrainState(args) {
-  if (!args) return;
+  if (!args) { if (lastTerrainArgs !== null) { lastTerrainArgs = null; setTerrain(null); } return; }   // removed: the stage floor returns
   const key = JSON.stringify(args);
   if (lastTerrainArgs === key) return;
   lastTerrainArgs = key;

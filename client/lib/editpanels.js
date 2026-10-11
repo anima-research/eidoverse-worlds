@@ -125,7 +125,27 @@ const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONF
 // R, 10-10: "make it clear what the 'World' is in the Hierarchy. Either World: (gym, in this case) or at least tooltip
 // the world entity, or maybe put the 'world' icon in-line with it": all three.
 const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'globe', kind: 'World', label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel,
-  title: 'the world itself: its sky, weather, rules and settings. Click to edit them in the Inspector.' }] });
+  title: 'the world itself: its sky, weather, rules and settings. Click to edit them in the Inspector.' }, ...envRows()] });
+// R 10-11: "no way to get rid of the weather, sky, or terrain once created… We really need those components or entities
+// to appear under the world entity in the Hierarchy… so they can be deleted". Unreal's Outliner lists the sky and the
+// landscape as actors, Godot's scene tree a WorldEnvironment node, Roblox Terrain under Workspace: things in the tree.
+// Here they are @world's components, so they hang under the World row; a click opens their card, ✕ removes them.
+const ENV = [
+  { key: 'sky', label: 'Sky', icon: 'sun', gone: 'the default sky' },
+  { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather' },
+  { key: 'terrain', label: 'Terrain', icon: 'mountains', gone: 'the default flat ground' },
+  { key: 'grass', label: 'Grass', icon: 'plant', gone: 'no grass' },
+];
+const wxOf = () => state.st.sky?.weather ?? state.st.sky?.override?.weather ?? null;
+function envRows() {
+  const may = mayShape() !== false;
+  return ENV.filter((e) => (e.key === 'weather' ? wxOf() && wxOf() !== 'clear' : state.st[e.key] != null)).map((e) => ({
+    id: `env:${e.key}`, icon: e.icon, label: e.label, indent: true, active: worldSel && envFocus === e.key,
+    sub: e.key === 'weather' ? wxOf() : undefined,
+    title: `the world's ${e.label.toLowerCase()}: click to edit it in the Inspector${may ? `; ✕ removes it (${e.gone})` : ''}`,
+    actions: may ? [{ k: 'envdel', label: '✕', danger: true, hover: true, title: `remove: ${e.gone}` }] : [] }));
+}
+let envFocus = null;
 // HIERARCHY VIEW OPTIONS (R, 10-10: "the list in the hierarchy is still hella busy. I would only have the name in the
 // list proper, more info (like id) when you hover over it, and a drop-down ... 'display by id', checkboxes for 'list
 // components'"). Off by default; kept per browser.
@@ -292,10 +312,20 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     case 'hopt:ids': case 'hopt:kinds': case 'hopt:comps': { const k = action.slice(5); hopts[k] = !hopts[k]; saveHopts(); repaintAll(); return; }
     case 'myhide': { const on = toggleMineHidden(payload); flashHint(on ? html`${payload} hidden in <b>your</b> view only — nobody else is affected` : `${payload} shown again`, 2400); repaintAll(); return; }
     case 'myshowall': { const n = showAllMine(); flashHint(`${n} shown again`, 2000); repaintAll(); return; }
-    case 'wsel': {   // the pinned World row
+    case 'wsel': {   // the pinned World row, and its environment rows (env:<key>)
       if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
+      envFocus = String(payload ?? '').startsWith('env:') ? String(payload).slice(4) : null;
+      if (envFocus) { const g = envFocus === 'weather' ? 'weather' : envFocus; if (!isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g); }
       selectWorld();
+      if (envFocus) requestAnimationFrame(() => document.querySelector(`#ew-inspector [data-group="${envFocus}"], .sp-group[data-k="${envFocus}"]`)?.scrollIntoView?.({ block: 'nearest' }));
       return;
+    }
+    case 'envdel': {   // ✕ on an environment row: the same edit as the card's remove button (mow, for grass)
+      const key = String(payload ?? '').slice(4); const e = ENV.find((x) => x.key === key); if (!e) return;
+      const path = key === 'weather' ? 'weather.state' : key === 'grass' ? 'grass.mow' : `${key}.remove`;
+      const r = commitEdit(WORLD_ID, path, key === 'weather' ? 'clear' : true);
+      flashHint(r.errors?.length ? r.errors.join(' · ') : `${e.label} removed: ${e.gone} (Ctrl+Z brings it back)`, r.errors?.length ? 5000 : 2600, r.errors?.length ? 'attn' : undefined);
+      repaintAll(); return;
     }
     case 'sel': {
       if (String(payload).startsWith('rider:')) return;

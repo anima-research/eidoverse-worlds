@@ -72,7 +72,7 @@ import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';
-import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill } from './icons.js';
+import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine } from './icons.js';
 // a name from either set: the line icons (24 grid) or the filled ones (the eye, R 10-10: the Hierarchy's eye drew nothing,
 // 'eye' being a filled-set name the line-set function didn't know)
 const iconSvg = (name, size = 18) => (hasIcon(name) ? strokeSvg(name, size) : hasFill(name) ? fsvg(name, size) : '');
@@ -856,11 +856,11 @@ function fieldDOM(f, edit, ro = {}) {
       const box = el('div', 'sp-list');
       if (!f.rows?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
       for (const r of f.rows ?? []) {
-        const line = el('div', `sp-item${r.active ? ' active' : ''}`);
+        const line = el('div', `sp-item${r.active ? ' active' : ''}${r.indent ? ' sp-item-sub-row' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
         const main = el('span', 'sp-item-main');
         if (r.icon) {   // the World row: its glyph, its kind and its name on ONE line
-          const head = el('span', 'sp-item-head'), i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : rsvg)(r.icon, 14);
+          const head = el('span', 'sp-item-head'), i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : hasLine(r.icon) || !hasFill(r.icon) ? rsvg : fsvg)(r.icon, 14);   // any of the three sets
           const lab = el('span', 'sp-item-label'); if (r.kind) lab.append(el('span', 'sp-item-kind', r.kind)); lab.append(r.label);
           head.append(i, lab); main.append(head);
         } else main.append(el('span', 'sp-item-label', r.label));
@@ -869,7 +869,7 @@ function fieldDOM(f, edit, ro = {}) {
         main.onclick = () => edit(f.k ?? 'row', r.id);   // a keyed list routes its rows; unkeyed lists keep 'row'
         line.append(main);
         for (const a of r.actions ?? []) {
-          const b = el('button', `sp-mini${a.danger ? ' danger' : ''}`, a.label);
+          const b = el('button', `sp-mini${a.danger ? ' danger' : ''}${a.hover ? ' sp-hov' : ''}`, a.label); if (a.title) b.title = a.title;
           b.onclick = (e) => { e.stopPropagation(); edit(a.k, r.id); };
           line.append(b);
         }
