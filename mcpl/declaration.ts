@@ -136,14 +136,90 @@ export const PUBLISH_TARGET = { target: "root" } as const;
 /**
  * Why a channels/publish naming a place (RFC-011 `threadId`) can't be
  * honored, or undefined when it can. Absent: a legacy caller, answered as
- * before. `null`: the world itself. Anything else names a thread the world
- * doesn't have, and is refused before anything is said.
+ * before. `null`: the world itself. A string names a thread the world
+ * doesn't have, and any other value is invalid: both are refused before
+ * anything is said. The reason echoes at most a short prefix of the value.
  */
 export function publishTargetRefusal(threadId: unknown): string | undefined {
   if (threadId === undefined || threadId === null) return undefined;
   return typeof threadId === "string"
-    ? `the world channel has no threads (thread "${threadId}" requested); publish with threadId null`
-    : `invalid threadId ${JSON.stringify(threadId)}: expected null for the world channel`;
+    ? `the world channel has no threads (thread "${shorten(threadId)}" requested); publish with threadId null`
+    : `invalid threadId ${shorten(jsonOf(threadId))}: expected null for the world channel`;
+}
+
+/** The most a publish says aloud, in UTF-16 code units. */
+export const SAY_LIMIT = 4000;
+
+/** What a channels/publish does in the world: the text to say (none when
+ *  undefined) and the result to answer with. A result with `error` is the
+ *  RFC-005 §3.2.3 boundary answer, which the caller maps to -32023. */
+export interface PublishDecision {
+  say?: string;
+  result: { delivered: boolean; error?: string; reason?: string; threadId?: null };
+}
+
+/**
+ * Decide a channels/publish. The session's handlePublish says `say` when
+ * there is one and answers `result`; everything else is decided here, in
+ * this order:
+ * 1. A channel the session isn't attached to gets the §3.2.3 boundary
+ *    answer, an error, whatever the target (an RFC-011 host reads it as
+ *    unconfirmed).
+ * 2. A target the world can't honor (RFC-011 §4) is refused as a result,
+ *    with a reason and nothing said.
+ * 3. No text: nothing is said. A targeted publish says why.
+ * 4. A targeted publish whose body can't say anything now (not joined, or
+ *    its socket isn't open) is refused with a reason. A legacy one goes on
+ *    to say(), as before.
+ * 5. The text is said, cut to SAY_LIMIT without splitting a surrogate pair.
+ *    A targeted result echoes threadId: null, and its reason names what
+ *    wasn't said: the cut, or blocks that aren't text. A legacy result is
+ *    exactly as before: { delivered: true }.
+ */
+export function decidePublish(
+  params: { channelId?: unknown; threadId?: unknown; content?: ReadonlyArray<{ type?: unknown; text?: unknown }> },
+  world: { channelId: string; canSay: boolean },
+): PublishDecision {
+  if (params.channelId !== world.channelId) {
+    return { result: { delivered: false, error: `unknown channel: ${String(params.channelId)}` } };
+  }
+  const refusal = publishTargetRefusal(params.threadId);
+  if (refusal) return { result: { delivered: false, reason: refusal } };
+  const targeted = params.threadId === null;
+  const blocks = params.content ?? [];
+  const text = blocks
+    .filter((b) => b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string).join("\n").trim();
+  if (!text) return { result: { delivered: false, ...(targeted ? { reason: "no text content; nothing was said" } : {}) } };
+  if (targeted && !world.canSay) {
+    return { result: { delivered: false, reason: "the body isn't connected to the world; nothing was said" } };
+  }
+  const say = cutText(text, SAY_LIMIT);
+  if (!targeted) return { say, result: { delivered: true } };
+  const notes: string[] = [];
+  if (say.length < text.length) notes.push(`cut to ${say.length} of ${text.length} characters; the rest wasn't said`);
+  if (blocks.some((b) => b.type !== "text")) notes.push("only text is said in a world; its other blocks weren't");
+  return { say, result: { delivered: true, threadId: null, ...(notes.length ? { reason: notes.join("; ") } : {}) } };
+}
+
+/** `text` cut to `limit` UTF-16 code units, one fewer when the cut would
+ *  split a surrogate pair. */
+function cutText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const last = text.charCodeAt(limit - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? limit - 1 : limit);
+}
+
+function shorten(s: string): string {
+  return s.length > 64 ? `${s.slice(0, 64)}…` : s;
+}
+
+function jsonOf(v: unknown): string {
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    return typeof v;
+  }
 }
 
 /**
