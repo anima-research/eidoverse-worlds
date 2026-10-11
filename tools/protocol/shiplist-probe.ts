@@ -346,6 +346,34 @@ try {
   check("HD2 …and in a busy world (a repaint every frame before the authority answers) the box keeps showing what I clicked", r?.early?.length === 6 && r.early.every(Boolean), r?.early);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'hdsign' });`).catch(() => null);
   });
+  // ---- SB: Shift in the viewport (R, 10-11 00:18: "Can shift-select allow me to select multiple objects in the viewport,
+  // and shift-select-drag draw a bounding box around objects to select them?") ----
+  await stage("SB", async () => {
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+    const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { a: [p.x + f[0] * 4 - r[0] * 0.8, p.z + f[1] * 4 - r[1] * 0.8], b: [p.x + f[0] * 4 + r[0] * 0.8, p.z + f[1] * 4 + r[1] * 0.8] };`);
+  for (const [id, xz] of [["sba", at.a], ["sbb", at.b]]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: '${id}', transform: { pos: [${xz[0]}, 0, ${xz[1]}], scale: 0.25 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('sba') && !!m.entities.get('sbb'))`); await sleep(1000);
+  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);
+  const scr = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('${id}'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera); const r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
+  const A = await scr("sba"), B = await scr("sbb");
+  const m = (type, x, y, mods = 0) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1, modifiers: mods });
+  const sel = () => page(`const sg = await import('/lib/scenegraph.js'); return [...document.querySelectorAll('[data-frame="hierarchy"] .sp-item.active, [data-frame="hierarchy"] .sp-item.multi')].map((x) => x.closest('[data-id]')?.dataset.id).filter((x) => x === 'sba' || x === 'sbb').sort();`);
+  await m("mousePressed", A[0], A[1]); await m("mouseReleased", A[0], A[1]); await sleep(400);
+  await m("mousePressed", B[0], B[1], 8); await m("mouseReleased", B[0], B[1], 8); await sleep(600);
+  const s1 = await sel();
+  await page(`(await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`); await sleep(400);
+  const x0 = Math.min(A[0], B[0]) - 60, x1 = Math.max(A[0], B[0]) + 60, y0 = Math.min(A[1], B[1]) - 60, y1 = Math.max(A[1], B[1]) + 60;
+  // start the box on a pixel with nothing under it (other stages leave things about): each corner, pushed out until bare
+  const start = await page(`const cu = await import('/lib/clickuse.js'); for (let k = 0; k < 8; k++) for (const [x, y] of [[${x0} - k * 30, ${y0} - k * 30], [${x1} + k * 30, ${y1} + k * 30], [${x0} - k * 30, ${y1} + k * 30], [${x1} + k * 30, ${y0} - k * 30]]) if (!cu.thingAt(x, y)) return [x, y]; return null;`);
+  const sx = start?.[0] ?? x0, sy = start?.[1] ?? y0, ex = sx <= x0 ? x1 : x0, ey = sy <= y0 ? y1 : y0;
+  await m("mousePressed", sx, sy, 8); for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: Math.round(sx + (ex - sx) * k / 6), y: Math.round(sy + (ey - sy) * k / 6), button: "left", buttons: 1, modifiers: 8 });
+  await m("mouseReleased", ex, ey, 8); await sleep(600);
+  const s2 = await sel();
+  check("SB1 Shift-click in the viewport adds a second thing to the selection", JSON.stringify(s1) === '["sba","sbb"]', { A, B, s1 });
+  check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify(s2) === '["sba","sbb"]', { box: [sx, sy, ex, ey], start, s2 });
+  await page(`(await import('/lib/build.js')).setEditMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {

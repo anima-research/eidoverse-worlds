@@ -612,7 +612,8 @@ function fieldDOM(f, edit, ro = {}) {
         const disc = el('button', `sp-disc${r.kids ? '' : ' none'}`, r.kids ? (r.open === false ? '▸' : '▾') : '');
         disc.tabIndex = -1;
         // Shift- or Alt-click: this one and everything under it (Maya's and Blender's Shift, Unity's Alt)
-        if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', e.shiftKey || e.altKey ? { id: r.id, deep: true } : r.id); };
+        if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', e.shiftKey || e.altKey ? { id: r.id, deep: true } : r.id); };   // keys: treeFold
+        if (r.kids) disc.title = KEYHINTS.treeFold.before;
         line.append(disc);
         const main = el('span', 'sp-item-main');
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));

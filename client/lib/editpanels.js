@@ -1157,6 +1157,10 @@ export function initEditPanels() {
   loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
   bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)
+  // a box drawn in the viewport (Shift-drag on bare space, build.js): ADD each to the selection (never toggles one off)
+  bus.on('edit-select-add', (ids) => { const list = (ids ?? []).filter((id) => entities.get(id)); if (!list.length) return;
+    let p = sceneSelected(); if (!p) { sceneSelect(list[0]); p = list[0]; }
+    for (const id of list) if (id !== p) extra.add(id); syncOutlines(); repaintAll(); });
   // an armed attach completes on a VIEWPORT pick too: build.js select → sceneSelect
   // → this. The child is re-selected after, so the inspector shows what moved.
   bus.on('sg:selected', (id) => {

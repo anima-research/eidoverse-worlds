@@ -557,6 +557,20 @@ addEventListener('mouseup', (e) => {
   if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
   if (selected) deselect(); if (seatSelected()) deselectSeat();
 });
+// BOX SELECT (R 10-11 00:18: "shift-select-drag draw a bounding box around objects to select them"): Shift-drag on bare
+// space draws a box and ADDS every thing whose centre lands inside it (hidden ones, and ones bigger than 40 m, the
+// ground, aren't caught). A plain bare drag still orbits.
+let marquee = null; const _mc = new THREE.Vector3(), _mb = new THREE.Box3();
+function marqueeMove(e) { if (!marquee) return; const x0 = Math.min(marquee.x, e.clientX), y0 = Math.min(marquee.y, e.clientY);
+  Object.assign(marquee.el.style, { left: `${x0}px`, top: `${y0}px`, width: `${Math.abs(e.clientX - marquee.x)}px`, height: `${Math.abs(e.clientY - marquee.y)}px`, display: 'block' }); }
+function marqueeEnd(e) { const m = marquee; marquee = null; if (!m) return; m.el.remove(); removeEventListener('mousemove', marqueeMove); removeEventListener('mouseup', marqueeEnd);
+  if (Math.hypot(e.clientX - m.x, e.clientY - m.y) < 5) return;
+  const x0 = Math.min(m.x, e.clientX), x1 = Math.max(m.x, e.clientX), y0 = Math.min(m.y, e.clientY), y1 = Math.max(m.y, e.clientY); const ids = [];
+  for (const [id, o] of entities) { if (!o || !o.visible) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
+    const sz = _mb.getSize(_mc); if (Math.max(sz.x, sz.z) > 40) continue; _mb.getCenter(_mc).project(camera); if (_mc.z > 1) continue;
+    const sx = (_mc.x + 1) / 2 * innerWidth, sy = (1 - _mc.y) / 2 * innerHeight; if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(id); }
+  if (ids.length) bus.emit('edit-select-add', ids); }
+export const marqueeActive = () => !!marquee;
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
@@ -579,6 +593,9 @@ canvas.addEventListener('mousedown', (e) => {
   const hit = raycaster.intersectObjects(targets, true)[0];
   // a press on nothing: a DRAG from here orbits the camera; only a click that didn't travel deselects (an orbit that
   // threw away the selection every time would make looking around a thing impossible)
+  if (!hit && e.shiftKey) { const d = document.createElement('div');   // keys: selectExtend
+    d.className = 'edit-marquee'; d.style.display = 'none'; document.body.append(d);
+    marquee = { x: e.clientX, y: e.clientY, el: d }; addEventListener('mousemove', marqueeMove); addEventListener('mouseup', marqueeEnd); e.preventDefault(); return; }
   if (!hit) { barePress = { x: e.clientX, y: e.clientY }; bus.emit('edit-bare-press'); return; }
   if (seatSelected()) deselectSeat();
   let root = hit.object;
@@ -589,7 +606,10 @@ canvas.addEventListener('mousedown', (e) => {
   // vertical drag here, so it can't double as the extend modifier it is in
   // the tree). No drag starts from an extend.
   if (e.ctrlKey || e.metaKey) { bus.emit('edit-extend', id); e.preventDefault(); return; }   // keys: selectExtend
-  select(id);
+  // Shift: a click adds it to (or takes it from) the selection, as in the tree (R 10-11); a Shift press that TRAVELS is
+  // still the vertical drag, so the thing is selected only once it starts to move
+  const shiftPick = e.shiftKey && !!sceneSelected() && sceneSelected() !== id;   // keys: selectExtend
+  if (!shiftPick) select(id);
   // A press is a SELECT. It only becomes a drag once the pointer actually
   // travels — otherwise clicking a thing to look at its label moved it.
   const aim = aimPoint(id);
@@ -610,6 +630,7 @@ canvas.addEventListener('mousedown', (e) => {
     // express height, so hold Shift and the pointer's up/down maps to world Y
     // with the horizontal position pinned. The standard editor gesture.
     vertical: e.shiftKey,   // keys: meshMove
+    shiftPick,
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
@@ -634,11 +655,13 @@ addEventListener('mousemove', (e) => {
     // the press selected it; travel is where a move would begin — a locked
     // thing refuses here, before any preview exists to snap back
     dragging.armed = true;
+    if (dragging.shiftPick) { select(dragging.id); dragging.shiftPick = false; }
     engage('meshMove');
   }
 });
 
 addEventListener('mouseup', () => {
+  if (dragging && !dragging.armed && dragging.shiftPick) bus.emit('edit-extend', dragging.id);
   if (dragging?.armed) release();
   if (dragging?.armed && selected) {
     const moved = dragging.before;
