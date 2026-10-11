@@ -366,6 +366,31 @@ try {
   const at = await page(`const st = (await import('/lib/state.js')).state.st; return st.entities.rbtgt?.pos;`);
   check("RZ1 Edit's 'make reset button' + the button's first offer (its left-click): the moved thing is back where it stood when the button was made", mk.every(Boolean) && made?.ok && moved?.ok && /^reset/.test(offer.first ?? "") && offer.ok && Math.hypot(at[0] - me[0] - 2, at[2] - me[1] + 2) < 0.01, { mk, made: made?.ok ?? made, moved: moved?.ok, offer, at });
   });
+  // ---- GE: the grip editor (R, 10-10): add a grip, drag it, mirror it, try it; the palm lands on the grip ----
+  await stage("GE", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'getool', model: '${CRATE}', components: { label: 'Grip tool', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.25 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('getool'))`); await sleep(700);
+  const opened = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/gripedit.js')).openGripEditor('getool');
+    const p = globalThis.__gripeditTest(); const add = [...p.panel.querySelectorAll('button')].find((b) => b.textContent === '+ grip'); add.click(); await new Promise((z) => setTimeout(z, 1500));
+    const w = await import('/lib/world.js'); return { grips: Object.keys(w.comps.get('getool')?.grabbable?.grips ?? {}), start: w.comps.get('getool')?.grabbable?.grips?.grip1?.pos ?? null, ed: globalThis.__gripedit(), gizmo: globalThis.__gizmo?.().attached ?? null };`);
+  check("GE1 the grabbable card's grip editor adds a grip and shows a ghost hand on it (and the main gizmo steps aside)", opened.grips.includes("grip1") && opened.ed?.name === "grip1" && opened.ed?.ghost && !opened.gizmo, opened);
+  const dragged = await page(`const t = globalThis.__gripeditTest(); t.proxy.position.y += 0.1; t.proxy.rotateZ(Math.PI / 2); t.controls.dispatchEvent({ type: 'dragging-changed', value: false }); await new Promise((z) => setTimeout(z, 1500));
+    const g = (await import('/lib/world.js')).comps.get('getool').grabbable.grips.grip1; return g;`);
+  check("GE2 a drag of the ghost writes the grip in the thing's frame (0.1 m up at scale 0.25 is 0.4; a quarter turn about the palm's Z)", Math.abs(dragged.pos[1] - opened.start[1] - 0.4) < 0.01 && Math.abs(dragged.pos[0] - opened.start[0]) < 0.01 && Math.abs(Math.abs(dragged.q[2]) - Math.SQRT1_2) < 0.01, { start: opened.start, dragged });
+  const mirrored = await page(`const p = globalThis.__gripeditTest().panel; [...p.querySelectorAll('button')].find((b) => b.textContent === 'mirror').click(); await new Promise((z) => setTimeout(z, 1500));
+    const gs = (await import('/lib/world.js')).comps.get('getool').grabbable.grips; return gs;`);
+  const L = mirrored["grip1-left"], Rg = mirrored.grip1;
+  check("GE3 mirror writes the left hand's grip: x negated, the same palm-out (Z) after the reflection", !!L && L.hand === "left" && Math.abs(L.pos[0] + Rg.pos[0]) < 1e-3 && Math.abs(L.pos[1] - Rg.pos[1]) < 1e-3, { L, R: Rg });
+  const tried = await page(`const c = await import('/lib/controller.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js'), tp = await import('/lib/thingphysics.js'), n = await import('/lib/net.js');
+    const ge = await import('/lib/gripedit.js'); const tc = globalThis.__gripeditTest(); [...tc.panel.querySelectorAll('.gripedit-row')].find((r) => r.textContent.startsWith('grip1') && !r.textContent.includes('left')).click();
+    await new Promise((z) => setTimeout(z, 300)); const r = await [...tc.panel.querySelectorAll('button')].find((b) => b.textContent === 'try it').onclick();
+    await new Promise((z) => setTimeout(z, 2500)); const o = w.entities.get('getool'); o.updateWorldMatrix(true, false); const g = w.comps.get('getool').grabbable.grips.grip1;
+    const gp = new T.Vector3(...g.pos).applyMatrix4(o.matrixWorld); const P = { p: new T.Vector3(), q: new T.Quaternion() }; const palm = tp.palmOf(n.net.you, 'right', P);
+    return { ok: r?.ok ?? null, why: r?.refused?.reason ?? null, gap: palm ? +gp.distanceTo(P.p).toFixed(4) : null };`);
+  check("GE4 try it: it is picked up by that grip, and the palm sits on the grip point (within 1 cm)", tried.ok && tried.gap !== null && tried.gap < 0.01, tried);
+  await page(`(await import('/lib/gripedit.js')).closeGripEditor(); (await import('/lib/thingphysics.js')).physicsApi?.put?.('getool'); (await import('/lib/build.js')).setEditMode(false);`);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

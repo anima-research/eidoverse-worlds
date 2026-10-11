@@ -421,7 +421,7 @@ try {
 
   // the World row: its name big (the protocol keeps it on @world.about), @world small (R 10-04: "World and (@world)?")
   const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
-  check("W1 the Hierarchy's World row reads 'World: <its name>', not '(@world)'", wrow?.startsWith("World: client check") && !wrow.includes("@world"), wrow);
+  check("W1 the Hierarchy's World row reads WORLD then its name (one line, 38b82c6a), not '(@world)'", /^World\s*client check/.test(wrow ?? "") && !wrow.includes("@world"), wrow);
 
   // transform space (R 10-04: "gimbal/object/world rotations... a way to switch between them")
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); const B = await import('/lib/build.js'); B.setSpace('rotate', 'world'); B.setTool('select'); return true;`);

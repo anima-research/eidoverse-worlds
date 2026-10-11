@@ -227,3 +227,5 @@ export function makeResetButton(button, targets) {
   const c = compsOf(button) ?? {}; const reactions = { ...(c.reactions ?? {}), reset: { kind: 'reset', targets: targets.map(idIn) } };
   return sendOps([OP.set(idIn(button), 'reactions', reactions)], { what: `make ${button} a reset button for ${targets.length} thing${targets.length > 1 ? 's' : ''}` });
 }
+/** One component written whole (the grip editor's grabbable), with expect, undoable. */
+export function setComp(id, comp, value, what) { return sendOps([OP.set(idIn(id), comp, value)], { what }); }

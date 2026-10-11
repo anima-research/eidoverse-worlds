@@ -389,7 +389,7 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'Words that say what it is (key, sword…). Let go near a socket that accepts one of these words and it snaps into the socket.' },
       { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'What happens when you press the use button while holding it: the name of one of this thing\'s actions. Two names as "down / up" run one on press and the other on release.' },
       { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'The words shown when you point at it, in place of "pick up …". Up to 40 characters.' },
-      { t: 'info', label: 'grips', value: grips.length ? grips.join(', ') : 'none: held where it is grabbed (edit grips in the JSON below)' },
+      { t: 'btn', k: 'gripedit', label: grips.length ? `edit grips (${grips.length}): ${grips.join(', ')}` : 'add grips…', hint: 'Where the hand takes hold of it, and how. Opens a see-through hand you drag into place; mirror it for the other hand, then try it.' },
     ] });
   }
 

@@ -1913,6 +1913,21 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .edit-viewbar { position: fixed; z-index: 29; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px;
   background: color-mix(in srgb, var(--e-bg1, #1e1e21) 88%, transparent); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); }
 .edit-viewbar[hidden] { display: none; }
+/* the grip editor's panel: floats under the viewport bar (gripedit.js) */
+.gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--e-bg1, #1e1e21) 92%, transparent); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); }
+.gripedit-head { display: flex; align-items: center; gap: 6px; }
+.gripedit-of { color: var(--e-accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gripedit-list { display: flex; flex-direction: column; gap: 1px; }
+.gripedit-row { display: flex; align-items: center; gap: 6px; text-align: left; border: none; background: none; padding: 2px 4px; border-radius: 3px; }
+.gripedit-row.on { background: var(--e-accent-bg); }
+.gripedit-sw { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.gripedit-dim { color: var(--e-dim, #8a8a92); margin-left: auto; }
+.gripedit-list > .gripedit-dim { margin-left: 0; }
+.gripedit-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+.gripedit-bar button.on { box-shadow: inset 0 -2px 0 var(--e-accent); }
+.gripedit-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
+.gripedit button.danger { color: var(--e-danger, #ff6b6b); }
 .edit-viewbar .edit-camsw { margin-right: 2px; }
 .edit-camsw { display: inline-flex; margin-right: 6px; border: 1px solid var(--e-line); border-radius: 4px; overflow: hidden; }
 .edit-camsw .edit-cam { border: none; border-radius: 0; padding: 0 8px; height: 22px; }

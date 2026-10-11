@@ -53,6 +53,7 @@ let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing():
 // displayed flights never advanced between folds (R, 10-10: "object location updates every few seconds", a domino
 // "stuck in this tilted position"). Every probe passed its own wall, so none saw it.
 export function initThingPhysics(h) { hooks = h; pushHostHook(() => frame()); }
+export const myAvatar = () => hooks?.me() ?? null;
 // Am I in a headset? xr.js binds this (it imports this module, never the other way round): a tracked body holds with
 // its own hands, so the hold pose's arms are only for a body without them.
 let presenting = () => false;
@@ -191,7 +192,7 @@ function handOf(actorId, side = 'right', out = _hp) {
 const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3();
 const _px = new THREE.Vector3(), _py = new THREE.Vector3(), _pz = new THREE.Vector3(), _pm = new THREE.Matrix4();
 const PALM_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);   // grip frame in a T-pose hand bone
-function palmOf(actorId, side, out) {
+export function palmOf(actorId, side, out) {
   const av = avatarOf(actorId); const H = av?.vrm?.humanoid; if (!H) return null;
   const raw = (n) => H.getRawBoneNode?.(n) ?? null;
   const hand = raw(`${side}Hand`); if (!hand) return null;

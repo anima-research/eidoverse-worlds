@@ -158,8 +158,10 @@ export const hasSelection = () => selected !== null;
 setPointerClaim(() => ghost !== null || !!dragging?.armed);
 // the gizmo (gizmo.js) vetoes the mesh-grab while one of its handles is hot —
 // a probe, not an import: gizmo imports us
-let pointerVeto = () => false;
-export function setPointerVeto(fn) { pointerVeto = fn; }
+// several handle sets may own a press (the gizmo, the grip editor's): any one vetoes
+const pointerVetoes = [];
+const pointerVeto = () => pointerVetoes.some((f) => f());
+export function setPointerVeto(fn) { pointerVetoes.push(fn); }
 setEditingProbe(() => editMode);
 
 // ============================================================ selection
@@ -660,8 +662,10 @@ canvas.addEventListener('click', (e) => {
 // ============================================================ keys
 
 /** Something mid-gesture that Esc should cancel before anything else (gizmo.js). */
-let escapeHook = () => false;
-export function setEscapeHook(fn) { escapeHook = fn; }
+// Esc goes to each hook in turn, newest first (the grip editor, then the gizmo's drag); the first that takes it ends it
+const escapeHooks = [];
+const escapeHook = () => escapeHooks.some((f) => f());
+export function setEscapeHook(fn) { escapeHooks.unshift(fn); }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
     // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it

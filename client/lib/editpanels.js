@@ -24,6 +24,7 @@ import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { requestDebug, sendRequest, replica, net } from './net.js';
 import { flashHint, html } from './ui.js';
+import { openGripEditor } from './gripedit.js';
 import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
@@ -669,6 +670,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
     if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;

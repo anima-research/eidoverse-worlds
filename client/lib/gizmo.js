@@ -27,6 +27,7 @@ import { foldRecord } from './inspect.js';
 import { editOps, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { gripEditing } from './gripedit.js';
 
 const R2D = 180 / Math.PI;
 let controls = null;
@@ -91,7 +92,7 @@ function sync() {
   if (start) return;
   const id = sceneSelected();
   // scenegraph's selection is THE selection (a tree click never sets build.js's viewport `selected`)
-  const want = isEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;
+  const want = isEditing() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
   const c = ensure();
   const obj = entities.get(want); const piv = pivotOf(want) ?? (getTool() === 'pivot' ? [0, 0, 0] : null);   // the pivot tool starts at the origin when there is none
@@ -188,6 +189,6 @@ function cancelDrag() {
 export function initGizmo() {
   setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
-  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync);
+  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }
