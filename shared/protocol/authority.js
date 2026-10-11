@@ -1945,7 +1945,7 @@ function buildUse(ctx, a) {
       if (!home) { skipped.push({ id: t, why: "it has no home" }); continue; }
       if ([t, ...ancestors(ctx.st, t)].some((k) => lockedC(ctx.st.entities[k]?.c))) { skipped.push({ id: t, why: "it is locked" }); continue; }
       const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
-      // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); v1 skips it and says so
+      // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); for now a reset skips it and says so
       { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
       if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) continue;   // home already (and its size), in no hand
       ops.push(...(hp ? [setOp(t, "parent", { order: "a0", ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
@@ -2943,8 +2943,10 @@ function body(w, actor) {
 }
 function holdOf(w, actor, id) {
   const h = w.presence.holds[id];
+  // gone first: a delete now releases the hold itself (9d7bc99b), so a put of a deleted thing found no hold and said
+  // 'not-holding' when the truth is that the thing is gone (attack-check L1low)
+  if (!w.state().entities[id]) { if (h) { delete w.presence.holds[id]; w.savePresence(); } refuse("gone", h?.by === actor || !h ? `${id} isn't here any more (it was deleted)` : `${id} was deleted`, "your hand is empty now"); }
   if (!h || h.by !== actor) refuse("not-holding", `you aren't holding ${id}${h ? ` (${said(h.by)} is)` : ""}`, `grab {id: '${id}'} first`);
-  if (!w.state().entities[id]) { delete w.presence.holds[id]; w.savePresence(); refuse("gone", `${id} was deleted while you held it`, "your hand is empty now"); }
   return h;
 }
 // L6 / 25d M3: the authority's own plausibility TRACK of each body (presence: unlogged). A body is where the authority last
