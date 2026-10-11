@@ -21,6 +21,16 @@
 .pf-rename-btns button { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,.18); background: transparent; color: inherit; }
 .pf-rename-ok { background: var(--brand, #7cf) !important; color: #0b0d10 !important; border-color: transparent !important; font-weight: 600; }
 .pf-rename-ok:disabled { opacity: .45; cursor: default; }
+/* a long info value: cut with an ellipsis, whole on hover, unfolded on click (R 10-11) */
+.sp-info.sp-info-long { cursor: pointer; }
+.sp-info.sp-info-open { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; }
+/* the icon buttons on the name line: the glyph centred, accent-blue when switched on (R 10-11) */
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on, .frame.edit .sp-row.sp-iconbtn .sp-btn.on:hover { color: var(--e-accent, #4a9eff); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn svg { display: block; }
+/* Add Component… / Add Script…: Blender's Add Modifier, a filled band that heads the component list, not a footnote to Transform */
+.frame.edit .sp-row.sp-add { margin-top: 10px; }
+.frame.edit .sp-row.sp-add .sp-btn, .frame.edit .sp-row.sp-add > button { background: color-mix(in srgb, var(--e-accent, #4a9eff) 22%, transparent); border-color: color-mix(in srgb, var(--e-accent, #4a9eff) 45%, transparent); color: var(--e-text); font-weight: 600; }
+.frame.edit .sp-row.sp-add .sp-btn:hover, .frame.edit .sp-row.sp-add > button:hover { background: color-mix(in srgb, var(--e-accent, #4a9eff) 34%, transparent); }
 </style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
@@ -1787,7 +1797,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-step { position: relative; }
 .frame.edit .sp-step .sp-unit { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); margin: 0; color: var(--e-faint); font-size: 11px; pointer-events: none; }
 .frame.edit .sp-step.compact .sp-num { width: 96px; text-align: right; padding: 0 8px; }
-.frame.edit .sp-step.compact:has(.sp-unit) .sp-num { padding-right: 20px; }
+.frame.edit .sp-step.compact .sp-num { padding-right: 20px; }   /* unit or not: one right edge for every number (R 10-11: scale sat 12 px right of translate/rotate) */
 .frame.edit .sp-step:not(.compact) { height: 22px; background: var(--e-well); border: 1px solid var(--e-line); border-radius: 3px; gap: 0; box-sizing: border-box; }
 .frame.edit .sp-step:not(.compact):focus-within { border-color: var(--e-accent); }
 .frame.edit .sp-step:not(.compact) .sp-num { border: none; background: none; height: 20px; width: 56px; text-align: center; padding: 0 2px; box-shadow: none; }

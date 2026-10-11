@@ -664,7 +664,7 @@ function inspectorFields() {
     if (schema.sections.add.length) {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
-      adds.push({ t: 'pop', k: 'c:+pop', label: '+ Add Component', deskOnly: true, unfold: true, bar: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
+      adds.push({ t: 'pop', k: 'c:+pop', label: 'Add Component…', icon: 'plus', cls: 'sp-add', deskOnly: true, unfold: true, bar: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
         items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked, keywords: ADD_WORDS[a.name] ?? [],
           hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
       adds.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
@@ -679,7 +679,7 @@ function inspectorFields() {
     }
     // the new-script button goes after the desktop's Add Component, BEFORE the VR-only Add Component group (a row after
     // that group's header would fold into it)
-    if (id !== WORLD_ID) { const at = adds.findIndex((r) => r.vrOnly && r.t === 'group'); adds.splice(at < 0 ? adds.length : at, 0, { t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, unfold: true, bar: true, disabled: !mayScript(),
+    if (id !== WORLD_ID) { const at = adds.findIndex((r) => r.vrOnly && r.t === 'group'); adds.splice(at < 0 ? adds.length : at, 0, { t: 'btn', k: 'newscript', label: 'Add Script…', icon: 'scrollText', cls: 'sp-add', deskOnly: true, unfold: true, bar: true, disabled: !mayScript(),
       hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' }); }
     pushCards(f, schema, id, { locked, afterTransform: adds });
     // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the

@@ -494,8 +494,11 @@ function fieldDOM(f, edit, ro = {}) {
     }
     case 'info': {
       const s = put(el('span', 'sp-info'), f.value, ro.icons);
+      // a long value is cut at the panel's edge: hover shows it whole, a click unfolds it in place (R 10-11: 'reads as')
+      const full = () => { const t = s.textContent ?? ''; s.title = t.length > 40 ? t : ''; s.classList.toggle('sp-info-long', t.length > 40); };
+      full(); s.onclick = () => { if (s.classList.contains('sp-info-long')) s.classList.toggle('sp-info-open'); };
       row.append(s);
-      row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); };
+      row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); full(); };
       break;
     }
     case 'num': {
@@ -760,23 +763,24 @@ function fieldDOM(f, edit, ro = {}) {
     case 'pop': {
       // one button that opens a searchable list (Add Component, R 10-04): {label, items:[{k, label, category, hint,
       // disabled}], recentKey}. Typing filters on name and hint, Enter takes the first, Esc or a click outside closes.
-      const b = el('button', 'sp-btn sp-pop-btn', f.label);
+      const b = el('button', `sp-btn sp-pop-btn${f.icon ? ' sp-btn-ico' : ''}`, f.label);
+      if (f.icon) b.insertAdjacentHTML('afterbegin', iconSvg(f.icon, 14));
       b.title = f.hint ?? '';
       b.onclick = (e) => { e.stopPropagation(); openPop(b, f, (k) => edit(k)); };
       row.append(b);
-      row.update = (nf) => { b.textContent = nf.label; f = nf; };
+      row.update = (nf) => { b.lastChild.textContent = nf.label; f = nf; };
       break;
     }
     case 'btn': {
       const b = el('button', `sp-btn${f.danger ? ' danger' : ''}${f.icon ? ' sp-btn-ico' : ''}`);
-      const txt = el('span', '', f.label);
+      const txt = el('span', '', f.label); txt.hidden = !f.label;   // an icon-only button: no empty span to push the glyph off centre
       let ico = f.icon ?? null; if (ico) b.innerHTML = iconSvg(ico, 14);
       b.append(txt);
       b.disabled = !!f.disabled; b.classList.toggle('on', !!f.on); if (!f.label && f.hint) b.title = f.hint;
       b.onclick = () => edit(f.k);
       row.append(b);
       // an icon toggle (the eye, the padlock) must redraw its picture, not only its words
-      row.update = (nf) => { txt.textContent = nf.label; b.classList.toggle('on', !!nf.on); if (!nf.label && nf.hint) b.title = nf.hint;
+      row.update = (nf) => { txt.textContent = nf.label; txt.hidden = !nf.label; b.classList.toggle('on', !!nf.on); if (!nf.label && nf.hint) b.title = nf.hint;
         if ((nf.icon ?? null) !== ico) { ico = nf.icon ?? null; b.querySelector('svg')?.remove(); if (ico) b.insertAdjacentHTML('afterbegin', iconSvg(ico, 14)); } };
       break;
     }
