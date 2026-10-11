@@ -606,11 +606,13 @@ try {
     const spinX = [...insp.querySelectorAll('.sp-row.sp-f-group')].find((g) => /^▾?[ ]*Spin/.test(g.textContent.trim()))?.querySelector('.sp-gact');
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
     const at = document.querySelector('[data-frame="attributes"]'); const al = [...at.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
+    const ag = [...at.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim()); const ig = [...insp.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim());
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); await new Promise((z) => setTimeout(z, 300));   // back to the Inspector whatever happens (VM2b measures it)
     let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).comps.get('atbox')?.motion; }
     (await import('/lib/build.js')).setEditMode(false);
-    return { hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.textContent?.trim() ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
+    return { ag, ig, hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.textContent?.trim() ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
   check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
+  check("AT1b rotation order and the quaternion are in Attributes ('Rotation, as stored'), not an Inspector 'Advanced' group (R 10-10 23:38)", r?.ag?.includes("Rotation, as stored") && !r?.ig?.includes("Advanced"), { ag: r?.ag, ig: r?.ig });
   check("AT2 a removable card's title line carries a ✕ that removes it (Spin)", r.spinX && r.removed === true, r);
   });
   // ---- MT: the draft hesperus/material, drawn (docs/COMPONENT-LADDER.md rung 1; R 10-10) ----

@@ -517,7 +517,9 @@ function pushCards(f, schema, id, opts = {}) {
     // groups are FLAT markers (renderDOM, the VR quad): a sub-header reopens
     // its rows even under a folded card, so a folded Transform omits it. A
     // filter is the exception: filterFields opens whatever holds a hit.
-    if (quat.length && (isOpen(id, key) || ifilter.trim())) {
+    // R 10-10 23:38: 'Remember to move the Advanced component stuff into Attributes': rotation order and the stored
+    // quaternion live in the Attributes tab now; only a thing in quaternion mode (where they ARE its rotation) keeps them here
+    if (quat.length && sec.quatOpen && (isOpen(id, key) || ifilter.trim())) {
       const qk = `${key}:quat`;
       f.push({ t: 'group', k: qk, label: 'Advanced', hint: 'rotation order and the quaternion (the rotation as it is stored: four numbers that never gimbal-lock) — rarely needed until rigs', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
       f.push(...quat);
@@ -1087,6 +1089,10 @@ function attributesFields() {
   if (hid) f.push({ ...hid, label: 'hidden for all', hint: 'Hidden from EVERYONE in this world (a world edit). The eye in the Inspector and the Hierarchy hides it in your view only.' });
   const lk = cardRow(schema, id, 'flags.lock'); if (lk) f.push({ ...lk, label: 'locked' });
   const ly = cardRow(schema, id, 'flags.layer'); if (ly) f.push(ly);   // the selection layer (Select ▾ in the viewport bar)
+  // the Transform's advanced rows (were the Inspector's 'Advanced'): rotation order and the quaternion as stored
+  const tsec = schema.sections?.list?.find((x) => x.type === 'Transform');
+  const adv = (tsec?.fields ?? []).map((addr) => [addr, cardRow(schema, id, addr)]).filter(([addr, r]) => r && !r.alias && (r.row === 'quat' || addr === 'rot.order')).map(([, r]) => r);
+  if (adv.length && !tsec.quatOpen) { f.push({ t: 'group', k: 'a:rot', label: 'Rotation, as stored', open: isOpen(id, 'a:rot'), hint: 'rotation order and the quaternion (four numbers that never gimbal-lock): rarely needed until rigs' }); f.push(...adv); }
   const parentSec = schema.sections?.list?.find((s) => s.type === 'Parent');
   if (parentSec) { f.push({ t: 'group', k: 'a:parent', label: 'Parent', open: isOpen(id, 'a:parent') }); for (const addr of parentSec.fields) { const r = cardRow(schema, id, addr); if (r) f.push(r); } }
   f.push({ t: 'group', k: 'a:json', label: 'Components as JSON', open: isOpen(id, 'a:json'), hint: 'every component on it, as it is stored. A saved edit replaces that component whole.' });

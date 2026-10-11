@@ -193,7 +193,9 @@ export function setInspectorHtml(line) {   // text, or markup built with html`` 
 function showInspector(id) {
   const meta = entityMeta.get(id) ?? {};
   ensureInspector();
-  const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id;
+  // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
+  const own = Edits.compsOf(id)?.label;
+  const label = (typeof own === 'string' && own) || (libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id);
   const locked = isLocked(id);
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
@@ -203,13 +205,13 @@ function showInspector(id) {
           `<kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>F</kbd> find · <kbd>X</kbd> remove · <kbd>Esc</kbd> done</span>`) +
     `<label title="nail it down: while locked, nobody's drags, verbs or scripts can move, replace or remove it (server-enforced) — sitting on it and content edits stay open" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
     // an icon, never an emoji (R, 10-10: "ONLY use emotes in the Chat and Emote panes. They are illegal pretty much everywhere else")
-    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>` +
-    `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes">+ seat</button>`;
+    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>`;
+  // '+ seat' lived here (R 10-10 23:56: "Very curious why there's a 'seat' button here in the helper dialog?"); one stray
+  // click on it seated people on a sign 3 m up. A seat is added where components are: Add Component ▸ Sockets ▸ '+ seat here'.
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
     Edits.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
   };
-  inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
   inspector.style.display = 'flex';
 }
 export function hideInspector() { if (inspector) inspector.style.display = 'none'; }
