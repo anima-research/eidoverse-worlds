@@ -776,6 +776,16 @@ try {
   await onLabel("translate x", "click"); await onLabel("translate z", "click", "ctrlKey: true"); await sleep(200);
   const r2 = await rows();
   check("CB4 a click on a name selects the channel; Ctrl-click adds another", v("translate x", r2)?.sel && v("translate z", r2)?.sel && !v("translate y", r2)?.sel, r2?.filter((r: any) => r.sel).map((r: any) => r.label));
+  // R 10-10 23:36: "enable click-drag and shift-selecting multiple channels" (Maya's channel box)
+  await onLabel("rotate x", "click"); await onLabel("scale y", "click", "shiftKey: true"); await sleep(200);
+  const r2b = await rows(); const selOf = (rs: any) => rs?.filter((r: any) => r.sel).map((r: any) => r.label);
+  check("CB4b Shift-click selects the run from the last channel clicked (rotate x … scale y)", JSON.stringify(selOf(r2b)) === JSON.stringify(["rotate x", "rotate y", "rotate z", "scale x", "scale y"]), selOf(r2b));
+  await page(`const L = [...${I}.querySelectorAll('.sp-row.sp-f-num .sp-label')]; const a = L.find((x) => x.textContent.startsWith('translate y')), b = L.find((x) => x.textContent.startsWith('rotate y'));
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), x = ra.left + 8; const ev = (t, y) => new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: x, clientY: y });
+    a.dispatchEvent(ev('pointerdown', ra.top + ra.height / 2)); for (const k of [0.25, 0.5, 0.75, 1]) dispatchEvent(ev('pointermove', ra.top + ra.height / 2 + (rb.top - ra.top) * k)); dispatchEvent(ev('pointerup', rb.top + rb.height / 2)); a.dispatchEvent(ev('pointerup', rb.top + rb.height / 2)); return true;`); await sleep(300);
+  const r2c = await rows();
+  check("CB4c dragging DOWN the names selects the run (translate y … rotate y), and scrubs nothing", JSON.stringify(selOf(r2c)) === JSON.stringify(["translate y", "translate z", "rotate x", "rotate y"]) && v("translate y", r2c)?.v === v("translate y", r2b)?.v, { sel: selOf(r2c), ty: [v("translate y", r2b)?.v, v("translate y", r2c)?.v] });
+  await onLabel("translate x", "click"); await onLabel("translate z", "click", "ctrlKey: true"); await sleep(200);   // back to CB4's two for CB5
   await onLabel("translate z", "menu");
   const items = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
   await evalJson(`([...document.querySelectorAll('.sp-ctx-item')].find((b) => /reset the 2 selected/.test(b.textContent))?.click(), true)`);

@@ -327,6 +327,7 @@ function stepper(value, f, commit) {
   });
   src.addEventListener('pointermove', (e) => {
     if (!drag || drag.src !== src) return;
+    if (src._ranging) { drag = null; return; }   // a channel name dragged UP or DOWN selects channels (below), never scrubs
     const dx = e.clientX - drag.lastX; drag.lastX = e.clientX;
     // accumulate BEFORE the arm check (Godot :113 then :117): the pixels
     // inside the click slop still count, or a drag that wanders back lands
@@ -508,13 +509,28 @@ function fieldDOM(f, edit, ro = {}) {
       row.update = (nf) => { setLabel(nf); st.update(nf); };
       if (label && ro.icons && !f.disabled) {   // edit chrome: the channel's name is a handle too
         label.classList.add('sp-chan');
-        st.bindScrub(label, (e) => {   // a click on the name selects the channel; Shift/Ctrl adds or removes it
+        // selecting channels, as in Maya's channel box (R 10-10 23:36): a click selects one; Ctrl toggles one; Shift selects
+        // the run from the last one clicked; dragging UP or DOWN the names selects the run under the pointer (sideways
+        // is still the scrub)
+        const chans = () => [...(row.parentElement?.children ?? [])].filter((r) => r.classList?.contains('sp-row') && r.querySelector('.sp-chan'));
+        const selectRun = (a, b, keep) => { const L = chans(); const i = L.indexOf(a), j = L.indexOf(b); if (i < 0 || j < 0) return;
+          if (!keep) for (const r of L) r.classList.remove('chan-sel'); for (let k = Math.min(i, j); k <= Math.max(i, j); k++) L[k].classList.add('chan-sel'); };
+        st.bindScrub(label, (e) => {
+          if (label._ranged) { label._ranged = false; return; }   // that press was a run drag, not a click
           const sel = [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])];
-          if (e.shiftKey || e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); return; }   // keys: selectExtend
+          if (e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); row.parentElement._chanAnchor = row; return; }   // keys: selectExtend
+          if (e.shiftKey && row.parentElement?._chanAnchor?.isConnected) { selectRun(row.parentElement._chanAnchor, row, false); return; }   // keys: selectExtend
           const only = sel.length === 1 && sel[0] === row;
           for (const r of sel) r.classList.remove('chan-sel');
           if (!only) row.classList.add('chan-sel');
+          if (row.parentElement) row.parentElement._chanAnchor = row;
         });
+        label.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; const y0 = e.clientY, x0 = e.clientX, keep = e.ctrlKey || e.metaKey;   // keys: selectExtend
+         
+          const move = (ev) => { if (!label._ranging) { if (Math.abs(ev.clientY - y0) < 6 || Math.abs(ev.clientY - y0) < Math.abs(ev.clientX - x0)) return; label._ranging = true; label._ranged = true; }
+            const over = document.elementFromPoint(x0, ev.clientY)?.closest?.('.sp-row'); if (over && chans().includes(over)) { selectRun(row, over, keep); row.parentElement._chanAnchor = row; } };
+          const up = () => { removeEventListener('pointermove', move, true); removeEventListener('pointerup', up, true); setTimeout(() => { label._ranging = false; label._ranged = false; }, 0); };
+          addEventListener('pointermove', move, true); addEventListener('pointerup', up, true); });
       }
       break;
     }
