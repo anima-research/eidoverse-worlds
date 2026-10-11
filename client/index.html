@@ -1827,6 +1827,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-row.sp-bar { display: inline-flex; vertical-align: top; margin: 6px 6px 6px 0 !important; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
 .frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 24px; gap: 4px; }
 .frame.edit .sp-item:hover { background: var(--e-hover); }
+.frame.edit .sp-tree .sp-item.dim { min-height: 17px; line-height: 15px; font-size: 11px; }   /* a thing's component rows, packed (R 10-10 23:31) */
 .frame.edit .sp-tree-row { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--e-line) 10px 11px, transparent 11px 14px);
   background-size: calc(var(--d, 0) * 14px) 100%; background-position: 4px 0; background-repeat: no-repeat; }
 .frame.edit .sp-item.active { background-color: var(--e-accent-bg); box-shadow: inset 2px 0 0 var(--e-accent); }
@@ -1927,7 +1928,7 @@ body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
 /* the viewport bar: floats on the view's top-left corner, the edit chrome's own tokens */
 .edit-viewbar { position: fixed; z-index: 29; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px;
-  background: color-mix(in srgb, var(--e-bg1, #1e1e21) 88%, transparent); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); }
+  background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }   /* solid (R 10-10 23:32: readable over any view) */
 .edit-viewbar[hidden] { display: none; }
 /* the grip editor's panel: floats under the viewport bar (gripedit.js) */
 .gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;
@@ -1944,7 +1945,7 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .gripedit-bar button.on { box-shadow: inset 0 -2px 0 var(--e-accent); }
 .gripedit-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
 .gripedit button.danger { color: var(--e-danger, #ff6b6b); }
-.edit-viewbar .edit-camsw { margin-right: 2px; }
+.edit-viewbar .edit-camsw { margin: 0 2px; }
 .edit-camsw { display: inline-flex; margin-right: 6px; border: 1px solid var(--e-line); border-radius: 4px; overflow: hidden; }
 .edit-camsw .edit-cam { border: none; border-radius: 0; padding: 0 8px; height: 22px; }
 .edit-camsw .edit-cam.on { background: var(--e-accent-bg); color: var(--e-text); box-shadow: inset 0 -2px 0 var(--e-accent); }

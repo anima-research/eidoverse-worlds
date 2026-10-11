@@ -301,7 +301,8 @@ export function trySitOn(arg, slot = null) {
 // pose anyway).
 // R, 10-10, on seeing it: "extend the arms out further in front of the body and rotate the hands palm out, kind of like a
 // mage casting magic". Arms forward and a little down (Y −80°, Z −15°), elbows barely bent, wrists back 80° so the palms face out.
-const WORKING_POSE = { leftUpperArm: [0.0839, -0.6373, -0.1, 0.7594], rightUpperArm: [0.0839, 0.6373, 0.1, 0.7594], leftLowerArm: [0, -0.1305, 0, 0.9914], rightLowerArm: [0, 0.1305, 0, 0.9914],
+// R 10-10 23:33: 'relax the elbows and spread the arms apart like 15 degrees' (7.5° each arm, elbows 15° → 35°)
+const WORKING_POSE = { leftUpperArm: [0.0772, -0.5863, -0.1053, 0.7995], rightUpperArm: [0.0772, 0.5863, 0.1053, 0.7995], leftLowerArm: [0, -0.3007, 0, 0.9537], rightLowerArm: [0, 0.3007, 0, 0.9537],
   leftHand: [0, 0, 0.6428, 0.766], rightHand: [0, 0, -0.6428, 0.766], head: [0.0872, 0, 0, 0.9962] };
 let working = false;
 bus.on('edit-freecam', (on) => {

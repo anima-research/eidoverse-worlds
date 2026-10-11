@@ -178,7 +178,7 @@ function build() {
   // Hierarchy and the Inspector ... free-floating like Blender"): what pertains to the view sits ON the view, a small
   // floating bar at its top-left. Full screen stays in the top bar (it is the window's, not the viewport's).
   const vbar = el('div', 'edit-viewbar'); vbar.hidden = true; document.body.append(vbar);
-  vbar.append(camSw, vmenu, wire);
+  vbar.append(vmenu, camSw, wire);   // 'Viewport ▾' first, almost a title (R 10-10 23:32)
   view.append(full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's
