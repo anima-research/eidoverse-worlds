@@ -53,7 +53,7 @@ for (const [id, e] of ents) {
   const comps = componentsOf(e).components;
   cards += s.sections.list.length;
   const inHeader = comps.filter((c) => c.type === 'Label' || c.type === 'Hidden' || c.type === 'Description').length;
-  const emptyParent = s.sections.list.filter((c: any) => c.type === 'Parent' && c.present === false).length;   // a root's quiet Parent card (the no-drag path, R 10-04)
+  const emptyParent = s.sections.list.filter((c: any) => (c.type === 'Parent' || c.type === 'Material') && c.present === false).length;   // a root's quiet Parent card (the no-drag path, R 10-04); a model's Material card before any override (R 10-10)
   if (s.sections.list.length - emptyParent !== comps.length - inHeader) probs.push(`${id}: ${comps.length} components (${inHeader} in the header), ${s.sections.list.length} cards`);
   const owned = new Map<string, string>();
   for (const a of s.sections.header) owned.set(a, 'header');

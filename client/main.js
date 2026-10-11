@@ -63,6 +63,7 @@ import { initEditPanels } from './lib/editpanels.js';
 import { initEditLayout } from './lib/editlayout.js';
 import { initGizmo } from './lib/gizmo.js';
 import { initGripEdit } from './lib/gripedit.js';
+import { initMaterialOverrides } from './lib/matoverride.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
 import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
 import { initRolesPanels, openModeration } from './lib/rolespanels.js';
@@ -353,6 +354,7 @@ function start() {
   bus.on('edit-mode', (on) => editPanels.show(!!on));
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
+  initMaterialOverrides();   // the draft hesperus/material reader (docs/COMPONENT-LADDER.md)
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered AFTER show, so it docks visible frames)
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
   // (lib/commandbar.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes

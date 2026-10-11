@@ -43,7 +43,7 @@ console.log("\nschema is a function of the record:");
   const s = inspectSchema(chair, "c1");
   const G = s.groups.map((g) => g.group);
   // step 3: the channel box's Rotate channels are their own group, `rot` (tools/channelbox-test.ts)
-  check("a chair: pos · rot · parent · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","comp"]', JSON.stringify(G));
+  check("a chair: pos · rot · parent · flags · sockets · hmat (its Material card, R 10-10) · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","hmat","comp"]', JSON.stringify(G));
   check("locked → transform stays editable and says moving it asks first (the door decides, §5)", fieldAt(s, "pos.x")!.disabled !== true && /locked — moving it asks first/.test(fieldAt(s, "pos.x")!.hint), JSON.stringify(fieldAt(s, "pos.x")));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
   check("unknown comp 'local/recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.local/recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
@@ -257,6 +257,25 @@ console.log("\nphysics as fields (R 10-10: 'hard to interact with unless you kno
   check("an edit writes the whole physics value once: friction set, a blank mass stays absent, the rest kept", r.ops.length === 1 && v?.friction === 0.3 && !("mass" in v) && v?.kind === "dynamic" && Array.isArray(v?.shape), JSON.stringify(r));
   const bad = editOps(box, "pb1", { "physics.restitution": "2" });
   check("bounciness above 1 is refused before it is sent", !bad.ops.length && /restitution/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+}
+
+console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):");
+{
+  const live = { materials: [{ slot: "wood", name: "Wood", color: 0x8a5a2b, roughness: 0.8, metalness: 0, opacity: 1, emissive: 0 }] };
+  const plain = { lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], comp: {} };
+  const m = inspectSchema(plain, "m1", live); const sec = m.sections.list.find((x: any) => x.title === "Material");
+  check("every thing with a model has a Material card listing its own materials, marked a draft, with an override button", !!sec && sec.draft && sec.present === false && fieldAt(m, "hmat.override") != null && m.groups.find((g: any) => g.group === "hmat").fields.some((f: any) => f.t === "info" && /#8a5a2b/.test(f.value)));
+  const r = editOps(plain, "m1", { "hmat.override": true }, live);
+  check("'override' writes an empty hesperus/material (blank fields = the model's own)", r.ops.length === 1 && r.ops[0].args?.component === "hesperus/material" && JSON.stringify(r.ops[0].args?.value) === "{}", JSON.stringify(r));
+  const ov = { ...plain, comp: { "hesperus/material": { color: 0xff0000 } } };
+  const r2 = editOps(ov, "m1", { "hmat.roughness": "0.2", "hmat.metalness": "" }, live); const v = r2.ops[0]?.args?.value;
+  check("an edit keeps the rest of the override; a blank field stays absent", r2.ops.length === 1 && v?.color === 0xff0000 && v?.roughness === 0.2 && !("metalness" in v), JSON.stringify(r2));
+  const bad = editOps(ov, "m1", { "hmat.opacity": "3" }, live);
+  check("opacity above 1 is refused before it is sent", !bad.ops.length && /opacity/.test(bad.errors[0] ?? ""));
+  const back = editOps(ov, "m1", { "hmat.reset": true }, live);
+  check("'back to the model's own' removes the override", back.ops.length === 1 && /unset|delete/.test(back.ops[0].verb ?? ""), JSON.stringify(back));
+  const ms = inspectSchema(ov, "m1", live).sections.list.filter((x: any) => x.title === "Material");
+  check("with an override there is ONE Material card (the override's), removable", ms.length === 1 && ms[0].removable && ms[0].key === "hesperus/material");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

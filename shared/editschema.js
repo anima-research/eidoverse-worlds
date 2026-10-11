@@ -413,6 +413,30 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
+  // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
+  // its model's own materials (live.materials, read-only), and an override whose blank fields mean "the model's own".
+  if (ent.lib) {
+    const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
+    const own = Array.isArray(live.materials) ? live.materials : [];
+    const hex = (v) => (Number.isInteger(v) ? `#${v.toString(16).padStart(6, '0')}` : '—');
+    const fields = own.slice(0, 8).map((m) => ({ t: 'info', k: `own|${m.slot}`, label: m.name.slice(0, 18), value: `${hex(m.color)} · rough ${m.roughness ?? '—'} · metal ${m.metalness ?? '—'}`, hint: `slot '${m.slot}': the model's own material` }));
+    if (!own.length) fields.push({ t: 'info', k: 'own|none', label: 'model', value: 'its materials show once the model has loaded' });
+    if (!ov) fields.push({ t: 'btn', k: 'override', label: 'override its look…', hint: 'Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model\'s own.' });
+    else {
+      const first = own[0] ?? {};
+      const num = (k, label, hint, lo = 0, hi = 1) => ({ t: 'text', k, label, value: typeof ov[k] === 'number' ? String(ov[k]) : '', placeholder: first[k] != null ? `model's: ${first[k]}` : `model's own`, hint: `${hint} ${lo} to ${hi}; blank keeps the model's own.` });
+      fields.push(
+        { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(ov.color) ? ov.color : (first.color ?? 0xffffff), hint: 'Its base colour. Use ↺ to go back to the model\'s own.' },
+        num('roughness', 'roughness', '0 is mirror-smooth, 1 is matte:'),
+        num('metalness', 'metalness', '0 is plastic, wood, paint; 1 is bare metal:'),
+        { t: 'color', k: 'emissive', label: 'glow', value: Number.isInteger(ov.emissive) ? ov.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
+        num('emissiveStrength', 'glow amount', 'How bright the glow is:', 0, 20),
+        num('opacity', 'opacity', '1 is solid, 0 is invisible:'),
+        { t: 'btn', k: 'reset', label: 'back to the model\'s own', hint: 'Removes the override (the card\'s ✕ does the same).' });
+    }
+    groups.push({ group: 'hmat', label: 'Material', types: ov ? [MATK] : [], fields });
+  }
+
   if (c.particles && typeof c.particles === 'object') {
     // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
     // (an Essential's: count, size, opacity, speed, lifetime, area, texture, quality). An older value (the first
@@ -534,7 +558,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'hesperus/material', ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -665,6 +689,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
           sec.title = `Script · ${name}`; sec.fields = [`script.${name}`, `script.json|${inst.key}`]; sec.removable = true;
+        } else if (inst.key === 'hesperus/material' && g('hmat')) {
+          sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
         } else {
@@ -675,6 +701,10 @@ function componentSections(ent, groups, live = {}, id = '?') {
     }
     if (typeof sec.title === 'string' && sec.title) sec.title = sec.title.charAt(0).toUpperCase() + sec.title.slice(1);   // every card starts with a capital (R 10-10: 'physics')
     out.push(sec);
+  }
+  // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
+  if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
+    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: false, draft: true });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
   // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
@@ -1084,6 +1114,20 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'angle' || k === 'time') { const n = num(f, raw); if (n == null) break; next[k] = round(n, 6); }
         else { errors.push(`${key}: no such field`); break; }
         comps.set('openable', next);
+        break;
+      }
+      case 'hmat': {
+        const MATK = 'hesperus/material';
+        if (k === 'override') { if (c[MATK] == null) comps.set(MATK, {}); break; }
+        if (k === 'reset') { comps.set(MATK, null); break; }
+        const next = comps.get(MATK) ?? JSON.parse(JSON.stringify(c[MATK] ?? {}));
+        if (k === 'color' || k === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
+          if (raw === null || raw === '' ) delete next[k]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[k] = n; else { errors.push(`material.${k}: a colour`); break; } }
+        else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(k)) {
+          const t = String(raw ?? '').trim(); const hi = k === 'emissiveStrength' ? 20 : 1;
+          if (!t) delete next[k]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${k}: a number from 0 to ${hi}, or blank`); break; } next[k] = round(n, 3); } }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set(MATK, next);
         break;
       }
       case 'physics': {

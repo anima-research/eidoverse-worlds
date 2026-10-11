@@ -1,0 +1,103 @@
+// matoverride — the reader for the DRAFT component `hesperus/material` (docs/COMPONENT-LADDER.md, rung 1).
+//
+// R, 10-10: Material as the ladder's first test. Absent, a thing shows its model's own materials. Present, the value
+// overrides fields of them: {color?, roughness?, metalness?, emissive?, emissiveStrength?, opacity?} (glTF PBR terms).
+// `hesperus/material` applies to every material slot; `hesperus/material:<slot>` to one (the slot is the model's
+// material name, slotKey'd). A field absent = the model's own value. A malformed value or field is ignored, never thrown.
+// (A `surface` link to physics waits for promotion: a draft can't feed a rule.)
+//
+// Models share materials across instances, so an override is a per-mesh CLONE, built once and prepared like every
+// world material (materials.js prepareMaterial: the node graph's shape is fixed before its first compile); later edits
+// are uniform writes. Removing the override puts the model's own material back.
+
+import { THREE } from './core.js';
+import { bus } from './base.js';
+import { entities, comps } from './world.js';
+import { prepareMaterial } from './materials.js';
+
+export const MAT = 'hesperus/material';
+export const slotKey = (name, i = 0) => {
+  const k = String(name ?? '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+  return /^[a-z]/.test(k) ? k : `slot-${i}${k ? `-${k}` : ''}`.slice(0, 48);
+};
+const U = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+const HEX = (v) => Number.isInteger(v) && v >= 0 && v <= 0xffffff;
+/** The fields of a value that a reader may use (anything else is ignored). */
+export function readMaterial(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const o = {};
+  if (HEX(v.color)) o.color = v.color;
+  if (U(v.roughness)) o.roughness = v.roughness;
+  if (U(v.metalness)) o.metalness = v.metalness;
+  if (HEX(v.emissive)) o.emissive = v.emissive;
+  if (typeof v.emissiveStrength === 'number' && v.emissiveStrength >= 0 && v.emissiveStrength <= 20) o.emissiveStrength = v.emissiveStrength;
+  if (U(v.opacity)) o.opacity = v.opacity;
+  return Object.keys(o).length ? o : null;
+}
+
+// its own meshes only: a child THING (parented, or settled onto it) is its own entity with its own materials
+function meshes(obj) {
+  const out = []; const id = obj?.userData?.entityId;
+  const walk = (o) => { if (o !== obj && o.userData?.entityId && o.userData.entityId !== id) return;
+    if (o.isMesh && o.material && !o.userData?.noMaterialOverride && !o.isInstancedMesh) out.push(o);
+    for (const k of o.children ?? []) walk(k); };
+  if (obj) walk(obj);
+  return out;
+}
+const origOf = (mesh) => (mesh.userData.__matOrig ??= Array.isArray(mesh.material) ? mesh.material.slice() : [mesh.material]);
+
+/** The model's OWN materials (never the overrides), one per slot: for the Inspector's read-only Material card. */
+export function materialsOf(obj) {
+  const seen = new Map();
+  for (const m of meshes(obj)) origOf(m).forEach((mat, i) => {
+    if (!mat || seen.has(mat)) return;
+    seen.set(mat, { slot: slotKey(mat.name, seen.size), name: mat.name || `material ${seen.size + 1}`,
+      color: mat.color?.getHex?.() ?? null, roughness: typeof mat.roughness === 'number' ? +mat.roughness.toFixed(3) : null,
+      metalness: typeof mat.metalness === 'number' ? +mat.metalness.toFixed(3) : null, opacity: typeof mat.opacity === 'number' ? +mat.opacity.toFixed(3) : null,
+      emissive: mat.emissive?.getHex?.() ?? null });
+  });
+  const list = [...seen.values()]; const n = new Map();
+  for (const x of list) { const c = (n.get(x.slot) ?? 0) + 1; n.set(x.slot, c); if (c > 1) x.slot = `${x.slot}-${c}`.slice(0, 48); }   // two slots one name: numbered
+  return list;
+}
+
+function overrideFor(bag, mat, i) {
+  const all = readMaterial(bag?.[MAT]); const one = readMaterial(bag?.[`${MAT}:${slotKey(mat?.name, i)}`]);
+  return all || one ? { ...(all ?? {}), ...(one ?? {}) } : null;
+}
+function write(clone, orig, o) {
+  if (clone.color && orig.color) clone.color.setHex(o.color ?? orig.color.getHex());
+  if ('roughness' in clone) clone.roughness = o.roughness ?? orig.roughness;
+  if ('metalness' in clone) clone.metalness = o.metalness ?? orig.metalness;
+  if (clone.emissive && orig.emissive) clone.emissive.setHex(o.emissive ?? orig.emissive.getHex());
+  if ('emissiveIntensity' in clone) clone.emissiveIntensity = o.emissiveStrength ?? orig.emissiveIntensity ?? 1;
+  const op = o.opacity ?? orig.opacity; clone.opacity = op; clone.transparent = orig.transparent || op < 1;
+}
+
+/** Make a thing's meshes show its override (or their own materials again). Returns how many slots carry one. */
+export function applyMaterials(id) {
+  const obj = entities.get(id); if (!obj) return 0;
+  const bag = comps.get(id); let n = 0;
+  for (const mesh of meshes(obj)) {
+    const orig = origOf(mesh); const clones = (mesh.userData.__matClones ??= []);
+    const next = orig.map((mat, i) => {
+      const o = mat ? overrideFor(bag, mat, i) : null;
+      if (!o) return mat;
+      n++;
+      let c = clones[i];
+      if (!c || c.__from !== mat) { c = mat.clone(); c.__from = mat; c.name = mat.name; prepareMaterial(c, mesh); clones[i] = c; }
+      write(c, mat, o); return c;
+    });
+    mesh.material = Array.isArray(mesh.material) || next.length > 1 ? next : next[0];
+  }
+  return n;
+}
+
+export function initMaterialOverrides() {
+  bus.on('comp', ({ id, type }) => { if (type === MAT || String(type).startsWith(`${MAT}:`)) applyMaterials(id); });
+  // a model that arrives (or is swapped in by residency) after its component: the bag is re-announced, but be sure
+  bus.on('entity', ({ id, kind }) => { if (kind === 'spawn' || kind === 'place') { const bag = comps.get(id); if (bag && Object.keys(bag).some((k) => k === MAT || k.startsWith(`${MAT}:`))) requestAnimationFrame(() => applyMaterials(id)); } });
+  // a deleted override: the bag no longer has it, and nothing announces a deleted type by name everywhere; re-read on any comp change of a thing that had one
+  bus.on('comp', ({ id }) => { const obj = entities.get(id); if (obj && meshes(obj).some((m) => m.userData.__matClones?.some(Boolean))) applyMaterials(id); });
+  globalThis.__matoverride = { applyMaterials, materialsOf: (id) => materialsOf(entities.get(id)) };
+}

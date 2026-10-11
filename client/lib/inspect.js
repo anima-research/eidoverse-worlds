@@ -21,6 +21,7 @@
 // until it retires; that panel also gets the schema groups, rendered by the
 // factory, through the same commit path.
 
+import { materialsOf } from './matoverride.js';
 import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
 import { boxOf } from './realize/models.js';
@@ -69,7 +70,7 @@ function eulerHint(id, rec) {
 export function liveFor(id) {
   const obj = entities.get(id);
   const light = !!obj?.userData?.isLight;
-  return { casting: light ? hooks.casting?.(obj) : undefined, parts: obj && !light ? namedParts(obj) : undefined,
+  return { casting: light ? hooks.casting?.(obj) : undefined, parts: obj && !light ? namedParts(obj) : undefined, materials: obj && !light ? materialsOf(obj) : undefined,
     euler: eulerHint(id, foldRecord(id)),
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths

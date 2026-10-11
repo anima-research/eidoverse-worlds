@@ -451,6 +451,19 @@ try {
   check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
   check("AT2 a removable card's title line carries a ✕ that removes it (Spin)", r.spinX && r.removed === true, r);
   });
+  // ---- MT: the draft hesperus/material, drawn (docs/COMPONENT-LADDER.md rung 1; R 10-10) ----
+  await stage("MT", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); for (const [id, dx] of [['mta', 2], ['mtb', 3.2]]) await m.sendRequest('create', { id, model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 3], scale: 0.3 } } }); return true;`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.get('mta') && m.entities.get('mtb'))`); await sleep(1500);
+  const look = (id) => `(() => { const w = globalThis.__mtw; let c = null, r = null, shared = null; w.entities.get('${id}').traverse((o) => { if (o.isMesh && c === null) { const mm = Array.isArray(o.material) ? o.material[0] : o.material; c = mm.color?.getHexString?.() ?? null; r = mm.roughness ?? null; shared = mm; } }); return { c, r, mat: shared }; })()`;
+  const r = await page(`globalThis.__mtw = await import('/lib/world.js'); const n = await import('/lib/net.js');
+    const before = ${look('mta')}; const set = await n.sendRequest('set', { id: 'mta', component: 'hesperus/material', value: { color: 0xff2200, roughness: 0.15 } });
+    await new Promise((z) => setTimeout(z, 1500)); const a = ${look('mta')}, b = ${look('mtb')};
+    const del = await n.sendRequest('delete', { id: 'mta', component: 'hesperus/material' }); await new Promise((z) => setTimeout(z, 1500)); const back = ${look('mta')};
+    return { set: set.ok ?? set.refused, before: [before.c, before.r], a: [a.c, a.r], b: [b.c, b.r], sharedWithB: a.mat === b.mat, back: [back.c, back.r], backIsOwn: back.mat === before.mat, del: del.ok ?? del.refused };`);
+  check("MT1 a hesperus/material override recolours that one thing (a clone; the same model elsewhere is untouched), and deleting it brings the model's own material back", r.set === true && r.a[0] === "ff2200" && Math.abs(r.a[1] - 0.15) < 1e-6 && r.b[0] === r.before[0] && !r.sharedWithB && r.backIsOwn && r.del === true, r);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

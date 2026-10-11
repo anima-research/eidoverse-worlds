@@ -573,6 +573,7 @@ function fieldDOM(f, edit, ro = {}) {
       row.innerHTML = ''; row.append(h);
       // a card's own actions on its title line, shown on hover (R 10-10: 'delete components right from the title line,
       // like an x that shows up on the line when you hover over it'); the VR quad keeps its remove row instead
+      if (f.dot) { const d = el('span', `sp-dot sp-dot-${f.dot}`); d.title = f.dot === 'draft' ? 'a draft component: not part of the engine yet (it can still change)' : 'a component this client has no reader for: kept and replayed, not drawn'; h.append(d); }
       if (f.actions?.length) {
         const acts = el('span', 'sp-gacts');
         for (const a of f.actions) { const b = el('button', `sp-gact${a.danger ? ' danger' : ''}`); b.type = 'button'; b.title = a.title ?? a.label ?? ''; b.setAttribute('aria-label', b.title);
@@ -580,7 +581,7 @@ function fieldDOM(f, edit, ro = {}) {
           b.onclick = (e) => { e.stopPropagation(); edit(a.k); }; acts.append(b); }
         row.append(acts); row.classList.add('has-acts');
       }
-      row.update = (nf) => { put(h, `${nf.open === false ? '▸' : '▾'} ${nf.label}`, ro.icons); };
+      row.update = (nf) => { put(h, `${nf.open === false ? '▸' : '▾'} ${nf.label}`, ro.icons); if (nf.dot) { const d = el('span', `sp-dot sp-dot-${nf.dot}`); d.title = nf.dot === 'draft' ? 'a draft component: not part of the engine yet (it can still change)' : 'a component this client has no reader for: kept and replayed, not drawn'; h.append(d); } };
       break;
     }
     case 'tree': {

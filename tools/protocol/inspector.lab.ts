@@ -15,7 +15,7 @@ try {
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(3000);
   await page(`const m = await import('/lib/net.js'); const r = await m.sendRequest('create', { id: 'pallet-spin', model: 'eidoverse/assets/models/crate_large_blue.glb', components: { label: 'spinning pallet', physics: { kind: 'dynamic' }, transform: { pos: [2, 0, 2], q: [0,0,0,1], scale: [1,1,1] } } });
-    await m.sendRequest('set', { id: 'pallet-spin', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 45 } }); return r.ok;`);
+    await m.sendRequest('set', { id: 'pallet-spin', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 45 } }); await m.sendRequest('set', { id: 'pallet-spin', component: 'hesperus/material', value: { color: 0xff6633, roughness: 0.3 } }); return r.ok;`);
   await sleep(1500);
   await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 600)); (await import('/lib/scenegraph.js')).sceneSelect('pallet-spin'); return true;`);
   await sleep(1500);
@@ -25,6 +25,7 @@ try {
     const eye = f.querySelector('.sp-bar')?.textContent?.trim() ?? null; const hasHidden = [...f.querySelectorAll('.sp-label')].some((l) => l.textContent.trim() === 'hidden');
     const order = [...f.querySelectorAll('.sp-group, .sp-bar')].map((e) => e.classList.contains('sp-bar') ? '[' + e.textContent.trim().slice(0, 18) + ']' : e.textContent.trim().slice(0, 16)); return { frame: R(f), groups, order, rows, eye, hasHidden };`);
   fs.writeFileSync(`${OUT}/rows.json`, JSON.stringify(m, null, 1));
+  if (process.env.SCROLL_END) { await evalJson(`(() => { const s = document.querySelector('[data-frame="inspector"] .schema-scroll'); s.scrollTop = s.scrollHeight; return true; })()`); await sleep(300); }
   const b = await evalJson(`(() => { const r = document.querySelector('[data-frame="inspector"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
   const s = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: Math.min(b[3], 1000 - b[1]), scale: 1 } }); fs.writeFileSync(`${OUT}/inspector.png`, Buffer.from(s.data, "base64"));
   const ed = await page(`const I = await import('/lib/inspect.js'); const out = {};
