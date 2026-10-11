@@ -116,7 +116,7 @@ function loadWorldDefs() {
 const worldName = () => replica.st?.entities?.['@world']?.c?.about?.name || CONFIG.world || 'World';
 // R, 10-10: "make it clear what the 'World' is in the Hierarchy. Either World: (gym, in this case) or at least tooltip
 // the world entity, or maybe put the 'world' icon in-line with it": all three.
-const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'planet', label: `World: ${worldName()}`, sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel,
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, icon: 'globe', kind: 'World', label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel,
   title: 'the world itself: its sky, weather, rules and settings. Click to edit them in the Inspector.' }] });
 // HIERARCHY VIEW OPTIONS (R, 10-10: "the list in the hierarchy is still hella busy. I would only have the name in the
 // list proper, more info (like id) when you hover over it, and a drop-down ... 'display by id', checkboxes for 'list
@@ -269,8 +269,10 @@ function hierarchyFields() {
     // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on)
     ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
-    { t: 'pop', k: 'hopts', label: `View${Object.keys(HOPTS).some((k) => hopts[k]) ? `: ${Object.keys(HOPTS).filter((k) => hopts[k]).map((k) => HOPTS[k].replace(/^(show|list) /, '')).join(', ')}` : ''} ▾`, deskOnly: true, hint: 'what each row shows: names only by default', placeholder: 'what rows show…', recentKey: 'hierarchy-view',
-      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : '·'} ${HOPTS[k]}` })) },
+    // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
+    // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
+    { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, hint: 'what each row shows: names only, unless you turn more on',
+      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })) },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }

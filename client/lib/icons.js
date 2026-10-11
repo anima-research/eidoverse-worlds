@@ -22,6 +22,8 @@
 // tried first and read as blobs at 26px.
 
 const P = {
+  // the world, for the Hierarchy's World row (R, 10-10: the filled planet was a blot at 13 px): a circle, its equator, one meridian
+  globe: ['M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18', 'M3 12h18', 'M12 3c3.2 3 3.2 15 0 18c-3.2-3-3.2-15 0-18'],
   ear: ['M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0',
         'M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4'],
   // lucide `brain` (R, 08-05, third pass: bubble-with-dots read as silence,

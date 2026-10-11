@@ -379,7 +379,7 @@ let popOpen = null;
 function openPop(anchor, f, pick) {
   popOpen?.close();
   const LS = `ew-recent-${f.recentKey ?? 'pop'}`;
-  let recent = []; try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }
+  let recent = []; if (!f.plain) try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }   // plain: a short menu of switches, no search box, no recents
   // opaque, inside the viewport, one row lit (review 10-07 S10: it drew over the fields behind it, ran off the right and
   // bottom edges, and every row wore the brand-green button look). Its look is index.html's .sp-pop rules.
   const box = el('div', 'sp-pop');
@@ -393,11 +393,12 @@ function openPop(anchor, f, pick) {
   box.style.top = `${Math.round(Math.max(M, top))}px`;
   const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = f.placeholder ?? 'search components…';
   const list = el('div', 'sp-pop-list');
+  if (f.plain) { inp.style.cssText = 'position:absolute;opacity:0;height:0;border:0;padding:0;pointer-events:none'; box.style.width = '190px'; }   // kept for the keys (↑↓ Enter Esc), unseen
   box.append(inp, list);
   const items = f.items ?? [];
   const take = (it) => {
     if (it.disabled) return;
-    try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
+    if (!f.plain) try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
     close(); pick(it.k);
   };
   let shown = [], active = 0, rows = [];
@@ -463,7 +464,7 @@ function fieldDOM(f, edit, ro = {}) {
   else if (f.hint) row.title = f.hint;
   if (f.t === 'num' && !f.disabled) row.title = row.title ? `${row.title}\n${SCRUB_TIP}` : SCRUB_TIP;   // the modifiers, where the hand is
   let label = null;
-  if (f.label != null && f.t !== 'btn' && f.t !== 'group') { label = el('label', 'sp-label', f.label); row.append(label); }
+  if (f.label != null && f.t !== 'btn' && f.t !== 'group' && f.t !== 'pop') { label = el('label', 'sp-label', f.label); row.append(label); }   // a pop's label is its button's face
   if (label && ro.icons) put(label, f.label, true);
   const setLabel = (nf) => { if (label && nf.label != null) put(label, nf.label, ro.icons); };
   switch (f.t) {
@@ -806,8 +807,11 @@ function fieldDOM(f, edit, ro = {}) {
         const line = el('div', `sp-item${r.active ? ' active' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
         const main = el('span', 'sp-item-main');
-        if (r.icon) { const i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : rsvg)(r.icon, 13); main.append(i); }   // the World row's planet
-        main.append(el('span', 'sp-item-label', r.label));
+        if (r.icon) {   // the World row: its glyph, its kind and its name on ONE line
+          const head = el('span', 'sp-item-head'), i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : rsvg)(r.icon, 14);
+          const lab = el('span', 'sp-item-label'); if (r.kind) lab.append(el('span', 'sp-item-kind', r.kind)); lab.append(r.label);
+          head.append(i, lab); main.append(head);
+        } else main.append(el('span', 'sp-item-label', r.label));
         if (r.sub) main.append(el('span', 'sp-item-sub', r.sub));
         if (r.title) main.title = r.title;
         main.onclick = () => edit(f.k ?? 'row', r.id);   // a keyed list routes its rows; unkeyed lists keep 'row'

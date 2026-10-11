@@ -299,7 +299,10 @@ export function trySitOn(arg, slot = null) {
 // the people around it can see I've stepped out: forearms raised as at a console, head bent to it. Mine to give up: it
 // ends when the camera comes back (the Body switch, or B), and any pose I held before is not restored (moving ends a
 // pose anyway).
-const WORKING_POSE = { leftUpperArm: [0, 0, -0.5736, 0.8192], rightUpperArm: [0, 0, 0.5736, 0.8192], leftLowerArm: [0, -0.8434, 0, 0.5373], rightLowerArm: [0, 0.8434, 0, 0.5373], head: [0.1219, 0, 0, 0.9925] };
+// R, 10-10, on seeing it: "extend the arms out further in front of the body and rotate the hands palm out, kind of like a
+// mage casting magic". Arms forward and a little down (Y −80°, Z −15°), elbows barely bent, wrists back 80° so the palms face out.
+const WORKING_POSE = { leftUpperArm: [0.0839, -0.6373, -0.1, 0.7594], rightUpperArm: [0.0839, 0.6373, 0.1, 0.7594], leftLowerArm: [0, -0.1305, 0, 0.9914], rightLowerArm: [0, 0.1305, 0, 0.9914],
+  leftHand: [0, 0, 0.6428, 0.766], rightHand: [0, 0, -0.6428, 0.766], head: [0.0872, 0, 0, 0.9962] };
 let working = false;
 bus.on('edit-freecam', (on) => {
   const me = getMe(); if (!me) return;

@@ -1915,6 +1915,10 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 /* a row's menu as a button: only where there is no right-click (a frame on a headset quad, domquad.js's #xr-stage) */
 .sp-ctxbtn { display: none; flex: none; margin-left: auto; width: 22px; height: 20px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; color: var(--dim); cursor: pointer; line-height: 1; }
 #xr-stage .sp-ctxbtn { display: inline-flex; align-items: center; justify-content: center; }
+.sp-item-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-item-head .sp-ico { display: inline-flex; flex: none; color: var(--e-accent, var(--brand)); }
+.sp-item-head .sp-item-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-item-kind { font-weight: 400; color: var(--e-dim, var(--dim)); margin-right: 6px; text-transform: uppercase; font-size: .82em; letter-spacing: .06em; }
 .edit-selbar .sp-ico { display: inline-flex; vertical-align: -2px; }
 body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); }   /* the dock is open: ⋯ folds it again */
 /* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the

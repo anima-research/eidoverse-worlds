@@ -886,13 +886,17 @@ export function updateFollowCamera(dt, me) {
   // with three fresh Vector3s per frame, to learn this one number.
   const farD = focus.distanceTo(want);
   _cdir.copy(want).sub(focus).normalize();
-  const hitT = free ? null : raySegment(focus, _cdir, farD);   // the free camera is an editor's: it passes through
+  // the free camera is an editor's: it passes through. So does the body camera once its centre has left the body (F, a
+  // pan): the centre is then INSIDE the framed thing, and the wall rule pulled the eye in to its middle (R, 10-10: F in
+  // Body mode put the camera inside the barrel)
+  const off = free || (editingNow() && editPan.lengthSq() > 1e-6);
+  const hitT = off ? null : raySegment(focus, _cdir, farD);
   const allowed = hitT !== null ? Math.min(farD, hitT - 0.22) : farD;
   if (allowed < farD) {
     want.copy(focus).addScaledVector(_cdir, Math.max(0.35, allowed));
   }
   // never let the eye go under the floor
-  if (!free) want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
+  if (!off) want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
 
   camera.position.lerp(want, 1 - Math.exp(-(allowed < farD ? 26 : 14) * dt));
   camera.lookAt(focus.x + shoulder.x * 0.5, focus.y - 0.1, focus.z + shoulder.z * 0.5);

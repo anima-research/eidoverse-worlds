@@ -389,6 +389,10 @@ try {
   check("EC4 a left-drag on bare space orbits, and keeps what was selected", d4?.at && Math.abs(c4.yaw - c3.yaw) > 0.2 && s0 === "cuball" && s1 === "cuball", { d4, c3, c4, s0, s1 });
   await drag("bare", 0, false, 0, 0);
   check("EC5 …and a left CLICK on bare space (no travel) deselects, as before", (await sel()) === null, await sel());
+  // F in Body mode on a thing: the eye stays OUTSIDE it (it was pulled into its middle by the wall rule)
+  await evalJson(`import('/lib/build.js').then((m) => (m.select('anchor'), true))`); await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true })), true)`); await sleep(1500);
+  const fb = await page(`const k = await import('/lib/core.js'), w = await import('/lib/world.js'), T = k.THREE; const o = w.entities.get('anchor'); const b = new T.Box3().setFromObject(o); return { inside: b.containsPoint(k.camera.position), dist: +k.camera.position.distanceTo(b.getCenter(new T.Vector3())).toFixed(2), half: +(b.getSize(new T.Vector3()).length() / 2).toFixed(2) };`);
+  check("EC6b F on a thing in Body mode frames it from outside: the camera is not inside it, and stands back at least its half-size", fb && !fb.inside && fb.dist > fb.half, fb);
   // F frames something far off; then walking brings the camera home
   await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); c.frameOn(new k.THREE.Vector3(c.myState.pos.x + 30, 2, c.myState.pos.z + 30), 4); return true;`);
   const far = await cam();
@@ -408,18 +412,20 @@ try {
   const H = `document.querySelector('[data-frame="hierarchy"]')`;
   const row = () => evalJson(`(() => { const l = [...${H}.querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'cuball'); const m = l?.querySelector('.sp-item-main'); return l ? { label: m.querySelector('.sp-item-label')?.textContent, sub: m.querySelector('.sp-item-sub')?.textContent ?? null, title: m.title } : null; })()`);
   await waitFor(`!!${H}?.querySelector('.sp-tree-row')`, 5000);
-  const w = await evalJson(`(() => { const l = ${H}.querySelector('.sp-list .sp-item-main'); return { label: l?.querySelector('.sp-item-label')?.textContent, icon: !!l?.querySelector('.sp-ico svg'), title: l?.title }; })()`);
-  check("HQ1 the World row says which world it is, with the planet icon and a tooltip", /^World: \S/.test(w?.label ?? "") && w?.icon && /world itself/.test(w?.title ?? ""), w);
+  const w = await evalJson(`(() => { const l = ${H}.querySelector('.sp-list .sp-item-main'); const ic = l?.querySelector('.sp-ico')?.getBoundingClientRect(), lb = l?.querySelector('.sp-item-label')?.getBoundingClientRect(); return { label: l?.querySelector('.sp-item-label')?.textContent, icon: !!l?.querySelector('.sp-ico svg'), inline: !!ic && !!lb && Math.abs((ic.top + ic.height / 2) - (lb.top + lb.height / 2)) < 6 && lb.left > ic.right - 1, title: l?.title }; })()`);
+  check("HQ1 the World row says which world it is (WORLD, then its name), with its glyph on the same line and a tooltip", /^World\S/.test(w?.label ?? "") && w?.icon && w?.inline && /world itself/.test(w?.title ?? ""), w);
   const r0 = await row();
   check("HQ2 a row is the name alone; its id and kind are on hover", r0?.label === "Clicker" && r0.sub === null && /id cuball/.test(r0.title), r0);
   const pick = async (k: string) => { await evalJson(`(${H}.querySelector('.sp-pop-btn').click(), true)`); await waitFor(`!!document.querySelector('.sp-pop-item')`, 2000);
     await evalJson(`([...document.querySelectorAll('.sp-pop-item')].find((b) => b.textContent.includes('${k}'))?.click(), true)`); await sleep(400); };
   await pick("show ids");
   const r1 = await row();
-  check("HQ3 View ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
+  const face = await evalJson(`(() => { const b = ${H}.querySelector('.sp-pop-btn'), r = b.closest('.sp-row'); b.click(); const pop = document.querySelector('.sp-pop'); const o = { btn: b.textContent, rowText: r.textContent, items: [...document.querySelectorAll('.sp-pop-item')].map((x) => x.textContent.trim()), search: (() => { const i = pop?.querySelector('.sp-pop-search'); return i ? i.getBoundingClientRect().height : 0; })() }; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return o; })()`);
+  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾" && face.items.length === 3 && face.search < 2, face);
+  check("HQ3 Options ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
   await pick("list components");
   const cs = await evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:cuball:')).map((x) => x.querySelector('.sp-item-label').textContent)`);
-  check("HQ4 View ▸ list components: its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
+  check("HQ4 Options ▸ list components: its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
   await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });
@@ -526,8 +532,9 @@ try {
     const h = me.vrm.humanoid, at = (b) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); return n.getWorldPosition(new T.Vector3()); };
     const yaw = me.root.rotation.y, f = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), hips = at('hips');
     const rel = (b) => { const p = at(b).sub(hips); return { fwd: +p.dot(f).toFixed(2), up: +p.y.toFixed(2), side: +p.dot(new T.Vector3(f.z, 0, -f.x)).toFixed(2) }; };
-    return { leftHand: rel('leftHand'), rightHand: rel('rightHand'), leftShoulder: rel('leftUpperArm'), head: rel('head') };`);
-  check("FC1b the working pose: both hands forward of the body, between hip and shoulder height, on their own sides", limbs && limbs.leftHand.fwd > 0.15 && limbs.rightHand.fwd > 0.15 && limbs.leftHand.up > 0.05 && limbs.leftHand.up < limbs.leftShoulder.up && limbs.rightHand.up < limbs.leftShoulder.up && limbs.leftHand.side * limbs.rightHand.side < 0, limbs);
+    const palm = (b, sgn) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); const d = new T.Vector3(0, -1, 0).transformDirection(n.matrixWorld); return +d.dot(f).toFixed(2); };
+    return { leftHand: rel('leftHand'), rightHand: rel('rightHand'), leftShoulder: rel('leftUpperArm'), head: rel('head'), palmOut: [palm('leftHand'), palm('rightHand')] };`);
+  check("FC1b the working pose (a mage casting): both hands well out in front, below the shoulders, on their own sides, palms facing out", limbs && limbs.leftHand.fwd > 0.35 && limbs.rightHand.fwd > 0.35 && limbs.palmOut[0] > 0.6 && limbs.palmOut[1] > 0.6 && limbs.leftHand.up > 0.05 && limbs.leftHand.up < limbs.leftShoulder.up && limbs.rightHand.up < limbs.leftShoulder.up && limbs.leftHand.side * limbs.rightHand.side < 0, limbs);
   check("FC1 the Free switch: the camera is its own, the switch shows it, and my body holds a pose", s0.sw.join() === "body" && s1.free && s1.sw.join() === "free" && s1.pose && !s0.pose, { s0, s1 });
   await hold("KeyW", 700); const s2 = await st();
   const d = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
