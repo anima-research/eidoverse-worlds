@@ -12,6 +12,8 @@ import { join } from "node:path";
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
 import { TRUST_NAMES } from "./config.ts";
+// how often a person may change the name they show (moderation: a name is how people recognise who did what)
+const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan, addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
@@ -467,6 +469,17 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     }
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
     // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).
+    // RENAME COOLDOWN (R 10-11: "you can only rename yourself every so often (moderation reasons)"): a typed name that
+    // differs from the one this account wore is a rename; inside the cooldown the old name stands and the client is told
+    // when it may change. A case change is free; a sign-in's name (Discord's) is the provider's, not counted here.
+    c.renamed = false; c.renameRefused = undefined;
+    if (!c.spectator && c.account && !auth && !c.tokenVerified) {
+      const dir = directoryFor(WORLDS_DIR); const id0 = dir.idOfSub(c.account); const e0 = id0 ? dir.entry(id0) : null;
+      if (e0 && foldName(e0.name) !== foldName(c.id)) {
+        const until = (e0.renamedAt ?? 0) + RENAME_COOLDOWN_MS;
+        if (Date.now() < until) { c.renameRefused = { tried: c.id, until }; c.id = e0.name; } else c.renamed = true;
+      }
+    }
     // The newcomer is the one renamed; an anonymous one is marked as a guest.
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
@@ -484,6 +497,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
     c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
+    if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
@@ -720,6 +734,9 @@ function buildSnapshot(w: World, c: Client) {
       type: "snapshot",
       world: w.name,
       you: c.id,
+      // when this account may next change its name (and the name it just tried, if that was too soon)
+      ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),
+      ...(c.renameRefused ? { renameRefused: c.renameRefused } : {}),
       // your durable subject, when the authority vouched for one
       ...(c.sub ? { yourSub: c.sub } : {}),
       gen: c.gen,   // your surfaceSession — echo it in attestations

@@ -131,7 +131,7 @@ const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, ico
 // landscape as actors, Godot's scene tree a WorldEnvironment node, Roblox Terrain under Workspace: things in the tree.
 // Here they are @world's components, so they hang under the World row; a click opens their card, ✕ removes them.
 const ENV = [
-  { key: 'sky', label: 'Sky', icon: 'sun', gone: 'the default sky' },
+  { key: 'sky', label: 'Sky', icon: 'sun', gone: 'a plain clear sky' },
   { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather' },
   { key: 'terrain', label: 'Terrain', icon: 'mountains', gone: 'the default flat ground' },
   { key: 'grass', label: 'Grass', icon: 'plant', gone: 'no grass' },

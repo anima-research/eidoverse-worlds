@@ -187,7 +187,7 @@ export function worldSchema(st, live = {}) {
       ...(k === 'hours' && !clocked && (s.rate ?? 0) !== 0 ? { hint: ro.hint ?? 'the hour now — the day turns at the rate below; setting it re-anchors the day here' } : {}) });
     if (k === 'rate') skyFields.push({ t: 'enum', k: 'clouds', label: 'clouds', value: s.clouds ?? 'cumulus', def: 'cumulus', options: CLOUDS.map((v) => ({ v, label: v })), ...ro });
   }
-  if (sky != null) skyFields.push({ t: 'btn', k: 'remove', label: 'remove the sky', danger: true, hint: 'back to the default sky (weather goes with it)', ...ro });
+  if (sky != null) skyFields.push({ t: 'btn', k: 'remove', label: 'remove the sky', danger: true, hint: 'back to a plain clear sky (weather goes with it)', ...ro });
   groups.push({ group: 'sky', label: 'Sky', fields: skyFields });
 
   // Weather — state.sky's weather half; under a forecast a pick is a manual

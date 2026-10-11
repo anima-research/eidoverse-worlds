@@ -923,15 +923,19 @@ async function onSnapshot(msg) {
   net.joined = true;
   net.status = 'live';
   net.myId = msg.you;
-  net.mySub = msg.yourSub ?? null;   // the durable subject the authority vouched for, if any — what guarded things match on
+  net.mySub = msg.yourSub ?? null;
+  net.renameAfter = msg.renameAfter ?? null; net.renameCooldownDays = msg.renameCooldownDays ?? null;   // profile.js's name dialog
+  if (msg.renameRefused) { const d = new Date(msg.renameRefused.until);
+    toast(`still “${msg.you}”: names change once every ${msg.renameCooldownDays} days — “${msg.renameRefused.tried}” can be yours from ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}`, 'info', 12000); }   // the durable subject the authority vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
   // adopt it — and say so, a silently different nameplate is confusing.
-  if (msg.you && msg.you !== CONFIG.name) {
+  if (msg.you && msg.you !== CONFIG.name && !msg.renameRefused) {
     CONFIG.name = msg.you;
     localStorage.setItem('ew-name', msg.you);
     toast(`you're appearing as “${msg.you}”`, 'info', 8000);
-  }
+  } else if (msg.renameRefused) { CONFIG.name = msg.you; localStorage.setItem('ew-name', msg.you);
+    try { const u = new URL(location.href); if (u.searchParams.has('name')) { u.searchParams.set('name', msg.you); history.replaceState(null, '', u); } } catch { /* fine */ } }
   if (typeof msg.throughSeq === 'number' && msg.throughSeq > lastSeq) lastSeq = msg.throughSeq;
   bus.emit('net', net);
   // #57 matrix 7: who has which aux legs live NOW (surface-transition keeps it

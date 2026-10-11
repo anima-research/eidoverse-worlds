@@ -8,7 +8,10 @@ import { scratchBench, sleep } from "../harness.ts";
 process.env.TRUST_NAMES = "1";
 const SRC = process.env.WORLDS_SRC; const OUT = "/home/claude/eido/logs/env-shots"; fs.mkdirSync(OUT, { recursive: true });
 const { cdp, evalJson, cleanup, BASE } = await scratchBench("gymenv", { prepare: (scratch) => { const w = path.join(scratch, "worlds"); fs.mkdirSync(w, { recursive: true });
-  for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f)); fs.cpSync(path.join(SRC, "gym"), path.join(w, "gym"), { recursive: true }); } });
+  for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f)); fs.cpSync(path.join(SRC, "gym"), path.join(w, "gym"), { recursive: true });
+  // the gym as it stood before R removed its sky and terrain herself (10-11 ~21:04Z)
+  const f = path.join(w, "gym/world.jsonl"), T = Date.parse(process.env.CUT ?? "2026-10-11T21:00:00Z"); const ls = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+  const k = ls.findIndex((l) => JSON.parse(l).ts >= T); if (k > 0) fs.writeFileSync(f, ls.slice(0, k).join("\n") + "\n"); } });
 const page = (js) => evalJson(`(async () => { ${js} })()`);
 const shot = async (name) => { const r = await cdp.send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, name), Buffer.from(r.data, "base64")); };
 let fail = 0; const check = (k, ok, info) => { console.log(`${ok ? "✓" : "✗"} ${k}`, JSON.stringify(info ?? "").slice(0, 300)); if (!ok) fail++; };
