@@ -482,7 +482,7 @@ function cardRow(schema, id, addr) {
 }
 /** The cards (design §5): one per component, each owning its fields by their
  *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
-function pushCards(f, schema, id, { locked = false } = {}) {
+function pushCards(f, schema, id, { locked = false, afterTransform = [] } = {}) {
   const touched = id !== WORLD_ID ? authorityInspect(id)?.touched ?? {} : {};
   for (const sec of schema.sections.list) {
     const key = `c:${sec.key ?? sec.type}`;
@@ -506,6 +506,8 @@ function pushCards(f, schema, id, { locked = false } = {}) {
       f.push(...quat);
     }
     if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
+    // R 10-10: Add Component and New Script sit right under Transform (Blender's Add Modifier), not at the foot of a long list
+    if (sec.type === 'Transform' && afterTransform.length) f.push(...afterTransform);
   }
 }
 
@@ -593,27 +595,32 @@ function inspectorFields() {
       else for (const o of q.options) f.push({ t: 'btn', k: `ask:${o.v}`, label: o.label });
       f.push({ t: 'btn', k: 'ask:cancel', label: 'cancel' });
     }
-    pushCards(f, schema, id, { locked });
-    // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the
-    // Inspector, not in it; this line is the doorway)
-    const lc = lastChange(id);
-    if (lc) f.push({ t: 'btn', k: 'history', label: `last change: ${lc} — History ›`, hint: 'the most recent change to this thing, from the world log. History lists them all, newest first; each card\'s tooltip says who last set it' });
+    const adds = [];
     if (schema.sections.add.length) {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
-      f.push({ t: 'pop', k: 'c:+pop', label: '+ Add Component', deskOnly: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
+      adds.push({ t: 'pop', k: 'c:+pop', label: '+ Add Component', deskOnly: true, unfold: true, bar: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
         items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked, keywords: ADD_WORDS[a.name] ?? [],
           hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
-      f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
+      adds.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
       for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
-        f.push({ t: 'info', label: '', value: cat });
+        adds.push({ t: 'info', label: '', value: cat });
         for (const a of schema.sections.add.filter((x) => x.category === cat)) {
           const viaGesture = { Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name];
-          f.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}${a.brings ? ' (+ its need)' : a.asks ? '…' : ''}`, disabled: !!a.blocked,
+          adds.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}${a.brings ? ' (+ its need)' : a.asks ? '…' : ''}`, disabled: !!a.blocked,
             hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) });
         }
       }
     }
+    // the new-script button goes after the desktop's Add Component, BEFORE the VR-only Add Component group (a row after
+    // that group's header would fold into it)
+    if (id !== WORLD_ID) { const at = adds.findIndex((r) => r.vrOnly && r.t === 'group'); adds.splice(at < 0 ? adds.length : at, 0, { t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, unfold: true, bar: true, disabled: !mayScript(),
+      hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' }); }
+    pushCards(f, schema, id, { locked, afterTransform: adds });
+    // the foot of the cards: the latest change to this thing, in one line (research 56: history lives beside the
+    // Inspector, not in it; this line is the doorway)
+    const lc = lastChange(id);
+    if (lc) f.push({ t: 'btn', k: 'history', label: `last change: ${lc} — History ›`, hint: 'the most recent change to this thing, from the world log. History lists them all, newest first; each card\'s tooltip says who last set it' });
   } else {
   // CHANNELS — the numeric lane: every num in the schema, transform first
   f.push({ t: 'group', k: 'channels', label: `Channels${locked ? ' 🔒' : ''}${obj.userData.mountedTo ? ' (mounted)' : ''}`, open: isOpen(id, 'channels') });
@@ -646,9 +653,11 @@ function inspectorFields() {
   const mine = behaviors.filter((b) => b.attach === id);
   // Scripts: the ones on this thing, and (desktop: it's a card with a source box) a new one (scriptnew.js: upload, then
   // one act). Its own group, so it never folds under the VR-only Add Component rows above.
-  if (mine.length || id !== WORLD_ID) f.push({ t: 'group', k: 'behaviors', label: mine.length ? `Scripts (${mine.length})` : 'Scripts', open: isOpen(id, 'behaviors') });
+  // the new-script button sits under Transform with Add Component; this card lists the scripts there are
+  const scriptsUp = !!schema.sections && id !== WORLD_ID;
+  if (mine.length || (id !== WORLD_ID && !scriptsUp)) f.push({ t: 'group', k: 'behaviors', label: mine.length ? `Scripts (${mine.length})` : 'Scripts', open: isOpen(id, 'behaviors') });
   if (mine.length) f.push({ t: 'list', k: 'scripts', rows: mine.map((b) => ({ id: b.id, label: `${running(b) ? '▶' : '⏸'} ${b.id}`, sub: `${b.timers ? `${b.timers}⏲ ` : ''}${b.status ?? ''}`, actions: [{ k: 'unbind', label: 'remove', danger: true }] })) });
-  if (id !== WORLD_ID) f.push({ t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, disabled: !mayScript(),
+  if (id !== WORLD_ID && !scriptsUp) f.push({ t: 'btn', k: 'newscript', label: 'new script…', icon: 'scrollText', deskOnly: true, disabled: !mayScript(),
     hint: mayScript() ? 'write a script that runs when someone uses this, or on a timer' : 'making scripts needs the scripts switch (the owner gives it)' });
   f.push({ t: 'btn', k: 'remove', label: 'remove', danger: true, vrOnly: true });   // desktop removes with Del / Backspace / X / right-click / Edit ▸ delete; a headset has no keys
   const shown = filterFields(f, ifilter);

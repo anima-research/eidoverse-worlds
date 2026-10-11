@@ -177,7 +177,7 @@ export function renderDOM(body, fields, edit, ro = {}) {
   for (const f of fields) {
     let row = null;
     if (f.t === 'group') { folded = f.open === false || !!f.vrOnly; row = f.vrOnly ? null : fieldDOM(f, via, ro); }   // a vrOnly group hides its rows too
-    else if (!folded && !f.vrOnly) row = fieldDOM(f, via, ro);   // vrOnly: the quad's stand-in for a key the desktop has
+    else if ((!folded || f.unfold) && !f.vrOnly) row = fieldDOM(f, via, ro);   // vrOnly: the quad's stand-in for a key the desktop has; unfold: shown even under a folded card (the Add Component bar)
     rows.push(row);
     if (row) body.append(row);
   }
@@ -456,7 +456,7 @@ function menuButton(row) {
   return b;
 }
 function fieldDOM(f, edit, ro = {}) {
-  const row = el('div', `sp-row sp-f-${f.t}`);   // sp-f- prefix: never collide with element classes
+  const row = el('div', `sp-row sp-f-${f.t}${f.bar ? ' sp-bar' : ''}`);   // sp-f- prefix: never collide with element classes; sp-bar: side by side
   const ax = /(?:^|:)(?:pos|rot|scale)\.s?([xyz])$/.exec(f.k ?? '');   // pos.x, rot.y, pos.sz (scale's channels)
   if (ax) row.dataset.axis = ax[1];   // the channel's axis: edit chrome colours its label x/y/z
   if (f.disabled) row.classList.add('disabled');

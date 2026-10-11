@@ -21,9 +21,10 @@ try {
   await sleep(1500);
   const m = await page(`const f = document.querySelector('[data-frame="inspector"]'); const R = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width)]; };
     const rows = [...f.querySelectorAll('.sp-row')].slice(0, 60).map((r) => { const l = r.querySelector('.sp-label'); const c = l?.nextElementSibling; return { t: (l?.textContent ?? '').trim().slice(0, 18), label: l ? R(l) : null, ctl: c ? [c.className.split(' ')[0], ...R(c)] : null }; });
-    const groups = [...f.querySelectorAll('.sp-group')].map((g) => g.textContent.trim().slice(0, 30)); return { frame: R(f), groups, rows };`);
+    const groups = [...f.querySelectorAll('.sp-group')].map((g) => g.textContent.trim().slice(0, 30));
+    const order = [...f.querySelectorAll('.sp-group, .sp-bar')].map((e) => e.classList.contains('sp-bar') ? '[' + e.textContent.trim().slice(0, 18) + ']' : e.textContent.trim().slice(0, 16)); return { frame: R(f), groups, order, rows };`);
   fs.writeFileSync(`${OUT}/rows.json`, JSON.stringify(m, null, 1));
   const b = await evalJson(`(() => { const r = document.querySelector('[data-frame="inspector"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
   const s = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: Math.min(b[3], 1000 - b[1]), scale: 1 } }); fs.writeFileSync(`${OUT}/inspector.png`, Buffer.from(s.data, "base64"));
-  console.log("groups", JSON.stringify(m.groups));
+  console.log("groups", JSON.stringify(m.groups)); console.log("order", JSON.stringify(m.order));
 } finally { await cleanup(); }

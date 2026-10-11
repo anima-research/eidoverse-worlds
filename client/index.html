@@ -1810,7 +1810,9 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-group::first-letter { text-transform: uppercase; }
 .frame.edit .sp-group:hover { background: var(--e-hover); }
 /* tree rows (Hierarchy): 24px, faint indent guides, name + dim kind on one line; selected = accent-bg + a 2px accent bar */
-.frame.edit .sp-tree { gap: 0; max-height: none; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
+.frame.edit .sp-tree { gap: 0; max-height: none; }
+/* the Add Component / New Script bar under Transform: two buttons on one line, its own little area */
+.frame.edit .sp-row.sp-bar { display: inline-flex; vertical-align: top; margin: 6px 6px 6px 0 !important; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
 .frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 24px; gap: 4px; }
 .frame.edit .sp-item:hover { background: var(--e-hover); }
 .frame.edit .sp-tree-row { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--e-line) 10px 11px, transparent 11px 14px);

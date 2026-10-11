@@ -652,6 +652,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
           if (inst.type === 'Annotation') sec.title = inst.key;
         }
     }
+    if (typeof sec.title === 'string' && sec.title) sec.title = sec.title.charAt(0).toUpperCase() + sec.title.slice(1);   // every card starts with a capital (R 10-10: 'physics')
     out.push(sec);
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
