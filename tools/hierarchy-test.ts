@@ -268,5 +268,10 @@ console.log('a parent edit undoes to exactly what it was (the door\'s undo)');
   check('a parent edit without the world records says so (old callers)', editOps(W.a, 'a', { 'parent.to': 'b' }).errors.some((e: string) => /world/.test(e)));
 }
 
+{ // R 10-11: 'domino 11, domino 12, domino 3': ordered by the name a person sees, numbers as numbers, unnamed by id
+  const w = { 'domino-3': { comp: { label: 'domino 3' } }, 'domino-11': { comp: { label: 'domino 11' } }, 'domino-2': { comp: { label: 'domino 2' } }, 'zz': { comp: { label: 'Apple' } }, 'b-7': { comp: {} } };
+  const order = treeOf(w).roots;
+  check('things are ordered by their names, numbers as numbers (Apple, b-7, domino 2, domino 3, domino 11)', JSON.stringify(order) === JSON.stringify(['zz', 'b-7', 'domino-2', 'domino-3', 'domino-11']), JSON.stringify(order));
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fails.length) { console.log(fails.map((f) => '  ✗ ' + f).join('\n')); process.exit(1); }

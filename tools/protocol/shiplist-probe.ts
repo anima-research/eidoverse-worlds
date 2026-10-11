@@ -598,11 +598,16 @@ try {
   await pick("show ids");
   const r1 = await row();
   const face = await evalJson(`(() => { const b = ${H}.querySelector('.sp-pop-btn'), r = b.closest('.sp-row'); b.click(); const pop = document.querySelector('.sp-pop'); const o = { btn: b.textContent, rowText: r.textContent, items: [...document.querySelectorAll('.sp-pop-item')].map((x) => x.textContent.trim()), search: (() => { const i = pop?.querySelector('.sp-pop-search'); return i ? i.getBoundingClientRect().height : 0; })() }; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return o; })()`);
-  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾" && face.items.length === 3 && face.search < 2, face);
+  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, then expand all / collapse all, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾" && face.items.length === 5 && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
   check("HQ3 Options ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
   await pick("list components");
-  const cs = await evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:cuball:')).map((x) => x.querySelector('.sp-item-label').textContent)`);
-  check("HQ4 Options ▸ list components: its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
+  // R 10-11 00:03: with components listed, things start FOLDED; opening one shows its components
+  const compRows = () => evalJson(`[...${H}.querySelectorAll('.sp-tree-row')].filter((x) => (x.dataset.id ?? '').startsWith('comp:cuball:')).map((x) => x.querySelector('.sp-item-label').textContent)`);
+  const shut = await compRows();
+  await evalJson(`(${H}.querySelector('.sp-tree-row[data-id="cuball"] .sp-disc')?.click(), true)`); await sleep(400);
+  const cs = await compRows();
+  check("HQ4a …and with them listed, things start folded (no component rows until I open one)", Array.isArray(shut) && shut.length === 0, shut);
+  check("HQ4 Options ▸ list components: opened, its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
   await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
   });

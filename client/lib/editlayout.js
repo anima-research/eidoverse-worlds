@@ -94,7 +94,7 @@ function build() {
   // ---- tools column
   for (const t of TOOLS) {
     const b = el('button', 'edit-tool');
-    b.innerHTML = iconSvg(t.icon, 16);   // one glyph set (icons.js) — the rail's old ↖ ✥ ↻ ⤢ ⊙ were four fonts' worth of shapes
+    b.innerHTML = iconSvg(t.icon, 21);   // R 10-11: 'they look so small in their buttons'   // one glyph set (icons.js) — the rail's old ↖ ✥ ↻ ⤢ ⊙ were four fonts' worth of shapes
     if (t.key) b.append(el('kbd', 'edit-tool-key', t.key));   // the letter, so hands learn it
     b.dataset.tool = t.id; b.disabled = !!t.disabled;
     // the tool's hidden keys, in its tooltip (keyhints.js): the gizmo's Ctrl-snap, select's Ctrl/Shift-click, all the letters

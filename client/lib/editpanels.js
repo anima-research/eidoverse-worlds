@@ -84,11 +84,18 @@ let filter = '';     // the hierarchy's filter text: non-matches hide, ancestors
 // ancestors so the selected row is always on screen.
 const HFOLD_LS = () => `ew-hier-fold:${CONFIG.world ?? ''}`;
 const collapsed = new Set((() => { try { const v = JSON.parse(localStorage.getItem(HFOLD_LS()) || '[]'); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } })());
-function saveFolds() { try { localStorage.setItem(HFOLD_LS(), JSON.stringify([...collapsed])); } catch { /* a private window: folds last the session */ } }
+// R 10-10 00:03: with 'list components' on, every thing would open on its component rows; there, things start FOLDED, and
+// opening one is remembered here (per viewer, like the folds)
+const openComps = new Set((() => { try { const v = JSON.parse(localStorage.getItem('ew.hierarchy.opencomps') || '[]'); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } })());
+const isFolded = (id) => (hopts.comps ? !openComps.has(id) : collapsed.has(id));
+const setFolded = (id, shut) => { if (hopts.comps) { if (shut) openComps.delete(id); else openComps.add(id); } if (shut) collapsed.add(id); else collapsed.delete(id); };
+const descendantsOf = (id) => { const w = state.st.entities ?? {}, out = []; const kids = (p) => Object.keys(w).filter((k) => w[k]?.parent?.to === p);
+  for (let q = kids(id), n = 0; q.length && n < 4096; n++) { const k = q.shift(); out.push(k); q.push(...kids(k)); } return out; };
+function saveFolds() { try { localStorage.setItem(HFOLD_LS(), JSON.stringify([...collapsed])); localStorage.setItem('ew.hierarchy.opencomps', JSON.stringify([...openComps].slice(-2000))); } catch { /* a private window: folds last the session */ } }
 /** Unfold every ancestor of `id` (a selection reveals itself). */
 function revealPath(id) {
   let changed = false;
-  for (const a of ancestors(state.st.entities ?? {}, id)) if (collapsed.delete(a)) changed = true;
+  for (const a of ancestors(state.st.entities ?? {}, id)) { if (collapsed.delete(a)) changed = true; if (hopts.comps && !openComps.has(a)) { openComps.add(a); changed = true; } }
   if (changed) saveFolds();
   return changed;
 }
@@ -228,7 +235,7 @@ function hierarchyFields() {
   // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
   const compsOfRow = (id) => (hopts.comps ? Object.keys(comps.get(id) ?? world[id]?.comp ?? {}).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: !q || k.toLowerCase().includes(q) })) : []);
   const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
-  const rows = treeRows(world, { collapsed, matches, extra: underOf }).map((t) => {
+  const rows = treeRows(world, { collapsed: { has: isFolded }, matches, extra: underOf }).map((t) => {
     if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
     if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
     const id = t.id; const bag = comps.get(id) ?? world[id]?.comp ?? {};
@@ -273,7 +280,7 @@ function hierarchyFields() {
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
     // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
     { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, hint: 'what each row shows: names only, unless you turn more on',
-      items: Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })) },
+      items: [...Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })), { k: 'fold:all-open', label: '  expand all' }, { k: 'fold:all-shut', label: '  collapse all' }] },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
@@ -315,7 +322,9 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     case 'remove': { const ids = payload && !extra.has(payload) && payload !== sel ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
     case 'drop': reparent(payload?.id, payload?.onto); break;
     case 'filter': filter = String(payload ?? ''); break;
-    case 'open': if (collapsed.has(payload)) collapsed.delete(payload); else collapsed.add(payload); saveFolds(); break;
+    case 'open': { const id = typeof payload === 'object' ? payload?.id : payload, deep = typeof payload === 'object' && !!payload?.deep;
+      const was = isFolded(id); for (const k of deep ? [id, ...descendantsOf(id)] : [id]) setFolded(k, !was); saveFolds(); break; }
+    case 'fold:all-open': case 'fold:all-shut': { const shut = action.endsWith('shut'); for (const k of Object.keys(state.st.entities ?? {})) setFolded(k, shut); saveFolds(); repaintAll(); return; }
     case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', comps.get(id)?.hidden !== true); break; }
     case 'duplicate': duplicate(payload ?? sel); break;
     case 'step': {   // ↑/↓ through the rows as painted
