@@ -1084,6 +1084,7 @@ function attributesFields() {
   const hid = cardRow(schema, id, 'flags.hidden');
   if (hid) f.push({ ...hid, label: 'hidden for all', hint: 'Hidden from EVERYONE in this world (a world edit). The eye in the Inspector and the Hierarchy hides it in your view only.' });
   const lk = cardRow(schema, id, 'flags.lock'); if (lk) f.push({ ...lk, label: 'locked' });
+  const ly = cardRow(schema, id, 'flags.layer'); if (ly) f.push(ly);   // the selection layer (Select ▾ in the viewport bar)
   const parentSec = schema.sections?.list?.find((s) => s.type === 'Parent');
   if (parentSec) { f.push({ t: 'group', k: 'a:parent', label: 'Parent', open: isOpen(id, 'a:parent') }); for (const addr of parentSec.fields) { const r = cardRow(schema, id, addr); if (r) f.push(r); } }
   f.push({ t: 'group', k: 'a:json', label: 'Components as JSON', open: isOpen(id, 'a:json'), hint: 'every component on it, as it is stored. A saved edit replaces that component whole.' });

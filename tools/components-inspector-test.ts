@@ -70,7 +70,8 @@ for (const [id, e] of ents) {
     if (f.k == null || f.t === 'info') continue;
     const a = `${g.group}.${f.k}`;
     const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a)
-      || (a === 'flags.lock' && addable.has('Lock'));
+      || (a === 'flags.lock' && addable.has('Lock'))
+      || a === 'flags.layer';   // the selection layer is a row of the Attributes tab (editpanels attributesFields), not a card
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
 }

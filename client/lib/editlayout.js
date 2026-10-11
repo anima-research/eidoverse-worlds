@@ -31,6 +31,8 @@ import { replica } from './net.js';
 import { setFreeCam, freeCamState } from './controller.js';
 import { selection } from './editpanels.js';
 import { flashHint } from './ui.js';
+import { LAYERS, LAYER_HINT } from '../../shared/layers.js';
+import { layerOn, setLayerOn } from './selectmask.js';
 import { isolating, setIsolate } from './myview.js';
 
 const LS = 'ew-edit-layout';
@@ -159,6 +161,10 @@ function build() {
     { label: `${tick(shade === 'flat')}flat shaded`, title: 'every face lit flat, in one grey: the forms without their textures', run: () => setShade('flat') },
   ]);
   vmenu.dataset.menu = 'viewport';
+  // SELECT menu (R 10-11: selection layers): which kinds of thing MY viewport clicks can land on. Per viewer; the
+  // Hierarchy still selects anything. Each thing's layer is its Layer row in Attributes (or a default by kind).
+  const smenu = menu('Select', () => LAYERS.map((ly) => ({ label: `${tick(layerOn(ly))}${ly}`, title: `${LAYER_HINT[ly]}: click to ${layerOn(ly) ? 'stop clicks landing on' : 'let clicks land on'} these (in your view only)`, run: () => setLayerOn(ly, !layerOn(ly)) })));
+  smenu.dataset.menu = 'select';
   const wire = el('button', 'edit-vbtn'); wire.innerHTML = iconSvg('box', 16); wire.title = 'wireframe'; wire.dataset.view = 'wire';
   wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
   shadeBtn = wire;
@@ -178,7 +184,7 @@ function build() {
   // Hierarchy and the Inspector ... free-floating like Blender"): what pertains to the view sits ON the view, a small
   // floating bar at its top-left. Full screen stays in the top bar (it is the window's, not the viewport's).
   const vbar = el('div', 'edit-viewbar'); vbar.hidden = true; document.body.append(vbar);
-  vbar.append(vmenu, camSw, wire);   // 'Viewport ▾' first, almost a title (R 10-10 23:32)
+  vbar.append(vmenu, camSw, wire, smenu);   // 'Viewport ▾' first, almost a title (R 10-10 23:32)
   view.append(full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's

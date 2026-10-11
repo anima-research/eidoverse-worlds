@@ -374,6 +374,37 @@ try {
   check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify(s2) === '["sba","sbb"]', { box: [sx, sy, ex, ey], start, s2 });
   await page(`(await import('/lib/build.js')).setEditMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
   });
+  // ---- SL: selection layers (R, 10-11: "selection layers so people don't select the ground plane all the time") ----
+  await stage("SL", async () => {
+  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(4000);   // the edit camera first (it eases in): placed and projected from it
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
+    const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { me: [p.x, p.z], crate: [p.x + f[0] * 4, p.z + f[1] * 4], floorPt: [p.x + f[0] * 4 + r[0] * 2, p.z + f[1] * 4 + r[1] * 2] };`);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'slfloor', model: '${CRATE}', components: { label: 'Floor slab', 'hesperus/layer': 'environment', transform: { pos: [${at.floorPt[0]}, -0.09, ${at.floorPt[1]}], scale: [1.2, 0.05, 1.2] } } });   // a 35 m slab lost the bench's GPU context; size defaults are layers-test's
+    return await m.sendRequest('create', { id: 'slcrate', model: '${CRATE}', components: { label: 'Layer crate', transform: { pos: [${at.crate[0]}, 0, ${at.crate[1]}], scale: 0.25 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('slfloor') && !!m.entities.get('slcrate'))`); await sleep(1000);
+  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);   // as SB: placed from the play camera, then edit mode
+  // find, on screen, a pixel whose NEAREST thing is the crate and one whose nearest is the floor (whatever the camera does)
+  const find = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const rc = new T.Raycaster(), r = c.canvas.getBoundingClientRect();
+    const objs = [...w.entities.values()].filter(Boolean); const want = w.entities.get('${id}');
+    for (let gy = 0.15; gy < 0.95; gy += 0.025) for (let gx = 0.1; gx < 0.9; gx += 0.025) { rc.setFromCamera(new T.Vector2(gx * 2 - 1, -(gy * 2 - 1)), c.camera);
+      const h = rc.intersectObjects(objs, true)[0]; if (!h) continue; let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o === want) return [r.left + gx * r.width, r.top + gy * r.height]; }
+    return null;`);
+  const cratePx = await find("slcrate"), floorPx = await find("slfloor");
+  if (!cratePx || !floorPx) { const sh = await cdp.send("Page.captureScreenshot", { format: "png" }); (await import("node:fs")).writeFileSync("/home/claude/eido/logs/insp-shots/sl.png", Buffer.from(sh.data, "base64")); }
+  check("(setup) both the crate and the floor are on screen", !!cratePx && !!floorPx, { cratePx, floorPx });
+  if (!cratePx || !floorPx) return;
+  const m = (type, x, y) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
+  const clickAt = async (p) => { await m("mousePressed", p[0], p[1]); await m("mouseReleased", p[0], p[1]); await sleep(500); return evalJson(`import('/lib/scenegraph.js').then((s) => s.sceneSelected())`); };
+  // Esc only when something is selected: Esc with nothing selected leaves edit mode (and the next click would be ignored)
+  const esc = () => page(`if ((await import('/lib/scenegraph.js')).sceneSelected()) (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`);
+  const a = await clickAt(floorPx); await esc(); await sleep(300);
+  const b = await clickAt(cratePx); await esc(); await sleep(300);
+  await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', true); return true;`);
+  const c2 = await clickAt(floorPx); await esc();
+  await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', false); (await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'slfloor' }); await n.sendRequest('delete', { id: 'slcrate' }); return true;`).catch(() => null);
+  check("SL1 a floor slab on 'environment' is off for clicks at first: clicking it selects nothing; the crate on it still selects", a !== "slfloor" && b === "slcrate", { a, b, floorPx, cratePx });
+  check("SL2 Select ▸ environment on: the floor is clickable again", c2 === "slfloor", { c2 });
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {
