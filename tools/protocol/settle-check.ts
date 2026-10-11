@@ -53,5 +53,17 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const s3 = st(W), m = s3.entities.mid.c, b = s3.entities.bot.c;
   ok(stacked && g.ok && r.ok && (r.notes ?? []).some((n) => n.flying?.includes("mid")) && m.transform.pos[1] > -0.05 && b.transform.pos[1] > -0.05,
     `SE6 ${verb === "throw" ? "a thrown" : "a dropped"} tray's load flies with it as its own body and lands on (not under) the ground`, { stacked, grab: g.ok ?? g.refused, r, mid: m.transform.pos, midParent: m.parent, bot: b.transform.pos }); }
+// R 10-10 22:22: a thrown tray's load starts to come apart as it leaves the hand (spin + flick), not only on impact
+{ const W = "spray"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "tray", [0, 0, 0], [1.5, 0.3, 1.5]); box(W, "a", [-0.3, 0.2, 0], [0.4, 0.4, 0.4]); box(W, "b", [0.3, 0.2, 0], [0.4, 0.4, 0.4]); call(W, "rowan", "set", { id: "tray", component: "grabbable", value: { carries: true } });
+  call(W, "vic", "move", { to: [0, 0, -0.9] }); for (const k of ["a", "b"]) call(W, "vic", "punt", { id: k, v: [0, 0.5, 0] }); T += 6000; call(W, "vic", "look", {});
+  const on = ["a", "b"].every((k) => st(W).entities[k].c.parent?.to === "tray");
+  call(W, "vic", "move", { to: [0, 0, -0.9] }); const g = call(W, "vic", "grab", { id: "tray" });
+  const n0 = openWorld(root, W).entries.length; const th = call(W, "vic", "throw", { id: "tray", v: [0, 3, 4], w: [3.2, 0, 0] });
+  const L = openWorld(root, W).entries.slice(n0).filter((e) => e.kind === "sim" && e.verb === "launch"); const vOf = (id) => L.find((e) => e.body.id === id)?.body.v;
+  const d = (x, y) => x && y ? Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) : 0;
+  ok(on && g.ok && th.ok && d(vOf("a"), vOf("tray")) > 0.05 && d(vOf("b"), vOf("tray")) > 0.05 && d(vOf("a"), vOf("b")) > 0.05,
+    "SE7 thrown with spin, each rider leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });
+}
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

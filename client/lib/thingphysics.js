@@ -478,7 +478,11 @@ export async function throwHeld(arg) {
     const speed = Math.min(20, Math.max(1, parseFloat(arg) || THROW.speed)), yaw = hooks?.myState?.()?.yaw ?? 0;
     v = [Math.sin(yaw) * Math.cos(THROW.arc) * speed, Math.sin(THROW.arc) * speed, Math.cos(yaw) * Math.cos(THROW.arc) * speed].map(r3);
   }
-  const r = await sendRequest('throw', { id, v, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  // a thrown thing tumbles forward, as an overhand throw does (R 10-10: "naturally there would be some" spin): about the
+  // level axis across the throw, faster for a harder throw. A VR hand sends its own measured spin instead.
+  const fl = Math.hypot(v[0], v[2]), sp = Math.hypot(...v), mag = Math.min(8, 0.8 * sp);
+  const w = fl > 0.2 ? [v[2] / fl * mag, 0, -v[0] / fl * mag].map(r3) : null;
+  const r = await sendRequest('throw', { id, v, ...(w ? { w } : {}), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
   return r?.ok ? r : refused('throw', r, id);
 }
 /** A hand's grab (VR grip, or any caller with a hand position [x, y, z]): the nearest thing it can carry within reach of

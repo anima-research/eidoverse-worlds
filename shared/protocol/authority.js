@@ -3435,8 +3435,17 @@ function launch(w, actor, a, verb, g = null) {
   // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
   const riders = []; { const st = w.state(); const t = worldT(st, a.id);
     const at = scratch(st, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.slice(), q: h.pose.q ?? t.q, scale: t.scale })]);
+    // each rider leaves with the tray's velocity at ITS spot (v + w × r: the rim of a tumbling tray moves faster than its
+    // middle), plus a small scatter (6% of the speed per axis) for the flick. The scatter is a hash of the act and the id,
+    // and the launch carries the result, so every client folds the same spray (R 10-10: "start to fly apart as soon as
+    // they're launched from your hand").
+    const sp = Math.hypot(...v), wv = Array.isArray(a.w) ? a.w : [0, 0, 0], o = h.pose.pos;
+    const jit = (k, i) => { let x = 2166136261; for (const ch of `${act}:${k}:${i}`) x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return ((x >>> 0) / 4294967295) * 2 - 1; };
     for (const k of descendants(st, a.id)) { if (st.entities[k]?.c.physics?.kind !== "dynamic" || w.presence.holds[k]) continue; const tk = worldT(at, k);
-      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: v.slice(), handled: h.handled } });
+      const r = [0, 1, 2].map((i) => tk.pos[i] - o[i]); const wr = [wv[1] * r[2] - wv[2] * r[1], wv[2] * r[0] - wv[0] * r[2], wv[0] * r[1] - wv[1] * r[0]];
+      let vk = [0, 1, 2].map((i) => v[i] + wr[i] + jit(k, i) * 0.06 * sp); const sk = Math.hypot(...vk), max = ENGINES[spec.engine].maxSpeed;
+      if (sk > max) vk = vk.map((n) => n * max / sk); vk = vk.map((n) => noNeg0(r3(n)));
+      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: vk, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
       riders.push(k); } }
   if (riders.length) notes.push({ flying: riders, why: `they were riding on ${a.id}; they fly with it` });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });

@@ -357,7 +357,7 @@ try {
   await key("KeyC");
   // where it first comes down: the lowest-y moment near the ground, sampled in the page
   const land = await page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'), v = new T.Vector3(); let up = false, hit = null;
-    for (let i = 0; i < 80 && !hit; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); if (v.y > 0.5) up = true; else if (up && v.y < 0.12) hit = [v.x, v.y, v.z]; await new Promise((z) => setTimeout(z, 33)); } return { up, hit };`);
+    for (let i = 0; i < 80 && !hit; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); const lo = new T.Box3().setFromObject(o).min.y; if (v.y > 0.5) up = true; else if (up && (lo < 0.06 || v.y < 0.12)) hit = [v.x, lo, v.z]; await new Promise((z) => setTimeout(z, 33)); } return { up, hit };`);
   check("AC2 C throws it at the spot under the cursor: it rises, and first comes down within 0.9 m of that spot (5.4 m away, off to one side)", mv && land?.up && land.hit && Math.hypot(land.hit[0] - tgt[0], land.hit[2] - tgt[1]) < 0.9, { aim: mv, tgt, land });
   await sleep(2500);
   // the menu: the name bare, in its own span
