@@ -453,6 +453,7 @@ export class WorldAgent {
    *  the body as a zombie that fights its successor over the identity. */
   close() {
     this.closed = true;
+    this.briefing = null;
     this.stopSim();
     if (this.ticker) { clearInterval(this.ticker); this.ticker = null; }
     if (this.activityTimer) { clearInterval(this.activityTimer); this.activityTimer = null; }
@@ -576,6 +577,9 @@ export class WorldAgent {
         agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
       ws.onclose = (ev) => {
         this.joined = false;
+        // A briefing describes the connection it came with: between
+        // connections, or after a refused rejoin, look() offers none.
+        this.briefing = null;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
         // either hammer a banned door or instantly undo a kick — the body
         // stays down; its host reconnecting later is the deliberate return.
@@ -667,7 +671,7 @@ export class WorldAgent {
             // Replace even when absent: reconnecting to an older door must not
             // keep advertising guidance from a previous snapshot.
             this.briefing = resolveBriefing(msg.briefing,
-              this.briefingBase === undefined ? this.httpBase + "/" : this.briefingBase ?? undefined);
+              this.briefingBase === undefined ? this.httpBase + "/" : this.briefingBase);
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;

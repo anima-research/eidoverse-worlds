@@ -1210,7 +1210,10 @@ const http = createServer((req, res) => {
         const body = Buffer.from(await guide.arrayBuffer());
         res.writeHead(guide.status, Object.fromEntries(guide.headers));
         res.end(body);
-      }).catch(() => res.destroy());
+      }).catch(err => {
+        console.warn(`[${ts()}] [mcpl] /agents.md reply failed: ${err instanceof Error ? err.message : String(err)}`);
+        res.destroy();
+      });
     return;
   }
   // A plain HTTP GET here is someone curious — curl, a browser, an agent

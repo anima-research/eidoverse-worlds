@@ -17,9 +17,16 @@ async function until(f: () => boolean | Promise<boolean>) {
   while (!await f()) { if (Date.now() > end) throw new Error("network briefing condition timed out"); await sleep(20); }
 }
 const digest = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+/** What console.warn says while `fn` runs: the operator's log of a degraded answer. */
+async function warned<T>(fn: () => Promise<T>): Promise<{ value: T; lines: string[] }> {
+  const lines: string[] = [], warn = console.warn;
+  console.warn = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
+  try { return { value: await fn(), lines }; } finally { console.warn = warn; }
+}
 try {
   check("direct origin uses the public door Host and port", briefingOrigin({ host: "world.example:8941" }) === "http://world.example:8941");
   check("TLS proxy preserves HTTPS in the reader-facing origin", briefingOrigin({ host: "world.example", "x-forwarded-proto": "https" }) === "https://world.example");
+  check("the forwarded protocol is read without regard to case", briefingOrigin({ host: "world.example", "x-forwarded-proto": "HTTPS" }) === "https://world.example");
   check("public origin override wins over internal proxy headers", briefingOrigin({ host: "127.0.0.1:8941" }, "https://outside.example") === "https://outside.example");
   check("missing and credential-bearing Host cannot become a pointer", briefingOrigin({}) === null && briefingOrigin({ host: "user:secret@world.example" }) === null);
   let rejected = 0;
@@ -37,8 +44,35 @@ try {
   check("guide failure stays a legible uncached failure", missing.status === 503 && missing.headers.get("cache-control") === "no-store");
   check("proxy forwards only the conditional header to the fixed guide path", new URL(upstreamRequest!.url).pathname === "/agents.md" && !new URL(upstreamRequest!.url).search && !upstreamRequest!.headers.has("authorization") && !upstreamRequest!.headers.has("cookie") && upstreamRequest!.headers.get("if-none-match") === '"v1"');
   const failedPort = failed.port; failed.stop(true);
-  const disconnected = await proxyAgentGuide("GET", {}, `ws://127.0.0.1:${failedPort}/ws`);
+  const { value: disconnected, lines: refusedLog } = await warned(() => proxyAgentGuide("GET", {}, `ws://127.0.0.1:${failedPort}/ws?token=private-transport`));
   check("unreachable sequencer fails without exposing its private URL", disconnected.status === 502 && !((await disconnected.text()).includes("127.0.0.1")));
+  check("the 502 logs why and where, without the transport token", refusedLog.length === 1 && refusedLog[0].includes("502")
+    && refusedLog[0].includes(`http://127.0.0.1:${failedPort}/agents.md`) && !refusedLog[0].includes("private-transport"));
+
+  const silent = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Promise<Response>(() => {}) }); servers.push(silent);
+  const hungFrom = Date.now();
+  const { value: hung, lines: hungLog } = await warned(() => proxyAgentGuide("GET", {}, `ws://127.0.0.1:${silent.port}/ws`));
+  const hungFor = Date.now() - hungFrom;
+  check("an upstream that accepts and never answers gets a 502 within the bound", hung.status === 502 && hungFor >= 4500 && hungFor < 8000, `${hungFor} ms`);
+  check("and the log says it never answered", hungLog.length === 1 && hungLog[0].includes("no answer within 5 s"));
+
+  const leaky = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("# guide", { headers: {
+    "content-type": "text/markdown", etag: '"sha256:x"', "cache-control": "no-cache",
+    "set-cookie": "session=private", location: "http://127.0.0.1:1/elsewhere", "x-internal": "private" } }) }); servers.push(leaky);
+  const relayed = await proxyAgentGuide("GET", {}, `ws://127.0.0.1:${leaky.port}/ws`);
+  check("the door relays only the guide's own headers", relayed.status === 200 && [...relayed.headers.keys()].sort().join(",") === "cache-control,content-type,etag"
+    && !relayed.headers.has("set-cookie") && !relayed.headers.has("location"));
+
+  const refusing = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
+    cwd: join(import.meta.dir, ".."),
+    env: { ...process.env, MCPL_PORT: String(freePort(9790)), MCPL_PUBLIC_ORIGIN: "https://world.example/path" },
+    stdout: "pipe", stderr: "pipe",
+  });
+  const refusedExit = await Promise.race([refusing.exited, sleep(15000).then(() => null)]);
+  // A door that started anyway is stopped before its stderr is read to the end.
+  if (refusedExit === null) { refusing.kill(); await refusing.exited; }
+  const refusedText = await new Response(refusing.stderr as ReadableStream).text();
+  check("the door refuses to start on a malformed MCPL_PUBLIC_ORIGIN", refusedExit !== null && refusedExit !== 0 && refusedText.includes("MCPL_PUBLIC_ORIGIN must be"), `exit ${refusedExit}`);
 
   h = await scratchSequencer("briefing-door", { portFrom: 9740, serverEnv: {
     OPT_DIR: join(dir, "opt"), EIDOVERSE_DIR: join(dir, "library"), SKIP_OPT_SWEEP: "1", HN_REQUIRE_LOGIN: "0", HN_ISSUER_KEY: "",
@@ -98,6 +132,8 @@ try {
   check("reader-facing conditional fetch returns 304", cached.status === 304 && await cached.text() === "");
   const head = await fetch(doc.url, { method: "HEAD" });
   check("reader-facing HEAD exposes metadata without a body", head.ok && head.headers.get("etag") === `"${version}"` && await head.text() === "");
+  const upper = await fetch(directDoor.base + "/AGENTS.md");
+  check("the door serves the guide at either spelling", upper.ok && digest(new Uint8Array(await upper.arrayBuffer())) === version);
   const travel = await reader.call("travel", { world: "annex" });
   check("plain MCP travel succeeds through the actual door", !travel.isError && travel.content[0].text.includes("annex"));
   check("travel retains the public briefing origin", (await reader.briefing()).docs[0].url === doc.url);

@@ -368,8 +368,9 @@ function sendGeomFollowup(w: World, c: Client) {
 // code. It is STRUCTURAL now: admitJoin can only answer and refuse (it
 // never touches the roster; the one c.world assignment predates the aux
 // checks exactly as the unsplit case had it), installJoin is the only
-// place a join mutates the roster, and buildSnapshot is a pure read that
-// can finally be exercised without a live socket. Bodies moved verbatim;
+// place a join mutates the roster, and buildSnapshot only reads, so it
+// can finally be exercised without a live socket: the world, and since #214
+// AGENTS.md from disk, hashed for the join's briefing. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
 function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, reason?: string): void }, msg: any, auth: HnSession | null): World | null {

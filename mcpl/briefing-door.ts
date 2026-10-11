@@ -1,6 +1,7 @@
 // Reader-facing documentation lives at the MCPL door, not at its private
 // sequencer address. No credential or transport query belongs in these URLs.
 import type { IncomingHttpHeaders } from "node:http";
+import { AGENT_GUIDE } from "../shared/briefing.js";
 
 function origin(value: string): string | null {
   try {
@@ -19,26 +20,33 @@ export function briefingOrigin(headers: IncomingHttpHeaders, configured?: string
   // TLS-terminating proxies must preserve Host and overwrite this header.
   // Direct HTTP/WS connections need neither proxy configuration nor a public URL.
   const forwarded = headers["x-forwarded-proto"];
-  const proto = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "";
+  const proto = typeof forwarded === "string" ? forwarded.split(",")[0].trim().toLowerCase() : "";
   const scheme = proto === "https" ? "https" : "http";
   return typeof headers.host === "string" ? origin(`${scheme}://${headers.host}`) : null;
 }
 
+/** The sequencer's guide, as a body beside it resolves the advertised pointer:
+ * against the HTTP base its WORLD_URL names (agent.ts's httpBase), so a mount
+ * prefix is kept and both derivations agree. */
 export function sequencerGuideURL(worldURL: string): URL {
   const u = new URL(worldURL);
   if (!["ws:", "wss:"].includes(u.protocol)) throw new Error("WORLD_URL must use ws or wss");
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
-  u.pathname = u.pathname.replace(/\/ws$/, "") + "/agents.md";
+  u.pathname = u.pathname.replace(/\/ws$/, "").replace(/\/?$/, "/");
   u.username = ""; u.password = ""; u.search = ""; u.hash = "";
-  return u;
+  return new URL(AGENT_GUIDE, u);
 }
 
-/** Relay only the fixed, public guide. Request cookies/authorization/queries
- * never reach the sequencer, and its private URL never enters a response. */
+/** Relay only the fixed guide, which is public documentation. Request
+ * cookies, authorization and queries never reach the sequencer, and the
+ * deployed WORLD_URL never enters a response (the guide's own text names
+ * loopback examples, which are documentation, not this deployment). */
 export async function proxyAgentGuide(method: string, headers: IncomingHttpHeaders, worldURL: string): Promise<Response> {
+  let guide: URL | undefined;
   try {
     const conditional = headers["if-none-match"];
-    const upstream = await fetch(sequencerGuideURL(worldURL), {
+    guide = sequencerGuideURL(worldURL);
+    const upstream = await fetch(guide, {
       method, headers: typeof conditional === "string" ? { "if-none-match": conditional } : {},
       signal: AbortSignal.timeout(5000), redirect: "error",
     });
@@ -48,7 +56,14 @@ export async function proxyAgentGuide(method: string, headers: IncomingHttpHeade
     const body = method === "HEAD" || upstream.status === 304 || upstream.status === 204
       ? null : await upstream.arrayBuffer();
     return new Response(body, { status: upstream.status, headers: out });
-  } catch {
+  } catch (err) {
+    // The operator's log names the upstream (credentials and query stripped)
+    // and the failure; the reader's answer names neither.
+    const e = err as { name?: unknown; message?: unknown; cause?: { code?: unknown } } | null;
+    const reason = e?.name === "TimeoutError" ? "no answer within 5 s"
+      : typeof e?.cause?.code === "string" ? e.cause.code
+      : typeof e?.message === "string" ? e.message : String(err);
+    console.warn(`[mcpl] /agents.md answered 502: ${reason} (upstream ${guide?.href ?? "WORLD_URL unusable"})`);
     return new Response("Agent guide unavailable", { status: 502, headers: { "cache-control": "no-store" } });
   }
 }
