@@ -1224,8 +1224,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
-    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || Object.keys(v).some((k) => !["pos", "q", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to" || k === "socket"))))
-      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, socket?}}`, "e.g. {pos: [0, 0, 2]}"); }
+    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || (v.scale !== undefined && !(typeof v.scale === "number" ? v.scale > 0 : nums(v.scale, 3) && v.scale.every((x) => x > 0))) || Object.keys(v).some((k) => !["pos", "q", "scale", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to" || k === "socket"))))
+      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], scale?, parent?: {to, socket?}}`, "e.g. {pos: [0, 0, 2]}"); }
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
@@ -1947,9 +1947,9 @@ function buildUse(ctx, a) {
       const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
       // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); v1 skips it and says so
       { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
-      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t]) continue;   // home already, in no hand
+      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) continue;   // home already (and its size), in no hand
       ops.push(...(hp ? [setOp(t, "parent", { order: "a0", ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
-        setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: (te.c.transform?.scale ?? [1, 1, 1]).slice() }));
+        setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) }));
       sent.push(t); ctx.refs.add(t); }
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
@@ -3334,6 +3334,14 @@ function returnDue(w) {
 // A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
 // that moves a thing whose home was where it stood carries the home with it (a builder moving the key moves its hook…
 // home). A builder may set home outright; one that isn't where the thing stands is left alone.
+// the scale a thing goes home at, in its home parent's frame (R 10-10: a settled crate is parented to the one under it
+// at a local scale of 1; sent home unparented with that 1, it came back four times its size). Its size in the world is
+// kept: its scale times every ancestor's now, divided by the home parent chain's.
+const vec3s = (v) => (typeof v === "number" ? [v, v, v] : Array.isArray(v) && v.length === 3 ? v : [1, 1, 1]);
+const chainScale = (st, id) => { let k = [1, 1, 1], p = id, n = 0; while (p && n++ < 33) { const c = st.entities[p]?.c; if (!c) break; const sc = vec3s(c.transform?.scale); k = k.map((x, i) => x * sc[i]); p = c.parent?.to; } return k; };
+const homeScale = (st, id, home) => { if (home.scale !== undefined) return vec3s(home.scale).slice();
+  const world = chainScale(st, id), under = home.parent?.to ? chainScale(st, home.parent.to) : [1, 1, 1];
+  return world.map((x, i) => +(x / (under[i] || 1)).toFixed(6)); };
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
   return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }; };
 // a reset handler being written: each target with no home of its own gets one where it stands now (it can be moved with

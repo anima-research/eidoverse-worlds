@@ -63,7 +63,7 @@ export const COMPONENTS = {
   // the numbers a thing exposes to the bodies on it (a pose blends by `param.<name>`); scripts write them
   // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
   // grabbable.home (older) means the same for a grabbable; a reset reads home first.
-  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", parent: "any" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
+  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
   params:    { on: "thing", map: "number", help: "{<name>: number}: values a socket's pose can blend by (param.<name>); scripts write them" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
     handlers: {

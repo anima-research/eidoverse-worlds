@@ -299,7 +299,11 @@
   "fields": {
    "pos": "vec3",
    "q": "array",
+   "scale": "any",
    "parent": "any"
+  },
+  "absentMeans": {
+   "scale": "its size in the world is kept as it is when the reset runs"
   },
   "on": "thing"
  },

@@ -47,5 +47,11 @@ const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", 
   ok(r.ok && JSON.stringify(pos(W, "a")) === "[1,0,5]" && code(bad) === "shape", "RS7 'set home here' is a write of home; a malformed home is refused", { r: code(r), a: pos(W, "a"), bad: code(bad) }); }
 { const W = "noop"; mk(W); button(W, ["a"]); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
   ok(code(r) === "nothing-to-reset", "RS8 pressed with everything already home: says so (no empty change)", { r: code(r), why: r.refused?.reason }); }
+{ const W = "scale"; mk(W); call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [0.25, 0.25, 0.25] } }); button(W, ["a", "b"]);
+  // the shape a settle leaves (R's gym, 10-10): b rests on a, parented to it at a local scale of 1 (0.25 in the world)
+  call(W, "rowan", "set", { id: "b", component: "parent", value: { to: "a", order: "a0" } }); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [0.5, 4, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  call(W, "rowan", "set", { id: "b", component: "home", value: { pos: [3, 0, 0], q: [0, 0, 0, 1] } });
+  const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const b = st(W).entities.b.c;
+  ok(r.ok && !b.parent && JSON.stringify(b.transform.scale) === "[0.25,0.25,0.25]" && JSON.stringify(b.transform.pos) === "[3,0,0]", "RS9 a thing settled onto another (parented at a local scale of 1) goes home unparented at its size in the world, not 4x", { r: code(r), why: r.refused?.reason, b: b.transform, parent: b.parent }); }
 console.log(`[reset-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
