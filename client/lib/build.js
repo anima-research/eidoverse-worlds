@@ -33,6 +33,7 @@ import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame, html } from './ui.js';
 import { paint, escapeHtml } from './markup.js';
+import { pushHostHook } from './autohooks.js';
 import { clickable } from './selectmask.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
@@ -241,6 +242,22 @@ export function deselect() {
 export function refreshOutline() {
   if (selected) outline.box.setFromObject(selected.obj);
 }
+// ONE selection (R 10-11 01:13: "make sure the same entities that are selected agree with each other in the hierarchy and
+// the viewport"; 00:57: after undos, clicking away no longer deselected; 00:41: "Can the bounding box on moving objects
+// update as the objects translate?"). The scene selection (scenegraph) is the truth; each edit-mode frame the viewport's
+// pick follows it (a Hierarchy click, an undo, a model swapped under it) and its box is re-measured, so it tracks a thing
+// that moves.
+function syncSelection() {
+  if (!editMode) return;
+  const sid = sceneSelected(); const obj = sid != null ? entities.get(sid) : null;
+  if (obj) {
+    if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
+    obj.updateWorldMatrix(true, true); outline.box.setFromObject(obj); outline.visible = true;
+  } else if (selected && !dragging) { editHolds.delete(selected.id); selected = null; outline.visible = false; }
+}
+pushHostHook(syncSelection);
+/** For probes: what the viewport shows as selected (its outline box). */
+export const selectionView = () => ({ id: selected?.id ?? null, visible: !!outline.visible, min: outline.box.min.toArray(), max: outline.box.max.toArray() });
 // the echo of a place (ours from the inspector, or anyone's) moves the mesh; the box follows
 bus.on('entity', ({ id } = {}) => { if (selected && id === selected.id) refreshOutline(); });
 
@@ -556,7 +573,8 @@ let barePress = null;
 addEventListener('mouseup', (e) => {
   const p = barePress; barePress = null;
   if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
-  if (selected) deselect(); if (seatSelected()) deselectSeat();
+  // a click on empty space clears THE selection (the Hierarchy's too), not only the viewport's pick
+  deselectAll(); if (seatSelected()) deselectSeat();
 });
 // BOX SELECT (R 10-11 00:18: "shift-select-drag draw a bounding box around objects to select them"): Shift-drag on bare
 // space draws a box and ADDS every thing whose centre lands inside it (hidden ones, and layers I've switched off for

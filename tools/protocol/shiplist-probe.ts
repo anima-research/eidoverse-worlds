@@ -405,6 +405,35 @@ try {
   check("SL1 a floor slab on 'environment' is off for clicks at first: clicking it selects nothing; the crate on it still selects", a !== "slfloor" && b === "slcrate", { a, b, floorPx, cratePx });
   check("SL2 Select ▸ environment on: the floor is clickable again", c2 === "slfloor", { c2 });
   });
+  // ---- SY: one selection (R, 10-11 01:13 "agree with each other in the hierarchy and the viewport"; 00:57 "after undoing a
+  // few times ... can't unselect them by clicking away"; 00:41 "the bounding box on moving objects update as they translate") ----
+  await stage("SY", async () => {
+  const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; const p = co.myState.pos; return [p.x + d.x / h * 4, p.z + d.z / h * 4];`);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'syorb', model: '${CRATE}', components: { label: 'Orbiter', transform: { pos: [${at[0]}, 0, ${at[1]}], scale: 0.2 } } });
+    await m.sendRequest('set', { id: 'syorb', component: 'motion', value: { type: 'orbit', radius: 1.2, degPerSec: 120, center: [${at[0]}, 0, ${at[1]}] } });
+    return await m.sendRequest('create', { id: 'syb', model: '${CRATE}', components: { label: 'Still box', transform: { pos: [${at[0]} + 2, 0, ${at[1]}], scale: 0.25 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('syorb') && !!m.entities.get('syb'))`); await sleep(1000);
+  const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE, n = await import('/lib/net.js');
+    const wait = (ms) => new Promise((z) => setTimeout(z, ms));
+    b.setEditMode(true); await wait(800);
+    // SY1: picked in the TREE (no viewport click): the viewport outlines it
+    sg.sceneSelect('syb'); await wait(300); const v1 = b.selectionView(); const cb = new T.Box3().setFromObject(w.entities.get('syb')).getCenter(new T.Vector3());
+    const inBox = (v, p) => p.x >= v.min[0] - 0.01 && p.x <= v.max[0] + 0.01 && p.z >= v.min[2] - 0.01 && p.z <= v.max[2] + 0.01;
+    // SY3: an orbiting thing: its box follows it
+    sg.sceneSelect('syorb'); const follow = []; for (let i = 0; i < 6; i++) { await wait(200); const v = b.selectionView(); const c = new T.Box3().setFromObject(w.entities.get('syorb')).getCenter(new T.Vector3()); follow.push(inBox(v, c) && v.visible); }
+    // SY2: an edit, an undo, then a click on empty space deselects everywhere
+    sg.sceneSelect('syb'); await wait(200); await n.sendRequest('set', { id: 'syb', component: 'transform', value: { pos: [${at[0]} + 2.3, 0, ${at[1]}], q: [0, 0, 0, 1], scale: [0.25, 0.25, 0.25] } }); await wait(400);
+    await b.undo(); await wait(600);
+    return { v1, syb: [cb.x, cb.z], sy1: v1.id === 'syb' && v1.visible && inBox(v1, cb), follow, afterUndo: { scene: sg.sceneSelected(), view: b.selectionView().id } };`);
+  // a real click on empty sky for SY2
+  const bare = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const r = c.canvas.getBoundingClientRect(), rc = new T.Raycaster(), objs = [...w.entities.values()].filter(Boolean); for (let y = r.top + 60; y < r.bottom - 60; y += 20) for (let x = r.left + 360; x < r.right - 360; x += 30) { if (document.elementFromPoint(x, y) !== c.canvas) continue; rc.setFromCamera(new T.Vector2((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); if (!rc.intersectObjects(objs, true).length) return [x, y]; } return null;`);   // nothing at all under it (as the viewport's own pick sees things), on the canvas itself   // the canvas itself, not a panel over it
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: Math.round(bare[0]), y: Math.round(bare[1]), button: "left", buttons: 1, clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: Math.round(bare[0]), y: Math.round(bare[1]), button: "left", buttons: 0, clickCount: 1 }); await sleep(500);
+  const after = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'); const o = { scene: sg.sceneSelected(), view: b.selectionView() }; b.setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'syorb' }); await n.sendRequest('delete', { id: 'syb' }); return o;`);
+  check("SY1 picked in the Hierarchy, the viewport outlines the same thing", r?.sy1, r?.v1);
+  check("SY2 after an edit and an undo, a click on empty space deselects it in the Hierarchy AND the viewport", r?.afterUndo?.scene === "syb" && after.scene == null && !after.view.visible, { afterUndo: r?.afterUndo, after });
+  check("SY3 the selection box follows a moving (orbiting) thing", r?.follow?.length === 6 && r.follow.every(Boolean), r?.follow);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {
