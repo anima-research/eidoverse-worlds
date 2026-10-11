@@ -590,7 +590,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
   let partOrdinal = 0;
   for (const inst of components) {
     const rec = RECORDS[inst.type];
-    const sec = { type: inst.type, key: inst.key ?? null, title: inst.type, hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
+    // every card's title starts with a capital (R 10-10: 'physics' was the only one that didn't)
+    const sec = { type: inst.type, key: inst.key ?? null, title: String(inst.type).charAt(0).toUpperCase() + String(inst.type).slice(1), hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
     switch (inst.type) {
       case 'Transform': {
         // the channel box: Translate, Rotate, Scale, the order, and the

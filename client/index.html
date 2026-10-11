@@ -1731,10 +1731,11 @@ body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var
 /* rows: 24px rhythm; a label column (~38%, right-aligned, dim) and the value left-aligned after it */
 .frame.edit .sp-row { margin: 0; min-height: 24px; gap: 8px; }
 .frame.edit .sp-row + .sp-row { margin-top: 2px; }
-.frame.edit .sp-label { flex: 0 0 38%; min-width: 72px; max-width: 140px; box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
+.frame.edit .sp-label { flex: 0 0 27%; min-width: 60px; max-width: 100px;   /* R 10-10: the label column ~30% narrower */
+  box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .frame.edit .sp-f-num.sp-row { justify-content: flex-start; }
-.frame.edit .sp-f-num .sp-label { flex: 0 0 38%; }
+.frame.edit .sp-f-num .sp-label { flex: 0 0 27%; }
 .frame.edit .sp-info { color: var(--e-text); }
 .frame.edit .sp-row[data-axis="x"] .sp-label { color: var(--e-x); }
 .frame.edit .sp-row[data-axis="y"] .sp-label { color: var(--e-y); }
@@ -1765,7 +1766,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-f-num.sp-row + .sp-f-num.sp-row { margin-top: 0; }
 .frame.edit .sp-step.compact .sp-num { height: 20px; border-color: transparent; }
 .frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
-.frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 4px; margin: 0 -4px; }
+.frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 0 1px 4px; margin: 0; }   /* no negative margins: they pulled every number field 8 px left of the other rows (R 10-10, spin's axis vs rate) */
 .frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: var(--e-accent-bg); box-shadow: inset 0 0 0 1px var(--e-accent); }
 /* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
 .frame.edit .sp-step { position: relative; }
@@ -1809,7 +1810,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-group::first-letter { text-transform: uppercase; }
 .frame.edit .sp-group:hover { background: var(--e-hover); }
 /* tree rows (Hierarchy): 24px, faint indent guides, name + dim kind on one line; selected = accent-bg + a 2px accent bar */
-.frame.edit .sp-tree { gap: 0; }
+.frame.edit .sp-tree { gap: 0; max-height: none; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
 .frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 24px; gap: 4px; }
 .frame.edit .sp-item:hover { background: var(--e-hover); }
 .frame.edit .sp-tree-row { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--e-line) 10px 11px, transparent 11px 14px);
