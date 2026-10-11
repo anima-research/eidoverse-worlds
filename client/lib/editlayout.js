@@ -384,6 +384,13 @@ function apply() {
 }
 
 let seatTimer = 0;
+// the HUD's own panels, not the workspace's columns (those dock into it) nor the World panel (parked separately)
+const WORKSPACE_OWN = new Set(['build', 'hierarchy', 'inspector', 'history', 'chat', 'world']);
+const loosePanels = () => allFrames().filter((f) => f?.id && !WORKSPACE_OWN.has(f.id) && typeof f.show === 'function');
+let playPanels = null;
+const PANELS_KEY = 'ew.edit.panels';
+function readPanels() { try { const v = JSON.parse(localStorage.getItem(PANELS_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; } }
+function savePanels(ids) { try { localStorage.setItem(PANELS_KEY, JSON.stringify(ids)); } catch { /* private window: edit mode starts bare next time */ } }
 function enter() {
   const { top, tools, left, right, lsplit, rsplit, tabs, rtabs } = build();
   on = true;
@@ -398,6 +405,12 @@ function enter() {
   i?.dock(right); hs?.dock(right);
   right.prepend(rtabs, ...[i?.el, hs?.el].filter(Boolean));   // tabs, then both pages
   if (c) { prevChat = c.visible; c.dock(left); if (!c.visible) c.show(); }
+  // each mode keeps its own open panels (R, 10-10: "collapse all other HUD panels" on entering; Blender's workspaces):
+  // play's are put away and remembered, edit's last set comes back (none, the first time). What you open in edit mode
+  // is edit mode's from then on.
+  playPanels = loosePanels().filter((f) => f.visible).map((f) => f.id);
+  for (const f of loosePanels()) if (f.visible) f.hide();
+  for (const id of readPanels()) getFrame(id)?.show();
   // floating frames render UNDER the columns; the World panel build.js opens
   // on entry sits at the right edge, exactly where the Inspector now is.
   // Park it; World ▾ brings it back, and exit restores it.
@@ -424,6 +437,10 @@ function exit() {
   const c = getFrame('chat');
   for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace
+  savePanels(loosePanels().filter((f) => f.visible).map((f) => f.id));
+  for (const f of loosePanels()) if (f.visible) f.hide();
+  for (const id of playPanels ?? []) getFrame(id)?.show();
+  playPanels = null;
   if (prevWorld) getFrame('world')?.show();
   prevChat = prevWorld = null;
   closeMenus();

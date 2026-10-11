@@ -415,6 +415,18 @@ try {
     return { grab: g?.ok ?? null, label: put?.label ?? null, ok: res?.ok ?? res?.refused?.code ?? null, topBottom: +tb.min.y.toFixed(3), baseTop: +b.max.y.toFixed(3), held: t.physicsApi.mine() };`);
   check("PO1 holding one thing, the menu on another offers 'put Small on Base'; a click on its side sets it down ON it", r.grab && /^put Small on Base$/.test(r.label ?? "") && r.ok === true && Math.abs(r.topBottom - r.baseTop) < 0.03 && !r.held.length, r);
   });
+  // ---- EP: each mode keeps its own open HUD panels (R, 10-10; Blender's workspaces) ----
+  await stage("EP", async () => {
+  const r = await page(`const W = await import('/lib/windows.js'), B = await import('/lib/build.js'); const wait = (ms) => new Promise((z) => setTimeout(z, ms));
+    const ids = W.allFrames().map((f) => f.id); const a = ['emotes', 'profile', 'keyboard', 'debug'].find((x) => ids.includes(x)), b = ['profile', 'keyboard', 'emotes', 'debug'].find((x) => ids.includes(x) && x !== a);
+    try { localStorage.removeItem('ew.edit.panels'); } catch {}
+    W.getFrame(a).show(); W.getFrame(b).hide(); B.setEditMode(true); await wait(500);
+    const inEdit1 = [W.getFrame(a).visible, W.getFrame(b).visible]; W.getFrame(b).show(); await wait(200);
+    B.setEditMode(false); await wait(500); const inPlay = [W.getFrame(a).visible, W.getFrame(b).visible];
+    B.setEditMode(true); await wait(500); const inEdit2 = [W.getFrame(a).visible, W.getFrame(b).visible]; B.setEditMode(false); await wait(400); W.getFrame(a).hide();
+    return { a, b, inEdit1, inPlay, inEdit2 };`);
+  check("EP1 entering edit mode puts play's panels away; what I open in edit mode comes back next time; play's come back on leaving", JSON.stringify(r.inEdit1) === "[false,false]" && JSON.stringify(r.inPlay) === "[true,false]" && JSON.stringify(r.inEdit2) === "[false,true]", r);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
