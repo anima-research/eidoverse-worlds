@@ -439,6 +439,25 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
+  // Home: where the reset button sends it (R 10-11: "'Home' should probably get a proper UI"). Position, turn and size, and
+  // what it hangs under; the component's JSON stays below like every card's. A tilted home (a q that isn't a turn about
+  // up) shows its turn and says so; editing the turn writes a level one.
+  if (c.home && typeof c.home === 'object' && Array.isArray(c.home.pos)) {
+    const h = c.home, q = Array.isArray(h.q) && h.q.length === 4 ? h.q : [0, 0, 0, 1];
+    const yaw = Math.atan2(2 * (q[3] * q[1] + q[0] * q[2]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180 / Math.PI;
+    const level = Math.abs(q[0]) < 1e-4 && Math.abs(q[2]) < 1e-4;
+    const sc = h.scale == null ? null : Array.isArray(h.scale) ? h.scale : [h.scale, h.scale, h.scale];
+    const fields = [
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `pos.${ax}`, label: `position ${ax}`, axis: ax, value: round(h.pos[i] ?? 0), def: 0, step: 0.05, dp: 3, unit: 'm', compact: true, hint: `Where the reset puts it back, along ${ax}${h.parent ? ` (in ${h.parent}'s frame)` : ''}.` })),
+      { t: 'num', k: 'turn', label: 'turn', value: round(yaw, 1), def: 0, step: 5, dp: 1, unit: '°', compact: true, hint: level ? 'Which way it faces when it goes home, turned about up.' : 'Which way it faces when it goes home. Its home is tilted too: editing this sets a level turn.' },
+      ...(sc ? (sc[0] === sc[1] && sc[1] === sc[2] ? [{ t: 'num', k: 'scale', label: 'size', value: round(sc[0]), def: 1, step: 0.05, dp: 3, compact: true, hint: 'Its size at home (1 is the model as made).' }]
+        : ['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `scale.${ax}`, label: `size ${ax}`, axis: ax, value: round(sc[i]), def: 1, step: 0.05, dp: 3, compact: true }))) : []),
+      { t: 'info', label: 'under', value: h.parent ? String(h.parent) : 'nothing: the world', hint: 'What it hangs under at home; set by "set home here".' },
+      { t: 'btn', k: 'sethere', label: 'set home to where it is now', hint: 'Records its current place, turn, size and parent as home (Edit ▸ set home here does the same).' },
+    ];
+    groups.push({ group: 'home', label: 'Home', types: ['home'], fields });
+  }
+
   // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
   // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
   // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
@@ -592,7 +611,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -1175,6 +1194,17 @@ export function editOps(ent, id, edits, live = {}) {
           if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); break; } next[fk] = round(n, 3); } }
         else { errors.push(`${key}: no such field`); break; }
         comps.set(ck, next);
+        break;
+      }
+      case 'home': {
+        const next = comps.get('home') ?? JSON.parse(JSON.stringify(c.home ?? {}));
+        const n = num(f, raw); if (n == null) break;   // (home.sethere is the client's: it reads where the thing is now)
+        if (k.startsWith('pos.')) { next.pos = [...(next.pos ?? [0, 0, 0])]; next.pos['xyz'.indexOf(k[4])] = round(n, 4); }
+        else if (k === 'turn') { const a = n * Math.PI / 360; next.q = [0, round(Math.sin(a), 6), 0, round(Math.cos(a), 6)]; }
+        else if (k === 'scale') next.scale = round(n, 4);
+        else if (k.startsWith('scale.')) { const s3 = Array.isArray(next.scale) ? [...next.scale] : [next.scale ?? 1, next.scale ?? 1, next.scale ?? 1]; s3['xyz'.indexOf(k[6])] = round(n, 4); next.scale = s3; }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set('home', next);
         break;
       }
       case 'physics': {

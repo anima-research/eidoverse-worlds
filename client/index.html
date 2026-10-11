@@ -31,6 +31,10 @@
 .frame.edit .sp-row.sp-add { margin-top: 10px; }
 .frame.edit .sp-row.sp-add .sp-btn, .frame.edit .sp-row.sp-add > button { background: color-mix(in srgb, var(--e-accent, #4a9eff) 22%, transparent); border-color: color-mix(in srgb, var(--e-accent, #4a9eff) 45%, transparent); color: var(--e-text); font-weight: 600; }
 .frame.edit .sp-row.sp-add .sp-btn:hover, .frame.edit .sp-row.sp-add > button:hover { background: color-mix(in srgb, var(--e-accent, #4a9eff) 34%, transparent); }
+/* a card's provenance pill, at the front of its title (R 10-11) */
+.sp-pill { display: inline-block; margin: 0 6px 0 1px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 15px; letter-spacing: .02em; text-transform: uppercase; vertical-align: 1px; }
+.sp-pill-draft { background: color-mix(in srgb, #e0a33a 22%, transparent); color: #e0a33a; box-shadow: inset 0 0 0 1px color-mix(in srgb, #e0a33a 55%, transparent); }
+.sp-pill-foreign { background: transparent; color: var(--e-dim, #999); box-shadow: inset 0 0 0 1px currentColor; }
 </style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
@@ -1077,7 +1081,13 @@ body.edit-mode canvas { cursor: crosshair; }
    z 38: over frames (≤25), the rail (27) and the frame rim (30); under the ∃
    menu and the scrims (40), the glyphs (45), notices (60) and the door (120). */
 #hintbar { bottom: var(--ln-b, 24px); left: var(--ln-x, 50%); height: 36px; box-sizing: border-box;
-  display: flex; align-items: center; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+  display: block; line-height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+/* block, not flex (R 10-11: "the text is right up against the 'T' in the box on either side"): a flex box makes every text
+   run its own item and drops the spaces at their ends, so 'click or ' + <kbd>T</kbd> + ' to pick up' lost both spaces */
+#hintbar kbd { vertical-align: middle; position: relative; top: -1px; }
+#hintbar.attn { pointer-events: auto; user-select: text; }
+#hintbar .hint-copy { margin-right: 8px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
+#hintbar .hint-copy:hover { opacity: 1; }
 #hintbar:empty { display: none; }
 #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: hidden; }
 body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer sits in this band (both bottom 24px); on a phone its list can reach it */
@@ -1758,7 +1768,7 @@ body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var
 .frame.edit .sp-row + .sp-row { margin-top: 2px; }
 .frame.edit .sp-label { flex: 0 0 27%; min-width: 60px; max-width: 100px;   /* R 10-10: the label column ~30% narrower */
   box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }   /* a long label wraps (R 10-11: 'can be taken fro…'), never cut */
 .frame.edit .sp-f-num.sp-row { justify-content: flex-start; }
 .frame.edit .sp-f-num .sp-label { flex: 0 0 27%; }
 .frame.edit .sp-info { color: var(--e-text); }

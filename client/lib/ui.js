@@ -130,9 +130,19 @@ export function flashHint(line, ms = 2600, tone = null) {
   // tone 'attn': something you asked for didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status
   // bar at the bottom that fades away after a few seconds"), every time you ask
   el.hint.classList.toggle('attn', tone === 'attn');
+  // a refusal can be copied (R 10-11: "a little 'copy' icon on status errors… would be useful to grab and paste them for
+  // you"): its text is selectable, a copy button sits at its end, and pointing at it holds it on screen
+  if (tone === 'attn') {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'hint-copy'; b.title = 'copy this message'; b.textContent = '⧉';
+    b.onclick = (e) => { e.stopPropagation(); const t = [...el.hint.childNodes].filter((n) => n !== b).map((n) => n.textContent).join('').trim();
+      navigator.clipboard?.writeText(t).then(() => { b.textContent = '✓'; }, () => { b.textContent = 'select it to copy'; }); };
+    el.hint.prepend(b);   // first: a long reason is cut at the bar's end, and the button must not be
+  }
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
   el.hint._t = setTimeout(endFlash, ms);
+  el.hint.onpointerenter = () => { if (el.hint.classList.contains('attn')) { clearTimeout(el.hint._t); el.hint._t = -1; } };
+  el.hint.onpointerleave = () => { if (el.hint.classList.contains('attn') && el.hint._t === -1) el.hint._t = setTimeout(endFlash, 2500); };
 }
 // keyhints.js: a gesture's keys hold the bar while you're engaged (R 10-04: the status line, once engaged), then give it back
 addEventListener('ew-keyhint', (e) => {

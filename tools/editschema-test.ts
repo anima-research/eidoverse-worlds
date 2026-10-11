@@ -302,5 +302,16 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   check("with an override there is ONE Material card (the override's), removable", ms.length === 1 && ms[0].removable && ms[0].key === "hesperus/material");
 }
 
+// Home (R 10-11: "'Home' should probably get a proper UI"): a card of its own, not only the JSON hatch
+{
+  const crate = { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, actor: "r", ts: 1, comp: { home: { pos: [6, 1, 0], q: [0, 0.7071068, 0, 0.7071068], scale: [0.25, 0.25, 0.25] } } };
+  const g = inspectSchema(crate, "t").groups.find((x) => x.group === "home");
+  const f = (k) => g?.fields.find((x) => x.k === k);
+  check("HM1 home gets its own card: position x/y/z, turn, size", !!g && f("pos.y")?.value === 1 && Math.round(f("turn")?.value) === 90 && f("scale")?.value === 0.25, JSON.stringify(g?.fields?.map((x) => [x.k, x.value])));
+  const r = editOps(crate, "t", { "home.pos.y": 2, "home.turn": 180 });
+  const v = sets(r, "home")[0]?.args.value;
+  check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -325,7 +325,9 @@ function fitDock(TOP) {
   const wrench = dock.querySelector('button[data-toggles="edit"]');
   let more = dock.querySelector('.dock-more');
   if (!more) {
-    more = document.createElement('button'); more.className = 'dock-more'; more.textContent = '⋯';
+    // three real dots, drawn (R 10-11: "make these ellipses dots bigger and more graphic"): a glyph's ⋯ was a few pixels tall
+    more = document.createElement('button'); more.className = 'dock-more'; more.title = 'more panels';
+    more.innerHTML = '<svg width="20" height="6" viewBox="0 0 20 6" aria-hidden="true"><circle cx="3" cy="3" r="2.4" fill="currentColor"/><circle cx="10" cy="3" r="2.4" fill="currentColor"/><circle cx="17" cy="3" r="2.4" fill="currentColor"/></svg>';
     more.onclick = (e) => { e.stopPropagation(); dockOpen = !dockOpen; try { localStorage.setItem('ew.edit.dock', dockOpen ? 'open' : 'folded'); } catch { /* no storage */ } apply(); };
     dock.insertBefore(more, wrench ?? dock.querySelector('.dock-grip'));
   }

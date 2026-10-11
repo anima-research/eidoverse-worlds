@@ -8,7 +8,9 @@ import { scratchBench, sleep } from "../harness.ts";
 process.env.TRUST_NAMES = "1";
 const SRC = process.env.WORLDS_SRC; const OUT = "/home/claude/eido/logs/insp-shots"; fs.mkdirSync(OUT, { recursive: true });
 const { cdp, evalJson, cleanup, BASE } = await scratchBench("gyminsp", { prepare: (scratch) => { const w = path.join(scratch, "worlds"); fs.mkdirSync(w, { recursive: true });
-  for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f)); fs.cpSync(path.join(SRC, "gym"), path.join(w, "gym"), { recursive: true }); } });
+  for (const f of [".custody.json", ".directory.json"]) fs.copyFileSync(path.join(SRC, f), path.join(w, f)); fs.cpSync(path.join(SRC, "gym"), path.join(w, "gym"), { recursive: true });
+  const f = path.join(w, "gym/world.jsonl"), T = Date.parse(process.env.CUT ?? "2026-10-11T21:15:00Z"); const ls = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);   // her gym as it stood for her 14:08-14:14 notes
+  const k = ls.findIndex((l) => JSON.parse(l).ts >= T); if (k > 0) fs.writeFileSync(f, ls.slice(0, k).join("\n") + "\n"); } });
 const page = (js) => evalJson(`(async () => { ${js} })()`);
 let fail = 0; const check = (k, ok, info) => { console.log(`${ok ? "✓" : "✗"} ${k}`, JSON.stringify(info ?? "").slice(0, 400)); if (!ok) fail++; };
 try {
@@ -19,7 +21,9 @@ try {
   await sleep(3000);
   await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 600)); (await import('/lib/scenegraph.js')).sceneSelect('tower-2'); return true;`);
   await sleep(1200);
-  await page(`const bs = document.querySelectorAll('[data-frame="inspector"] .sp-iconbtn .sp-btn'); bs[1]?.click(); return bs.length;`); await sleep(3000);
+  await page(`const bs = document.querySelectorAll('[data-frame="inspector"] .sp-iconbtn .sp-btn'); bs[1]?.click(); return bs.length;`);
+  for (let i = 0; i < 40; i++) { if (await evalJson(`!!document.querySelector('[data-frame="inspector"] .sp-iconbtn .sp-btn.on')`)) break; await sleep(250); }   // the lock's round trip, then its repaint
+  await sleep(400);
   const m = await page(`const f = document.querySelector('[data-frame="inspector"]'); const C = (e) => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
     const btns = [...f.querySelectorAll('.sp-iconbtn .sp-btn')].map((b) => { const s = b.querySelector('svg'); const [bx, by] = C(b), [sx, sy] = C(s); return { title: b.title.slice(0, 20), on: b.classList.contains('on'), color: getComputedStyle(b).color, off: [+(sx - bx).toFixed(1), +(sy - by).toFixed(1)] }; });
     const accent = getComputedStyle(f).getPropertyValue('--e-accent').trim();

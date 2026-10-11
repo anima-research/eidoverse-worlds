@@ -746,7 +746,8 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
   if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !comps.get(id)?.lock); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
-  if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }   // the grip editor (gripedit.js)
+  if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
+  if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)
   if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
     if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;

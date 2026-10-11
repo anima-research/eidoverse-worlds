@@ -395,7 +395,9 @@ const say = (t) => logChat('*', t);
 const REPEAT_MS = 5000, saidAt = new Map();
 // (keyed by the words with their numbers taken out: a too-fast or solid reason names a distance or a spot that changes
 // every step, so the same refusal never matched itself; review round 2)
-const refused = (what, r, id = '') => { const x = r?.refused, text = plain(what, r), now = performance.now();
+const refused = (what, r, id = '') => { const x = r?.refused, now = performance.now();
+  // a let-go out of reach is the server's body track a step behind mine, not something she did (R 10-11: 'Not obvious what's wrong')
+  const text = x?.code === 'out-of-reach' && (what === 'throw' || what === 'drop') ? `Couldn't ${what} it from there: the server still has you a step back from where you see yourself. Try again — standing still a moment helps` : plain(what, r);
   // at a desk: the status bar, in the attention colour, EVERY time you ask (R, 10-10: the chat line came "not every time
   // I try - only every 5s or so"; it is no longer a chat line). The event below (a headset's card, the probes) keeps
   // its once-per-5-s rule: a squeeze repeated is not news.
@@ -472,7 +474,7 @@ export async function drop(name) {
 export async function throwHeld(arg) {
   const id = myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
-  const pos = heldPos(id), aim = Array.isArray(arg) && arg.length === 3 && arg.every(Number.isFinite) ? arg : null;
+  const pos = letGoAt(heldPos(id)), aim = Array.isArray(arg) && arg.length === 3 && arg.every(Number.isFinite) ? arg : null;
   let v;
   if (aim && pos) {
     const dx = aim[0] - pos.x, dz = aim[2] - pos.z, d = Math.hypot(dx, dz), dy = aim[1] - pos.y;
@@ -506,7 +508,7 @@ export async function grabNear(at, within = 0.6) {
 export async function release(v = [0, 0, 0], name) {
   const id = name || myHolds()[0]; if (!id) return null;
   await track(true);
-  const pos = heldPos(id); const still = v.every((n) => Math.abs(n) < 0.05);
+  const pos = letGoAt(heldPos(id)); const still = v.every((n) => Math.abs(n) < 0.05);
   const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
   return r?.ok ? r : refused(still ? 'drop' : 'throw', r, id);
 }
@@ -678,6 +680,11 @@ export function handsHint() {
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
 /** Could my hand set something down at this spot on the floor from where I stand (the authority's reach, with a margin)? */
+// where a let-go starts: the thing as drawn in my hand, but never further from the authority's hand than its reach. A big
+// thing carried two-armed is drawn pushed out from the chest, and the authority's track of a walking body runs a step
+// behind: R 10-11 14:25, 'Couldn't throw: … is 1.586 m from your hand as the authority tracks your body; you can reach 1.5 m'
+const letGoAt = (pos) => { const f = feet(); if (!pos || !f) return pos; const h = new THREE.Vector3(f[0], f[1] + HAND_Y, f[2]);
+  const d = pos.distanceTo(h), lim = REACH - 0.15; return d <= lim ? pos : h.lerp(pos, lim / d); };
 const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f[0], y - (f[1] + HAND_Y), z - f[2]) <= REACH - 0.08; };
 /** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
 const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
