@@ -293,7 +293,6 @@ function hierarchyFields() {
   }
   visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:') && !String(r.id).startsWith('comp:')).map((r) => r.id);
   return [
-    worldRowFields(),   // pinned: the world entity, always first, never filtered out (design §3)
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
     // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
@@ -303,6 +302,10 @@ function hierarchyFields() {
     // line, not a line of its own: appearing and vanishing with the first and last hidden thing, a line of its own pushed
     // every row down and back (R 10-11 01:00: "the scroll jumps up and if I click it again the scroll jumps down")
     ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, bar: true, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
+    // pinned: the world entity, the first row of the list itself and never filtered out (design §3). Below the filter
+    // since R 10-11 ("move the 'world' in the Hierarchy under the filter line, just to make it more clear that you can
+    // interact with it like an ordinary entity"): Blender's Outliner starts its tree with the Scene Collection the same way
+    worldRowFields(),
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
