@@ -28,7 +28,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -443,6 +443,7 @@ function fileIx(ix, id, g, cloned) {
 function buildIx(st, ver) {
   const ix = { cat: CAT, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
   for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
+    if (offChain(st, id)) continue;   // switched off: nothing to stand on, bump into or overlap (componentspec disabled)
     const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
   return ix;
 }
@@ -465,7 +466,7 @@ function deriveIx(prev, st) {
     if (old) { ix.rec.delete(id); const cs = cellsOf(old);
       if (cs) for (const k of cs) { const a = ix.grid.get(k); if (!a) continue; const b = a.filter((x) => x !== id); if (b.length) ix.grid.set(k, b); else ix.grid.delete(k); cloned.add(k); } } }
   ix.big = prev.big.filter((x) => !touched.has(x));
-  for (const id of touched) { if (E[id] === undefined) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
+  for (const id of touched) { if (E[id] === undefined || offChain(st, id)) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
   // the children map is rebuilt (lazily) only when a parent link changed
   if (added.length || removed.length || changed.some((id) => P[id]?.c.parent?.to !== E[id]?.c.parent?.to)) ix.kids = null;
   return ix;
@@ -1575,6 +1576,8 @@ function historyDiff(w, id, at, ops) {
   return Object.keys(out).length ? out : null;
 }
 
+// a switched-off thing (componentspec disabled, itself or what it hangs under) can't be handled: it's a link in the record
+function offRefuse(st, id, what) { const k = offChain(st, id); if (k) refuse("disabled", k === id ? `${id} is switched off, so it can't be ${what}` : `${id} hangs under ${k}, which is switched off, so it can't be ${what}`, `an editor switches it back on: delete {id: '${k}', component: 'disabled'}`); }
 function needThing(ctx, id) {
   const e = ctx.st.entities[id];
   if (!e) refuse("not-found", `no thing called '${id}'`, "look lists what's here", { didYouMean: guess(String(id), Object.keys(ctx.st.entities)) });
@@ -1930,6 +1933,7 @@ function reactionCap(ctx, id, comp, action) {
 }
 function buildUse(ctx, a) {
   const e = ctx.st.entities[a.id]; if (!e) refuse("not-found", `no '${a.id}'`, "", { didYouMean: guess(a.id, Object.keys(ctx.st.entities)) });
+  offRefuse(ctx.st, a.id, "used");
   const offers = actionsOf(ctx.st, a.id);
   // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
   // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
@@ -3041,6 +3045,7 @@ const PHYSICS_VERBS = {
     if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_VERBS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
+    offRefuse(st, a.id, "picked up");
     const held = w.presence.holds[a.id];
     if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
     if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
@@ -3209,6 +3214,7 @@ const PHYSICS_VERBS = {
   punt(w, actor, a) {
     const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
+    offRefuse(st, a.id, "punted");
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);

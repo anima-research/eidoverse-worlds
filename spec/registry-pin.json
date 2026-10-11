@@ -59,6 +59,10 @@
   "type": "bool",
   "on": "thing"
  },
+ "disabled": {
+  "type": "bool",
+  "on": "thing"
+ },
  "pivot": {
   "on": "thing"
  },

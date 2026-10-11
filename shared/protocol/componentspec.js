@@ -28,6 +28,7 @@ export const COMPONENTS = {
   collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
   stage:     { on: "thing", fields: { speaker: "any" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
   hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
+  disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets

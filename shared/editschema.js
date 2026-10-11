@@ -203,6 +203,7 @@ export function inspectSchema(ent, id, live = {}) {
     ...(locked ? [{ t: 'enum', k: 'lockLevel', label: 'lock level', value: LOCK_LEVEL(c.lock), def: 'builder', options: LOCK_LEVEL_OPTIONS,
       hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
+    { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
     // selection layer (R 10-11; the draft hesperus/layer): 'auto' is its default by kind; a builder may set it
     { t: 'enum', k: 'layer', label: 'layer', value: LAYERS.includes(c[LAYER_KEY]) ? c[LAYER_KEY] : 'auto', options: [{ v: 'auto', label: `auto (${defaultLayer(ent)})` }, ...LAYERS.map((v) => ({ v, label: v }))],
       hint: 'which selection layer it is on: each person chooses in Select ▾ which layers their clicks can land on (the Hierarchy selects anything). auto = by kind; anything riding an avatar is on people' },
@@ -611,7 +612,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'disabled', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -1086,6 +1087,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
         else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
+        else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
         else if (k === 'layer') { const v = String(raw ?? 'auto'); if (v !== 'auto' && !LAYERS.includes(v)) { errors.push(`flags.layer: one of auto, ${LAYERS.join(', ')}`); break; } flagsComp(LAYER_KEY, v === 'auto' ? null : v); }
         else if (k === 'label') { const s = String(raw ?? '').trim(); flagsComp('label', s ? s.slice(0, 80) : null); }
         else if (k === 'description') { const s = String(raw ?? '').trim(); flagsComp('description', s || null); }

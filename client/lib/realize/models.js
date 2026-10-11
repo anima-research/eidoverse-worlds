@@ -37,7 +37,7 @@ import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn } from './models_field.js';
 
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 
@@ -751,6 +751,12 @@ bus.on('myview', ({ id }) => applyHidden(id));
 
 function onComp(id, type) {
   syncComps(id);
+  // switched off or back on: the thing and everything under it go (deepest first) or come back (the top first)
+  if (type === 'disabled') { const E = state.st.entities; const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });
+    const order = [id, ...under]; const off = offIn(E, id); if (off) order.reverse();
+    for (const k of order) { if (!off) indexFoldParent(k); reconcileId(k); }   // back on: the parent index first, so each load re-seats what rides it
+    if (!off) for (const k of under) execMount(k);   // (a no-op until both ends are realized; the load's own callback finishes it)
+    bus.emit('disabled-changed', { id }); return; }
   const data = comps.get(id)?.[type] ?? null;
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
@@ -1041,7 +1047,7 @@ export const residencyDebug = () => {
 function reconcileId(id) {
   const ent = state.st.entities[id];
   const t = tracked.get(id);
-  if (!ent) { if (t || entities.has(id)) retire(id); return; }
+  if (!ent || offIn(state.st.entities, id)) { if (t || entities.has(id)) retire(id); return; }
   const kind = kindOf(ent);
   if (!t) { CREATE[kind](id, ent); return; }
   if (t.kind !== kind || (kind === 'model' && t.lib !== ent.lib)) {

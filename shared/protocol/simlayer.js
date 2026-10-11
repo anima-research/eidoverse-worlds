@@ -32,7 +32,7 @@ export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
 export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.build;
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
-const PHYSICAL = new Set(["transform", "parent", "model", "physics"]);
+const PHYSICAL = new Set(["transform", "parent", "model", "physics", "disabled"]);   // disabled: switching off takes the body (and its subtree) out, on puts it back
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
 export function worldPose(st, id, depth = 0) {
@@ -62,8 +62,11 @@ function fixedSet(st) {
   for (const id of Object.keys(st.entities)) for (let p = up(id), n = 0; p && n++ < 32; p = up(p)) if (lockedC(st.entities[p]?.c)) { fixed.add(id); break; }   // under a lock
   return fixed;
 }
+// switched off (componentspec disabled), itself or anything it hangs under: no body, no collider
+export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
 function engineEntity(st, id, models = MODELS, fixed = null) {
   const e = st.entities[id]; if (!e || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
+  if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)
   return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),

@@ -41,6 +41,7 @@ import { structureTools, currentTool as structureTool, setTool as setStructureTo
 import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
+import { offIn } from './realize/models_field.js';
 import { schemaFor, commitEdit, commitMany, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
@@ -260,8 +261,10 @@ function hierarchyFields() {
     if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
     const id = t.id; const bag = comps.get(id) ?? world[id]?.comp ?? {};
     const badges = hopts.kinds ? badgesFor(id) : [];   // what it carries (grabbable · physics) is 'show kinds'; state badges below always show
-    if (!entities.get(id)) badges.unshift('loading…');
+    const off = offIn(world, id);   // switched off (itself or above): not loaded, so not 'loading…'
+    if (!entities.get(id) && !off) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
+    if (off) badges.push(world[id]?.comp?.disabled === true ? 'off' : 'off (above)');
     const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     // a child of a locked thing is held by that lock (the authority refuses moving it: "it rides X, which is locked"), so
@@ -272,7 +275,7 @@ function hierarchyFields() {
     return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock, mine: isMineHidden(id),
       ...(bag.lock ? { lockLevel: lockLevelOf(bag.lock) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
       lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id, bag.lock)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
-      kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
+      kids: t.kids, open: t.open, ...(t.dim || off ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open; a switched-off row is dim too
   });
   for (const r of rows) {
     if (String(r.id).startsWith('rider:') || String(r.id).startsWith('comp:')) continue;
@@ -288,6 +291,7 @@ function hierarchyFields() {
       ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
       { k: 'myhide', label: r.mine ? 'show in my view' : 'hide in my view (only you)' },
       { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'make visible to everyone' : 'make invisible to everyone' },
+      { k: 'off', label: world[r.id]?.comp?.disabled === true ? 'switch on' : 'switch off (for everyone)' },
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
   }
@@ -361,6 +365,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       const was = isFolded(id); for (const k of deep ? [id, ...descendantsOf(id)] : [id]) setFolded(k, !was); saveFolds(); break; }
     case 'fold:all-open': case 'fold:all-shut': { const shut = action.endsWith('shut'); for (const k of Object.keys(state.st.entities ?? {})) setFolded(k, shut); saveFolds(); repaintAll(); return; }
     case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', comps.get(id)?.hidden !== true); break; }
+    case 'off': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.disabled', state.st.entities[id]?.comp?.disabled !== true); break; }
     case 'duplicate': duplicate(payload ?? sel); break;
     case 'step': {   // ↑/↓ through the rows as painted
       const i = visibleRows.indexOf(sel);
@@ -613,10 +618,11 @@ function lastChange(id) {
   return v.created ? `made by ${Edits.nameOf(v.by)} · ${ago(v.ts)}` : `${Edits.nameOf(v.by)} · ${sec?.title ?? comp} · ${ago(v.ts)}`;
 }
 
+const thingName = (id) => { const l = comps.get(id)?.label ?? state.st.entities[id]?.comp?.label; return typeof l === 'string' && l ? l : id; };
 function inspectorFields() {
   if (worldSel) return worldFields();
   const id = sceneSelected();
-  if (!id || !entities.has(id)) return [{ t: 'info', label: 'selection', value: 'nothing selected — click a thing, a row in the hierarchy, or World for the sky and ground' }];
+  if (!id || (!entities.has(id) && !offIn(state.st.entities, id))) return [{ t: 'info', label: 'selection', value: 'nothing selected — click a thing, a row in the hierarchy, or World for the sky and ground' }];
   const ids = selection();
   if (ids.length > 1) return multiFields(ids);
   const obj = entities.get(id); const meta = entityMeta.get(id) ?? {}; const bag = comps.get(id) ?? {};
@@ -624,6 +630,11 @@ function inspectorFields() {
   // while the GLB loads (scenegraph guards the same seam)
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
   const idRow = { t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this, so it never changes, even when you rename it (like a Maya node\'s UUID)' };
+  if (!obj && offIn(state.st.entities, id)) {   // switched off: nothing loaded, so no transform to show; the way back on
+    const self = state.st.entities[id]?.comp?.disabled === true; let up = id; if (!self) for (let k = state.st.entities[id]?.parent?.to; k; k = state.st.entities[k]?.parent?.to) if (state.st.entities[k]?.comp?.disabled === true) { up = k; break; }
+    return [{ t: 'info', label: 'name', value: thingName(id) }, idRow,
+      { t: 'info', label: 'state', value: self ? 'switched off: nobody downloads, sees or touches it' : `switched off with ${thingName(up)}, which it hangs under` },
+      ...(self ? [{ t: 'btn', k: 'hoff', label: 'switch it back on', icon: 'power' }] : [{ t: 'btn', k: `selup:${up}`, label: `select ${thingName(up)}` }])]; }
   if (!obj) return [idRow, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
   const locked = !!bag.lock;
   const wp = obj.getWorldPosition(_wp);
@@ -643,13 +654,15 @@ function inspectorFields() {
     // (hidden in MY view only; the Hierarchy's eye is the same switch) and the padlock. 'disable' waits on its rules.
     let nameRow = null;
     for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') nameRow = r; else f.push(r); } }
-    { const mine = isMineHidden(id), lk = comps.get(id)?.lock;
+    { const mine = isMineHidden(id), lk = comps.get(id)?.lock, offNow = state.st.entities[id]?.comp?.disabled === true;
       const line = [
         ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }] : []),
         { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn',
           hint: mine ? 'Hidden in YOUR view only; everyone else still sees it. Click to show it again.' : 'Hide it in YOUR view only. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
         { t: 'btn', k: 'hlock', icon: lk ? 'lock' : 'lockOpen', label: '', on: !!lk, bar: true, deskOnly: true, cls: 'sp-iconbtn',
           hint: lk ? 'Locked: nobody moves, replaces or removes it until it is unlocked. Click to unlock.' : 'Lock it: nobody moves, replaces or removes it until it is unlocked (sitting on it and content edits stay open).' },
+        { t: 'btn', k: 'hoff', icon: 'power', label: '', on: offNow, bar: true, deskOnly: true, cls: 'sp-iconbtn',
+          hint: offNow ? 'Switched off: nobody downloads, sees or touches it, and it has no physics. Click to switch it back on.' : 'Switch it off for everyone: it stays in the Hierarchy as a link, but nobody downloads, sees or touches it until it is switched on again (what hangs under it goes with it).' },
       ];
       f.unshift(...line); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {
@@ -745,6 +758,9 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
   if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !comps.get(id)?.lock); return; }
+  if (action.startsWith('selup:')) { sceneSelect(action.slice(6)); return; }
+  if (action === 'hoff' && id && id !== WORLD_ID) { const on = state.st.entities[id]?.comp?.disabled === true; const r = commitEdit(id, 'flags.disabled', !on);
+    if (r?.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); else flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }
   if (action === 'ed:home.sethere') { void Edits.setHomeHere([id]); return; }   // the Home card's button: where it is now (editwrites)   // the grip editor (gripedit.js)
@@ -1231,6 +1247,7 @@ export function initEditPanels() {
     sceneSelect(child);
   });
   bus.on('entity', () => { if (extra.size) syncOutlines(); });
+  bus.on('disabled-changed', () => repaintAll());   // switched off or on: the Inspector and the Hierarchy say so at once
   bus.on('edit-mode', (on) => { if (!on) { clearExtras(); armingRef = null; worldSel = false; } });
   setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo

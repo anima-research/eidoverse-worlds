@@ -38,12 +38,16 @@ import { P } from '../scheduler.js';
  *  model. One answer for planReconcile and models.js alike. */
 export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? 'empty' : 'model');
 
+/** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider (R 10-11:
+ *  "present in the world as links, but not downloaded… until someone re-enables it"). Same rule as the engine's offChain. */
+export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k = stEntities[k]?.parent?.to, n++) if (stEntities[k]?.comp?.disabled === true) return true; return false; }
+
 export function planReconcile(stEntities, realized) {
   const create = [];
   const retire = [];
   for (const [id, view] of realized) {
     const ent = stEntities[id];
-    if (!ent) { retire.push(id); continue; }
+    if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
     const foldedKind = kindOf(ent);
     if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib)) {
       retire.push(id);
@@ -51,7 +55,7 @@ export function planReconcile(stEntities, realized) {
     }
   }
   for (const [id, ent] of Object.entries(stEntities)) {
-    if (!realized.has(id)) create.push({ id, ent });
+    if (!realized.has(id) && !offIn(stEntities, id)) create.push({ id, ent });
   }
   return { create, retire };
 }

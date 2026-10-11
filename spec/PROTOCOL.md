@@ -178,7 +178,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, socket?}`,
-  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
+  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`, `hidden`, `disabled`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
