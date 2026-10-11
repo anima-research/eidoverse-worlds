@@ -281,12 +281,23 @@ function heldPose(id, h, obj) {
   obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq);
   return { p: _tp.copy(hand).sub(_held), q: null };
 }
+// R 10-10 evening: a thing held with no grip (or carried in both arms) kept its world orientation as she turned. It now
+// keeps the turn it had relative to the holder's body when it was taken (yaw only: the body turns about up).
+const heldTurn = new Map();   // `${id}|${by}` → the thing's rotation in the holder's yaw frame
+const _bq = new THREE.Quaternion(), _bodyQ = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+function bodyYawQ(by) { const av = avatarOf(by); if (!av?.root) return null; av.root.getWorldQuaternion(_bq);
+  const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_bq); return _bodyQ.setFromAxisAngle(_up, Math.atan2(f.x, f.z)); }
 function drawHeld() {
   const now = performance.now();
+  for (const k of heldTurn.keys()) { const [id, by] = k.split('|'); if (holds[id]?.by !== by) heldTurn.delete(k); }
   for (const [id, h] of Object.entries(holds)) {
     if (pres?.bodies?.[id]) continue;              // thrown or dropped: the launch is folded, the flight draws it
     const obj = entities.get(id); if (!obj) continue;
     const at = heldPose(id, h, obj); if (!at) continue;
+    if (!at.q) { const bq = bodyYawQ(h.by);
+      if (bq) { const key = `${id}|${h.by}`; let r = heldTurn.get(key);
+        if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
+        at.q = bq.clone().multiply(r); } }
     const pull = pulls.get(id);
     if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else { const e = 1 - (1 - k) ** 3; at.p.lerpVectors(pull.from, at.p, e); } }
     setWorldPose(obj, at.p, at.q);

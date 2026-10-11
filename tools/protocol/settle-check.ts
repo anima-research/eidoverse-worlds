@@ -31,5 +31,27 @@ for (const carries of [false, true]) { const W = carries ? "tray" : "book";
   const m = st(W).entities.mid.c; const fell = (g.notes ?? []).some((n) => n.fell?.includes("mid"));
   if (!carries) ok(stacked && g.ok && fell && !m.parent && m.transform.pos[1] < 0.05, "SE3 picking up the bottom of a stack takes that one: what the physics stacked on it falls off and lands (a book from a pile)", { stacked, grab: g.ok ?? g.refused, fell, mid: m.transform.pos, parent: m.parent });
   else ok(stacked && g.ok && !fell && m.parent?.to === "bot", "SE4 grabbable.carries ('can carry other entities', a tray): what rests on it comes along", { stacked, grab: g.ok ?? g.refused, fell, parent: m.parent }); }
+// R 10-10 evening (the gym log, 04:23Z): she picked up pyr-1; what was on it fell, and the settle parented it straight
+// back ONTO pyr-1, still standing in the log where it was picked up. She carried the stack off; thrown, the riders were
+// rigid children of the thrown crate and sank into the ground with it.
+{ const W = "held"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  // the gym's shape: 'top' sits across l and r; l is taken; top drops onto r and the floor-high step beside it ('step', as
+  // high as l), so its footprint is level with where l still stands in the log
+  box(W, "l", [-0.31, 0, 0]); box(W, "r", [0.31, 0, 0]); box(W, "step", [-0.31, 0, 0.61]); box(W, "top", [0, 0.6, 0.3]);
+  call(W, "vic", "move", { to: [-0.31, 0, -0.75] }); const g = call(W, "vic", "grab", { id: "l" });
+  T += 6000; call(W, "vic", "look", {}); const t = st(W).entities.top.c;
+  ok(g.ok && t.parent?.to !== "l", "SE5 what falls off a thing I'm holding never settles back onto it (it still stands in the log where I took it)", { grab: g.ok ?? g.refused, parent: t.parent, pos: t.transform.pos });
+  const th = call(W, "vic", "throw", { id: "l", v: [0, 2, 2] }); T += 8000; call(W, "vic", "look", {});
+  const s2 = st(W); const lowest = Math.min(...["l", "r", "top"].map((k) => s2.entities[k].c.transform.pos[1]));
+  ok(th.ok && lowest > -0.05, "SE5b …and thrown, nothing ends up under the ground", { throw: th.ok ?? th.refused, lowest }); }
+for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "bot", [0, 0, 0]); box(W, "mid", [0, 0.6, 0]); call(W, "rowan", "set", { id: "bot", component: "grabbable", value: { carries: true } });
+  call(W, "vic", "move", { to: [0, 0, -0.7] }); call(W, "vic", "punt", { id: "mid", v: [0, 1, 0] }); T += 6000; call(W, "vic", "look", {});
+  const stacked = st(W).entities.mid.c.parent?.to === "bot";
+  call(W, "vic", "move", { to: [0, 0, -0.75] }); const g = call(W, "vic", "grab", { id: "bot" });
+  const r = call(W, "vic", verb, verb === "throw" ? { id: "bot", v: [0, 2, 3] } : { id: "bot" }); T += 8000; call(W, "vic", "look", {});
+  const s3 = st(W), m = s3.entities.mid.c, b = s3.entities.bot.c;
+  ok(stacked && g.ok && r.ok && (r.notes ?? []).some((n) => n.flying?.includes("mid")) && m.transform.pos[1] > -0.05 && b.transform.pos[1] > -0.05,
+    `SE6 ${verb === "throw" ? "a thrown" : "a dropped"} tray's load flies with it as its own body and lands on (not under) the ground`, { stacked, grab: g.ok ?? g.refused, r, mid: m.transform.pos, midParent: m.parent, bot: b.transform.pos }); }
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

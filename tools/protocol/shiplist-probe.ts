@@ -28,6 +28,7 @@ const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("shiplist", {
   },
 });
 const { check: check0, tally } = mkCheck();
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));
 const disk = () => fold(entries());
@@ -49,7 +50,8 @@ try {
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
 
   // each stage stands alone: a stage that throws is a FAIL of that stage, and the next still runs (the base: every stage red)
-  const stage = async (id: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
+  const ONLY = process.env.STAGES ? new Set(process.env.STAGES.split(",")) : null;   // STAGES=HT,HP runs just those (a quick look; the suite runs all)
+  const stage = async (id: string, fn: () => Promise<void>) => { if (ONLY && !ONLY.has(id)) return; try { await fn(); } catch (e) { check(`${id} (the stage threw)`, false, String(e?.message ?? e)); } };
   // ---- D: the authority, as a desktop visitor meets it ----
   const me = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
   const at = [me[0] + 1.2, me[2]];
@@ -285,6 +287,21 @@ try {
   check("HP1 held in both arms it sits against my body, not around it (its near side at least 5 cm out from my centre line)", r?.grab && r.held.flat - 0.35 >= 0.05, r);
   check("HP2 put down, it rests ON the floor (its centre one radius up), in front of me and clear of my body", r?.put && Math.abs(r.down.y - 0.35) < 0.03 && r.down.flat >= 0.35 + 0.32, r);
   check("HP3 …and putting it down does not shove me (the camera rides my body)", r?.put && r.shoved < 0.15, { shoved: r?.shoved });
+  });
+  // ---- HT: a held thing turns with me (R, 10-10 evening: "they don't rotate with the avatar, they're always oriented the same direction") ----
+  await stage("HT", async () => {
+  const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h * 0.7, c.myState.pos.z + d.z / h * 0.7];`);
+  const htMade = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'htcrate', model: '${CRATE}', components: { label: 'Turn crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.25 } } });`);
+  check("(setup) a crate 0.7 m in front of me", htMade?.ok, htMade);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('htcrate'))`); await sleep(1200);
+  const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
+    const yawOf = (o) => { o.updateWorldMatrix(true, false); const f = new T.Vector3(0, 0, 1).applyQuaternion(o.getWorldQuaternion(new T.Quaternion())); return Math.atan2(f.x, f.z); };
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)); const o = w.entities.get('htcrate'), me = t.myAvatar?.()?.root ?? null; if (!o) return { noCrate: true, has: w.entities.has('htcrate') };
+    const g = await t.physicsApi.grab('htcrate'); await new Promise((z) => setTimeout(z, 1200));
+    const c0 = yawOf(o), b0 = me ? yawOf(me) : null; c.myState.yaw += Math.PI / 2; await new Promise((z) => setTimeout(z, 1200));
+    const c1 = yawOf(o), b1 = me ? yawOf(me) : null; await t.physicsApi.put('htcrate');
+    return { grab: !!g?.ok, why: g?.refused ?? g?.why ?? null, body: b0 == null ? null : +wrap(b1 - b0).toFixed(3), crate: +wrap(c1 - c0).toFixed(3) };`);
+  check("HT1 holding a crate, I turn a quarter: it turns the same quarter with me (within 0.1 rad)", r?.grab && r.body != null && Math.abs(r.body) > 1.2 && Math.abs(wrap(r.crate - r.body)) < 0.1, r);
   });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----

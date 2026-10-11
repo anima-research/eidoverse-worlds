@@ -2905,7 +2905,10 @@ function settleSim(w) {
     // ON = what its footprint touches (R 10-10: a pyramid's top crate sits over the gap between two crates; read under its
     // centre, the gap led down to the crate a row lower, and the top crate was parented 0.5 m above it: carry that one
     // and it rode along in mid-air). Nothing within 3 cm under its footprint: not parented.
+    // and never onto a HELD thing (R 10-10 evening): a held thing still stands in the log where it was picked up, so the
+    // crates that fell off it settled back onto it and were carried off in her hands
     const fam = new Set([r.id, ...descendants(st2, r.id)]); const bx = aabb(st2, r.id);
+    for (const k of Object.keys(w.presence.holds)) if (st2.entities[k]) for (const d of [k, ...descendants(st2, k)]) fam.add(d);
     const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
     if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
     const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
@@ -3428,6 +3431,14 @@ function launch(w, actor, a, verb, g = null) {
   if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
+  // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
+  const riders = []; { const st = w.state(); const t = worldT(st, a.id);
+    const at = scratch(st, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.slice(), q: h.pose.q ?? t.q, scale: t.scale })]);
+    for (const k of descendants(st, a.id)) { if (st.entities[k]?.c.physics?.kind !== "dynamic" || w.presence.holds[k]) continue; const tk = worldT(at, k);
+      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: v.slice(), handled: h.handled } });
+      riders.push(k); } }
+  if (riders.length) notes.push({ flying: riders, why: `they were riding on ${a.id}; they fly with it` });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
