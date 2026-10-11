@@ -45,6 +45,21 @@ import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
+/** Which channels a whole-entity motion moves: { t: Set of translate axes, r: Set of rotate axes }. */
+export function motionChannels(m) {
+  const all = new Set(['x', 'y', 'z']), none = () => new Set();
+  const letter = (axis, dflt) => { const v = typeof axis === 'string' ? AXES[axis.toLowerCase()] : Array.isArray(axis) ? axis : AXES[dflt];
+    if (!v) return all; const nz = [0, 1, 2].filter((i) => Math.abs(v[i]) > 1e-9); return nz.length === 1 ? new Set(['xyz'[nz[0]]]) : all; };
+  const pivoted = Array.isArray(m?.pivot) && m.pivot.some((n) => Math.abs(n) > 1e-9);
+  switch (m?.type) {
+    case 'spin': return { t: pivoted ? all : none(), r: letter(m.axis, 'y') };
+    case 'pendulum': return { t: pivoted ? all : none(), r: letter(m.axis, 'x') };
+    case 'bob': return { t: letter(m.axis, 'y'), r: none() };
+    case 'orbit': return { t: new Set(['x', 'z']), r: m.face === false ? none() : new Set(['y']) };
+    case 'path': return { t: all, r: m.rot === false ? none() : new Set(['y']) };
+    default: return { t: all, r: all };
+  }
+}
 export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
 // a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
 // tools/protocol/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
@@ -157,7 +172,12 @@ export function inspectSchema(ent, id, live = {}) {
   }
   const driven = c.motion?.type && !c.motion.part ? 'motion' : null;   // a whole-entity motion composes onto this REST pose
   // drivenBy: the card's own title (a pendulum's card is Pendulum), so the field's ~ names what you'll land on
-  if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); }
+  // only the channels the motion actually moves (R 10-11: "spin doesn't impact scale or translate, and only the rotation axes
+  // in question"); an unknown type marks every channel it might own
+  if (driven) { const ch = motionChannels(c.motion);
+    for (const f of [...transform, ...rotation]) { if (f.t !== 'num') continue; const lb = String(f.label ?? '');
+      const hit = /^translate ([xyz])$/.test(lb) ? ch.t.has(lb.slice(-1)) : /^rotate ([xyz])$/.test(lb) ? ch.r.has(lb.slice(-1)) : /^quat /.test(lb) ? ch.r.size > 0 : lb === 'heading' ? ch.r.has('y') : false;
+      if (hit) { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); } } }
   if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
   groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
   if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
@@ -266,8 +286,10 @@ export function inspectSchema(ent, id, live = {}) {
       fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: m.type, options: types.map((v) => ({ v, label: v })) });
       if (['pendulum', 'spin', 'bob'].includes(m.type)) {
         const ax = axisName(m, m.type === 'pendulum' ? 'x' : 'y');
-        const opts = Object.keys(AXES).map((v) => ({ v, label: v }));
-        fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: ax === 'custom' ? [...opts, { v: 'custom', label: 'custom' }] : opts });
+        // x, y, z only (R 10-11: "not sure why we have a negative axis as an option when we can do negative degrees", and the
+        // authority refused '-x'); a stored negative or custom axis still shows as itself
+        const opts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
+        fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: opts.some((o) => o.v === ax) ? opts : [...opts, { v: ax, label: ax }] });
       }
       switch (m.type) {
         case 'pendulum':

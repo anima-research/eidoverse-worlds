@@ -51,7 +51,9 @@ console.log("\nschema is a function of the record:");
   const l = inspectSchema(lamp, "lamp");
   check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.important")?.value === true && fieldAt(l, "light.range")?.value === 6);
   const w = inspectSchema(swing, "s");
-  check("a driven thing: transform tinted, rest pose", fieldAt(w, "pos.x")!.driven === "motion" && fieldAt(w, "pos.x")!.value === 5);
+  // a pendulum about x (no pivot) swings rotate x: that channel is driven; its position isn't, and shows the rest pose
+  const wRot = w.groups.flatMap((g: any) => g.fields).find((f: any) => f.label === "rotate x");
+  check("a driven thing: the channel its pendulum swings is tinted (rotate x), its position is not, and shows the rest pose", wRot?.driven === "motion" && !fieldAt(w, "pos.x")!.driven && fieldAt(w, "pos.x")!.value === 5, JSON.stringify({ rot: wRot?.driven, pos: fieldAt(w, "pos.x")?.driven }));
   check("motion group covers the whole comp AND the part", fieldAt(w, "motion.amp")?.t === "num" && fieldAt(w, "motion.plank|degPerSec")?.value === 60);
   check("axis vector reads back as a name", fieldAt(w, "motion.axis")?.value === "x");
   const m = inspectSchema(cargo, "k");
@@ -274,6 +276,15 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   check("opacity above 1 is refused before it is sent", !bad.ops.length && /opacity/.test(bad.errors[0] ?? ""));
   const back = editOps(ov, "m1", { "hmat.reset": true }, live);
   check("'back to the model's own' removes the override", back.ops.length === 1 && /unset|delete/.test(back.ops[0].verb ?? ""), JSON.stringify(back));
+  { const sp = { id: "s1", lib: "x.glb", comp: { transform: { pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, motion: { type: "spin", axis: "y", degPerSec: 45 } } };
+    const g = inspectSchema(sp, "s1", {}).groups; const nums = g.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && /^(translate|rotate|scale) [xyz]$/.test(f.label ?? ""));
+    const drv = nums.filter((f: any) => f.driven).map((f: any) => f.label).sort();
+    check("a spin about y marks only rotate y as driven (not translate, not scale, not the other rotations)", JSON.stringify(drv) === JSON.stringify(["rotate y"]), JSON.stringify(drv));
+    const ax = g.flatMap((x: any) => x.fields).find((f: any) => f.t === "enum" && /axis/.test(f.label ?? ""));
+    check("the motion axis menu offers x, y, z (a negative rate turns it the other way)", JSON.stringify(ax?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]), JSON.stringify(ax?.options));
+    const bob = { ...sp, comp: { ...sp.comp, motion: { type: "bob", amplitude: 0.3 } } };
+    const bd = inspectSchema(bob, "s1", {}).groups.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && f.driven).map((f: any) => f.label).sort();
+    check("a bob marks only translate y", JSON.stringify(bd) === JSON.stringify(["translate y"]), JSON.stringify(bd)); }
   const two = { materials: [{ slot: "material-020", name: "Material.020", color: 0x8a5a2b, roughness: 0.8, metalness: 0 }, { slot: "brass-trim", name: "Brass_trim", color: 0xb08d57, roughness: 0.3, metalness: 1 }] };
   const sl = inspectSchema(plain, "m1", two); const own = sl.groups.find((g: any) => g.group === "hmat").fields.filter((f: any) => String(f.k).startsWith("own|"));
   check("its own materials read as people would say them: 'Material.020' is 'material 1', 'Brass_trim' stays 'Brass trim'; each a read-only swatch", own.map((f: any) => f.label).join("|") === "material 1|Brass trim" && own.every((f: any) => f.t === "color" && f.disabled), own.map((f: any) => f.label));
