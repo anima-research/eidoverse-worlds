@@ -80,7 +80,7 @@ function videoFields() {
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
     { t: 'check', k: 'msaa', label: 'antialiasing (on reload)', value: msaaOn },
     // batch 2 (R 10-07): the safety row rides the same VR quad (the desk has its own 🛡 safety section, below)
-    { t: 'check', k: 'untrusted', label: `🛡 ${UNTRUSTED_WORDS.label.toLowerCase()}`, value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
+    { t: 'check', k: 'untrusted', label: UNTRUSTED_WORDS.label.toLowerCase(), value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
   ];
 }
 function videoDispatch(k, v) {
@@ -180,9 +180,10 @@ export function initVideoPanel() {
     if (body.dataset.init) return;
     body.dataset.init = '1';
     body.appendChild(checkRow(UNTRUSTED_WORDS.label, UNTRUSTED_WORDS.hint, allowUntrusted(), (on) => {
-      setAllowUntrusted(on); flashHint(on ? '🛡 links from any site play for you now' : '🛡 only this server\'s files and trusted hosts play for you');
+      setAllowUntrusted(on); flashHint(on ? 'links from any site play for you now' : 'only this server\'s files and trusted hosts play for you');   // no emoji outside Chat and Emotes (R)
     }));
-    const p = document.createElement('div'); p.className = 'row wide'; p.style.cssText = 'font-size:11px;color:var(--dim);line-height:1.4';
+    // the explanation runs the panel's full width (R 10-10: it was squeezed into the label column, a word a line)
+    const p = document.createElement('div'); p.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:2px 8px 6px;font-size:11px;color:var(--dim);line-height:1.4';
     p.textContent = UNTRUSTED_WORDS.hint; body.appendChild(p);
   }, { id: 'safety', host: 'settings' });
 }

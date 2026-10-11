@@ -26,7 +26,7 @@ const EMOJI_ICON = {
   '👋': 'hand-waving',
   '🐞': 'bug',
   '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun',
-  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality',
+  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality', '🛡': 'shield',
 };
 // The load list is INJECTED, not imported: assets.js reaches the engine (GLTFLoader),
 // and ui.js is shared with a client that has no renderer and therefore never loads an
@@ -890,14 +890,15 @@ export function toggleEMenu(force) {
 // left of a right one, under a top rail, over a bottom one. Clamped to the viewport. Never remembered: a dropdown
 // hangs from what opened it.
 function anchorBeside(node) {
-  const h = el.hud.getBoundingClientRect();
+  // flush with the RAIL's box, not the glyph inside it (R 10-10: it sat 4 px low and 2 px out, which read as an error)
+  const h = el.dock.getBoundingClientRect();
   const edge = el.dock.dataset.edge || 'left';
   node.style.left = node.style.top = '0px'; node.style.right = node.style.bottom = 'auto';
   const r = node.getBoundingClientRect();
-  let x = h.right + 6, y = h.top;
-  if (edge === 'right') x = h.left - 6 - r.width;
-  else if (edge === 'top') { x = h.left; y = h.bottom + 6; }
-  else if (edge === 'bottom') { x = h.left; y = h.top - 6 - r.height; }
+  let x = h.right, y = h.top;
+  if (edge === 'right') x = h.left - r.width;
+  else if (edge === 'top') { x = h.left; y = h.bottom; }
+  else if (edge === 'bottom') { x = h.left; y = h.top - r.height; }
   node.style.left = `${Math.round(Math.max(4, Math.min(innerWidth - r.width - 4, x)))}px`;
   node.style.top = `${Math.round(Math.max(4, Math.min(innerHeight - r.height - 4, y)))}px`;
 }

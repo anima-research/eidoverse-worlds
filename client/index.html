@@ -160,7 +160,7 @@ button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--f
 /* unshared local changes are pending until committed */
 button.dirty { border-color: var(--warn); color: var(--warn); }
 
-input[type=text], input[type=search], input[type=number], input:not([type]) {
+input[type=text], input[type=search], input[type=number], input:not([type]), textarea {   /* textarea too (R 10-10: World Settings' description was the browser's white box) */
   font: var(--fs-sm) var(--font);
   color: var(--fg);
   background: var(--well);
@@ -168,7 +168,8 @@ input[type=text], input[type=search], input[type=number], input:not([type]) {
   border-radius: 5px;
   padding: 6px 8px;
 }
-input::placeholder { color: var(--dim); }
+input::placeholder, textarea::placeholder { color: var(--dim); }
+textarea { resize: vertical; }
 select {
   font: var(--fs-xs) var(--font); background: var(--well); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 5px; padding: 5px;
@@ -2376,8 +2377,19 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 .rp-filters { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .rp-filters .pm-chip { padding: 3px 9px; font-size: var(--fs-xs); }
 .rp-ended summary { cursor: pointer; color: var(--dim); font-size: var(--fs-xs); margin-top: 10px; }
-.rp-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; font-size: var(--fs-sm); flex-wrap: wrap; }
-.rp-field.rp-wide { flex-direction: column; align-items: stretch; }
+.rp-field { display: grid; grid-template-columns: 12em auto minmax(0, 1fr); align-items: center; gap: 4px 10px; margin: 6px 0; font-size: var(--fs-sm); }   /* the label, then its control beside it (R 10-10: inputs were pushed to the far edge) */
+.rp-field > input:not([type=checkbox]):not([type=number]) { grid-column: 2 / -1; width: 100%; box-sizing: border-box; min-width: 0; }   /* a text field runs to the edge; a number keeps its unit beside it */
+.rp-field > input[type=number], .rp-field > select { justify-self: start; max-width: 100%; }
+.rp-field > input[type=number] { width: 8em; box-sizing: border-box; }
+.rp-v3 input { width: 5em; box-sizing: border-box; }
+.rp-field.rp-wide { grid-template-columns: minmax(0, 1fr); }
+/* a dark checkbox, the panels' own ink (R 10-10: the browser's white one is "unconventional for the style") */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0; flex: none; vertical-align: middle; cursor: pointer;
+  border: 1px solid var(--edge-hi, #4a5a5a); border-radius: 3px; background: var(--well, #0b1414) center / 11px 11px no-repeat; }
+input[type=checkbox]:checked { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-offset: 1px; }
 .rp-field textarea { width: 100%; box-sizing: border-box; }
 .rp-v3 { display: inline-flex; gap: 4px; } .rp-v3 input { width: 4.5em; }
 .rp-ro { color: var(--dim); font-size: var(--fs-xs); font-style: italic; margin: 8px 0 0; }
