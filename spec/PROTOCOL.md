@@ -392,9 +392,12 @@ owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
 
 **Locks.** `lock: true` on an entity binds everyone, its locker and owners
-included: no write may move, replace or delete it or anything attached to
-it (its `transform`, `parent` or `model`, or the entity itself). Edits that
-don't relocate it stay open. Anyone who may delete the `lock` component
+included: no write may change it or anything attached to it — no component
+set, added or removed, no move, no new parent, no new model, no removal —
+except the lock itself (by someone who may lift it). Use stays open: a
+handler's own writes may change a locked thing's state (an `openable`, a
+`label`) but never its `transform`, `parent` or `model`; sitting, scripts'
+reads and a new thing placed on top are open too. Anyone who may delete the `lock` component
 (builders and owners) may instead send a request with `throughLock: true`;
 the log records only the edit. A lock binds authoring, not motion. A lock
 has a level: `true` is builder level, and `{rank: "builder" | "moderator" |

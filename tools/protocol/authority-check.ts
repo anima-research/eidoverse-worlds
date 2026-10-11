@@ -92,10 +92,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("bob", "delete", { id: "cup", component: "parent" })) === "locked", "P9 …nor lifted off (deleting its parent)");
   ok(code(call("bob", "set", { id: "bell", component: "transform", value: { pos: [0, 0.6, 0] } })) === "locked", "P10 a grandchild is bound too (the lock is two levels up)");
   // what stays open: everything that doesn't relocate it (v1: "sit / use / motion / other comps all stay open while locked")
-  ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table" }).ok && call("bob", "set", { id: "cup", component: "label", value: "a crate" }).ok, "P11 a label stays open (the locker's and a builder's)");
-  ok(call("olive", "set", { id: "tbl", component: "motion", value: { type: "spin", axis: [0, 1, 0], amp: 0.2, period: 4 } }).ok, "P12 motion stays open (v1's matrix; a motion animates in place)");
-  ok(call("olive", "set", { id: "tbl", component: "light", value: { range: 4 } }).ok && call("olive", "set", { id: "tbl", component: "physics", value: { kind: "static" } }).ok, "P13 a light and physics stay open (neither relocates it)");
-  ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } } }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 reactions stay open, and a visitor may still `use` it");
+  // a lock covers EVERYTHING (R 10-11 16:21; review C-S1-1): every component, on it and on what's attached; use stays open
+  ok(code(call("bob", "set", { id: "tbl", component: "label", value: "the long table" })) === "locked" && code(call("bob", "set", { id: "cup", component: "label", value: "a crate" })) === "locked", "P11 a label is locked too (on it, and on what's attached to it)");
+  ok(code(call("bob", "set", { id: "tbl", component: "motion", value: { type: "spin", axis: [0, 1, 0], amp: 0.2, period: 4 } })) === "locked", "P12 motion is locked");
+  ok(code(call("bob", "set", { id: "tbl", component: "light", value: { range: 4 } })) === "locked" && code(call("bob", "set", { id: "tbl", component: "physics", value: { kind: "none" } })) === "locked"
+    && code(call("bob", "set", { id: "tbl", component: "disabled", value: true })) === "locked" && code(call("bob", "set", { id: "tbl", component: "hidden", value: true })) === "locked", "P13 a light, physics, switching off and hiding are locked (the review's bypass)");
+  ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } }, throughLock: true }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 through the lock a builder sets reactions, and a visitor may still `use` it (use stays open, its label write too)");
+  ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table", throughLock: true }).ok, "P14b the locker edits through it with throughLock");
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
   // throughLock
   { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, throughLock: true });
@@ -107,13 +110,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
   ok(call("bob", "set", { id: "cup2", component: "label", value: "x", throughLock: true }).ok, "P21 throughLock on an edit no lock guards is harmless");
   { // a capability never acts through a lock: a visitor's use of a handler that would move it, flag or not
-    call("bob", "set", { id: "cup2", component: "reactions", value: { nudge: { kind: "set", component: "transform", value: { pos: [0.2, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
+    call("bob", "set", { throughLock: true, id: "cup2", component: "reactions", value: { nudge: { kind: "set", component: "transform", value: { pos: [0.2, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
     const v = call("vic", "use", { id: "cup2", action: "nudge", throughLock: true }), b = call("bob", "use", { id: "cup2", action: "nudge", throughLock: true });
     ok(code(v) === "locked" && /not a handler/.test(v.refused.fix), "P22 a visitor can't move it through a handler with throughLock (they may not remove the lock)", v.refused);
     ok(code(b) === "locked", "P23 …nor can a builder through a handler (throughLock covers your own edits, not a capability)", b.refused); }
   ok(code(call("vic", "delete", { id: "tbl", component: "lock" })) === "rights" && code(call("vic", "set", { id: "cup2", component: "lock", value: true })) === "rights", "P24 a visitor may neither unlock nor lock");
   ok(code(call("olive", "set", { id: "@world", component: "lock", value: true })) === "world", "P25 @world can't be locked (even by its owner)");
-  ok(code(call("bob", "set", { id: "cup2", component: "lock", value: 1 })) === "shape", "P26 the authority writes a lock only as true (to unlock, delete it)");
+  ok(code(call("olive", "set", { id: "tbl", component: "lock", value: 1 })) === "shape", "P26 the authority writes a lock only as true (to unlock, delete it)");
   { call("bob", "set", { id: "cup2", component: "lock", value: true });
     ok(code(call("bob", "set", { id: "cup2", component: "transform", value: { pos: [0.3, 0.75, 0] } })) === "locked", "P27 a builder's own lock binds that builder (the locker, not an owner)"); }
   ok(call("bob", "delete", { id: "tbl", component: "lock" }).ok, "P28 any builder may unlock someone else's lock (olive's)");

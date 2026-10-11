@@ -809,14 +809,13 @@ function guess(s, opts) {
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   system   — the authority's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
 //   founding — the `new` act's first write to @world, by an owner named in genesis, once.
-// What a lock guards (§5, the first protocol's lock matrix): nothing may MOVE, REPLACE or REMOVE a locked thing
-// or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
-// Everything that doesn't relocate it stays open: labels, lights,
-// reactions, sockets, `use`, sitting on it, and motion (the old matrix keeps motion open: "sit / use / motion / other comps
-// all stay open while locked"; today's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
-// physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
-// and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
-const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
+// What a lock guards (§5; R 10-11 16:21, Second Life's Locked): EVERYTHING on the locked thing and on anything attached to
+// it — every component set, added or removed, its place, its parent, its model, its removal — until the lock is lifted
+// (throughLock: a request by someone who may lift it acts through it). The first protocol's matrix left labels, lights,
+// motion, physics and reactions open; review 10-11 C-S1-1 showed what that let a builder do to an owner-locked piece
+// (switch it off, hide it, take its physics away). USE stays open: a lock stops authoring, not using, so a handler's own
+// writes may change a locked thing's state (a door's openable, a label) but never move, re-parent, swap or remove it.
+const RELOCATES = new Set(["transform", "parent", "model"]);   // what even USE may not change on a locked thing (a lock covers everything else for authoring)
 // L7 rate (round-2 review R6): per actor, over a 10 s window by the authority's clock. Counted in ENTRIES and in BYTES, with
 // talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
 // make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
@@ -901,7 +900,12 @@ function admit(w, st, who, ops) {
     lockLevelCheck(w, st, s, who, op, at);
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
-    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp) || op.comp.startsWith("terrain-tile:"))) { // a rest is the engine's word on a released thing: locks guard authored writes
+    // a lock covers EVERYTHING on the thing and on what hangs under it (R 10-11 16:21, Second Life's Locked): every component
+    // set, added or removed, not only where it stands (review 10-11 C-S1-1: a builder could switch off, hide or un-physics an
+    // owner-locked thing). Open still: USE (a reaction's own writes), the engine's rest, the authority's follow-ups, and the
+    // thing's own lock (lockLevelCheck says who may lift it).
+    else if (!made.has(op.id) && !["rest", "system"].includes(cap?.kind) && !(op.comp === "lock" && lockedC(s.entities[op.id]?.c))
+      && (cap?.kind !== "reaction" || op.comp === undefined || RELOCATES.has(op.comp))) {   // use stays open, but no handler moves, re-parents, swaps or removes a locked thing
       // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
       // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
       // put or throw settles it. Its OWN lock still binds, and picking it up off a locked thing is refused at grab.

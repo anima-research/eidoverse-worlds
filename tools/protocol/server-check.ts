@@ -147,9 +147,10 @@ bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300
   ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
-ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't lock-guarded");
+ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).refused?.code === "locked", "S3 a label is lock-guarded too (a lock covers everything, 10-11)");
+ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup", throughLock: true })).ok, "S3 …and Bob, who may lift it, labels through it");
 
-const u = await bob.req("undo", {});
+const u = await bob.req("undo", { throughLock: true });   // the label sits on a locked table: undoing it is an edit too
 ok(u.ok && u.after?.cup && u.after.cup.label === null, "S4 Bob undoes his own last act (the label goes)", u);
 // F2 (decided 10-05): revert goes along rank, never upward. A visitor can't undo Bob's act; an owner may (here the
 // table's lock still stops it, which is the lock doing its job, not rank)
@@ -189,8 +190,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the act tool exposes the protocol's vocabulary (relational place)", dr.content[0].text.slice(0, 200));
   const un0 = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
   ok(un0.isError && /locked/.test(un0.content[0].text), "S5 undoing that place is refused now (the inverse goes through admit: the table is locked)", un0.content[0].text.slice(0, 200));
-  await HANDLERS.act(ag, { verb: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "act");
-  const un = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
+  await HANDLERS.act(ag, { verb: "set", args: { id: "agentcup", component: "label", value: "mine", throughLock: true } }, {} as any, "act");
+  const un = await HANDLERS.act(ag, { verb: "undo", args: { throughLock: true } }, {} as any, "act");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
   // slice 3c: the agent folds the log stream itself (joined replica), never the v1 projection
   ok(ag.replica?.active === true && ag.entities.has("agentcup"), "S5b the agent folds the authority's own stream, and sees what it made there", [ag.replica?.active, [...ag.entities.keys()]]);
