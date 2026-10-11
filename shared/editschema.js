@@ -414,27 +414,35 @@ export function inspectSchema(ent, id, live = {}) {
   }
 
   // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
-  // its model's own materials (live.materials, read-only), and an override whose blank fields mean "the model's own".
+  // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
+  // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
   if (ent.lib) {
     const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
     const own = Array.isArray(live.materials) ? live.materials : [];
-    const hex = (v) => (Number.isInteger(v) ? `#${v.toString(16).padStart(6, '0')}` : '—');
-    const fields = own.slice(0, 8).map((m) => ({ t: 'info', k: `own|${m.slot}`, label: m.name.slice(0, 18), value: `${hex(m.color)} · rough ${m.roughness ?? '—'} · metal ${m.metalness ?? '—'}`, hint: `slot '${m.slot}': the model's own material` }));
+    const label = (m, i) => matLabel(m?.name, i);
+    const fields = own.slice(0, 12).map((m, i) => ({ t: 'color', k: `own|${m.slot}`, label: label(m, i), value: m.color ?? 0xffffff, disabled: true,
+      hint: `The model's own material "${m.name}": roughness ${m.roughness ?? '—'}, metalness ${m.metalness ?? '—'}.` }));
     if (!own.length) fields.push({ t: 'info', k: 'own|none', label: 'model', value: 'its materials show once the model has loaded' });
-    if (!ov) fields.push({ t: 'btn', k: 'override', label: 'override its look…', hint: 'Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model\'s own.' });
-    else {
-      const first = own[0] ?? {};
-      const num = (k, label, hint, lo = 0, hi = 1) => ({ t: 'text', k, label, value: typeof ov[k] === 'number' ? String(ov[k]) : '', placeholder: first[k] != null ? `model's: ${first[k]}` : `model's own`, hint: `${hint} ${lo} to ${hi}; blank keeps the model's own.` });
-      fields.push(
-        { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(ov.color) ? ov.color : (first.color ?? 0xffffff), hint: 'Its base colour. Use ↺ to go back to the model\'s own.' },
+    const block = (pre, o, base, title) => {
+      const num = (k, lab, hint, hi = 1) => ({ t: 'text', k: `${pre}${k}`, label: lab, value: typeof o[k] === 'number' ? String(o[k]) : '', placeholder: base?.[k] != null ? `model's: ${base[k]}` : "model's own", hint: `${hint} 0 to ${hi}; blank keeps the model's own.` });
+      if (title) fields.push({ t: 'info', k: `${pre}head`, label: '', value: title });
+      fields.push({ t: 'color', k: `${pre}color`, label: 'colour', value: Number.isInteger(o.color) ? o.color : (base?.color ?? 0xffffff), hint: "Its base colour." },
         num('roughness', 'roughness', '0 is mirror-smooth, 1 is matte:'),
         num('metalness', 'metalness', '0 is plastic, wood, paint; 1 is bare metal:'),
-        { t: 'color', k: 'emissive', label: 'glow', value: Number.isInteger(ov.emissive) ? ov.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
-        num('emissiveStrength', 'glow amount', 'How bright the glow is:', 0, 20),
+        { t: 'color', k: `${pre}emissive`, label: 'glow', value: Number.isInteger(o.emissive) ? o.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
+        num('emissiveStrength', 'glow amount', 'How bright the glow is:', 20),
         num('opacity', 'opacity', '1 is solid, 0 is invisible:'),
-        { t: 'btn', k: 'reset', label: 'back to the model\'s own', hint: 'Removes the override (the card\'s ✕ does the same).' });
-    }
-    groups.push({ group: 'hmat', label: 'Material', types: ov ? [MATK] : [], fields });
+        { t: 'btn', k: `${pre}reset`, label: "back to the model's own", hint: 'Removes this override.' }); };
+    if (ov) block('', ov, own[0], own.length > 1 ? 'every material' : null);
+    const slotKeys = Object.keys(c).filter((k) => k.startsWith(`${MATK}:`) && c[k] && typeof c[k] === 'object');
+    for (const k of slotKeys) { const slot = k.slice(MATK.length + 1); const at = own.findIndex((m) => m.slot === slot);
+      if (own.length && at < 0) fields.push({ t: 'info', k: `slot|${slot}|gone`, label: slot.slice(0, 18), value: "this model has no such material any more: the override does nothing", hint: `hesperus/material:${slot}` },
+        { t: 'btn', k: `slot|${slot}|reset`, label: 'remove it', hint: 'Removes the override for a material this model no longer has.' });
+      else block(`slot|${slot}|`, c[k], own[at], `${label(own[at], at)} only`); }
+    if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
+    if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
+      fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
+    groups.push({ group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields });
   }
 
   if (c.particles && typeof c.particles === 'object') {
@@ -558,7 +566,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'hesperus/material', ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'hesperus/material', ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -616,6 +624,13 @@ const MACHINE_PART = [/^(tripo_)?(part|mesh|node|object|geometry|group|primitive
  *  ("seat plank"), else its place in the model ("part 2": its index in the
  *  model's named parts when the viewer knows them, else the name's own
  *  trailing number + 1, else its order among this entity's part motions). */
+/** A model material's name for a person: generator names ("Material.020", "material_3", "lambert2") become "material N"
+ *  by its place on the model; real words ("Wood", "Brass_trim") stay. */
+export function matLabel(name, i = 0) {
+  const n = String(name ?? '').trim();
+  if (!n || /^(material|mat|lambert|phong|blinn|standard(surface)?|default(material)?|initialshadinggroup|tripo[_a-z]*|mesh|node)([_.\- ]?\d+)*$/i.test(n) || MACHINE_PART.some((re) => re.test(n))) return `material ${i + 1}`;
+  return n.replace(/[_]+/g, ' ').replace(/\.\d+$/, '').trim().slice(0, 24);
+}
 export function partLabel(name, parts = null, ordinal = 1) {
   const n = String(name);
   if (!MACHINE_PART.some((re) => re.test(n))) return n.replace(/[_]+/g, ' ').trim();
@@ -689,6 +704,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
           sec.title = `Script · ${name}`; sec.fields = [`script.${name}`, `script.json|${inst.key}`]; sec.removable = true;
+        } else if (String(inst.key ?? '').startsWith('hesperus/material:') && g('hmat')) {
+          continue;   // a one-slot override lives inside the Material card
         } else if (inst.key === 'hesperus/material' && g('hmat')) {
           sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
         } else if (inst.key === 'physics' && g('physics')) {
@@ -704,7 +721,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
   }
   // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
   if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
-    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: false, draft: true });
+    const anySlot = Object.keys(ent.comp ?? {}).some((k) => k.startsWith('hesperus/material:'));
+    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
   // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
@@ -1118,16 +1136,18 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'hmat': {
         const MATK = 'hesperus/material';
-        if (k === 'override') { if (c[MATK] == null) comps.set(MATK, {}); break; }
-        if (k === 'reset') { comps.set(MATK, null); break; }
-        const next = comps.get(MATK) ?? JSON.parse(JSON.stringify(c[MATK] ?? {}));
-        if (k === 'color' || k === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
-          if (raw === null || raw === '' ) delete next[k]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[k] = n; else { errors.push(`material.${k}: a colour`); break; } }
-        else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(k)) {
-          const t = String(raw ?? '').trim(); const hi = k === 'emissiveStrength' ? 20 : 1;
-          if (!t) delete next[k]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${k}: a number from 0 to ${hi}, or blank`); break; } next[k] = round(n, 3); } }
+        const m = /^slot\|([^|]+)\|(.+)$/.exec(k); const ck = m ? `${MATK}:${m[1]}` : MATK; const fk = m ? m[2] : k;
+        if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); break; }
+        if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); break; }
+        if (fk === 'reset') { comps.set(ck, null); break; }
+        const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
+        if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
+          if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); break; } }
+        else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(fk)) {
+          const t = String(raw ?? '').trim(); const hi = fk === 'emissiveStrength' ? 20 : 1;
+          if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); break; } next[fk] = round(n, 3); } }
         else { errors.push(`${key}: no such field`); break; }
-        comps.set(MATK, next);
+        comps.set(ck, next);
         break;
       }
       case 'physics': {

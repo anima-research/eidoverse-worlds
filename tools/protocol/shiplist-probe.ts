@@ -478,7 +478,11 @@ try {
     const before = ${look('mta')}; const set = await n.sendRequest('set', { id: 'mta', component: 'hesperus/material', value: { color: 0xff2200, roughness: 0.15 } });
     await new Promise((z) => setTimeout(z, 1500)); const a = ${look('mta')}, b = ${look('mtb')};
     const del = await n.sendRequest('delete', { id: 'mta', component: 'hesperus/material' }); await new Promise((z) => setTimeout(z, 1500)); const back = ${look('mta')};
-    return { set: set.ok ?? set.refused, before: [before.c, before.r], a: [a.c, a.r], b: [b.c, b.r], sharedWithB: a.mat === b.mat, back: [back.c, back.r], backIsOwn: back.mat === before.mat, del: del.ok ?? del.refused };`);
+    const slot = globalThis.__matoverride.materialsOf('mta')[0]?.slot; await n.sendRequest('set', { id: 'mta', component: 'hesperus/material:' + slot, value: { color: 0x0044ff } });
+    await n.sendRequest('set', { id: 'mtb', component: 'hesperus/material:not-a-slot', value: { color: 0x00ff00 } }); await new Promise((z) => setTimeout(z, 1500));
+    const sa = ${look('mta')}, sb = ${look('mtb')};
+    return { slot, slotA: sa.c, slotB: sb.c, set: set.ok ?? set.refused, before: [before.c, before.r], a: [a.c, a.r], b: [b.c, b.r], sharedWithB: a.mat === b.mat, back: [back.c, back.r], backIsOwn: back.mat === before.mat, del: del.ok ?? del.refused };`);
+  check("MT2 a one-slot override (hesperus/material:<its slot>) recolours that slot; a slot the model doesn't have changes nothing", r.slot && r.slotA === "0044ff" && r.slotB === r.before[0], r);
   check("MT1 a hesperus/material override recolours that one thing (a clone; the same model elsewhere is untouched), and deleting it brings the model's own material back", r.set === true && r.a[0] === "ff2200" && Math.abs(r.a[1] - 0.15) < 1e-6 && r.b[0] === r.before[0] && !r.sharedWithB && r.backIsOwn && r.del === true, r);
   });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or

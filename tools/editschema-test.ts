@@ -264,7 +264,7 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   const live = { materials: [{ slot: "wood", name: "Wood", color: 0x8a5a2b, roughness: 0.8, metalness: 0, opacity: 1, emissive: 0 }] };
   const plain = { lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], comp: {} };
   const m = inspectSchema(plain, "m1", live); const sec = m.sections.list.find((x: any) => x.title === "Material");
-  check("every thing with a model has a Material card listing its own materials, marked a draft, with an override button", !!sec && sec.draft && sec.present === false && fieldAt(m, "hmat.override") != null && m.groups.find((g: any) => g.group === "hmat").fields.some((f: any) => f.t === "info" && /#8a5a2b/.test(f.value)));
+  check("every thing with a model has a Material card listing its own materials, marked a draft, with an override button", !!sec && sec.draft && sec.present === false && fieldAt(m, "hmat.override") != null && m.groups.find((g: any) => g.group === "hmat").fields.some((f: any) => f.t === "color" && f.disabled && f.value === 0x8a5a2b));
   const r = editOps(plain, "m1", { "hmat.override": true }, live);
   check("'override' writes an empty hesperus/material (blank fields = the model's own)", r.ops.length === 1 && r.ops[0].args?.component === "hesperus/material" && JSON.stringify(r.ops[0].args?.value) === "{}", JSON.stringify(r));
   const ov = { ...plain, comp: { "hesperus/material": { color: 0xff0000 } } };
@@ -274,6 +274,19 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   check("opacity above 1 is refused before it is sent", !bad.ops.length && /opacity/.test(bad.errors[0] ?? ""));
   const back = editOps(ov, "m1", { "hmat.reset": true }, live);
   check("'back to the model's own' removes the override", back.ops.length === 1 && /unset|delete/.test(back.ops[0].verb ?? ""), JSON.stringify(back));
+  const two = { materials: [{ slot: "material-020", name: "Material.020", color: 0x8a5a2b, roughness: 0.8, metalness: 0 }, { slot: "brass-trim", name: "Brass_trim", color: 0xb08d57, roughness: 0.3, metalness: 1 }] };
+  const sl = inspectSchema(plain, "m1", two); const own = sl.groups.find((g: any) => g.group === "hmat").fields.filter((f: any) => String(f.k).startsWith("own|"));
+  check("its own materials read as people would say them: 'Material.020' is 'material 1', 'Brass_trim' stays 'Brass trim'; each a read-only swatch", own.map((f: any) => f.label).join("|") === "material 1|Brass trim" && own.every((f: any) => f.t === "color" && f.disabled), own.map((f: any) => f.label));
+  const add = editOps(plain, "m1", { "hmat.slot|brass-trim|add": true }, two);
+  check("'change Brass trim only…' writes hesperus/material:brass-trim", add.ops.length === 1 && add.ops[0].args?.component === "hesperus/material:brass-trim", JSON.stringify(add));
+  const slotEnt = { ...plain, comp: { "hesperus/material:brass-trim": { color: 0x00ff00 } } };
+  const se = editOps(slotEnt, "m1", { "hmat.slot|brass-trim|roughness": "0.5" }, two);
+  check("…and its fields edit that slot only", se.ops.length === 1 && se.ops[0].args?.component === "hesperus/material:brass-trim" && se.ops[0].args?.value?.color === 0x00ff00 && se.ops[0].args?.value?.roughness === 0.5, JSON.stringify(se));
+  const cards = inspectSchema(slotEnt, "m1", two).sections.list.filter((x: any) => x.title === "Material");
+  check("a one-slot override lives inside the one Material card (no card of its own)", cards.length === 1 && cards[0].fields.includes("hmat.slot|brass-trim|roughness"), cards.map((x: any) => x.fields));
+  const gone = { ...plain, comp: { "hesperus/material:old-paint": { color: 0xff0000 } } };
+  const gf = inspectSchema(gone, "m1", two).groups.find((g: any) => g.group === "hmat").fields;
+  check("an override for a material the model no longer has says so, and can be removed", gf.some((f: any) => /no such material/.test(f.value ?? "")) && editOps(gone, "m1", { "hmat.slot|old-paint|reset": true }, two).ops.length === 1);
   const ms = inspectSchema(ov, "m1", live).sections.list.filter((x: any) => x.title === "Material");
   check("with an override there is ONE Material card (the override's), removable", ms.length === 1 && ms[0].removable && ms[0].key === "hesperus/material");
 }

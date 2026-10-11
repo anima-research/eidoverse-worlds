@@ -46,23 +46,27 @@ function meshes(obj) {
 }
 const origOf = (mesh) => (mesh.userData.__matOrig ??= Array.isArray(mesh.material) ? mesh.material.slice() : [mesh.material]);
 
+// one slot name per distinct original material, in first-seen order; two with one name are numbered (the card and the
+// reader both use this, so a key always means the same slot)
+function slotsOf(obj) {
+  const slot = new Map(); const used = new Map();
+  for (const m of meshes(obj)) origOf(m).forEach((mat) => {
+    if (!mat || slot.has(mat)) return;
+    const base = slotKey(mat.name, slot.size); const c = (used.get(base) ?? 0) + 1; used.set(base, c);
+    slot.set(mat, c > 1 ? `${base}-${c}`.slice(0, 48) : base);
+  });
+  return slot;
+}
 /** The model's OWN materials (never the overrides), one per slot: for the Inspector's read-only Material card. */
 export function materialsOf(obj) {
-  const seen = new Map();
-  for (const m of meshes(obj)) origOf(m).forEach((mat, i) => {
-    if (!mat || seen.has(mat)) return;
-    seen.set(mat, { slot: slotKey(mat.name, seen.size), name: mat.name || `material ${seen.size + 1}`,
-      color: mat.color?.getHex?.() ?? null, roughness: typeof mat.roughness === 'number' ? +mat.roughness.toFixed(3) : null,
-      metalness: typeof mat.metalness === 'number' ? +mat.metalness.toFixed(3) : null, opacity: typeof mat.opacity === 'number' ? +mat.opacity.toFixed(3) : null,
-      emissive: mat.emissive?.getHex?.() ?? null });
-  });
-  const list = [...seen.values()]; const n = new Map();
-  for (const x of list) { const c = (n.get(x.slot) ?? 0) + 1; n.set(x.slot, c); if (c > 1) x.slot = `${x.slot}-${c}`.slice(0, 48); }   // two slots one name: numbered
-  return list;
+  return [...slotsOf(obj)].map(([mat, slot], i) => ({ slot, name: mat.name || `material ${i + 1}`,
+    color: mat.color?.getHex?.() ?? null, roughness: typeof mat.roughness === 'number' ? +mat.roughness.toFixed(3) : null,
+    metalness: typeof mat.metalness === 'number' ? +mat.metalness.toFixed(3) : null, opacity: typeof mat.opacity === 'number' ? +mat.opacity.toFixed(3) : null,
+    emissive: mat.emissive?.getHex?.() ?? null }));
 }
 
-function overrideFor(bag, mat, i) {
-  const all = readMaterial(bag?.[MAT]); const one = readMaterial(bag?.[`${MAT}:${slotKey(mat?.name, i)}`]);
+function overrideFor(bag, slot) {
+  const all = readMaterial(bag?.[MAT]); const one = slot ? readMaterial(bag?.[`${MAT}:${slot}`]) : null;
   return all || one ? { ...(all ?? {}), ...(one ?? {}) } : null;
 }
 function write(clone, orig, o) {
@@ -77,11 +81,11 @@ function write(clone, orig, o) {
 /** Make a thing's meshes show its override (or their own materials again). Returns how many slots carry one. */
 export function applyMaterials(id) {
   const obj = entities.get(id); if (!obj) return 0;
-  const bag = comps.get(id); let n = 0;
+  const bag = comps.get(id); let n = 0; const slots = slotsOf(obj);
   for (const mesh of meshes(obj)) {
     const orig = origOf(mesh); const clones = (mesh.userData.__matClones ??= []);
     const next = orig.map((mat, i) => {
-      const o = mat ? overrideFor(bag, mat, i) : null;
+      const o = mat ? overrideFor(bag, slots.get(mat)) : null;
       if (!o) return mat;
       n++;
       let c = clones[i];
