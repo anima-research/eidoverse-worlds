@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { RECORD, WORLDS_DIR } from "./config.ts";
 import { FrameArchive, DEFAULT_ARCHIVE_POLICY, type ArchivePolicy } from "./frame-archive.ts";
+import { recordingSummaryOf } from "../shared/recording.js";
 
 function limit(name: string, fallback: number) {
   const raw = process.env[name];
@@ -21,7 +22,16 @@ const policy: ArchivePolicy = {
   minFreeBytes: limit("RECORD_MIN_FREE_BYTES", DEFAULT_ARCHIVE_POLICY.minFreeBytes),
 };
 const boot = Date.now() + "-" + randomUUID();
-const performance = process.env.RECORD_PERFORMANCE_ID || boot;
+/** A label of at most 80 characters (code points), checked here at boot with
+ *  the other RECORD_* values; an invalid one warns and falls back. */
+function performanceId(raw: string | undefined, fallback: string) {
+  if (raw === undefined || raw === "") return fallback;
+  if (raw.trim() && [...raw].length <= 80) return raw;
+  console.warn("[recording] invalid RECORD_PERFORMANCE_ID=" + JSON.stringify(raw) +
+    " (it must be 1 to 80 characters, not only spaces); using " + fallback);
+  return fallback;
+}
+const performance = performanceId(process.env.RECORD_PERFORMANCE_ID, boot);
 const archives = new Map<string, FrameArchive>();
 export function recorderFor(world: string, report: (event: string, detail: Record<string, unknown>) => void) {
   if (!RECORD) return null;
@@ -32,9 +42,13 @@ export function recorderFor(world: string, report: (event: string, detail: Recor
   }
   return archive;
 }
+/** The full status, for /recordings. `waiting`: recording is on, but no one
+ *  has joined this world since boot, so it has no archive yet. */
 export function recordingStatus(world: string) {
   return archives.get(world)?.status() ?? { state: RECORD ? "waiting" : "disabled", policy };
 }
+/** What a client is told: state, stop code and performance, nothing else. */
+export function recordingSummary(world: string) { return recordingSummaryOf(recordingStatus(world)); }
 export function recordingMaintenance() { for (const a of archives.values()) a.maintain(); }
 export function closeRecordings() { for (const a of archives.values()) a.close(); }
 
@@ -48,11 +62,14 @@ type RecordingWorld = {
 };
 export function frameRecorder(w: RecordingWorld) {
   const archive = recorderFor(w.name, (event, detail) => {
+    // The server log gets everything; the flight recorder and clients get
+    // the stop's code, never its error text, which can carry host paths.
     console.warn("[world:" + w.name + "] recording " + event, detail);
-    w.debug("recording-" + event, detail);
+    const { detail: _text, ...shared } = detail;
+    w.debug("recording-" + event, shared);
     if (event === "stopped") {
       const notice = JSON.stringify({ type: "recording-status", recording: false,
-        recordingStatus: { state: "stopped", reason: detail.reason, performance: detail.performance } });
+        recordingStatus: recordingSummaryOf({ state: "stopped", reason: detail.reason, performance: detail.performance }) });
       for (const c of w.clients) {
         try { c.ws.send(notice); } catch { /* a closed peer cannot hide the stop from others */ }
       }

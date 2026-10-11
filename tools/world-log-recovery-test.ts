@@ -50,6 +50,43 @@ try {
     assert.deepEqual(third.poses,{}); checks++;
     assert.ok(third.entries.some(e=>e.verb==="say")); checks++;
   }
+  // A non-empty authored log keeps its snapshot and poses, and boot starts
+  // from them (sw-ew215 I7): the quarantine is for derived files with no log.
+  {
+    const kept = new WorldLog("kept");
+    kept.append("owner","spawn",{id:"kept-thing",lib:"kept.glb"});
+    kept.fold("fixture");
+    const dir=join(scratch,"worlds","kept");
+    writeFileSync(join(dir,"poses.json"),JSON.stringify({keeper:{p:[1,2,3]}}));
+    kept.flushLog();
+    const snapshotBytes=readFileSync(join(dir,"snapshot.json"));
+    const again = new WorldLog("kept");
+    assert.deepEqual(again.poses,{keeper:{p:[1,2,3]}},"kept: poses are used"); checks++;
+    assert.ok(again.snapSeq>=0,"kept: boot starts from the snapshot, not a full replay"); checks++;
+    assert.ok(again.state.entities["kept-thing"],"kept: the snapshot's state is there"); checks++;
+    assert.deepEqual(readFileSync(join(dir,"snapshot.json")),snapshotBytes,"kept: the snapshot stays where it was"); checks++;
+    assert.ok(!readdirSync(dir).some(n=>n.startsWith("orphaned-derived-")),"kept: nothing is quarantined"); checks++;
+  }
+  // A crash right after the quarantine, before the fresh genesis is on disk
+  // (sw-ew215 I21): the next start finds no log and no derived files, and the
+  // old poses stay out of the new epoch.
+  {
+    const old = new WorldLog("crash-after-quarantine");
+    old.append("owner","spawn",{id:"old-thing",lib:"old.glb"});
+    old.fold("fixture");
+    const dir=join(scratch,"worlds","crash-after-quarantine");
+    writeFileSync(join(dir,"poses.json"),JSON.stringify({oldPerson:{p:[9,9,9]}}));
+    mkdirSync(join(dir,"erased-crash"));
+    renameSync(join(dir,"log.jsonl"),join(dir,"erased-crash","log.jsonl"));
+    new WorldLog("crash-after-quarantine"); // quarantines, appends genesis in memory, then the process dies unflushed
+    assert.ok(!existsSync(join(dir,"poses.json")) && !existsSync(join(dir,"snapshot.json")),"crash: derived files retired before genesis"); checks++;
+    const restarted = new WorldLog("crash-after-quarantine");
+    assert.deepEqual(restarted.poses,{},"crash: the restart has no old poses"); checks++;
+    assert.ok(!restarted.state.entities["old-thing"],"crash: nor the old snapshot's state"); checks++;
+    const copies=readdirSync(dir).filter(n=>n.startsWith("orphaned-derived-"));
+    assert.equal(copies.length,1,"crash: one quarantine, kept"); checks++;
+    assert.deepEqual(JSON.parse(readFileSync(join(dir,copies[0],"poses.json"),"utf8")),{oldPerson:{p:[9,9,9]}},"crash: the old poses are preserved there"); checks++;
+  }
   passed = true;
   console.log("PASS " + checks + " durable orphan-recovery assertions");
 } finally {

@@ -32,6 +32,13 @@ try {
   check(a.look().includes('"reason":"disk-floor"'), "MCPL look changes on live stop");
   check(a.look().includes('"performance":"show"'), "MCPL stop readback retains the performance ID");
   check(a.inbox.some(e => e.text?.includes("recording stopped")), "MCPL receives a stop notice");
+  // The same stop again (a repeated broadcast) says nothing new (sw-ew215 I29).
+  const stopsBefore = a.inbox.length;
+  peer.send(JSON.stringify(stop));
+  peer.send(JSON.stringify({ type: "recording-status", recording: false, recordingStatus: { ...stop.recordingStatus, reason: "archive-io" } }));
+  await until(() => a.recordingStatus?.reason === "archive-io");
+  check(a.inbox.filter(e => e.text?.includes("recording stopped")).length === 2 && a.inbox.length === stopsBefore + 1,
+    "MCPL posts each stop once: a repeat adds nothing, a new reason does");
   current = {};
   peer.close();
   await until(() => joins === 2 && a.joined);
@@ -54,8 +61,19 @@ await _dispatch(stop);
 await _dispatch(stop);
 check(net.recordingStatus?.state === "stopped", "browser/lite state changes to stopped");
 check(net.recordingStatus?.performance === "show", "browser/lite stop readback retains the performance ID");
-check(notices.length === 2 && notices[0].includes("⏺") && notices[1].includes("disk-floor"), "browser/lite prints active then stop, without repeated notice");
+check(notices.length === 2 && notices[0].includes("⏺") && notices[1].includes("low on disk space") && !notices[1].includes("disk-floor"),
+  "browser/lite prints active then stop in plain words, without repeated notice");
 await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "visitor" }, entries: [], present: [], avatars: [], ...current });
 check(net.recordingStatus === null, "browser snapshot clears state absent on older server");
+// Joining into a stopped recording shows its state and notice; rejoining into
+// the same stop says nothing new (sw-ew215 I16, I29).
+const stoppedJoin = { type: "snapshot", you: "tester", yourRights: { role: "visitor" }, entries: [], present: [], avatars: [],
+  recording: false, recordingStatus: { state: "stopped", reason: "world-byte-limit", performance: "show" } };
+await _dispatch(stoppedJoin);
+check(net.recordingStatus?.state === "stopped" && net.recordingStatus?.reason === "world-byte-limit",
+  "browser join snapshot carries the stopped state and its code");
+check(notices.length === 3 && notices[2].includes("size limit"), "browser join into a stop prints its notice in plain words");
+await _dispatch(stoppedJoin);
+check(notices.length === 3, "browser rejoin into the same stop prints nothing new");
 console.log("PASS " + checks + " recording readback checks");
 process.exit(0);

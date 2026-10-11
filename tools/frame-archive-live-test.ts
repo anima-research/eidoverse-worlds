@@ -19,8 +19,11 @@ const sockets: WebSocket[] = [];
 let checks = 0;
 let completed = false;
 function check(value: unknown, message: string) { assert.ok(value, message); checks++; console.log("✓ " + message); }
+// Each wait is for the event its check reads, under a bound generous enough
+// for a loaded host (30 s); a correct sequencer answers in milliseconds.
 async function until(fn: () => unknown | Promise<unknown>, message: string) {
-  for (let i = 0; i < 100; i++) { if (await fn()) return; await pause(30); }
+  const end = Date.now() + 30_000;
+  while (Date.now() < end) { if (await fn()) return; await pause(30); }
   throw new Error("timeout: " + message);
 }
 async function boot(record = "1", extra: Record<string, string> = {}) {
@@ -79,11 +82,17 @@ try {
   check(performer.snapshot.recording, "active recording is disclosed at join");
   for (let i = 0; i < 30 && (await status("bounded")).state !== "stopped"; i++) await move(performer, i);
   check((await status("bounded")).reason === "segment-count-limit", "small configured segment count stops archive");
-  check(viewer.messages.some(m => m.type === "recording-status" && m.recording === false && m.recordingStatus.reason === "segment-count-limit"), "existing clients receive the actual recording stop");
-  check(viewer.messages.find(m => m.type === "recording-status").recordingStatus.performance === "test-performance",
-    "live stop retains the affected performance identity");
+  const stopNotice = { state: "stopped", reason: "segment-count-limit", performance: "test-performance" };
+  for (const client of [performer, viewer]) {
+    await until(() => client.messages.some(m => m.type === "recording-status"), "stop broadcast");
+    const notice = client.messages.find(m => m.type === "recording-status");
+    assert.equal(notice.recording, false);
+    assert.deepEqual(notice.recordingStatus, stopNotice);
+  }
+  check(true, "every client receives the actual stop: state, its code and the performance, nothing more");
   const before = viewer.messages.filter(m => m.type === "frame").length;
   await move(performer, 100); await move(performer, 101);
+  await until(() => viewer.messages.filter(m => m.type === "frame").length >= before + 2, "spectator frames after the cap");
   check(viewer.messages.filter(m => m.type === "frame").length >= before + 2, "spectator receives continued frames after recording cap");
   const bounded = archiveIndex(join(worlds, "bounded"));
   check(bounded.length === 3 && bounded.every(p => p.actualBytes <= 500), "real server rotates within byte boundary");
@@ -93,18 +102,28 @@ try {
   await until(() => performer.messages.some(m => m.type === "debug"), "recording debug");
   check(performer.messages.find(m => m.type === "debug").events.some((e: any) => e.kind === "recording-stopped"), "recording stop is visible in world_debug");
   const late = await connect("bounded", "late", true);
-  check(!late.snapshot.recording && late.snapshot.recordingStatus.state === "stopped", "late join reports actual stopped state");
+  check(!late.snapshot.recording, "late join is told recording isn't active");
+  assert.deepEqual(late.snapshot.recordingStatus, stopNotice);
+  check(true, "late join's snapshot carries the stop's state, code and performance, and no counters");
   performer.ws.send(JSON.stringify({ type: "verb", verb: "say", args: { text: "authored after archival stop" } }));
   await until(() => viewer.messages.some(m => m.type === "log" && m.entry?.args?.text === "authored after archival stop"), "live authored log");
-  check(true, "authored world log keeps working after archival stop");
+  check(viewer.messages.some(m => m.type === "log" && m.entry?.args?.text === "authored after archival stop"),
+    "authored world log keeps working after archival stop");
 
   const failing = await connect("iofail", "writer");
   await move(failing, 0);
   const current = (await status("iofail")).currentSegment;
   mkdirSync(join(worlds, "iofail", current.replace(/\.jsonl$/, ".index.json.tmp")));
   for (let i = 1; i < 12 && (await status("iofail")).state !== "stopped"; i++) await move(failing, i);
-  check((await status("iofail")).reason.includes("archive-io"), "real index-write failure stops recording");
-  await move(failing, 50); check(true, "live fanout survives archival filesystem failure");
+  check((await status("iofail")).reason === "archive-io", "real index-write failure stops recording, reported by its code");
+  await until(() => failing.messages.some(m => m.type === "recording-status"), "iofail stop broadcast");
+  const ioNotice = failing.messages.find(m => m.type === "recording-status");
+  check(ioNotice.recordingStatus.reason === "archive-io" && !JSON.stringify(ioNotice).includes(worlds),
+    "the stop a client receives names its code, never the error's host path");
+  check(!JSON.stringify(await status("iofail")).includes(worlds), "/recordings names no host path either");
+  const framesBefore = failing.messages.filter(m => m.type === "frame").length;
+  await move(failing, 50);
+  check(failing.messages.filter(m => m.type === "frame").length > framesBefore, "live fanout survives archival filesystem failure");
 
   const resetter = await connect("reset-epochs", "owner");
   const resetDir = join(worlds, "reset-epochs");

@@ -1,4 +1,4 @@
-import { recordingState, recordingNotice } from "../../shared/recording.js";
+import { recordingState, recordingNotice, recordingNoticeKey } from "../../shared/recording.js";
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
@@ -518,12 +518,15 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-let lastRecordingNotice = null;
+// Said once per (state, stop code, performance): a repeated stop message or
+// a reconnect into the same stop says nothing new (recordingNoticeKey).
+let lastRecordingKey = null;
 function acceptRecording(msg) {
   net.recordingStatus = recordingState(msg);
   const notice = recordingNotice(net.recordingStatus);
-  if (notice && notice !== lastRecordingNotice) logChat('*', notice);
-  lastRecordingNotice = notice;
+  const key = recordingNoticeKey(net.recordingStatus);
+  if (notice && key !== lastRecordingKey) logChat('*', notice);
+  lastRecordingKey = key;
   bus.emit('recording-status', net.recordingStatus);
 }
 
