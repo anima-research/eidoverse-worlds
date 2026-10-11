@@ -274,13 +274,15 @@ function hierarchyFields() {
   visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:') && !String(r.id).startsWith('comp:')).map((r) => r.id);
   return [
     worldRowFields(),   // pinned: the world entity, always first, never filtered out (design §3)
-    // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on)
-    ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
     // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
-    { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, hint: 'what each row shows: names only, unless you turn more on',
+    { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, bar: true, hint: 'what each row shows: names only, unless you turn more on',
       items: [...Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })), { k: 'fold:all-open', label: '  expand all' }, { k: 'fold:all-shut', label: '  collapse all' }] },
+    // never lose track of what you hid (research 51 R3: Unity's eye confuses because nothing says it's on). On the Options
+    // line, not a line of its own: appearing and vanishing with the first and last hidden thing, a line of its own pushed
+    // every row down and back (R 10-11 01:00: "the scroll jumps up and if I click it again the scroll jumps down")
+    ...(myHiddenCount() ? [{ t: 'btn', k: 'myshowall', label: `${myHiddenCount()} hidden in your view · show all`, bar: true, hint: 'things you hid with the eye: only your view, nobody else is affected' }] : []),
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }

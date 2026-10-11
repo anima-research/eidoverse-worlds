@@ -113,7 +113,12 @@ export function makeSchemaFrame(key, opts) {
     // Rebuilding under a focused input eats the caret mid-edit; hold the
     // refresh until focus leaves the panel, then paint the queued state.
     if (holdUntilBlur()) return;
+    // keep what is in view where it is (R 10-11 01:00: hiding a thing with the eye added a line above the Hierarchy's rows,
+    // and every row jumped down, then back up on showing it): the first row in view, by its id, sits at the same height
+    const top = scroll.getBoundingClientRect().top; let anchor = null;
+    if (scroll.scrollTop > 0) for (const e of scroll.querySelectorAll('[data-id]')) { const t = e.getBoundingClientRect().top; if (t >= top) { anchor = { id: e.dataset.id, at: t }; break; } }
     live = { key, ...renderDOM(scroll, fields, edit, ro) };
+    if (anchor) { const e = [...scroll.querySelectorAll('[data-id]')].find((x) => x.dataset.id === anchor.id); if (e) scroll.scrollTop += e.getBoundingClientRect().top - anchor.at; }
   }
   function holdUntilBlur() {
     const a = document.activeElement;
