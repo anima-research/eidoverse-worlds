@@ -464,7 +464,7 @@ function menuButton(row) {
   return b;
 }
 function fieldDOM(f, edit, ro = {}) {
-  const row = el('div', `sp-row sp-f-${f.t}${f.bar ? ' sp-bar' : ''}`);   // sp-f- prefix: never collide with element classes; sp-bar: side by side
+  const row = el('div', `sp-row sp-f-${f.t}${f.bar ? ' sp-bar' : ''}${f.cls ? ' ' + f.cls : ''}`);   // cls: a field's own look (the Inspector's name line)   // sp-f- prefix: never collide with element classes; sp-bar: side by side
   const ax = /(?:^|:)(?:pos|rot|scale)\.s?([xyz])$/.exec(f.k ?? '');   // pos.x, rot.y, pos.sz (scale's channels)
   if (ax) row.dataset.axis = ax[1];   // the channel's axis: edit chrome colours its label x/y/z
   if (f.disabled) row.classList.add('disabled');
@@ -754,12 +754,14 @@ function fieldDOM(f, edit, ro = {}) {
     case 'btn': {
       const b = el('button', `sp-btn${f.danger ? ' danger' : ''}${f.icon ? ' sp-btn-ico' : ''}`);
       const txt = el('span', '', f.label);
-      if (f.icon) b.innerHTML = iconSvg(f.icon, 14);
+      let ico = f.icon ?? null; if (ico) b.innerHTML = iconSvg(ico, 14);
       b.append(txt);
-      b.disabled = !!f.disabled;
+      b.disabled = !!f.disabled; b.classList.toggle('on', !!f.on); if (!f.label && f.hint) b.title = f.hint;
       b.onclick = () => edit(f.k);
       row.append(b);
-      row.update = (nf) => { txt.textContent = nf.label; };
+      // an icon toggle (the eye, the padlock) must redraw its picture, not only its words
+      row.update = (nf) => { txt.textContent = nf.label; b.classList.toggle('on', !!nf.on); if (!nf.label && nf.hint) b.title = nf.hint;
+        if ((nf.icon ?? null) !== ico) { ico = nf.icon ?? null; b.querySelector('svg')?.remove(); if (ico) b.insertAdjacentHTML('afterbegin', iconSvg(ico, 14)); } };
       break;
     }
     case 'tiles': {

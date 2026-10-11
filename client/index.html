@@ -1930,6 +1930,15 @@ body.edit-workspace #dock button.edit-overflow { display: none !important; }
 .edit-viewbar { position: fixed; z-index: 29; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px;
   background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }   /* solid (R 10-10 23:32: readable over any view) */
 .edit-viewbar[hidden] { display: none; }
+/* the Inspector's name line: the name as a title, the eye and padlock beside it (R 10-10 23:48) */
+.frame.edit .sp-row.sp-title { width: calc(100% - 84px); margin-right: 0 !important; }
+.frame.edit .sp-row.sp-iconbtn { margin-left: 0 !important; margin-right: 0 !important; }
+.frame.edit .sp-row.sp-title .sp-label { display: none; }
+.frame.edit .sp-row.sp-title input, .frame.edit .sp-row.sp-title .sp-text { width: 100%; font-size: 15px; font-weight: 600; background: transparent !important; border-color: transparent !important; box-shadow: none !important; padding-left: 2px; }
+.frame.edit .sp-row.sp-title input:hover, .frame.edit .sp-row.sp-title input:focus { border-color: var(--e-line) !important; background: var(--e-well) !important; }
+.frame.edit .sp-row.sp-iconbtn .sp-btn { width: 26px; height: 24px; padding: 0; display: inline-grid; place-items: center; background: none; border-color: transparent; color: var(--e-dim); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn:hover { color: var(--e-text); background: var(--e-hover); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on { color: var(--e-accent); }
 .edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
 /* the grip editor's panel: floats under the viewport bar (gripedit.js) */
 .gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;

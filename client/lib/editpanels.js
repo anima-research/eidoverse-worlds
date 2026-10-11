@@ -605,11 +605,20 @@ function inspectorFields() {
   // owning its fields by their unchanged group.k address, then Add Component.
   if (schema.sections) {
     // the name leads (Unity's name box), the id under it; the rest of the header after the facts
-    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') f.unshift(r); else f.push(r); } }
-    // R 10-10: the eye, as in the Hierarchy: hidden in MY view only. Hidden for everyone lives in Attributes, by that name.
-    { const mine = isMineHidden(id);
-      f.splice(Math.min(f.length, 2), 0, { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: mine ? 'hidden for you' : 'shown for you', bar: true, deskOnly: true,
-        hint: mine ? 'Hidden in YOUR view only; everyone else still sees it. Click to show it again.' : 'Click to hide it in YOUR view only. Nobody else is affected (the eye in the Hierarchy is the same switch).' }); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
+    // THE NAME LINE (R 10-10 23:48: "make the 'name' attribute be like Maya, where it just kinda looks like a normal inline
+    // title? The eye and lock and disable icons can be on this line to the right"): the name as a title, then the eye
+    // (hidden in MY view only; the Hierarchy's eye is the same switch) and the padlock. 'disable' waits on its rules.
+    let nameRow = null;
+    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.') && a !== 'flags.hidden') { if (a === 'flags.label') nameRow = r; else f.push(r); } }
+    { const mine = isMineHidden(id), lk = comps.get(id)?.lock;
+      const line = [
+        ...(nameRow ? [{ ...nameRow, label: '', bar: true, cls: 'sp-title', placeholder: 'name it', vrLabel: 'name' }] : []),
+        { t: 'btn', k: 'myhide', icon: mine ? 'eye-slash' : 'eye', label: '', on: mine, bar: true, deskOnly: true, cls: 'sp-iconbtn',
+          hint: mine ? 'Hidden in YOUR view only; everyone else still sees it. Click to show it again.' : 'Hide it in YOUR view only. Nobody else is affected (the eye in the Hierarchy is the same switch).' },
+        { t: 'btn', k: 'hlock', icon: lk ? 'lock' : 'lockOpen', label: '', on: !!lk, bar: true, deskOnly: true, cls: 'sp-iconbtn',
+          hint: lk ? 'Locked: nobody moves, replaces or removes it until it is unlocked. Click to unlock.' : 'Lock it: nobody moves, replaces or removes it until it is unlocked (sitting on it and content edits stay open).' },
+      ];
+      f.unshift(...line); }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {
       const q = pendingAsk.ask;
       f.push({ t: 'group', k: 'c:ask', label: q.kind === 'confirm' ? `Remove ${q.type}?` : `${q.component} needs a choice`, open: true });
@@ -702,6 +711,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     return;
   }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (action === 'hlock' && id && id !== WORLD_ID) { commitEdit(id, 'flags.lock', !comps.get(id)?.lock); return; }
   if (action === 'myhide' && id && id !== WORLD_ID) { const on = toggleMineHidden(id); flashHint(on ? html`${id} hidden in <b>your</b> view only — nobody else is affected` : `${id} shown again`, 2400); repaintAll(); return; }
   if (action === 'ed:grabbable.gripedit') { openGripEditor(id); return; }   // the grip editor (gripedit.js)
   if (id === WORLD_ID && WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }   // the Terrain card's shape tiles (S15)

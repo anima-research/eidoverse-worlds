@@ -448,6 +448,25 @@ try {
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sthigh' }); await m.sendRequest('delete', { id: 'stlow' }); return true;`).catch(() => null);
   check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === "stlow", r);
   });
+  // ---- NL: the Inspector's name line (R, 10-10 23:48: "make the 'name' attribute be like Maya ... The eye and lock and
+  // disable icons can be on this line to the right") ----
+  await stage("NL", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nlbox', model: '${CRATE}', components: { label: 'Name box', transform: { pos: [${me[0]} + 2.5, 0, ${me[1]} - 2], scale: 0.3 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('nlbox'))`); await sleep(600);
+  await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('nlbox'); return true;`);
+  const insp = `document.querySelector('[data-frame="inspector"]')`;
+  await waitFor(`${insp}.querySelector('.sp-row.sp-title input')?.value === 'Name box'`);
+  const lockBtn = `[...${insp}.querySelectorAll('.sp-iconbtn button')].find((b) => /Lock it|Locked/.test(b.title))`;
+  const before = await evalJson(`(() => { const line = ${insp}.querySelector('.sp-row.sp-title'), lb = ${lockBtn}, eb = [...${insp}.querySelectorAll('.sp-iconbtn button')].find((b) => /YOUR view/.test(b.title));
+    return { title: line?.querySelector('input')?.value ?? null, sameLine: !!line && !!lb && !!eb && Math.abs(line.getBoundingClientRect().top - lb.getBoundingClientRect().top) < 8 && Math.abs(eb.getBoundingClientRect().top - lb.getBoundingClientRect().top) < 4, svg: lb?.querySelector('svg')?.innerHTML ?? null }; })()`);
+  await evalJson(`(${lockBtn}?.click(), true)`);
+  const locked = await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('nlbox')?.lock)`);
+  await sleep(400); const svg1 = await evalJson(`${lockBtn}?.querySelector('svg')?.innerHTML ?? null`);
+  await evalJson(`(${lockBtn}?.click(), true)`); await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('nlbox')?.lock)`);
+  await page(`(await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'nlbox' }); return true;`).catch(() => null);
+  check("NL1 the Inspector's first line is the name as a title, with the eye and the padlock on it; the padlock locks it, and its icon changes", before.title === "Name box" && before.sameLine && locked && !!svg1 && svg1 !== before.svg, { before: { ...before, svg: !!before.svg }, locked, iconChanged: !!svg1 && svg1 !== before.svg });
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {
@@ -602,7 +621,7 @@ try {
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('atbox'))`); await sleep(600);
   const r = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('atbox'); await new Promise((z) => setTimeout(z, 900));
     const insp = document.querySelector('[data-frame="inspector"]'); const labels = [...insp.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
-    const eye = [...insp.querySelectorAll('.sp-bar button')].find((b) => /for you/.test(b.textContent)); const hasEyeIcon = !!eye?.querySelector('svg');
+    const eye = [...insp.querySelectorAll('.sp-bar button')].find((b) => /YOUR view/.test(b.title)); const hasEyeIcon = !!eye?.querySelector('svg');
     const spinX = [...insp.querySelectorAll('.sp-row.sp-f-group')].find((g) => /^▾?[ ]*Spin/.test(g.textContent.trim()))?.querySelector('.sp-gact');
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
     const at = document.querySelector('[data-frame="attributes"]'); const al = [...at.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
@@ -610,7 +629,7 @@ try {
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); await new Promise((z) => setTimeout(z, 300));   // back to the Inspector whatever happens (VM2b measures it)
     let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).comps.get('atbox')?.motion; }
     (await import('/lib/build.js')).setEditMode(false);
-    return { ag, ig, hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.textContent?.trim() ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
+    return { ag, ig, hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.title ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
   check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
   check("AT1b rotation order and the quaternion are in Attributes ('Rotation, as stored'), not an Inspector 'Advanced' group (R 10-10 23:38)", r?.ag?.includes("Rotation, as stored") && !r?.ig?.includes("Advanced"), { ag: r?.ag, ig: r?.ig });
   check("AT2 a removable card's title line carries a ✕ that removes it (Spin)", r.spinX && r.removed === true, r);
