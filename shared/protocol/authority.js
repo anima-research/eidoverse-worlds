@@ -1459,7 +1459,9 @@ function commit(w, actor, verb, args, build) {
   // after was refused from a hand the two no longer agreed on.)
   { let let_go = false;
     for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h) continue;
-      if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent")) {
+      // switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing can't be thrown, so it's set down where
+      // the record has it. Keep this set in step with simlayer's RELEASES.
+      if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
         delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
     if (let_go) w.savePresence(); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
@@ -2379,8 +2381,10 @@ function orphanLifts(w) {
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
     else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      if (o.id === "@world" && o.comp === "physics-engine") { lifted.clear(); continue; }
-      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
+      // the same lifecycle as the engine's (simlayer RELEASES): what ends a hold is a write that moves it, re-parents it,
+      // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
+      // (review of 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
+      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)) lifted.delete(o.id); }
   });
   return lifted;
 }
@@ -3322,7 +3326,7 @@ function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
   for (const [hid, he] of Object.entries(st.entities)) {
-    if (hid === "@world" || fam.has(hid)) continue;
+    if (hid === "@world" || fam.has(hid) || offChain(st, hid)) continue;   // a switched-off host has no sockets to snap into (review 5d5eef5c #7)
     const socks = he.c.sockets ?? modelOf(he.c.model)?.sockets; if (!socks || typeof socks !== "object") continue;
     for (const [slot, sk] of Object.entries(socks)) {
       if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;

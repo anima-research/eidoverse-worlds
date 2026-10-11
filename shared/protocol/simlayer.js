@@ -32,7 +32,8 @@ export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
 export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.build;
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
-const PHYSICAL = new Set(["transform", "parent", "model", "physics", "disabled"]);   // disabled: switching off takes the body (and its subtree) out, on puts it back
+const PHYSICAL = new Set(["transform", "parent", "model", "physics", "disabled"]);
+const RELEASES = new Set(["transform", "parent", "disabled"]);   // the writes that end a hold (authority commit()); keep the two in step   // disabled: switching off takes the body (and its subtree) out, on puts it back
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
 export function worldPose(st, id, depth = 0) {
@@ -131,7 +132,8 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
-  const engineView = (s) => engineViewM(s, models), boxesFor = (s) => boxesForM(s, models);
+  // a thing in someone's hand is nowhere in the engine's world: no rebuild (terrain, epoch, relock) may seat it (review 64d26822 #3)
+  const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id]; return v; }, boxesFor = (s) => boxesForM(s, models);
   const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
@@ -162,7 +164,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       applyInPlace(st, ops, seq);
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
           eidosim.simEntry(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
@@ -180,8 +182,10 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
         if (o.comp === "lock" || o.comp === "parent") relock = true;
         if (!whole && !PHYSICAL.has(o.comp)) continue;
+        // a write that ends a hold (the authority's commit(): transform, parent, disabled, or the whole thing) puts it back in the
+        // world; any other physical write to a held thing (its physics, its model) leaves it in the hand (review 64d26822 #1–#2)
+        if (out.lifted.has(o.id)) { if (whole || (RELEASES.has(o.comp) && !(o.comp === "disabled" && !(o.verb === "set" && o.value === true)))) out.lifted.delete(o.id); else continue; }
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
-        out.lifted.delete(o.id);   // written to directly (a put, an edit): back in the world, the engine's to place
         for (const id of ids) {
           // in someone's hand (lifted or caught, not yet put down or thrown): its record still stands where it was taken, under
           // whatever it rested on, and a move of that thing must not put a body back there (R 10-11: a crate she caught was
@@ -203,12 +207,12 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     } else if (e.kind === "sim" && out.sim) {
       const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
+        out.lifted.delete(a.id);   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // the launch's stamped state (p, v, q, w) is the body's exactly: the engine flies it from there
         eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "launch", args: { id: a.id, p: a.p, v: a.v, q: a.q, w: a.w } }, view);
         out.launched[a.id] = { seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
-        out.lifted.delete(a.id);
       } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
         // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
         // it's put down (an authored transform reseats it) or thrown (a launch)

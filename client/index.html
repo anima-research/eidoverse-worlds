@@ -811,8 +811,10 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
    far edge of a wide frame. .row = short label (42px) + slider + readout;
    .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
    No private layout rules anywhere. */
-.row.wide { display: grid; grid-template-columns: var(--row-label-col, 7rem) minmax(0, 1fr); align-items: center; }
-.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: left; line-height: 1.25; white-space: normal; }
+/* R 10-11 supersedes the left-aligned rule: labels RIGHT-justified, controls left-justified, both against ONE invisible
+   line, as the edit-mode panels do ("the Settings panel aren't aligned like stuff in the Edit mode menus") */
+.row.wide { display: grid; grid-template-columns: var(--row-label-col, clamp(6rem, 36%, 10rem)) minmax(0, 1fr); align-items: center; column-gap: 9px; }
+.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: right; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
    or meter inside fills the row (Audio's did not — .ctl had been swept into the
    12rem cap by a bad edit;) */
@@ -2013,7 +2015,7 @@ body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); 
    wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /
    ear / goggles are NOT moved here: mictoggle.placeMic folds them to the ∃'s right exactly as it does
    on the HUD, and editlayout's spacer (fitSeat) starts the menus after them. */
-body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 8px; z-index: 28;
+body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 2px; z-index: 28;   /* the normal dock's gap: 8 px read "exploded" next to it (R 10-11 14:41: 42 px pitch against 36) */
   background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }   /* no HUD-tinted card behind the ∃ and the wrench: the bar and the rail ARE its ground */
 /* …grey-on-grey: the glyphs read their inks off themselves (mictoggle tok), so re-pointing the house
    tokens on these three elements alone re-inks them for the bar and nowhere else */

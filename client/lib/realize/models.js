@@ -752,11 +752,7 @@ bus.on('myview', ({ id }) => applyHidden(id));
 function onComp(id, type) {
   syncComps(id);
   // switched off or back on: the thing and everything under it go (deepest first) or come back (the top first)
-  if (type === 'disabled') { const E = state.st.entities; const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });
-    const order = [id, ...under]; const off = offIn(E, id); if (off) order.reverse();
-    for (const k of order) { if (!off) indexFoldParent(k); reconcileId(k); }   // back on: the parent index first, so each load re-seats what rides it
-    if (!off) for (const k of under) execMount(k);   // (a no-op until both ends are realized; the load's own callback finishes it)
-    bus.emit('disabled-changed', { id }); return; }
+  if (type === 'disabled') { reconcileSubtree(id); bus.emit('disabled-changed', { id }); return; }
   const data = comps.get(id)?.[type] ?? null;
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
@@ -1044,6 +1040,15 @@ export const residencyDebug = () => {
 
 /** One id, after its identity may have changed: create, retire, rebuild, or
  *  refresh — the fold's current word is final. */
+/** A thing and everything under it, after it was switched off or on (or moved under / out from under something off): off
+ *  goes deepest first, on comes top first, by real depth, with the parent index rebuilt so each load re-seats its riders. */
+function reconcileSubtree(id) {
+  const E = state.st.entities; const depth = (k) => { let n = 0; for (let p = E[k]?.parent?.to; p && n < 33; p = E[p]?.parent?.to) n++; return n; };
+  const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });
+  const order = [id, ...under].sort((a, b) => depth(a) - depth(b)); const off = offIn(E, id); if (off) order.reverse();
+  for (const k of order) { if (!off) indexFoldParent(k); reconcileId(k); }
+  if (!off) for (const k of order) execMount(k);   // (a no-op until both ends are realized; the load's own callback finishes it)
+}
 function reconcileId(id) {
   const ent = state.st.entities[id];
   const t = tracked.get(id);
@@ -1100,6 +1105,8 @@ function onChange({ id, what, comp }) {
         break;
       case 'parent':
         refoldParents('mount', id);
+        // moved under (or out from under) a switched-off thing: it goes or comes with its new parent (review 5d5eef5c #6)
+        if (offIn(state.st.entities, id) !== !(entities.has(id) || tracked.has(id))) { reconcileSubtree(id); break; }
         if (ent?.parent) execMount(id);
         else if (entities.has(id) || tracked.has(id)) execDismount(id, ent);
         break;
