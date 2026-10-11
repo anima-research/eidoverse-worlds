@@ -324,6 +324,28 @@ try {
     return { grab: !!g?.ok, why: g?.refused ?? g?.why ?? null, body: b0 == null ? null : +wrap(b1 - b0).toFixed(3), crate: +wrap(c1 - c0).toFixed(3) };`);
   check("HT1 holding a crate, I turn a quarter: it turns the same quarter with me (within 0.1 rad)", r?.grab && r.body != null && Math.abs(r.body) > 1.2 && Math.abs(wrap(r.crate - r.body)) < 0.1, r);
   });
+  // ---- HD: 'hidden for all' from the Attributes tab (R, 10-10 23:48: "VERY slow at updating ... the sign visible but the
+  // checkbox still registering 'hidden'") ----
+  await stage("HD", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hdsign', components: { label: 'Hide sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HIDE ME', size: 0.2, width: 2 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('hdsign'))`); await sleep(800);
+  const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'), w = await import('/lib/world.js');
+    b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hdsign'); await new Promise((z) => setTimeout(z, 700));
+    base.bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
+    const box = () => { const at = document.querySelector('[data-frame="attributes"]'); const row = [...at.querySelectorAll('.sp-row')].find((r) => /hidden for all/.test(r.textContent)); return row?.querySelector('input[type=checkbox]'); };
+    const sample = async (ms) => { const out = []; for (let t = 0; t <= ms; t += 100) { const o = w.entities.get('hdsign'); out.push([t, !!box()?.checked, !!o?.visible, w.comps.get('hdsign')?.hidden === true]); await new Promise((z) => setTimeout(z, 100)); } return out; };
+    // HD2: in a busy world every frame repaints (each physics rest is a 'comp'); repaint before the authority has answered
+    const early = []; box()?.click(); for (let i = 0; i < 6; i++) { base.bus.emit('comp', { id: 'some-other-thing', type: 'transform' }); await new Promise((z) => requestAnimationFrame(z)); early.push(!!box()?.checked); }
+    await sample(1500); box()?.click(); await sample(1500);
+    box()?.click(); const on = await sample(2500); box()?.click(); const off = await sample(2500);
+    base.bus.emit('edit-righttab', 'inspector'); b.setEditMode(false);
+    const first = (xs, f) => (xs.find(f) ?? [null])[0];
+    return { early, onChecked: first(on, (x) => x[1]), onHiddenRec: first(on, (x) => x[3]), onInvisible: first(on, (x) => !x[2]), offUnchecked: first(off, (x) => !x[1]), offRec: first(off, (x) => !x[3]), offVisible: first(off, (x) => x[2]), tail: [on.at(-1), off.at(-1)] };`);
+  check("HD1 ticking 'hidden for all' hides the sign and the box shows it within half a second; unticking brings both back as fast", r && r.onInvisible != null && r.onInvisible <= 500 && r.onChecked != null && r.onChecked <= 500 && r.offVisible != null && r.offVisible <= 500 && r.offUnchecked != null && r.offUnchecked <= 500, r);
+  check("HD2 …and in a busy world (a repaint every frame before the authority answers) the box keeps showing what I clicked", r?.early?.length === 6 && r.early.every(Boolean), r?.early);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'hdsign' });`).catch(() => null);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {

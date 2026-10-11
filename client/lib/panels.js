@@ -816,9 +816,15 @@ function fieldDOM(f, edit, ro = {}) {
       inp.type = 'checkbox';
       inp.checked = !!f.value;
       inp.disabled = !!f.disabled;
-      inp.onchange = () => edit(f.k, inp.checked);
+      // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
+      // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
+      // it was clicked to until the record agrees (or 3 s pass: then the record wins, e.g. a refusal).
+      let pending = null;
+      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked); };
       row.append(inp);
-      row.update = (nf) => { setLabel(nf); inp.checked = !!nf.value; };
+      row.update = (nf) => { setLabel(nf); const v = !!nf.value;
+        if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
+        pending = null; inp.checked = v; };
       break;
     }
     case 'list': {
