@@ -209,6 +209,9 @@ test("failed close preserves interrupted bytes without certifying a final range"
   expect(a.status().state).toBe("stopped");
   expect(entry.metadata).toMatchObject({ state: "interrupted", frames: null, lastFrameSeq: null });
   expect(entry.metadata?.reason).toContain("close-failed");
+  // The close's report shares its code; the failure's text is its detail, for the server log.
+  expect(events.find(e => e.event === "segment-close")).toMatchObject({ reason: "shutdown", state: "interrupted" });
+  expect(events.find(e => e.event === "segment-close")?.detail).toContain("late close I/O failure");
   expect(entry.actualBytes).toBeGreaterThan(0);
   expect(lines(dir, entry.file).filter(r => r.type === "frame")).toHaveLength(1);
   expect(events.some(e => e.event === "segment-close" && e.state === "closed")).toBe(false);
@@ -314,6 +317,10 @@ test("a stop's code is all status says; its text stays in the index and the repo
   expect(stop.detail).toContain("/srv/secret");
   expect(stop.recovery).toContain("I/O failure");
   expect(archiveIndex(dir)[0].metadata?.reason).toContain("/srv/secret");
+  // As the sequencer's reporter shares them with world_debug: without `detail`.
+  const shared = events.map(({ detail, ...rest }) => rest);
+  expect(shared.find(e => e.event === "segment-close")?.reason).toBe("archive-io");
+  expect(JSON.stringify(shared)).not.toContain("/srv/secret");
 });
 
 test("the reason written into an index is capped well inside the reader's limit", () => {

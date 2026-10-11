@@ -208,7 +208,10 @@ export class FrameArchive {
     this.announce("segment-open", { file, performance: this.performance, ordinal: meta.ordinal });
   }
 
-  private finish(reason: string, interrupted = false) {
+  /** Close the open segment. `code` is why (a stop's code, or "rotation" and
+   *  the like); `text` is a stop's full text, which the index keeps and the
+   *  segment-close report carries only as `detail`, for the server log. */
+  private finish(code: string, text: string = code, interrupted = false) {
     const c = this.current;
     if (!c) return;
     this.current = null; // close/update failures must not reuse a suspect fd
@@ -217,8 +220,8 @@ export class FrameArchive {
     try { this.sync(c.fd); } catch (e) { closeError = e; closeFailed = true; }
     try { this.closeFile(c.fd); } catch (e) { if (!closeFailed) closeError = e; closeFailed = true; }
     c.meta.closedAt = closeFailed ? null : this.now();
-    const text = closeFailed ? reason + "; close-failed: " + String(closeError) : reason;
-    c.meta.reason = text.length > REASON_TEXT_LIMIT ? text.slice(0, REASON_TEXT_LIMIT) + "…" : text;
+    const full = closeFailed ? text + "; close-failed: " + String(closeError) : text;
+    c.meta.reason = full.length > REASON_TEXT_LIMIT ? full.slice(0, REASON_TEXT_LIMIT) + "…" : full;
     c.meta.state = interrupted || closeFailed ? "interrupted" : "closed";
     c.meta.bytes = statSync(join(this.dir, c.meta.file)).size;
     // An interrupted write may have torn its batch, and a failed close cannot
@@ -235,8 +238,8 @@ export class FrameArchive {
     const dirFd = openSync(this.dir, "r");
     try { this.sync(dirFd); } finally { closeSync(dirFd); }
     this.totalBytes += c.meta.bytes - c.bytes + Buffer.byteLength(data) - c.indexBytes;
-    this.announce("segment-close", { file: c.meta.file, reason: c.meta.reason,
-      state: c.meta.state, bytes: c.meta.bytes });
+    this.announce("segment-close", { file: c.meta.file, reason: code,
+      ...(full !== code ? { detail: full } : {}), state: c.meta.state, bytes: c.meta.bytes });
     if (closeFailed) throw closeError;
   }
 
@@ -246,7 +249,7 @@ export class FrameArchive {
     if (this.state === "stopped" || this.state === "closed") return;
     this.state = "stopped"; this.reason = code;
     this.reasonText = detail === undefined ? code : code + ": " + detail;
-    try { this.finish(this.reasonText, interrupted); }
+    try { this.finish(code, this.reasonText, interrupted); }
     catch (e) { this.reasonText += "; index-close: " + String(e); }
     // A failed write may leave a partial batch or index temporary. Reconcile
     // once on stop; if even stat fails, publish unknown rather than zero.

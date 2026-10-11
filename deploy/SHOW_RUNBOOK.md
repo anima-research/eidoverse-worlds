@@ -133,7 +133,7 @@ Segments stay raw JSONL for renderer compatibility and to keep compression CPU a
 
 1. Stop the sequencer through the operator's normal shutdown procedure.
 2. Copy the world's `log.jsonl`, its `erased-*` and `orphaned-derived-*` directories, all frame segments and indices, and `assets/opt/store/` off-box. Keep library assets used by the performance available too.
-3. Verify the exported copies before removing local frame segments and their matching indices. Remove only copies you intentionally exported; the sequencer performs no deletion. After confirming complete, byte-identical off-box copies, you may delete local `orphaned-derived-*` directories to reclaim space; the sequencer never reads quarantined files.
+3. Verify the exported copies before removing local frame segments and their matching indices. Remove only copies you intentionally exported; the frame archive deletes nothing. After confirming complete, byte-identical off-box copies, you may delete local `orphaned-derived-*` directories to reclaim space; the sequencer never reads quarantined files.
 4. Check the reported stop reason and do what its recovery says (the table above).
 5. Restart the sequencer. Confirm `GET /recordings` reports `ready` or `recording` for the show world after a client joins.
 
