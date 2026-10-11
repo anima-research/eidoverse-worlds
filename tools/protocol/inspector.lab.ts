@@ -26,5 +26,9 @@ try {
   fs.writeFileSync(`${OUT}/rows.json`, JSON.stringify(m, null, 1));
   const b = await evalJson(`(() => { const r = document.querySelector('[data-frame="inspector"]').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
   const s = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: Math.min(b[3], 1000 - b[1]), scale: 1 } }); fs.writeFileSync(`${OUT}/inspector.png`, Buffer.from(s.data, "base64"));
+  const ed = await page(`const I = await import('/lib/inspect.js'); const out = {};
+    for (const [k, v] of [['physics.friction', '0.25'], ['physics.restitution', '0.8'], ['physics.mass', ''], ['physics.restitution', '2'], ['physics.kind', 'static']]) { const r = I.commitEdit('pallet-spin', k, v); out[k + '=' + v] = r?.errors?.length ? r.errors.join('; ') : 'ok'; await new Promise((z) => setTimeout(z, 900)); }
+    const w = await import('/lib/world.js'); out.after = w.comps.get('pallet-spin')?.physics; return out;`);
+  console.log("EDITS", JSON.stringify(ed));
   console.log("groups", JSON.stringify(m.groups)); console.log("order", JSON.stringify(m.order));
 } finally { await cleanup(); }

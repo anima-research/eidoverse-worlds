@@ -394,6 +394,25 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
+  // physics (R 10-10: 'hard to interact with unless you know code'): what a builder tunes, as fields; the measured shape as
+  // a fact; everything else (layers, combine rules, centre of mass) through the JSON hatch the group grows below.
+  // A blank number means its absence: the engine's own reading (componentspec's absentMeans), not zero.
+  if (c.physics && typeof c.physics === 'object') {
+    const ph = c.physics; const opt = (v) => (typeof v === 'number' ? String(v) : '');
+    const sh = ph.shape; const box = Array.isArray(sh) && sh.length === 2 && sh.every((p) => Array.isArray(p) && p.length === 3) ? sh[1].map((v, i) => Math.abs(v - sh[0][i])) : null;
+    const shapeWords = box ? `a box ${box.map((v) => v.toFixed(2)).join(' × ')} m` : sh == null ? 'none yet: measured when its model loads' : (typeof sh === 'object' && sh.kind ? `${sh.kind}` : 'measured');
+    groups.push({ group: 'physics', label: 'physics', types: ['physics'], fields: [
+      { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: [['dynamic', 'dynamic'], ['static', 'static'], ['kinematic', 'kinematic'], ['none', 'none']].map(([v, label]) => ({ v, label })),
+        hint: 'How the physics treats it. Dynamic: falls, tumbles, can be pushed. Static: solid, never moves (walls, floors). Kinematic: moves only when its motion or a script moves it, and pushes others. None: no collisions at all.' },
+      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: 'Who can kick it or knock it around.' }] : []),
+      { t: 'text', k: 'mass', label: 'mass (kg)', value: opt(ph.mass), placeholder: 'from its size', hint: 'How heavy it is. Leave it blank and it is worked out from its size, as if it were as dense as water.' },
+      { t: 'text', k: 'friction', label: 'friction', value: opt(ph.friction), placeholder: 'engine default', hint: 'How much it grips what it slides on: 0 is ice, 1 is rubber (up to 10).' },
+      { t: 'text', k: 'restitution', label: 'bounciness', value: opt(ph.restitution), placeholder: 'engine default', hint: 'How much it bounces: 0 lands dead, 1 bounces back as high as it fell.' },
+      { t: 'check', k: 'ccd', label: 'fast mover', value: ph.ccd === true, hint: 'On for small things that fly fast (a thrown ball, a bullet), so they don\'t pass through thin walls. Costs a little more.' },
+      { t: 'info', label: 'shape', value: shapeWords, hint: 'Its collision shape, measured from its model by the server. To change how it bumps into things, use a Collider component.' },
+    ] });
+  }
+
   if (c.particles && typeof c.particles === 'object') {
     // R 10-07: the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
     // (an Essential's: count, size, opacity, speed, lifetime, area, texture, quality). An older value (the first
@@ -515,7 +534,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -646,6 +665,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
           sec.title = `Script · ${name}`; sec.fields = [`script.${name}`, `script.json|${inst.key}`]; sec.removable = true;
+        } else if (inst.key === 'physics' && g('physics')) {
+          sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
         } else {
           sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
           sec.removable = inst.type !== 'Captions';
@@ -1063,6 +1084,19 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'angle' || k === 'time') { const n = num(f, raw); if (n == null) break; next[k] = round(n, 6); }
         else { errors.push(`${key}: no such field`); break; }
         comps.set('openable', next);
+        break;
+      }
+      case 'physics': {
+        const next = comps.get('physics') ?? JSON.parse(JSON.stringify(c.physics ?? {}));
+        if (k === 'kind' || k === 'who') next[k] = String(raw);
+        else if (k === 'ccd') { if (bool(raw)) next.ccd = true; else delete next.ccd; }
+        else if (['mass', 'friction', 'restitution'].includes(k)) {
+          const t = String(raw ?? '').trim(); if (!t) { delete next[k]; }
+          else { const n = Number(t); const lim = { mass: [1e-6, 1e6], friction: [0, 10], restitution: [0, 1] }[k];
+            if (!Number.isFinite(n) || n < lim[0] || n > lim[1]) { errors.push(`physics.${k}: a number from ${k === 'mass' ? 'just above 0' : lim[0]} to ${lim[1]}, or blank`); break; }
+            next[k] = round(n, 4); } }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set('physics', next);
         break;
       }
       case 'grabbable': {

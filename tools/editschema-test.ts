@@ -246,5 +246,18 @@ console.log("\nthe JSON escape hatch: every typed group, addressed to its comp, 
   check("invalid JSON is an error, not an op", !bad.ops.length && /not valid JSON/.test(bad.errors[0] ?? ""));
 }
 
+console.log("\nphysics as fields (R 10-10: 'hard to interact with unless you know code'):");
+{
+  const box = { lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], comp: { physics: { kind: "dynamic", who: "visitor", shape: [[-1, 0, -1], [1, 2, 1]] } } };
+  const m = inspectSchema(box, "pb1"); const g = m.groups.find((x: any) => x.group === "physics");
+  check("a physics component gets its own card of fields (body, pushed by, mass, friction, bounciness, fast mover) and its JSON hatch",
+    !!g && ["kind", "who", "mass", "friction", "restitution", "ccd"].every((k) => g.fields.some((f: any) => f.k === k)) && g.fields.some((f: any) => f.t === "json" && f.collapsed) && !m.groups.find((x: any) => x.group === "comp")?.fields?.some((f: any) => f.k === "physics"));
+  const r = editOps(box, "pb1", { "physics.friction": "0.3", "physics.mass": "" });
+  const v = r.ops[0]?.args?.value;
+  check("an edit writes the whole physics value once: friction set, a blank mass stays absent, the rest kept", r.ops.length === 1 && v?.friction === 0.3 && !("mass" in v) && v?.kind === "dynamic" && Array.isArray(v?.shape), JSON.stringify(r));
+  const bad = editOps(box, "pb1", { "physics.restitution": "2" });
+  check("bounciness above 1 is refused before it is sent", !bad.ops.length && /restitution/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
