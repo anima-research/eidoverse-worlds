@@ -61,6 +61,9 @@ export const COMPONENTS = {
   // using it (VRChat Station, Roblox Seat): chairs, swings, saddles, a car's seats. Things attach with parent {to, socket}.
   sockets:   { on: "thing", map: "object", help: "{<name>: {pos: [x,y,z] (its own frame), q? [x,y,z,w] (its rotation: a rocket seat lies on its back), part? (a model node it rides), accepts? [keywords] + radius? (m, default 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in (a key on its hook, a sword in its rack), body?: what a person's body does there: {action ('sit'; what 'use' calls it), anchor (root, the default | hips | feet | head: the body point on the socket), pose (a clip; {clip, time: 'phase'}; or a blend {by: 'speed'|'steer'|…|'param.<name>', clips: [[0,'idle'],[2,'walk']]}), poses {<name>: pose} + sync, approach [x,y,z,yaw], enter/leave (clips), exit [x,y,z], reach {leftHand: {at, q?, part?, hint?, vr: snap|track|near}}, hold {<bone>: q}, look {yaw: [min,max]°, pitch, up: world|socket}, input {move: none|drive|walk, look: free|aim|locked} (one drive per thing), leaveBy (jump|menu|script), fromSeat, who (builder|owner)}}}" },
   // the numbers a thing exposes to the bodies on it (a pose blends by `param.<name>`); scripts write them
+  // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
+  // grabbable.home (older) means the same for a grabbable; a reset reads home first.
+  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", parent: "any" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
   params:    { on: "thing", map: "number", help: "{<name>: number}: values a socket's pose can blend by (param.<name>); scripts write them" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
     handlers: {
@@ -76,6 +79,10 @@ export const COMPONENTS = {
       // batch 2: a doorbell plays its sound again from the top, whether or not it's playing (set can't restart it, toggle
       // would stop it): the authority writes sound {…, playing: true, t0: now}
       play: { args: {}, example: { ring: { kind: "play" } } },
+      // R 10-10: a reset button (VRChat's shape: each thing remembers a home, a button lists what it sends home; research
+      // notes/eidoverse/RESEARCH-grips-and-reset-2026-10-10.md). Each target goes back to its home component (or its
+      // grabbable.home), out of any hand; a target with no home, gone or locked is skipped and named in the reply.
+      reset: { args: { targets: "the ids it sends home: 1 to 64 things. Each needs a home (stamped where it stands when the handler is written, if it has none)" }, example: { reset: { kind: "reset", targets: ["ball-0", "ball-1"] } } },
       impulse: { args: { strength: "a push: the speed it gives the thing at its centre, m/s (default 0.5). A use may give its own push as args.impulse [x,y,z] (m/s)", angular: "or a turn: the turn rate it adds about the thing's axis, rad/s (instead of strength)" }, example: { push: { kind: "impulse", strength: 0.5 } } } },
     common: { kind: "the handler kind", who: "who may use it: builder|owner", fix: "text shown on refusal" } },
   // R 10-07: the behaviour is `openable` (a door, a gate, a lid, a hatch, a cabinet), not the asset. The conventional shape

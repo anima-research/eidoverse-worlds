@@ -1223,12 +1223,18 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
+  if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
+    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || Object.keys(v).some((k) => !["pos", "q", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to" || k === "socket"))))
+      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], parent?: {to, socket?}}`, "e.g. {pos: [0, 0, 2]}"); }
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§3.1");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'openable', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
+      if (h.kind === "reset" && !(Array.isArray(h.targets) && h.targets.length >= 1 && h.targets.length <= 64 && h.targets.every((t) => typeof t === "string")))
+        refuse("shape", `reactions.${act} (reset) names what it sends home: targets [1 to 64 ids]`, "e.g. {reset: {kind: 'reset', targets: ['ball-0', 'ball-1']}}");
+      if (h.kind === "reset") { const gone = h.targets.filter((t) => !s.entities[t]); if (gone.length) refuse("not-found", `reactions.${act} (reset) names ${gone.join(", ")}, which ${gone.length > 1 ? "aren't" : "isn't"} here`, "", { didYouMean: guess(gone[0], Object.keys(s.entities)) }); }
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
@@ -1439,7 +1445,7 @@ function commit(w, actor, verb, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = stampMedia(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))));
+  const ops = stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
@@ -1930,6 +1936,26 @@ function buildUse(ctx, a) {
   const h = e.c.reactions?.[action];
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
+  if (h?.kind === "reset") {
+    reactionCap(ctx, a.id, "transform", action); ctx.refs.add(a.id);
+    const ops = [], sent = [], skipped = [];
+    for (const t of h.targets) { const te = ctx.st.entities[t];
+      if (!te) { skipped.push({ id: t, why: "it isn't here any more" }); continue; }
+      const home = te.c.home ?? grabOf(te.c)?.home;
+      if (!home) { skipped.push({ id: t, why: "it has no home" }); continue; }
+      if ([t, ...ancestors(ctx.st, t)].some((k) => lockedC(ctx.st.entities[k]?.c))) { skipped.push({ id: t, why: "it is locked" }); continue; }
+      const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
+      // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); v1 skips it and says so
+      { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
+      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t]) continue;   // home already, in no hand
+      ops.push(...(hp ? [setOp(t, "parent", { order: "a0", ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
+        setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: (te.c.transform?.scale ?? [1, 1, 1]).slice() }));
+      sent.push(t); ctx.refs.add(t); }
+    ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
+    if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
+    if (!ops.length) refuse("nothing-to-reset", skipped.length ? `nothing could go home: ${skipped.map((x) => `${x.id} (${x.why})`).join(", ")}` : "everything is already home", "");
+    return ops;
+  }
   if (h?.kind === "impulse") {
     if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
@@ -3310,6 +3336,18 @@ function returnDue(w) {
 // home). A builder may set home outright; one that isn't where the thing stands is left alone.
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
   return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }; };
+// a reset handler being written: each target with no home of its own gets one where it stands now (it can be moved with
+// "set home here", i.e. a write of home). Not under a capability: a script or reaction writes only what it names.
+function stampResetHomes(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops;
+  const resets = ops.filter((o) => o.verb === "set" && o.comp === "reactions" && o.value && typeof o.value === "object").flatMap((o) => Object.values(o.value).filter((h) => h?.kind === "reset"));
+  if (!resets.length) return ops;
+  const after = scratch(ctx.st, ops); const out = ops.slice(); const done = new Set();
+  for (const t of resets.flatMap((h) => h.targets ?? [])) { const c = after.entities[t]?.c; if (!c || done.has(t)) continue; done.add(t);
+    if (c.home || grabOf(c)?.home || ops.some((o) => o.id === t && o.comp === "home")) continue;
+    const home = homeHere(after, t); out.push(setOp(t, "home", home)); ctx.notes.push({ id: t, component: "home", kept: home, why: "stamped for the reset that names it: where it stands now" }); }
+  return out;
+}
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();

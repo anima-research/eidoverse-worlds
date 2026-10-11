@@ -1,0 +1,51 @@
+// @ts-nocheck
+// tools/protocol/reset-check.ts — a reset button (reactions kind 'reset', the home component). R's ask, 2026-10-10.
+// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/reset-check.ts
+import { request } from "../../shared/protocol/authority.js";
+import { openWorld } from "../../server/filehost.ts";
+import { fold } from "../../shared/protocol/fold.js";
+import { ENGINES, simFold } from "../../shared/protocol/simlayer.js";
+import { scratch } from "./common.ts";
+const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
+let pass = 0, fail = 0;
+const ok = (c, name, info) => { if (c) pass++; else { fail++; console.log("FAIL", name, info === undefined ? "" : JSON.stringify(info)); } };
+const root = scratch("reset"); let T = 1800000000000;
+const tick = (ms = 1500) => { T += ms; process.env.PROTOCOL_NOW = String(T); };
+const call = (w, a, v, args = {}) => { tick(); return request(openWorld(root, w), a, v, args); };
+const st = (W) => fold(openWorld(root, W).entries);
+const pos = (W, id) => st(W).entities[id]?.c.transform.pos;
+const code = (r) => (r.ok ? "ok" : r.refused?.code);
+const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  for (const [id, x] of [["a", 0], ["b", 3]]) call(W, "rowan", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [x, 0] } });
+  call(W, "rowan", "create", { id: "dom", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [6, 0] } });
+  call(W, "rowan", "create", { id: "btn", model: "crate", place: { at: [0, 4] } }); };
+const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", component: "reactions", value: { reset: { kind: "reset", targets, ...extra } } });
+
+{ const W = "stamp"; mk(W); const r = button(W, ["a", "b", "dom"]); const s = st(W);
+  ok(r.ok && ["a", "b", "dom"].every((id) => JSON.stringify(s.entities[id].c.home?.pos) === JSON.stringify(s.entities[id].c.transform.pos)), "RS1 writing a reset handler stamps a home on each target that has none, where it stands", { r: code(r), homes: ["a", "b", "dom"].map((id) => s.entities[id].c.home) }); }
+{ const W = "bad"; mk(W); const r1 = button(W, ["a", "nope"]), r2 = button(W, []), r3 = button(W, "a");
+  ok(code(r1) === "not-found" && code(r2) === "shape" && code(r3) === "shape", "RS2 a reset naming a missing thing, none, or not a list is refused when written", [code(r1), code(r2), code(r3)]); }
+{ const W = "use"; mk(W); button(W, ["a", "b", "dom"]);
+  call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "move", { to: [2, 0, -2] }); call(W, "vic", "put", { id: "a", at: [2, -2.6] });
+  call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } });
+  call(W, "vic", "move", { to: [0, 0, 3.2] }); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(r.ok && JSON.stringify(pos(W, "a")) === "[0,0,0]" && JSON.stringify(pos(W, "b")) === "[3,0,0]", "RS3 a VISITOR presses it: everything moved goes home (one put by a hand, one moved by an edit)", { r: code(r), why: r.refused?.reason, a: pos(W, "a"), b: pos(W, "b") }); }
+{ const W = "held"; mk(W); button(W, ["a", "b"]); call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "move", { to: [2, 0, 2.5] });
+  const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(r.ok && !openWorld(root, W).presence.holds.a && JSON.stringify(pos(W, "a")) === "[0,0,0]", "RS4 a thing in someone's hand leaves the hand and goes home", { r: code(r), why: r.refused?.reason, held: Object.keys(openWorld(root, W).presence.holds), a: pos(W, "a") }); }
+{ const W = "flying"; mk(W); button(W, ["a", "b"]); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } });
+  call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "a" }); call(W, "vic", "throw", { id: "a", v: [0, 6, 4] });
+  tick(300); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(r.ok && JSON.stringify(pos(W, "b")) === "[3,0,0]" && r.notes?.some((n) => n.id === "a" && /in flight/.test(n.why)), "RS5 a thing in flight is skipped and named (the engine has it till it lands); the rest still go home", { r: code(r), why: r.refused?.reason, notes: r.notes, b: pos(W, "b") });
+  tick(6000); const again = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(again.ok && JSON.stringify(pos(W, "a")) === "[0,0,0]", "RS5b …pressed again after it lands, it goes home", { r: code(again), why: again.refused?.reason, a: pos(W, "a") }); }
+{ const W = "skip"; mk(W); button(W, ["a", "b"]); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } }); call(W, "rowan", "set", { id: "b", component: "lock", value: true });
+  call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [4, 0, 4] } }); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(r.ok && JSON.stringify(pos(W, "a")) === "[0,0,0]" && JSON.stringify(pos(W, "b")) === "[9,0,9]" && r.notes?.some((n) => n.id === "b" && n.reset === "skipped"), "RS6 a locked target is skipped and named; the rest still go home", { r: code(r), notes: r.notes, a: pos(W, "a"), b: pos(W, "b") }); }
+{ const W = "home"; mk(W); button(W, ["a"]); call(W, "rowan", "set", { id: "a", component: "home", value: { pos: [1, 0, 5] } }); call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [7, 0, 7] } });
+  const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const bad = call(W, "rowan", "set", { id: "a", component: "home", value: { pos: [1, 0] } });
+  ok(r.ok && JSON.stringify(pos(W, "a")) === "[1,0,5]" && code(bad) === "shape", "RS7 'set home here' is a write of home; a malformed home is refused", { r: code(r), a: pos(W, "a"), bad: code(bad) }); }
+{ const W = "noop"; mk(W); button(W, ["a"]); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(code(r) === "nothing-to-reset", "RS8 pressed with everything already home: says so (no empty change)", { r: code(r), why: r.refused?.reason }); }
+console.log(`[reset-check] ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

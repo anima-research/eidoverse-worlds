@@ -128,6 +128,11 @@ function build() {
       { label: 'redo\tCtrl+Shift+Z', run: () => Edits.redo(), title: KEYHINTS.undo.before },
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
+      // a reset button (R, 10-10): select the button FIRST, then what it sends home (Ctrl/Shift-click)
+      { label: 'make reset button (first selected resets the rest)', run: () => { const sel = selection(); if (sel.length < 2) return flashHint('select the button first, then Ctrl- or Shift-click what it should send home', 4200, 'attn'); void Edits.makeResetButton(sel[0], sel.slice(1)); },
+        title: 'The first thing you selected becomes a button. Using it (click, or E) puts every other selected thing back where it stands right now.' },
+      { label: 'set home here', run: () => { const sel = selection(); if (!sel.length) return flashHint('select something first', 3000, 'attn'); void Edits.setHomeHere(sel); },
+        title: 'Where a reset button sends the selected things back to: where they stand now.' },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },
     ]),
     menu('Layout', () => [   // was 'View' (R, 10-10: say what it holds: the workspace's own arrangement)

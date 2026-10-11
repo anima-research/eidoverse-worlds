@@ -43,7 +43,8 @@
   "enums": {
    "shape": [
     "exact",
-    "box"
+    "box",
+    "sphere"
    ]
   },
   "on": "thing"
@@ -292,6 +293,14 @@
   }
  },
  "sockets": {
+  "on": "thing"
+ },
+ "home": {
+  "fields": {
+   "pos": "vec3",
+   "q": "array",
+   "parent": "any"
+  },
   "on": "thing"
  },
  "params": {

@@ -351,6 +351,21 @@ try {
   await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
   check("AC3 the menu names the thing bare (no quotes), in its own accent span", mi?.name === "Aimed" && !/[“”"]/.test(mi.text), mi);
   });
+  // ---- RB: a reset button made from the Edit menu's helpers, used by its left-click offer (R, 10-10) ----
+  await stage("RB", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const mk = await page(`const m = await import('/lib/net.js'); const a = await m.sendRequest('create', { id: 'rbtgt', model: '${CRATE}', components: { label: 'Reset target', transform: { pos: [${me[0]} + 2, 0, ${me[1]} - 2], scale: 0.3 } } });
+    const b = await m.sendRequest('create', { id: 'rbbtn', model: '${CRATE}', components: { label: 'Reset button', transform: { pos: [${me[0]} + 0.8, 0, ${me[1]}], scale: 0.3 } } }); return [a.ok, b.ok];`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('rbtgt') && m.entities.has('rbbtn'))`); await sleep(600);
+  const made = await page(`const e = await import('/lib/editwrites.js'); return await e.makeResetButton('rbbtn', ['rbtgt']);`);
+  await sleep(800);
+  const moved = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'rbtgt', component: 'transform', value: { pos: [${me[0]} + 5, 0, ${me[1]} + 5], q: [0, 0, 0, 1], scale: [0.3, 0.3, 0.3] } });`);
+  await sleep(800);
+  const offer = await page(`const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('rbbtn'); const r = await o[0]?.run(); return { first: o[0]?.label, ok: r?.ok ?? null, why: r?.refused?.reason ?? null };`);
+  await sleep(1200);
+  const at = await page(`const st = (await import('/lib/state.js')).state.st; return st.entities.rbtgt?.pos;`);
+  check("RZ1 Edit's 'make reset button' + the button's first offer (its left-click): the moved thing is back where it stood when the button was made", mk.every(Boolean) && made?.ok && moved?.ok && /^reset/.test(offer.first ?? "") && offer.ok && Math.hypot(at[0] - me[0] - 2, at[2] - me[1] + 2) < 0.01, { mk, made: made?.ok ?? made, moved: moved?.ok, offer, at });
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
