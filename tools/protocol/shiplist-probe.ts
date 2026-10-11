@@ -89,7 +89,7 @@ try {
   // ---- WB: the world's edge (R, 10-10 23:00: walked 44 m out of a ±20 m world; the authority's track of her stayed at
   // the edge, and every put and throw after was "25 m from you") ----
   await stage("WB", async () => {
-  const me0 = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z];`);
+  const me0 = await page(`const c = await import('/lib/controller.js'); return [c.myState.pos.x, c.myState.pos.z, c.myState.yaw];`);
   const edge = +(me0[0] - 1.2).toFixed(2);   // to my -x: stage D leaves a thing 1.2 m to my +x   // close, so nothing an earlier stage left can stand between me and it
   const b = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'bounds', value: { min: [${edge}, 0, -60], max: [60, 30, 60] } });`);
   check("(setup) this world's edge 1.2 m to my -x", b?.ok, b);
@@ -103,7 +103,9 @@ try {
   check("WB1 walking at this world's edge stops me at it (as a wall), so the authority still has me where I am: a grab and a put there work", r && r.x >= edge && r.x < edge + 0.6 && r.grab === true && r.put === true, { edge, ...r });
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: '@world', component: 'bounds' });`).catch(() => null);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'wbcrate' });`).catch(() => null);
-  await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); return true;`);
+  await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); c.myState.yaw = ${me0[2]}; await new Promise((z) => setTimeout(z, 600)); return true;`);   // and face the way I did: later stages place things where I look
+  const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.wbcrate, back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
+  check("WB2 (cleanup) the test's edge and crate are gone again", !after.bounds && !after.crate, after);
   });
   // ---- F: a refusal, in a person's words ----
   await stage("F", async () => {
