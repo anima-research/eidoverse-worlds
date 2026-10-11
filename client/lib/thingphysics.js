@@ -29,7 +29,7 @@ import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
 import { colliderFor } from './bodyscale.js';
-import { replica, net, sendRequest, identities } from './net.js';
+import { replica, net, sendRequest as rawSend, identities } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
@@ -113,6 +113,15 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
+// R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
+// this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
+async function sendRequest(verb, args) {
+  const r = await rawSend(verb, args);
+  if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
+  arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
+  return (await track(true)) ? rawSend(verb, args) : r;
+}
+export { sendRequest as requestWithBody };
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
   if (!replica.active || !net.joined) return false;

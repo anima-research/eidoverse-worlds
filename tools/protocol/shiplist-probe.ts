@@ -391,6 +391,16 @@ try {
   check("GE4 try it: it is picked up by that grip, and the palm sits on the grip point (within 1 cm)", tried.ok && tried.gap !== null && tried.gap < 0.01, tried);
   await page(`(await import('/lib/gripedit.js')).closeGripEditor(); (await import('/lib/thingphysics.js')).physicsApi?.put?.('getool'); (await import('/lib/build.js')).setEditMode(false);`);
   });
+  // ---- NH: the authority has no body for me while I think I'm here (R, 10-10 after a rename): a grab re-arrives ----
+  await stage("NH", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nhball', model: '${CRATE}', components: { grabbable: {}, transform: { pos: [${me[0]} + 0.7, 0, ${me[1]}], scale: 0.2 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('nhball'))`); await sleep(500);
+  const r = await page(`const n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js'); const gone = await n.sendRequest('leave', {});
+    const cu = await import('/lib/clickuse.js'); const o = cu.offersOf('nhball'); const g = await o[0]?.run(); await new Promise((z) => setTimeout(z, 600));
+    const back = await t.physicsApi.put('nhball'); return { first: o[0]?.label, left: gone?.ok ?? gone?.refused?.code, grab: g?.ok ?? g?.refused?.code, put: back?.ok ?? back?.refused?.code };`);
+  check("NH1 my body gone at the authority (leave), a CLICK grab (the left-click offer) still works: the 'not-here' refusal re-arrives and sends it again", r.left === true && r.grab === true, r);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

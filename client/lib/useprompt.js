@@ -11,6 +11,7 @@ import { register as registerAction } from './actions.js';
 import { xrActive } from './xrask.js';
 import { nameOf, plain } from './plainwords.js';
 import { sendRequest } from './net.js';
+import { requestWithBody } from './thingphysics.js';
 import { flashHint } from './ui.js';
 import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
@@ -62,7 +63,7 @@ export function actionsOf(id) {
 export async function useThing(id, action, verb = action) {
   // a use that doesn't work says why in the status bar, in the attention colour, every time (R, 10-10: "same goes for
   // objects you click to use but it doesn't work for some reason"); it was a 9 s toast
-  const req = OP.use(id, action), what = `${verb} ${id}`; const r = await sendRequest(req.verb, req.args);
+  const req = OP.use(id, action), what = `${verb} ${id}`; const r = await requestWithBody(req.verb, req.args);   // re-arrives once on 'not-here'
   if (r && !r.ok && r.refused) { const text = plain(what, r); flashHint(text, 4200, 'attn'); bus.emit('edit-refused', { what, refused: r.refused, text, agentText: text }); }
   bus.emit('use-prompt', { id, action, ok: !!r?.ok });
   return r;
