@@ -130,7 +130,7 @@ function build() {
       { label: 'delete\tDel', run: removeKeyTargets },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },
     ]),
-    menu('View', () => [
+    menu('Layout', () => [   // was 'View' (R, 10-10: say what it holds: the workspace's own arrangement)
       { label: 'reset workspace layout', run: () => { L = { ...DEF }; save(); apply(); } },
       { label: `${getFrame('chat')?.visible ? 'hide' : 'show'} chat`, run: () => { getFrame('chat')?.toggle(); apply(); } },
       { label: `${getFrame('console')?.visible ? 'hide' : 'show'} console (scripts)`, run: () => getFrame('console')?.toggle() },
@@ -169,7 +169,12 @@ function build() {
   }
   const paintCam = () => { for (const b of camSw.children) b.classList.toggle('on', (b.dataset.cam === 'free') === freeCamState().on); };
   bus.on('edit-freecam', paintCam); paintCam();
-  view.append(camSw, vmenu, wire, full);
+  // the VIEWPORT BAR (R, 10-10: "move the Body/Free, Viewport, and wireframe button onto a new panel line between the
+  // Hierarchy and the Inspector ... free-floating like Blender"): what pertains to the view sits ON the view, a small
+  // floating bar at its top-left. Full screen stays in the top bar (it is the window's, not the viewport's).
+  const vbar = el('div', 'edit-viewbar'); vbar.hidden = true; document.body.append(vbar);
+  vbar.append(camSw, vmenu, wire);
+  view.append(full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's
   // dock, mictoggle.placeMic — which folds them to the ∃'s right, the HUD's own layout); this
@@ -185,7 +190,7 @@ function build() {
   dragSplit(split, (_dx, dy) => { L.leftSplit = clamp(L.leftSplit + dy / left.clientHeight, 0.15, 0.85); });
   addEventListener('resize', () => { if (on) apply(); });
 
-  els = { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip };
+  els = { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip, vbar };
   paintTools();
   return els;
 }
@@ -215,6 +220,7 @@ function paintStrip() {
   const t = structureTool();
   const info = t ? structureTools().find((x) => x.k === t) : null;
   els.strip.hidden = !(on && info);
+  if (els.vbar.style.left) els.vbar.style.top = `${40 + 8 + (els.strip.hidden ? 0 : 30)}px`;
   if (!info) return;
   els.strip.innerHTML = '';
   const name = el('span', 'edit-toolstrip-name');
@@ -348,6 +354,7 @@ function apply() {
   const dockBottom = fitDock(TOP);
   tools.style.cssText = `left:0; top:${TOP}px; bottom:0; width:${RAIL}px; padding-top:${Math.max(46, Math.round(dockBottom - TOP + 8))}px`;
   strip.style.cssText = `left:${RAIL + Math.round(L.leftW)}px; right:${Math.round(L.rightW)}px; top:${TOP}px`;
+  els.vbar.style.cssText = `left:${RAIL + Math.round(L.leftW) + 8}px; top:${TOP + 8 + (els.strip.hidden ? 0 : 30)}px`;   // under the armed-tool strip when one shows
   const leftW = Math.round(L.leftW), rightW = Math.round(L.rightW);
   left.style.cssText = `left:${RAIL}px; top:${TOP}px; bottom:0; width:${leftW}px`;
   right.style.cssText = `right:0; top:${TOP}px; bottom:0; width:${rightW}px`;
@@ -376,6 +383,7 @@ function enter() {
   const { top, tools, left, right, lsplit, rsplit, tabs, rtabs } = build();
   on = true;
   for (const e of [top, tools, left, right, lsplit, rsplit]) e.hidden = false;
+  els.vbar.hidden = false;
   document.body.classList.add('edit-workspace');
   dispatchEvent(new CustomEvent('dockmoved'));   // the ∃ just moved into the corner: re-seat its glyphs now (mictoggle.placeMic listens)
   const bd = getFrame('build'), h = getFrame('hierarchy'), i = getFrame('inspector'), c = getFrame('chat');
@@ -402,6 +410,7 @@ function exit() {
   clearInterval(seatTimer); seatTimer = 0;
   const { top, tools, left, right, lsplit, rsplit, strip } = els;
   for (const e of [top, tools, left, right, lsplit, rsplit, strip]) e.hidden = true;
+  els.vbar.hidden = true;
   document.body.classList.remove('edit-workspace');
   unfitDock();
   dispatchEvent(new CustomEvent('dockmoved'));   // …and back beside the HUD's ∃

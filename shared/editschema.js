@@ -375,20 +375,20 @@ export function inspectSchema(ent, id, live = {}) {
     const opts = (list) => list.map((v) => ({ v, label: v }));
     const grips = Object.keys(g.grips);
     groups.push({ group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
-      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'off: not now (a dynamic ball stays kickable)' },
+      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' },
       { t: 'enum', k: 'who', label: 'who may', value: g.who, def: GRAB_DEFAULTS.who, options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) },
-      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'off: nobody takes it from whoever holds it (owners still may)' },
-      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'from the hand; past 1.5 m it flies to you' },
-      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'wins over lower when several are in reach (the key, not the table)' },
+      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' },
+      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' },
+      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' },
       { t: 'enum', k: 'hold', label: 'hold', value: g.hold, def: GRAB_DEFAULTS.hold, options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) },
-      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'how a body without tracked hands holds it' },
-      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'a second hand on a secondary grip steers it; off, a second hand takes it over' },
-      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: '× the release velocity; 0 = it can only be dropped' },
+      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
+      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' },
+      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' },
       { t: 'enum', k: 'release', label: 'let go', value: g.release, def: GRAB_DEFAULTS.release, options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) },
-      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: '0 = never; unheld that long, it goes home' },
-      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'keywords: a socket whose accepts shares one takes it when let go nearby' },
-      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'a reactions action: what the use button fires while held (down / up for press and release)' },
-      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'up to 40 characters' },
+      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: 'Left lying around for this many seconds, it returns to its home spot. 0 = it never returns on its own.' },
+      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'Words that say what it is (key, sword…). Let go near a socket that accepts one of these words and it snaps into the socket.' },
+      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'What happens when you press the use button while holding it: the name of one of this thing\'s actions. Two names as "down / up" run one on press and the other on release.' },
+      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'The words shown when you point at it, in place of "pick up …". Up to 40 characters.' },
       { t: 'info', label: 'grips', value: grips.length ? grips.join(', ') : 'none: held where it is grabbed (edit grips in the JSON below)' },
     ] });
   }

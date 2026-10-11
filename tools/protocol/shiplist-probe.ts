@@ -187,7 +187,7 @@ try {
   // VA3 (review round 3): a fresh re-arrival (refused too-fast, then a teleport), and a walk straight after: the refusal's
   // back-off (2 s) must not outlive the arrival, so my body follows within 1.2 s
   await page(`const c = await import('/lib/controller.js'); c.myState.pos.z += 8; const b = await import('/lib/base.js'); b.bus.emit('cut-adopted'); return true;`);
-  const re = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 1500);
+  const re = await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 5000);   // the re-arrival itself may be slow on a busy host (red five times on 10-10, each time under load); what VA3 times is the walk AFTER it
   const t0 = (await evalJson(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body())`))?.trackedAt;
   await page(`const c = await import('/lib/controller.js'); c.myState.pos.x += 3; return true;`);
   const followed = await waitFor(`import('/lib/thingphysics.js').then((m) => { const t = m.physicsApi.body().trackedAt; return !!t && Math.abs(t[0] - ${t0?.[0] ?? 0} - 3) < 0.3; })`, 1200);
@@ -511,6 +511,9 @@ try {
   const flat = await evalJson(`import('/lib/core.js').then((c) => ({ over: !!c.scene.overrideMaterial, flat: c.scene.overrideMaterial?.flatShading === true }))`);
   await pickV("wireframe");
   const wire = await evalJson(`import('/lib/core.js').then((c) => ({ wire: c.scene.overrideMaterial?.wireframe === true }))`);
+  const bar = await evalJson(`(() => { const b = document.querySelector('.edit-viewbar'), t = document.querySelector('.edit-top'), L = document.querySelector('[data-frame="hierarchy"]')?.getBoundingClientRect(), R = document.querySelector('[data-frame="inspector"]')?.getBoundingClientRect(); if (!b) return null; const r = b.getBoundingClientRect();
+    return { has: ['.edit-camsw', '.edit-menu[data-menu="viewport"]', '.edit-vbtn[data-view="wire"]'].map((q) => !!b.querySelector(q)), inTop: !!t?.querySelector('.edit-camsw, .edit-menu[data-menu="viewport"]'), between: !!L && !!R && r.left >= L.right - 2 && r.right <= R.left + 2, layout: [...document.querySelectorAll('.edit-top .edit-menu > .edit-btn')].map((x) => x.textContent) }; })()`);
+  check("VM2b Body | Free, Viewport and wireframe sit in a bar ON the viewport, between the two columns, not in the top bar; the top bar's menu is 'Layout'", bar?.has.every(Boolean) && !bar.inTop && bar.between && bar.layout.some((t: string) => /^Layout/.test(t)) && !bar.layout.some((t: string) => /^View\b/.test(t)), bar);
   check("VM3 flat shaded and wireframe draw the scene through one override material", flat?.flat && wire?.wire, { flat, wire });
   await pickV("isolate selected");
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(300);
