@@ -1070,8 +1070,10 @@ function historyFields() {
   if (hist.mode === 'person') f.push({ t: 'enum', k: 'who', label: 'person', value: hist.who ?? '', options: [{ v: '', label: '(pick someone)' }, ...people.map((p) => ({ v: p.by, label: `${p.who} (${p.deeds})` }))] });
   if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
   const row = (e) => {
-    const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
-    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? Edits.nameOf(e.by)} · ${what}`, hint: `act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
+    // what changed, not just where (R 10-10 23:55): the authority's diff per component ('text: width 5.08 → 3.91')
+    const diff = e.diff && !e.changed?.includes('(created)') ? Object.entries(e.diff).map(([c, d]) => `${c}: ${d}`).join(' · ') : '';   // a creation says so; its every field isn't news
+    const what = `${e.verb}${e.target ? ` ${e.target}` : ''}${diff ? ` · ${diff}` : e.changed?.length ? ` · ${e.changed.join(', ')}` : ''}${e.undoes !== undefined ? ` (undoes #${e.undoes})` : ''}`;
+    f.push({ t: 'info', k: `h:${e.seq}`, label: e.ts ? agoWords(e.ts) : `#${e.seq}`, value: e.text ?? `${e.who ?? Edits.nameOf(e.by)} · ${what}`, hint: `${diff ? diff + '\n' : ''}act #${e.act ?? e.seq} in the log${e.ts ? ` · ${new Date(e.ts).toLocaleString()}` : ''}` });
   };
   if (view.mode === 'top') for (const p of view.people) f.push({ t: 'btn', k: `who:${p.by}`, label: `${p.who} — ${p.did.join(' · ') || 'tried'}${p.deeds > 1 ? ` (${p.deeds})` : ''}`, hint: `${p.deeds} change${p.deeds === 1 ? '' : 's'}${p.tried ? `, ${p.tried} refused` : ''} in what's loaded — click for their history` });
   else if (view.mode === 'kind') for (const g of view.groups) { f.push({ t: 'info', label: '', value: `${g.kind} (${g.rows.length})` }); g.rows.forEach(row); }

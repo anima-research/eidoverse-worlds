@@ -37,6 +37,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
   ["reset", "reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
   ["settle", "settle-check.ts", 1],     // what a thing at rest is attached to
+  ["histdiff", "history-diff-check.ts", 1], // history {id}: each entry says what changed (a field, from what to what)
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the authority at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)

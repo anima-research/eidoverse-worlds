@@ -467,6 +467,17 @@ try {
   await page(`(await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'nlbox' }); return true;`).catch(() => null);
   check("NL1 the Inspector's first line is the name as a title, with the eye and the padlock on it; the padlock locks it, and its icon changes", before.title === "Name box" && before.sameLine && locked && !!svg1 && svg1 !== before.svg, { before: { ...before, svg: !!before.svg }, locked, iconChanged: !!svg1 && svg1 !== before.svg });
   });
+  // ---- HY: History says what changed (R, 10-10 23:55: "Is there a reason the history isn't more explicit here?") ----
+  await stage("HY", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'hysign', components: { label: 'History sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HI', size: 0.2, width: 5.076 } } });
+    await new Promise((z) => setTimeout(z, 1600)); return await m.sendRequest('set', { id: 'hysign', component: 'text', value: { text: 'HI', size: 0.2, width: 3.912 } });`);
+  await sleep(800);
+  const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'); b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hysign'); await new Promise((z) => setTimeout(z, 600));
+    base.bus.emit('edit-righttab', 'history'); let lines = []; for (let i = 0; i < 20 && !lines.some((l) => /width/.test(l)); i++) { await new Promise((z) => setTimeout(z, 250)); lines = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((e) => e.textContent); }
+    base.bus.emit('edit-righttab', 'inspector'); b.setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'hysign' }); return lines.slice(0, 4);`);
+  check("HY1 History says what an edit changed: 'text: width 5.076 → 3.912'", r?.some((l: string) => /text: width 5\.076 → 3\.912/.test(l)), r);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {

@@ -1554,6 +1554,26 @@ function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   return out;
 }
 const opsTouching = (e, id) => opsQuiet(e).filter((o) => o.id === id);
+// What one change did to a thing, in a few words a person can read (R 10-10 23:55: "Is there a reason the history isn't more
+// explicit? ... does the World log actually not know what I set at any of these logged spots?" It does: every entry
+// carries the whole new value). Per component: the fields that differ from its previous value, 'a → b'.
+function historyDiff(w, id, at, ops) {
+  const out = {};
+  const prevOf = (comp) => { for (const j of backward(w, id)) { if (j >= at) continue; const e = w.entries[j]; if (!isE(e) || e.kind !== "change") continue;
+    const os = opsTouching(e, id); for (let k = os.length - 1; k >= 0; k--) { const o = os[k]; if (o.verb === "set" && o.comp === comp) return o.value; if (o.verb === "delete" && (o.comp === comp || o.comp === undefined)) return undefined; if (o.verb === "create") return undefined; } }
+    return undefined; };
+  const word = (v) => v === undefined ? "none" : v === true ? "on" : v === false ? "off" : typeof v === "number" ? String(+v.toPrecision(4)) : typeof v === "string" ? JSON.stringify(v.length > 24 ? v.slice(0, 23) + "…" : v)
+    : Array.isArray(v) && v.length <= 4 && v.every((n) => typeof n === "number") ? `(${v.map((n) => +n.toPrecision(3)).join(", ")})` : Array.isArray(v) ? `[${v.length}]` : "{…}";
+  for (const o of ops) {
+    if (!o.comp || (o.verb !== "set" && o.verb !== "delete")) continue;
+    const was = prevOf(o.comp), now = o.verb === "delete" ? undefined : o.value; const bits = [];
+    if (was && now && typeof was === "object" && typeof now === "object" && !Array.isArray(was) && !Array.isArray(now)) {
+      for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) if (JSON.stringify(was[k]) !== JSON.stringify(now[k])) bits.push(`${k} ${word(was[k])} → ${word(now[k])}`);
+    } else if (JSON.stringify(was) !== JSON.stringify(now)) bits.push(was === undefined ? `set ${word(now)}` : now === undefined ? `removed (was ${word(was)})` : `${word(was)} → ${word(now)}`);
+    if (bits.length) out[o.comp] = bits.slice(0, 4).join(", ") + (bits.length > 4 ? ` (+${bits.length - 4})` : "");
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 function needThing(ctx, id) {
   const e = ctx.st.entities[id];
@@ -3679,6 +3699,7 @@ const VERBS = {
         // an imported act reads as what it was (spawn, place, comp), never "imported" (batch 2: Credits in History)
         out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
+          ...(() => { const d = historyDiff(w, id, i, ops); return d ? { diff: d } : {}; })(),
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
     }
