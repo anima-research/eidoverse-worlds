@@ -59,7 +59,7 @@ export function makeReplica() {
     // …and a cut with no engine state (its sender doesn't carry the build) can't be flown here either: mid-epoch, a sim
     // is only ever started from a cut (review of 8377ec52 #10)
     const spec = cut?.spec ?? null, foreign = !!spec && (!carried(spec) || !cut?.sim);
-    folder = simFolder(E, { models: {}, from: { st: stateFromView(snap.state), clock: cut?.clock ?? 0, spec, foreign, sim: foreign ? null : cut?.sim ?? null, launched: cut?.launched ?? {} } });
+    folder = simFolder(E, { models: {}, from: { st: stateFromView(snap.state), clock: cut?.clock ?? 0, spec, foreign, sim: foreign ? null : cut?.sim ?? null, launched: cut?.launched ?? {}, lifted: cut?.lifted ?? [] } });
     v.sim = folder.view(); v.simVersion++;
   };
   v.adopt = (snap) => {

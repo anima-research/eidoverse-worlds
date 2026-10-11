@@ -107,7 +107,7 @@ export function simFold(entries, now, opts = {}) {
 // every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
 export function simFolder(entries, { models = MODELS, from = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
-  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
+  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const E = () => eidosim;
   const tickOf = (ts) => (out.sim ? E().tickOf(out.sim, ts) : 0);
   const advance = (ts) => {
@@ -178,7 +178,12 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         if (o.comp === "lock" || o.comp === "parent") relock = true;
         if (!whole && !PHYSICAL.has(o.comp)) continue;
         const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
+        out.lifted.delete(o.id);   // written to directly (a put, an edit): back in the world, the engine's to place
         for (const id of ids) {
+          // in someone's hand (lifted or caught, not yet put down or thrown): its record still stands where it was taken, under
+          // whatever it rested on, and a move of that thing must not put a body back there (R 10-11: a crate she caught was
+          // re-placed under the crate below it, rested there, and she held a thing that lay on the floor)
+          if (id !== o.id && out.lifted.has(id)) continue;
           // a thing under it that a launch set moving is the engine's until its own rest is LOGGED (L6), flying or come to
           // rest unlogged: its parent's rest or a write to its parent doesn't cancel it (review of 8377ec52 #6)
           if (id !== o.id && out.launched[id] && out.sim.bodies[id]) continue;
@@ -200,11 +205,13 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         // the launch's stamped state (p, v, q, w) is the body's exactly: the engine flies it from there
         eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "launch", args: { id: a.id, p: a.p, v: a.v, q: a.q, w: a.w } }, view);
         out.launched[a.id] = { seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
+        out.lifted.delete(a.id);
       } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
         // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
         // it's put down (an authored transform reseats it) or thrown (a launch)
         E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
         delete out.launched[a.id];
+        out.lifted.add(a.id);
       }
     }
   };
@@ -251,7 +258,7 @@ export function livePoses(sf) {
 export function simCutOf(sf, entries) {
   const launched = JSON.parse(JSON.stringify(sf.launched ?? {}));
   const launches = {}; for (const l of Object.values(launched)) if (entries[l.seq]) launches[l.seq] = entries[l.seq];
-  return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches };
+  return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches, lifted: [...(sf.lifted ?? [])].sort() };
 }
 export const digestOf = (sim) => sha256(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
 // A cut, in our own format: the engine state as plain JSON, restorable. (For eidosim the format IS its snapshot.)
