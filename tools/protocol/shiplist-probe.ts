@@ -240,15 +240,17 @@ try {
   check("CU4 left-click on it is its primary use: I hold it", await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000), await holds());
   // letting go (R, holding the wrecking ball: "left-click doesn't drop it and there's no help option to assist me")
   await sleep(800);
-  const hint = await waitFor(`/holding/.test(document.body.innerText) && /put it down/.test(document.body.innerText)`, 3000);
-  check("CU5 while I hold it the hint bar says so, and how to let go", hint, await evalJson(`[...document.querySelectorAll('*')].filter((e) => !e.children.length && /holding|pick up/.test(e.textContent)).map((e) => e.textContent).slice(0, 3)`));
-  // a click on NOTHING (in third person my own body hides what I hold): scan for a pixel no usable thing is under
-  const bare = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'); const r = c.canvas.getBoundingClientRect(); let at = null;
-    for (let gy = 1; gy < 12 && !at; gy++) for (let gx = 1; gx < 16 && !at; gx++) { const x = r.left + r.width * gx / 16, y = r.top + r.height * gy / 12; if (cu.thingAt(x, y) === null) at = [x, y]; }
+  const hint = await waitFor(`/holding/.test(document.getElementById('hintbar').textContent) && /set it down/.test(document.getElementById('hintbar').textContent)`, 3000);
+  check("CU5 while I hold it the hint bar says so, and how to let go", hint, await evalJson(`document.getElementById('hintbar').textContent`));
+  // a click on a bare spot of floor within reach (in third person my own body hides what I hold): it is set down there
+  const bare = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), k = await import('/lib/controller.js'); const r = c.canvas.getBoundingClientRect(), me = k.myState.pos; let at = null, spot = null;
+    for (let gy = 1; gy < 24 && !at; gy++) for (let gx = 1; gx < 32 && !at; gx++) { const x = r.left + r.width * gx / 32, y = r.top + r.height * gy / 24; if (cu.thingAt(x, y) !== null) continue; const a = cu.clickUseApi.aimPoint(x, y); if (a && Math.abs(a[1] - me.y) < 0.05 && Math.hypot(a[0] - me.x, a[2] - me.z) < 0.85 && Math.hypot(a[0] - me.x, a[2] - me.z) > 0.5) { at = [x, y]; spot = a; } }
     if (!at) return null;
     const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: at[0], clientY: at[1] });
-    c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return at;`);
-  check("CU6 holding it, a left-click on nothing puts it down", bare && await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000), { bare, holds: await holds() });
+    c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return { at, spot };`);
+  const put6 = bare && await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('cuball'))`, 4000); await sleep(1200);
+  const at6 = await page(`const w = await import('/lib/world.js'); const o = w.entities.get('cuball'); o.updateWorldMatrix(true, false); return o.getWorldPosition(new (await import('/lib/core.js')).THREE.Vector3()).toArray();`);
+  check("CU6 holding it, a left-click on a bare spot within reach sets it down at that spot", put6 && Math.hypot(at6[0] - bare.spot[0], at6[2] - bare.spot[2]) < 0.3, { bare, at6, holds: await holds() });
   await sleep(1500);
   await click(0);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.mine().includes('cuball'))`, 4000); await sleep(800);
@@ -308,6 +310,47 @@ try {
   check("WG2 a click on it out of reach walks me over and picks it up", cl?.found && cl.walking && got && Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) > 2.5 && !end.walking, { cl, got, walked: Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) });
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.put('wgcrate'); return true;`); await sleep(600);
   });
+  // ---- AC: aim at the cursor (R, 10-10: a throw "just aims away from your camera view, not at the spot you're aiming with
+  // your cursor", and "my character would try to drop it where the cursor is, not right at their feet") ----
+  await stage("AC", async () => {
+  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 12; c.myState.pos.z += 14; b.bus.emit('cut-adopted'); return true;`);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1500);
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'acbox', model: '${CRATE}', components: { label: 'Aimed', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.3 } } });`);
+  check("(setup) a small crate beside me", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('acbox'))`); await sleep(800);
+  await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
+  // the pixel where a ground point shows: project it, then a real click there
+  const clickGround = (wx: number, wz: number) => page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${wx}, 0, ${wz}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
+    const cu = await import('/lib/clickuse.js'); const aim = cu.clickUseApi.aimPoint(x, y), over = cu.thingAt(x, y);
+    const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }); c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return { aim, over, on: Math.abs(p.x) < 1 && Math.abs(p.y) < 1 };`);
+  const where = () => page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, false); const v = o.getWorldPosition(new T.Vector3()); return [v.x, v.y, v.z];`);
+  const dir = await page(`const k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [d.x / h, d.z / h];`);
+  const spot = [me[0] + dir[0] * 3.5 + dir[1] * 1.2, me[1] + dir[1] * 3.5 - dir[0] * 1.2];   // 3.7 m off, ahead and to one side: out of reach
+  const cg = await clickGround(spot[0], spot[1]);
+  const down = await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('acbox'))`, 9000); await sleep(1500);
+  const at = await where();
+  check("AC1 holding it, a click on a spot 3.7 m away walks me over and sets it down THERE (within 0.4 m), not at my feet", cg?.on && !cg.over && down && Math.hypot(at[0] - spot[0], at[2] - spot[1]) < 0.4, { cg, spot, at });
+  // C throws at the spot under the cursor
+  await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
+  const me2 = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const tgt = [me2[0] + dir[0] * 5 - dir[1] * 2, me2[1] + dir[1] * 5 + dir[0] * 2];
+  const mv = await page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${tgt[0]}, 0, ${tgt[1]}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
+    c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); return (await import('/lib/clickuse.js')).clickUseApi.aimPoint();`);
+  await key("KeyC");
+  // where it first comes down: the lowest-y moment near the ground, sampled in the page
+  const land = await page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'), v = new T.Vector3(); let up = false, hit = null;
+    for (let i = 0; i < 80 && !hit; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); if (v.y > 0.5) up = true; else if (up && v.y < 0.12) hit = [v.x, v.y, v.z]; await new Promise((z) => setTimeout(z, 33)); } return { up, hit };`);
+  check("AC2 C throws it at the spot under the cursor: it rises, and first comes down within 0.9 m of that spot (5.4 m away, off to one side)", mv && land?.up && land.hit && Math.hypot(land.hit[0] - tgt[0], land.hit[2] - tgt[1]) < 0.9, { aim: mv, tgt, land });
+  await sleep(2500);
+  // the menu: the name bare, in its own span
+  await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); let x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
+    const ev = (t) => new MouseEvent(t, { bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y }); c.canvas.dispatchEvent(ev('mousedown')); c.canvas.dispatchEvent(ev('mouseup')); return true;`);
+  const mi = await evalJson(`(() => { const b = document.querySelector('.sp-ctx-item'); return b ? { text: b.textContent, name: b.querySelector('.sp-ctx-name')?.textContent ?? null } : null; })()`);
+  await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
+  check("AC3 the menu names the thing bare (no quotes), in its own accent span", mi?.name === "Aimed" && !/[“”"]/.test(mi.text), mi);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
@@ -325,7 +368,7 @@ try {
     const r = c.canvas.getBoundingClientRect(), R = new T.Raycaster(), all = [...w.entities.values()].filter(Boolean);
     const under = (x, y) => { R.setFromCamera(new T.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), c.camera); let o = R.intersectObjects(all, true)[0]?.object; while (o && !o.userData.entityId) o = o.parent; return o?.userData.entityId ?? null; };
     let at = null;
-    for (let gy = 1; gy < 16 && !at; gy++) for (let gx = 1; gx < 24 && !at; gx++) { const x = r.left + r.width * gx / 24, y = r.top + r.height * gy / 16, u = under(x, y); if (${where === "bare" ? "u === null" : `u === '${where}'`}) at = [x, y]; }
+    for (let gy = 1; gy < 64 && !at; gy++) for (let gx = 1; gx < 96 && !at; gx++) { const x = r.left + r.width * gx / 96, y = r.top + r.height * gy / 64, u = under(x, y); if (${where === "bare" ? "u === null" : `u === '${where}'`}) at = [x, y]; }
     if (!at) return { at: null };
     const ev = (t, o = {}) => new MouseEvent(t, { bubbles: true, cancelable: true, button: ${button}, altKey: ${alt}, clientX: at[0], clientY: at[1], ...o });
     c.canvas.dispatchEvent(ev('mousedown'));

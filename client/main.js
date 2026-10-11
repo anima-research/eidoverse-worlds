@@ -445,9 +445,9 @@ setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
-initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
-initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned() });   // the mouse: left-click a thing's primary use, right-click its menu
+initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({

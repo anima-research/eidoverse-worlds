@@ -189,6 +189,7 @@ export function contextMenu(x, y, items, pick) {
   const m = el('div', 'sp-ctx');
   for (const it of items) {
     const b = el('button', `sp-ctx-item${it.danger ? ' danger' : ''}`, it.label);
+    if (Array.isArray(it.parts)) { b.textContent = ''; b.append(it.parts[0], el('span', 'sp-ctx-name', it.parts[1]), it.parts[2] ?? ''); }   // a thing's name, in the accent colour
     if (it.title) b.title = it.title;
     b.onclick = () => { closeContextMenu(); pick(it.k); };
     m.append(b);

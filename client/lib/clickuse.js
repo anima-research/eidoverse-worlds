@@ -18,7 +18,7 @@ import { trySitOn } from './localbody.js';
 import { walkTo } from './controller.js';
 
 const CLICK_TRAVEL = 5, CLICK_MS = 500, HOVER_MS = 100, NEAR = 0.15;   // px, ms: more than this and the press was a drag
-let hooks = null;   // { editing(): bool, busy(): bool }
+let hooks = null;   // { editing(): bool, busy(): bool, myPos(): Vector3 }
 export function initClickUse(h) { hooks = h; }
 const off = () => !hooks || hooks.editing?.() || hooks.busy?.() || xrActive();
 
@@ -28,13 +28,16 @@ const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */
 export function offersOf(id) {
-  const out = [], name = nameOf(id) ?? id, held = physicsApi.mine().includes(id);
-  if (held) { out.push({ k: 'put', label: `put ${name} down`, run: () => physicsApi.put(id) }, { k: 'throw', label: `throw ${name}`, run: () => physicsApi.throw() }); }
-  else if (canGrab(id)) out.push({ k: 'grab', label: `pick up ${name}`, run: () => physicsApi.grab(id) });
-  for (const a of actionsOf(id)) out.push({ k: `use:${a.action}`, label: `${a.verb} ${name}${a.barred ? ` (${a.barred})` : ''}`, run: () => useThing(id, a.action, a.verb) });
+  // its name as its builder wrote it, no quotes: the menu draws it in the accent colour (R, 10-10)
+  const L = comps.get(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
+  const out = [], add = (k, pre, post, run) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run });
+  // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the C key)
+  if (held) { add('put', 'put ', ' down', () => physicsApi.put(id)); add('throw', 'throw ', '', () => physicsApi.throw()); }
+  else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id));
+  for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb));
   const seat = seatOf(id);
-  if (seat) out.push({ k: 'sit', label: `${seat.action ?? 'sit'} on ${name}`, run: () => trySitOn(id) });
-  if (!held && comps.get(id)?.physics?.kind === 'dynamic') out.push({ k: 'punt', label: `kick ${name}`, run: () => physicsApi.punt(id) });
+  if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id));
+  if (!held && comps.get(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id));
   return out;
 }
 
@@ -65,6 +68,33 @@ async function fetchIt(id, offer) {
   if (why === 'blocked' || why === 'timeout' || why === 'arrived') flashHint(`couldn't get to ${nameOf(id) ?? id}: something is in the way`, 3800, 'attn');
   return null;
 }
+/** The world point under the pointer: the nearest surface of anything placed (not what I hold), else the ground. [x, y, z] or null. */
+const aimRay = new THREE.Raycaster(), aimNdc = new THREE.Vector2(), aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), aimHit = new THREE.Vector3();
+let lastXY = null;
+canvas.addEventListener('mousemove', (e) => { lastXY = [e.clientX, e.clientY]; });
+export function aimPoint(clientX = lastXY?.[0], clientY = lastXY?.[1]) {
+  const lock = document.pointerLockElement === canvas, r = canvas.getBoundingClientRect();
+  if (lock) aimNdc.set(0, 0); else if (clientX == null) return null; else aimNdc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  aimRay.setFromCamera(aimNdc, camera);
+  const mine = new Set(physicsApi.mine()), targets = []; for (const [id, o] of entities) if (o && !mine.has(id)) targets.push(o);
+  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR);
+  const feetY = hooks?.myPos?.()?.y ?? 0; aimPlane.constant = -feetY;
+  const g = aimRay.ray.intersectPlane(aimPlane, aimHit) ? aimHit.clone() : null;
+  const p = h && (!g || h.distance < aimRay.ray.origin.distanceTo(g)) ? h.point : g;
+  return p ? [p.x, p.y, p.z] : null;
+}
+/** Holding something, a click on a spot: set it down THERE (R, 10-10: "my assumption is that my character would try to
+ *  drop it where the cursor is, not right at their feet"), walking over first when it is out of reach. */
+async function putAtSpot(id, spot) {
+  if (!physicsApi.canPutAt(spot[0], spot[1], spot[2])) {
+    const me = hooks?.myPos?.(); const flat = me ? Math.hypot(spot[0] - me.x, spot[2] - me.z) : Infinity;
+    if (flat > WALK_MAX) { flashHint(`that spot is ${flat.toFixed(0)} m away — too far to carry it over; go closer`, 3800, 'attn'); return null; }
+    const why = await walkTo(spot[0], spot[2], { until: () => physicsApi.canPutAt(spot[0], spot[1], spot[2]) });
+    if (why === 'cancelled') return null;
+    if (!physicsApi.canPutAt(spot[0], spot[1], spot[2])) { flashHint(`couldn't get close enough to set it down there`, 3800, 'attn'); return null; }
+  }
+  return physicsApi.put(id, [spot[0], spot[2]]);
+}
 let press = null;
 canvas.addEventListener('mousedown', (e) => { press = (e.button === 0 || e.button === 2) && !off() ? { x: e.clientX, y: e.clientY, t: performance.now(), b: e.button } : null; });
 addEventListener('mouseup', (e) => {
@@ -72,10 +102,13 @@ addEventListener('mouseup', (e) => {
   if (!p || e.button !== p.b || off() || Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TRAVEL || performance.now() - p.t > CLICK_MS) return;
   // with something in my hand, a click that lands on nothing is about IT (R, 10-10, holding the wrecking ball: "left-click
   // doesn't drop it ... How do I drop this thing??": in third person my own body hides what I hold, so there is nothing to aim at)
-  const id = thingAt(e.clientX, e.clientY) ?? physicsApi.mine()[0]; if (!id) return;
+  const over = thingAt(e.clientX, e.clientY), heldNow = physicsApi.mine()[0];
+  // holding something, a left-click that isn't on a thing to use: set it down at that spot
+  if (!over && heldNow && p.b === 0) { const spot = aimPoint(e.clientX, e.clientY); void (spot ? putAtSpot(heldNow, spot) : physicsApi.put(heldNow)); return; }
+  const id = over ?? heldNow; if (!id) return;
   const offers = offersOf(id); if (!offers.length) return;
   if (p.b === 0) { void (offers[0].k === 'grab' ? fetchIt(id, offers[0]) : offers[0].run()); return; }
-  contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label })), (k) => { void offers.find((o) => o.k === k)?.run(); });
+  contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { void offers.find((o) => o.k === k)?.run(); });
 });
 let hoverAt = 0, hand = '';
 canvas.addEventListener('mousemove', (e) => {
@@ -85,4 +118,4 @@ canvas.addEventListener('mousemove', (e) => {
   const cur = !k ? '' : k === 'grab' ? 'grab' : k === 'put' ? 'grabbing' : 'pointer';
   if (cur !== hand) { hand = cur; canvas.style.cursor = cur; }
 });
-export const clickUseApi = { offersOf, thingAt, close: closeContextMenu, hint: flashHint };
+export const clickUseApi = { offersOf, thingAt, aimPoint, close: closeContextMenu, hint: flashHint };

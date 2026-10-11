@@ -44,7 +44,7 @@ import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH
 const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the authority's punt reach, from the feet
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved
-const THROW = { speed: 8, arc: 0.45 };            // a desktop throw: along the view's heading, ~26° up
+const THROW = { speed: 8, arc: 0.45, lob: 0.6 };   // a desktop throw with no aim: the way my body faces, ~26° up; aimed: a lob of ~34° or steeper
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
 
 let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing(): bool }
@@ -415,9 +415,11 @@ export async function grab(name) {
   return r;
 }
 /** Set down what you hold (straight down onto what's below your hand). */
-export async function put(name) {
+export async function put(name, spot = null) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
+  // a spot [x, z] (where the cursor is): set it down there, on whatever is below; the authority checks my reach
+  if (Array.isArray(spot)) { const r = await sendRequest('put', { id, at: [r3(spot[0]), r3(spot[1])] }); return r?.ok ? r : refused('put', r, id); }
   // in front of my feet, clear of my body (the authority's default is under the hand, which is inside my own footprint:
   // a wrecking ball set down there shoved me 0.67 m aside, and the camera with me; R, 10-10). The authority works out
   // the height and what it lands on.
@@ -435,17 +437,26 @@ export async function drop(name) {
   return r?.ok ? r : refused('drop', r, id);
 }
 /** Throw what you hold along your view, from your hand. */
+/** Throw what I hold (the newest). `aim`: a world point [x, y, z] to land on (where the cursor is: R, 10-10, "it just aims
+ *  away from your camera view, not at the spot you're aiming with your cursor"): a lob that comes down there, as hard as
+ *  the distance needs, up to the engine's limit. No aim: ahead of my body, the way it faces. A number is a speed. */
 export async function throwHeld(arg) {
   const id = myHolds()[0]; if (!id) return say('you aren\'t holding anything');
-  const speed = Math.min(20, Math.max(1, parseFloat(arg) || THROW.speed));
-  // where you look, as an arc: the view's heading, lifted by THROW.arc, and higher when you look up (a third-person
-  // camera always looks down at your body: its pitch alone would throw everything flat into the ground)
-  const cam = hooks?.camera; const dir = new THREE.Vector3(0, 0, 1);
-  if (cam) cam.getWorldDirection(dir);
-  const h = Math.hypot(dir.x, dir.z) || 1, up = Math.min(1.2, THROW.arc + Math.max(0, Math.asin(Math.max(-1, Math.min(1, dir.y)))));
-  const v = [dir.x / h * Math.cos(up) * speed, Math.sin(up) * speed, dir.z / h * Math.cos(up) * speed].map(r3);
   await track(true);
-  const pos = heldPos(id);
+  const pos = heldPos(id), aim = Array.isArray(arg) && arg.length === 3 && arg.every(Number.isFinite) ? arg : null;
+  let v;
+  if (aim && pos) {
+    const dx = aim[0] - pos.x, dz = aim[2] - pos.z, d = Math.hypot(dx, dz), dy = aim[1] - pos.y;
+    if (d < 0.3) v = [0, 1, 0];   // at my own feet: let it go
+    else { // a lob at THROW.lob that passes through the point: v² = g d² / (2 cos²θ (d tanθ − Δy)); steeper when the point is high
+      let th = Math.max(THROW.lob, Math.atan2(dy, d) + 0.35); th = Math.min(1.25, th);
+      const den = 2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dy);
+      const sp = Math.min(20, Math.max(1.5, den > 1e-6 ? Math.sqrt(9.81 * d * d / den) : 20));
+      v = [dx / d * Math.cos(th) * sp, Math.sin(th) * sp, dz / d * Math.cos(th) * sp].map(r3); }
+  } else {
+    const speed = Math.min(20, Math.max(1, parseFloat(arg) || THROW.speed)), yaw = hooks?.myState?.()?.yaw ?? 0;
+    v = [Math.sin(yaw) * Math.cos(THROW.arc) * speed, Math.sin(THROW.arc) * speed, Math.cos(yaw) * Math.cos(THROW.arc) * speed].map(r3);
+  }
   const r = await sendRequest('throw', { id, v, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
   return r?.ok ? r : refused('throw', r, id);
 }
@@ -613,7 +624,7 @@ const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
     run: () => (myHolds().length ? put() : grab()) },
   { code: 'KeyC', key: 'C', id: 'body:throw', title: 'throw what you hold / punt what\'s at your feet', keywords: ['throw', 'kick', 'punt', 'toss'],
-    run: () => (myHolds().length ? throwHeld() : punt()) },
+    run: () => (myHolds().length ? throwHeld(hooks?.aim?.() ?? undefined) : punt()) },   // at the spot under the cursor (main.js hands me aim())
 ];
 for (const { code, ...a } of KEYS) registerAction({ ...a, group: 'body' });
 bus.on('key', (e) => {
@@ -627,17 +638,19 @@ bus.on('key', (e) => {
 export function handsHint() {
   if (!replica.active || hooks?.editing?.() || xrActive()) return null;
   const held = myHolds()[0];
-  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click or <kbd>T</kbd> to put it down · <kbd>C</kbd> throws · right-click for more`;
+  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click a spot to set it down there · <kbd>T</kbd> at your feet · <kbd>C</kbd> throws at the cursor · right-click for more`;
   const near = nearest(inHand, grabbableIds(), prioOf);
   return near ? html`click or <kbd>T</kbd> to pick up <b>${nameOf(near) ?? near}</b>` : null;
 }
 
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
+/** Could my hand set something down at this spot on the floor from where I stand (the authority's reach, with a margin)? */
+const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f[0], y - (f[1] + HAND_Y), z - f[2]) <= REACH - 0.08; };
 /** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
 const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, inReach, whereFromMe,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, inReach, whereFromMe, canPutAt,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */

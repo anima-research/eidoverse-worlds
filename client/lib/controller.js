@@ -648,6 +648,9 @@ export function updateMe(dt, me) {
   myState.speed = THREE.MathUtils.lerp(myState.speed, target, 1 - Math.exp(-10 * dt));
   if (myState.speed < 0.02) myState.speed = 0;
 
+  // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I
+  // throw or set down "ahead" goes where my eyes are. Not on a seat, not while the edit camera is off on its own.
+  if (firstPerson && !moving && !myState.seat && !isFreeCam()) { myState.yaw += angleDelta(myState.yaw, camYaw + Math.PI) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw)); }
   if (moving) {
     _dir.set(strafe, 0, -fwd).normalize().applyAxisAngle(UP, camYaw);
     const targetYaw = Math.atan2(_dir.x, _dir.z);
