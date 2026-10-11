@@ -165,6 +165,7 @@ function guardActions(root) {
 
 let fieldClip = null;   // { value } — a copied field value, pasted by type (the OS clipboard gets a copy too)
 export const _fieldClip = () => fieldClip;   // probes
+const treeScroll = new Map();   // a tree field's scroll position, by its key, across rebuilds
 let treeDrag = null;   // the tree row being dragged (id), across the dragstart → drop pair
 
 export function renderDOM(body, fields, edit, ro = {}) {
@@ -664,6 +665,13 @@ function fieldDOM(f, edit, ro = {}) {
         box.append(zone);
       }
       row.append(box);
+      // a changed tree is rebuilt (rows are shape), and a new box starts scrolled to the top: in a world where things
+      // move, that was every few frames, and the lower rows could not be reached (R 10-10: "entities ... I can't get
+      // to in the hierarchy"). The box keeps where it was scrolled to, by the field's key.
+      const tkey = f.k ?? 'tree';
+      box.addEventListener('scroll', () => treeScroll.set(tkey, box.scrollTop), { passive: true });
+      const back = () => { const y = treeScroll.get(tkey); if (y && box.isConnected) box.scrollTop = y; };
+      queueMicrotask(back); requestAnimationFrame(back);
       break;   // rows are shape: a changed tree repaints
     }
     case 'json': {
