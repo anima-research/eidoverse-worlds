@@ -17,9 +17,11 @@ export const UPLOAD_CAP = Number(process.env.UPLOAD_CAP_MB ?? 20) * 1_000_000;
 // on every client that sees it, so the door is narrower than the model door.
 export const IMAGE_CAP = Number(process.env.IMAGE_CAP_MB ?? 8) * 1_000_000;
 // RECORD_FRAMES=1 appends every broadcast stage frame (plus roster deltas) to
-// worlds/<name>/frames-<bootTs>.jsonl. World log + frames file + asset store =
+// bounded segments in worlds/<name>/ (server/frame-archive.ts; SHOW_RUNBOOK).
+// World log + ordered frames files + asset store =
 // enough to re-render the whole performance offline, at production quality,
-// forever. Clients are told at join — recording is never invisible.
+// while recording is active. Clients are told at join; /recordings and
+// world_debug report any capacity or I/O stop. Archives are preserved.
 export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod);
 // serving worlds must be startable without shouldering the optimizer.

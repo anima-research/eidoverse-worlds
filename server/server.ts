@@ -5,12 +5,14 @@
 //  - serves the browser client and the eidoverse-video asset library
 // No world manifest: everything about a world arrives through its log.
 
-import { existsSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, JOIN_TOKEN, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS } from "./config.ts";
+import { stageFrames } from "./stage-frame.ts";
+import { frameRecorder, recordingSummary, recordingMaintenance, closeRecordings } from "./recording.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
@@ -619,6 +621,10 @@ function installJoin(c: Client, w: World) {
 }
 
 function buildSnapshot(w: World, c: Client) {
+    // Binds the archive on first join; a joiner sees only the summary
+    // (state, stop code, performance), the full status is /recordings'.
+    frameRecorder(w);
+    const recording = recordingSummary(w.name);
     // snapshot = full log replay (folding comes later) + who's present now
     const jp = w.joinPayload();
     return {
@@ -636,7 +642,8 @@ function buildSnapshot(w: World, c: Client) {
       yourSurfaces: [...w.clients]
         .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
         .map(x => ({ surface: x.surface, gen: x.gen })),
-      recording: RECORD,
+      recording: recording.state === "ready" || recording.state === "recording",
+      recordingStatus: recording,
       // The world as it is, then only what has happened since. A joiner's
       // cost is now the size of the WORLD, not the length of its history.
       state: jp.state,
@@ -1062,32 +1069,15 @@ const server = Bun.serve({
 // backed up skips ticks instead of queueing history it will only fast-forward
 // through. Idle worlds cost one Map.size check.
 registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
-  // per-world guard, same idiom as the behavior tick: one world's failure
-  // (the RECORD path appends to disk) must cost that world one tick, not
-  // exit the process or stall every other world's frames (house rule 3 —
-  // module-level intervals can take the sequencer down exactly like a ws
-  // callback)
-  for (const w of worlds.values()) {
-    try {
-    if (w.dirty.size === 0) continue;
-    const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: Date.now(), poses: Object.fromEntries(w.dirty) });
-    w.dirty.clear();
-    if (RECORD) {
-      if (!w.recPath) {
-        w.recPath = join(WORLDS_DIR, w.name, `frames-${Date.now()}.jsonl`);
-        console.log(`[world:${w.name}] ⏺ recording stage frames → ${w.recPath}`);
-      }
-      const roster = JSON.stringify([...w.clients].filter((c) => !c.spectator).map((c) => ({ id: c.id, avatar: c.avatar })));
-      if (roster !== w.lastRoster) { w.lastRoster = roster; appendFileSync(w.recPath, `{"type":"roster","t":${Date.now()},"roster":${roster}}\n`); }
-      appendFileSync(w.recPath, data + "\n");
-    }
-    for (const c of w.clients) {
-      if ((c.ws.getBufferedAmount?.() ?? 0) > FRAME_SKIP_BUFFERED) continue; // stale frames die here, not in the kernel
-      c.ws.send(data);
-    }
-    } catch (err) { console.error(`[world:${w.name}] frame tick`, err); }
-  }
+  // per-world guards inside, same idiom as the behavior tick: one world's
+  // failure must cost that world one tick, not exit the process or stall
+  // every other world's frames (house rule 3 — module-level intervals can
+  // take the sequencer down exactly like a ws callback). Every world's frame
+  // is sent before any is archived (stage-frame.ts).
+  stageFrames(worlds.values());
 } });
+
+registerSystem({ name: "recording-maintenance", everyMs: 1000, fn: recordingMaintenance });
 
 // Stale-lease sweep: a holder that stops streaming (hung tab, wedged plugin)
 // loses the object — committed at its last known transform, like a
@@ -1117,6 +1107,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     if (shuttingDown) process.exit(0);
     shuttingDown = true;
+    closeRecordings();
     for (const w of worlds.values()) {
       // ws close handlers never run on exit — everyone connected right now
       // sleeps where they stand, same as a normal leave. Without this, a

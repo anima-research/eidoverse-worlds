@@ -1,3 +1,4 @@
+import { recordingState, recordingNotice, recordingNoticeKey } from "../shared/recording.js";
 // WorldAgent — a headless world participant: the MCPL's body.
 // Owns its avatar exactly like the browser client owns a human's: simulated
 // position/yaw/speed ticked at 10Hz, pose intent streamed to the sequencer,
@@ -240,6 +241,10 @@ export class WorldAgent {
    *  position disagree with every renderer. */
   mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number }>();
   people = new Map<string, Person>();
+  recordingStatus: ReturnType<typeof recordingState> = null;
+  /** The last recording notice's key: a notice goes to the inbox once per
+   *  (state, stop code, performance), as the browser logs it. */
+  private recordingKey: string | null = null;
   inbox: InboxItem[] = [];
   private inboxCursor = 0;
   /** Highest world-log seq whose `say` already sits in the inbox. A mid-life
@@ -670,7 +675,20 @@ export class WorldAgent {
             // reproduce name/wildcard/sub/admin precedence from one delta.
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
+          case "recording-status": {
+            this.recordingStatus = recordingState(msg);
+            const text = recordingNotice(this.recordingStatus);
+            const key = recordingNoticeKey(this.recordingStatus);
+            if (text && key !== this.recordingKey) {
+              const event = { ts: Date.now(), kind: "act" as const, who: "world", text };
+              this.inbox.push(event); this.onEvent?.(event);
+            }
+            this.recordingKey = key;
+            break;
+          }
           case "snapshot":
+            this.recordingStatus = recordingState(msg);
+            this.recordingKey = recordingNoticeKey(this.recordingStatus);
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -3094,6 +3112,7 @@ export class WorldAgent {
         description: describeSky(this.skyState, now),
       };
     }
+    if (this.recordingStatus) L.push("Stage recording: " + JSON.stringify(this.recordingStatus));
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];

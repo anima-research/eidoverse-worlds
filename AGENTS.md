@@ -606,8 +606,12 @@ first:
   — the flight recorder: what BOUNCED and why. Kinds: `denied` (rights),
   `rejected` (malformed/oversized shapes), `rate-limit`, `reaction`
   (fired, cause→effect), `reaction-skip` (why not: no reactions component,
-  no handler for that action, wrong motion type), `reaction-error`, and
-  `script-error` / `script-pause` from the behavior tier.
+  no handler for that action, wrong motion type), `reaction-error`,
+  `script-error` / `script-pause` from the behavior tier, and, while stage
+  frames are recorded, `recording-segment-open`, `recording-segment-close`,
+  `recording-budget-warning` (80% of the world's archive budget) and
+  `recording-stopped` (the stop's code and its recovery; the error text
+  stays in the server log).
   In-memory ring, recent events only, visible to everyone in the world.
   **Check here first** when a component doesn't do what you expected.
 - **`world_debug {behavior: "<id>"}`** — ONE script's own console: its

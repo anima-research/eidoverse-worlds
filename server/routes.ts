@@ -26,6 +26,7 @@ import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
+import { recordingStatus } from "./recording.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
@@ -686,6 +687,13 @@ const ROUTES: Route[] = [
         // generation guard compares this against update events, so a slow
         // response from before an acceptance can never roll it back
         "x-profiles-rev": String(seatStore.rev) } }),
+  },
+  {
+    // Cheap cached archive counters for loaded worlds; frame bytes stay local.
+    match: (u) => u.pathname === "/recordings",
+    handler: () => new Response(JSON.stringify({
+      worlds: [...worlds.keys()].map(world => ({ world, ...recordingStatus(world) })),
+    }), { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
     // The heartbeat's gauges (charter §4): per-system runs / worst ms /
