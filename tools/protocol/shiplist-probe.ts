@@ -434,6 +434,20 @@ try {
   check("SY2 after an edit and an undo, a click on empty space deselects it in the Hierarchy AND the viewport", r?.afterUndo?.scene === "syb" && after.scene == null && !after.view.visible, { afterUndo: r?.afterUndo, after });
   check("SY3 the selection box follows a moving (orbiting) thing", r?.follow?.length === 6 && r.follow.every(Boolean), r?.follow);
   });
+  // ---- ST: X sits only where I could climb (R, 10-11 00:47: "trying to sit with 'x' near the crates results in me levitating
+  // 5m in the air": a seat she had put on a sign 3 m up counted as near) ----
+  await stage("ST", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js');
+    await m.sendRequest('create', { id: 'sthigh', components: { label: 'High sign', transform: { pos: [${me[0]} + 0.8, 3, ${me[1]}] }, text: { text: 'UP HERE', size: 0.2 }, sockets: { seat: { pos: [0, 0, 0], body: {} } } } });
+    return await m.sendRequest('create', { id: 'stlow', model: '${CRATE}', components: { label: 'Low seat', transform: { pos: [${me[0]} - 2.2, 0, ${me[1]}], scale: 0.2 }, sockets: { seat: { pos: [0, 2.2, 0], body: {} } } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('sthigh') && !!m.entities.get('stlow'))`); await sleep(1200);
+  const r = await page(`const lb = await import('/lib/localbody.js'), w = await import('/lib/world.js'); const did = lb.trySitOn(); await new Promise((z) => setTimeout(z, 1500));
+    const on = w.avatarMounts?.get?.((await import('/lib/base.js')).CONFIG.name) ?? null; return { did, on: on ? on.to : null };`);
+  await page(`const lb = await import('/lib/localbody.js'); lb.standUp?.(); (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'KeyX' })); return true;`).catch(() => null); await sleep(800);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sthigh' }); await m.sendRequest('delete', { id: 'stlow' }); return true;`).catch(() => null);
+  check("ST1 X with a seat 3 m up beside me and one at the ground 2.2 m away: I sit on the one I could climb onto", r?.on === "stlow", r);
+  });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
   // appears in chat, but not every time ... an 'attention' color in the status bar ... or your avatar could walk over") ----
   await stage("WG", async () => {

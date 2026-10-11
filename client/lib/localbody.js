@@ -239,6 +239,9 @@ export function chooseSeatPose(name) {
  *  A seat someone is already on is taken (one occupant per socket); the seat
  *  I'm on doesn't count. */
 const _sitV = new THREE.Vector3();
+// R 10-11 00:47: X near the crates lifted her ~5 m: a seat declared on a sign 3 m up counted as 'near' (only the ground
+// distance was read). A plain X offers only a seat you could climb onto; naming one (/sit <name>) still reaches any.
+const SEAT_RISE = { up: 1.6, down: 1.0 };
 function nearestSeat(arg, reach) {
   const want = arg ? String(arg).toLowerCase() : null;
   const mine = avatarMounts.get(CONFIG.name);
@@ -255,6 +258,7 @@ function nearestSeat(arg, reach) {
       const p = socketWorldPos(id, slot, _sitV);
       if (!p) continue;
       const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);
+      if (!want && (p.y - myState.pos.y > SEAT_RISE.up || myState.pos.y - p.y > SEAT_RISE.down)) continue;   // out of climbing reach
       if (d < bestD) { bestD = d; best = { id, slot, d, body }; }
     }
   }
