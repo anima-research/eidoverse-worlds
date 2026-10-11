@@ -51,7 +51,7 @@ try {
     assert.ok(third.entries.some(e=>e.verb==="say")); checks++;
   }
   // A non-empty authored log keeps its snapshot and poses, and boot starts
-  // from them (sw-ew215 I7): the quarantine is for derived files with no log.
+  // from them: the quarantine is for derived files with no log.
   {
     const kept = new WorldLog("kept");
     kept.append("owner","spawn",{id:"kept-thing",lib:"kept.glb"});
@@ -67,9 +67,9 @@ try {
     assert.deepEqual(readFileSync(join(dir,"snapshot.json")),snapshotBytes,"kept: the snapshot stays where it was"); checks++;
     assert.ok(!readdirSync(dir).some(n=>n.startsWith("orphaned-derived-")),"kept: nothing is quarantined"); checks++;
   }
-  // A crash right after the quarantine, before the fresh genesis is on disk
-  // (sw-ew215 I21): the next start finds no log and no derived files, and the
-  // old poses stay out of the new epoch.
+  // A crash right after the quarantine, before the fresh genesis is on disk:
+  // the next start finds no log and no derived files, and the old poses stay
+  // out of the new epoch.
   {
     const old = new WorldLog("crash-after-quarantine");
     old.append("owner","spawn",{id:"old-thing",lib:"old.glb"});

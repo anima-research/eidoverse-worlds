@@ -9,7 +9,7 @@ Object.assign(process.env, {
   WORLDS_DIR: join(scratch, "worlds"), OPT_DIR: join(scratch, "opt"),
   EIDOVERSE_DIR: join(scratch, "library"), RECORD_FRAMES: "1", SKIP_OPT_SWEEP: "1",
   RECORD_MIN_FREE_BYTES: "1", RECORD_MAX_BYTES: "100000", RECORD_MAX_SEGMENTS: "10",
-  // 81 characters: invalid, so recording.ts warns at boot and uses the boot ID (sw-ew215 I26).
+  // 81 characters: invalid, so recording.ts warns at boot and uses the boot ID.
   RECORD_PERFORMANCE_ID: "p".repeat(81),
 });
 const { getWorld } = await import("../server/world.ts");
@@ -32,7 +32,7 @@ try {
   assert.equal(recordingStatus("failure").state, "recording");
   assert.notEqual(recordingStatus("failure").performance, "p".repeat(81), "an invalid performance ID falls back at boot");
 
-  // Every world's frame is sent before any world's archive write (I1).
+  // Every world's frame is sent before any world's archive write.
   const order: string[] = [];
   const worldsInOrder = [getWorld("order-a"), getWorld("order-b")];
   for (const ow of worldsInOrder) {
@@ -43,7 +43,7 @@ try {
   assert.deepEqual(order, ["send:order-a", "send:order-b", "archive:order-a", "archive:order-b"],
     "every world's frame goes out before any archive write");
 
-  // A receiver whose socket is backed up is skipped; the others get the frame (I41).
+  // A receiver whose socket is backed up is skipped; the others get the frame.
   const backlog = getWorld("backlog");
   const got: string[] = [];
   backlog.clients.add({ id: "slow", avatar: "", ws: { getBufferedAmount: () => FRAME_SKIP_BUFFERED + 1, send() { got.push("slow"); } } } as any);
@@ -52,8 +52,8 @@ try {
   stageFrames([backlog], () => null);
   assert.deepEqual(got, ["fast"], "a backed-up receiver is skipped while others get the frame");
 
-  // The roster lists who performs (I3), and the index's firstLogSeq is the
-  // last authored entry applied when the segment opened (I6).
+  // The roster lists who performs, and the index's firstLogSeq is the last
+  // authored entry applied when the segment opened.
   const anchored = getWorld("anchored");
   anchored.append("tester", "say", { text: "one" });
   anchored.append("tester", "say", { text: "two" });

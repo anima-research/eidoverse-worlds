@@ -32,7 +32,7 @@ try {
   check(a.look().includes('"reason":"disk-floor"'), "MCPL look changes on live stop");
   check(a.look().includes('"performance":"show"'), "MCPL stop readback retains the performance ID");
   check(a.inbox.some(e => e.text?.includes("recording stopped")), "MCPL receives a stop notice");
-  // The same stop again (a repeated broadcast) says nothing new (sw-ew215 I29).
+  // The same stop again (a repeated broadcast) says nothing new.
   const stopsBefore = a.inbox.length;
   peer.send(JSON.stringify(stop));
   peer.send(JSON.stringify({ type: "recording-status", recording: false, recordingStatus: { ...stop.recordingStatus, reason: "archive-io" } }));
@@ -66,7 +66,7 @@ check(notices.length === 2 && notices[0].includes("⏺") && notices[1].includes(
 await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "visitor" }, entries: [], present: [], avatars: [], ...current });
 check(net.recordingStatus === null, "browser snapshot clears state absent on older server");
 // Joining into a stopped recording shows its state and notice; rejoining into
-// the same stop says nothing new (sw-ew215 I16, I29).
+// the same stop says nothing new.
 const stoppedJoin = { type: "snapshot", you: "tester", yourRights: { role: "visitor" }, entries: [], present: [], avatars: [],
   recording: false, recordingStatus: { state: "stopped", reason: "world-byte-limit", performance: "show" } };
 await _dispatch(stoppedJoin);

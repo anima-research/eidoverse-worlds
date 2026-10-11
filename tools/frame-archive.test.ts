@@ -281,7 +281,6 @@ test("epoch rotation retains cumulative quota, identity and stopped performance 
   expect(a.status().state).toBe("stopped");
 });
 
-// ---- sw-ew215's review round ------------------------------------------------
 
 test("a closed segment's frames and index are synced before the index is renamed in, and the directory after", () => {
   const synced: string[] = [];
