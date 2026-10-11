@@ -1953,7 +1953,7 @@ function buildUse(ctx, a) {
       sent.push(t); ctx.refs.add(t); }
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
-    if (!ops.length) refuse("nothing-to-reset", skipped.length ? `nothing could go home: ${skipped.map((x) => `${x.id} (${x.why})`).join(", ")}` : "everything is already home", "");
+    if (!ops.length) refuse("nothing-to-reset", `everything is already home${skipped.length ? `; skipped: ${skipped.map((x) => `${x.id} (${x.why})`).join(", ")}` : ""}`, "");
     return ops;
   }
   if (h?.kind === "impulse") {
