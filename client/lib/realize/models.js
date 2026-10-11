@@ -1116,6 +1116,11 @@ export function initModelsRealizer() {
   // lights.js names the stranded id ('light-refused', off net.js's refusal
   // event) and the rollback is one call: refreshLight re-derives every
   // folded field, so the preview snaps back to exactly what a joiner sees
+  // thingphysics: a launched body leaves its carrier (scene.attach keeps where it is); its rest's parent record re-mounts it
+  bus.on('flight-detach', ({ id }) => {
+    const obj = entities.get(id); if (!obj || !obj.parent || obj.parent.isScene) return;
+    scene.attach(obj); delete obj.userData.mountedTo; delete obj.userData.mountRel; indexSceneMount(id, null);
+  });
   bus.on('edit-mode', (on) => {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);

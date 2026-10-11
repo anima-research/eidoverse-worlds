@@ -360,7 +360,10 @@ function drawFlights(wall, now) {
     //  over a hold the authority hasn't yet said is over)
     const b = pres.bodies[id]; const obj = entities.get(id); if (!obj) continue;
     let sp = spins.get(id);
-    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone() }; spins.set(id, sp); suspendCollider(id, true); }
+    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone() }; spins.set(id, sp); suspendCollider(id, true);
+      // the engine owns a launched body until its rest: it hangs from the scene, not from what it rode on (R 10-11: a stack's
+      // riders stayed under the box she took, dragged along by its hold, until the rest re-parented them seconds later)
+      if (obj.parent && !obj.parent.isScene) bus.emit('flight-detach', { id }); }
     const pv = b.resting ? undefined : prev.get(id);
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
