@@ -401,6 +401,20 @@ try {
     const back = await t.physicsApi.put('nhball'); return { first: o[0]?.label, left: gone?.ok ?? gone?.refused?.code, grab: g?.ok ?? g?.refused?.code, put: back?.ok ?? back?.refused?.code };`);
   check("NH1 my body gone at the authority (leave), a CLICK grab (the left-click offer) still works: the 'not-here' refusal re-arrives and sends it again", r.left === true && r.grab === true, r);
   });
+  // ---- PO: holding one thing, right-click another: 'put X on Y' sets it down on top, where the click was (R, 10-10) ----
+  await stage("PO", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'pobase', model: '${CRATE}', components: { label: 'Base', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.4 } } });
+    return await m.sendRequest('create', { id: 'potop', model: '${CRATE}', components: { label: 'Small', grabbable: {}, transform: { pos: [${me[0]} - 0.8, 0, ${me[1]}], scale: 0.15 } } });`);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('pobase') && m.entities.has('potop'))`); await sleep(700);
+  const r = await page(`const t = await import('/lib/thingphysics.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js');
+    const g = await t.physicsApi.grab('potop'); await new Promise((z) => setTimeout(z, 800));
+    const b = new T.Box3().setFromObject(w.entities.get('pobase')); const side = [b.max.x, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2];   // a click on its side
+    const o = cu.offersOf('pobase', { spot: side }); const put = o.find((x) => x.k === 'puton'); const res = await put?.run(); await new Promise((z) => setTimeout(z, 1500));
+    const tb = new T.Box3().setFromObject(w.entities.get('potop'));
+    return { grab: g?.ok ?? null, label: put?.label ?? null, ok: res?.ok ?? res?.refused?.code ?? null, topBottom: +tb.min.y.toFixed(3), baseTop: +b.max.y.toFixed(3), held: t.physicsApi.mine() };`);
+  check("PO1 holding one thing, the menu on another offers 'put Small on Base'; a click on its side sets it down ON it", r.grab && /^put Small on Base$/.test(r.label ?? "") && r.ok === true && Math.abs(r.topBottom - r.baseTop) < 0.03 && !r.held.length, r);
+  });
   // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

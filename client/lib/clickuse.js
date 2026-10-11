@@ -27,12 +27,18 @@ const seatOf = (id) => { const s = comps.get(id)?.sockets; if (!isBag(s)) return
 const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */
-export function offersOf(id) {
+/** spot: where the click landed (the context menu passes it), for "put X on Y" there. */
+export function offersOf(id, { spot = null } = {}) {
   // its name as its builder wrote it, no quotes: the menu draws it in the accent colour (R, 10-10)
   const L = comps.get(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
   const out = [], add = (k, pre, post, run) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run });
   // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the C key)
   if (held) { add('put', 'put ', ' down', () => physicsApi.put(id)); add('throw', 'throw ', '', () => physicsApi.throw()); }
+  // holding something else, on another thing: set it down on that thing where the click landed (R, 10-10: "you can't click
+  // to place it down on another grabbable object ... 'Put down [held item] on [clicked-on item]' at the place that was clicked")
+  const inHand = physicsApi.mine().find((h) => h !== id);
+  if (!held && inHand && spot) { const H = comps.get(inHand)?.label, hn = typeof H === 'string' && H.trim() ? H.trim().slice(0, 40) : (nameOf(inHand) ?? inHand);
+    out.push({ k: 'puton', label: `put ${hn} on ${name}`, parts: [`put ${hn} on `, name, ''], run: () => putAtSpot(inHand, onTop(id, spot)) }); }
   else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id));
   for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb));
   const seat = seatOf(id);
@@ -83,6 +89,12 @@ export function aimPoint(clientX = lastXY?.[0], clientY = lastXY?.[1]) {
   const p = h && (!g || h.distance < aimRay.ray.origin.distanceTo(g)) ? h.point : g;
   return p ? [p.x, p.y, p.z] : null;
 }
+/** A click on a thing's side still means on top of it: the spot pulled inside its footprint (5 cm in), at its top. */
+function onTop(id, spot) {
+  const o = entities.get(id); if (!o) return spot; const b = new THREE.Box3().setFromObject(o); if (b.isEmpty()) return spot;
+  const c = (v, lo, hi) => (hi - lo < 0.1 ? (lo + hi) / 2 : Math.min(hi - 0.05, Math.max(lo + 0.05, v)));
+  return [c(spot[0], b.min.x, b.max.x), Math.max(spot[1], b.max.y), c(spot[2], b.min.z, b.max.z)];
+}
 /** Holding something, a click on a spot: set it down THERE (R, 10-10: "my assumption is that my character would try to
  *  drop it where the cursor is, not right at their feet"), walking over first when it is out of reach. */
 async function putAtSpot(id, spot) {
@@ -108,7 +120,8 @@ addEventListener('mouseup', (e) => {
   const id = over ?? heldNow; if (!id) return;
   const offers = offersOf(id); if (!offers.length) return;
   if (p.b === 0) { void (offers[0].k === 'grab' ? fetchIt(id, offers[0]) : offers[0].run()); return; }
-  contextMenu(e.clientX, e.clientY, offers.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { void offers.find((o) => o.k === k)?.run(); });
+  const menu = over && heldNow ? offersOf(id, { spot: aimPoint(e.clientX, e.clientY) }) : offers;
+  contextMenu(e.clientX, e.clientY, menu.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { void menu.find((o) => o.k === k)?.run(); });
 });
 let hoverAt = 0, hand = '';
 canvas.addEventListener('mousemove', (e) => {
