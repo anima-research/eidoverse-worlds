@@ -283,7 +283,7 @@ function meshGhost(shape, [x, y, z]) {
   const r = x / 2;
   const geo = shape === 'sphere' ? new THREE.SphereGeometry(r, 24, 12).translate(0, r, 0)
     : shape === 'cylinder' ? new THREE.CylinderGeometry(r, r, y, 24).translate(0, y / 2, 0)
-    : shape === 'capsule' ? new THREE.CapsuleGeometry(r, Math.max(0, y - 2 * r), 6, 12).translate(0, y / 2, 0)
+    : shape === 'capsule' ? new THREE.CapsuleGeometry(r, Math.max(0, y - 2 * r), 6, 12).translate(0, Math.max(y, x) / 2, 0)
     : shape === 'plane' ? new THREE.PlaneGeometry(x, z).rotateX(-Math.PI / 2)
     : new THREE.BoxGeometry(x, y, z).translate(0, y / 2, 0);
   const obj = new THREE.Mesh(geo, new THREE.MeshStandardNodeMaterial({ color: 0x9a9a9a, roughness: 0.8, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));

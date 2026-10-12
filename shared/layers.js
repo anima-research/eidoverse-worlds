@@ -16,7 +16,7 @@ export function defaultLayer(e) {
   if (vrm(e)) return 'people';
   if (c.structure) return 'structure';
   if (c.text || c.picture) return 'signs';
-  if (e?.lib == null) return c.light && typeof c.light === 'object' ? 'lights' : 'other';
+  if (e?.lib == null && !(c.mesh && typeof c.mesh === 'object')) return c.light && typeof c.light === 'object' ? 'lights' : 'other';   // a mesh thing falls through to the size test, as a model does
   const sh = c.physics?.shape, t = c.transform; const s = Array.isArray(t?.scale) ? t.scale : [t?.scale ?? 1, t?.scale ?? 1, t?.scale ?? 1];
   if (Array.isArray(sh) && Array.isArray(sh[0]) && Array.isArray(sh[1]) && Math.max(Math.abs((sh[1][0] - sh[0][0]) * s[0]), Math.abs((sh[1][2] - sh[0][2]) * s[2])) >= 30) return 'environment';
   return 'props';

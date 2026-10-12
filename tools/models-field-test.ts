@@ -115,6 +115,10 @@ const light = () => ({ kind: "light", pos: [0, 1, 0], color: 0xffd9a0, intensity
   check("a shape change under the same id → retire + create (a rebuild)", changed.retire.includes("a") && changed.create.some((c) => c.id === "a"));
   const flip = planReconcile({ a: { lib: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1 } }, new Map([["a", { kind: "mesh", mesh: "box|1,1,1" }]] as any));
   check("a mesh id that becomes a model → rebuild", flip.retire.includes("a") && flip.create.length === 1);
+  // review round 2: S2.3 a capsule is at least its diameter tall (the authority's meshSize agrees); S3 a carried thing with
+  // both a lib and a mesh is its model, as the hierarchy and the Inspector read it
+  check("readMesh: a capsule [1, 0.2, 1] is 1 m tall", JSON.stringify(readMesh({ shape: "capsule", size: [1, 0.2, 1] })?.size) === "[1,1,1]");
+  check("kind 'model' when a carried thing has both a lib and a mesh", kindOf({ lib: "x.glb", pos: [0, 0, 0], actor: "t", ts: 1, comp: { mesh: { shape: "box", size: [1, 1, 1] } } }) === "model");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

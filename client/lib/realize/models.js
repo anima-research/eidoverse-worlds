@@ -546,7 +546,7 @@ function createMesh(id, ent) {
   const obj = new THREE.Mesh(meshGeometry(m), meshMaterial(m.shape));
   obj.castShadow = true; obj.receiveShadow = true;
   obj.userData.entityId = id;
-  obj.userData.meshShape = m.shape;
+  obj.userData.meshShape = m.shape; obj.userData.meshSize = m.size;
   prepareMaterial(obj.material, obj);
   obj.position.set(...(ent.pos ?? [0, 0, 0]));
   orientObj(obj, ent);
@@ -566,7 +566,7 @@ function rebuildMesh(id) {
   const ent = state.st.entities[id]; const obj = entities.get(id); const t = tracked.get(id);
   const m = readMesh(ent?.comp?.mesh); if (!obj || !t || t.kind !== 'mesh' || !m) return;
   const key = meshKeyOf(ent); if (key === t.mesh) return;
-  obj.geometry.dispose(); obj.geometry = meshGeometry(m);
+  obj.geometry.dispose(); obj.geometry = meshGeometry(m); obj.userData.meshSize = m.size;
   if (obj.userData.meshShape !== m.shape) { obj.userData.meshShape = m.shape; for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) if (mat) mat.side = m.shape === 'plane' ? THREE.DoubleSide : THREE.FrontSide; }
   t.mesh = key;
   if (!collisionOwnedElsewhere(ent, obj.userData.mountedTo)) fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
@@ -578,7 +578,7 @@ function rebuildMesh(id) {
 export function previewMesh(id, m) {
   const obj = entities.get(id); const t = tracked.get(id); if (!obj || t?.kind !== 'mesh') return false;
   const r = readMesh(m); if (!r) return false;
-  obj.geometry.dispose(); obj.geometry = meshGeometry(r); t.mesh = null;   // null: the next fold word rebuilds and refits
+  obj.geometry.dispose(); obj.geometry = meshGeometry(r); obj.userData.meshSize = r.size; t.mesh = null;   // null: the next fold word (or a pose-revert) rebuilds and refits
   return true;
 }
 const CREATE = { light: createLight, empty: createEmpty, model: createModel, mesh: createMesh };
@@ -752,7 +752,7 @@ function retire(id) {
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
   if (obj) {
     if (obj.userData?.isLight) disposeLight(obj);
-    if (obj.userData?.meshShape) { obj.geometry?.dispose?.(); for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) mat?.dispose?.(); }
+    if (obj.userData?.meshShape) { obj.geometry?.dispose?.(); for (const mat of new Set([obj.material, ...(obj.userData.__matOrig ?? []), ...(obj.userData.__matClones ?? [])])) mat?.dispose?.(); }
     // cargo steps off before the carrier vanishes — at the pose the FOLD
     // stamped for it, so every joiner and this client agree where it landed.
     // The scene index is the same membership the old all-entities walk
@@ -1208,6 +1208,8 @@ export function initModelsRealizer() {
     const ent = state.st.entities[id]; const obj = entities.get(id);
     if (!ent || !obj) return;
     if (tracked.get(id)?.kind === 'light') { refreshLight(id, ent); return; }
+    // a refused or cancelled mesh scrub previewed a geometry the fold never took (review S2.1): back to the fold's, collider too
+    if (tracked.get(id)?.kind === 'mesh') { tracked.get(id).mesh = null; rebuildMesh(id); }
     if (obj.userData.mountedTo && ent.parent) {
       const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.socket] : null;
       obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));

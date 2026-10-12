@@ -36,7 +36,7 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -100,8 +100,7 @@ function axisName(m, def) {
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
 const compLight = (ent) => isBag(ent?.comp?.light);
-export const MESH_SHAPES = ['box', 'sphere', 'cylinder', 'plane', 'capsule'];
-const compMesh = (ent) => isBag(ent?.comp?.mesh) && ent.lib == null;
+const compMesh = (ent) => isBag(ent?.comp?.mesh) && ent.lib == null && MESH_SHAPES.includes(ent.comp.mesh.shape);
 // The reading a viewer with no hint gets: canonical (middle axis within ±90°,
 // shared/euler.js) — except an UPRIGHT thing with a q (a pure turn about +Y,
 // which every lease release and settle writes), which reads (0, yaw, 0) in
@@ -275,7 +274,7 @@ export function inspectSchema(ent, id, live = {}) {
   // What each axis means per shape is said in the hint (a sphere reads x as its diameter; a plane has no height).
   if (compMesh(ent)) {
     const m = c.mesh; const size = Array.isArray(m.size) && m.size.length === 3 ? m.size : [1, 1, 1];
-    const meaning = { sphere: ['diameter', '(unused)', '(unused)'], cylinder: ['diameter', 'height', '(unused)'], capsule: ['diameter', 'height', '(unused)'], plane: ['width', '(unused)', 'depth'], box: ['width', 'height', 'depth'] }[MESH_SHAPES.includes(m.shape) ? m.shape : 'box'];
+    const meaning = { sphere: ['diameter', '(unused)', '(unused)'], cylinder: ['diameter', 'height', '(unused)'], capsule: ['diameter', 'height, at least the diameter', '(unused)'], plane: ['width', '(unused)', 'depth'], box: ['width', 'height', 'depth'] }[MESH_SHAPES.includes(m.shape) ? m.shape : 'box'];
     const fields = [
       { t: 'enum', k: 'shape', label: 'shape', value: MESH_SHAPES.includes(m.shape) ? m.shape : 'box', def: 'box', options: MESH_SHAPES.map((v) => ({ v, label: v })), hint: 'box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin' },
       ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, min: 0.05, max: 200, unit: 'm', hint: `${meaning[i]}, in metres (0.05 to 200)` })),
@@ -847,7 +846,7 @@ const NEEDS = {
   // a model is placed from the Library (spawn on the id would replace this
   // entity wholesale: its components, its placer, its born)
   Model: {
-    met: (ent) => ent?.lib != null,
+    met: (ent) => ent?.lib != null || compMesh(ent),   // a mesh thing has a body to act on, as the authority reads it (review S2.2)
     plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
       prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
   },
@@ -921,7 +920,9 @@ function addOwnOps(ent, id, name, value) {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
     // one place per thing (R 10-11; the authority refuses a light on a model): on a model, the light is a CHILD thing a
     // metre up, so its pose is its own and the gizmo moves one thing
-    if (c.model != null || ent?.lib != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, 1, 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
+    // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
+    const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
+    if (c.model != null || ent?.lib != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
   if (name === 'Mesh') {
@@ -931,7 +932,7 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'mesh', { shape, size: [1, 1, 1] })], errors: [] };
   }
   if (name === 'Collider') {
-    if (ent?.lib == null) return { ops: [], errors: [`a collider needs a model to collide as (${id} has none)`] };
+    if (ent?.lib == null && !compMesh(ent)) return { ops: [], errors: [`a collider needs a model or a mesh to collide as (${id} has none)`] };
     if (c.collider != null) return { ops: [], errors: [`${id} already has a collider`] };
     const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'exact' ? 'exact' : null;
     if (!shape) return { ops: [], errors: ['a collider shape is "exact", "box" or "sphere"'] };

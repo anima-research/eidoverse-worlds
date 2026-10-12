@@ -340,6 +340,14 @@ console.log("\nmesh (a parametric body with no model):");
   const addM3 = editOps({ pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} }, "e", { "comp.+": "Mesh" });
   check("on an Empty it writes mesh {shape: box, size: [1,1,1]}", JSON.stringify(val(addM3, "mesh")) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), JSON.stringify(addM3));
   check("the header says what it is: 'box'", inspectSchema(cube, "m1").sections.libLabel === "box", JSON.stringify(inspectSchema(cube, "m1").sections.libLabel));
+  // review round 2 (S2.2, S3): a mesh thing has a body: Grabbable, Sockets and Collider don't ask it for a model; the child
+  // light hangs half a metre over its top; a plane's at 0.55
+  const gr = editOps(cube, "m1", { "comp.+": "Grabbable" }), so = editOps(cube, "m1", { "comp.+": "Sockets" }), co = editOps(cube, "m1", { "comp.+": "Collider" }, {});
+  check("Add ▸ Grabbable and Collider on a mesh thing write their component; Sockets is its own gesture (none says 'needs a model')", sets(gr, "grabbable").length === 1 && !gr.errors.length && !/needs a model/.test(so.errors[0] ?? "") && sets(co, "collider").length === 1 && !co.errors.length, JSON.stringify([gr.errors, so.errors, co.errors, gr.choice ?? null, so.choice ?? null]));
+  const lt = editOps(cube, "m1", { "comp.+": "Light" }); const ly = flat(lt.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
+  const pl = editOps({ ...cube, comp: { mesh: { shape: "plane", size: [4, 0.05, 4] } } }, "p1", { "comp.+": "Light" }); const py = flat(pl.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
+  check("Add ▸ Light on a 2 m box childs the bulb at 2.5; on a plane at 0.55", ly === 2.5 && py === 0.55, JSON.stringify([ly, py]));
+  check("a carried thing with both a lib and a mesh is shown as its model: no mesh card", !inspectSchema({ ...cube, lib: "m/crate.glb" }, "m2").groups.some((g) => g.group === "mesh"));
 }
 
 // R 10-12 10:09 (the trusted rung, docs/COMPONENT-LADDER.md): a draft this client reads is offered under "drafts" with an

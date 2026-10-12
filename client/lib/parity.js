@@ -4,6 +4,7 @@
 // meshes): those diverge by design while an object is in flight or riding a motion.
 
 import { state } from './state.js';
+import { kindOf } from './realize/models_field.js';
 import { entities, entityMeta, comps } from './world.js';
 
 const jstr = (v) => JSON.stringify(v ?? null);
@@ -34,7 +35,7 @@ export function foldParity() {
     if (meta) {
       const ent = shadow.entities[id];
       const sceneKind = meta.kind === 'light' ? 'light' : meta.kind === 'mesh' ? 'mesh' : 'model';
-      const foldKind = ent.kind === 'light' ? 'light' : ent.comp?.mesh && typeof ent.comp.mesh === 'object' ? 'mesh' : 'model';
+      const foldKind = kindOf(ent) === 'empty' ? 'model' : kindOf(ent);
       if (sceneKind !== foldKind || (foldKind === 'model' && meta.lib !== ent.lib)) {
         out.identityDiffs.push({ id, legacy: { kind: sceneKind, lib: meta.lib },
           shadow: { kind: foldKind, lib: ent.lib } });

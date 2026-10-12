@@ -12,12 +12,16 @@ const W = {
   hat: { lib: "m/hat.glb", comp: {}, parent: { to: "npc" } },
   wall: { lib: null, comp: { structure: { tile: 1 } } },
   told: { lib: "m/crate.glb", comp: { "hesperus/layer": "environment" } },
+  // review S3 (primitives): a mesh thing is sized like a model, not filed with the Empties
+  ground: { lib: null, comp: { mesh: { shape: "plane", size: [200, 0.05, 200] }, physics: { kind: "static", shape: [[-100, 0, -100], [100, 0.05, 100]] }, transform: { pos: [0, 0, 0] } } },
+  cube: { lib: null, comp: { mesh: { shape: "box", size: [1, 1, 1] }, physics: { kind: "static", shape: [[-0.5, 0, -0.5], [0.5, 1, 0.5]] }, transform: { pos: [0, 0, 0] } } },
 };
 const got = Object.fromEntries(Object.keys(W).map((k) => [k, layerOf(W, k)]));
 check("defaults by kind: a 60 m floor is environment, a crate props, a lone light lights, text signs, an avatar people, a structure structure",
   got.floor === "environment" && got.crate === "props" && got.lamp === "lights" && got.sign === "signs" && got.npc === "people" && got.wall === "structure", JSON.stringify(got));
 check("what rides an avatar is on people with it", got.hat === "people", got.hat);
 check("a builder's hesperus/layer wins", got.told === "environment", got.told);
+check("a 200 m mesh plane is environment and a 1 m mesh box is props (a mesh thing takes the size test, not the Empties' 'other')", got.ground === "environment" && got.cube === "props", JSON.stringify([got.ground, got.cube]));
 const s = inspectSchema({ ...W.crate, id: "crate" }, "crate", {}); const f = s.groups.flatMap((g) => g.fields).find((x) => x.k === "layer");
 check("the layer row offers auto (its default) and every layer", f?.value === "auto" && f.options[0].label === "auto (props)" && f.options.length === 8, JSON.stringify(f?.options));
 const e = editOps({ ...W.crate, id: "crate" }, "crate", { "flags.layer": "environment" }, {});
