@@ -54,6 +54,13 @@ export function* bags() {
 /** What a thing IS as realized and where from, for the panels: {kind, lib?} — the fold's word (shared/protocol/kind.js),
  *  the realizer keeps no second copy (entityMeta is gone, C7c). */
 export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { lib: c.model } : {}) } : null; };
+/** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
+ *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
+ *  index for the realizer's carrier checks, the sockets re-seat and the panels; no map is kept beside the fold (C12b). */
+const out = (k) => dec(k) ?? k;
+export const childrenOf = (id) => replica.childrenOf?.(enc(String(id))).map(out) ?? [];
+export const parentIdOf = (id) => { const p = replica.parentOf?.(enc(String(id))); return p == null ? null : out(p); };
+export const ancestorsOf = (id) => replica.ancestors?.(enc(String(id))).map(out) ?? [];
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. */
 export const avatarMounts = new Map();

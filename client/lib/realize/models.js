@@ -34,7 +34,7 @@ import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
 import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
-import { entities, bagOf, avatarMounts, findPart, editHolds } from '../world.js';
+import { entities, bagOf, childrenOf, avatarMounts, findPart, editHolds } from '../world.js';
 import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
@@ -141,69 +141,15 @@ function clearReservation(id) {
   }
 }
 
-// ---- mount indices (§16.2.C) ------------------------------------------------
-// The promote path used to pay two O(N) scans per promote (the rider step-out
-// walked ALL entities; mountsTouching Object.entries'd them again) and the
-// 500ms sweep paid O(N) per demote CANDIDATE (canDemote's carrier scan) —
-// O(N²) at scale. These two maps are faster spellings of those exact
-// predicates, never state: fold parity cannot see them.
-//
-// TWO indices because the two truths genuinely diverge:
-// - FOLD truth (parent-id -> children whose state parent.to is it) serves
-//   canDemote's carrier refusal, the sockets re-seat, and mountsTouching —
-//   consumers asking "what does the fold WANT mounted here". Maintained at
-//   one choke point (indexFoldParent) driven from the verbs that can write a
-//   parent record: mount/dismount set/clear the id's own; spawn/light replace
-//   the record wholesale; remove deletes the children's records too.
-// - SCENE truth (parent-id -> children whose realized object is attached,
-//   i.e. userData.mountedTo) serves the two cargo step-out loops — a `remove`
-//   folds the children's parent records away BEFORE retire() runs, so at
-//   step-out time the scene attachment is all there is left to read.
-//   Maintained exactly where userData.mountedTo is written or cleared.
-const foldChildren = new Map();  // parent id -> Set(child id)   (state truth)
-const foldParentOf = new Map();  // child id -> parent id        (reverse, O(1) moves)
+// ---- the scene-side mount index ---------------------------------------------
+// The FOLD's edges (parent id -> children whose state parent.to is it) are the replica's own index (world.js
+// childrenOf, kept at every ingest): canDemote's carrier refusal, the sockets re-seat and mountsTouching read it.
+// What stays here is SCENE truth (parent id -> children whose realized object is attached, i.e. userData.mountedTo),
+// for the two cargo step-out loops: a `remove` folds the children's parent records away BEFORE retire() runs, so at
+// step-out time the scene attachment is all there is left to read. Maintained exactly where userData.mountedTo is
+// written or cleared.
 const sceneChildren = new Map(); // parent id -> Set(child id)   (scene truth)
 const sceneParentOf = new Map();
-
-function indexFoldParent(id) {
-  const to = state.st.entities[id]?.parent?.to ?? null;
-  const prev = foldParentOf.get(id) ?? null;
-  if (prev === to) return;
-  if (prev) {
-    const s = foldChildren.get(prev);
-    if (s) { s.delete(id); if (!s.size) foldChildren.delete(prev); }
-  }
-  if (to) {
-    let s = foldChildren.get(to);
-    if (!s) foldChildren.set(to, s = new Set());
-    s.add(id);
-    foldParentOf.set(id, to);
-  } else foldParentOf.delete(id);
-}
-
-/** Re-derive after a verb that can write parent records. For `remove`, the
- *  fold has already stripped the children's records — refresh them too. */
-function refoldParents(verb, id) {
-  if (!id) return;
-  if (verb === 'remove') {
-    const kids = foldChildren.get(id);
-    if (kids) for (const cid of [...kids]) indexFoldParent(cid);
-  }
-  indexFoldParent(id);
-}
-
-function rebuildFoldIndex() {
-  foldChildren.clear();
-  foldParentOf.clear();
-  for (const [cid, ent] of Object.entries(state.st.entities)) {
-    const to = ent.parent?.to;
-    if (!to) continue;
-    let s = foldChildren.get(to);
-    if (!s) foldChildren.set(to, s = new Set());
-    s.add(cid);
-    foldParentOf.set(cid, to);
-  }
-}
 
 /** Mirror one userData.mountedTo write (`to` = parent id) or clear (null). */
 function indexSceneMount(id, to) {
@@ -447,7 +393,7 @@ function runPromoteTail(id, obj) {
   if (infer) attachLamps(obj, `entity:${id}`);
   lampsOn.set(id, infer);
   // mounts that were waiting on this id — as child or carrier
-  for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
+  for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
 }
 
 /** Realized objects still owing their heavy tail — the governor's loading
@@ -495,7 +441,7 @@ function createHost(id, ent, kind) {
   emitCompBag(id);
   // mounts that were waiting on this id — as child or carrier (a model's
   // promote tail does this; an Empty has no tail, it exists at once)
-  for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
+  for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
 }
 
 const createEmpty = (id, ent) => createHost(id, ent, 'empty');
@@ -707,8 +653,7 @@ function onComp(id, type) {
   // socket's arrival is what makes it right (review S5; the relKey includes
   // the resolved socket for exactly this)
   if (type === 'sockets') {
-    const kids = foldChildren.get(id);   // same membership as the old full scan
-    if (kids) for (const cid of kids) execMount(cid);
+    for (const cid of childrenOf(id)) execMount(cid);
   }
   bus.emit('comp', { id, type, data });
 }
@@ -875,10 +820,7 @@ function canDemote(id, ent) {
   if (!libGeom.get(ent.lib)?.bbox) return false;    // nothing honest to stand in
   // a carrier: children mounted on it would need the cargo step-off, which
   // is semantically a removal (it re-stamps fold poses) — refuse instead.
-  // foldChildren holds exactly the ids the old Object.values scan matched
-  // (state parent.to === id), maintained at the fold-write choke point —
-  // the same predicate, O(1) and allocation-free per candidate (§16.2.C)
-  if (foldChildren.get(id)?.size) return false;
+  if (childrenOf(id).length) return false;
   // a body in its seat: someone is sitting on it, wherever WE are standing
   // (avatarMounts is rider-keyed and bounded by bodies present, not
   // entities — the scan stays)
@@ -986,7 +928,7 @@ function reconcileSubtree(id) {
   const E = state.st.entities; const depth = (k) => { let n = 0; for (let p = E[k]?.parent?.to; p && n < 33; p = E[p]?.parent?.to) n++; return n; };
   const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });
   const order = [id, ...under].sort((a, b) => depth(a) - depth(b)); const off = offIn(E, id); if (off) order.reverse();
-  for (const k of order) { if (!off) indexFoldParent(k); reconcileId(k); }
+  for (const k of order) reconcileId(k);
   if (!off) for (const k of order) execMount(k);   // (a no-op until both ends are realized; the load's own callback finishes it)
 }
 function reconcileId(id) {
@@ -1029,9 +971,6 @@ function onChange({ id, what, comp }) {
     switch (what) {
       case 'born':
       case 'gone':
-        // refresh the parent index BEFORE the handler runs (retire's step-out reads the SCENE index; canDemote,
-        // mountsTouching and the sockets re-seat read this one)
-        refoldParents(what === 'gone' ? 'remove' : 'spawn', id);
         reconcileId(id);
         // a re-born thing keeps no stale bag: the light follows the new one
         if (what === 'born') syncCompLight(id);
@@ -1041,7 +980,6 @@ function onChange({ id, what, comp }) {
         syncCompLight(id);   // a parked light (model still loading) moves with the fold
         break;
       case 'parent':
-        refoldParents('mount', id);
         // moved under (or out from under) a switched-off thing: it goes or comes with its new parent (review 5d5eef5c #6)
         if (offIn(state.st.entities, id) !== !(entities.has(id) || tracked.has(id))) { reconcileSubtree(id); break; }
         if (ent?.parent) execMount(id);
@@ -1091,17 +1029,12 @@ export function initModelsRealizer() {
   setInterval(residencySweep, 500);
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') {
-      // the snapshot's entities carry folded parent records (#71/#79: the
-      // late joiner sees every folded mount) — index them BEFORE the
-      // reconcile pass whose promotes will consult mountsTouching
-      rebuildFoldIndex();
       reconcileModels();
     } else if (ev.type === 'reset') {
       // a real teardown, not just bookkeeping: leaving the scene populated
       // while tracked empties means the next hydrate re-creates every id ON
       // TOP of its orphaned twin (review S4 — world switch without reload)
       for (const id of [...tracked.keys()]) retire(id);
-      rebuildFoldIndex();          // state is empty — so is the index
       sceneChildren.clear();
       sceneParentOf.clear();
     } else if (ev.type === 'change') onChange(ev);

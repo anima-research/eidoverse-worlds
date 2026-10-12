@@ -162,6 +162,10 @@ const recordOfView = (e) => (e ? { ...(e.lib != null ? { model: e.lib } : {}), t
 export const bagOf = (id) => comps.get(id) ?? recordOfView(state.st.entities?.[id]);
 export function* bags() { const seen = new Set(); for (const [id, c] of comps) { seen.add(id); yield [id, c]; } for (const id of Object.keys(state.st.entities ?? {})) if (!seen.has(id) && id !== '@world') yield [id, bagOf(id)]; }
 export const metaOf = (id) => entityMeta.get(id) ?? (state.st.entities?.[id] ? { kind: kindOf(state.st.entities[id]), ...(state.st.entities[id].lib ? { lib: state.st.entities[id].lib } : {}) } : null);
+/** the fold's edge index (world.js childrenOf/parentIdOf/ancestorsOf): this cone has no replica, so the view's records answer */
+export const childrenOf = (id) => Object.keys(state.st.entities ?? {}).filter((k) => state.st.entities[k]?.parent?.to === id).sort();
+export const parentIdOf = (id) => state.st.entities?.[id]?.parent?.to ?? null;
+export const ancestorsOf = (id) => { const out = []; const seen = new Set([id]); for (let p = parentIdOf(id); p && state.st.entities[p] && !seen.has(p); p = parentIdOf(p)) { out.push(p); seen.add(p); } return out; };
 export const avatarMounts = new Map();
 export const editHolds = new Set();
 export function findPart(root, name) {
