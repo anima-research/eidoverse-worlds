@@ -494,10 +494,11 @@ function endClaim(id) { const c = claims.get(id); if (!c) return; claims.delete(
 /** Probe/Hierarchy surface: who is editing what right now, by id. */
 export const claimsNow = () => Object.fromEntries([...claims].map(([id, c]) => [id, c.by]));
 setInterval(() => { const now = performance.now(); for (const [id, c] of claims) if (now - c.at > CLAIM_MS) endClaim(id); }, 250);
-bus.on('drag', ({ id, pos, yaw, q, by, end }) => {
+bus.on('drag', ({ id, pos, yaw, q, scale, by, end }) => {
   const obj = entities.get(id);
   if (!obj) return;
   if (Array.isArray(pos) && pos.length === 3) obj.position.set(...pos);
+  if (Array.isArray(scale) && scale.length === 3) obj.scale.set(...scale);   // a scrubbed size, previewed live
   if (Array.isArray(q) && q.length === 4) obj.quaternion.set(q[0], q[1], q[2], q[3]);   // the rotate gizmo's full turn
   else if (yaw != null) obj.rotation.y = yaw;
   reindexCollider(id);

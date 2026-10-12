@@ -26,7 +26,8 @@ import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
 import { boxOf } from './realize/models.js';
 import { state } from './state.js';
-import { net } from './net.js';
+import { net, sendDrag } from './net.js';
+import { THREE } from './core.js';
 import { renderDOM } from './panels.js';
 import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
 import { namedParts } from './parts.js';
@@ -117,6 +118,13 @@ export function planEdit(id, key, value) {
 /** Does this plan write a transform (a move/turn/scale)? The euler hint follows the pose. */
 export const movesPose = (ops) => ops.some((o) => (o.verb === 'batch' ? o.args.ops : [o]).some((x) => x.args?.component === 'transform'));
 
+// a scrubbed transform is a live drag for everyone else (E2: the same presence lane the gizmo uses, so co-builders see the
+// number move and the claim badge); the release's commit sends the last sample with end
+function dragOut(id, obj, end) {
+  obj.updateWorldMatrix(true, false);
+  const p = obj.getWorldPosition(new THREE.Vector3()), q = obj.getWorldQuaternion(new THREE.Quaternion());
+  sendDrag(id, p.toArray(), new THREE.Euler().setFromQuaternion(q, 'YXZ').y, q.toArray(), { end, scale: obj.scale.toArray() });
+}
 export function commitEdit(id, key, value, opts = {}) {
   if (id === WORLD_ID) {   // no live preview: a world field commits on release, one request, one undo step
     if (opts.live) return { ok: true, live: true };
@@ -134,6 +142,7 @@ export function commitEdit(id, key, value, opts = {}) {
   for (const h of handlers.get(group) ?? []) {
     try { if (h(id, obj, k, value, opts)) { if (!live) gesture = null; return { ok: true, handled: true }; } } catch (e) { console.warn(`[inspect] ${group} handler`, e); }
   }
+  if (group === 'pos' && obj) dragOut(id, obj, !live);   // the channel box previews a transform itself (no handler): still a drag for everyone else
   if (live) return { ok: true, live: true };
   const baseComps = gesture?.id === id ? gesture.comps : null;   // the components before the drag began
   gesture = null;

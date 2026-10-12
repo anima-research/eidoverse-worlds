@@ -287,7 +287,14 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     const y3 = await client(srv.port, "garden", "yan", { ...REPLICA, account: "acct-y" }); const m3 = y3.snapshot?.you, q3 = y3.snapshot?.renameRefused;
     ok(m1 === "yan" && m2 !== "zeph-two" && /^zeph-two/.test(String(m2)) && !q2, "RN2 a taken name is suffixed for the newcomer (zeph-two is worn by another account)", { m1, m2, q2 });
     ok(m3 === "yan" && !q3, "RN3 …and going back to their own name is not refused: the suffixed name was never their choice, so it started no cooldown", { m3, q3 });
-    z3.close(); y3.close(); await sleep(200); }
+    z3.close(); y3.close(); await sleep(200);
+    // the same account re-arriving under a new name is a takeover: the old socket's later close must not depart the body
+    const t1 = await client(srv.port, "garden", "tango", { ...REPLICA, account: "acct-tk" }); await t1.req("move", { to: [1, 0, 1] });
+    const t2 = await client(srv.port, "garden", "tango-two", { ...REPLICA, account: "acct-tk" }); const mv = await t2.req("move", { to: [1.2, 0, 1] });
+    t1.close(); await sleep(500);
+    const after = await t2.req("punt", { id: "no-such-thing" });
+    ok(t2.snapshot?.you === "tango-two" && mv?.ok && after?.refused?.code !== "not-here", "RN4 a rename reconnect is a takeover: when the old socket closes, the body is still in the world", { you: t2.snapshot?.you, mv: mv?.refused, after: after?.refused });
+    t2.close(); await sleep(200); }
   const wa = await vic.req("whois", { name: "Ann" }), wk = await vic.req("whois", { name: KIM });
   ok(wa.people?.[0]?.role === "owner" && wa.people[0].here === true && wk.people?.[0]?.name === "Kim" && wk.people[0].role === "builder", "CM3 …the authority's role (an owner reads as owner, not v1's visitor), and an identity works as the name", [wa, wk]);
   const ww = await vic.req("whois", { name: "Watcher" });

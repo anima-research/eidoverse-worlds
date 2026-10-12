@@ -540,6 +540,13 @@ try {
   const lapsed = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 2200));
     const bd = await import('/lib/build.js'); return bd.claimsNow();`);
   check("CL3 …and silence drops it after 1.5 s", !lapsed?.clbox, lapsed);
+  // E2: a live scrub of a transform channel goes out as a drag (with the size), and its commit sends the last sample with end
+  const sent = await page(`const ins = await import('/lib/inspect.js'); const out = []; const orig = WebSocket.prototype.send;
+    WebSocket.prototype.send = function (s) { try { const m = JSON.parse(s); if (m.type === 'drag') out.push(m); } catch {} return orig.call(this, s); };
+    const bd = await import('/lib/build.js'); bd.buildApi?.select?.('clbox');
+    ins.commitEdit('clbox', 'pos.x', ${me[0]} + 1.9, { live: true }); ins.commitEdit('clbox', 'pos.x', ${me[0]} + 2.0, { live: true }); ins.commitEdit('clbox', 'pos.x', ${me[0]} + 2.0, {});
+    await new Promise((r) => setTimeout(r, 400)); WebSocket.prototype.send = orig; return out;`);
+  check("CL4 a live scrub of pos.x sends drag samples with the size, and the commit's last one says end", Array.isArray(sent) && sent.length >= 3 && sent.every((m) => m.id === 'clbox' && Array.isArray(m.scale)) && sent.at(-1).end === true && !sent[0].end, sent);
   await key("KeyE"); await sleep(300);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'clbox' });`).catch(() => null); await sleep(300);
   });

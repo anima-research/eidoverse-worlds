@@ -409,7 +409,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
     // `end: true` is the last sample of a drag: receivers drop the claim it carried (docs/WIRE.md: a live drag is a claim)
-    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), ...(msg.end === true ? { end: true } : {}), by: c.id }, c);
+    const scale = Array.isArray(msg.scale) && msg.scale.length === 3 && msg.scale.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0 && n < 1000) ? msg.scale : null;   // a scrubbed size
+    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), ...(scale ? { scale } : {}), ...(msg.end === true ? { end: true } : {}), by: c.id }, c);
   },
   // spec/PHYSICS.md §5.1: a round-trip clock. {t0} (the asker's own clock, echoed untouched) → {t0, t}: t on the
   // world's AUTHORITY clock, the one that stamps entries' ts and frames' t. The asker's offset is t − (t0 + t1) / 2.

@@ -641,7 +641,9 @@ function installJoin(c: Client, w: World) {
       for (const other of [...w.clients]) {
         // a takeover is the SAME ACCOUNT re-arriving (H1): a typed name never kicks anyone, and anonymous sessions
         // never take over (each is its own guest)
-        if (other !== c && other.id === c.id && !!c.account && other.account === c.account
+        // …and the same account under a NEW name is a takeover too (R 10-10 18:13, "Body not in the world yet. I just changed
+        // my name": the renamed connection wasn't superseded, so its old socket's close departed the body under her feet)
+        if (other !== c && !!c.account && other.account === c.account
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
