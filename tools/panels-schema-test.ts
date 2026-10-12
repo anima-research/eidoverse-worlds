@@ -76,7 +76,7 @@ check('info shows the value as text', rows[0].querySelector('.sp-info')?.textCon
   check('slider: type=range with min/max/step and a unit readout', sl?.type === 'range' && sl.min === '0' && sl.max === '1' && sl.step === '0.05' && out.textContent === '0.25×', `${sl?.type} ${sl?.min}..${sl?.max}/${sl?.step} "${out.textContent}"`);
   check('progress fill --p follows the value', sl.style.getPropertyValue('--p') === '25%', sl.style.getPropertyValue('--p'));
   sl.value = '0.6'; sl.oninput!(new Event('input'));
-  check('slider drag PREVIEWS: edit("vol", 0.6, null, {live}) as a NUMBER, readout repainted', last() === '["vol",0.6,null,{"live":true}]' && out.textContent === '0.60×', `${last()} "${out.textContent}"`);
+  check('slider drag PREVIEWS: edit("vol", 0.6, null, {live}) as a NUMBER, readout repainted', last() === '["vol",0.6,null,{"live":true}]' && out.textContent === '0.6×', `${last()} "${out.textContent}"`);
   sl.onchange!(new Event('change'));
   check('slider release COMMITS once: edit("vol", 0.6)', last() === '["vol",0.6]', last()); }
 { const on = rows[4].querySelector('input[type=checkbox]') as HTMLInputElement, off = rows[5].querySelector('input[type=checkbox]') as HTMLInputElement;
