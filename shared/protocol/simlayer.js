@@ -178,7 +178,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       let relock = false;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
-          if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
+          if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? { amplitude: 0 } }, engineView(st)); out.launched = {}; }   // removed: flat y = 0, as at boot (line 80), never the toolkit's default hills
           continue; }
         const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;

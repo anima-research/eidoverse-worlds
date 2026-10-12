@@ -136,7 +136,7 @@ export function flashHint(line, ms = 2600, tone = null) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'hint-copy'; b.title = 'copy this message'; b.textContent = '⧉';
     b.onclick = (e) => { e.stopPropagation(); const t = [...el.hint.childNodes].filter((n) => n !== b).map((n) => n.textContent).join('').trim();
       navigator.clipboard?.writeText(t).then(() => { b.textContent = '✓'; }, () => { b.textContent = 'select it to copy'; }); };
-    el.hint.prepend(b);   // first: a long reason is cut at the bar's end, and the button must not be
+    el.hint.append(b);   // at the end of the words (R 10-11 22:48); an attn bar wraps, so a long reason never cuts it off
   }
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);

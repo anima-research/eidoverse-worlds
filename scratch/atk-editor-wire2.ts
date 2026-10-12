@@ -12,7 +12,7 @@ const mk = async (id, args) => { const r = await R("create", { id, ...args }); i
 const MODEL = (await R("find", { kind: "model" })).models[0].model;
 let at = null;
 const near = async (x, z) => { if (!at) { const r0 = await R("move", { to: [0, 0, 8] }); if (!r0.ok) T("   move spawn", show(r0)); at = [0, 8]; }
-  const tx = x - 1.1, tz = z + 1.1; for (let n = 0; n < 12; n++) { const dx = tx - at[0], dz = tz - at[1]; const d = Math.hypot(dx, dz); if (d < 0.05) break; const f = Math.min(1, 3.5 / d); const to = [at[0] + dx * f, 0, at[1] + dz * f]; const r = await R("move", { to }); if (!r.ok) { T("   move", show(r) + " closed=" + me.closed); break; } at = [to[0], to[2]]; } };
+  const tx = x - 0.85, tz = z + 0.85; for (let n = 0; n < 30; n++) { await sleep(450); const dx = tx - at[0], dz = tz - at[1]; const d = Math.hypot(dx, dz); if (d < 0.05) break; const f = Math.min(1, 1.6 / d); const to = [at[0] + dx * f, 0, at[1] + dz * f]; const r = await R("move", { to }); if (!r.ok) { T("   move", show(r) + " closed=" + me.closed); break; } at = [to[0], to[2]]; } };
 const meIn = async () => { const l = await R("look", {}); return String(JSON.stringify(l.bodies)).slice(0, 500); };
 { const l = await R("look", {}); T("look keys", Object.keys(l)); for (const t of l.things ?? []) if (/^atk-e[de]/.test(t.id)) { await R("delete", { id: t.id }); T("   swept", t.id); } }
 
@@ -59,7 +59,7 @@ i = await R("inspect", { id: `${P}-c9` }); T("   c9", JSON.stringify(i.at) + " p
 // blueprint
 T("help publish", JSON.stringify(await R("help", { verb: "publish" })).slice(0, 400));
 const pub = await R("publish", { from: `${P}-p8`, name: "atk-ed-bp" }); T("publish p8", show(pub) + " " + JSON.stringify(pub).slice(0, 250));
-const h = pub.hash ?? pub.blueprint ?? pub.refs?.[0]?.id ?? Object.keys((await R("inspect", { id: "@world" })).components ?? {}).filter((k) => k.startsWith("blueprints:")).map((k) => "sha256:" + k.slice(11)).at(-1);
+const h = (Object.keys(pub.after?.["@world"] ?? {}).find((k) => k.startsWith("blueprints:")) ?? "").replace("blueprints:", "sha256:") || Object.keys((await R("inspect", { id: "@world" })).components ?? {}).filter((k) => k.startsWith("blueprints:")).map((k) => "sha256:" + k.slice(11)).at(-1);
 r = await R("create", { id: `${P}-bp5`, from: h, components: { light: { color: 0xffd9a0, intensity: 8, range: 6 } }, place: { at: [6, 14.5] } }); ids.push(`${P}-bp5`); T("B1 create from blueprint + light", show(r) + " " + JSON.stringify(r).slice(0, 200));
 i = await R("inspect", { id: `${P}-bp5` }); T("   bp5 comps", Object.keys(i.components ?? {}));
 // model delete leaves physics shape

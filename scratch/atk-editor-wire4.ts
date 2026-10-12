@@ -1,0 +1,20 @@
+// @ts-nocheck is the stuck hand recoverable? put {at}, move away then put, delete the parent
+import { sock, show } from "./atk-access-lib.ts";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const T = (k, info) => console.log(k, typeof info === "string" ? info : String(JSON.stringify(info)).slice(0, 400));
+const me = await sock(); await me.join("gym", "atk-ed-2");
+const R = async (verb, args) => { const r = await me.req(verb, args); await sleep(230); return r; };
+const MODEL = (await R("find", { kind: "model" })).models[0].model; const P = "atk-ex" + Date.now().toString(36).slice(-3);
+await R("create", { id: `${P}-p`, model: MODEL, place: { at: [4, 14.5] } });
+await R("create", { id: `${P}-c`, model: MODEL, components: { grabbable: { range: 3 }, parent: { to: `${P}-p` }, transform: { pos: [0, 1.2, 0] } } });
+await R("move", { to: [0, 0, 8] }); await sleep(500); await R("move", { to: [1.5, 0, 9.5] }); await sleep(500); await R("move", { to: [2.9, 0, 11] }); await sleep(500); await R("move", { to: [3.1, 0, 12.5] }); await sleep(500);
+T("grab child", show(await R("grab", { id: `${P}-c` })));
+T("disable parent", show(await R("set", { id: `${P}-p`, component: "disabled", value: true })));
+T("put at [2, 11]", show(await R("put", { id: `${P}-c`, at: [2, 11] })));
+await R("move", { to: [2, 0, 11] }); await sleep(600); T("walk away, put", show(await R("put", { id: `${P}-c` })));
+T("drop", show(await R("drop", { id: `${P}-c` })));
+T("delete parent while child held under it", show(await R("delete", { id: `${P}-p` })));
+T("put now", show(await R("put", { id: `${P}-c` })));
+const i = await R("inspect", { id: `${P}-c` }); T("c", JSON.stringify(i.at) + " comps=" + Object.keys(i.components ?? {}));
+await R("delete", { id: `${P}-c` }); await R("delete", { id: `${P}-p` });
+me.close(); process.exit(0);

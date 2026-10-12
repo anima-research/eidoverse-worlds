@@ -1087,8 +1087,9 @@ body.edit-mode canvas { cursor: crosshair; }
 /* block, not flex (R 10-11: "the text is right up against the 'T' in the box on either side"): a flex box makes every text
    run its own item and drops the spaces at their ends, so 'click or ' + <kbd>T</kbd> + ' to pick up' lost both spaces */
 #hintbar kbd { vertical-align: middle; position: relative; top: -1px; }
-#hintbar.attn { pointer-events: auto; user-select: text; }
-#hintbar .hint-copy { margin-right: 8px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
+#hintbar.attn { pointer-events: auto; user-select: text; white-space: normal; }
+/* a small pill after the words, not a 34 px block in front of them (R 10-11 22:48: "fix the size… move it to the end") */
+#hintbar .hint-copy { margin-left: 8px; padding: 0 5px; height: 18px; line-height: 16px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
 #hintbar .hint-copy:hover { opacity: 1; }
 #hintbar:empty { display: none; }
 #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: hidden; }

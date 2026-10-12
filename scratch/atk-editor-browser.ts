@@ -16,8 +16,9 @@ const cws = new WebSocket(target.webSocketDebuggerUrl); await new Promise((res, 
 const errors = []; cws.addEventListener("message", (ev) => { const m = JSON.parse(String(ev.data)); if (m.method === "Runtime.exceptionThrown") errors.push(String(m.params?.exceptionDetails?.exception?.description ?? m.params?.exceptionDetails?.text).slice(0, 200)); });
 const cdp = cdpOn(cws); await Promise.all([cdp.send("Runtime.enable"), cdp.send("Page.enable"), cdp.send("Log.enable")]);
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); if (!sessionStorage.getItem('ew-gpu-lost')) sessionStorage.setItem('ew-gpu-lost', JSON.stringify([Date.now()])); } catch {}" });
-const evalJson = async (expr) => { const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r?.result?.value; };
-const page = (js) => evalJson(`(async () => { ${js} })()`);
+const evalJson = async (expr, timeout = 20000) => { const r = await cdp.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true, timeout }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text); return r?.result?.value; };
+const page = (js, timeout = 20000) => evalJson(`(async () => { ${js} })()`, timeout).catch((e) => ({ TIMEOUT: String(e?.message ?? e).slice(0, 120) }));
+const pulse = async () => { const t0 = Date.now(); const r = await evalJson(`1+1`, 8000).then(() => "ok").catch(() => "TIMEOUT"); return `${r}@${Date.now() - t0}ms`; };
 const shot = async (name) => { const r = await cdp.send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, name), Buffer.from(r.data, "base64")); };
 const click = async (x, y, mods = 0) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", clickCount: 1, modifiers: mods, buttons: type === "mousePressed" ? 1 : 0 }); };
 const until = async (js, ms = 10000) => { for (let i = 0; i < ms / 250; i++) { if (await evalJson(js).catch(() => false)) return true; await sleep(250); } return false; };
@@ -47,6 +48,7 @@ const tile = async (frame, hintRe, nth = 0) => page(`const ts = [...document.que
 const kb = async (text) => { await cdp.send("Input.insertText", { text }); };
 const key = async (k, code, mods = 0) => { await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, modifiers: mods, windowsVirtualKeyCode: k === "Enter" ? 13 : k === "Escape" ? 27 : k === "z" ? 90 : 0 }); await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, modifiers: mods }); };
 const made = []; const C = (id) => { made.push(id); return id; };
+const mine0 = mine; const myCreate = (ids) => ids.filter((k) => /^(empty-|light-|atk-)/.test(k) || true);
 try {
   await boot(); T("booted", { ents: (await ents()).length, errors });
   const base0 = await ents();
@@ -55,7 +57,10 @@ try {
     for (const [item, where] of [["Empty", [0.5, 0.72]], ["Light", [0.55, 0.72]]]) {
       const before = await ents(); T(`A ${item}: menu`, await menu(item)); await sleep(500);
       const c = await canvasAt(...where); await click(c[0], c[1]);
-      const nw = await grew(before); T(`   made`, nw); const u = await undo(); await sleep(1500); const after = await mine(before); T(`   undo`, { u, left: after });
+      const nw = await grew(before); T(`   made`, nw); T("   pulse", await pulse());
+      T("   stacks", await page(`const ew = await import('/lib/editwrites.js'); return ew.stacks().undo.slice(-3);`, 8000));
+      const u = await undo(); T("   pulse after undo", await pulse()); await sleep(1500); const after = await mine(before); T(`   undo`, { u, left: after });
+      if (u?.timeout || u?.TIMEOUT) { T("   direct undo request (bypassing settled())", await page(`const ew = await import('/lib/editwrites.js'); const act = ew.stacks().undo.at(-1); const r = await ew.send({ verb: 'undo', args: { act } }, { what: 'undo', record: false }); return { act, ok: r.ok, code: r.refused?.code };`, 15000)); T("   left", await mine(before)); }
       if (after.length) made.push(...after);
     }
     { const before = await ents(); T("A Model: menu", await menu("Model from the library…")); await sleep(800);

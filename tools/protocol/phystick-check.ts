@@ -153,5 +153,17 @@ function world(name, N) {
   }
 }
 
+// T9: removing the terrain puts the world back on flat ground at y = 0, for the engine as for the client (R 10-11 22:47: crates
+// "sank into the floor" after she removed the gym's terrain: the sim layer re-grounded the engine on terrain {} — the
+// toolkit's DEFAULT HILLS, amplitude 3 — while the client drew the flat default). A/B: a world that never had terrain.
+{
+  const restY = (name, withTerrain) => { const { w, call, beat } = world(name, 0);
+    if (withTerrain) { call("rowan", "set", { id: "@world", component: "terrain", value: { amplitude: 3, seed: 7 } }); call("rowan", "delete", { id: "@world", component: "terrain" }); }
+    call("rowan", "drop", { id: "ball" });
+    for (let k = 0; k < 300; k++) { beat(TICK); if (k > 2 && w.simPeek().rested.length === 0 && !Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting)) break; }
+    return w.state().entities.ball.c.transform.pos[1]; };
+  const a = restY("t9a", false), b = restY("t9b", true);
+  ok(a === b && Math.abs(a) < 0.05, `T9 a crate dropped after the terrain is removed rests exactly where one in a never-terrained world does (${a.toFixed(3)} vs ${b.toFixed(3)})`, { a, b });
+}
 console.log(`phystick: ${passes} ok, ${fails} failed${NO_TICK ? " (NO_TICK: the old shape)" : ""}`);
 process.exit(fails ? 1 : 0);
