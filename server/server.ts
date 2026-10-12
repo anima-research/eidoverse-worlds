@@ -479,14 +479,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // differs from the one this account wore is a rename; inside the cooldown the old name stands and the client is told
     // when it may change. A case change is free; a sign-in's name (Discord's) is the provider's, not counted here.
     c.renamed = false; c.renameRefused = undefined;
-    if (!c.spectator && c.account && !auth && !c.tokenVerified) {
-      const dir = directoryFor(WORLDS_DIR); const id0 = dir.idOfSub(c.account); const e0 = id0 ? dir.entry(id0) : null;
-      if (e0 && foldName(e0.name) !== foldName(c.id)) {
-        const until = (e0.renamedAt ?? 0) + RENAME_COOLDOWN_MS;
-        if (Date.now() < until) { c.renameRefused = { tried: c.id, until }; c.id = e0.name; } else c.renamed = true;
-      }
-    }
-    // The newcomer is the one renamed; an anonymous one is marked as a guest.
+    // The newcomer is the one renamed; an anonymous one is marked as a guest. The collision pass runs FIRST, so the
+    // cooldown below judges the name the person will actually wear (STRIKES P-S2-5: judged on the typed name, then
+    // suffixed, then stamped, it trapped someone under a name they never asked for).
+    const typed = c.id;
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
       const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
@@ -497,6 +493,14 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         let n = base.slice(0, LIMITS.ID_LEN), k = 2;
         while (taken(n)) n = `${base.slice(0, LIMITS.ID_LEN - 3)} ${k++}`;
         c.id = n;
+      }
+    }
+    if (!c.spectator && c.account && !auth && !c.tokenVerified) {
+      const dir = directoryFor(WORLDS_DIR); const id0 = dir.idOfSub(c.account); const e0 = id0 ? dir.entry(id0) : null;
+      if (e0 && foldName(e0.name) !== foldName(c.id)) {
+        const until = (e0.renamedAt ?? 0) + RENAME_COOLDOWN_MS;
+        if (Date.now() < until) { c.renameRefused = { tried: typed, until }; c.id = e0.name; }
+        else c.renamed = foldName(c.id) === foldName(typed);   // a suffixed name wasn't their choice: no cooldown starts on it
       }
     }
     // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only

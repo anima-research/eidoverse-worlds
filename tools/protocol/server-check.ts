@@ -49,7 +49,7 @@ process.on("exit", () => { for (const p of procs) try { p.kill(); } catch {} });
 async function startServer(tree: string, worlds: string, opt: string, tag: string) {
   const port = await freePort(8990 + procs.length * 7);
   const logf = path.join(root, `${tag}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
   for (let i = 0; i < 100; i++) { await sleep(150); try { const r = await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) }); if (r.ok) return { port, proc: p, log: logf }; } catch {} } // bounded: on this host a closed local port can drop the SYN instead of refusing it
@@ -267,6 +267,18 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const wz = await vic.req("whois", { name: "zed" });
   ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && wz.people[0].kind === "person" && !JSON.stringify(wz).includes("local:"),
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
+  // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
+  { const z1 = await client(srv.port, "garden", "zeph", { ...REPLICA, account: "acct-zp" }); const n1 = z1.snapshot?.you; z1.close(); await sleep(200);
+    const z2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-zp" }); const n2 = z2.snapshot?.you, r2 = z2.snapshot?.renameRefused; z2.close(); await sleep(200);
+    const z3 = await client(srv.port, "garden", "zeph-three", { ...REPLICA, account: "acct-zp" }); const n3 = z3.snapshot?.you, r3 = z3.snapshot?.renameRefused;
+    ok(n1 === "zeph" && n2 === "zeph-two" && !r2 && n3 === "zeph-two" && r3?.tried === "zeph-three", "RN1 one rename is free; a second inside the cooldown is refused and the last name stands", { n1, n2, r2, n3, r3, e1: z1.of("error")[0], e2: z2.of("error")[0], e3: z3.of("error")[0] });
+    // the trap: an account that typed a TAKEN name got a suffixed one it never asked for; that must not start its cooldown
+    const y1 = await client(srv.port, "garden", "yan", { ...REPLICA, account: "acct-y" }); const m1 = y1.snapshot?.you; y1.close(); await sleep(200);
+    const y2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-y" }); const m2 = y2.snapshot?.you, q2 = y2.snapshot?.renameRefused; y2.close(); await sleep(200);
+    const y3 = await client(srv.port, "garden", "yan", { ...REPLICA, account: "acct-y" }); const m3 = y3.snapshot?.you, q3 = y3.snapshot?.renameRefused;
+    ok(m1 === "yan" && m2 !== "zeph-two" && /^zeph-two/.test(String(m2)) && !q2, "RN2 a taken name is suffixed for the newcomer (zeph-two is worn by another account)", { m1, m2, q2 });
+    ok(m3 === "yan" && !q3, "RN3 …and going back to their own name is not refused: the suffixed name was never their choice, so it started no cooldown", { m3, q3 });
+    z3.close(); y3.close(); await sleep(200); }
   const wa = await vic.req("whois", { name: "Ann" }), wk = await vic.req("whois", { name: KIM });
   ok(wa.people?.[0]?.role === "owner" && wa.people[0].here === true && wk.people?.[0]?.name === "Kim" && wk.people[0].role === "builder", "CM3 …the authority's role (an owner reads as owner, not v1's visitor), and an identity works as the name", [wa, wk]);
   const ww = await vic.req("whois", { name: "Watcher" });
