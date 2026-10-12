@@ -4,7 +4,7 @@
 // ({lib?, comp: {mesh?, light?, …}}, shared/protocol/view.js viewOf). A model wins over a light (an imported lamp carries both;
 // the authority's one-place rule refuses writing that pairing natively); a mesh is a drawn thing like a model and wins over a
 // light the same way. A light or mesh component counts only as a plain object: anything else is an annotation on an Empty.
-// A view record never carries `kind` (translate-v1 rewrites a v1 light to c.light and drops the field; viewOf emits none):
+// A view record never carries `kind` (the old-world importer rewrites an old light to c.light and drops the field; viewOf emits none):
 // readers that branch on `ent.kind === 'light'` are reading a field that is never there.
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
