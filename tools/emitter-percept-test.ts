@@ -45,15 +45,16 @@ async function rig(name = "emitters", at: [number, number] = [0, 0]) {
       : door.act("set", { id, component: "particles", value: data }, { who: actor, at: ts, live })), `particles on ${id}`);
   const other = async (id: string, component: string, value: unknown, live = true) =>
     must(await door.act("set", { id, component, value }, { who: "antra", at: T0, live }), `${component} on ${id}`);
-  return { ag, A, events, spawn, comp, other };
+  return { ag, A, events, spawn, comp, other, door };
 }
 
-const FIRE = { preset: "fire", origin: [0, 0.25, 0], texture: "eidoverse/assets/particle_textures/flame_05.png" };
-const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
+// the protocol's spelling (effects are documents, PROTOCOL §4): {effect, at, params}; preset/origin/texture are the first protocol's
+const FIRE = { effect: "fire", at: [0, 0.25, 0], params: { texture: "eidoverse/assets/particle_textures/flame_05.png" } };
+const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
 
 // ---------------------------------------------------------------- A: pull perception (look)
 {
-  const { ag, spawn, comp, other } = await rig();
+  const { ag, spawn, comp, other, door } = await rig();
   await spawn("hearth", [2, 0, 0]);
   await comp("hearth", FIRE, false);
   const out = ag.look();
@@ -64,17 +65,18 @@ const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
   check("...and claims no heat, light, sound or contact",
     !/(warm|heat\b|crackl|glow|smell)/i.test(out));
 
-  await comp("hearth", { preset: "plasma" }, false);
-  const unknown = ag.look();
-  check("an unrenderable preset is still legible as an emitter",
-    /\[hearth\][^\n]*emitting "plasma"/.test(unknown) && unknown.includes("preset unknown"));
+  // an effect nobody has is refused at the door (effects are documents: an Essential's name or a stored address),
+  // so nothing unrenderable ever reaches a reader
+  const plasma = await door.act("set", { id: "hearth", component: "particles", value: { effect: "plasma" } }, { who: "antra", at: T0, live: false });
+  check("an effect that is no Essential and no address is refused at the door, naming the Essentials",
+    !plasma.ok && plasma.refused?.code === "shape" && /isn't an Essentials effect/.test(plasma.refused.reason) && /\[hearth\][^\n]*emitting fire/.test(ag.look()), JSON.stringify(plasma.refused));
 
   await comp("hearth", null, false);
   check("a removed emitter is gone from look()", !ag.look().includes("emitting"));
 
   // an ordinary component is untouched by any of this
-  await other("hearth", "recipe", { by: "fc" }, false);
-  check("other component types still read as they did", ag.look().includes("components: recipe"));
+  await other("hearth", "example.org/recipe", { by: "fc" }, false);
+  check("other component types still read as they did", ag.look().includes("components: example.org/recipe"));
 }
 
 // ---------------------------------------------------------------- B: live change perception
@@ -104,7 +106,7 @@ const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
   await spawn("hearth", [1, 0, 0]);
   await comp("hearth", FIRE);
   check("the first change speaks at once", events.length === 1);
-  for (let i = 0; i < 20; i++) await comp("hearth", { ...FIRE, size: 0.4 + i * 0.01 });
+  for (let i = 0; i < 20; i++) await comp("hearth", { ...FIRE, params: { ...FIRE.params, size: 0.4 + i * 0.01 } });
   check("twenty tuning entries add NOTHING inside the window", events.length === 1, `got ${events.length}`);
   await sleep(WINDOW * 2);
   check("the window closes with one summary of the net result", events.length === 2, `got ${events.length}`);
