@@ -198,6 +198,25 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const i = lc("vic", "inspect", { id: "stage" });
     ok(i.lock?.rank === "owner" || i.flags?.lock?.rank === "owner" || /owner/.test(JSON.stringify(i.lock ?? i.flags?.lock ?? "")), "PL16 inspect says the lock's level", { lock: i.lock, flags: i.flags });
   }
+  { // the trusted rung (R 10-12 10:09; docs/COMPONENT-LADDER.md): @world.trusted {components: [drafts]} is the owner's word,
+    // gated like the rest of @world (never a permission); the list is namespaced draft names only, ≤ 64, distinct
+    const tc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "trust"), actor, verb, args); };
+    const TW = () => openWorld(root, "trust").state();
+    tc("olive", "create-world", { title: "trust" }); tc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+    tc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "moderator", can: { editWorld: true } } });
+    const good = { components: ["hesperus/material"] };
+    ok(code(tc("bob", "set", { id: "@world", component: "trusted", value: good })) === "rights", "TR1 a builder can't trust a draft for the world");
+    ok(code(tc("mo", "set", { id: "@world", component: "trusted", value: good })) === "rights", "TR2 …nor a moderator with editWorld (trust is the owner's, never a permission)");
+    const r = tc("olive", "set", { id: "@world", component: "trusted", value: good });
+    ok(r.ok && JSON.stringify(TW().entities["@world"].c.trusted) === JSON.stringify(good), "TR3 the owner trusts it, and the world carries the list", r.refused ?? TW().entities["@world"]?.c.trusted);
+    for (const [v, what] of [[{ components: [1] }, "a non-string"], [{ components: ["light"] }, "a bare name"], [{ components: ["hesperus/material:slot"] }, "a keyed name"], [{ components: Array.from({ length: 65 }, (_, i) => `h/d${i}`) }, "65 entries"],
+      [{ components: ["hesperus/material", "hesperus/material"] }, "a name twice"], [["hesperus/material"], "a bare list"], [{ components: ["hesperus/material"], note: "x" }, "an unknown key"], [{ components: "hesperus/material" }, "a string for the list"]])
+      ok(code(tc("olive", "set", { id: "@world", component: "trusted", value: v })) === "shape", `TR4 refused (shape): ${what}`, tc("olive", "set", { id: "@world", component: "trusted", value: v }).refused);
+    ok(tc("olive", "set", { id: "@world", component: "trusted", value: { components: Array.from({ length: 64 }, (_, i) => `h/d${i}`) } }).ok, "TR5 64 entries is the most, and fine");
+    tc("olive", "create", { id: "plinth", model: "crate", place: { at: [2, 2] } });
+    ok(code(tc("olive", "set", { id: "plinth", component: "trusted", value: good })) === "world-only", "TR6 trusted is a world setting: refused on a thing", tc("olive", "set", { id: "plinth", component: "trusted", value: good }).refused);
+    ok(tc("olive", "delete", { id: "@world", component: "trusted" }).ok && TW().entities["@world"].c.trusted === undefined, "TR7 the owner removes the list (stop trusting the last one)");
+  }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
     const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
@@ -918,6 +937,60 @@ const w0 = () => openWorld(root, "tier0");
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [0, 0, 0], max: [0, 0, 0] } })) === "shape", "BZ1 a zero-size bounds box is refused");
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-5, 0, -5], max: [5, 0, 5] } })) === "shape", "BZ2 a box flat on one axis (min = max) is refused");
 ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 40, 50] } }).ok, "BZ3 a real box is accepted"); }
+
+// ---- MS: mesh (R 10-12, primitives): a registered parametric body on a model-less thing. One place per thing with a model
+// and a light; it has a size to place and stack on; its physics shape is stamped from the component and re-stamped on resize
+{ const name = "mesh"; T += 1000;
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c;
+  call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  { const r = call("bob", "create", { id: "mb", components: { mesh: { shape: "box" }, transform: { pos: [0, 0, 0] } } });
+    ok(r.ok && JSON.stringify(E("mb")?.mesh) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), "MS1 a mesh thing is created with its defaults written down (box 1×1×1)", r.refused ?? E("mb")?.mesh); }
+  { const r1 = call("bob", "set", { id: "mb", component: "model", value: "crate" }); const r2 = call("bob", "set", { id: "mb", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
+    call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
+    call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
+    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok")); }
+  { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
+    ok(code(r1) === "bounds" && code(r2) === "shape" && /each must be/.test(r1.refused?.reason ?? ""), "MS3 a size outside 0.05..200 (the definition's ranges, per element) and an unknown shape are refused", [r1.refused, r2.refused]); }
+  { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];
+    ok(r.ok && Math.abs(y - 1) < 1e-3, "MS4 place {on} a mesh box works: it has a size, and the ball lands on its top (y = 1)", r.refused ?? E("cup")?.transform);
+    const b = call("bob", "create", { id: "mb2", components: { mesh: { shape: "box", size: [2, 0.5, 2] } }, place: { beside: "mb" } }); ok(b.ok, "MS4b place {beside} works for a mesh too", b.refused); }
+  { const m = call("bob", "measure", { id: "mb" }); ok(m.ok && m.size.every((x) => Math.abs(x - 1) < 1e-6), "MS5 measure reads a mesh box as 1×1×1", m); }
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+  { const sh = E("mb")?.physics?.shape; ok(E("mb")?.physics?.kind === "static" && JSON.stringify(sh) === JSON.stringify([[-0.5, 0, -0.5], [0.5, 1, 0.5]]), "MS6 physics on: a mesh box is a static collider with its box stamped (base-centred)", E("mb")?.physics); }
+  { call("bob", "create", { id: "ms", components: { mesh: { shape: "sphere", size: [0.4, 9, 9] }, physics: { kind: "dynamic" }, transform: { pos: [-3, 2, -3] } } });
+    call("bob", "create", { id: "mc", components: { mesh: { shape: "cylinder", size: [0.6, 1.2, 9] }, transform: { pos: [-3, 0, 3] } } });
+    const s = E("ms")?.physics?.shape, c = E("mc")?.physics?.shape;
+    ok(s?.type === "sphere" && s.radius === 0.2 && s.pos[1] === 0.2, "MS7 a mesh sphere stamps a sphere (radius = size[0]/2, centred r up)", s);
+    ok(JSON.stringify(c) === JSON.stringify([[-0.3, 0, -0.3], [0.3, 1.2, 0.3]]), "MS8 a mesh cylinder stamps its bounding box (no carried engine reads a cylinder; review S1.1), size[0] wide and size[1] tall", c);
+    call("bob", "create", { id: "mp", components: { mesh: { shape: "capsule", size: [1, 0.2, 1] }, transform: { pos: [3, 0, -3] } } });
+    const m = call("bob", "measure", { id: "mp" }); const ps = E("mp")?.physics?.shape;
+    ok(m.ok && Math.abs(m.size[1] - 1) < 1e-6 && ps?.[1]?.[1] === 1, "MS8b a capsule shorter than its diameter is its diameter tall (review S2.3): measure and the stamp both say 1 m", { size: m.size, ps });
+    const rn = call("bob", "set", { id: "mc", component: "mesh", value: { shape: "cylinder", size: [0.6, 1.4, 9] } });
+    ok(rn.ok && (rn.notes ?? []).some((n) => n.field === "shape" && /bounding BOX/.test(n.why ?? "") && n.ids?.includes("mc")), "MS8c the reply says a cylinder is stamped as its bounding box (r2 S3), not left to read as round", rn.notes); }
+  { const r = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [2, 3, 4] } }); const sh = E("mb")?.physics?.shape;
+    ok(r.ok && JSON.stringify(sh) === JSON.stringify([[-1, 0, -2], [1, 3, 2]]), "MS9 a mesh size change re-stamps its physics shape", r.refused ?? sh); }
+}
+// ---- MS (no engine): a resized host sets its resting riders down from above its new top (r2 S1.1: a grown host buried them);
+// a host that loses its body frees them (r2 S2.3); a socketed child is never a rider (r2 S2.2); a no-op write re-drops nothing (r2 S2.1)
+{ const name = "mesh-noeng"; T += 1000;
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c; const wy = (id) => call("bob", "measure", { id }).bounds?.min?.[1];
+  call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  call("bob", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, sockets: { perch: { pos: [0.5, 0.8, 0.5] } }, transform: { pos: [0, 0, 0] } } });
+  const c = call("bob", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic" } }, place: { on: "plinth" } });
+  call("bob", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  ok(c.ok && E("crate")?.parent?.to === "plinth" && Math.abs(wy("crate") - 0.8) < 1e-3, "MS10 a crate placed on the plinth rides it at 0.8", { c: c.refused ?? null, y: wy("crate"), parent: E("crate")?.parent });
+  const s1 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
+  ok(s1.ok && Math.abs(wy("crate") - 0.3) < 1e-3 && (s1.notes ?? []).some((n) => n.setDown?.includes("crate")), "MS10a shrunk to 0.3: the crate is set down to 0.3 (no engine)", { y: wy("crate"), notes: s1.notes });
+  const s2 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
+  ok(s2.ok && Math.abs(wy("crate") - 1.0) < 1e-3 && E("crate")?.parent?.to === "plinth", "MS10b grown to 1.0: the crate is set down from ABOVE the new top, at 1.0, not buried inside (r2 S1.1)", { y: wy("crate"), notes: s2.notes });
+  ok(E("cup")?.parent?.socket === "perch" && JSON.stringify(E("cup")?.transform?.pos) === "[0,0,0]", "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2)", E("cup"));
+  const n0 = W().entries.length; const s3 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
+  ok(s3.ok && W().entries.length - n0 === 2 && !(s3.notes ?? []).some((n) => n.setDown || n.fell), "MS10d re-asserting the same mesh value writes 2 rows and re-drops nothing (r2 S2.1)", { rows: W().entries.length - n0, notes: s3.notes });
+  const d = call("bob", "delete", { id: "plinth", component: "mesh" });
+  ok(d.ok && !E("crate")?.parent && Math.abs(wy("crate")) < 1e-3 && !(d.notes ?? []).some((n) => n.stamped), "MS10e deleting the plinth's mesh frees the crate to the world and sets it on the ground; the reply doesn't say 'stamped' (r2 S2.3)", { y: wy("crate"), parent: E("crate")?.parent ?? null, notes: d.notes });
+}
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

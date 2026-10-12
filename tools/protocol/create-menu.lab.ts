@@ -34,6 +34,34 @@ try {
     [...document.querySelectorAll('.edit-menu-pop .edit-menu-item')].find((x) => x.textContent.trim() === 'Terrain')?.click(); return 1;`); await sleep(1000);
   const insp = await page(`return document.querySelector('[data-frame="inspector"]')?.innerText.slice(0, 400);`);
   check("CM4 Environment ▸ Terrain opens the World in the Inspector with its Terrain card", /Terrain/.test(insp ?? "") && /world/i.test(insp ?? ""), insp);
+  // R 10-12 (primitives): Create ▸ Box places a mesh thing: comp.mesh in the fold, a THREE.Mesh in the scene, a collider
+  await page(`(await import('/lib/build.js')).setEditMode(true); const b = [...document.querySelectorAll('.edit-menus button, .edit-menus .edit-menu-btn')].find((x) => /^Create/.test(x.textContent.trim())); b?.click(); await new Promise((z) => setTimeout(z, 300));
+    [...document.querySelectorAll('.edit-menu-pop .edit-menu-item')].find((x) => x.textContent.trim() === 'Box')?.click(); return 1;`); await sleep(800);
+  const c2 = await evalJson(`(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [Math.round(r.left + r.width * 0.6), Math.round(r.top + r.height * 0.72)]; })()`);
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: c2[0], y: c2[1], button: "left", clickCount: 1 });
+  await sleep(2500);
+  const box = await page(`const s = (await import('/lib/state.js')).state.st.entities; const W = await import('/lib/world.js'); const C = await import('/lib/colliders.js'); const { scene } = await import('/lib/core.js');
+    const ids = Object.entries(s).filter(([k, e]) => e?.comp?.mesh?.shape === 'box' && e.lib == null).map(([k]) => k); const id = ids[0]; const obj = id && W.entities.get(id);
+    let inScene = false; scene.traverse((o) => { if (o.isMesh && o.userData?.entityId === id) inScene = true; });
+    return { ids, mesh: id && s[id].comp.mesh, isMesh: !!obj?.isMesh, inScene, collider: !!C.colliders.get(id), matName: obj?.material?.name ?? null, y: obj?.position?.y ?? null };`);
+  check("CM5 Create ▸ Box + a click places a mesh thing: comp.mesh {box, [1,1,1]} in the fold, a THREE.Mesh in the scene with userData.entityId, a collider, its material named 'surface'", box.ids.length === 1 && box.mesh?.shape === "box" && JSON.stringify(box.mesh?.size) === "[1,1,1]" && box.isMesh && box.inScene && box.collider && box.matName === "surface", box);
+  const bid = box.ids[0];
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(bid)}); return 1;`); await sleep(800);
+  const card = await page(`return document.querySelector('[data-frame="inspector"]')?.innerText ?? '';`);
+  check("CM6a the Inspector shows the Mesh card and the Material card for it", /▾ Mesh/.test(card) && /Material/.test(card), card.slice(-300));
+  await page(`const E = await import('/lib/editwrites.js'); const OP = await import('/shared/protocol/requests.js'); await E.sendOps([OP.set(${JSON.stringify(bid)}, 'hesperus/material', { color: 0xff2200 })], { what: 'colour', expect: false }); return 1;`); await sleep(1500);
+  const col = await page(`const W = await import('/lib/world.js'); const o = W.entities.get(${JSON.stringify(bid)}); return { hex: o?.material?.color?.getHex?.() ?? null, name: o?.material?.name ?? null };`);
+  check("CM6 a hesperus/material override colours the mesh (material.color = 0xff2200; the clone keeps the 'surface' name)", col.hex === 0xff2200 && col.name === "surface", col);
+  // review S2.1: a size scrub previews on the thing; a REFUSED commit (the thing is locked by someone above) puts the fold's geometry back
+  await page(`const E = await import('/lib/editwrites.js'); const OP = await import('/shared/protocol/requests.js'); await E.sendOps([OP.set(${JSON.stringify(bid)}, 'lock', { rank: 'owner' })], { what: 'lock', expect: false }); return 1;`); await sleep(1200);
+  const scrub = await page(`const I = await import('/lib/inspect.js'); const W = await import('/lib/world.js'); const o = W.entities.get(${JSON.stringify(bid)});
+    const w = () => { o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox; return +(b.max.x - b.min.x).toFixed(3); };
+    const before = w(); I.commitEdit(${JSON.stringify(bid)}, 'mesh.size.x', 2, { live: true }); const during = w();
+    I.commitEdit(${JSON.stringify(bid)}, 'mesh.size.x', 2, {}); await new Promise((z) => setTimeout(z, 1500));
+    const dlg = document.querySelector('.cc-no'); const asked = !!dlg; dlg?.click();   // the lock's "move anyway?" card: cancel it (nothing written, the preview reverts)
+    await new Promise((z) => setTimeout(z, 1500));
+    const S = await import('/lib/state.js'); return { before, during, asked, after: w(), fold: S.state.st.entities[${JSON.stringify(bid)}]?.comp?.mesh?.size, lock: S.state.st.entities[${JSON.stringify(bid)}]?.comp?.lock };`);
+  check("CM7 a size scrub previews 2 m wide; the lock asks and the edit is cancelled: the geometry goes back to the fold's 1 m (review S2.1)", scrub.before === 1 && scrub.during === 2 && scrub.asked && scrub.after === 1 && JSON.stringify(scrub.fold) === "[1,1,1]", scrub);
 } catch (e) { console.log("ERR", e?.message ?? e); fail++; }
 finally { await cleanup(0); }
 console.log(`[create-menu] ${fail ? fail + " failed" : "all passed"}`);

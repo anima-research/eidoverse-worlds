@@ -20,6 +20,7 @@
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
 import { ROT_MODES } from './euler.js';
+import { COMPONENTS } from './protocol/componentspec.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -187,6 +188,12 @@ const DEFS = [
   { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it (alt text)', params: { text: { t: 'text', default: '', max: 500 } }, fallback: { text: 'the description' } },
   { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: { feed: { t: 'json', default: null } }, fallback: { text: 'captions' } },
   { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: { speaker: { t: 'text', default: null } }, fallback: { text: 'components: stage' } },
+  // R 10-12 (primitives): a parametric body on a thing with no model, registered bare (componentspec `mesh`); one place per
+  // thing with a model and a light, as the authority refuses
+  { name: 'Mesh', category: 'Rendering', summary: 'a parametric body with no model: a box, sphere, cylinder, plane or capsule, sized in metres',
+    params: { shape: { t: 'enum', options: ['box', 'sphere', 'cylinder', 'plane', 'capsule'], default: 'box' }, size: { t: 'vec3', default: [1, 1, 1], hint: 'metres; a sphere reads x as its diameter, a cylinder/capsule x as diameter and y as height, a plane x × z' } },
+    fallback: { visual: 'a grey body', text: '(a <shape>)' },
+    note: 'wire: comp.mesh {shape, size}; never beside a model or a light on one thing (give it a child). Its one material slot is \'surface\'' },
   { name: 'Annotation', category: 'Data', summary: 'any other data a world invents (recipe, notice, story…)',
     params: { type: { t: 'text', default: null, required: true }, data: { t: 'json', default: null } }, fallback: { text: 'components: <type>' } },
   // The world entity's components (design §3, shared/worldentity.js): `@world`
@@ -336,6 +343,7 @@ export function componentsOf(ent) {
     // object is one; any other data under these keys predates the meaning
     // (none in the corpus) and stays an Annotation, so its bytes still return.
     if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
+    if (key === 'mesh' && isBag(data)) { out.push({ type: 'Mesh', key, params: { ...data } }); continue; }
     if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
     const simple = { sockets: ['Sockets', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'], grabbable: ['Grabbable', 'spec'], openable: ['Openable', 'spec'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
@@ -414,6 +422,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Story': comp[inst.key ?? 'story'] = { ...p }; break;
       case 'Text': comp[inst.key ?? 'text'] = { ...p }; break;
       case 'Stage': comp[inst.key ?? 'stage'] = { ...p }; break;
+      case 'Mesh': comp[inst.key ?? 'mesh'] = { ...p }; break;
       case 'Particles': case 'Picture': case 'Sound': {
         const rec = RECORDS[inst.type]; const bag = {};
         for (const [k, v] of Object.entries(p)) bag[rec.params[k]?.wire ?? k] = v;
@@ -503,10 +512,28 @@ export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !==
  *  refusal reads the same from either. `data: null` (removal) is always fine.
  *  Keys a record does not name are allowed, as in every bag (annotations
  *  ride along); the ones it names must have their type. */
+/** One place per thing (R 10-11): the refusal's words, the same from the authority and the Inspector. `has` is what the thing
+ *  already is (model | light | mesh), `wants` what was asked for. */
+export const ONE_PLACE = {
+  reason: (id, has, wants) => (has === 'light' ? `${id} is a light; a ${wants} goes on its own thing${wants === 'model' ? '' : ' under it'}`
+    : has === 'mesh' ? `${id} is a mesh; a ${wants} goes on its own thing${wants === 'light' ? ' under it' : ''}` : `${id} has a model; a ${wants} ${wants === 'light' ? 'goes on its own thing under it' : 'is its own thing'}`),
+  fix: (id, has, wants) => (wants === 'light' ? `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
+    : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
+    : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
+};
+export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
+  if (type === 'mesh') {
+    if (ent?.lib != null || ent?.comp?.model != null) return `${ONE_PLACE.reason('this thing', 'model', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'model', 'mesh')}`;
+    if (isBag(ent?.comp?.light)) return `${ONE_PLACE.reason('this thing', 'light', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'light', 'mesh')}`;
+    if (!isBag(data) || !MESH_SHAPES.includes(data.shape)) return `a mesh component is {shape: ${MESH_SHAPES.join('|')}, size: [x, y, z]}`;
+    if (data.size !== undefined && !(Array.isArray(data.size) && data.size.length === 3 && data.size.every((x) => finite(x) && x >= 0.05 && x <= 200))) return 'mesh size is [x, y, z] in metres, each 0.05 to 200';
+    return null;
+  }
   if (type === 'light') {
     if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
+    if (isBag(ent?.comp?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
     if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';

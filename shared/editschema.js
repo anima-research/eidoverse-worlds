@@ -36,7 +36,8 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
+import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
@@ -99,6 +100,7 @@ function axisName(m, def) {
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
 const compLight = (ent) => isBag(ent?.comp?.light);
+const compMesh = (ent) => isBag(ent?.comp?.mesh) && ent.lib == null && MESH_SHAPES.includes(ent.comp.mesh.shape);
 // The reading a viewer with no hint gets: canonical (middle axis within ±90°,
 // shared/euler.js) — except an UPRIGHT thing with a q (a pure turn about +Y,
 // which every lease release and settle writes), which reads (0, yaw, 0) in
@@ -266,6 +268,18 @@ export function inspectSchema(ent, id, live = {}) {
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
     groups.push({ group: 'light', label: 'light', types: ['light'], fields });
+  }
+
+  // the `mesh` card (R 10-12, primitives): a parametric body on a model-less thing; its shape and its size in metres.
+  // What each axis means per shape is said in the hint (a sphere reads x as its diameter; a plane has no height).
+  if (compMesh(ent)) {
+    const m = c.mesh; const size = Array.isArray(m.size) && m.size.length === 3 ? m.size : [1, 1, 1];
+    const meaning = { sphere: ['diameter', '(unused)', '(unused)'], cylinder: ['diameter', 'height', '(unused)'], capsule: ['diameter', 'height, at least the diameter', '(unused)'], plane: ['width', '(unused)', 'depth'], box: ['width', 'height', 'depth'] }[MESH_SHAPES.includes(m.shape) ? m.shape : 'box'];
+    const fields = [
+      { t: 'enum', k: 'shape', label: 'shape', value: MESH_SHAPES.includes(m.shape) ? m.shape : 'box', def: 'box', options: MESH_SHAPES.map((v) => ({ v, label: v })), hint: 'box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin' },
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `size.${ax}`, label: `size ${ax}`, axis: ax, value: +(+size[i]).toFixed(2), def: 1, step: 0.1, dp: 2, min: 0.05, max: 200, unit: 'm', hint: `${meaning[i]}, in metres (0.05 to 200)` })),
+    ];
+    groups.push({ group: 'mesh', label: 'mesh', types: ['mesh'], fields });
   }
 
   // the collider component (PROTOCOL §4, 2026-10-01), or the spawn verb's
@@ -463,7 +477,7 @@ export function inspectSchema(ent, id, live = {}) {
   // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
   // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
   // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
-  if (ent.lib) {
+  if (ent.lib || compMesh(ent)) {   // every thing with meshes: a model's, or a mesh thing's one 'surface'
     const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
     const own = Array.isArray(live.materials) ? live.materials : [];
     const label = (m, i) => matLabel(m?.name, i);
@@ -489,6 +503,10 @@ export function inspectSchema(ent, id, live = {}) {
     if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
     if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
       fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
+    // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
+    if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
+      ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
+      : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
     groups.push({ group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields });
   }
 
@@ -616,7 +634,7 @@ export function inspectSchema(ent, id, live = {}) {
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
   const claimed = new Set(['lock', 'hidden', 'disabled', 'clickthrough', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
-    ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
+    ...(compLight(ent) ? ['light'] : []), ...(compMesh(ent) ? ['mesh'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
@@ -757,6 +775,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
           continue;   // a one-slot override lives inside the Material card
         } else if (inst.key === 'hesperus/material' && g('hmat')) {
           sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
+          if (isTrusted(inst.key, live.trusted)) sec.trusted = true;   // …blue once the world's owner trusts it here
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
         } else {
@@ -771,7 +790,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
   if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
     const anySlot = Object.keys(ent.comp ?? {}).some((k) => k.startsWith('hesperus/material:'));
-    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true });
+    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true, ...(isTrusted('hesperus/material', live.trusted) ? { trusted: true } : {}) });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
   // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
@@ -791,13 +810,28 @@ function componentSections(ent, groups, live = {}, id = '?') {
     });
   for (const name of ['Model', 'Structure', 'Parent']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
+  // the ladder's drafts (docs/COMPONENT-LADDER.md): only what this client has a reader for, where it applies, once.
+  // Trusted here (the owner's @world.trusted): the main list, blue. A plain draft: under "drafts", amber, unproven.
+  for (const d of draftsRead()) {
+    if (ent?.comp?.[d.name] != null || !d.applies(ent)) continue;
+    const trusted = isTrusted(d.name, live.trusted);
+    add.push({ name: d.name, label: d.title, category: trusted ? d.category : 'drafts', summary: d.summary, hash: null, draft: true, chip: trusted ? 'blue' : 'amber',
+      ...(trusted ? { trusted: true } : { hint: UNPROVEN_HINT }) });
+  }
   // the header's `lib` line reads the Model component (design §5), so it can
   // never disagree with the Model card; an Empty and a light say what they are
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
-    lib, libLabel: lib != null ? libLabel(lib) : ent?.comp?.light ? 'light' : 'empty' };
+    lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.comp?.mesh) && MESH_SHAPES.includes(ent.comp.mesh.shape) ? ent.comp.mesh.shape : ent?.comp?.light ? 'light' : 'empty' };
+}
+
+/** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
+ *  removes the component. The authority gates it (owner), and refuses a malformed list (shared/drafts.js trustRefusal). */
+export function trustOp(name, live = {}) {
+  const next = toggleTrusted(Array.isArray(live.trusted) ? live.trusted : [], name);
+  return next.length ? OP.set('@world', TRUSTED, { components: next }) : OP.unset('@world', TRUSTED);
 }
 
 // ---------------------------------------------------------------- needs
@@ -812,7 +846,7 @@ const NEEDS = {
   // a model is placed from the Library (spawn on the id would replace this
   // entity wholesale: its components, its placer, its born)
   Model: {
-    met: (ent) => ent?.lib != null,
+    met: (ent) => ent?.lib != null || compMesh(ent),   // a mesh thing has a body to act on, as the authority reads it (review S2.2)
     plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
       prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
   },
@@ -858,6 +892,7 @@ export function planNeeds(ent, id, name, value) {
  *  part motion, the type name for an Annotation, or a need's choice. Returns
  *  { ops, errors, choice? } — a `choice` sends nothing and asks. */
 export function addOps(ent, id, name, value) {
+  if (readsDraft(name)) { if (ent?.comp?.[name] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, name, draftsRead().find((d) => d.name === name).blank)], errors: [] }; }
   const np = planNeeds(ent, id, name, value);
   if (np.choice) return { ops: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
   const own = addOwnOps(ent, id, name, np.ops.length ? undefined : value);
@@ -885,11 +920,19 @@ function addOwnOps(ent, id, name, value) {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
     // one place per thing (R 10-11; the authority refuses a light on a model): on a model, the light is a CHILD thing a
     // metre up, so its pose is its own and the gizmo moves one thing
-    if (c.model != null || ent?.lib != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, 1, 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
+    // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
+    const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
+    if (c.model != null || ent?.lib != null || c.mesh != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
+  if (name === 'Mesh') {
+    if (c.mesh != null) return { ops: [], errors: [`${id} already has a mesh`] };
+    const why = compRefusal('mesh', { shape: 'box', size: [1, 1, 1] }, ent); if (why) return { ops: [], errors: [why] };
+    const shape = MESH_SHAPES.includes(value) ? value : 'box';
+    return { ops: [OP.set(id, 'mesh', { shape, size: [1, 1, 1] })], errors: [] };
+  }
   if (name === 'Collider') {
-    if (ent?.lib == null) return { ops: [], errors: [`a collider needs a model to collide as (${id} has none)`] };
+    if (ent?.lib == null && !compMesh(ent)) return { ops: [], errors: [`a collider needs a model or a mesh to collide as (${id} has none)`] };
     if (c.collider != null) return { ops: [], errors: [`${id} already has a collider`] };
     const shape = value === 'box' || value === 'sphere' ? value : value == null || value === '' || value === 'exact' ? 'exact' : null;
     if (!shape) return { ops: [], errors: ['a collider shape is "exact", "box" or "sphere"'] };
@@ -1110,6 +1153,11 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
         break;
       }
+      case 'mesh': {
+        if (k === 'shape') { if (!MESH_SHAPES.includes(raw)) { errors.push(`mesh.shape: one of ${MESH_SHAPES.join(', ')}`); break; } bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })).shape = raw; }
+        else if (/^size\.[xyz]$/.test(k)) { const n = num(f, raw); if (n == null) break; const b = bag('mesh', () => ({ shape: 'box', size: [1, 1, 1] })); b.size = [...(Array.isArray(b.size) && b.size.length === 3 ? b.size : [1, 1, 1])]; b.size['xyz'.indexOf(k.slice(5))] = +n.toFixed(3); }
+        break;
+      }
       case 'motion': {
         const bar = k.indexOf('|');
         const mkey = bar < 0 ? 'motion' : `motion:${k.slice(0, bar)}`;
@@ -1195,6 +1243,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); break; }
         if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); break; }
         if (fk === 'reset') { comps.set(ck, null); break; }
+        if (fk === 'trust') { ops.push(trustOp(MATK, live)); break; }
         const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
         if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
           if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); break; } }
@@ -1390,6 +1439,7 @@ export function editOps(ent, id, edits, live = {}) {
   for (const [type, b] of bags) {
     if (b === null) { comps.set(type, null); continue; }
     if (type === 'light') { const why = compRefusal('light', b, ent); if (why) errors.push(`light: ${why}`); else comps.set('light', b); continue; }
+    if (type === 'mesh') { const why = compRefusal('mesh', b, ent); if (why) errors.push(`mesh: ${why}`); else comps.set('mesh', b); continue; }
     const n = type === 'picture' ? normalizePicture(b) : normalizeSound(b);
     if (!n.ok) { errors.push(`${type}: ${n.why}`); continue; }   // the rule, before any round-trip
     comps.set(type, type === 'picture' ? n.picture : n.sound);

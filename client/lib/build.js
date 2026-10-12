@@ -274,6 +274,22 @@ function ghostify(obj) {
   obj.userData.noCamCollide = true;
 }
 
+// Create ▸ Box/Sphere/Cylinder/Plane/Capsule (R 10-12): a mesh thing (componentspec `mesh`), held as its own grey ghost and
+// placed with a click, standing on the floor (its origin is its base centre, the authority's boxOfM). Q/E turn it; ,/. scale
+// its default size. The lib is '@mesh:<shape>'.
+export const MESH_DEFAULT = { box: [1, 1, 1], sphere: [1, 1, 1], cylinder: [1, 1, 1], plane: [2, 0.05, 2], capsule: [0.5, 1.5, 0.5] };
+const meshOf = (lib) => (typeof lib === 'string' && lib.startsWith('@mesh:') ? lib.slice(6) : null);
+function meshGhost(shape, [x, y, z]) {
+  const r = x / 2;
+  const geo = shape === 'sphere' ? new THREE.SphereGeometry(r, 24, 12).translate(0, r, 0)
+    : shape === 'cylinder' ? new THREE.CylinderGeometry(r, r, y, 24).translate(0, y / 2, 0)
+    : shape === 'capsule' ? new THREE.CapsuleGeometry(r, Math.max(0, y - 2 * r), 6, 12).translate(0, Math.max(y, x) / 2, 0)
+    : shape === 'plane' ? new THREE.PlaneGeometry(x, z).rotateX(-Math.PI / 2)
+    : new THREE.BoxGeometry(x, y, z).translate(0, y / 2, 0);
+  const obj = new THREE.Mesh(geo, new THREE.MeshStandardNodeMaterial({ color: 0x9a9a9a, roughness: 0.8, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+  obj.castShadow = false; obj.userData.noCamCollide = true;
+  return obj;
+}
 export async function holdGhost(lib, label) {
   setEditMode(true, { quiet: true });   // choosing a thing to place is intent enough
   cancelGhost();
@@ -285,6 +301,8 @@ export async function holdGhost(lib, label) {
       obj.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.7; } });
     } else if (lib === '@empty') {   // Create ▸ Empty (R 10-11): a bare entity, a parent for others; shown as its axes
       obj = new THREE.AxesHelper(0.5);
+    } else if (meshOf(lib)) {
+      obj = meshGhost(meshOf(lib), MESH_DEFAULT[meshOf(lib)] ?? [1, 1, 1]);
     } else {
       obj = await loadGLB(lib);
       ghostify(obj);
@@ -294,7 +312,7 @@ export async function holdGhost(lib, label) {
     collapseAll();
     flashHint(lib === '@light' || lib === '@empty'
       ? html`placing ${lib === '@light' ? html`a <b>light</b>` : html`an <b>empty</b>`} — click to place · <kbd>Esc</kbd> cancel`
-      : html`placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
+      : html`placing <b>${label ?? meshOf(lib) ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
     if (lib !== '@light' && lib !== '@empty') engage('ghostKeys');   // the status line keeps the keys while it's in hand
   } catch (e) { report('ghost', e); }
 }
@@ -509,13 +527,15 @@ bus.on('cut-adopted', () => { for (const id of [...claims.keys()]) endClaim(id);
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
+  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : meshOf(ghost.lib) ?? String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
   let sent;
   if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
   else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
+  else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = (MESH_DEFAULT[shape] ?? [1, 1, 1]).map((v) => +(v * ghost.scale).toFixed(3));
+    sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot

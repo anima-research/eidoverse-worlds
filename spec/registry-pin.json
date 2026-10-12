@@ -120,6 +120,30 @@
    ]
   }
  },
+ "mesh": {
+  "fields": {
+   "shape": "string",
+   "size": "vec3"
+  },
+  "defaults": {
+   "shape": "box",
+   "size": [
+    1,
+    1,
+    1
+   ]
+  },
+  "enums": {
+   "shape": [
+    "box",
+    "sphere",
+    "cylinder",
+    "plane",
+    "capsule"
+   ]
+  },
+  "on": "thing"
+ },
  "motion": {
   "fields": {
    "type": "string",
@@ -811,6 +835,12 @@
   "fields": {
    "name": "string",
    "text": "string"
+  },
+  "on": "world"
+ },
+ "trusted": {
+  "fields": {
+   "components": "array"
   },
   "on": "world"
  },

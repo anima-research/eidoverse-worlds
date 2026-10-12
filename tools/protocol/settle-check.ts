@@ -5,7 +5,7 @@
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";
-import { ENGINES } from "../../shared/protocol/simlayer.js";
+import { ENGINES, restsOf } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
 const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
 let pass = 0, fail = 0;
@@ -74,5 +74,49 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); T += 6000; call(W, "vic", "look", {});
   const chip = st(W).entities.chip.c; const q = chip.transform.q ?? [0, 0, 0, 1];
   ok(chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
+// R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box dropped from a height
+// falls and rests on the floor; a crate thrown onto a static mesh box rests on it and is parented to it
+{ const W = "mesh"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  call(W, "rowan", "create", { id: "fall", components: { mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [4, 0, 4] } } });
+  call(W, "vic", "move", { to: [4, 0, 3.3] }); const p = call(W, "vic", "punt", { id: "fall", v: [0, 2, 0] }); T += 8000; call(W, "vic", "look", {});
+  const f = st(W).entities.fall.c; const rested = restsOf(openWorld(root, W).entries).some((x) => x.id === "fall");
+  ok(p.ok && rested && Math.abs(f.transform.pos[1]) < 0.02 && !f.parent, "SE9 a dynamic mesh box punted up has a body: it flies, comes back down and its rest is logged on the floor", { punt: p.ok ?? p.refused, rested, pos: f.transform.pos, parent: f.parent ?? null });
+  call(W, "rowan", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, transform: { pos: [0, 0, 0] } } });
+  box(W, "crate", [0, 1.0, 0]);
+  call(W, "vic", "move", { to: [2, 0, 1] }); const mv = call(W, "vic", "move", { to: [0, 0, -1.2] }); const q = call(W, "vic", "punt", { id: "crate", v: [0, 0.5, 0] }); T += 8000; call(W, "vic", "look", {});
+  const c = st(W).entities.crate.c;
+  ok(q.ok && c.parent?.to === "plinth" && Math.abs(c.transform.pos[1] - 0.8) < 0.05, "SE10 a crate dropped onto a static mesh box rests on its top (y = 0.8) and is its child: the mesh is a collider", { mv: mv.ok ? true : mv.refused, punt: q.ok ? true : q.refused, pos: c.transform.pos, parent: c.parent ?? null });
+  // review S1.1: a mesh cylinder was a collider to the authority and nothing to eidosim (a tagged cylinder has no box); a crate fell through it
+  call(W, "rowan", "create", { id: "drum", components: { mesh: { shape: "cylinder", size: [1.5, 0.8, 1.5] }, transform: { pos: [6, 0, -6] } } });
+  box(W, "crate2", [6, 1.0, -6]);
+  call(W, "vic", "move", { to: [3, 0, -3] }); call(W, "vic", "move", { to: [5, 0, -6] }); call(W, "vic", "move", { to: [6, 0, -7.2] }); const q2 = call(W, "vic", "punt", { id: "crate2", v: [0, 0.5, 0] }); T += 8000; call(W, "vic", "look", {});
+  const c2 = st(W).entities.crate2.c;
+  ok(q2.ok && c2.parent?.to === "drum" && Math.abs(c2.transform.pos[1] - 0.8) < 0.05, "SE11 a crate dropped onto a static mesh CYLINDER rests on its top (y = 0.8) and is its child: the engine has a body for it", { punt: q2.ok ? true : q2.refused, pos: c2.transform.pos, parent: c2.parent ?? null });
+  // review S2.4: a resized plinth re-drops what the physics stacked on it (a shrunk mesh left the crate floating 0.5 m up)
+  const sh = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); T += 8000; call(W, "vic", "look", {});
+  const c3 = st(W).entities.crate.c; const wy = (c3.parent?.to === "plinth" ? c3.transform.pos[1] : c3.transform.pos[1]);
+  ok(sh.ok && (sh.notes ?? []).some((n) => n.fell?.includes("crate")) && Math.abs(wy - 0.3) < 0.05, "SE12 shrinking the mesh plinth under a resting crate re-drops it: it lands on the new top (y = 0.3), the reply says it fell", { set: sh.ok ? sh.notes : sh.refused, pos: c3.transform.pos, parent: c3.parent ?? null });
+  // the same family for a model plinth: its scale shrinks, the child crate is re-dropped instead of riding the scale (sheared)
+  call(W, "rowan", "create", { id: "mp", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [-6, 0, 6], q: [0, 0, 0, 1], scale: [2.5, 1.3333, 2.5] } } });
+  box(W, "crate3", [-6, 1.0, 6]);
+  const walk = []; for (const to of [[3, 0, -5], [2, 0, -2], [2, 0, 1.5], [-1, 0, 3], [-4, 0, 4], [-6, 0, 4.8]]) walk.push(call(W, "vic", "move", { to }).refused ?? "ok"); const q3 = call(W, "vic", "punt", { id: "crate3", v: [0, 0.5, 0] }); T += 8000; call(W, "vic", "look", {});
+  const on = st(W).entities.crate3.c.parent?.to === "mp";
+  const sc = call(W, "rowan", "set", { id: "mp", component: "transform", value: { pos: [-6, 0, 6], q: [0, 0, 0, 1], scale: [2.5, 0.5, 2.5] } }); T += 8000; call(W, "vic", "look", {});
+  const c4 = st(W).entities.crate3.c; const w4 = c4.parent?.to === "mp" ? c4.transform.pos[1] * 0.5 : c4.transform.pos[1];
+  const ws = c4.parent?.to === "mp" ? (c4.transform.scale ?? [1, 1, 1]).map((v, i) => v * [2.5, 0.5, 2.5][i]) : (c4.transform.scale ?? [1, 1, 1]);
+  // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the riders
+  call(W, "rowan", "set", { id: "plinth", component: "sockets", value: { perch: { pos: [0.5, 0.3, 0.5] } } });
+  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  const n1 = openWorld(root, W).entries.length; const same = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); T += 8000; call(W, "vic", "look", {});
+  ok(same.ok && openWorld(root, W).entries.length - n1 === 2 && !(same.notes ?? []).some((n) => n.fell), "SE14 re-asserting the plinth's mesh value re-drops nothing: 2 rows, no fell note (r2 S2.1)", { rows: openWorld(root, W).entries.length - n1, notes: same.notes });
+  const grow = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.5, 1.5] } }); T += 8000; call(W, "vic", "look", {});
+  const cup = st(W).entities.cup.c;
+  ok(grow.ok && (grow.notes ?? []).some((n) => n.fell?.includes("crate")) && !(grow.notes ?? []).some((n) => n.fell?.includes("cup")) && cup.parent?.socket === "perch", "SE15 the crate re-drops on a resize, the cup on the perch socket stays on it (r2 S2.2)", { notes: grow.notes, cup: cup.parent });
+  call(W, "rowan", "delete", { id: "cup" });   // (the engine stands a socketed child at its host's origin: pre-existing, simlayer worldPose reads no sockets; out of the crate's way)
+  const del = call(W, "rowan", "delete", { id: "plinth", component: "mesh" }); T += 8000; call(W, "vic", "look", {});
+  const c5 = st(W).entities.crate.c;
+  ok(del.ok && (del.notes ?? []).some((n) => n.fell?.includes("crate")) && !(del.notes ?? []).some((n) => n.stamped) && !c5.parent && c5.transform.pos[1] < 0.05, "SE16 deleting the plinth's mesh re-drops the crate (it lands on the floor, unparented); the reply says unstamped, not stamped (r2 S2.3)", { notes: del.notes, pos: c5.transform.pos, parent: c5.parent ?? null });
+  ok(q3.ok && on && sc.ok && (sc.notes ?? []).some((n) => n.fell?.includes("crate3")) && Math.abs(w4 - 0.3) < 0.05 && ws.every((v) => Math.abs(v - 1) < 1e-3), "SE13 shrinking a MODEL plinth's scale under a resting crate re-drops it too (its own scale stays 1, it is not sheared): lands at world y = 0.3", { walk, punt: q3.ok ? true : q3.refused, on, set: sc.ok ? sc.notes : sc.refused, pos: c4.transform.pos, worldScale: ws, parent: c4.parent ?? null }); }
+
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

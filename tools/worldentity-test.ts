@@ -180,7 +180,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const sc = worldSchema(st(), { now: now() });
   const own = new Map<string, string>(); const bad: string[] = [];
   for (const sec of sc.sections.list) for (const a of sec.fields) { if (!fieldAt(sc, a)) bad.push(`${a} is no field`); if (own.has(a)) bad.push(`${a} twice`); own.set(a, sec.title); }
-  check('four cards (Sky, Weather, Terrain, Grass), every field address resolves and is owned once', canon(sc.sections.list.map((s: any) => s.title)) === canon(['Sky', 'Weather', 'Terrain', 'Grass']) && !bad.length && own.size > 12, bad.join(' · '));
+  check('five cards (Sky, Weather, Terrain, Grass, Trusted components — R 10-12), every field address resolves and is owned once', canon(sc.sections.list.map((s: any) => s.title)) === canon(['Sky', 'Weather', 'Terrain', 'Grass', 'Trusted components']) && !bad.length && own.size > 12, bad.join(' · '));
   // one edit is ONE request (inspect.js commitEdit / the agent's edit send OP.batch(ops)); `acts` counts what undo must take back
   const edit = (set: any) => {
     const r = worldEditOps(st(), set, { now: now() }); const was = JSON.parse(JSON.stringify(worldState(st())));
@@ -226,7 +226,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   const txt = describeSchema(sc, { verbsHint: false });
   check('describeSchema reads it (what an agent\'s inspect prints)', /sky\.hours = /.test(txt) && /weather\.state = /.test(txt) && /terrain\.amplitude = /.test(txt) && /grass\.mow: action/.test(txt), txt.slice(0, 200));
   const empty = worldSchema(emptyView(), {});
-  check('an empty world still shows four cards, defaults marked, saying how to grow ground and grass', empty.sections.list.length === 4 && empty.sections.list.every((s: any) => s.present === false)
+  check('an empty world still shows five cards, defaults marked, saying how to grow ground and grass', empty.sections.list.length === 5 && empty.sections.list.every((s: any) => s.present === false)
     && /Build ▸ World/.test(empty.sections.list.find((s: any) => s.type === 'Terrain').info[0][1]));
 }
 

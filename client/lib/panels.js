@@ -447,6 +447,7 @@ function openPop(anchor, f, pick) {
       if (cat && !q) list.append(el('div', 'sp-pop-cat', cat));
       for (const it of xs) {
         const row = el('button', 'sp-pop-item', it.label);
+        if (it.chip === 'amber' || it.chip === 'blue') row.prepend(el('span', `sp-pill sp-pill-${it.chip === 'blue' ? 'trusted' : 'draft'}`, it.chip === 'blue' ? 'trusted' : 'draft'));
         row.title = it.hint ?? ''; row.disabled = !!it.disabled;
         row.onclick = () => take(it);
         const i = rows.length; row.onpointerenter = () => { active = i; light(); };
@@ -617,7 +618,7 @@ function fieldDOM(f, edit, ro = {}) {
       row.classList.add(f.open === false ? 'closed' : 'open');
       // the card's title: the fold arrow, then its provenance pill at the FRONT (R 10-11: "move the draft/server-only
       // component pill to the front of the label row… to make it look more important"), then the name
-      const DOT = { draft: ['draft', 'a draft component: not part of the engine yet (it can still change)'], foreign: ['unknown', 'a component this client has no reader for: kept and replayed, not drawn'] };
+      const DOT = { draft: ['draft', 'a draft component: not part of the engine yet (it can still change); unproven: this client reads it, the engine doesn\'t'], trusted: ['trusted here', 'not engine-official, but used and trusted in this world (the owner\'s word); the engine still doesn\'t read it'], foreign: ['unknown', 'a component this client has no reader for: kept and replayed, not drawn'] };
       const head = (hh, ff) => { hh.textContent = ''; hh.append(document.createTextNode(`${ff.open === false ? '▸' : '▾'} `));
         if (ff.dot && DOT[ff.dot]) { const d = el('span', `sp-pill sp-pill-${ff.dot}`, DOT[ff.dot][0]); d.title = DOT[ff.dot][1]; hh.append(d); }
         hh.append(put(el('span', 'sp-group-name'), ff.label, ro.icons)); return hh; };

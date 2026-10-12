@@ -19,6 +19,8 @@
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
 import { scratchWorld, flat } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
+import { registerDraft } from "../shared/drafts.js";
+import { worldSchema, worldEditOps } from "../shared/worldentity.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -315,6 +317,73 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   const r = editOps(crate, "t", { "home.pos.y": 2, "home.turn": 180 });
   const v = sets(r, "home")[0]?.args.value;
   check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
+}
+
+// R 10-12 (primitives): the mesh card, its ops, the Material card on a mesh thing, one place per thing
+console.log("\nmesh (a parametric body with no model):");
+{
+  const cube = { pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: { mesh: { shape: "box", size: [1, 2, 3] }, label: "box" } };
+  const s = inspectSchema(cube, "m1", { materials: [{ slot: "surface", name: "surface", color: 0x9a9a9a, roughness: 0.8, metalness: 0, opacity: 1, emissive: 0 }] });
+  const G = s.groups.map((g) => g.group);
+  check("a mesh thing: a mesh card (shape + size x/y/z) and the Material card (every thing with meshes), no raw-JSON twin", G.includes("mesh") && G.includes("hmat") && !fieldAt(s, "comp.mesh") && fieldAt(s, "mesh.shape")?.value === "box" && fieldAt(s, "mesh.size.y")?.value === 2 && fieldAt(s, "mesh.size.x")?.min === 0.05 && fieldAt(s, "mesh.size.x")?.max === 200, JSON.stringify(G));
+  check("the Material card names its one slot 'surface'", s.groups.find((g) => g.group === "hmat")?.fields.some((f: any) => f.k === "own|surface"));
+  const r = editOps(cube, "m1", { "mesh.size.x": "+=0.5", "mesh.shape": "cylinder" });
+  const v = val(r, "mesh");
+  check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
+  check("a size below 0.05 clamps to the hard min; an unknown shape is an error, not an op", val(editOps(cube, "m1", { "mesh.size.z": "0" }), "mesh")?.size[2] === 0.05 && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
+  const addL = editOps(cube, "m1", { "comp.+": "Light" });
+  check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "m1-light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
+  const addM = editOps(chair, "c1", { "comp.+": "Mesh" });
+  check("Add Component ▸ Mesh on a model is refused with the one-place text", addM.ops.length === 0 && /one place per thing/.test(addM.errors[0] ?? ""), JSON.stringify(addM.errors));
+  const addM2 = editOps(lamp, "lamp", { "comp.+": "Mesh" });
+  check("…and on a light too", addM2.ops.length === 0 && /one place per thing/.test(addM2.errors[0] ?? ""), JSON.stringify(addM2.errors));
+  const addM3 = editOps({ pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} }, "e", { "comp.+": "Mesh" });
+  check("on an Empty it writes mesh {shape: box, size: [1,1,1]}", JSON.stringify(val(addM3, "mesh")) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), JSON.stringify(addM3));
+  check("the header says what it is: 'box'", inspectSchema(cube, "m1").sections.libLabel === "box", JSON.stringify(inspectSchema(cube, "m1").sections.libLabel));
+  // review round 2 (S2.2, S3): a mesh thing has a body: Grabbable, Sockets and Collider don't ask it for a model; the child
+  // light hangs half a metre over its top; a plane's at 0.55
+  const gr = editOps(cube, "m1", { "comp.+": "Grabbable" }), so = editOps(cube, "m1", { "comp.+": "Sockets" }), co = editOps(cube, "m1", { "comp.+": "Collider" }, {});
+  check("Add ▸ Grabbable and Collider on a mesh thing write their component; Sockets is its own gesture (none says 'needs a model')", sets(gr, "grabbable").length === 1 && !gr.errors.length && !/needs a model/.test(so.errors[0] ?? "") && sets(co, "collider").length === 1 && !co.errors.length, JSON.stringify([gr.errors, so.errors, co.errors, gr.choice ?? null, so.choice ?? null]));
+  const lt = editOps(cube, "m1", { "comp.+": "Light" }); const ly = flat(lt.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
+  const pl = editOps({ ...cube, comp: { mesh: { shape: "plane", size: [4, 0.05, 4] } } }, "p1", { "comp.+": "Light" }); const py = flat(pl.ops).find((o: any) => o.verb === "create")?.args.components?.transform?.pos?.[1];
+  check("Add ▸ Light on a 2 m box childs the bulb at 2.5; on a plane at 0.55", ly === 2.5 && py === 0.55, JSON.stringify([ly, py]));
+  check("a carried thing with both a lib and a mesh is shown as its model: no mesh card", !inspectSchema({ ...cube, lib: "m/crate.glb" }, "m2").groups.some((g) => g.group === "mesh"));
+}
+
+// R 10-12 10:09 (the trusted rung, docs/COMPONENT-LADDER.md): a draft this client reads is offered under "drafts" with an
+// amber chip and the unproven hint; once the owner trusts it in this world it sits in the main list with a blue chip
+// and no hint; a draft nothing here reads is never offered
+console.log("\ntrusted drafts (the ladder's second rung):");
+{
+  registerDraft("hesperus/material", { title: "Material", summary: "override its look", category: "Look", applies: (e: any) => e?.lib != null || e?.comp?.mesh != null });
+  const plain = { lib: "statue.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} };
+  const un = inspectSchema(plain, "m1", { materials: [] }).sections.add.find((a: any) => a.name === "hesperus/material");
+  check("TD1 untrusted: hesperus/material is offered under the 'drafts' heading, amber chip, the unproven hint", un?.category === "drafts" && un?.chip === "amber" && /unproven: this client reads it; the engine doesn't/.test(un?.hint ?? ""), JSON.stringify(un));
+  const tr = inspectSchema(plain, "m1", { materials: [], trusted: ["hesperus/material"] }).sections.add.find((a: any) => a.name === "hesperus/material");
+  check("TD2 trusted here: it sits in the main list (its own category), blue chip, no hint", tr?.category === "Look" && tr?.chip === "blue" && !/unproven/.test(tr?.hint ?? ""), JSON.stringify(tr));
+  const no = inspectSchema({ ...plain, comp: { "mica/heart": { beats: 1 } } }, "m1", { materials: [], trusted: ["mica/heart"] }).sections.add;
+  check("TD3 a draft with no reader here is not offered, trusted or not", !no.some((a: any) => a.name === "mica/heart"), JSON.stringify(no.map((a: any) => a.name)));
+  check("TD4 a draft already on the thing is not offered again", !inspectSchema({ ...plain, comp: { "hesperus/material": {} } }, "m1", { materials: [] }).sections.add.some((a: any) => a.name === "hesperus/material"));
+  check("TD5 a draft is offered only where its reader applies (a material needs meshes)", !inspectSchema(lamp, "lamp").sections.add.some((a: any) => a.name === "hesperus/material"));
+  const add = editOps(plain, "m1", { "comp.+": "hesperus/material" }, { materials: [] });
+  check("TD6 adding it writes the draft's blank value", JSON.stringify(val(add, "hesperus/material")) === "{}" && add.errors.length === 0, JSON.stringify(add));
+  const ov = { ...plain, comp: { "hesperus/material": { color: 0xff0000 } } };
+  const card = (live: any) => inspectSchema(ov, "m1", live).sections.list.find((x: any) => x.key === "hesperus/material");
+  check("TD7 the card: draft (amber dot) when untrusted, trusted (blue dot) when the world trusts it", card({ materials: [] })?.draft === true && !card({ materials: [] })?.trusted && card({ materials: [], trusted: ["hesperus/material"] })?.trusted === true, JSON.stringify([card({ materials: [] }), card({ materials: [], trusted: ["hesperus/material"] })]));
+  const btn = (live: any) => inspectSchema(ov, "m1", live).groups.find((g: any) => g.group === "hmat")?.fields.find((f: any) => f.k === "trust");
+  check("TD8 an owner sees 'trust this in this world' / 'stop trusting'; a non-owner sees no button", /trust this in this world/.test(btn({ materials: [], mayTrust: true })?.label ?? "") && /stop trusting/.test(btn({ materials: [], mayTrust: true, trusted: ["hesperus/material"] })?.label ?? "") && !btn({ materials: [] }), JSON.stringify([btn({ materials: [], mayTrust: true }), btn({ materials: [] })]));
+  const t1 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["mica/heart"] });
+  check("TD9 the button writes @world.trusted with the name added (the rest kept)", JSON.stringify(flat(t1.ops).find((o: any) => o.args.id === "@world")?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["mica/heart", "hesperus/material"] } }), JSON.stringify(t1));
+  const t2 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["hesperus/material"] });
+  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted"), JSON.stringify(t2));
+  // the World inspector (where sky/weather live): a "trusted components" card listing them, each with remove (owner)
+  const ws = (live: any) => worldSchema({ sky: null, terrain: null, grass: null }, live);
+  const wcard = ws({ trusted: ["hesperus/material", "mica/heart"], mayTrust: true }).sections.list.find((x: any) => x.key === "trusted");
+  check("TW1 @world has a Trusted components card listing each name, present when any", wcard?.present === true && JSON.stringify(wcard.info?.map((x: any) => x[1])) === JSON.stringify(["hesperus/material", "mica/heart"]), JSON.stringify(wcard));
+  const wg = (live: any) => ws(live).groups.find((g: any) => g.group === "trusted")?.fields ?? [];
+  check("TW2 an owner has a remove button per name; a non-owner has none; none trusted says so", wg({ trusted: ["mica/heart"], mayTrust: true }).some((f: any) => f.k === "remove|mica/heart") && !wg({ trusted: ["mica/heart"] }).some((f: any) => f.t === "btn") && wg({ trusted: [] }).some((f: any) => f.t === "info" && /none/.test(f.value)), JSON.stringify([wg({ trusted: ["mica/heart"], mayTrust: true }), wg({ trusted: ["mica/heart"] })]));
+  const wr = worldEditOps({ sky: null, terrain: null, grass: null }, { "trusted.remove|mica/heart": true }, { trusted: ["hesperus/material", "mica/heart"], mayTrust: true });
+  check("TW3 remove writes the list without that name", JSON.stringify(flat(wr.ops)[0]?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["hesperus/material"] } }) && wr.errors.length === 0, JSON.stringify(wr));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

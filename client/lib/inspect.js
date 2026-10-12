@@ -24,9 +24,10 @@
 import { materialsOf } from './matoverride.js';
 import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
-import { boxOf } from './realize/models.js';
+import { boxOf, previewMesh } from './realize/models.js';
 import { state } from './state.js';
-import { net, sendDrag } from './net.js';
+import { net, sendDrag, replica } from './net.js';
+import { trustedOf } from '../../shared/drafts.js';
 import { THREE } from './core.js';
 import { renderDOM } from './panels.js';
 import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
@@ -43,6 +44,13 @@ const htmlEditors = [];
 let hooks = { casting: null };
 
 export function registerHandler(group, fn) { if (!handlers.has(group)) handlers.set(group, []); handlers.get(group).push(fn); }
+// a mesh card scrub (size x/y/z, shape) shows on the thing before release; the commit goes through editOps as any field's
+registerHandler('mesh', (id, _obj, k, value, opts) => {
+  if (!opts?.live) return false;
+  const cur = { ...(foldRecord(id)?.comp?.mesh ?? {}) }; const n = Number(value);
+  if (k === 'shape') cur.shape = String(value); else if (/^size\.[xyz]$/.test(k) && Number.isFinite(n)) { cur.size = [...(Array.isArray(cur.size) ? cur.size : [1, 1, 1])]; cur.size['xyz'.indexOf(k.slice(5))] = n; } else return false;
+  return previewMesh(id, cur);
+});
 export function registerEditor(fn) { htmlEditors.push(fn); }
 /** editpanels installs the undo stack and the light coalescer at init —
  *  importing build.js from here would close an import loop through
@@ -82,15 +90,19 @@ export function liveFor(id) {
     mutedForMe: isMineMuted(id), untrusted: allowUntrusted(),
     // the stored particle effects this viewer has (emitters.js): an effect's params are the inspector's knobs
     effects: effectLookup,
+    // the ladder's second rung: what this world trusts (@world.trusted), and whether this viewer may change it (the owner)
+    trusted: trustedHere(), mayTrust: mayTrust(),
   };
 }
+export const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);
+export const mayTrust = () => (net.myRights?.role === undefined ? undefined : net.myRights.role === 'owner');
 // The world entity `@world` (design §3, shared/worldentity.js): an alias of
 // state.sky/terrain/grass, edited through the sky/weather/terrain/grass verbs.
 // Those are owner-rank: false = this viewer is known not to be the owner
 // (WORLD_ADMIN operators fold to owner), undefined = not known yet.
 // shaping the world's look is the editWorld switch (research roles S2); the owner's on an older server
 export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : r.role === 'owner'; };
-export const worldLive = () => ({ now: Date.now(), mayShape: mayShape() });
+export const worldLive = () => ({ now: Date.now(), mayShape: mayShape(), trusted: trustedHere(), mayTrust: mayTrust() });
 export function schemaFor(id) {
   if (id === WORLD_ID) return worldSchema(state.st, worldLive());
   const rec = foldRecord(id); if (!rec) return { id, groups: [] };

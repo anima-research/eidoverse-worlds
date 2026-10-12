@@ -7,7 +7,7 @@
 // Ported from the protocol lab (the protocol lab's authority.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/disk.js now, so this module has no node: imports and no
 // process/Date of its own (callers pass the clock). Everything from `w.worldId` down is the lab's code unchanged.
-import { bodyOf, socketQ } from "../components.js";
+import { bodyOf, socketQ, ONE_PLACE } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
 import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
@@ -29,6 +29,7 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { trustRefusal } from "../drafts.js";
 import { planVelocity } from "./launchplan.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
@@ -82,8 +83,33 @@ function structGeom(v) {
     g = { label: "a building", structure: true, box: [lo, hi], size: hi.map((x, i) => x - lo[i]), surfaces, solids: walls.length > STRUCT_MAX ? [[lo, hi]] : walls }; }
   STRUCTGEO.set(v, g); return g;
 }
-/** A thing's geometry: its building's (structure) if it has one, else its model's. */
-const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
+// a mesh thing's geometry, from its component alone (componentspec `mesh`): base-centred like a measured model, so boxOfM's
+// default box is its box; a sphere and a capsule are `round` (they offer no face when tipped). Cached per VALUE, as structGeom
+export const MESH_SIZE = COMPONENTS.mesh.ranges.size;
+const MESHGEO = new WeakMap();
+const meshOk = (v) => v && typeof v === "object" && !Array.isArray(v) && v !== PURGED && COMPONENTS.mesh.enums.shape.includes(v.shape)
+  && Array.isArray(v.size) && v.size.length === 3 && v.size.every((x) => isNum(x) && x >= MESH_SIZE.min && x <= MESH_SIZE.max);
+/** What a mesh value measures, by shape (the client's readMesh reads the same): a sphere is x³; a cylinder is x wide and y tall;
+ *  a capsule is at least its diameter tall; a plane is 0.05 thick. */
+export const meshSize = ({ shape, size: [x, y, z] }) => (shape === "sphere" ? [x, x, x] : shape === "cylinder" ? [x, y, x] : shape === "capsule" ? [x, Math.max(x, y), x] : shape === "plane" ? [x, MESH_SIZE.min, z] : [x, y, z]);
+export function meshGeom(v) {
+  if (!meshOk(v)) return undefined;
+  if (MESHGEO.has(v)) return MESHGEO.get(v);
+  const size = meshSize(v);
+  const round = v.shape === "sphere" || v.shape === "capsule";
+  const g = { label: `a ${v.shape}`, mesh: v.shape, size, surfaces: round ? [] : [{ y: size[1] }], ...(round ? { round: true } : {}) };
+  MESHGEO.set(v, g); return g;
+}
+/** The engine's shape of a mesh thing (PHYSICS §3.1): box → [[min], [max]]; sphere → {sphere}; plane → a thin box; a cylinder or
+ *  a capsule its bounding box, since no carried engine reads a cylinder (review S1.1: a tagged cylinder was a collider to the
+ *  authority and nothing to eidosim, and a crate fell through it). In the thing's frame, base-centred, as geomE places. */
+export function meshShape(v) {
+  const g = meshGeom(v); if (!g) return null; const r = r4(g.size[0] / 2);
+  if (v.shape === "sphere") return { type: "sphere", radius: r, pos: [0, r, 0] };
+  return boxOfM(g).map((c) => c.map(r4));
+}
+/** A thing's geometry: its building's (structure) if it has one, else its mesh's, else its model's. */
+const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : e?.c.mesh !== undefined ? meshGeom(e.c.mesh) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
 export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
@@ -1177,8 +1203,10 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   // one place per thing (R 10-11 00:37; the answer: anything that needs its own place goes on a child): a light and a model
   // never share an entity, so a light's pose is its own and the editor's gizmo moves one thing. Existing logs keep folding
   // (the fold never refuses); the importer splits them; a carried value (an import) passes.
-  if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
-  if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
+  // a mesh is a body of its own, as a model is: never beside a model or a light on one thing. The words are shared with the
+  // Inspector (components.js ONE_PLACE), so a refusal reads the same from either
+  if (!carry && (comp === "light" || comp === "model" || comp === "mesh")) { const c = s.entities[id]?.c ?? {};
+    for (const has of ["model", "light", "mesh"]) if (has !== comp && c[has] !== undefined) refuse("one-place", ONE_PLACE.reason(id, has, comp), ONE_PLACE.fix(id, has, comp)); }
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
@@ -1202,6 +1230,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   // grant to everyone, roles['*'].gen in its old log, becomes: can.generate). The same closed list and dependencies as roles:<id>.can
   if (id === "@world" && comp === "default-role" && obj && v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
     if (R.roleDef(wcS, v.role)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can }); if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } }
+  if (id === "@world" && comp === "trusted") { const bad = trustRefusal(v); if (bad) refuse("shape", `${at}: ${bad}`, "set {id: '@world', component: 'trusted', value: {components: ['<handle>/<name>', …]}} (the drafts this world trusts; delete the component to trust none)"); }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
   const whoOk = (x, where) => { if (x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
@@ -1398,8 +1427,10 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
       const cap = typeof x === "string" ? r.maxLen : r.maxItems;
       if (cap !== undefined && n > cap) refuse("bounds", `${at}.${k} is ${n.toLocaleString("en")} ${typeof x === "string" ? "characters" : "items"}; it must be ≤ ${cap}`, def.help);
       continue; }
-    const bad = (r.min !== undefined && x < r.min) || (r.gt !== undefined && x <= r.gt) || (r.max !== undefined && x > r.max);
-    if (bad) refuse("bounds", `${at}.${k} is ${x}; it must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
+    // a vector's range holds for each element (mesh.size)
+    const out = (n) => (r.min !== undefined && n < r.min) || (r.gt !== undefined && n <= r.gt) || (r.max !== undefined && n > r.max);
+    const bad = Array.isArray(x) ? x.some((n) => typeof n === "number" && out(n)) : out(x);
+    if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
@@ -1466,6 +1497,7 @@ function commit(w, actor, verb, args, build) {
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
+  resettleRiders(w, actor, plan.ops, st, after, act, ctx.notes);
   // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
   // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
   // after was refused from a hand the two no longer agreed on.)
@@ -1484,6 +1516,50 @@ function commit(w, actor, verb, args, build) {
     if (let_go) w.savePresence(); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
+}
+// review S2.4 (R 10-12): a geometry write moves a thing's top (a mesh resized, a model swapped, its scale changed), and what the
+// physics had stacked on it (its dynamic children, attached by their rest) kept their local pose: floating over a shrunk
+// plinth, or scaled with a model's new size. They are re-dropped: under a carried engine a zero-velocity launch from where
+// each stands (the engine logs where it lands, as a grab's fallen dependents are); with no engine, set straight down onto
+// what is under them. A held, locked or already flying child is left alone. A move or a turn is not a geometry write: the
+// stack rides along, as it always did.
+function resettleRiders(w, actor, ops, before, after0, act, notes) { let after = after0;
+  // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
+  // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
+  // geometry is a change like any other (r2 S2.3)
+  const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
+  const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
+  if (!hosts.size) return;
+  // a child on a SOCKET rides the socket, not the top: it is never a rider (r2 S2.2: a cup on its perch was torn off and dropped)
+  const riders = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
+    return hosts.has(c.parent?.to) && !c.parent.socket && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
+  if (!riders.length) return;
+  const spec = after.entities["@world"]?.c["physics-engine"];
+  if (spec && carried(spec)) {
+    const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
+    const dropped = riders.filter((k) => !flying.has(k));
+    // out from under the host first, standing where it stood in the world: its rest re-attaches it to whatever it lands on
+    // with a fresh local pose (a rest keeps a child's recorded scale, and that scale was compensation for the OLD host size)
+    // (as it stood BEFORE the write: a model host's new scale had already carried the child's world pose and size with it)
+    if (dropped.length) { const free = dropped.flatMap((k) => { const t = worldT(before, k); return [delOp(k, "parent"), setOp(k, "transform", { pos: t.pos.map(r3), q: qr3(t.q), scale: t.scale.map(r3) })]; });
+      changeEntry(w, admit(w, after, { actor, cap: { kind: "system", ids: dropped, comps: ["transform", "parent"] } }, free), act); after = w.state(); }
+    for (const k of dropped) { const t = worldT(before, k);
+      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [actor] } }); }
+    if (dropped.length) notes.push({ fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" });
+    return;
+  }
+  // no engine: set each rider down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
+  // counts faces at or below where the rider stands; r2 S1.1). A host that lost its body frees its riders to the world
+  const setOps = riders.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);
+    const lift = hb ? Math.max(0, hb.max[1] - b.min[1]) : 0; const probe = { min: [b.min[0], b.min[1] + lift, b.min[2]], max: [b.max[0], b.max[1] + lift, b.max[2]] };
+    const below = supportUnder(after, probe, new Set([k, ...descendants(after, k)])); const wpos = [wt.pos[0], r3(wt.pos[1] - (b.min[1] - below.y)), wt.pos[2]];
+    if (!hb) return [delOp(k, "parent"), setOp(k, "transform", { pos: wpos, q: qr3(wt.q), scale: wt.scale.map(r3) })];
+    const lt = localFrom(after, host, { ...wt, pos: wpos });
+    const v = { ...after.entities[k].c.transform, pos: lt.pos }; return JSON.stringify(v) === JSON.stringify(after.entities[k].c.transform) ? [] : [setOp(k, "transform", v)]; });
+  if (!setOps.length) return;
+  const plan = admit(w, after, { actor, cap: { kind: "system", ids: riders, comps: ["transform", "parent"] } }, setOps);
+  changeEntry(w, plan, act);
+  notes.push({ setDown: [...new Set(setOps.map((o) => o.id))], why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" });
 }
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
 // log, as physics.shape: the AUTHORITY's measurement of its model (model-local box [[min], [max]]), never the asker's word.
@@ -1505,14 +1581,14 @@ function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
-  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider")) ids.add(o.id);
+  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
-  const out = ops.slice(); const stamped = [];
+  const out = ops.slice(); const stamped = [], unstamped = [], rounded = [];
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;
-    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : null;
+    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : e.c.mesh !== undefined ? meshShape(e.c.mesh) : null;
     let next;
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
@@ -1521,9 +1597,12 @@ function stampShapes(ctx, ops) {
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
         ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
     const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
-    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); stamped.push(id); }
+    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); if (next.shape) stamped.push(id); else unstamped.push(id); }
+    if (want && (e.c.mesh?.shape === "cylinder" || e.c.mesh?.shape === "capsule")) rounded.push(id);
   }
-  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the authority's measured shape" });
+  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model or a mesh are colliders, with the authority's measured shape" });
+  if (unstamped.length) ctx.notes.push({ component: "physics", unstamped: unstamped.length <= 12 ? unstamped : unstamped.length, why: "its body is gone, so its measured shape is gone with it: it is no collider now" });
+  if (rounded.length) ctx.notes.push({ component: "physics", field: "shape", ids: rounded.length <= 12 ? rounded : rounded.length, why: "a cylinder or a capsule is stamped as its bounding BOX: no carried engine reads a cylinder, so it collides, stacks and measures as a box" });
   return out;
 }
 // batch 2: a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
@@ -1752,7 +1831,7 @@ function buildTurn(ctx, a) {
 // Relational placement (A1): the authority solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
-  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model or mesh, so it has no size to place`, "set its transform directly");
   // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
   // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
   // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
@@ -3550,9 +3629,10 @@ function shaped(e, id, spec = null) {
   // a rotating engine finds a thing's collider through its model (the epoch's boxes): with no model it would fly nothing
   // and never rest (review of 49d4fb0d #6). Today the shape check below refuses it anyway (a modelless thing keeps no
   // measured shape; phys-check D6); this holds if a shape can ever be set without a model
-  if (spec && ENGINES[spec.engine]?.rotates && typeof e.c.model !== "string") refuse("no-shape", `${id} has no model, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
+  const bodied = typeof e.c.model === "string" || e.c.mesh !== undefined;
+  if (spec && ENGINES[spec.engine]?.rotates && !bodied) refuse("no-shape", `${id} has no model or mesh, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
   if (spec && ENGINES[spec.engine]?.rotates && e.c.physics?.shape?.type === "sphere" && !shapeError(e.c.physics.shape)) return;   // a rigid engine flies a sphere
-  if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
+  if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${bodied ? "" : " (it has no model or mesh)"}, so physics can't fly it`, bodied ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
 function releasePos(me, pos) {
@@ -3801,7 +3881,7 @@ const VERBS = {
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
   measure(w, actor, a) {
-    const st = w.state(); const b = aabb(st, a.id); if (!b) return { ok: false, refused: { code: "no-model", reason: `${a.id} has no model to measure` } };
+    const st = w.state(); const b = aabb(st, a.id); if (!b) return { ok: false, refused: { code: "no-model", reason: `${a.id} has no model or mesh to measure` } };
     const t = worldT(st, a.id);
     return { ok: true, id: a.id, bounds: { min: b.min.map(r3), max: b.max.map(r3) }, size: b.max.map((v, i) => r3(v - b.min[i])),
       front: qrot(t.q, [0, 0, 1]).map(r3), surfaces: surfacesOf(st, a.id).map((s) => ({ level: s.level, y: r3(s.y), size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] })) };

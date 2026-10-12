@@ -178,12 +178,17 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, socket?}`,
-  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
+  `pivot`, `light`, `mesh`, `motion`, `sockets`, `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
   `sky`, `terrain`, `terrain-grid`, `terrain-tile:<i>-<j>`, `grass`, `physics-engine`, `surface:<name>`,
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>`.
+- **A mesh is a body without a model.** `mesh {shape, size}` draws a
+  parametric body (box, sphere, cylinder, plane, capsule) on a thing that has
+  no model; the authority reads its size as it reads a measured model's, so
+  the thing can be placed, stacked on and given a physics shape. A mesh never
+  shares a thing with a model or a light (one place per thing).
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the

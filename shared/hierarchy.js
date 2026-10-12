@@ -122,7 +122,8 @@ export function childrenOf(world, id) {
 export function kindHint(ent) {
   if (!ent) return '?';
   const lit = ent.comp?.light && typeof ent.comp.light === 'object';
-  if (ent.lib == null) return lit ? 'light' : 'empty';
+  const mesh = ent.comp?.mesh && typeof ent.comp.mesh === 'object' ? ent.comp.mesh.shape : null;
+  if (ent.lib == null) return typeof mesh === 'string' ? `${mesh}${lit ? ' + light' : ''}` : lit ? 'light' : 'empty';
   const plus = lit ? ' + light' : '';
   return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
