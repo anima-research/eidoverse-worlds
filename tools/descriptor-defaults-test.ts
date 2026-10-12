@@ -32,7 +32,11 @@ for (const [card, d] of Object.entries(DESCRIPTORS)) {
     if (f.path == null) continue;
     const p = rec.params[f.param]; if (!p || p.default === undefined) continue;
     const want = editorDefault(card, f.k);
-    if (want === undefined) { if (p.default !== null) note(`${card}.${f.param}: the record says ${j(p.default)}, the registry writes nothing (${d.key}.${f.path} absent has its own meaning)`); continue; }
+    if (want === undefined) {
+      // C8: a yellow is DECIDED on the descriptor (`absent`: the record's default is a reading of absence, prose when RECORDS
+      // is generated), or it is red: a new field the registry never writes needs its decision
+      if (p.default !== null) check(`${card}.${f.param}: the record says ${j(p.default)}, the registry writes nothing — decided: ${(f as any).absent ? "absent means " + j((f as any).absent).slice(0, 60) + "…" : "NOT DECIDED"}`, typeof (f as any).absent === "string" && (f as any).absent.length > 0);
+      continue; }
     check(`${card}.${f.param} = ${j(want)}`, same(p.default, want), `RECORDS says ${j(p.default)}, materialize(${d.key}${d.type ? `, {type: '${d.type}'}` : ""}) says ${j(want)}`);
   }
 }
@@ -50,7 +54,7 @@ for (const [card, d] of Object.entries(DESCRIPTORS)) {
     const fld: any = fieldAt(schema, `${group}.${f.k}`);
     if (!fld || fld.def === undefined) continue;
     const want = editorDefault(card, f.k);
-    if (want === undefined) { note(`${card}.${f.k}: the inspector's def is ${j(fld.def)}, the registry writes nothing`); continue; }
+    if (want === undefined) { check(`${card}.${f.k}: the inspector's def is ${j(fld.def)}, the registry writes nothing — decided on the descriptor`, typeof (f as any).absent === "string"); continue; }
     check(`inspector ${group}.${f.k} def = ${j(want)}`, same(fld.def, want), `editschema says ${j(fld.def)}`);
   }
 }
