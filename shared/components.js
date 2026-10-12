@@ -108,8 +108,9 @@ const DEFS = [
       important: { t: 'bool', default: false, hint: 'always casts: first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
     note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
+  // period, damp and maxAmp are the registry's (componentspec.js motion, pendulum): tools/descriptor-defaults-test.ts holds them there
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
-    params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 3.5, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 1.1, hint: 'cap on a push (server reaction only), radians' } },
+    params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 2.4, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0.08, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 0.9, hint: 'cap on a push (server reaction only), radians' } },
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
   { name: 'Spin', category: 'Motion', summary: 'turns steadily about an axis',
     params: { part, axis: axis('y'), rate: { t: 'num', unit: '°/s', default: 36, step: 5 }, pivot: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, phase: { ...deg, default: 0 } },

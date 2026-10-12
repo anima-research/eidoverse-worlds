@@ -300,16 +300,18 @@ export function inspectSchema(ent, id, live = {}) {
       switch (m.type) {
         case 'pendulum':
           fields.push({ t: 'num', k: k('amp'), label: `${P}amp`, value: m.amp ?? m.amplitude ?? 0, step: 5, deg: true, min: 0, softMax: Math.PI });
-          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 3.5, def: 3.5, step: 0.1, dp: 2, min: 0.05, unit: 's' });
+          // def is what a reset writes: the registry's (componentspec.js; tools/descriptor-defaults-test.ts). The value's
+          // fallback is how a value written before the authority materialized one is drawn (client/lib/motioneval.js)
+          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 3.5, def: 2.4, step: 0.1, dp: 2, min: 0.05, unit: 's' });
           fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
-          fields.push({ t: 'num', k: k('damp'), label: `${P}damp`, value: m.damp ?? 0, def: 0, step: 0.01, dp: 3, min: 0, softMax: 2, hint: '0 swings forever; friction is opt-in' });
+          fields.push({ t: 'num', k: k('damp'), label: `${P}damp`, value: m.damp ?? 0, def: 0.08, step: 0.01, dp: 3, min: 0, softMax: 2, hint: '0 swings forever' });
           break;
         case 'spin':
           fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 36), def: 36, step: 5, dp: 1, unit: '°/s' });
           fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
           break;
         case 'orbit':
-          fields.push({ t: 'num', k: k('radius'), label: `${P}radius`, value: m.radius ?? 1, def: 1, step: 0.1, dp: 2, min: 0, unit: 'm' });
+          fields.push({ t: 'num', k: k('radius'), label: `${P}radius`, value: m.radius ?? 3, def: 3, step: 0.1, dp: 2, min: 0, unit: 'm' });
           fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 12), def: 12, step: 5, dp: 1, unit: '°/s', hint: 'degrees a second (a lap of 30 s is 12°/s)' });
           fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
           break;
@@ -822,7 +824,7 @@ const NEEDS = {
     met: (ent) => ent?.comp?.motion?.type === 'pendulum',
     plan: (ent, id, name) => {
       const m = ent?.comp?.motion;
-      const ops = [OP.set(id, 'motion', { type: 'pendulum', amp: 0, period: 3.5 })];
+      const ops = [OP.set(id, 'motion', { type: 'pendulum', amp: 0 })];   // the authority writes its period, damp and maxAmp (componentspec.js)
       if (!m) return { ops, brings: 'a Pendulum at rest, for it to push' };
       return { choice: { need: 'Pendulum', prompt: `${name} pushes a pendulum, and ${id} already moves as a whole (${m.type ?? 'a motion'}) — replace that with a Pendulum?`,
         options: [{ v: 'replace', label: `replace its ${m.type ?? 'motion'} with a Pendulum`, ops }] } };
@@ -868,7 +870,8 @@ function addOwnOps(ent, id, name, value) {
   const c = ent?.comp ?? {};
   // a path's points are in its parent's frame (as the renderer reads them): it starts where it stands and goes 2 m on
   const p0 = (Array.isArray(ent?.parent?.offset) ? ent.parent.offset : Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0]).map((v) => round(+v || 0, 4));
-  const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
+  // a motion seed states what makes it visible (a swing of 15°, a 1 m orbit); the rest the authority writes (componentspec.js)
+  const motion = { Pendulum: { type: 'pendulum', amp: 0.26 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };
   if (motion[name]) {
     const part = typeof value === 'string' && value.trim() ? value.trim() : null;
     if (part) { const key = `motion:${part}`; if (c[key]) return { ops: [], errors: [`${id} already has a motion on ${part}`] }; return { ops: [OP.set(id, key, motion[name])], errors: [] }; }
