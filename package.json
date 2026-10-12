@@ -27,6 +27,6 @@
     "test:flight:headless": "bun tools/flight-headless-test.ts",
     "test:wingfold": "bun tools/wing-fold-presence-test.ts && bun tools/wing-owner-wire-test.ts",
     "test:protocol": "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/run.ts",
-    "test:shadows": "bun tools/shadow-follow-test.mjs && bun tools/xrshadow-test.mjs && bun tools/shadow-pref-test.mjs && bun tools/shadow-pref-test.mjs --mutants && bun tools/lamp-skin-test.mjs && bun tools/body-shadow-gate-test.mjs && bun tools/lamp-slot-policy-test.mjs"
+    "test:shadows": "bun tools/shadow-follow-test.mjs && bun tools/shadow-fade-test.mjs && bun tools/xrshadow-test.mjs && bun tools/shadow-pref-test.mjs && bun tools/shadow-pref-test.mjs --mutants && bun tools/lamp-skin-test.mjs && bun tools/body-shadow-gate-test.mjs && bun tools/lamp-slot-policy-test.mjs"
   }
 }

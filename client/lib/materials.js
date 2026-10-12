@@ -48,8 +48,17 @@ import { effectiveSky } from '../../shared/forecast.js';
 const {
   Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
   fract, floor, dot, length, positionWorld, positionView, normalWorld,
-  materialColor, materialRoughness, materialMetalness,
+  materialColor, materialRoughness, materialMetalness, screenCoordinate,
 } = TSL;
+
+// ---- the caster fade ---------------------------------------------------------
+// A caster entering or leaving the distance budget (lightrig casterPass) dithers its shadow in over ~300 ms instead
+// of popping (R 10-11). Materials are SHARED across clones (draw_batches groups by material.id), so the amount comes
+// from the OBJECT being drawn: one uniform, re-read per object in the shadow pass. One module-level node so every
+// material's depth pass has the SAME WGSL shape; the material is marked so lightrig knows the mesh can fade (a
+// non-node material hard-flips as before). Interleaved-gradient noise, in shadow-map pixels.
+const uShadowFade = uniform(1).onObjectUpdate(({ object }) => object?.userData?.shadowFade ?? 1);
+const FADE_MASK = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))))).lessThan(uShadowFade);
 
 // ---- the shared uniform state -----------------------------------------------
 // One set for the whole scene, exactly like upstream's: every wrapped
@@ -366,6 +375,9 @@ export function prepareMaterial(mat, receiver = null) {
   const pbr = mat.isMeshStandardNodeMaterial || mat.isMeshPhysicalNodeMaterial
     || (mat.roughness !== undefined && mat.metalness !== undefined);
   wrapMaterial(mat, receiver, pbr);
+  const mask = mat.maskShadowNode ?? mat.maskNode;   // maskShadowNode wins over maskNode in three's depth pass
+  mat.maskShadowNode = mask ? FADE_MASK.and(mask) : FADE_MASK;
+  mat.userData.shadowFade = true;
   stats.wrapped++;
   return true;
 }
