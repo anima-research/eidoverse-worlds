@@ -45,6 +45,7 @@ import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
+import { DESCRIPTORS, fieldOf, claimOf, cardsOfKey, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -99,6 +100,19 @@ function axisName(m, def) {
   return def;
 }
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+/** A card's row from its descriptor (shared/protocol/descriptors.js): the widget facts (ui), the value read through the
+ *  wire translation with the registry's default (or the field's `absent` reading) behind it, and `def` where the row
+ *  offers a reset. `over` is the prose and anything the card knows better (a softMax that follows the value). A field the
+ *  descriptor doesn't name still draws (its value from `over`), and no card claims it: components-inspector-test says so. */
+function rowOf(card, k, bag, over = {}) {
+  const f = fieldOf(card, k); const { def: offersDef, absent, sparse: _s, clears: _c, own: _o, ...widget } = f?.ui ?? {};
+  const t = over.t ?? widget.t;
+  const def = f ? editorDefault(card, k) : undefined;
+  let value = f && f.path != null ? (f.wire ? f.wire.from(bag?.[f.path], bag) : bag?.[f.path]) : undefined;
+  if (t === 'check') value = def ? value !== false : value === true;   // a check offers no reset: its box is the reset
+  else value = value ?? absent ?? def;
+  return { ...widget, t, k, value, ...(def !== undefined && offersDef !== false && t !== 'check' ? { def } : {}), ...over };
+}
 // The light component (PROTOCOL §4, 2026-10-01): a lamp is a thing with a `light` component.
 const compLight = (ent) => isBag(ent?.comp?.light);
 // The reading a viewer with no hint gets: canonical (middle axis within ±90°,
@@ -246,26 +260,27 @@ export function inspectSchema(ent, id, live = {}) {
     for (const key of laKeys) {
       const la = c[key]; const pre = key === 'look-at' ? '' : `${key.slice(8)}|`; const nm = key === 'look-at' ? '' : `${key.slice(8)} `;
       const T = typeof la.target === 'string' ? la.target : null;
-      fields.push({ t: 'ref', k: `${pre}target`, label: `${nm}faces`, value: T && !T.startsWith('@') && !/^u-/.test(T) ? T : null, words: { '@viewer': 'the viewer', '@nearest': 'nearest person' }, word: T?.startsWith('@') || /^u-/.test(T ?? '') ? T : null,
-          hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' },
+      const LA = (p, over = {}) => rowOf('LookAt', p, la, { ...over, k: `${pre}${p}`, label: `${nm}${over.label ?? p}` });
+      fields.push(LA('target', { label: 'faces', value: T && !T.startsWith('@') && !/^u-/.test(T) ? T : null, words: { '@viewer': 'the viewer', '@nearest': 'nearest person' }, word: T?.startsWith('@') || /^u-/.test(T ?? '') ? T : null,
+          hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' }),
         { t: 'enum', k: `${pre}target@`, label: `${nm}or`, value: T?.startsWith('@') ? T : '', options: [{ v: '', label: '(a thing)' }, { v: '@viewer', label: 'the viewer' }, { v: '@nearest', label: 'nearest person' }] },
-        { t: 'enum', k: `${pre}mode`, label: `${nm}turns`, value: la.mode === 'aim' ? 'aim' : 'yaw', def: 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] },
-        { t: 'enum', k: `${pre}forward`, label: `${nm}front`, value: typeof la.forward === 'string' ? la.forward : 'z', def: 'z', options: AX.map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' },
-        { t: 'num', k: `${pre}speed`, label: `${nm}speed`, value: la.speed ?? 240, def: 240, step: 30, dp: 0, min: 0, max: 3600, unit: '°/s', hint: '0 = turns at once' },
-        { t: 'num', k: `${pre}range`, label: `${nm}range`, value: la.range ?? 12, def: 12, step: 1, dp: 1, min: 0.1, max: 100, unit: 'm', hint: 'a person further than this: it turns back to rest' });
+        LA('mode', { label: 'turns', value: la.mode === 'aim' ? 'aim' : 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] }),
+        LA('forward', { label: 'front', value: typeof la.forward === 'string' ? la.forward : 'z', options: AX.map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' }),
+        LA('speed', { hint: '0 = turns at once' }),
+        LA('range', { hint: 'a person further than this: it turns back to rest' }));
     }
     groups.push({ group: 'look-at', label: 'look at', types: laKeys, fields });
   }
 
   // the `light` group: `light.intensity` is the same address to the panel, the VR quad and the agent's edit tool
   if (compLight(ent)) {
-    const src = c.light;
+    const src = c.light; const L = (k, over) => rowOf('Light', k, src, over);
     const fields = [
-      { t: 'color', k: 'color', label: 'color', value: src.color ?? 0xffd9a0, def: 0xffd9a0 },
-      { t: 'num', k: 'intensity', label: 'brightness', value: src.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, src.intensity ?? 16) },
-      { t: 'num', k: 'range', label: 'range', value: src.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, src.range ?? 10), unit: 'm' },
-      { t: 'check', k: 'important', label: 'important', value: src.important === true, hint: 'always casts: first claim on a light slot, never governor-shed' },
-      { t: 'check', k: 'noon', label: 'burns at noon', value: src.day === false, hint: 'opts out of the day cycle' },
+      L('color', { label: 'color' }),
+      L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
+      L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
+      L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
+      L('noon', { label: 'burns at noon', hint: 'opts out of the day cycle' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
     groups.push({ group: 'light', label: 'light', types: ['light'], fields });
@@ -278,9 +293,9 @@ export function inspectSchema(ent, id, live = {}) {
     const shape = isBag(c.collider) ? c.collider.shape : ent.collide;
     const opts = ['exact', 'box', 'sphere'];
     groups.push({ group: 'collider', label: 'collider', ...(isBag(c.collider) ? { types: ['collider'] } : {}), fields: [
-      { t: 'enum', k: 'shape', label: 'shape', value: shape, options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
+      rowOf('Collider', 'shape', isBag(c.collider) ? c.collider : { shape }, { label: 'shape', options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
         hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide'
-          : 'set by its spawn; changing it here writes a collider component, which takes precedence' },
+          : 'set by its spawn; changing it here writes a collider component, which takes precedence' }),
     ] });
   }
 
@@ -300,35 +315,29 @@ export function inspectSchema(ent, id, live = {}) {
         const opts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
         fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: opts.some((o) => o.v === ax) ? opts : [...opts, { v: ax, label: ax }] });
       }
+      const card = { pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[m.type];
+      const M = (p, over = {}) => rowOf(card, p, m, { ...over, k: k(p), label: `${P}${over.label ?? p}` });
       switch (m.type) {
         case 'pendulum':
-          fields.push({ t: 'num', k: k('amp'), label: `${P}amp`, value: m.amp ?? m.amplitude ?? 0, step: 5, deg: true, min: 0, softMax: Math.PI });
+          fields.push(M('amp'));
           // def is what a reset writes: the registry's (componentspec.js; tools/descriptor-defaults-test.ts). The value's
-          // fallback is how a value written before the authority materialized one is drawn (client/lib/motioneval.js)
-          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 3.5, def: 2.4, step: 0.1, dp: 2, min: 0.05, unit: 's' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
-          fields.push({ t: 'num', k: k('damp'), label: `${P}damp`, value: m.damp ?? 0, def: 0.08, step: 0.01, dp: 3, min: 0, softMax: 2, hint: '0 swings forever' });
+          // fallback (the descriptor's `absent`) is how a value written before the authority materialized one is drawn (client/lib/motioneval.js)
+          fields.push(M('period'), M('phase'), M('damp', { hint: '0 swings forever' }));
           break;
         case 'spin':
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 36), def: 36, step: 5, dp: 1, unit: '°/s' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
+          fields.push(M('degPerSec', { label: 'rate' }), M('phase'));
           break;
         case 'orbit':
-          fields.push({ t: 'num', k: k('radius'), label: `${P}radius`, value: m.radius ?? 3, def: 3, step: 0.1, dp: 2, min: 0, unit: 'm' });
-          fields.push({ t: 'num', k: k('degPerSec'), label: `${P}rate`, value: rateOf(m, 12), def: 12, step: 5, dp: 1, unit: '°/s', hint: 'degrees a second (a lap of 30 s is 12°/s)' });
-          fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
+          fields.push(M('radius'), M('degPerSec', { label: 'rate', hint: 'degrees a second (a lap of 30 s is 12°/s)' }), M('face', { label: 'face along' }));
           break;
         case 'bob':
-          fields.push({ t: 'num', k: k('amp'), label: `${P}amp`, value: m.amp ?? m.amplitude ?? 0.3, def: 0.3, step: 0.05, dp: 2, min: 0, unit: 'm' });
-          fields.push({ t: 'num', k: k('period'), label: `${P}period`, value: m.period ?? 4, def: 4, step: 0.1, dp: 2, min: 0.05, unit: 's' });
-          fields.push({ t: 'num', k: k('phase'), label: `${P}phase`, value: m.phase ?? 0, step: 5, deg: true });
+          fields.push(M('amp'), M('period'), M('phase'));
           break;
         case 'path':
           fields.push({ t: 'info', label: `${P}points`, value: `${Array.isArray(m.points) ? m.points.length : 0} points — edit as JSON (comp.${key})` });
-          if (m.duration != null && m.speed == null) fields.push({ t: 'num', k: k('duration'), label: `${P}duration`, value: m.duration, step: 0.5, dp: 1, min: 0.1, unit: 's' });
-          else fields.push({ t: 'num', k: k('speed'), label: `${P}speed`, value: m.speed ?? 1, def: 1, step: 0.1, dp: 2, min: 0, unit: 'm/s' });
-          fields.push({ t: 'enum', k: k('loop'), label: `${P}loop`, value: m.loop ?? 'loop', options: ['loop', 'pingpong', 'once'].map((v) => ({ v, label: v })) });
-          fields.push({ t: 'check', k: k('face'), label: `${P}face along`, value: m.face !== false });
+          if (m.duration != null && m.speed == null) fields.push(M('duration'));
+          else fields.push(M('speed'));
+          fields.push(M('loop', { options: ['loop', 'pingpong', 'once'].map((v) => ({ v, label: v })) }), M('face', { label: 'face along' }));
           break;
       }
       fields.push({ t: 'btn', k: k('rest'), label: P ? `${P.trim()} come to rest` : 'come to rest', danger: true });
@@ -381,22 +390,22 @@ export function inspectSchema(ent, id, live = {}) {
   // openable (R 10-07; shared/protocol/componentspec.js): open and locked are its state; it turns `angle` about its pivot (or slides
   // `slide` in its own frame) over `time`. The hinge buttons put the pivot on an edge of the model's own box (live.box).
   if (isBag(c.openable)) {
-    const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box;
+    const o = c.openable; const slides = Array.isArray(o.slide); const box = live.box; const O = (p, over) => rowOf('Openable', p, o, over);
     const fields = [
-      { t: 'check', k: 'open', label: 'open', value: o.open === true, hint: 'its state now; anyone using it flips this (its reactions)' },
-      { t: 'check', k: 'locked', label: 'door locked', value: o.locked === true, hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" },
+      O('open', { label: 'open', hint: 'its state now; anyone using it flips this (its reactions)' }),
+      O('locked', { label: 'door locked', hint: "bars opening while on (an open handler with unless: 'locked'): the door's own lock, for the people using it. Pinning it in place is the Lock component's" }),
       { t: 'enum', k: 'by', label: 'opens by', value: slides ? 'slide' : 'turn', def: 'turn', options: [['turn', 'turning about its pivot (a hinge)'], ['slide', 'sliding']].map(([v, label]) => ({ v, label })) },
     ];
     if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, min: -10, max: 10, unit: 'm', hint: 'how far it moves when open, in its own frame' }));
     else {
-      fields.push({ t: 'num', k: 'angle', label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, def: Math.PI / 2, step: 15, deg: true, min: -Math.PI, max: Math.PI, hint: 'how far it turns when open; negative turns the other way' });
-      fields.push({ t: 'enum', k: 'axis', label: 'hinge axis', value: axisName(o, 'y'), def: 'y', options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' });
+      fields.push(O('angle', { label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, hint: 'how far it turns when open; negative turns the other way' }));
+      fields.push(O('axis', { label: 'hinge axis', value: axisName(o, 'y'), options: Object.keys(AXES).map((v) => ({ v, label: v })), hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
       if (Array.isArray(box) && !o.part) {
         fields.push({ t: 'btn', k: 'hingeL', label: 'hinge on its left edge', hint: 'puts its pivot on the -x edge of its box (it turns about the pivot)' });
         fields.push({ t: 'btn', k: 'hingeR', label: 'hinge on its right edge', hint: 'puts its pivot on the +x edge of its box' });
       }
     }
-    fields.push({ t: 'num', k: 'time', label: 'takes', value: Number.isFinite(o.time) ? o.time : 1, def: 1, step: 0.1, dp: 2, min: 0, max: 10, unit: 's', hint: 'seconds to open or close' });
+    fields.push(O('time', { label: 'takes', value: Number.isFinite(o.time) ? o.time : 1, hint: 'seconds to open or close' }));
     if (o.part) fields.push({ t: 'info', label: 'moves', value: `the part ${o.part} (about the part's own origin)` });
     groups.push({ group: 'openable', label: 'openable', types: ['openable'], fields });
   }
@@ -510,12 +519,13 @@ export function inspectSchema(ent, id, live = {}) {
       if (p.type === 'bool') return [{ t: 'check', k, label: name, value: v === true, hint }];
       if (p.type === 'color') return [{ t: 'color', k, label: name, value: v ?? 0xffffff, hint }];
       return [{ t: 'text', k, label: name, value: v ?? '', placeholder: p.type === 'texture' ? 'eidoverse/assets/particle_textures/….png' : '', hint }]; });
+    const PA = (p, over) => rowOf('Particles', p, inst, over);
     groups.push({ group: 'particles', label: 'particles', types: ['particles'], fields: [
-      { t: 'enum', k: 'effect', label: 'effect', value: inst.effect, options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' },
-      { t: 'check', k: 'playing', label: 'playing', value: inst.playing !== false, hint: 'off: no new particles; the living finish' },
-      { t: 'num', k: 'scale', label: 'scale', value: inst.scale ?? 1, def: 1, step: 0.1, dp: 2, min: 0.01, max: 100 },
+      PA('effect', { label: 'effect', options: effects.map((v) => ({ v, label: v.startsWith('sha256:') || v.startsWith('eido:') ? `${doc?.name ?? 'stored'} (${v.slice(0, 15)}…)` : v })), hint: 'an Essential, or a stored effect document (upload {effect})' }),
+      PA('playing', { label: 'playing', hint: 'off: no new particles; the living finish' }),
+      PA('scale', { label: 'scale' }),
       ...[0, 1, 2].map((i) => ({ t: 'num', k: `at|${i}`, label: `at ${'xyz'[i]}`, value: at[i], step: 0.05, dp: 2, min: -8, max: 8, unit: 'm' })),
-      { t: 'text', k: 'part', label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' },
+      PA('part', { label: 'part', value: inst.part ?? '', placeholder: 'a node of its model (optional)', hint: 'emit from one part of its model' }),
       ...params,
       { t: 'btn', k: 'out', label: 'put it out', danger: true },
     ] });
@@ -527,15 +537,16 @@ export function inspectSchema(ent, id, live = {}) {
     const p = c.picture; const parts = live.parts ?? [];
     const partOpts = [{ v: '', label: '(its own: a framed picture)' }, ...[...new Set([...(p.part && !parts.includes(p.part) ? [p.part] : []), ...parts])].map((v) => ({ v, label: v }))];
     const tier = mediaTier(p.src, 'image');
+    const PI = (k, over) => rowOf('Picture', k, p, over);
     const fields = [
-      { t: 'text', k: 'src', label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') },
+      PI('src', { label: 'image', value: p.src ?? '', placeholder: 'upload, or store/images/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'image') }),
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t see this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      { t: 'enum', k: 'part', label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' },
-      ...(p.part ? [] : [{ t: 'num', k: 'width', label: 'width', value: p.width ?? 1, def: 1, step: 0.1, dp: 2, min: 0.05, max: 20, unit: 'm', hint: 'its height follows the image' }]),
-      { t: 'text', k: 'alt', label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` },
-      { t: 'enum', k: 'lit', label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) },
-      { t: 'check', k: 'flip', label: 'flip', value: p.flip === true, hint: 'for a part whose UVs were exported upside down' },
+      PI('part', { label: 'where', value: p.part ?? '', options: partOpts, hint: 'on its own (a picture facing its front, sized by width), or on one of its model\'s parts' }),
+      ...(p.part ? [] : [PI('width', { label: 'width', hint: 'its height follows the image' })]),
+      PI('alt', { label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` }),
+      PI('lit', { label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) }),
+      PI('flip', { label: 'flip', hint: 'for a part whose UVs were exported upside down' }),
     ];
     const n = normalizePicture(p);
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
@@ -550,17 +561,18 @@ export function inspectSchema(ent, id, live = {}) {
     const d = c.sound; const playing = d.playing !== false;
     const tier = mediaTier(d.src, 'audio');
     const rings = isBag(c.reactions) && Object.values(c.reactions).some((h) => h?.kind === 'play');
+    const SO = (k, over) => rowOf('Sound', k, d, over);
     const fields = [
       { t: 'info', label: 'state', value: playing ? (d.loop === false ? '▶ played (one-shot)' : '▶ playing') : '⏸ paused' },
-      { t: 'text', k: 'src', label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') },
+      SO('src', { label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') }),
       { t: 'btn', k: 'upload', label: 'upload audio…', client: true, hint: 'MP3, Ogg, WAV, WebM or M4A into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      { t: 'text', k: 'alt', label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` },
-      { t: 'num', k: 'volume', label: 'volume', value: d.volume ?? 0.8, def: 0.8, step: 0.05, dp: 2, min: 0, max: 1 },
-      { t: 'num', k: 'pitch', label: 'pitch', value: d.pitch ?? 1, def: 1, step: 0.05, dp: 2, min: 0.5, max: 2, hint: 'playback rate: 2 = an octave up and twice as fast' },
-      { t: 'num', k: 'near', label: 'full volume within', value: d.near ?? 1.5, def: 1.5, step: 0.5, dp: 1, min: 0.1, max: SOUND_MAX_RADIUS, unit: 'm' },
-      { t: 'num', k: 'radius', label: 'silent beyond', value: d.radius ?? 12, def: 12, step: 1, dp: 0, min: 1, max: SOUND_MAX_RADIUS, unit: 'm', hint: 'nobody further than this hears it at all' },
-      { t: 'check', k: 'spatial', label: 'positional', value: d.spatial !== false, hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' },
-      { t: 'check', k: 'loop', label: 'loop', value: d.loop !== false },
+      SO('alt', { label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` }),
+      SO('volume', { label: 'volume' }),
+      SO('pitch', { label: 'pitch', hint: 'playback rate: 2 = an octave up and twice as fast' }),
+      SO('near', { label: 'full volume within', max: SOUND_MAX_RADIUS }),
+      SO('radius', { label: 'silent beyond', max: SOUND_MAX_RADIUS, hint: 'nobody further than this hears it at all' }),
+      SO('spatial', { label: 'positional', hint: 'off: heard evenly everywhere inside its radius (room tone, music in a hall)' }),
+      SO('loop', { label: 'loop' }),
       // this viewer's own (client: never a value on the wire): a sound you never want to hear here again
       ...(live.mutedForMe !== undefined ? [{ t: 'check', k: 'mute', label: 'mute for me', value: !!live.mutedForMe, client: true, hint: 'only you stop hearing it; nobody else is affected, and nothing is recorded' }] : []),
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t hear this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
@@ -577,10 +589,11 @@ export function inspectSchema(ent, id, live = {}) {
   // story (batch 2): why it's here, a museum label. Shown on Inspect and read by agents
   if (isBag(c.story)) {
     const st = c.story;
+    const ST = (k, over) => rowOf('Story', k, st, over);
     groups.push({ group: 'story', label: 'story', types: ['story'], fields: [
-      { t: 'text', k: 'title', label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${SPEC.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` },
-      { t: 'text', k: 'text', label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${SPEC.story.ranges.text.maxLen}` },
-      { t: 'text', k: 'marks', label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' },
+      ST('title', { label: 'title', value: st.title ?? '', placeholder: 'its headline', hint: `≤${SPEC.story.ranges.title.maxLen} characters (${graphemes(st.title ?? '')} now)` }),
+      ST('text', { label: 'text', value: st.text ?? '', multiline: true, placeholder: 'why it is here', hint: `plain text, a blank line between paragraphs; ${graphemes(st.text ?? '')} / ${SPEC.story.ranges.text.maxLen}` }),
+      ST('marks', { label: 'marks', value: Array.isArray(st.marks) ? st.marks.join(', ') : '', placeholder: 'ids, comma-separated', hint: 'what it marks or commemorates (up to 8 things)' }),
     ] });
   }
 
@@ -588,18 +601,20 @@ export function inspectSchema(ent, id, live = {}) {
   if (isBag(c.text)) {
     const tx = c.text; const D = SPEC.text.defaults;
     const lumaInt = (c) => (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)) / 255;   // as texts.js picks the edge
+    const TX = (k, over) => rowOf('Text', k, tx, over);
+    const edge = lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff;   // the descriptor's absent reading of outlineColor, computed
     groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
-      { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` },
-      { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
-      { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
-      { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
-      { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color, def: D.color },
-      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'an edge around the letters, so they read on any background' },
-      ...(tx.outline !== false ? [{ t: 'color', k: 'outlineColor', label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : (lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff), def: lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff, hint: 'left alone, the one that contrasts with the text colour' }] : []),
+      TX('text', { label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` }),
+      TX('size', { label: 'size', hint: 'the height of a line' }),
+      TX('width', { label: 'width', hint: 'where lines wrap' }),
+      TX('align', { label: 'align', options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) }),
+      TX('color', { label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color }),
+      TX('outline', { label: 'outline', hint: 'an edge around the letters, so they read on any background' }),
+      ...(tx.outline !== false ? [TX('outlineColor', { label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : edge, def: edge, hint: 'left alone, the one that contrasts with the text colour' })] : []),
       { t: 'check', k: 'plate', label: 'plate', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
-      ...(Number.isInteger(tx.background) ? [{ t: 'color', k: 'background', label: 'plate colour', value: tx.background }] : []),
-      { t: 'enum', k: 'billboard', label: 'faces', value: tx.billboard ?? D.billboard, def: D.billboard, options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] },
-      { t: 'enum', k: 'lit', label: 'lit', value: tx.lit ?? D.lit, def: D.lit, options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] },
+      ...(Number.isInteger(tx.background) ? [TX('background', { label: 'plate colour' })] : []),
+      TX('billboard', { label: 'faces', options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] }),
+      TX('lit', { label: 'lit', options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] }),
     ] });
   }
 
@@ -620,8 +635,10 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'disabled', 'clickthrough', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
-    ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
+  // the descriptor table's typed cards (CLAIMED_KEYS: the floor cards keep their key), their keyed spellings (motion:<part>,
+  // look-at:<part>), and the client's own flags and draft cards — a key here is a card's, never raw JSON. A light or
+  // collider that isn't a bag, a home with no pos, a physics that isn't a bag: raw, as the card didn't draw
+  const claimed = new Set([...CLAIMED_KEYS.filter((k) => !(k === 'light' && !compLight(ent)) && !(k === 'collider' && !isBag(c.collider))), 'disabled', 'clickthrough', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), ...laKeys, ...mk, ...scriptKeys]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
@@ -699,6 +716,9 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const have = new Set(components.map((c) => c.type));
   const g = (name) => groups.find((x) => x.group === name);
   const refs = (group, pred = () => true) => (g(group)?.fields ?? []).filter((f) => f.k != null && pred(f)).map((f) => `${group}.${f.k}`);
+  // a descriptor card claims the rows its descriptor names (a field, or one of the card's own derived rows), and the
+  // group's buttons, notes and JSON hatch; a value row it doesn't name is in no card (components-inspector-test)
+  const claims = (card, group, pred = () => true) => refs(group, (f) => pred(f) && (['btn', 'info', 'json'].includes(f.t) || !!claimOf(card, f.k)));
   const out = [];
   let partOrdinal = 0;
   for (const inst of components) {
@@ -721,7 +741,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       // keyed = the component; keyless = the legacy spawn `collide`, which owns
       // the collider group only when no component overrides it
       case 'Collider':
-        if (inst.key != null || !isBag(ent.comp?.collider)) sec.fields = refs('collider');
+        if (inst.key != null || !isBag(ent.comp?.collider)) sec.fields = claims('Collider', 'collider');
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
@@ -730,7 +750,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
         // hand-written log put one beside a legacy light
-        if (inst.key == null || compLight(ent)) sec.fields = refs('light');
+        if (inst.key == null || compLight(ent)) sec.fields = claims('Light', 'light');
         else sec.fields = [`comp.${inst.key}`];
         sec.removable = inst.key != null;
         break;
@@ -738,23 +758,23 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key || f.k === 'lockLevel'); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = refs('grabbable'); sec.removable = true; break;
-      case 'Openable': sec.fields = refs('openable'); sec.removable = true; break;
-      case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
-      case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
-      case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
+      case 'Openable': sec.fields = claims('Openable', 'openable'); sec.removable = true; break;
+      case 'Particles': sec.fields = claims('Particles', 'particles', (f) => f.k !== 'out'); sec.removable = true; break;
+      case 'Picture': sec.fields = claims('Picture', 'picture', (f) => f.k !== 'down'); sec.removable = true; break;
+      case 'Sound': sec.fields = claims('Sound', 'sound', (f) => f.k !== 'silence'); sec.removable = true; break;
       case 'LookAt': { const pre = inst.key === 'look-at' ? '' : `${inst.key.slice(8)}|`;
-        sec.fields = refs('look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
+        sec.fields = claims('LookAt', 'look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
         if (pre) sec.title = `LookAt · ${partLabel(inst.key.slice(8), live.parts)}`; break; }
-      case 'Story': sec.fields = refs('story'); sec.removable = true; break;
-      case 'Text': sec.fields = refs('text'); sec.removable = true; break;
-      case 'Pivot': sec.fields = refs('pivot'); sec.removable = true; break;
+      case 'Story': sec.fields = claims('Story', 'story'); sec.removable = true; break;
+      case 'Text': sec.fields = claims('Text', 'text'); sec.removable = true; break;
+      case 'Pivot': sec.fields = claims('Pivot', 'pivot'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
           const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
           if (part) { sec.title = `${inst.type} · ${partLabel(part, live.parts, ++partOrdinal)}`; sec.part = part; }
           // the type is the card, not a field: changing it is remove + add
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
-          sec.fields = refs('motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
+          sec.fields = claims(inst.type, 'motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
           sec.removable = true;
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
@@ -765,6 +785,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
           sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
+        } else if (inst.key === 'home' && g('home')) {
+          sec.title = 'Home'; sec.fields = refs('home'); sec.removable = true;   // its own fields (R 10-11); the card named comp.home, a row the floor no longer held, until C8's every-card pin (10-12)
         } else {
           sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
           sec.removable = inst.type !== 'Captions';
@@ -1045,6 +1067,20 @@ export function editOps(ent, id, edits, live = {}) {
     return n;
   };
   const bool = (v) => (typeof v === 'string' ? !/^(false|0|no|off)$/i.test(v) : !!v);
+  // a descriptor field's write (shared/protocol/descriptors.js): parsed by its widget, bounded by its row, rounded to the
+  // card's writeDp, put on the wire through its translation; a sparse field is deleted at its default, and a write retires
+  // the spellings it clears. false = not a field the table writes (the card's own code does: an axis, a text, a button)
+  const writeField = (card, k, key, f, raw, next) => {
+    const d = fieldOf(card, k); const ui = d?.ui; if (!d || d.path == null || !ui || ui.own || !['num', 'check', 'color', 'enum'].includes(ui.t)) return false;
+    let v;
+    if (ui.t === 'num') { if (!f) return false; const n = num(f, raw); if (n == null) return true; const dp = DESCRIPTORS[card].writeDp; v = dp == null ? n : round(n, dp); }
+    else if (ui.t === 'check') v = bool(raw);
+    else if (ui.t === 'color') { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); return true; } v = n; }
+    else { if (raw === '' || raw == null) return false; v = String(raw); }
+    if (ui.sparse && v === editorDefault(card, k)) delete next[d.path]; else next[d.path] = toWire(card, k, v);
+    for (const old of ui.clears ?? []) delete next[old];
+    return true;
+  };
 
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
@@ -1117,10 +1153,7 @@ export function editOps(ent, id, edits, live = {}) {
         // the light component: merge into its bag, important/day stored only in their non-default state, validated once at
         // the end like picture/sound
         const b = bag('light', () => ({}));
-        if (f.t === 'num') { const n = num(f, raw); if (n == null) break; b[k] = n; }
-        else if (k === 'color') b.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
-        else if (k === 'important') { if (bool(raw)) b.important = true; else delete b.important; }
-        else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
+        if (!writeField('Light', k, key, f, raw, b)) errors.push(`${key}: no such field`);
         break;
       }
       case 'motion': {
@@ -1140,8 +1173,7 @@ export function editOps(ent, id, edits, live = {}) {
           next.type = raw;
         }
         else if (param === 'loop') next.loop = raw;
-        else if (f.t === 'check') next[param] = bool(raw);
-        else { const n = num(f, raw); if (n == null) break; next[param] = round(n, 4); if (param === 'degPerSec') { delete next.rpm; delete next.period; } if (param === 'amp') delete next.amplitude; }
+        else if (!writeField({ pendulum: 'Pendulum', spin: 'Spin', orbit: 'Orbit', bob: 'Bob', path: 'Path' }[prev.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
         break;
       }
@@ -1193,12 +1225,10 @@ export function editOps(ent, id, edits, live = {}) {
         const next = comps.get('openable') ?? JSON.parse(JSON.stringify(c.openable ?? {}));
         if (k === 'hingeL' || k === 'hingeR') { const box = live.box; if (!Array.isArray(box)) { errors.push(`${key}: its box isn't known yet`); break; }
           comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4), round(box[0][1], 4), round((box[0][2] + box[1][2]) / 2, 4)] }); break; }
-        if (k === 'open' || k === 'locked') next[k] = bool(raw);
-        else if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
+        if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
         else if (k === 'axis') { if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
         else if (k.startsWith('slide|')) { const n = num(f, raw); if (n == null) break; next.slide = [...(Array.isArray(next.slide) ? next.slide : [0, 0, 0])]; next.slide[+k.slice(6)] = round(n, 4); }
-        else if (k === 'angle' || k === 'time') { const n = num(f, raw); if (n == null) break; next[k] = round(n, 6); }
-        else { errors.push(`${key}: no such field`); break; }
+        else if (!writeField('Openable', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         comps.set('openable', next);
         break;
       }
@@ -1263,11 +1293,9 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k.startsWith('param|')) { const name = k.slice(6); const v = f?.t === 'num' ? num(f, raw) : f?.t === 'check' ? bool(raw) : f?.t === 'color' ? (typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw) : String(raw ?? '').trim();
           if (v == null || v === '') { const { [name]: _, ...rest } = next.params ?? {}; if (Object.keys(rest).length) next.params = rest; else delete next.params; }
           else next.params = { ...(next.params ?? {}), [name]: f?.t === 'num' ? round(v) : v }; }
-        else if (k === 'scale') { const n = num(f, raw); if (n == null) break; next.scale = round(n); }
-        else if (k === 'playing') next.playing = bool(raw);
         else if (k === 'part') { const v = String(raw ?? '').trim(); if (v) next.part = v; else delete next.part; }
         else if (k === 'effect') { if (String(raw) !== next.effect) { next.effect = String(raw); delete next.params; } }   // another effect's knobs aren't these
-        else { errors.push(`${key}: no such field`); break; }
+        else if (!writeField('Particles', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         // the authority's rules, here first (a known effect: an Essential, or a stored one the viewer has)
         const doc = effectFor(next.effect, live.effects ?? (() => null)); const bad = doc || ESSENTIAL_NAMES.includes(next.effect) ? instanceProblem(next, doc) : null;
         if (bad) { errors.push(`particles.${k}: ${bad}`); break; }
@@ -1278,8 +1306,8 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'down') { bags.set('picture', null); break; }
         const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
         if (!['part', 'src', 'alt', 'lit', 'flip', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
-        if (k === 'flip') b.flip = bool(raw);
-        else if (k === 'width') { const n = num(f ?? { value: b.width ?? 1, min: 0.05, max: 20 }, raw); if (n == null) break; b.width = round(n); }
+        if (writeField('Picture', k, key, f, raw, b)) break;
+        if (k === 'width') { const n = num({ value: b.width ?? 1, min: 0.05, max: 20 }, raw); if (n == null) break; b.width = round(n); }   // no row yet: the picture is being made
         else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt' || k === 'part') delete b[k]; else b[k] = v; }
         break;
       }
@@ -1295,9 +1323,9 @@ export function editOps(ent, id, edits, live = {}) {
         // play and restart send no t0: the authority stamps it (shared/protocol/authority.js stampMedia), on its clock, for everyone
         if (k === 'play') { b.playing = true; delete b.t0; }
         else if (k === 'pause') { b.playing = false; }
-        else if (k === 'loop' || k === 'spatial') b[k] = bool(raw);
-        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const lim = { volume: [0, 1, 0.8], radius: [1, SOUND_MAX_RADIUS, 12], near: [0.1, SOUND_MAX_RADIUS, 1.5], pitch: [0.5, 2, 1] }[k];
-          const n = num(f ?? { value: b[k] ?? lim[2], min: lim[0], max: lim[1] }, raw); if (n == null) break; b[k] = round(n); }
+        else if (writeField('Sound', k, key, f, raw, b)) { /* written */ }
+        else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const lim = { volume: [0, 1, 0.8], radius: [1, SOUND_MAX_RADIUS, 12], near: [0.1, SOUND_MAX_RADIUS, 1.5], pitch: [0.5, 2, 1] }[k];   // no row yet: the sound is being made
+          const n = num({ value: b[k] ?? lim[2], min: lim[0], max: lim[1] }, raw); if (n == null) break; b[k] = round(n); }
         else if (k === 'src' || k === 'alt') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
@@ -1327,8 +1355,9 @@ export function editOps(ent, id, edits, live = {}) {
         const ck = part ? `look-at:${part}` : 'look-at';
         const next = { ...(comps.get(ck) ?? (isBag(c[ck]) ? c[ck] : {})) };
         if (fk === 'target' || fk === 'target@') { if (raw == null || raw === '') { if (fk === 'target') { comps.set(ck, null); break; } else break; } next.target = String(raw); }
-        else if (fk === 'mode' || fk === 'forward' || fk === 'up') next[fk] = String(raw);
-        else if (fk === 'speed' || fk === 'range') { const n = num(f ?? { value: next[fk] ?? (fk === 'speed' ? 240 : 12), min: fk === 'speed' ? 0 : 0.1, max: fk === 'speed' ? 3600 : 100 }, raw); if (n == null) break; next[fk] = round(n); }
+        else if (writeField('LookAt', fk, key, f, raw, next)) { /* written */ }
+        else if (fk === 'up') next.up = String(raw);
+        else if (fk === 'speed' || fk === 'range') { const n = num({ value: next[fk] ?? (fk === 'speed' ? 240 : 12), min: fk === 'speed' ? 0 : 0.1, max: fk === 'speed' ? 3600 : 100 }, raw); if (n == null) break; next[fk] = round(n); }   // no row yet: the look-at is being made
         else { errors.push(`${key}: no such field`); break; }
         comps.set(ck, next); break;
       }
@@ -1336,11 +1365,8 @@ export function editOps(ent, id, edits, live = {}) {
         const next = { ...(comps.get(group) ?? (isBag(c[group]) ? c[group] : {})) };
         if (group === 'story' && k === 'marks') { const ids = String(raw ?? '').split(/[\s,]+/).filter(Boolean); if (ids.length) next.marks = ids; else delete next.marks; }
         else if (k === 'title' || k === 'text') next[k] = String(raw ?? '');
-        else if (group === 'text' && (k === 'size' || k === 'width')) { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
-        else if (group === 'text' && (k === 'color' || k === 'background' || k === 'outlineColor')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
         else if (group === 'text' && k === 'plate') { if (bool(raw)) next.background = Number.isInteger(next.background) ? next.background : 0x202020; else delete next.background; }
-        else if (group === 'text' && k === 'outline') next.outline = bool(raw);
-        else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);
+        else if (group === 'text' && writeField('Text', k, key, f, raw, next)) { /* written */ }
         else { errors.push(`${key}: no such field`); break; }
         // the authority's rules, here first (the same catalogue): a refusal is a hint before any round-trip
         const lim = SPEC[group].ranges; for (const [fk, r] of Object.entries(lim)) if (typeof next[fk] === 'string' && r.maxLen && graphemes(next[fk]) > r.maxLen) errors.push(`${group}.${fk}: ${graphemes(next[fk])} characters; at most ${r.maxLen}`);

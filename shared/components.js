@@ -22,6 +22,7 @@
 import { ROT_MODES } from './euler.js';
 import { kindOf } from './protocol/kind.js';
 import { recordOf } from './protocol/view.js';
+import { materialize } from './protocol/componentspec.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -447,7 +448,8 @@ export function addable(components, { unmet = false, met = null } = {}) {
 // The browser, the text tier and the inspector each need to ask "is this a
 // light, and with what?" of an entity that may use either spelling. They ask
 // HERE, so the answer (and its defaults, which are the fold's) is written once.
-export const LIGHT_DEFAULTS = Object.freeze({ color: 0xffd9a0, intensity: 16, range: 10 });
+// the registry's light (componentspec.js), the three fields every reading needs: what the authority writes into a bare {light: {}}
+export const LIGHT_DEFAULTS = Object.freeze((({ color, intensity, range }) => ({ color, intensity, range }))(materialize('light', {}).value));
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /** The light an entity casts, normalized, or null: a plain-object comp.light on any entity (a bare light, or an imported
