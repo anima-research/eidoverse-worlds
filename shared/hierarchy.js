@@ -21,10 +21,9 @@ import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 import { socketQ } from './components.js';
+import { r9 } from './protocol/round.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
-const r3 = (v) => +(+v).toFixed(4);
-const r9 = (v) => +(+v).toFixed(9);
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 

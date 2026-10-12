@@ -16,7 +16,8 @@ import { flashHint } from './ui.js';
 import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
 
-export const USE_REACH = 2.5;   // m, feet to the thing (Roblox's prompt reaches ~10 studs ≈ 2.8 m)
+import { USE_REACH } from '../../shared/protocol/physconst.js';
+export { USE_REACH };
 let hooks = null;               // { myPos(): {x,y,z}, camera, editing(): bool, busy(): bool (photo mode, limp) }
 export function initUsePrompt(h) { hooks = h; }
 

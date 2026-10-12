@@ -34,6 +34,7 @@
 // Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; client, door and agent read with grabOf.
 
 import { HUMANOID_BONES } from './humanoid.js';
+import { REACH } from './protocol/physconst.js';
 
 export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
 // a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
@@ -52,8 +53,8 @@ export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part']
 export const DEFAULT_WHO = 'visitor';   // R 10-07: "I vote for visitors being able to grab and throw" (a world narrows it per thing with who)
 export const DEFAULTS = Object.freeze({ enabled: true, who: DEFAULT_WHO, steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
   twoHanded: false, throw: 1, release: 'drop', returnAfter: 0, home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
-/** The authority's hand reach today (authority.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
-export const HAND_REACH = 1.5;
+/** The authority's hand reach (physconst.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
+export const HAND_REACH = REACH;
 /** A free socket takes a released thing that fits within this many metres of it, unless it says otherwise. */
 export const SOCKET_RADIUS = 0.15;
 /** VR near-grab: the hover sphere around a hand, × the avatar's scale (VRChat's number). */
