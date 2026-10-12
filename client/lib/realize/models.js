@@ -30,7 +30,7 @@ import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPre
 import { makeModelQuality, chooseTier } from '../lod_policy.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
 import { attachLamps, releaseOwner, registerCaster, releaseCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
-import { makeLight, updateLight, disposeLight, makeLightGizmo } from '../lights.js';
+import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
 import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
@@ -53,7 +53,7 @@ const restOf = (obj, ent) => ({
   ...(Array.isArray(ent?.q) && ent.q.length === 4 ? { q: [...ent.q] } : {}),
 });
 
-/** id → {kind:'model'|'light'|'empty', lib?, gen} — the realizer's own view of what
+/** id → {kind (shared/protocol/kind.js kindOf), lib?, gen} — the realizer's own view of what
  *  it has handled. gen guards a load completion against acting for a
  *  reservation that was retired and re-created while its bytes flew. */
 const tracked = new Map();
@@ -123,7 +123,7 @@ function maybePlaceholder(id) {
   if (entities.get(id) !== null) return;   // realized, placeholdered, or unknown
   const ent = state.st.entities[id];
   const g = ent?.lib ? libGeom.get(ent.lib) : null;
-  if (!ent || ent.kind === 'light' || !g?.bbox) return;
+  if (!ent || !g?.bbox) return;
   const grp = makePlaceholder(id, ent, g);
   entities.set(id, grp);
   scene.add(grp);
@@ -271,7 +271,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       // by a light, re-spawned with a different lib (its own job follows),
       // demoted-then-reset, or this whole realizer generation was reset
       if (signal.aborted || t?.gen !== gen) return;
-      if (!cur || cur.kind === 'light' || cur.lib !== ent.lib) {
+      if (!cur || kindOf(cur) !== 'model' || cur.lib !== ent.lib) {
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) tracked.delete(id);
         return;
@@ -364,7 +364,7 @@ function realizeModel(id, cur, obj) {
   if (sc) applyScale(obj, sc);
   obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
-  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
+  entityMeta.set(id, { actor: cur.actor, kind: 'model', lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
   applyHidden(id);   // a thing hidden before its model arrived stays hidden
   bus.emit('entity', { id, kind: 'spawn' });
@@ -475,31 +475,15 @@ export function drainPromoteTail() {
   }
 }
 
-function createLight(id, ent) {
-  tracked.set(id, { kind: 'light', gen: nextGen++ });
-  const g = makeLight({ color: ent.color, intensity: ent.intensity, range: ent.range, keep: ent.keep, day: ent.day }, id);
-  g.userData.entityId = id;
-  g.position.set(...(ent.pos ?? [0, 1, 0]));
-  // rest pose, same as models carry — refreshLight re-stamps it on every
-  // fold refresh, so create and refresh agree on where "at rest" is
-  g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
-  entities.set(id, g);
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
-  scene.add(g);
-  applyHidden(id);
-  bus.emit('entity', { id, kind: 'light' });
-  emitCompBag(id);
-}
-
 /** An Empty (PROTOCOL §3.2): a transform with nothing to draw — a pivot, a
  *  group parent, a target. A bare Group, so every consumer of the entities
  *  map (mounts, motion, the hierarchy, selection, emitters) treats it as an
  *  entity; it owns no collider, no lamps, no caster slot and no load. It
  *  announces itself as a 'spawn' because that is the event the comp
  *  evaluators (emitters, pictures) rebuild on. A light component on it
- *  brings its gizmo (syncCompLight), which is how a bare bulb is seen. */
-function createEmpty(id, ent) {
-  tracked.set(id, { kind: 'empty', gen: nextGen++ });
+ *  brings its gizmo (syncCompLight), which is how a bare bulb is seen. `kind` is the fold's word for it (kindOf). */
+function createHost(id, ent, kind) {
+  tracked.set(id, { kind, gen: nextGen++ });
   const g = new THREE.Group();
   g.userData.entityId = id;
   g.userData.empty = true;
@@ -510,7 +494,7 @@ function createEmpty(id, ent) {
   g.userData.base = restOf(g, ent);
   setEmptyMarker(g, editing);
   entities.set(id, g);
-  entityMeta.set(id, { actor: ent.actor, kind: 'empty', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
+  entityMeta.set(id, { actor: ent.actor, kind, ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   scene.add(g);
   applyHidden(id);
   bus.emit('entity', { id, kind: 'spawn' });
@@ -520,7 +504,22 @@ function createEmpty(id, ent) {
   for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
 }
 
-const CREATE = { light: createLight, empty: createEmpty, model: createModel };
+const createEmpty = (id, ent) => createHost(id, ent, 'empty');
+/** A light or mesh component landing on, or leaving, a standing host changes what the fold calls it — the same Group
+ *  serves, so only the word changes (the realized object is the one a planReconcile would otherwise rebuild). */
+function relabelHost(id) {
+  const t = tracked.get(id), ent = state.st.entities[id];
+  if (!t || !ent || t.kind === 'model') return;
+  const kind = kindOf(ent);
+  if (kind === 'model' || kind === t.kind) return;
+  t.kind = kind;
+  const meta = entityMeta.get(id);
+  if (meta) meta.kind = kind;
+}
+/** A light is an Empty that casts (syncCompLight hangs the cast and the gizmo on it); a mesh is an Empty until the mesh
+ *  realizer lands (a sibling branch) — both are tracked under their own kind so the planner's identity rule and the
+ *  residency sweep read the same word the fold does. */
+const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: (id, ent) => createHost(id, ent, 'mesh'), empty: createEmpty, model: createModel };
 
 // An Empty is invisible, so in EDIT MODE it wears a small wireframe marker
 // that a click can pick (build.js walks up from the hit mesh to entityId).
@@ -590,7 +589,7 @@ function syncInferredLamps(id) {
 function syncCompLight(id) {
   syncInferredLamps(id);
   const ent = state.st.entities[id];
-  const L = ent && kindOf(ent) !== 'light' ? lightOf(ent) : null;
+  const L = ent ? lightOf(ent) : null;
   if (!L) { dropCompLight(id); return; }
   const host = entities.get(id) ?? null;
   const spec = {
@@ -629,7 +628,7 @@ function applyColliderPref(id) {
 
 function refreshModel(id, ent) {
   const obj = entities.get(id);
-  if (!obj || obj.userData?.isLight) return;   // loading: completion reads state
+  if (!obj) return;   // loading: completion reads state
   // A MOUNTED child's transform is parent-relative; ent.pos is the fold's
   // absolute pre-mount pose, and applying it here would seat the cargo 3m
   // off in the carrier's frame on every reconnect reconcile (review B1 —
@@ -646,39 +645,6 @@ function refreshModel(id, ent) {
   bus.emit('entity', { id, kind: 'place' });
 }
 
-/** Live refresh ≡ join create: after this runs, the realized light must be
- *  indistinguishable from what createLight would build off the same folded
- *  entity — EVERY folded field re-applied (params, mount-guarded transform,
- *  entityMeta, comp bag, parent linkage), so a live edit and a rejoin render
- *  identically. (Slice 18a; the divergence was the user-visible bug.) */
-function refreshLight(id, ent) {
-  const g = entities.get(id);
-  if (!g?.userData?.isLight) return;
-  // explicit values, not a partial patch: the FOLD already merged, and a
-  // cleared keep/day folds as an ABSENT field — passing it through
-  // updateLight's null-skip guard would leave the old value stuck on
-  // (a live landmine for keep before day existed)
-  updateLight(g, {
-    color: ent.color, intensity: ent.intensity, range: ent.range,
-    keep: ent.keep === true, day: ent.day !== false,
-  });
-  // A MOUNTED light's transform is carrier-relative; ent.pos is the fold's
-  // absolute pre-mount pose, and writing it here jumped the bulb by the
-  // carrier offset — live only, which is exactly the live-vs-join drift
-  // this function must never produce (same law as refreshModel; the
-  // dismount stamp brings the fold's word back when the ride ends).
-  if (!g.userData.mountedTo) {
-    if (ent.pos) g.position.set(...ent.pos);
-    g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
-  }
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
-  bus.emit('entity', { id, kind: 'light' });
-  // comps that folded onto the light and its folded parent re-announce and
-  // re-execute, exactly as a join create would (createLight + the tail)
-  emitCompBag(id);
-  execMount(id);
-}
-
 // ---- retirement -------------------------------------------------------------
 
 function retire(id) {
@@ -690,7 +656,6 @@ function retire(id) {
   const obj = entities.get(id);
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
   if (obj) {
-    if (obj.userData?.isLight) disposeLight(obj);
     // cargo steps off before the carrier vanishes — at the pose the FOLD
     // stamped for it, so every joiner and this client agree where it landed.
     // The scene index is the same membership the old all-entities walk
@@ -706,7 +671,7 @@ function retire(id) {
       const cst = state.st.entities[cid];
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
-      if (!cobj.userData.isLight) applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
+      applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
       cobj.userData.base = restOf(cobj, cst);
       // an Empty owns no collider (its only mesh may be a light gizmo)
       if (!cobj.userData.empty) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
@@ -757,6 +722,7 @@ function onComp(id, type) {
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
   if (type === 'light') syncCompLight(id);
+  if (type === 'light' || type === 'mesh') relabelHost(id);
   if (type === 'collider') applyColliderPref(id);
   // a sockets change re-seats everything riding this carrier — a mount that
   // landed BEFORE its socket was authored glued to the origin, and the
@@ -839,7 +805,7 @@ function execDismount(id, ent) {
     // …and so does the fold's scale: attach() baked the carrier's scale into
     // this one (a 0.5 cup off a 2× crate became 1.0), which a joiner — who
     // builds it from ent.scale — would never see
-    if (!obj.userData.isLight) applyScale(obj, entScale(ent) ?? 1);
+    applyScale(obj, entScale(ent) ?? 1);
     obj.userData.base = restOf(obj, ent);
     if (!obj.userData.empty) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
   }
@@ -925,7 +891,7 @@ function entDist(ent) {
 /** The audit's three impossibles plus the edit hold — things whose demote
  *  has no clean undo. All are cheap fold-truth predicates. */
 function canDemote(id, ent) {
-  if (!ent || ent.kind === 'light' || ent.parent) return false;   // lights are cheap; mounted children ride carriers
+  if (!ent || kindOf(ent) !== 'model' || ent.parent) return false;   // only a model has a stand-in; mounted children ride carriers
   const obj = entities.get(id);
   if (!obj || isPlaceholder(obj) || editHolds.has(id)) return false;
   if (!libGeom.get(ent.lib)?.bbox) return false;    // nothing honest to stand in
@@ -982,7 +948,7 @@ export function residencySweep() {
   for (const [id, t] of tracked) {
     if (t.kind !== 'model') continue;
     const ent = state.st.entities[id];
-    if (!ent || ent.kind === 'light') continue;
+    if (!ent) continue;
     const obj = entities.get(id);
     const R = residencyRadius(ent);
     const d = entDist(ent);
@@ -1060,8 +1026,8 @@ function reconcileId(id) {
     CREATE[kind](id, ent);
     return;
   }
-  if (kind === 'light') refreshLight(id, ent);
-  else { refreshModel(id, ent); if (kind === 'empty') { emitCompBag(id); execMount(id); } }
+  refreshModel(id, ent);
+  if (kind !== 'model') { emitCompBag(id); execMount(id); }
 }
 
 /** Full idempotent pass — hydration, reconnect. reconcile ∘ reconcile =
@@ -1076,9 +1042,6 @@ export function reconcileModels() {
   for (const [id, t] of tracked) {
     if (created.has(id) || !state.st.entities[id]) continue;
     const ent = state.st.entities[id];
-    // refreshLight ≡ join create: it re-announces the bag and re-executes
-    // the mount itself — calling them again here would double-emit
-    if (t.kind === 'light') { refreshLight(id, ent); continue; }
     refreshModel(id, ent);
     emitCompBag(id);
     execMount(id);
@@ -1100,7 +1063,7 @@ function onChange({ id, what, comp }) {
         if (what === 'born') syncCompLight(id);
         break;
       case 'pose':
-        if (ent) (ent.kind === 'light' ? refreshLight : refreshModel)(id, ent);
+        if (ent) refreshModel(id, ent);
         syncCompLight(id);   // a parked light (model still loading) moves with the fold
         break;
       case 'parent':
@@ -1125,10 +1088,6 @@ export function initModelsRealizer() {
     for (const [lib, g] of Object.entries(geom ?? {})) libGeom.set(lib, g);
     for (const id of tracked.keys()) maybePlaceholder(id);
   });
-  // a REFUSED `light` verb never folds, but the editor already previewed it —
-  // lights.js names the stranded id ('light-refused', off net.js's refusal
-  // event) and the rollback is one call: refreshLight re-derives every
-  // folded field, so the preview snaps back to exactly what a joiner sees
   // thingphysics: a launched body leaves its carrier (scene.attach keeps where it is); its rest's parent record re-mounts it
   bus.on('flight-detach', ({ id }) => {
     const obj = entities.get(id); if (!obj || !obj.parent || obj.parent.isScene) return;
@@ -1136,14 +1095,13 @@ export function initModelsRealizer() {
   });
   bus.on('edit-mode', (on) => {
     editing = !!on;
-    for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
+    for (const [id, t] of tracked) if (t.kind !== 'model' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });
   // a gesture the authority refused, or one cancelled with Esc (worlds, editwrites.js): the preview snaps back to the fold.
   // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
   bus.on('pose-revert', ({ id }) => {
     const ent = state.st.entities[id]; const obj = entities.get(id);
     if (!ent || !obj) return;
-    if (tracked.get(id)?.kind === 'light') { refreshLight(id, ent); return; }
     if (obj.userData.mountedTo && ent.parent) {
       const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.socket] : null;
       obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
@@ -1153,10 +1111,6 @@ export function initModelsRealizer() {
       return;
     }
     refreshModel(id, ent);
-  });
-  bus.on('light-refused', ({ id }) => {
-    const ent = state.st.entities[id];
-    if (ent?.kind === 'light' && tracked.get(id)?.kind === 'light') refreshLight(id, ent);
   });
   // the residency sweep: fold positions in, demote/promote out. 500ms is
   // plenty — a person covers ~3m between beats at a run

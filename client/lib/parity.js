@@ -5,6 +5,7 @@
 
 import { state } from './state.js';
 import { entities, entityMeta, comps } from './world.js';
+import { kindOf } from '../../shared/protocol/kind.js';
 
 const jstr = (v) => JSON.stringify(v ?? null);
 
@@ -33,8 +34,8 @@ export function foldParity() {
     const meta = entityMeta.get(id);
     if (meta) {
       const ent = shadow.entities[id];
-      const sceneKind = meta.kind === 'light' ? 'light' : 'model';
-      const foldKind = ent.kind === 'light' ? 'light' : 'model';
+      const sceneKind = meta.kind;
+      const foldKind = kindOf(ent);
       if (sceneKind !== foldKind || (foldKind === 'model' && meta.lib !== ent.lib)) {
         out.identityDiffs.push({ id, legacy: { kind: sceneKind, lib: meta.lib },
           shadow: { kind: foldKind, lib: ent.lib } });

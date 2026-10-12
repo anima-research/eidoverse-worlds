@@ -5,6 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
+import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
 import { r3 } from "../shared/protocol/round.js";
@@ -80,7 +81,8 @@ const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1
 
 type Vec2 = { x: number; z: number };
 type Pose = PublicPose;
-type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
+type Kind = ReturnType<typeof kindOf>;
+type Entity = { id: string; lib: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
@@ -1294,7 +1296,7 @@ export class WorldAgent {
       seen.add(id);
       this.entities.set(id, {
         id,
-        lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
+        lib: String((e as any).lib ?? ""), kind: kindOf(e),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
@@ -1650,7 +1652,7 @@ export class WorldAgent {
 
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
-    if (!before || !before.lib || before.lib === "(light)") return;  // lights carry no collider
+    if (!before?.lib) return;  // only a model carries a collider
     // A moving thing supports nothing here — and stops supporting the moment
     // it starts moving, so this is the drop path as well as the skip path.
     // Mounted cargo is the same story told by a different verb: it rides a
@@ -3309,7 +3311,7 @@ export class WorldAgent {
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
       const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("blueprint");
-      if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
+      if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
