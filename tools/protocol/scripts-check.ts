@@ -207,6 +207,13 @@ function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model:
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
 
+// E5's stand-in for the sandbox: a host whose script callback re-enters the authority with a request of its own (the shape
+// enter() guards: a nested call must not reset the outer call's queues under it)
+const HOSTCB: any = { w: null, nested: null, checkSyntax: () => null,
+  run({ self, key, event }: any) {
+    const ops = key === "script:hear" ? ((HOSTCB.nested = D.request(HOSTCB.w, "bob", "set", { id: "lamp", component: "t/n", value: 1 })), [{ verb: "set", id: self, comp: "t/released", value: { by: event.by } }])
+      : key === "script:glow" ? [{ verb: "set", id: self, comp: "t/moved", value: true }] : [];
+    return { ok: true, ran: true, ops, says: [], bodies: [], reads: null, logs: [], fuel: 0 }; } };
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean; server?: boolean; opts?: any };
 const cases: Case[] = [
   // ---------------- B: behaviours on sponsor rights ----------------
@@ -682,6 +689,15 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       for (let i = 0; i < 3; i++) { s.advance(10000); for (const r of s.tick()) evs.push(r.status); }
       return { asleep, evs, woke: comp(s, "clock", "t/woke"), n: comp(s, "clock", "t/n") }; },
     good: (o) => o.asleep === 0 && JSON.stringify(o.evs) === '["ran","ran","ran"]' && o.woke >= 3590 && o.woke <= 3610 && o.n === 2 },
+  { id: "E5", what: "re-entrancy: a host callback inside an activation sends a nested request; the outer request's queues come back after it, so the second script still hears the outer entry (enter() restores the whole per-call state)", opts: { scripts: HOSTCB },
+    run(s) { cast(s); HOSTCB.w = s.w(); HOSTCB.nested = null;
+      s.call("bob", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "lamp", model: "crate", place: { at: [3, 0] } });
+      install(s, "bob", "ball", "hear", "// host callback\n", { scope: { ids: "self", comps: ["t/released"] }, on: ["release"] });
+      install(s, "bob", "ball", "glow", "// host callback\n", { scope: { ids: "self", comps: ["t/moved"] }, on: ["changed:transform"] });
+      const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), dr = s.call("vic", "drop", { id: "ball" });
+      return { setup: [show(mv), show(gr), show(dr)], nested: show(HOSTCB.nested), lamp: comp(s, "lamp", "t/n"), released: comp(s, "ball", "t/released"), moved: comp(s, "ball", "t/moved") }; },
+    good: (o) => o.setup.every((x: string) => x === "ok") && o.nested === "ok" && o.lamp === 1 && o.released?.by === "vic" && o.moved === true },
   // ---------------- P: param.<name> ----------------
   { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here
