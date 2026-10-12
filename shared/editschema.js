@@ -793,7 +793,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'description' || f.k === 'reads'), list: out, add,
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'description' || f.k === 'reads'), list: out, add,
     lib, libLabel: lib != null ? libLabel(lib) : ent?.comp?.light ? 'light' : 'empty' };
 }
 
@@ -1089,8 +1089,8 @@ export function editOps(ent, id, edits, live = {}) {
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
         else if (k === 'layer') { const v = String(raw ?? 'auto'); if (v !== 'auto' && !LAYERS.includes(v)) { errors.push(`flags.layer: one of auto, ${LAYERS.join(', ')}`); break; } flagsComp(LAYER_KEY, v === 'auto' ? null : v); }
-        else if (k === 'label') { const s = String(raw ?? '').trim(); flagsComp('label', s ? s.slice(0, 80) : null); }
-        else if (k === 'description') { const s = String(raw ?? '').trim(); flagsComp('description', s || null); }
+        else if (k === 'label') { const s = String(raw ?? '').trim(); if (graphemes(s) > SPEC.label.maxLen) errors.push(`label: ${graphemes(s)} characters; at most ${SPEC.label.maxLen}`); else flagsComp('label', s || null); }
+        else if (k === 'description') { const s = String(raw ?? '').trim(); if (graphemes(s) > SPEC.description.maxLen) errors.push(`description: ${graphemes(s)} characters; at most ${SPEC.description.maxLen}`); else flagsComp('description', s || null); }
         break;
       }
       case 'light': {

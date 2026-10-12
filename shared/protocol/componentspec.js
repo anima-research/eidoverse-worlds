@@ -13,7 +13,7 @@ export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
-  label:     { type: "string", help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
+  label:     { type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
   // name / description / role+state. label stays the name; description is how the thing is described to any text-based
   // reader (alt text), one plain string, like label and picture.alt; what it can do and its state are GENERATED from its
