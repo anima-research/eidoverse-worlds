@@ -59,14 +59,18 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const W = scratchWorld('compwire3');
   W.seed({
     pivot: { pos: [1, 2, 3], yaw: 0.5, comp: { light: { important: true, intensity: 30 } } },
-    lamp: { lib: LAMP, pos: [2, 0, 0], comp: { light: { color: 0xff8800, range: 7, day: false }, collider: { shape: 'box' } } },
+    lamp: { lib: LAMP, pos: [2, 0, 0], comp: { collider: { shape: 'box' } } },
+    'lamp-light': { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1, 0] }, comp: { light: { color: 0xff8800, range: 7, day: false } } },
     crate: { lib: 'eidoverse/assets/models/crate.glb', pos: [4, 0, 0], comp: { collider: { shape: 'box' } } },
     plain: { lib: 'eidoverse/assets/models/plain.glb', pos: [6, 0, 0] },
-    farlamp: { lib: LAMP, pos: [600, 0, 0], comp: { light: { intensity: 5 } } },
+    farlamp: { lib: LAMP, pos: [600, 0, 0] },
+    'farlamp-light': { pos: [0, 0, 0], parent: { to: 'farlamp', offset: [0, 0, 0] }, comp: { light: { intensity: 5 } } },
     cup: { lib: 'eidoverse/assets/models/cup.glb', pos: [0, 0, 0], parent: { to: 'pivot', offset: [0, 0.5, 0] } },
   });
   M.initModelsRealizer();
-  S.hydrate(structuredClone(W.view()));
+  const view0 = structuredClone(W.view());
+  view0.entities.implamp = { lib: LAMP, pos: [8, 0, 0], comp: { light: { color: 0xff8800, range: 7 } } };   // as an imported log folds (the fold never refuses)
+  S.hydrate(view0);
   await settle();
   /** one door write, then the view a client folds from it */
   const live = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
@@ -75,8 +79,8 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const piv = stub.entities.get('pivot');
   check('an Empty realizes at once as an invisible Group at its folded transform', !!piv && piv.isGroup && piv.userData.empty === true
     && jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [1, 2, 3]) && Math.abs(piv.rotation.y - 0.5) < 1e-9, `${piv?.type} ${JSON.stringify(piv?.position)}`);
-  check('…loads nothing (no asset request names it) and is listed with kind "empty"',
-    !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.entityMeta.get('pivot')?.kind === 'empty', JSON.stringify(stub.loads.map((l: any) => l.lib)));
+  check('…loads nothing (no asset request names it) and is listed with kind "light" (one kindOf: an Empty carrying a light IS a light)',
+    !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.metaOf('pivot')?.kind === 'light', JSON.stringify([stub.loads.map((l: any) => l.lib), stub.metaOf('pivot')]));
   check('…and owns no collider', !stub.colliderLog.some((e: any) => e[1] === 'pivot'), JSON.stringify(stub.colliderLog));
   const cup = stub.entities.get('cup');
   check('a model parented to an Empty rides it (parented into the Empty\'s Group at its offset)', !!cup && cup.parent === piv && jeq(cup.position.toArray().map((x: number) => +x.toFixed(9)), [0, 0.5, 0]), `${cup?.parent?.type} ${JSON.stringify(cup?.position)}`);
@@ -85,18 +89,20 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   check('the light component on the Empty becomes a rig request that follows the Empty\'s object, with its fields and the defaults',
     rq('pivot')?.obj === piv && rq('pivot').keep === true && rq('pivot').intensity === 30 && rq('pivot').range === 10 && rq('pivot').color === 0xffd9a0 && rq('pivot').dayAware === true && rq('pivot').authored === true, JSON.stringify({ ...rq('pivot'), obj: !!rq('pivot')?.obj }));
   check('…and its gizmo is a child of the Empty (a bare bulb is seen, and selectable)', piv?.children.some((c: any) => c.userData.gizmo), JSON.stringify(piv?.children.map((c: any) => c.type)));
-  const lamp = stub.entities.get('lamp');
-  check('a lamp (Model + light component): the request follows the REALIZED model, day:false → not day-aware',
-    !!lamp && !!lamp.userData.lib && rq('lamp')?.obj === lamp && rq('lamp').color === 0xff8800 && rq('lamp').range === 7 && rq('lamp').dayAware === false, JSON.stringify({ ...rq('lamp'), obj: rq('lamp')?.obj?.userData }));
-  let lampGizmo = false; lamp?.traverse((o: any) => { if (o.userData?.gizmo) lampGizmo = true; });
-  check('…with NO gizmo mesh inside the model (it would join the collider, the lamp scan, the caster scan)', !lampGizmo);
-  check('a far lamp (beyond its residency radius, never loaded) still lights: the request parks at the folded position',
-    stub.entities.get('farlamp') === null && rq('farlamp')?.obj === null && jeq(rq('farlamp')?.pos, [600, 0, 0]) && rq('farlamp').intensity === 5, JSON.stringify(rq('farlamp')));
+  // one place per thing (R 10-11): a light never shares an entity with a model natively — a lamp is a model with a light
+  // on its own child. An imported world's lamp (model + light on one record, kept by the fold) is hydrated here by hand.
+  const lamp = stub.entities.get('lamp'); const lampLight = stub.entities.get('lamp-light');
+  check('a lamp (Model + child light): the child Empty rides the REALIZED model and its request follows the child, day:false → not day-aware',
+    !!lamp && !!lamp.userData.lib && lampLight?.parent === lamp && rq('lamp-light')?.obj === lampLight && rq('lamp-light').color === 0xff8800 && rq('lamp-light').range === 7 && rq('lamp-light').dayAware === false, JSON.stringify({ ...rq('lamp-light'), obj: rq('lamp-light')?.obj?.userData, parent: lampLight?.parent?.userData }));
+  let lampGizmo = false; lamp?.traverse((o: any) => { if (o.userData?.gizmo && o.parent !== lampLight) lampGizmo = true; });
+  check('…with NO gizmo mesh inside the model itself (it would join the collider, the lamp scan, the caster scan); the bulb\'s gizmo hangs on the child', !lampGizmo && !!lampLight?.children.some((c: any) => c.userData.gizmo));
+  check('a far lamp\'s light (beyond its residency radius, never loaded) still lights: the request parks at the folded WORLD position',
+    stub.entities.get('farlamp') === null && rq('farlamp-light')?.obj === null && jeq(rq('farlamp-light')?.pos, [600, 0, 0]) && rq('farlamp-light').intensity === 5, JSON.stringify(rq('farlamp-light')));
 
   // authored beats inferred (design §3): a Light component suppresses the model's inferred lamps
   const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
-  check('a lamp (Model + light component) lands WITHOUT inferred lamps — the authored light alone lights it', !!lamp?.userData?.lib && lamps('lamp') === 0,
-    JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:lamp')));
+  check('an imported lamp (Model + light on one record, as the fold keeps it) lands WITHOUT inferred lamps — the authored light alone lights it', !!stub.entities.get('implamp')?.userData?.lib && lamps('implamp') === 0 && rq('implamp')?.obj === stub.entities.get('implamp'),
+    JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:implamp')));
   check('…a model with no Light component still gets its inferred lamps, exactly once', lamps('plain') === 1 && lamps('crate') === 1, JSON.stringify([...stub.lampOwners]));
   check('…attached once at landing, with no churn (no release, no second attach) before anything changed',
     ['plain', 'crate'].every((id) => JSON.stringify(stub.lampLog.filter((e: any) => e[1] === `entity:${id}`)) === JSON.stringify([['attach', `entity:${id}`]])), JSON.stringify(stub.lampLog));
@@ -110,18 +116,20 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   live('set', at('pivot', [5, 5, 5]));
   check('live: moving the Empty moves its Group (and the request rides it)', jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [5, 5, 5]) && rq('pivot')?.obj === piv, JSON.stringify(piv.position));
   live('set', at('farlamp', [700, 0, 0]));
-  check('live: moving a never-loaded lamp moves its parked light', jeq(rq('farlamp')?.pos, [700, 0, 0]), JSON.stringify(rq('farlamp')?.pos));
+  check('live: moving a never-loaded lamp moves its child\'s parked light', jeq(rq('farlamp-light')?.pos, [700, 0, 0]), JSON.stringify(rq('farlamp-light')?.pos));
   const marks = stub.colliderLog.length;
   live('set', { id: 'lamp', component: 'collider', value: { shape: 'exact' } });
   check('live: a changed collider component re-decides the standing collider under the new shape',
     stub.colliders.get('lamp')?.pref === 'exact' && stub.colliderLog.slice(marks).some((e: any) => e[0] === 'refit' && e[1] === 'lamp'), JSON.stringify(stub.colliderLog.slice(marks)));
-  live('set', { id: 'plain', component: 'light', value: { intensity: 9 } });
-  check('live: a Light component added to a STANDING model releases its inferred lamps (and casts its own)',
-    lamps('plain') === 0 && stub.lampLog.at(-1)?.[0] === 'release' && stub.lampLog.at(-1)?.[1] === 'entity:plain' && rq('plain')?.intensity === 9, JSON.stringify(stub.lampLog.slice(-3)));
-  live('set', { id: 'plain', component: 'light', value: { intensity: 12 } });
-  check('…changing that light touches no lamps', lamps('plain') === 0 && stub.lampLog.at(-1)?.[1] === 'entity:plain' && stub.lampLog.at(-1)?.[0] === 'release' && rq('plain')?.intensity === 12);
-  live('delete', { id: 'plain', component: 'light' });
-  check('…removing it re-infers the lamps, once', lamps('plain') === 1 && !rq('plain'), JSON.stringify(stub.lampLog.slice(-3)));
+  const onePlace = W.call('set', { id: 'plain', component: 'light', value: { intensity: 9 } });
+  check('live: a Light component on a STANDING model is refused at the door (one-place)', !onePlace.ok && onePlace.refused?.code === 'one-place', JSON.stringify(onePlace.refused));
+  live('create', { id: 'plain-light', components: { transform: { pos: [0, 1, 0] }, parent: { to: 'plain' }, light: { intensity: 9 } } });
+  check('live: a light child added under a STANDING model casts its own light; the model keeps its inferred lamps (a child is not an authored light ON the model)',
+    rq('plain-light')?.intensity === 9 && rq('plain-light').obj === stub.entities.get('plain-light') && lamps('plain') === 1, JSON.stringify([stub.lampLog.slice(-3), rq('plain-light')?.intensity, lamps('plain')]));
+  live('set', { id: 'plain-light', component: 'light', value: { intensity: 12 } });
+  check('…changing that light touches no lamps', lamps('plain') === 1 && stub.lampLog.at(-1)?.[1] !== 'entity:plain' && rq('plain-light')?.intensity === 12, JSON.stringify([stub.lampLog.slice(-2), rq('plain-light')?.intensity]));
+  live('delete', { id: 'plain-light' });
+  check('…removing the child releases its request and leaves the model\'s lamps alone', lamps('plain') === 1 && !rq('plain-light'), JSON.stringify(stub.lampLog.slice(-3)));
   live('delete', { id: 'pivot', component: 'light' });
   check('live: removing the light component releases the request and takes the gizmo off the Empty',
     !rq('pivot') && !piv.children.some((c: any) => c.userData.gizmo));
@@ -168,7 +176,8 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
     return bad; };
   const card = (ent: any, type: string, key: string | null = null) => inspectSchema(ent, 'x').sections.list.find((c: any) => c.type === type && c.key === key);
 
-  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, important: true } }, actor: 'a', ts: 1 };
+  // a lamp is a thing with a light component — an Empty (one place per thing: the door refuses a light on a model)
+  const lamp = { pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, important: true } }, actor: 'a', ts: 1 };
   const lsch = inspectSchema(lamp, 'x');
   check('a light component shows in the light group (light.* addresses), valued from its bag',
     fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.important')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
@@ -195,7 +204,7 @@ console.log('\n5. the inspector (shared/editschema.js: reads either spelling, wr
     const W = scratchWorld('compwire').seed({ x: tlamp });
     const sent = W.sendAll(ed(tlamp, { 'light.intensity': 24 }).ops);
     check('…and the door takes the planner\'s edit of such a (translated) lamp', sent.ok, JSON.stringify(sent.refused)); }
-  check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.ops.length === 0 && /light: light color/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
+  check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.ops.length === 0 && /light\.color: a colour/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
   const rl = door(lamp, { 'remove.light': null });
   check('…its card is removable and remove.light writes delete light; through the door it is dark', card(lamp, 'Light', 'light')?.removable === true
     && opsOf(rl.r) === JSON.stringify([{ verb: 'delete', args: { id: 'x', component: 'light' } }]) && rl.res.ok && rl.after.comp?.light === undefined, JSON.stringify([rl.r.ops, rl.res.refused]));
