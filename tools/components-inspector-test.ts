@@ -16,6 +16,7 @@ import { inspectSchema, fieldAt, editOps, partLabel, libLabel } from '../shared/
 import { componentsOf } from '../shared/components.js';
 import { translate } from './protocol/import-v1/translate-v1.js';
 import { viewState } from '../shared/protocol/view.js';
+import { enc } from '../shared/protocol/names.js';
 import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
@@ -35,16 +36,31 @@ walk(join(import.meta.dir, '..', 'spec', 'fixtures'));
 for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
 
 const ents: [string, any][] = [];
+const folds: [string, any][] = [];   // the same entities as the fold holds them (C7b: the editor's one input)
 let untranslated = 0;
 for (const p of logs) {
   const old: any[] = [];
   for (const line of readFileSync(p, 'utf8').split('\n')) { if (!line) continue; try { old.push(JSON.parse(line)); } catch { /* skip */ } }
   let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch { untranslated++; continue; }
   const st: any = emptyState(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
-  for (const [id, e] of Object.entries(viewState(st).entities ?? {})) ents.push([id, e]);
+  for (const [id, e] of Object.entries(viewState(st).entities ?? {})) { ents.push([id, e]); folds.push([id, st.entities[enc(id)]?.c]); }
 }
 console.log(`${ents.length} final entities from ${logs.length} logs, translated (${untranslated} untranslatable)`);
 check('every corpus log translates, and the corpus is not empty', untranslated === 0 && ents.length > 10, `${untranslated} / ${ents.length}`);
+
+{
+  // the fold record is the one input: every corpus entity read as `c` (through view.js recordOf) gives the schema and the
+  // components its view gives, byte for byte — the pin that (b) moved the editor's input, not just its fixtures
+  const J = (v: any) => JSON.stringify(v);
+  // (`born` is the entity's, not its bag's: the view carries it as a stamp, a bare `c` can't)
+  const comps = (x: any) => { const r = componentsOf(x); const { born: _b, ...stamps } = r.stamps ?? {}; return { ...r, stamps }; };
+  let same = 0; const diff: string[] = [];
+  folds.forEach(([id, c], i) => {
+    const e = ents[i][1]; if (!c) { diff.push(`${id}: not in the fold`); return; }
+    if (J(inspectSchema(c, id)) === J(inspectSchema(e, id)) && J(comps(c)) === J(comps(e))) same++; else { diff.push(id); if (process.env.SHOW_DIFF) { const a = inspectSchema(c, id), b = inspectSchema(e, id); const d = (x: any, y: any, path = '') => { if (J(x) === J(y)) return; if (x && y && typeof x === 'object' && typeof y === 'object') { for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) d(x[k], y[k], `${path}.${k}`); } else console.log(`   ${id}${path}: fold ${J(x)} vs view ${J(y)}`); }; d(a, b); d(comps(c), comps(e), ' comps'); } }
+  });
+  check(`inspectSchema(c) ≡ inspectSchema(view) and componentsOf(c) ≡ componentsOf(view) over the corpus (${same}/${folds.length})`, same === folds.length && folds.length === ents.length, diff.slice(0, 5).join(', '));
+}
 
 const probs: string[] = [];
 let cards = 0;

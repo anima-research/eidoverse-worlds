@@ -43,6 +43,7 @@ import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChann
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
+import { recordOf } from './protocol/view.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -108,7 +109,7 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
 
 // ---------------------------------------------------------------- schema
 
-/** @param ent   the folded entity record (shared/fold.js), or null
+/** @param ent   the fold record (shared/protocol/fold.js `c`) — or, through recordOf, the view record (view.js viewOf) — or null
  *  @param id    its id
  *  @param live  optional viewer extras: { casting?: boolean,
  *               parts?: string[] (the model's named mesh parts — a picture's `part`
@@ -116,6 +117,7 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
+  ent = recordOf(ent, id);
   const c = ent.comp ?? {};
   const mounted = !!ent.parent;
   const locked = !!c.lock;
@@ -833,12 +835,14 @@ const NEEDS = {
 };
 /** Is `need` met on this entity? The NEEDS table's reading, else a component of that type. */
 export function needMet(need, ent) {
+  ent = recordOf(ent);
   return NEEDS[need] ? NEEDS[need].met(ent) : componentsOf(ent).components.some((c) => c.type === need);
 }
 /** Plan the needs of adding `name`: { ops } to prepend, `brings` (what is
  *  added for you), or a `choice` (unresolved). `value` resolves a choice when
  *  it names one of its options ("replace", or {choose: "replace"}). */
 export function planNeeds(ent, id, name, value) {
+  ent = recordOf(ent, id);
   const ops = []; const brings = [];
   const pick = typeof value === 'string' ? value : value?.choose;
   for (const need of RECORDS[name]?.needs ?? []) {
@@ -860,6 +864,7 @@ export function planNeeds(ent, id, name, value) {
  *  part motion, the type name for an Annotation, or a need's choice. Returns
  *  { ops, errors, choice? } — a `choice` sends nothing and asks. */
 export function addOps(ent, id, name, value) {
+  ent = recordOf(ent, id);
   const np = planNeeds(ent, id, name, value);
   if (np.choice) return { ops: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
   const own = addOwnOps(ent, id, name, np.ops.length ? undefined : value);
@@ -926,6 +931,7 @@ function addOwnOps(ent, id, name, value) {
  *  `confirm`, and removing again with value "both" removes them too, in the
  *  same step. */
 export function removeOps(ent, id, key, value) {
+  ent = recordOf(ent, id);
   const c = ent?.comp ?? {};
   if (c[key] != null) {
     const after = { ...ent, comp: Object.fromEntries(Object.entries(c).filter(([k]) => k !== key)) };
@@ -963,6 +969,7 @@ function removeOwnOps(ent, id, key) {
  *  yaw-only thing, which stays a heading (pos.yaw, degrees) so its history
  *  keeps its bytes. */
 export function poseEdits(ent, id, mode, { pos, q, scale } = {}, live = {}) {
+  ent = recordOf(ent, id);
   const sc = inspectSchema(ent, id, live);
   const out = {};
   if (mode === 'move' && pos) ['x', 'y', 'z'].forEach((k, i) => { if (fieldAt(sc, `pos.${k}`)) out[`pos.${k}`] = +(+pos[i]).toFixed(3); });
@@ -997,6 +1004,7 @@ export function fieldAt(schema, key) {
  *  relative expressions; a field's hard min/max clamp; disabled fields
  *  refuse. Pure: never sends, never mutates `ent`. */
 export function editOps(ent, id, edits, live = {}) {
+  ent = recordOf(ent, id);
   const schema = inspectSchema(ent, id, live);
   const errors = [];
   const ops = [];

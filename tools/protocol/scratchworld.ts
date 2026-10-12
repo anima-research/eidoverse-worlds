@@ -73,6 +73,21 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch" 
   return W;
 }
 
+/** A VIEW-form record as the fold holds it (`c`: {model?, transform, parent?, …components}, names encoded) — what seed()
+ *  writes, read back without the authority: the suites run their fixtures through the editor as fold records (C7b). */
+export function foldRecordOf(r, recs = null) {
+  const L = r.parent ? localOf(r, recs) : null;   // a child's transform is LOCAL to its parent (as seed writes it)
+  const pos = L?.mounted ? L.pos : r.pos ?? [0, 0, 0];
+  const q = (L?.mounted ? L.q : null) ?? qNorm(r.q) ?? qFromYaw((L?.mounted ? L.yaw : r.yaw) ?? 0);
+  const s = r.scale3 ?? (Number.isFinite(r.scale) ? [r.scale, r.scale, r.scale] : [1, 1, 1]);
+  const c = Object.create(null);
+  if (r.lib) c.model = r.lib;
+  c.transform = { pos, q, scale: s };
+  if (r.parent?.to) c.parent = { to: enc(r.parent.to), ...(r.parent.socket ? { socket: r.parent.socket } : {}) };
+  for (const [k, v] of Object.entries(r.comp ?? {})) if (v !== undefined) c[encName(k)] = JSON.parse(JSON.stringify(v));
+  return c;
+}
+
 /** a request's ops, flattened (a batch's ops, or the one op) */
 export const flat = (x) => {
   const list = Array.isArray(x) ? x : x?.ops ?? (x ? [x] : []);

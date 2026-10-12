@@ -26,7 +26,8 @@ import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
 import { boxOf } from './realize/models.js';
 import { state } from './state.js';
-import { net, sendDrag } from './net.js';
+import { net, sendDrag, replica } from './net.js';
+import { enc } from '../../shared/protocol/names.js';
 import { THREE } from './core.js';
 import { renderDOM } from './panels.js';
 import { inspectSchema, editOps, fieldAt } from '../../shared/editschema.js';
@@ -49,8 +50,11 @@ export function registerEditor(fn) { htmlEditors.push(fn); }
  *  scenegraph.js. */
 export function setEditHooks(h) { hooks = { ...hooks, ...h }; }
 
-/** The folded record for a placed thing — exactly what the schema reads. */
+/** The view record of a placed thing (view.js viewOf): what the gizmo and the euler hint still read (C7c moves them). */
 export const foldRecord = (id) => state.st.entities?.[id] ?? null;
+/** The fold record of a placed thing — exactly what the schema reads (C7b: shared/editschema.js takes `c`). Frozen in
+ *  dev; never written here. */
+export const recordFor = (id) => replica.st?.entities?.[enc(String(id))]?.c ?? null;
 // The Rotate channels' hint (shared/euler.js): the Euler triple THIS viewer
 // last composed for a thing, so its channels read back exactly as typed
 // (the branch past 90°, the inner channel at gimbal lock). Only honoured
@@ -93,7 +97,7 @@ export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.per
 export const worldLive = () => ({ now: Date.now(), mayShape: mayShape() });
 export function schemaFor(id) {
   if (id === WORLD_ID) return worldSchema(state.st, worldLive());
-  const rec = foldRecord(id); if (!rec) return { id, groups: [] };
+  const rec = recordFor(id); if (!rec) return { id, groups: [] };
   return inspectSchema(rec, id, liveFor(id));
 }
 
@@ -104,7 +108,7 @@ export function endGesture() { gesture = null; }
  *  these across ids into one request (one act, one Ctrl+Z: the authority's undo). */
 export function planEdit(id, key, value) {
   if (id === WORLD_ID) { const r = worldEditOps(state.st, { [key]: value }, worldLive()); return { ops: r.ops, errors: r.errors }; }
-  const rec = foldRecord(id);
+  const rec = recordFor(id);
   if (!rec) return { ops: [], errors: [`${id} is not in the fold`] };
   const dot = key.indexOf('.');
   const group = key.slice(0, dot), k = key.slice(dot + 1);
@@ -132,7 +136,7 @@ export function commitEdit(id, key, value, opts = {}) {
     if (ops.length) Edits.sendOps(ops, { what: `${key} of the world`, expect: false });
     return { ok: !errors.length, errors, ops };
   }
-  const rec = foldRecord(id);
+  const rec = recordFor(id);
   const obj = entities.get(id);
   if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
   const dot = key.indexOf('.');
@@ -160,7 +164,7 @@ export function commitEdit(id, key, value, opts = {}) {
 /** Several channels of one thing in ONE request (so one undo step): {'pos.x': 0, 'pos.y': 0, …}, FACE values (degrees
  *  for rotate), as editOps takes them. The transform's reset keys use it. */
 export function commitMany(id, edits, what) {
-  const rec = foldRecord(id); if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
+  const rec = recordFor(id); if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
   const { ops, errors, euler } = editOps(rec, id, edits, liveFor(id));
   if (ops.length) Edits.sendOps(ops, { what: `${what} of ${id}`, revert: () => Edits.revertPose(id) });
   if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);

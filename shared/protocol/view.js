@@ -44,6 +44,14 @@ export function compOf(c) {
   return comp;
 }
 
+/** The one-line adapter the editor's entry points stand behind (C7b): a fold record `c` ({transform, model?, parent?,
+ *  …components}) reads as its view; a view record (the suites' fixtures, an agent's foldRecord) passes through. A fold
+ *  record is told by its shape — it carries `transform`/`model` and none of the view's `pos`/`lib`/`comp` — which holds
+ *  for every record the authority writes (a create always carries a transform). */
+export const isFoldRecord = (x) => !!x && typeof x === "object" && !Array.isArray(x)
+  && x.pos === undefined && x.lib === undefined && x.comp === undefined && (typeof x.transform === "object" || typeof x.model === "string");
+export const recordOf = (x, id = "") => (isFoldRecord(x) ? viewOf(id, x) : x);
+
 /** One entity's components as the record readers use. */
 export function viewOf(id, c) {
   const rec = {};
