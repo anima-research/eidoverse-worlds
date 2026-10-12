@@ -40,8 +40,23 @@ export function stateFromView(view) {
   return st;
 }
 
-export function makeReplica() {
-  const v = { active: false, st: null, head: -1, worldId: null, you: null, names: Object.create(null), stats: { ingested: 0, resyncs: 0 } };
+/** Freeze one entity's record in place: its bag and every value under it. The fold never mutates a value (a set
+ *  replaces one), so a frozen record only ever stops a READER's stray write — which, with the realizer's clone gone
+ *  (C7), would otherwise corrupt the fold this client holds. */
+function freezeRecord(e) {
+  if (!e || Object.isFrozen(e.c)) return;
+  const deep = (x) => { if (x && typeof x === "object" && !Object.isFrozen(x)) { Object.freeze(x); for (const k of Object.keys(x)) deep(x[k]); } };
+  deep(e.c);
+}
+/** The same entity, thawed for the fold to write (a shallow copy of its bag: the values stay frozen and are never
+ *  mutated in place, only replaced). */
+const thawed = (e) => ({ born: e.born, c: Object.assign(Object.create(null), e.c) });
+
+/** `freeze`: dev-mode guard (on by default outside the browser, so every suite runs with it; client/lib/net.js
+ *  turns it on for a dev host): the fold's records are frozen, so a reader that mutates one throws where it stands. */
+export function makeReplica({ freeze = true } = {}) {
+  const v = { active: false, st: null, head: -1, worldId: null, you: null, names: Object.create(null), stats: { ingested: 0, resyncs: 0 }, frozen: !!freeze };
+  const freezeAll = () => { if (freeze && v.st) for (const id of Object.keys(v.st.entities)) freezeRecord(v.st.entities[id]); };
   // actors are opaque ids (u-…); their display names come from the authority's directory, never from the log (§2.3)
   const learn = (names) => { if (names && typeof names === "object") { learnNames(names); for (const [k, n] of Object.entries(names)) if (typeof n === "string") v.names[k] = n; } };
   v.nameOf = (id) => actorName(id);
@@ -65,6 +80,7 @@ export function makeReplica() {
   v.adopt = (snap) => {
     v.st = stateFromView(snap.state); v.head = Number.isInteger(snap.head) ? snap.head : -1; v.worldId = snap.worldId ?? null; v.active = true;
     v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
+    freezeAll();
     startSim(snap);
   };
   v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; };
@@ -91,7 +107,14 @@ export function makeReplica() {
       if (seq !== v.head + 1) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: `gap ${v.head} → ${seq}` }; }
       if (e && typeof e === "object" && (e.kind === "purge" || e.kind === "genesis" || e.kind === "sequencer")) { v.stats.resyncs++; return { changed: false, says: [], resync: true, why: e.kind }; }
       let ok = !!(e && typeof e === "object" && !(e instanceof Malformed));
-      if (e?.kind === "change") { try { applyInPlace(v.st, opsOf(e), seq); changed = true; } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; } }
+      if (e?.kind === "change") {
+        try {
+          const ops = opsOf(e);
+          if (freeze) for (const o of ops) { const ent = typeof o?.id === "string" ? v.st.entities[o.id] : undefined; if (ent && Object.isFrozen(ent.c)) v.st.entities[o.id] = thawed(ent); }
+          try { applyInPlace(v.st, ops, seq); changed = true; }
+          finally { if (freeze) for (const o of ops) if (typeof o?.id === "string") freezeRecord(v.st.entities[o.id]); }
+        } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; }
+      }
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
       if (ok && folder) { const rev = v.sim?.rev; E[seq] = e; folder.feed(seq); if (!(e.kind === "sim" && e.verb === "launch")) delete E[seq]; if (v.sim?.rev !== rev) v.simVersion++; }   // the engine moved: the screen re-copies; a say or a label didn't: it keeps its copy
       if (e?.kind === "say" && typeof e.body?.text === "string") says.push({ seq, ts: e.ts, actor: v.nameOf(e.actor), by: String(e.actor), text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: v.nameOf(e.body.to) } : {}), ...spokenOf(e.body) });
