@@ -29,6 +29,7 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { planVelocity } from "./launchplan.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -3530,10 +3531,7 @@ function launch(w, actor, a, verb, g = null) {
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
-  const notes = []; let v = a.v;
-  if (g && g.throw !== 1 && verb === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
-  const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
-  if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
+  const { v, notes } = planVelocity(a.v, g, ENGINES[spec.engine].maxSpeed, verb);   // one function with the predicting client (launchplan.js)
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
   // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,

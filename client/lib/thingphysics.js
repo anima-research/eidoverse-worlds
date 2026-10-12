@@ -36,6 +36,7 @@ import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
 import { simEntry } from '../../shared/sim.js';
+import { planVelocity } from '../../shared/protocol/launchplan.js';
 import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
 import { plain, nameOf } from './plainwords.js';
@@ -350,15 +351,13 @@ export const simShown = () => pres;
 // entry within PENDING_MS, removes it and the thing eases back into the hand. Nothing here is ever read back into a
 // request (Covenant III): whereIs, reach and the canonical fold never see a provisional body.
 const pending = new Map();   // id -> { ts, args, sentAt }
-const PENDING_MS = 4000, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;
+const PENDING_MS = 1500, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;   // a reply normally lands within 300 ms; while a guess is pending, others' news waits (second review S3)
 let predictOn = true;        // lab knob (physicsApi.predict(false)): the old shape, for the probe's control arm
 const swapFrom = new Map();  // id -> drawn world position before a copy swap (the offset starts from it)
 function planRelease(id, pos, v, w) {
   const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
   const obj = entities.get(id); if (!obj) return null;
-  const g = grabOf(compsOf(id)); let vv = v;
-  if (g && typeof g.throw === 'number' && g.throw !== 1) vv = vv.map((n) => n * g.throw);
-  const max = ENGINES[canon.spec?.engine]?.maxSpeed; const sp = Math.hypot(...vv); if (max && sp > max) vv = vv.map((n) => n * max / sp);
+  const vv = planVelocity(v, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw').v;   // the authority's own arithmetic (launchplan.js)
   const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
   return { id, p: pos, q, v: vv, ...(w ? { w } : {}) };
 }
