@@ -123,7 +123,8 @@ export function kindHint(ent) {
   if (!ent) return '?';
   const kind = kindOf(ent);
   const plus = lightOf(ent) ? ' + light' : '';
-  if (kind !== 'model') return kind === 'mesh' ? `${kind}${plus}` : kind;   // a mesh may carry a light as a model may (primitives)
+  if (kind === 'mesh') return `${(ent.c ?? ent.comp).mesh.shape}${plus}`;
+  if (kind !== 'model') return kind;
   return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
 

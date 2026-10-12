@@ -56,7 +56,7 @@ console.log("1. one answer per fixture, headless");
   check("a model with a light component (an imported lamp) is a model; the view-side rule agrees", kindOf({ c: { model: TABLE, light: LIGHT } }) === "model" && kindOf({ lib: TABLE, comp: { light: LIGHT } }) === "model");
   check("kindOf({c}) mesh = mesh", kindOf(MESH_REC) === "mesh", kindOf(MESH_REC));
   check("kindOf(view) mesh = mesh", kindOf(MESH_VIEW) === "mesh", kindOf(MESH_VIEW));
-  check("kindHint mesh = mesh", kindHint(MESH_VIEW) === "mesh", kindHint(MESH_VIEW));
+  check("kindHint mesh says its shape", kindHint(MESH_VIEW) === "box", kindHint(MESH_VIEW));
   check("a light that is not an object is not a light", kindOf({ c: { light: true } }) === "empty" && kindOf({ comp: { light: 3 } }) === "empty");
   check("nothing is an Empty", kindOf(null) === "empty" && kindOf({}) === "empty" && kindOf({ c: {} }) === "empty");
   check("viewOf of each fixture's record is the same kind as the record", Object.keys(WANT).every((id) => kindOf(viewOf(id, S[id].c)) === kindOf(S[id])));
