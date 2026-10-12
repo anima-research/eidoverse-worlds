@@ -45,7 +45,8 @@ export function paintSign(v) {
     ctx.fillStyle = css(v.background); ctx.beginPath(); ctx.roundRect?.(0, 0, W, H, pad) ?? ctx.rect(0, 0, W, H); ctx.fill();
   }
   const color = Number.isInteger(v.color) ? v.color : D.color;
-  const outline = v.outline !== false; const edge = lumaOf(color) > 0.5 ? '#000' : '#fff';
+  // the outline's colour: the author's (text.outlineColor, R 10-11), else the contrasting one for the text colour
+  const outline = v.outline !== false; const edge = Number.isInteger(v.outlineColor) ? css(v.outlineColor) : lumaOf(color) > 0.5 ? '#000' : '#fff';
   lines.forEach((l, i) => {
     const y = pad + (i + 0.5) * LINE_PX; const align = v.align ?? D.align;
     ctx.direction = l.dir; ctx.textAlign = align === 'center' ? 'center' : (align === 'left') !== (l.dir === 'rtl') ? 'left' : 'right';

@@ -506,6 +506,23 @@ try {
   check("WG2 a click on it out of reach walks me over and picks it up", cl?.found && cl.walking && got && Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) > 2.5 && !end.walking, { cl, got, walked: Math.hypot(end.me[0] - far.me[0], end.me[1] - far.me[1]) });
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.put('wgcrate'); return true;`); await sleep(600);
   });
+  // ---- CT: clicks go through (R 10-11 01:17 queue E8: a per-thing switch; componentspec clickthrough) ----
+  await stage("CT", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'ctbox', model: '${CRATE}', components: { label: 'Through', grabbable: { enabled: true }, transform: { pos: [${me[0]} + Math.sin(${me[2]}) * 1.2, 0, ${me[1]} + Math.cos(${me[2]}) * 1.2], scale: 0.3 } } });`);
+  check("(setup) a crate in front of me", made?.ok, made);
+  const seen = await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('ctbox') && !!m.comps.get('ctbox'))`, 15000); await sleep(600);   // realized, not just listed (the map holds null until the model is in)
+  const dbg = await page(`const w = await import('/lib/world.js'); return { has: w.entities.has('ctbox'), comps: w.comps.get('ctbox') ?? null, n: w.entities.size };`);
+  check("(setup) the crate is realized in the page", seen && dbg?.has, { seen, dbg });
+  const at = () => page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return cu.thingAt(r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height);`);
+  const before = await at();
+  check("CT0 a click on it finds it", before === 'ctbox', before);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'ctbox', component: 'clickthrough', value: true });`); await sleep(600);
+  const after = await at();
+  check("CT1 with clickthrough set, the same click passes through it (nothing behind: null)", after === null, after);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null); await sleep(300);
+  });
   // ---- AC: aim at the cursor (R, 10-10: a throw "just aims away from your camera view, not at the spot you're aiming with
   // your cursor", and "my character would try to drop it where the cursor is, not right at their feet") ----
   await stage("AC", async () => {

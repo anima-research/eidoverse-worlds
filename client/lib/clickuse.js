@@ -54,7 +54,9 @@ export function thingAt(clientX, clientY) {
   if (lock) ndc.set(0, 0); else ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const targets = [];
-  for (const [id, o] of entities) if (o && (canGrab(id) || actionsOf(id).length || seatOf(id) || physicsApi.mine().includes(id))) targets.push(o);
+  // clickthrough (componentspec): a click passes through it to whatever is behind (R 10-11: a per-thing switch)
+  const through = (id) => comps.get(id)?.clickthrough === true;
+  for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || seatOf(id) || physicsApi.mine().includes(id))) targets.push(o);
   if (!targets.length) return null;
   // not a surface the camera is standing in (an orbit camera pulled up against a gate saw only the gate, 7 cm away)
   let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR)?.object;

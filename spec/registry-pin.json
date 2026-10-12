@@ -59,6 +59,10 @@
   "type": "bool",
   "on": "thing"
  },
+ "clickthrough": {
+  "type": "bool",
+  "on": "thing"
+ },
  "disabled": {
   "type": "bool",
   "on": "thing"
@@ -561,6 +565,7 @@
    "align": "string",
    "color": "int",
    "outline": "bool",
+   "outlineColor": "int",
    "background": "int",
    "billboard": "string",
    "lit": "string"
@@ -589,6 +594,9 @@
     "self",
     "scene"
    ]
+  },
+  "absentMeans": {
+   "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark"
   },
   "on": "thing"
  },

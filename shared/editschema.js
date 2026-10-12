@@ -203,6 +203,7 @@ export function inspectSchema(ent, id, live = {}) {
     ...(locked ? [{ t: 'enum', k: 'lockLevel', label: 'lock level', value: LOCK_LEVEL(c.lock), def: 'builder', options: LOCK_LEVEL_OPTIONS,
       hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
+    { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it (R 10-11)' },
     { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
     // selection layer (R 10-11; the draft hesperus/layer): 'auto' is its default by kind; a builder may set it
     { t: 'enum', k: 'layer', label: 'layer', value: LAYERS.includes(c[LAYER_KEY]) ? c[LAYER_KEY] : 'auto', options: [{ v: 'auto', label: `auto (${defaultLayer(ent)})` }, ...LAYERS.map((v) => ({ v, label: v }))],
@@ -581,14 +582,16 @@ export function inspectSchema(ent, id, live = {}) {
   // text (batch 2): a sign
   if (isBag(c.text)) {
     const tx = c.text; const D = SPEC.text.defaults;
+    const lumaInt = (c) => (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)) / 255;   // as texts.js picks the edge
     groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
       { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` },
       { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
       { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
       { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
       { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color, def: D.color },
-      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'a contrasting edge, so it reads on any background' },
-      { t: 'check', k: 'plate', label: 'background', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
+      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'an edge around the letters, so they read on any background' },
+      ...(tx.outline !== false ? [{ t: 'color', k: 'outlineColor', label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : (lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff), def: lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff, hint: 'left alone, the one that contrasts with the text colour' }] : []),
+      { t: 'check', k: 'plate', label: 'plate', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
       ...(Number.isInteger(tx.background) ? [{ t: 'color', k: 'background', label: 'plate colour', value: tx.background }] : []),
       { t: 'enum', k: 'billboard', label: 'faces', value: tx.billboard ?? D.billboard, def: D.billboard, options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] },
       { t: 'enum', k: 'lit', label: 'lit', value: tx.lit ?? D.lit, def: D.lit, options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] },
@@ -612,7 +615,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'disabled', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'disabled', 'clickthrough', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -793,7 +796,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'description' || f.k === 'reads'), list: out, add,
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
     lib, libLabel: lib != null ? libLabel(lib) : ent?.comp?.light ? 'light' : 'empty' };
 }
 
@@ -1087,6 +1090,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
         else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
+        else if (k === 'clickthrough') flagsComp('clickthrough', bool(raw) ? true : null);
         else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
         else if (k === 'layer') { const v = String(raw ?? 'auto'); if (v !== 'auto' && !LAYERS.includes(v)) { errors.push(`flags.layer: one of auto, ${LAYERS.join(', ')}`); break; } flagsComp(LAYER_KEY, v === 'auto' ? null : v); }
         else if (k === 'label') { const s = String(raw ?? '').trim(); if (graphemes(s) > SPEC.label.maxLen) errors.push(`label: ${graphemes(s)} characters; at most ${SPEC.label.maxLen}`); else flagsComp('label', s || null); }
@@ -1317,7 +1321,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (group === 'story' && k === 'marks') { const ids = String(raw ?? '').split(/[\s,]+/).filter(Boolean); if (ids.length) next.marks = ids; else delete next.marks; }
         else if (k === 'title' || k === 'text') next[k] = String(raw ?? '');
         else if (group === 'text' && (k === 'size' || k === 'width')) { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
-        else if (group === 'text' && (k === 'color' || k === 'background')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
+        else if (group === 'text' && (k === 'color' || k === 'background' || k === 'outlineColor')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
         else if (group === 'text' && k === 'plate') { if (bool(raw)) next.background = Number.isInteger(next.background) ? next.background : 0x202020; else delete next.background; }
         else if (group === 'text' && k === 'outline') next.outline = bool(raw);
         else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);
