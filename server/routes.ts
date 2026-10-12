@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
+import { kindOf } from "../shared/protocol/kind.js";
 import { eidoFile, eidoRel } from "./eidoindex.ts";
 import { randomBytes } from "node:crypto";
 import { creditsFor } from "../shared/libcredits.js";
@@ -613,7 +614,7 @@ const ROUTES: Route[] = [
         const file = withBoxes && e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
         const at = poseOf(eid, e);
-        out.push({ id: eid, lib: e.lib ?? null, kind: e.comp?.light ? "light" : "thing",
+        out.push({ id: eid, lib: e.lib ?? null, kind: kindOf(e),
           pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });

@@ -40,7 +40,7 @@ console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
     table: { lib: LIB, pos: [0, 0, 0] },
-    lamp: { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] }, comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } },
+    lamp: { lib: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },   // one place per thing: its light is the bulb under it
     bulb: { pos: [0, 1.2, 0], parent: { to: 'lamp', offset: [0, 0.4, 0] }, comp: { light: { color: 0xffd9a0, intensity: 8, range: 4 } } },   // an Empty with a light
     porch: { pos: [5, 2, 0], comp: { light: { color: 0xffffff, intensity: 10, range: 6 } } },
     marker: { pos: [7, 0, 0] },                                                                                                           // a bare Empty
@@ -60,7 +60,8 @@ console.log('tree building from a world\'s view');
   check('a filter with no match is empty', treeRows(W, { matches: m('zzz') }).length === 0);
   const ex = treeRows(W, { extra: (id: string) => (id === 'chair' ? [{ id: 'rider:ann', match: true }] : []) });
   check('extra rows (a seated person) nest under their carrier and count as children', ex[1]?.id === 'rider:ann' && ex[1].depth === 1 && ex[0].kids === 1, JSON.stringify(ex.slice(0, 2)));
-  check('kind hints: model stem, a model with a light, an Empty with a light (a lamp), a bare Empty', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk + light' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty',
+  check('kind hints: model stem, an Empty with a light (a bulb), a bare Empty; an imported lamp (model + light) says both', kindHint(W.table) === 'table oak round' && kindHint(W.lamp) === 'lamp brass desk' && kindHint(W.bulb) === 'light' && kindHint(W.porch) === 'light' && kindHint(W.marker) === 'empty'
+    && kindHint({ ...W.lamp, comp: { light: { color: 1 } } }) === 'lamp brass desk + light',
     JSON.stringify(['table', 'lamp', 'bulb', 'porch', 'marker'].map((k) => kindHint(W[k]))));
   check('childrenOf / ancestors read the view', childrenOf(W, 'lamp').join() === 'bulb' && ancestors(W, 'bulb').join() === 'lamp,table');
   // a loop written by hand (the door refuses one; a hand-edited log file need not): both members are roots, nothing vanishes
