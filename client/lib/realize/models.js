@@ -37,7 +37,8 @@ import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn, readMesh, meshKeyOf } from './models_field.js';
+import { prepareMaterial } from '../materials.js';
 
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 
@@ -520,7 +521,59 @@ function createEmpty(id, ent) {
   for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
 }
 
-const CREATE = { light: createLight, empty: createEmpty, model: createModel };
+/** A mesh thing (componentspec `mesh`, R 10-12): a parametric body with no model, drawn as one THREE.Mesh whose single
+ *  material is named 'surface' so hesperus/material (and its :surface slot) colours it as it colours a model's. Base-centred
+ *  like a measured model (the authority's boxOfM): it stands on its own origin. The same tail a model gets: a collider fitted
+ *  in its local frame, a caster slot. A changed shape or size rebuilds the geometry in place. */
+function meshGeometry({ shape, size: [x, y, z] }) {
+  const r = x / 2;
+  switch (shape) {
+    case 'sphere': return new THREE.SphereGeometry(r, 32, 16).translate(0, r, 0);
+    case 'cylinder': return new THREE.CylinderGeometry(r, r, y, 32).translate(0, y / 2, 0);
+    case 'capsule': return new THREE.CapsuleGeometry(r, Math.max(0, y - 2 * r), 8, 16).translate(0, y / 2, 0);
+    case 'plane': return new THREE.PlaneGeometry(x, z).rotateX(-Math.PI / 2);
+    default: return new THREE.BoxGeometry(x, y, z).translate(0, y / 2, 0);
+  }
+}
+function meshMaterial(shape) {
+  const mat = new THREE.MeshStandardNodeMaterial({ color: 0x9a9a9a, roughness: 0.8, metalness: 0, ...(shape === 'plane' ? { side: THREE.DoubleSide } : {}) });
+  mat.name = 'surface';
+  return mat;
+}
+function createMesh(id, ent) {
+  const m = readMesh(ent.comp?.mesh);
+  tracked.set(id, { kind: 'mesh', mesh: meshKeyOf(ent), gen: nextGen++ });
+  const obj = new THREE.Mesh(meshGeometry(m), meshMaterial(m.shape));
+  obj.castShadow = true; obj.receiveShadow = true;
+  obj.userData.entityId = id;
+  obj.userData.meshShape = m.shape;
+  prepareMaterial(obj.material, obj);
+  obj.position.set(...(ent.pos ?? [0, 0, 0]));
+  orientObj(obj, ent);
+  if (ent.scale) applyScale(obj, entScale(ent));
+  obj.userData.base = restOf(obj, ent);
+  entities.set(id, obj);
+  entityMeta.set(id, { actor: ent.actor, kind: 'mesh', mesh: m.shape, ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
+  scene.add(obj);
+  applyHidden(id);
+  fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
+  registerCaster(id, obj);
+  bus.emit('entity', { id, kind: 'spawn' });
+  emitCompBag(id);
+  for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
+}
+function rebuildMesh(id) {
+  const ent = state.st.entities[id]; const obj = entities.get(id); const t = tracked.get(id);
+  const m = readMesh(ent?.comp?.mesh); if (!obj || !t || t.kind !== 'mesh' || !m) return;
+  const key = meshKeyOf(ent); if (key === t.mesh) return;
+  obj.geometry.dispose(); obj.geometry = meshGeometry(m);
+  if (obj.userData.meshShape !== m.shape) { obj.userData.meshShape = m.shape; for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) if (mat) mat.side = m.shape === 'plane' ? THREE.DoubleSide : THREE.FrontSide; }
+  t.mesh = key;
+  if (!collisionOwnedElsewhere(ent, obj.userData.mountedTo)) fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
+  bus.emit('entity', { id, kind: 'place' });
+}
+
+const CREATE = { light: createLight, empty: createEmpty, model: createModel, mesh: createMesh };
 
 // An Empty is invisible, so in EDIT MODE it wears a small wireframe marker
 // that a click can pick (build.js walks up from the hit mesh to entityId).
@@ -691,6 +744,7 @@ function retire(id) {
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
   if (obj) {
     if (obj.userData?.isLight) disposeLight(obj);
+    if (obj.userData?.meshShape) { obj.geometry?.dispose?.(); for (const mat of [obj.material, ...(obj.userData.__matClones ?? [])]) mat?.dispose?.(); }
     // cargo steps off before the carrier vanishes — at the pose the FOLD
     // stamped for it, so every joiner and this client agree where it landed.
     // The scene index is the same membership the old all-entities walk
@@ -757,6 +811,7 @@ function onComp(id, type) {
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
   if (type === 'light') syncCompLight(id);
+  if (type === 'mesh') { if (kindOf(state.st.entities[id]) === 'mesh' && tracked.get(id)?.kind === 'mesh') rebuildMesh(id); else reconcileId(id); }
   if (type === 'collider') applyColliderPref(id);
   // a sockets change re-seats everything riding this carrier — a mount that
   // landed BEFORE its socket was authored glued to the origin, and the
@@ -925,7 +980,7 @@ function entDist(ent) {
 /** The audit's three impossibles plus the edit hold — things whose demote
  *  has no clean undo. All are cheap fold-truth predicates. */
 function canDemote(id, ent) {
-  if (!ent || ent.kind === 'light' || ent.parent) return false;   // lights are cheap; mounted children ride carriers
+  if (!ent || ent.kind === 'light' || ent.parent || ent.lib == null) return false;   // lights are cheap; mounted children ride carriers; a mesh has no bytes to shed
   const obj = entities.get(id);
   if (!obj || isPlaceholder(obj) || editHolds.has(id)) return false;
   if (!libGeom.get(ent.lib)?.bbox) return false;    // nothing honest to stand in
@@ -1060,6 +1115,7 @@ function reconcileId(id) {
     CREATE[kind](id, ent);
     return;
   }
+  if (kind === 'mesh') rebuildMesh(id);
   if (kind === 'light') refreshLight(id, ent);
   else { refreshModel(id, ent); if (kind === 'empty') { emitCompBag(id); execMount(id); } }
 }
@@ -1067,7 +1123,7 @@ function reconcileId(id) {
 /** Full idempotent pass — hydration, reconnect. reconcile ∘ reconcile =
  *  reconcile is the contract (§11.4). */
 export function reconcileModels() {
-  const view = new Map([...tracked].map(([id, t]) => [id, { kind: t.kind, lib: t.lib }]));
+  const view = new Map([...tracked].map(([id, t]) => [id, { kind: t.kind, lib: t.lib, mesh: t.mesh }]));
   const { create, retire: dead } = planReconcile(state.st.entities, view);
   for (const id of dead) retire(id);
   const created = new Set(create.map((c) => c.id));

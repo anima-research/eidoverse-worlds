@@ -36,7 +36,20 @@ import { P } from '../scheduler.js';
 /** What the realizer builds for a folded entity: a legacy `light`-verb light,
  *  an Empty (a spawn with no lib — PROTOCOL §3.2: an invisible Object3D), or a
  *  model. One answer for planReconcile and models.js alike. */
-export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? 'empty' : 'model');
+export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : isMeshBag(ent?.comp?.mesh) ? 'mesh' : ent?.lib == null ? 'empty' : 'model');
+
+/** The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
+ *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it. */
+export const MESH_SHAPES = ['box', 'sphere', 'cylinder', 'plane', 'capsule'];
+const isMeshBag = (m) => !!m && typeof m === 'object' && !Array.isArray(m) && MESH_SHAPES.includes(m.shape);
+export function readMesh(m) {
+  if (!isMeshBag(m)) return null;
+  const n = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(200, Math.max(0.05, x)) : 1);
+  const size = Array.isArray(m.size) && m.size.length === 3 ? m.size.map(n) : [1, 1, 1];
+  return { shape: m.shape, size };
+}
+/** One string per distinct geometry: a changed shape or size is a rebuild (planReconcile), as a changed lib is. */
+export const meshKeyOf = (ent) => { const m = readMesh(ent?.comp?.mesh); return m ? `${m.shape}|${m.size.join(',')}` : null; };
 
 /** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider (R 10-11:
  *  "present in the world as links, but not downloaded… until someone re-enables it"). Same rule as the engine's offChain. */
@@ -49,7 +62,7 @@ export function planReconcile(stEntities, realized) {
     const ent = stEntities[id];
     if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
     const foldedKind = kindOf(ent);
-    if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib)) {
+    if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
       retire.push(id);
       create.push({ id, ent });
     }

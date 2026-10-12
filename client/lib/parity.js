@@ -33,8 +33,8 @@ export function foldParity() {
     const meta = entityMeta.get(id);
     if (meta) {
       const ent = shadow.entities[id];
-      const sceneKind = meta.kind === 'light' ? 'light' : 'model';
-      const foldKind = ent.kind === 'light' ? 'light' : 'model';
+      const sceneKind = meta.kind === 'light' ? 'light' : meta.kind === 'mesh' ? 'mesh' : 'model';
+      const foldKind = ent.kind === 'light' ? 'light' : ent.comp?.mesh && typeof ent.comp.mesh === 'object' ? 'mesh' : 'model';
       if (sceneKind !== foldKind || (foldKind === 'model' && meta.lib !== ent.lib)) {
         out.identityDiffs.push({ id, legacy: { kind: sceneKind, lib: meta.lib },
           shadow: { kind: foldKind, lib: ent.lib } });

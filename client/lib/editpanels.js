@@ -56,7 +56,7 @@ import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
-const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
+const short = (meta) => (meta?.lib ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
 const round = (v, dp = 3) => +(+v).toFixed(dp);
 
 // collapsed groups remembered per LIB (a chair's Components stays open for

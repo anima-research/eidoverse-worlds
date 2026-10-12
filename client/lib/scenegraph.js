@@ -106,7 +106,7 @@ function paintScene(force = false) {
   const rows = [];
   const row = (id, depth) => {
     const meta = entityMeta.get(id);
-    const short = (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
+    const short = (meta?.lib ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
