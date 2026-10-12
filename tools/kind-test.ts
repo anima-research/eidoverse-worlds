@@ -1,6 +1,6 @@
 // kind-test — "is this a light / an Empty / a model" is decided ONCE (shared/protocol/kind.js kindOf), and every surface that
 // says a thing's kind agrees with it: the realizer's planner (models_field), the hierarchy row hint, GET /geom?world's `kind`,
-// and the mcpl inspect head. Five fixtures: a native v4 light (comp.light, no model), a bare Empty, a model, a model with a
+// and the mcpl inspect head. Five fixtures: a native light (comp.light, no model), a bare Empty, a model, a model with a
 // child light, and a thing carrying a `mesh` component (a sibling branch's kind; not built here, only named).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/kind-test.ts
