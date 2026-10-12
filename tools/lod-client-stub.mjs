@@ -19,6 +19,7 @@ import * as THREE_ from '../client/node_modules/three/build/three.module.js';
 import { askFor, tierOf } from '../client/lib/lod_policy.js';
 import { state } from '../client/lib/state.js';
 import { kindOf } from '../shared/protocol/kind.js';
+import { bus } from '../client/lib/base.js';
 
 // ---- core.js ----------------------------------------------------------------
 // makePlaceholder wants the node material class from three/webgpu; the
@@ -84,6 +85,8 @@ export const fitCollider = (id, obj, opts) => { colliders.set(id, { obj, opts })
 export const removeCollider = (id) => { colliders.delete(id); colliderLog.push(['remove', id]); };
 export const refitCollider = (id) => { colliderLog.push(['refit', id]); };
 export const reindexCollider = () => {};
+// what the real colliders.js and lightrig.js do on the realizer's word (realize/lifecycle.js release)
+bus.on('realized', ({ id, owner }) => { removeCollider(id); releaseCaster(id); releaseOwner(owner); });
 
 // ---- lightrig.js / lights.js ------------------------------------------------
 /** inferred lamps (attachLamps) by owner, as the realizer drives them: owner -> times attached; plus the log */
@@ -91,8 +94,10 @@ export const lampOwners = new Map();
 export const lampLog = [];
 export const attachLamps = (_root, owner) => { lampOwners.set(owner, (lampOwners.get(owner) ?? 0) + 1); lampLog.push(['attach', owner]); };
 export const releaseOwner = (owner) => { lampOwners.delete(owner); lampLog.push(['release', owner]); };
-export const registerCaster = () => {};
-export const releaseCaster = () => {};
+/** the rig's caster registry as the realizer drives it: id -> obj (registered at the promote tail, released at retire/demote) */
+export const casters = new Map();
+export const registerCaster = (id, obj) => { casters.set(id, obj); };
+export const releaseCaster = (id) => { casters.delete(id); };
 export const makeLight = () => new THREE_.Group();
 export const makeLightGizmo = (color) => { const m = new THREE_.Mesh(new THREE_.SphereGeometry(0.13), new THREE_.MeshBasicMaterial({ color })); m.userData.gizmo = true; return m; };
 /** the rig's request table as the realizer drives it (comp.light): key -> spec */
