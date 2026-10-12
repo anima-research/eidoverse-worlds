@@ -40,7 +40,7 @@
 // the same meadow.
 
 import { THREE, TSL, sun, ground, renderer } from './core.js';
-import { report, CONFIG } from './base.js';
+import { report, CONFIG, bus } from './base.js';
 import { registerFoliage } from './foliage.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
@@ -441,6 +441,33 @@ export function setBodyShadows(root, on = true) {
     n++;
   });
   return n;
+}
+
+// MY BODY CASTS A REAL SHADOW — a Video setting, own avatar only (R 10-11 wishlist). The lamp gate above stays
+// the default for everyone; this is the one body the viewer pays for by choice. Remotes never pass through here:
+// mybody.js calls it from setMe (the own-body hook), and a remote's pref value is not this browser's.
+export const PREF_MY_SHADOW = 'ew-my-shadow';
+export function myShadowPref() { try { return localStorage.getItem(PREF_MY_SHADOW) === '1'; } catch { return false; } }
+export function setMyShadowPref(on) {
+  try { localStorage.setItem(PREF_MY_SHADOW, on ? '1' : '0'); } catch { /* private window */ }
+  bus.emit('my-shadow', !!on);
+}
+/** Decide and apply the own body's shadows: the pref OR its lamp. `warm(label, getMeshes)` pre-compiles the depth
+ *  pipelines before the flip ON (bodies never reach the caster budget's warm, and a compile inside the next shadow
+ *  render is the first-frame hitch); `still()` says whether this body is still the one worn when the warm lands. */
+export async function applyOwnBodyShadow(av, { pref = myShadowPref(), warm = null, still = () => true } = {}) {
+  const root = av?.vrm?.scene;
+  if (!root?.traverse) return false;
+  const want = pref || !!av._lamps?.length;
+  if (want && warm && !av._depthWarm) {
+    const meshes = [];
+    root.traverse((o) => { if (o.isMesh && !BODY_NO_CAST.test(o.name || '')) meshes.push(o); });
+    await warm('depth me', () => (still() ? meshes : []));
+    av._depthWarm = true;
+    if (!still()) return false;
+  }
+  setBodyShadows(root, want);
+  return want;
 }
 
 export function prepareObject(root, { kind = 'model', foliage = true } = {}) {

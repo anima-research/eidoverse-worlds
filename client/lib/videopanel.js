@@ -17,6 +17,7 @@ import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
 import { registerXRPanel } from './xrpanels.js';
 import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from './mediaprefs.js';
+import { myShadowPref, setMyShadowPref } from './materials.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)
@@ -74,7 +75,8 @@ function videoFields() {
   return [
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
-    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution'), pick('casters', CASTER_CHOICES, getCasterCeiling(), 'shadow casters')] : []),
+    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution'), pick('casters', CASTER_CHOICES, getCasterCeiling(), 'shadow casters'),
+      { t: 'check', k: 'myshadow', label: 'my body casts a real shadow', value: myShadowPref() }] : []),
     pick('particles', PARTICLE_TIERS, getParticleTier(), 'particles'),
     pick('foliage', FOLIAGE_MODES, getFoliageMode(), 'textured transparency'),
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
@@ -88,6 +90,7 @@ function videoDispatch(k, v) {
   else if (k === 'shadows') setShadows(!!v);
   else if (k === 'shadowres') setShadowRes(+v);
   else if (k === 'casters') setCasterCeiling(+v);
+  else if (k === 'myshadow') setMyShadowPref(!!v);
   else if (k === 'particles') setParticleTier(v);
   else if (k === 'foliage') setFoliageMode(v);
   else if (k === 'detail') setAvatarDetail(v);
@@ -155,11 +158,16 @@ export function initVideoPanel() {
       CASTER_CHOICES.map((v) => [v, `${v} nearest`]), getCasterCeiling(),
       (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
     castRow.hidden = !shadowsOn();
+    const meRow = checkRow('my body casts a real shadow',
+      'Your own body throws a real shadow from the sun and lamps, instead of only the soft blob under your feet (the blob stays as the contact cue). Only your body — other people keep theirs unless they wear a lamp. Costs a few shadow draws; the first switch-on compiles its depth shaders off the frame.',
+      myShadowPref(), (on) => { setMyShadowPref(on); flashHint(`my shadow: ${on ? 'real' : 'blob only'}`); });
+    meRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',
       'All cast shadows — the sun’s and the lamp shadow. Off is the cheapest single change on a weak GPU; flipping it recompiles nothing.',
-      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; castRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
+      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; castRow.hidden = !on; meRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
     body.appendChild(resRow);
     body.appendChild(castRow);
+    body.appendChild(meRow);
 
     body.appendChild(selectRow('particles',
       'How many sprites particle effects draw. auto lets the engine thin them under load and restore them after.',
