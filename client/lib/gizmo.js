@@ -189,6 +189,6 @@ function cancelDrag() {
 export function initGizmo() {
   setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
-  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
+  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('edit-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }

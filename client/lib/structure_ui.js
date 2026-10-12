@@ -42,7 +42,7 @@ let tool = null;
 let editing = null;          // entity id being edited
 let dragFrom = null;
 let dragOn = null;           // the building a room/erase drag started on: the stroke stays on it
-let selectedId = null;       // the Hierarchy/inspector selection (sg:selected)
+let selectedId = null;       // the editor's primary thing (edit/selection.js)
 let ghost = null;
 
 /** Every structure entity in the world. */
@@ -289,6 +289,8 @@ export function setStructureMode(on) {
   return active;
 }
 export const isStructureMode = () => active;
+/** For probes: the building the tools would edit by selection alone. */
+export const structureSelection = () => selectedId;
 
 export function initStructureUI() {
   canvas.addEventListener('mousedown', onDown, true);
@@ -296,7 +298,7 @@ export function initStructureUI() {
   window.addEventListener('mouseup', onUp);
   bus.on('world-reset', () => { editing = null; selectedId = null; clearGhost(); refreshGrid(); });
   // the selected building is the one the tools edit (and its lattice is the one drawn)
-  bus.on('sg:selected', (id) => { selectedId = id ?? null; if (active) refreshGrid(); });
+  bus.on('selection', ({ ids, kind }) => { selectedId = kind === 'things' ? ids[0] ?? null : null; if (active) refreshGrid(); });
   // the mode arrives and leaves with eidoverse's own build mode — B, or Esc
   bus.on('edit-mode', (on) => setStructureMode(on));
   // a building appearing or changing under us moves the lattice with it

@@ -707,7 +707,7 @@ console.log('\nDel / Backspace act on what the INSPECTOR shows (a tree pick), no
   await evalJson(`import('/lib/build.js').then((m) => (m.select('delA'), true))`);          // viewport pick: build.js's own `selected`
   await sleep(150);
   await evalJson(`(window.__clk = [], document.addEventListener('click', (e) => __clk.push(['cap', e.target.className]), true), addEventListener('click', (e) => __clk.push(['bub', e.target.className]))), import('/lib/scenegraph.js').then((m) => { window.__sgs = m.sceneSelected; }), true`);
-  await evalJson(`import('/lib/base.js').then((m) => { window.__sel = []; m.bus.on('sg:selected', (id) => __sel.push(id)); }), true`);
+  await evalJson(`import('/lib/base.js').then((m) => { window.__sel = []; m.bus.on('selection', (s) => __sel.push(s.ids[0] ?? null)); }), true`);
   check('the tree row for delB is clickable', await rowClick('delB'));
   check('…and the inspector now shows delB', await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'delB')`));
   await key('Delete');
