@@ -132,6 +132,35 @@ const slider = byAction('vol')[0];
 check('range: ONE track region carrying {lo,hi,st}', byAction('vol').length === 1 && JSON.stringify(slider.slider) === '{"lo":0,"hi":1,"st":0.05}', JSON.stringify(slider?.slider));
 check('rows stack: every region lies inside the canvas', regions.every((r: any) => r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= cv.height));
 
+// C13: every field type is ONE entry in widgets.js's WIDGETS table, read by the desktop and both quads. Mutation: delete
+// one entry (say `check`) → this goes red for the DOM and the legacy quad; tools/edittheme-test.ts C for the edit quad.
+console.log('PANELS — every field type draws on both surfaces (widgets.js WIDGETS, one table)');
+{
+  (globalThis as any).Option ??= function (text: string, value: string) { const o = document.createElement('option'); o.textContent = text; o.value = value; return o; };
+  const ALL = [
+    { t: 'info', k: 'i', label: 'i', value: 'v' }, { t: 'log', k: 'lg', lines: ['a'] }, { t: 'num', k: 'n', label: 'n', value: 1 },
+    { t: 'range', k: 'rg', label: 'r', value: 0.5 }, { t: 'vec3', k: 'v3', label: 'v', value: [1, 2, 3] },
+    { t: 'enum', k: 'en', label: 'e', value: 'a', options: [{ v: 'a', label: 'a' }, { v: 'b', label: 'b' }] },
+    { t: 'color', k: 'co', label: 'c', value: 0xff0000 }, { t: 'check', k: 'ck', label: 'c', value: true },
+    { t: 'text', k: 'tx', label: 't', value: 'x' }, { t: 'json', k: 'js', label: 'j', value: '{}' }, { t: 'ref', k: 'rf', label: 'r', value: 'id1' },
+    { t: 'btn', k: 'bt', label: 'b' }, { t: 'pop', k: 'pp', label: 'p', items: [] },
+    { t: 'tiles', k: 'tl', value: 'a', options: [{ v: 'a', label: 'a' }] },
+    { t: 'group', k: 'gp', label: 'g', open: true },
+    { t: 'list', k: 'ls', label: 'l', rows: [{ id: 'r1', label: 'r', actions: [{ k: 'la', label: 'a' }] }] },
+    { t: 'tree', k: 'tr', rows: [{ id: 't1', label: 't', depth: 0, kids: 1, locked: false }] },
+  ];
+  const b2 = document.createElement('div'); document.body.append(b2);
+  renderDOM(b2, ALL, edit);
+  const CHROME = new Set(['sp-label', 'sp-ctxbtn', 'sp-revert']);
+  const bare = ALL.filter((f, i) => ![...(b2.children[i]?.children ?? [])].some((c: any) => ![...c.classList].some((x) => CHROME.has(x))));
+  check(`DOM: every one of the ${ALL.length} field types builds a control in its row`, bare.length === 0, bare.map((f) => f.t).join(','));
+  const R = renderCanvas(document.createElement('canvas'), ALL, { width: W, rowH: ROW, pad: PAD });
+  const has = (a: string) => R.some((r: any) => r.action === a);
+  const want: [string, string][] = [['num', 'n'], ['range', 'rg'], ['vec3', 'v3'], ['enum', 'en'], ['color', 'co'], ['check', 'ck'], ['ref', 'rf'], ['btn', 'bt'], ['tiles', 'tl'], ['group', 'fold'], ['list', 'la'], ['tree', 'open'], ['tree', 'lock']];
+  const lost = want.filter(([, a]) => !has(a));
+  check(`legacy quad: every interactive type paints its target (${want.length} actions)`, lost.length === 0, lost.map(([t, a]) => `${t}:${a}`).join(','));
+}
+
 console.log('PANELS — hitRegion: UV → region; a slider hit is its snapped value');
 const uvAt = (r: any, fx = 0.5, fy = 0.5) => [(r.x + r.w * fx) / cv.width, (r.y + r.h * fy) / cv.height];
 { const [u, v] = uvAt(byAction('del')[0]);

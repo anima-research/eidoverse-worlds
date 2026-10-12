@@ -156,6 +156,12 @@ console.log("\nC. the same dispatch as the legacy painter:");
   check("a collapsed group's rows are not painted", !E.regions.some((r: any) => r.action === "hidden:num"));
   check("tree order kept: the disclosure is the FIRST region (it wins over its row)", E.regions[0]?.action === "open" && E.regions[0]?.payload === "benchlamp", JSON.stringify(E.regions[0]));
   check("no theme → the legacy painter, untouched (its 30-px targets are still there)", L.regions.some((r: any) => r.h === 30));
+  // C13: one WIDGETS table (widgets.js) for the desktop, the legacy quad and this painter. Mutation: delete one entry
+  // (say `check`) → this goes red here AND in tools/panels-schema-test.ts (its DOM and legacy-quad pins), not just one.
+  const want: [string, string][] = [["num", "ch:pos.x"], ["vec3", "v"], ["check", "flags.lock"], ["enum", "motion.type"], ["color", "light.color"], ["range", "r"], ["ref", "look.at"], ["btn", "rest"], ["tiles", "stool"], ["group", "fold"], ["list", "ed:sockets.del"], ["tree", "open"], ["tree", "lock"]];
+  const lostE = want.filter(([, a]) => !E.regions.some((r: any) => r.action === a)), lostL = want.filter(([, a]) => !L.regions.some((r: any) => r.action === a));
+  check(`every interactive field type paints its target on the edit painter (${want.length} actions)`, lostE.length === 0, lostE.map(([t, a]) => `${t}:${a}`).join(" · "));
+  check("…and on the legacy painter", lostL.length === 0, lostL.map(([t, a]) => `${t}:${a}`).join(" · "));
 }
 
 console.log("\nD. the quad's texture is sRGB (xrpanels.makePanel, the real module):");
@@ -184,7 +190,8 @@ console.log("\nE. no pictograph in edit chrome's own sources:");
   const sb = strip(src("structure_ui.js"));
   const tools = /const TOOLS = \[([\s\S]*?)\];/.exec(sb)?.[1] ?? "";
   check("the build bar's tool labels: no pictograph", tools.length > 0 && !PICTO.test(tools), (tools.match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
-  const tree = /case 'tree': \{([\s\S]*?)case 'json'/.exec(src("panels.js"))?.[1] ?? "";
+  // C13: the tree widget lives in widgets.js (WIDGETS.tree.dom), one table for every surface; the check keeps its name
+  const tree = /\n  tree: \{\n([\s\S]*?)\n    row: ROW,/.exec(src("widgets.js"))?.[1] ?? "";
   check("panels.js tree rows (lock toggle): no pictograph", tree.length > 0 && !PICTO.test(strip(tree)), (strip(tree).match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
 }
 
@@ -194,11 +201,13 @@ console.log("\nE2. every glyph edit chrome names exists (a missing icon paints N
   const { PICTO_ICON } = await import("../client/lib/edittheme.js");
   const src = (p: string) => { try { return readFileSync(here(`../client/lib/${p}`), "utf8"); } catch { return ""; } };
   const names = new Set<string>(Object.values(PICTO_ICON) as string[]);
-  for (const m of src("editpaint.js").matchAll(/icon\(g, ([^,]+),/g)) for (const q of m[1].matchAll(/'([A-Za-z0-9]+)'/g)) names.add(q[1]);
-  for (const m of src("editpaint.js").matchAll(/(?:quietButton\([^)]*|ACTION_ICON = \{[^}]*)'([A-Za-z0-9]+)'\)?/g)) names.add(m[1]);
+  for (const p of ["editpaint.js", "widgets.js"]) {   // C13: the edit widgets' glyphs are named in widgets.js, the surface's in editpaint.js
+    for (const m of src(p).matchAll(/icon\(g, ([^,]+),/g)) for (const q of m[1].matchAll(/'([A-Za-z0-9]+)'/g)) names.add(q[1]);
+    for (const m of src(p).matchAll(/(?:quietButton\([^)]*|ACTION_ICON = \{[^}]*)'([A-Za-z0-9]+)'\)?/g)) names.add(m[1]);
+  }
   for (const m of src("editlayout.js").matchAll(/icon: '([A-Za-z0-9]+)'|iconSvg\('([A-Za-z0-9]+)'/g)) names.add(m[1] ?? m[2]);
   for (const m of src("structure_ui.js").matchAll(/'([A-Za-z0-9]+)'\],|, '([A-Za-z0-9]+)'\);/g)) names.add(m[1] ?? m[2]);
-  for (const m of src("panels.js").matchAll(/iconSvg\(r\.locked \? '([A-Za-z]+)' : '([A-Za-z]+)'/g)) { names.add(m[1]); names.add(m[2]); }
+  for (const m of src("widgets.js").matchAll(/iconSvg\(r\.locked \? '([A-Za-z]+)' : '([A-Za-z]+)'/g)) { names.add(m[1]); names.add(m[2]); }
   for (const m of src("editpanels.js").matchAll(/icon: '([A-Za-z0-9]+)'/g)) names.add(m[1]);   // the Create panel's buttons
   const missing = [...names].filter((n) => !icons.has(n));
   check(`all ${names.size} named glyphs are in icons.js`, names.size >= 20 && missing.length === 0, "missing: " + missing.join(", ") + " · seen: " + [...names].join(","));
