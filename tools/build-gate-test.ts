@@ -6,8 +6,10 @@
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({ name: 'build-gate-stubs', setup(b) {
-  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'seatedit'])
+  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'scenegraph', 'windows', 'seatedit', 'xrask'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./build-gate-stub.mjs') }));
+  // the building realizer (three.js materials and the GPU) behind structure_ui.js is not under test
+  b.onResolve({ filter: /^\.\/realize\/structure\.js$/ }, () => ({ path: here('./build-gate-stub.mjs') }));
 } });
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
