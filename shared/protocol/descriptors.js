@@ -72,7 +72,8 @@ const DECIDED = {
 // per card: the registry fields it shows (motion's are per type), and the editor's spellings and widgets where they differ
 // from the wire's. A card with `whole` edits its value as one JSON field named `whole`. `extra`: the card's own derived
 // rows, claimed by the card though no registry field is theirs. `floor`: the card IS its raw-JSON row on the inspector's
-// floor (Reactions, Captions, Stage), so the floor keeps the key. `writeDp`: the decimals an edit is rounded to on the wire.
+// floor (Reactions, Captions, Stage), so the floor keeps the key. `writeDp`: the decimals an edit is rounded to on the wire
+// (a field's ui.wdp overrides it). `hand`: the card's rows and writes are editschema's own (HAND), not built from this table.
 const MOTION = {
   Pendulum: { type: 'pendulum', show: ['part', 'axis', 'amp', 'period', 'damp', 'maxAmp', 'phase', 'pivot'],
     editor: { amp: { wire: AMP, ui: { ...DEG, min: 0, softMax: Math.PI, def: false, clears: ['amplitude'] } }, period: { ui: { ...SEC, absent: 3.5 } }, damp: { ui: { t: 'num', step: 0.01, dp: 3, min: 0, softMax: 2, absent: 0 } }, phase: { ui: PHASE } } },
@@ -86,15 +87,20 @@ const MOTION = {
 };
 const MOTION_EDITOR = { axis: { wire: AXIS, ui: { t: 'enum', def: false, own: true } }, degPerSec: { param: 'rate', wire: RATE, ui: { ...RATE_UI, clears: ['rpm', 'period'] } } };
 const CARDS = {
-  Transform: { key: 'transform', show: ['pos', 'q', 'scale'], editor: { scale: { wire: UNIFORM } } },
+  Transform: { key: 'transform', hand: true, show: ['pos', 'q', 'scale'], editor: { scale: { wire: UNIFORM } } },
   Pivot: { key: 'pivot', own: { pos: 'vec3' }, extra: ['x', 'y', 'z'] },   // the registry types pivot by its help only ({pos: [x,y,z]}); registering the field needs a pin regeneration (D8)
   Collider: { key: 'collider', editor: { shape: { ui: { t: 'enum', def: false } } } },
   Light: { key: 'light', show: ['color', 'intensity', 'range', 'important', 'day'], writeDp: null,
     editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, min: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, min: 1, softMax: 40, unit: 'm' } },
       important: { ui: { t: 'check', sparse: true } }, day: { k: 'noon', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
-  Sockets: { key: 'sockets', whole: 'slots' },
-  Grabbable: { key: 'grabbable', whole: 'spec', show: ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'twoHanded', 'throw', 'release', 'returnAfter'] },
+  Sockets: { key: 'sockets', whole: 'slots', hand: true },
+  // the hand-written four (hand: true): Transform, Sockets, Grabbable and Material (a draft, unregistered: no descriptor) keep
+  // read/write hooks in editschema.js (HAND); Grabbable's registry fields still draw and write through the table
+  Grabbable: { key: 'grabbable', whole: 'spec', hand: true, show: ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'twoHanded', 'throw', 'release', 'returnAfter'], writeDp: 3, extra: ['pose', 'carries', 'fits', 'use', 'prompt'],
+    editor: { enabled: { ui: { t: 'check' } }, who: { ui: { t: 'enum' } }, steal: { ui: { t: 'check' } }, range: { ui: { t: 'num', step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm' } },
+      priority: { ui: { t: 'num', step: 1, dp: 0, min: -10, max: 10, wdp: 0 } }, hold: { ui: { t: 'enum' } }, twoHanded: { ui: { t: 'check' } }, throw: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, max: 3, unit: '×' } },
+      release: { ui: { t: 'enum' } }, returnAfter: { ui: { t: 'num', step: 5, dp: 0, min: 0, max: 3600, unit: 's' } } } },
   Openable: { key: 'openable', whole: 'spec', show: ['open', 'locked', 'angle', 'axis', 'slide', 'time', 'part'], writeDp: 6, extra: ['by'],
     editor: { open: { ui: { t: 'check' } }, locked: { ui: { t: 'check' } }, angle: { ui: { t: 'num', step: 15, deg: true, min: -Math.PI, max: Math.PI } }, axis: { wire: AXIS, ui: { t: 'enum', own: true } },
       time: { ui: { t: 'num', step: 0.1, dp: 2, min: 0, max: 10, unit: 's' } } } },
@@ -136,7 +142,7 @@ function build(card, c) {
     const decided = DECIDED[`${card}.${path}`];
     fields.push({ k: e.k ?? path, param: e.param ?? e.k ?? path, t: typed[path] ?? TYPEOF[typeof def.defaults[path]] ?? 'any', path, ...(e.wire ? { wire: e.wire } : {}), ...(e.ui ? { ui: Object.freeze({ ...e.ui }) } : {}), ...(decided ? { absent: decided } : {}) });
   }
-  return Object.freeze({ key: c.key, card, ...(c.type ? { type: c.type } : {}), fields: Object.freeze(fields.map(Object.freeze)), extra: Object.freeze([...(c.extra ?? [])]), ...(c.floor ? { floor: true } : {}), ...(c.writeDp !== undefined ? { writeDp: c.writeDp } : {}) });
+  return Object.freeze({ key: c.key, card, ...(c.type ? { type: c.type } : {}), fields: Object.freeze(fields.map(Object.freeze)), extra: Object.freeze([...(c.extra ?? [])]), ...(c.floor ? { floor: true } : {}), ...(c.hand ? { hand: true } : {}), ...(c.writeDp !== undefined ? { writeDp: c.writeDp } : {}) });
 }
 export const DESCRIPTORS = Object.freeze(Object.fromEntries(Object.entries(CARDS).map(([card, c]) => [card, build(card, c)])));
 export const descriptorFor = (card) => DESCRIPTORS[card] ?? null;
@@ -162,13 +168,9 @@ export function claimOf(card, k) {
   for (const seg of String(k).split('|')) { const f = d.fields.find((x) => x.k === seg); if (f) return f; if (d.extra.includes(seg)) return { k: seg, extra: true }; }
   return null;
 }
-/** The descriptor cards a registry key is shown as (motion: by the bag's type; else the one card of that key). */
-export function cardsOfKey(key, bag = null) {
-  const all = Object.values(DESCRIPTORS).filter((d) => d.key === key);
-  if (bag && all.some((d) => d.type)) return all.filter((d) => d.type === bag?.type);
-  return all;
-}
 /** Every registry key some descriptor speaks for. */
 export const DESCRIBED_KEYS = Object.freeze([...new Set(Object.values(DESCRIPTORS).map((d) => d.key))]);
+/** The hand-written cards: editschema.js HAND must hold a read and a write hook for each. */
+export const HAND_CARDS = Object.freeze(Object.values(DESCRIPTORS).filter((d) => d.hand).map((d) => d.card));
 /** The keys a typed card speaks for — not raw JSON on the inspector's floor (the `floor` cards keep theirs there). */
 export const CLAIMED_KEYS = Object.freeze([...new Set(Object.values(DESCRIPTORS).filter((d) => !d.floor).map((d) => d.key))]);
