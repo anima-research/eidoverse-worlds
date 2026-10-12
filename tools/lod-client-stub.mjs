@@ -127,6 +127,8 @@ export const getCasterCeiling = () => 24;
 export const setCasterCeiling = () => {};
 export const CASTER_CHOICES = [6, 12, 24, 48, 96];
 export const casterCount = () => 0;
+export const fadingCount = () => 0;
+export const FADE_MS = 300;
 export const setEmitterQuality = () => false;
 export const emitterQuality = () => 'auto';
 export const emitterCount = () => 0;

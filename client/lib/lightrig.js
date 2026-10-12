@@ -763,16 +763,55 @@ let lastCasterPass = 0;
 export function registerCaster(id, obj) {
   const meshes = [];
   obj.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  casters.set(id, { id, obj, meshes, casting: false, warm: 'none', released: false });
+  casters.set(id, { id, obj, meshes, casting: false, warm: 'none', released: false, fade: 0 });
 }
 export function releaseCaster(id) {
   const c = casters.get(id);
-  if (c) c.released = true;   // a queued warm re-reads this and skips the work
+  if (c) { c.released = true; fading.delete(c); }   // a queued warm re-reads this and skips the work
   casters.delete(id);
 }
 export const casterCount = () => casters.size;
 export function setCasterBudget(k) { casterBudget = Math.max(0, Math.min(casterCeiling, k)); }
 export const getCasterBudget = () => casterBudget;
+
+// ---- the fade: a caster dithers in and out over FADE_MS (materials.js FADE_MASK reads mesh.userData.shadowFade
+// per object in the depth pass). castShadow goes true at the START of a fade-in (at amount 0) and false only at the
+// END of a fade-out, so the draw is shed once nothing of it shows. A caster past the edge that comes back mid-fade
+// just reverses. A mesh whose material was never marked (not a node material) hard-flips with the caster's ends.
+export const FADE_MS = 300;
+const fading = new Set();
+let lastFadeTick = 0;
+const canFade = (m) => {
+  const ms = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+  return ms.length > 0 && ms.every((x) => x?.userData?.shadowFade === true);
+};
+function writeFade(c) {
+  for (const m of c.meshes) if (canFade(m)) m.userData.shadowFade = c.fade;
+}
+function beginFade(c) {
+  if (fading.has(c)) return;
+  fading.add(c);
+  // a batched InstancedMesh carries its own userData (amount 1): the source draws itself while it fades
+  for (const m of c.meshes) if (!m.userData.noDrawBatch) { m.userData.noDrawBatch = true; (c.unbatched ??= []).push(m); }
+}
+function endFade(c) {
+  fading.delete(c);
+  for (const m of c.unbatched ?? []) delete m.userData.noDrawBatch;
+  c.unbatched = null;
+  if (c.fade === 0) for (const m of c.meshes) m.castShadow = false;
+}
+function stepFades(now) {
+  const dt = lastFadeTick ? Math.min(100, Math.max(0, now - lastFadeTick)) : 0;
+  lastFadeTick = now;
+  if (!fading.size) return;
+  for (const c of fading) {
+    const target = c.casting ? 1 : 0;
+    c.fade = target > c.fade ? Math.min(1, c.fade + dt / FADE_MS) : Math.max(0, c.fade - dt / FADE_MS);
+    writeFade(c);
+    if (c.fade === target) endFade(c);
+  }
+}
+export const fadingCount = () => fading.size;
 
 function casterPass() {
   const ranked = [...casters.values()]
@@ -781,14 +820,15 @@ function casterPass() {
   let enables = 0;
   // hysteresis: something already casting keeps casting until it's well past the edge (1.25× the last caster's distance),
   // so walking along a row of crates doesn't make shadows blink on and off at the boundary (R: 'instead of popping')
-  const edge = casterBudget > 0 && ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
+  // (a budget of 0 keeps nothing: the old `casterBudget > 0 && … : Infinity` kept the first four casting forever)
+  const edge = casterBudget === 0 ? -1 : ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
   for (let i = 0; i < ranked.length; i++) {
     const { c, d } = ranked[i];
     const want = i < casterBudget || (c.casting && d <= edge && i < casterBudget + 4);
     if (want === c.casting) continue;
-    if (!want) {                          // disables are free — flip now
+    if (!want) {                          // the draw is shed when the fade-out ends (castShadow is in no cache key)
       c.casting = false;
-      for (const m of c.meshes) m.castShadow = false;
+      beginFade(c);
       continue;
     }
     // an unwarmed caster never flips: ask the conductor once, flip on a
@@ -801,10 +841,13 @@ function casterPass() {
       continue;
     }
     if (c.warm !== 'done') continue;      // still warming
+    if (c.fade > 0) { c.casting = true; beginFade(c); continue; }   // still fading out: reverse, no flip
     if (enables >= 2) continue;           // ≤2 FLIPS per beat, as before
     enables++;
     c.casting = true;
+    writeFade(c);                         // amount 0 before the first depth draw
     for (const m of c.meshes) m.castShadow = true;
+    beginFade(c);
   }
 }
 
@@ -876,6 +919,7 @@ function writeSpots() {
 /** Call once per frame. Reassigns when needed; writes every slot's uniforms. */
 export function updateRig(now) {
   updateShadow();
+  stepFades(now);   // before the pass: a fade begun this frame is drawn at its start amount first
   if (now - lastCasterPass > 300) { lastCasterPass = now; casterPass(); }
   if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.getWorldPosition(_eye)) > 2.25) {
     assign(now);
@@ -979,7 +1023,7 @@ export const rigDebug = () => ({
   _slots: slots,
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
-  casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, meshes: c.meshes.length })),
+  casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, fade: +c.fade.toFixed(3), meshes: c.meshes.length })),
   requests: [...requests.values()].map((r) => ({
     key: r.key, slot: r.slot, keep: r.keep, authored: r.authored,
     mirror: Boolean(r.mirror), dayAware: r.dayAware,
