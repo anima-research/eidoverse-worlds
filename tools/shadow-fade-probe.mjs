@@ -22,7 +22,7 @@ const shader = []; pg.on('console', (m) => { const t = m.text(); if (/^\[(jank|l
 const poll = async (fn, ms, every = 250) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await pg.evaluate(fn); if (v) return v; await pg.waitForTimeout(every); } return v; };
 try {
   await pg.goto(`${world.origin}/`, { waitUntil: 'domcontentloaded' });
-  await pg.evaluate(() => { localStorage.setItem('ew-cloud-quality', 'off'); localStorage.setItem('ew-shadows', 'on'); });
+  await pg.evaluate(() => { localStorage.setItem('ew-cloud-quality', 'off'); localStorage.setItem('ew-shadows', 'on'); localStorage.setItem('ew-my-shadow', '1'); });   // the own-body pref: its lit+depth warms run through the real renderer
   await pg.goto(`${world.origin}/?world=${W}&name=shadowfade&key=${world.key}&lite=0&webgpu=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 120000 });
   await pg.evaluate(async () => { globalThis.__rig = await import('./lib/lightrig.js'); });
@@ -40,6 +40,8 @@ try {
   check('restoring the budget fades back in', back === true);
   await pg.waitForTimeout(1500);
   check('no shader / pipeline / console errors while casters faded', shader.length === beforeErrs, shader.slice(beforeErrs, beforeErrs + 3).join(' | '));
+  const me = await poll(async () => { const mb = await import('./lib/mybody.js'); const root = mb.getMe()?.vrm?.scene; if (!root) return null; const ms = []; root.traverse((o) => { if (o.isMesh) ms.push(o); }); const cast = ms.filter((m) => m.castShadow).length; return cast ? { meshes: ms.length, cast, receive: ms.filter((m) => m.receiveShadow).length } : null; }, 60000, 500);
+  check("'my body casts a real shadow' on at boot: the own body casts and receives after its lit+depth warms", !!me && me.cast > 0 && me.receive === me.meshes, JSON.stringify(me));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
   if (shader.length) console.log('    pre-existing console errors at boot (emulator signatures):', shader.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }
