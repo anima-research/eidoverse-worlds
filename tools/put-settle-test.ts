@@ -182,6 +182,30 @@ check('same-pose put: t=60 between', between(world(crate), HAND5, { p: new THREE
 tick(T5 + 120); frame();
 check('same-pose put: t=120 exactly the fold\'s pose (it never stays drawn in the hand)', same(world(crate), { p: new THREE.Vector3(3, 0, 3), q: new THREE.Quaternion() }, 1e-9), J(world(crate).p.toArray()));
 
+// ---- S1 (review round 2): a throw by anyone — the launch entry lands in the CANONICAL fold before the holds message,
+// the presentation copy only on the next frame. The hold's end must not ask the realizer to revert to the pre-grab pose.
+{
+  const T6 = 18000; const reverts: string[] = []; const off = bus.on('pose-revert', ({ id }: any) => reverts.push(id));
+  tick(T6 - 1000); bus.emit('holds', { crate: { by: 'me' } });
+  for (let t = T6 - 1000; t < T6; t += 16) { tick(t); frame(); }
+  S.replica.sim = { sim: { bodies: { crate: { p: [0, 1, 0.35] } } }, foreign: false, launched: { crate: {} } };
+  tick(T6); bus.emit('holds', {});
+  check('a throw (canonical body, copy not yet refreshed): no pose-revert', reverts.length === 0, J(reverts));
+  check('a throw: nothing settling', !(tp.physicsApi.settling?.() ?? []).length, J(tp.physicsApi.settling?.()));
+  off(); S.replica.sim = null; frame();
+}
+// ---- S2.1: a put row for a hold this client never drew (no hand pose): the old snap, never a slide from the old rest
+{
+  const T7 = 20000;
+  state.applyView(view([10, 0, 10], q0)); crate.position.set(10, 0, 10); crate.quaternion.identity();
+  tick(T7 - 100); bus.emit('holds', { crate: { by: 'nobody-here' } });   // a holder with no avatar: drawHeld draws nothing
+  for (let t = T7 - 100; t < T7; t += 16) { tick(t); frame(); }
+  tick(T7); state.applyView(view([0, 0, 0], q0)); frame();
+  check('never drawn in a hand: nothing settling', !(tp.physicsApi.settling?.() ?? []).length, J(tp.physicsApi.settling?.()));
+  tick(T7 + 60); frame();
+  check('never drawn in a hand: t=60 is the new rest (a snap, not a slide along the floor)', world(crate).p.distanceTo(new THREE.Vector3(0, 0, 0)) < 1e-9, J(world(crate).p.toArray()));
+}
+
 // ---- a launch (a throw/drop: the engine's flight owns it) is not a put: left to the flight's own smoothing
 // (pres.bodies is the flight's; with no engine here there is none, so this only pins the guard's shape)
 

@@ -70,7 +70,7 @@ bus.on('holds', (h) => {
   for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id);
     // a hold that ends with no row moving the thing (a put back to the very pose it had: the fold didn't change, so no
     // change event ever re-asserts it): ask the realizer for the fold's pose and ease to it, as a put does
-    if (!presOwns(id) && entities.has(id)) { startSettle(id); bus.emit('pose-revert', { id }); } }
+    if (!flying(id) && entities.has(id) && !compsOf(id)?.motion) { startSettle(id); bus.emit('pose-revert', { id }); } }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
   // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the authority
   // takes it from whoever pressed down), and the press stops riding my presence (review 10-06)
@@ -101,13 +101,17 @@ onWorldChange((ev) => {
 // only: nothing sent, nothing logged; the collider sits the ease out (as a flight's does) and comes back at the truth.
 // A launch (throw, drop) is the engine's flight, not this.
 let SETTLE_MS = 120;   // lab knob (physicsApi.settle(ms))
+// the engine has it: the presentation copy lags a frame behind the canonical fold, which has a launch's body before the
+// holds message lands (review round 2 S1: a throw by anyone asked the realizer for the pre-grab pose on every client)
+const flying = (id) => presOwns(id) || !!replica.sim?.sim?.bodies?.[id];
 const settles = new Map();   // id -> { from: {p, q} world, drawn: {p, q} world, t0, dur, truth: {p, q} local | null (read on the first frame, after the realizer wrote it) }
 const drawnHeld = new Map();   // id -> {p, q} world: where drawHeld last put a held thing (the hand's place, as drawn)
 function startSettle(id) {
-  const obj = entities.get(id); if (!obj || presOwns(id) || compsOf(id)?.motion) return;
+  const obj = entities.get(id); if (!obj || flying(id) || compsOf(id)?.motion) return;
   const s = settles.get(id); const at = s?.drawn ?? drawnHeld.get(id);
+  if (!at) return;   // no hand this client drew it in (the holder's body not here yet, a joiner mid-hold): the snap, never a slide from the old rest (round 2 S2.1)
   if (s?.truth) { obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); }   // the realizer's write lands on the truth, never on a drawn pose
-  const from = at ? { p: at.p.clone(), q: at.q.clone() } : (obj.updateWorldMatrix(true, false), { p: obj.getWorldPosition(new THREE.Vector3()), q: obj.getWorldQuaternion(new THREE.Quaternion()) });
+  const from = { p: at.p.clone(), q: at.q.clone() };
   settles.set(id, { from, drawn: { p: from.p.clone(), q: from.q.clone() }, t0: performance.now(), dur: SETTLE_MS, truth: null });
   drawnHeld.delete(id);
 }
