@@ -117,10 +117,11 @@ check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spi
   check('remove.motion → delete motion; through the door it no longer moves', JSON.stringify(m.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'motion' } }]) && m.res.ok && m.after.comp?.motion === undefined, JSON.stringify([m.r.ops, m.res.refused]));
   const l = through({ 'remove.lock': null });
   check('remove.lock → delete lock; through the door it is unlocked (any builder may unlock)', JSON.stringify(l.r.ops) === JSON.stringify([{ verb: 'delete', args: { id: 'c1', component: 'lock' } }]) && l.res.ok && l.after.comp?.lock === undefined, JSON.stringify([l.r.ops, l.res.refused]));
-  // step 2 (design §6): a lamp is a Model with a Light component
+  // step 2 (design §6, revised 10-11: one place per thing): a lamp is a Model with a Light CHILD, a metre up
   const L = through({ 'add.Light': null }, open);
-  check('add.Light on a model → set light with its fields spelled out (write-new-on-edit)', JSON.stringify(L.r.ops) === JSON.stringify([{ verb: 'set', args: { id: 'c1', component: 'light', value: { color: 0xffd9a0, intensity: 16, range: 10 } } }]), JSON.stringify(L.r.ops));
-  check('…through the door it is lit with exactly those values (on an unlocked thing)', L.res.ok && L.after.comp?.light?.color === 0xffd9a0 && L.after.comp.light.intensity === 16 && L.after.comp.light.range === 10, JSON.stringify([L.res.refused, L.after.comp]));
+  { const o: any = L.r.ops[0]; const cc = o?.args?.components ?? {};
+    check('add.Light on a model → ONE create: a child light a metre up, under c1, with its fields spelled out (write-new-on-edit)', L.r.ops.length === 1 && o.verb === 'create' && o.args.id === 'c1-light' && cc.parent?.to === 'c1' && JSON.stringify(cc.transform?.pos) === '[0,1,0]' && JSON.stringify(cc.light) === JSON.stringify({ color: 0xffd9a0, intensity: 16, range: 10 }), JSON.stringify(L.r.ops)); }
+  check('…through the door the child is lit with exactly those values, under c1', L.res.ok && L.after.comp?.light === undefined, JSON.stringify(L.res));
 }
 check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());
 // KNOWN BUG (reported 2026-10-06, not fixed here): guard is merged into lock, but shared/components.js RECORDS

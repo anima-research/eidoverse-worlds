@@ -1174,6 +1174,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
+  // one place per thing (R 10-11 00:37; the answer: anything that needs its own place goes on a child): a light and a model
+  // never share an entity, so a light's pose is its own and the editor's gizmo moves one thing. Existing logs keep folding
+  // (the fold never refuses); the importer splits them; a carried value (an import) passes.
+  if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
+  if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);

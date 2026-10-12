@@ -242,7 +242,7 @@ const cases: Case[] = [
   { id: "B5", what: "41 #6 the heart: a 5 s timer re-asserting one light, 2 h simulated, nobody present: 0 entries, asleep; `always` and already lit: still 0 (elided)", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       const LIT = { kind: "point", color: 16711680, intensity: 1, range: 6, shadows: false };
-      s.call("bob", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } }); s.call("olive", "create", { id: "lamp2", model: "table-lamp", components: { light: LIT }, place: { at: [2, 0] } });
+      s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "lamp2", components: { label: "lamp2", light: LIT, transform: { pos: [2, 0, 0] } } });
       const HEART = `world.on("tick", () => world.set("self", "light", ${JSON.stringify(LIT)}));\nworld.on("wake", () => world.set("self", "light", ${JSON.stringify(LIT)}));\n`;
       install(s, "bob", "lamp", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5 });
       const always = install(s, "olive", "lamp2", "heart", HEART, { scope: { ids: "self", comps: ["light"] }, every: 5, always: true }).r;
@@ -337,7 +337,7 @@ const cases: Case[] = [
         modLog: s.w().mod.some((m: any) => m.verb === "ban" && m.who === "bob") }; },
     good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
   { id: "B16", what: "no-op elision (a stated rule for script batches, §3d): a use that re-sets the same value logs the visitor's act and nothing else", run(s) { cast(s);
-      s.call("bob", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, shadows: false });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
       s.call("bob", "set", { id: "lamp", component: "reactions", value: { on: { kind: "script", script: "on" } } });
       const n0 = s.entries().length; const a = s.call("vic", "use", { id: "lamp", action: "on" }); const n1 = s.entries().length; const b = s.call("vic", "use", { id: "lamp", action: "on" });
@@ -684,7 +684,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.asleep === 0 && JSON.stringify(o.evs) === '["ran","ran","ran"]' && o.woke >= 3590 && o.woke <= 3610 && o.n === 2 },
   // ---------------- P: param.<name> ----------------
   { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
-      s.call("bob", "create", { id: "swing", model: "swing-seat", place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
       install(s, "bob", "swing", "pump", onUse(`world.param("self", "light", "lean", 0.25); world.param("self", "t/pose", "lean", -1);`), { scope: { ids: "self", comps: ["light", "t/pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "swing", component: "reactions", value: { pump: { kind: "script", script: "pump" } } });
@@ -693,12 +693,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { r: st(s, r), light: comp(s, "swing", "light"), pose: comp(s, "swing", "t/pose"), typo: code(typo) }; },
     good: (o) => o.r === "ran" && o.light?.["param.lean"] === 0.25 && o.light?.intensity === 1 && o.pose?.["param.lean"] === -1 && o.typo === "schema" },
   { id: "P2", what: "param values are numbers: a direct set of param.lean = 'far' is refused, as is a bad parameter name, and world.param('x', 't/on') throws in the script", run(s) { cast(s);
-      s.call("bob", "create", { id: "seat", model: "crate", place: { at: [0, 0] } });
-      const str = s.call("bob", "set", { id: "seat", component: "light", value: { kind: "point", "param.lean": "far" } });
-      const name = s.call("bob", "set", { id: "seat", component: "light", value: { kind: "point", "param.9": 1 } });
-      install(s, "bob", "seat", "p", onUse(`world.param("self", "light", "lean", "far");`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
-      s.call("bob", "set", { id: "seat", component: "reactions", value: { p: { kind: "script", script: "p" } } });
-      return { str: code(str), name: code(name), script: st(s, s.call("vic", "use", { id: "seat", action: "p" })) }; },
+      s.call("bob", "create", { id: "seatl", components: { label: "seat light", transform: { pos: [1, 0, 0] } } });   // light-only (one place per thing)
+      const str = s.call("bob", "set", { id: "seatl", component: "light", value: { kind: "point", "param.lean": "far" } });
+      const name = s.call("bob", "set", { id: "seatl", component: "light", value: { kind: "point", "param.9": 1 } });
+      install(s, "bob", "seatl", "p", onUse(`world.param("self", "light", "lean", "far");`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
+      s.call("bob", "set", { id: "seatl", component: "reactions", value: { p: { kind: "script", script: "p" } } });
+      return { str: code(str), name: code(name), script: st(s, s.call("vic", "use", { id: "seatl", action: "p" })) }; },
     good: (o) => o.str === "shape" && o.name === "shape" && o.script === "failed thrown" },
   // ---------------- C: body effects meet consent ----------------
   { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose table says no (a behaviour is a stranger): refused where it lands, nothing logged; once vic allows it by name, it lands and the act records the consent used", run(s) { cast(s);

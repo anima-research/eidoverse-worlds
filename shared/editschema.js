@@ -883,6 +883,9 @@ function addOwnOps(ent, id, name, value) {
   // so a later change of the engine's defaults cannot change this lamp
   if (name === 'Light') {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
+    // one place per thing (R 10-11; the authority refuses a light on a model): on a model, the light is a CHILD thing a
+    // metre up, so its pose is its own and the gizmo moves one thing
+    if (c.model != null || ent?.lib != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, 1, 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
   if (name === 'Collider') {
