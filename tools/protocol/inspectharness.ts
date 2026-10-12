@@ -44,7 +44,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
         // every name client/lib imports from these modules exists (no-ops where the edit path never calls them)
         const noop = (names) => names.map((n) => `export const ${n} = () => {};`).join(" ");
         const src = {
-          world: `const H = globalThis.__ih; export const entities = H.entities; export const entityMeta = new Map(); export const comps = new Map(); export const avatarMounts = new Map(); export const editHolds = new Map(); export const behaviors = new Map();
+          world: `const H = globalThis.__ih; export const entities = H.entities; export const bagOf = (id) => H.replica.st?.entities?.[id]?.c ?? null; export function* bags() { for (const [k, e] of Object.entries(H.replica.st?.entities ?? {})) if (k !== '@world') yield [k, e.c]; } export const metaOf = () => null; export const avatarMounts = new Map(); export const editHolds = new Map(); export const behaviors = new Map();
             export const findPart = () => null; ${noop(["mountTransform", "setBodySeat", "socketWorldPos"])}`,
           state: `export const state = globalThis.__ih.state; export const onWorldChange = () => () => {}; ${noop(["applyView", "foldLive", "hydrate", "reset"])}`,
           net: `const H = globalThis.__ih;

@@ -18,7 +18,7 @@ try {
   for (let i = 0; i < 60; i++) { if (await evalJson(`import('/lib/net.js').then((m) => m.replicaActive())`).catch(() => false)) break; await sleep(300); }
   await sleep(7000);
   const air = await page(`const w = await import('/lib/world.js'), { THREE: T, scene } = await import('/lib/core.js'); const out = [];
-    for (const [id, o] of w.entities) { const c = w.comps.get(id); if (c?.physics?.kind !== 'dynamic') continue; o.updateWorldMatrix(true, true);
+    for (const [id, o] of w.entities) { const c = w.bagOf(id); if (c?.physics?.kind !== 'dynamic') continue; o.updateWorldMatrix(true, true);
       const b = new T.Box3().setFromObject(o); if (b.isEmpty()) continue; const mid = b.getCenter(new T.Vector3());
       const others = [...w.entities].filter(([k]) => k !== id).map(([, x]) => x);
       const rc = new T.Raycaster(new T.Vector3(mid.x, b.min.y - 0.005, mid.z), new T.Vector3(0, -1, 0), 0, 50); const hit = rc.intersectObjects(others, true)[0];
@@ -31,7 +31,7 @@ try {
     const o = w.entities.get('${id}'); const p = o.getWorldPosition(new T.Vector3()); c.myState.pos.set(p.x - 0.8, 0, p.z); b.bus.emit('cut-adopted'); await new Promise((z) => setTimeout(z, 2500));
     const before = o.getWorldPosition(new T.Vector3()).toArray(); const g = await t.physicsApi.grab('${id}'); await new Promise((z) => setTimeout(z, 2500));
     const P = { p: new T.Vector3(), q: new T.Quaternion() }; t.palmOf(n.net.you, 'right', P); const after = o.getWorldPosition(new T.Vector3());
-    const kids = [...w.entities].filter(([k]) => w.comps.get(k)?.parent?.to === '${id}').map(([k, x]) => [k, x.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2))]);
+    const kids = [...w.entities].filter(([k]) => w.bagOf(k)?.parent?.to === '${id}').map(([k, x]) => [k, x.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2))]);
     return { grab: g?.ok ?? g?.refused?.code, before: before.map((v) => +v.toFixed(2)), after: after.toArray().map((v) => +v.toFixed(2)), palm: P.p.toArray().map((v) => +v.toFixed(2)), toPalm: +after.distanceTo(P.p).toFixed(2),
       sceneParent: o.parent?.name || o.parent?.type, kids };`);
   console.log("HOLD", id, JSON.stringify(held));

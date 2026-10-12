@@ -10,6 +10,9 @@
 export const avatarMounts = new Map();
 export const entities = new Map();
 export const comps = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = () => null;
 export const behaviors = new Map();
 export const editHolds = new Map();
 export function mountTransform() { return null; }

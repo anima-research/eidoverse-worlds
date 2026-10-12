@@ -27,7 +27,9 @@ import { markPhase } from './boot.js';
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
 import { actorName } from '../../shared/protocol/names.js';
-export const replica = makeReplica();
+// the fold's records are frozen on a dev host (a reader that writes into one throws where it stands, C7); a visitor's
+// browser skips the walk
+export const replica = makeReplica({ freeze: CONFIG.dev });
 /** Is this client in a world (it has adopted the authority's cut)? */
 export const replicaActive = () => replica.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,

@@ -17,7 +17,7 @@ import { sendOps } from './editwrites.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { libLabels } from './assets.js';
-import { entities, entityMeta, comps, findPart } from './world.js';
+import { entities, metaOf, bags, bagOf, findPart } from './world.js';
 import { mouse } from './controller.js';
 import { flashHint, html } from './ui.js';
 import { engage, release } from './keyhints.js';
@@ -51,13 +51,13 @@ function makeSeatGizmo() {
   return g;
 }
 
-/** Rebuild all markers from the comps map. Parented to the entity ROOT in
+/** Rebuild all markers from the fold's records. Parented to the entity ROOT in
  *  model frame — the anchor's rest spot, matching socketWorldPos semantics
  *  (reach never oscillates with a part's motion, neither should the gizmo). */
 export function refreshSeatGizmos() {
   for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
   if (!isEditing()) return;
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     if (!bag.sockets) continue;
     const root = entities.get(id);
     if (!root) continue;
@@ -105,7 +105,7 @@ export function selectSeat(pick) {
   seatSel = pick;
   refreshSeatHighlight();
   engage('seatTurn');
-  const meta = entityMeta.get(pick.id) ?? {};
+  const meta = metaOf(pick.id) ?? {};
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
   setInspectorHtml(
     html`<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span><span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`);   // one html``: markup + markup would concatenate to a plain (text) string
@@ -123,7 +123,7 @@ export function resetSeats() {
   deselectSeat();
 }
 
-function socketsOf(id) { return structuredClone(comps.get(id)?.sockets ?? {}); }
+function socketsOf(id) { return structuredClone(bagOf(id)?.sockets ?? {}); }
 
 /** One merged comp entry per gesture, with its inverse on the undo stack —
  *  merged, because comp data replaces wholesale and a naive write would
@@ -146,7 +146,7 @@ function worldYawOf(root) {
  *  the `part` that makes an anchor RIDE. Only parts a motion comp actually
  *  names count: naming arbitrary mesh nodes would freeze junk into the log. */
 function partUnderHit(id, hitObj) {
-  const bag = comps.get(id) ?? {};
+  const bag = bagOf(id) ?? {};
   const names = new Set();
   for (const key in bag) {
     if (key.startsWith('motion:')) names.add(key.slice(7));

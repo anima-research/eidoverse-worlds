@@ -12,6 +12,7 @@
 // is, by the same data, sittable and placeable-on. Nobody authors that.
 
 import { THREE } from './core.js';
+import { bus } from './base.js';
 import { MeshBVH, estimateMemoryInBytes } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from './supportclass.js';
@@ -471,6 +472,8 @@ export function refitCollider(id) {
   decide(e, e.obj.scale?.x || 1);
   if (!suspended.has(id)) bucketAdd(id, e);
 }
+// the realizer's word that a realized object is going (realize/lifecycle.js): its collider goes with it
+bus.on('realized', ({ id }) => removeCollider(id));
 export function removeCollider(id) {
   suspended.delete(id);
   const e = colliders.get(id);

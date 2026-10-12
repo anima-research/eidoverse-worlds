@@ -16,9 +16,11 @@ import { inspectSchema, fieldAt, editOps, partLabel, libLabel } from '../shared/
 import { componentsOf } from '../shared/components.js';
 import { translate } from './protocol/import-v1/translate-v1.js';
 import { viewState } from '../shared/protocol/view.js';
+import { enc } from '../shared/protocol/names.js';
 import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
+import { materialize } from '../shared/protocol/componentspec.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -35,16 +37,31 @@ walk(join(import.meta.dir, '..', 'spec', 'fixtures'));
 for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
 
 const ents: [string, any][] = [];
+const folds: [string, any][] = [];   // the same entities as the fold holds them (C7b: the editor's one input)
 let untranslated = 0;
 for (const p of logs) {
   const old: any[] = [];
   for (const line of readFileSync(p, 'utf8').split('\n')) { if (!line) continue; try { old.push(JSON.parse(line)); } catch { /* skip */ } }
   let r: any; try { r = translate(old, { foldBuild: v1FoldBuild() }); } catch { untranslated++; continue; }
   const st: any = emptyState(); r.out.forEach((e: any, seq: number) => { if (e.kind === 'change') applyInPlace(st, opsOf(e), seq); });
-  for (const [id, e] of Object.entries(viewState(st).entities ?? {})) ents.push([id, e]);
+  for (const [id, e] of Object.entries(viewState(st).entities ?? {})) { ents.push([id, e]); folds.push([id, st.entities[enc(id)]?.c]); }
 }
 console.log(`${ents.length} final entities from ${logs.length} logs, translated (${untranslated} untranslatable)`);
 check('every corpus log translates, and the corpus is not empty', untranslated === 0 && ents.length > 10, `${untranslated} / ${ents.length}`);
+
+{
+  // the fold record is the one input: every corpus entity read as `c` (through view.js recordOf) gives the schema and the
+  // components its view gives, byte for byte — the pin that (b) moved the editor's input, not just its fixtures
+  const J = (v: any) => JSON.stringify(v);
+  // (`born` is the entity's, not its bag's: the view carries it as a stamp, a bare `c` can't)
+  const comps = (x: any) => { const r = componentsOf(x); const { born: _b, ...stamps } = r.stamps ?? {}; return { ...r, stamps }; };
+  let same = 0; const diff: string[] = [];
+  folds.forEach(([id, c], i) => {
+    const e = ents[i][1]; if (!c) { diff.push(`${id}: not in the fold`); return; }
+    if (J(inspectSchema(c, id)) === J(inspectSchema(e, id)) && J(comps(c)) === J(comps(e))) same++; else { diff.push(id); if (process.env.SHOW_DIFF) { const a = inspectSchema(c, id), b = inspectSchema(e, id); const d = (x: any, y: any, path = '') => { if (J(x) === J(y)) return; if (x && y && typeof x === 'object' && typeof y === 'object') { for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) d(x[k], y[k], `${path}.${k}`); } else console.log(`   ${id}${path}: fold ${J(x)} vs view ${J(y)}`); }; d(a, b); d(comps(c), comps(e), ' comps'); } }
+  });
+  check(`inspectSchema(c) ≡ inspectSchema(view) and componentsOf(c) ≡ componentsOf(view) over the corpus (${same}/${folds.length})`, same === folds.length && folds.length === ents.length, diff.slice(0, 5).join(', '));
+}
 
 const probs: string[] = [];
 let cards = 0;
@@ -74,6 +91,32 @@ for (const [id, e] of ents) {
       || a === 'flags.layer';   // the selection layer is a row of the Attributes tab (editpanels attributesFields), not a card
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
+}
+// C8: every engine card the corpus may lack (openable, pivot, description, story, text, particles…) on one synthetic thing —
+// every value row of a typed card is claimed by its card (shared/protocol/descriptors.js claims it, or the card's own
+// extra), and nothing a typed card shows is doubled on the raw-JSON floor. Mutation (2026-10-12): drop `intensity` from
+// the Light descriptor's show → "light.intensity is in no card" on every lamp here and in the corpus.
+{
+  const M = (k: string, x: any = {}) => materialize(k, x).value;
+  const every: any = { lib: 'store/x.glb', pos: [0, 0, 0], yaw: 0, comp: {
+    light: { ...M('light'), day: false, important: true }, collider: { shape: 'box' }, pivot: { pos: [0, 1, 0] },
+    motion: { type: 'pendulum', amp: 0.2 }, 'motion:a': { type: 'spin' }, 'motion:b': { type: 'orbit' }, 'motion:c': { type: 'bob' }, 'motion:d': { type: 'path', points: [[0, 0, 0], [1, 1, 1]], duration: 2 },
+    openable: { open: true, angle: 1 }, grabbable: { fits: ['key'] }, sockets: { seat: { pos: [0, 0.5, 0], body: {} } },
+    particles: { effect: 'fire', params: { count: 10 } }, picture: { src: 'store/a.png' }, sound: { src: 'store/a.mp3' }, story: { title: 't', text: 'x' },
+    text: { text: 'hi', background: 0x202020 }, 'look-at': { target: '@viewer' }, 'look-at:head': { target: 'c1' },
+    lock: true, hidden: true, disabled: true, label: 'nm', description: 'd', 'hesperus/material': { color: 1 }, physics: { kind: 'dynamic' }, home: { pos: [0, 0, 0] }, reactions: { push: { kind: 'push' } }, 'script:s': { paused: true }, 'local/recipe': { a: 1 } } };
+  const s = inspectSchema(every, 'every', { parts: ['lid'], box: [[-1, 0, -1], [1, 2, 1]], materials: [{ slot: 'm', name: 'm', color: 1 }], mutedForMe: false, effects: () => null });
+  const owned = new Set<string>([...s.sections.header, ...s.sections.list.flatMap((c: any) => c.fields)]);
+  const unowned: string[] = [];
+  for (const g of s.groups) for (const f of g.fields) {
+    if (f.k == null || f.t === 'info') continue;
+    const a = `${g.group}.${f.k}`;
+    const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a) || a === 'flags.layer';
+    if (!owned.has(a) && !replaced) unowned.push(a);
+  }
+  const floor = s.groups.find((g: any) => g.group === 'comp')!.fields.filter((f: any) => f.t === 'json').map((f: any) => f.k);
+  check(`one thing with every engine card: every value row is claimed by a card (${owned.size} claimed)`, unowned.length === 0, unowned.join(', '));
+  check('…and the raw-JSON floor holds only what no typed card draws (reactions, the script, the recipe): no doubled key', JSON.stringify(floor) === JSON.stringify(['reactions', 'local/recipe']), JSON.stringify(floor));
 }
 // the header's lib line reads the Model component, on every corpus entity (it said "lib ?" beside a Model card)
 {

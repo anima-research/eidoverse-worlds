@@ -33,7 +33,7 @@ try {
       const info = { same: cur === o, oldInScene: !!rootO.isScene, curInScene: !!rootC?.isScene, copiesInScene: copies, oldTier: o.userData?.tier ?? null, curTier: cur?.userData?.tier ?? null, curWorld: cur?.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)), writers: [...writers].sort((a, b) => b[1] - a[1]).slice(0, 8), refresh: globalThis.__refresh?.['${id}'] ?? null, chain, objWorld: o.getWorldPosition(new T.Vector3()).toArray().map((v) => +v.toFixed(2)), meshes, dbg: globalThis.__dbgHeld?.('${id}'), holds: Object.keys(t.physicsApi.holds?.() ?? {}), shown: !!t.physicsApi.shown?.()?.bodies?.['${id}'], parentObj: o.parent?.userData?.entityId ?? o.parent?.type, scale: o.scale.toArray().map((v) => +v.toFixed(3)) };
       c.myState.yaw += Math.PI / 2; await new Promise((z) => setTimeout(z, 1500)); const turned = gap();
       await t.physicsApi.put('${id}'); await new Promise((z) => setTimeout(z, 800));
-      return { walked, me: [+c.myState.pos.x.toFixed(2), +c.myState.pos.z.toFixed(2)], grab: g?.ok ?? g?.refused?.code, parent: w.comps.get('${id}')?.parent?.to ?? null, held, frames, info, turned };`);
+      return { walked, me: [+c.myState.pos.x.toFixed(2), +c.myState.pos.z.toFixed(2)], grab: g?.ok ?? g?.refused?.code, parent: w.bagOf('${id}')?.parent?.to ?? null, held, frames, info, turned };`);
     console.log(id, JSON.stringify(r));
   }
 } finally { await cleanup(0); }

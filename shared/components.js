@@ -6,20 +6,23 @@
 // text-tier resident reads. No record carries code; the realizers that give the
 // built-ins behaviour are the engine's own.
 //
-// Every spelling the wire has ever had is an ALIAS here (design §2.4, §6):
-// the old ones (`lib`, `kind: "light"`, `collide`, `parent`, `comp.motion`
-// with its `type` enum, `comp.sockets`, …) and the step-2 ones (`comp.light`
-// on any entity, `comp.collider`, and the Empty — a spawn with no `lib`).
-// `componentsOf` reads any folded entity as a component list, and `entityOf`
-// writes a component list back to exactly those bytes; an instance's `key`
-// says which spelling it came from (a Light with no key is `kind: "light"`, a
-// Light with key "light" is `comp.light`). Nothing in an existing world is
-// rewritten (RFC: updates are offered, never applied);
+// Every spelling the wire has is an ALIAS here (design §2.4, §6): `lib`,
+// `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …,
+// `comp.light` on any entity, `comp.collider`, and the Empty — a spawn with no
+// `lib`. (The v1 light verb's `kind: "light"` entity is gone from the view:
+// the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
+// what a thing is.) `componentsOf` reads any folded entity as a component list,
+// and `entityOf` writes a component list back to exactly those bytes; an
+// instance's `key` says which comp-bag key it came from. Nothing in an existing
+// world is rewritten (RFC: updates are offered, never applied);
 // tools/components-corpus-test.ts proves the round trip on every local world.
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
 import { ROT_MODES } from './euler.js';
+import { kindOf } from './protocol/kind.js';
+import { recordOf } from './protocol/view.js';
+import { materialize } from './protocol/componentspec.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -106,9 +109,10 @@ const DEFS = [
     params: { color: { t: 'color', default: 0xffd9a0 }, intensity: { t: 'num', default: 16, min: 0, softMax: 64, step: 1 }, range: { t: 'num', unit: 'm', default: 10, min: 1, softMax: 40, step: 1 },
       important: { t: 'bool', default: false, hint: 'always casts: first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, important, day} on any entity (a lamp is a Model and a Light), or the light verb\'s legacy kind:"light" entity; the legacy spelling wins when both are present' },
+    note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
+  // period, damp and maxAmp are the registry's (componentspec.js motion, pendulum): tools/descriptor-defaults-test.ts holds them there
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
-    params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 3.5, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 1.1, hint: 'cap on a push (server reaction only), radians' } },
+    params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 2.4, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0.08, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 0.9, hint: 'cap on a push (server reaction only), radians' } },
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
   { name: 'Spin', category: 'Motion', summary: 'turns steadily about an axis',
     params: { part, axis: axis('y'), rate: { t: 'num', unit: '°/s', default: 36, step: 5 }, pivot: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, phase: { ...deg, default: 0 } },
@@ -287,6 +291,7 @@ function compBag(inst) {
  *  nothing is dropped; tools/components-corpus-test.ts counts them. */
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
+  ent = recordOf(ent);
   const out = [];
   const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (view.js), kept through the round trip
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
@@ -296,13 +301,6 @@ export function componentsOf(ent) {
   const hasOrder = typeof ro === 'string' && ROT_MODES.includes(ro);
   if (hasOrder) tf.rotOrder = ro;
   out.push({ type: 'Transform', params: tf });
-  if (ent.kind === 'light') {
-    const p = pick(ent, ['color', 'intensity', 'range']);
-    if (ent.keep !== undefined) p.important = ent.keep;   // the legacy kind:"light" entity's own spelling
-    if (ent.day === false) p.burnsAtNoon = true;
-    // the fold stores `day` only as false; any other stored value is kept as-is
-    out.push({ type: 'Light', params: p, ...(ent.day !== undefined && ent.day !== false ? { wire: { day: ent.day } } : {}) });
-  }
   if (ent.lib !== undefined) out.push({ type: 'Model', params: { lib: ent.lib } });
   if (ent.collide !== undefined) out.push({ type: 'Collider', params: { shape: ent.collide } });
   if (ent.parent !== undefined) out.push({ type: 'Parent', params: { ...ent.parent } });
@@ -375,13 +373,7 @@ export function entityOf({ components, stamps = {} }) {
         break;
       }
       case 'Light': {
-        // keyed = comp.light (step 2); keyless = the legacy kind:"light" entity
-        if (inst.key != null) { comp[inst.key] = compBag(inst); break; }
-        ent.kind = 'light';
-        Object.assign(ent, pick(p, ['color', 'intensity', 'range']));
-        if (p.important !== undefined) ent.keep = p.important;   // the legacy entity's spelling
-        if (p.burnsAtNoon === true) ent.day = false;
-        else if (inst.wire?.day !== undefined) ent.day = inst.wire.day;
+        comp[inst.key ?? 'light'] = compBag(inst);
         break;
       }
       case 'Model': ent.lib = p.lib; break;
@@ -456,26 +448,21 @@ export function addable(components, { unmet = false, met = null } = {}) {
 // The browser, the text tier and the inspector each need to ask "is this a
 // light, and with what?" of an entity that may use either spelling. They ask
 // HERE, so the answer (and its defaults, which are the fold's) is written once.
-export const LIGHT_DEFAULTS = Object.freeze({ color: 0xffd9a0, intensity: 16, range: 10 });
+// the registry's light (componentspec.js), the three fields every reading needs: what the authority writes into a bare {light: {}}
+export const LIGHT_DEFAULTS = Object.freeze((({ color, intensity, range }) => ({ color, intensity, range }))(materialize('light', {}).value));
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
-/** The light an entity casts, normalized, or null. Either spelling:
- *  kind:"light" (the light verb; the fold already defaulted its fields) or a
- *  plain-object comp.light on any other entity. When both are present the
- *  legacy kind:"light" wins (the authority refuses `comp light` on such an entity;
- *  this rule is for hand-written logs). A comp.light field of the wrong type
- *  reads as its default — never a throw, never NaN reaching the rig. */
+/** The light an entity casts, normalized, or null: a plain-object comp.light on any entity (a bare light, or an imported
+ *  lamp that is a model too). A field of the wrong type reads as its default — never a throw, never NaN reaching the rig. */
 export function lightOf(ent) {
   if (!ent || typeof ent !== 'object') return null;
-  const legacy = ent.kind === 'light';
-  const src = legacy ? ent : (isBag(ent.comp?.light) ? ent.comp.light : null);
+  const src = isBag(ent.comp?.light) ? ent.comp.light : null;
   if (!src) return null;
   return {
-    spelling: legacy ? 'kind' : 'comp',
     color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
     intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : LIGHT_DEFAULTS.intensity,
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
-    important: (legacy ? src.keep : src.important) === true,
+    important: src.important === true,
     day: src.day !== false,
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
     // a point light is the default and says nothing more; a spot adds its kind and cone
@@ -495,8 +482,8 @@ export function colliderOf(ent) {
 }
 
 /** An Empty: an entity with nothing but a Transform (and whatever comps it
- *  carries) — no model, not a legacy light. A pivot, a group parent, a target. */
-export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.lib == null;
+ *  carries) — no model, no light, no mesh. A pivot, a group parent, a target. */
+export const isEmpty = (ent) => !!ent && typeof ent === 'object' && kindOf(ent) === 'empty';
 
 /** Why a `comp` of type light/collider would be refused, or null. The authority
  *  (server/verbs.ts vComp) and the inspector ask the same question, so a
@@ -506,7 +493,6 @@ export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !==
 export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
   if (type === 'light') {
-    if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
     if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';

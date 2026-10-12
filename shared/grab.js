@@ -34,6 +34,8 @@
 // Pure: no DOM, no three, no clock. The authority validates with checkGrabbable; client, door and agent read with grabOf.
 
 import { HUMANOID_BONES } from './humanoid.js';
+import { REACH } from './protocol/physconst.js';
+import { materialize } from './protocol/componentspec.js';
 
 export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
 // a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
@@ -49,11 +51,12 @@ export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part']
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
 // Flipping it to 'visitor' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
-export const DEFAULT_WHO = 'visitor';   // R 10-07: "I vote for visitors being able to grab and throw" (a world narrows it per thing with who)
-export const DEFAULTS = Object.freeze({ enabled: true, who: DEFAULT_WHO, steal: true, range: 1.5, priority: 0, hold: 'auto', pose: null, grips: Object.freeze({}),
-  twoHanded: false, throw: 1, release: 'drop', returnAfter: 0, home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
-/** The authority's hand reach today (authority.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
-export const HAND_REACH = 1.5;
+export const DEFAULT_WHO = materialize('grabbable', {}).value.who;   // 'visitor' (R 10-07: "I vote for visitors being able to grab and throw"; a world narrows it per thing with who)
+// the written defaults are the registry's (componentspec.js grabbable.defaults: what the authority writes into a bare
+// {grabbable: {}}); the rest is what a reader fills in for a field the authority leaves absent
+export const DEFAULTS = Object.freeze({ ...materialize('grabbable', {}).value, pose: null, grips: Object.freeze({}), home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
+/** The authority's hand reach (physconst.js REACH): a range past it is granted as a pull (the thing flies to the hand). */
+export const HAND_REACH = REACH;
 /** A free socket takes a released thing that fits within this many metres of it, unless it says otherwise. */
 export const SOCKET_RADIUS = 0.15;
 /** VR near-grab: the hover sphere around a hand, × the avatar's scale (VRChat's number). */

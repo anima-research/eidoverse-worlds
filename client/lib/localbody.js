@@ -24,13 +24,14 @@ import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
 } from './controller.js';
 import { camera } from './core.js';
-import { avatarMounts, mountTransform, comps, socketWorldPos, setBodySeat, entities } from './world.js';
+import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities } from './world.js';
 import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
 import { posable, pushable, bodyTable, onConsentChange } from './consent.js';
+import { makeConsentSync } from './consentsync.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
@@ -99,7 +100,7 @@ export const seatLeaving = () => !!leaving;
 /** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
 export function mySeatBody() {
   const m = avatarMounts.get(CONFIG.name);
-  return m ? bodyOf(comps.get(m.to)?.sockets?.[m.slot]) : null;
+  return m ? bodyOf(bagOf(m.to)?.sockets?.[m.slot]) : null;
 }
 /** Get off my seat, if the socket lets this kind of leaving through ('move' | 'jump' | 'menu' | 'script'). True when
  *  I'm off (or on my way off, with a leave clip). */
@@ -247,7 +248,7 @@ function nearestSeat(arg, reach) {
   const mine = avatarMounts.get(CONFIG.name);
   const taken = new Set([...avatarMounts].filter(([id]) => id !== CONFIG.name).map(([, o]) => `${o.to}/${o.slot}`));
   let best = null, bestD = reach;
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     if (!bag.sockets) continue;
     if (want && !id.toLowerCase().startsWith(want)) continue;
     for (const slot of Object.keys(bag.sockets)) {
@@ -276,7 +277,7 @@ let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes e
 export function trySitOn(arg, slot = null) {
   const mine = avatarMounts.get(CONFIG.name);
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
-  if (best && slot && best.slot !== slot) { const b = bodyOf(comps.get(best.id)?.sockets?.[slot]); if (b) Object.assign(best, { slot, body: b }); }
+  if (best && slot && best.slot !== slot) { const b = bodyOf(bagOf(best.id)?.sockets?.[slot]); if (b) Object.assign(best, { slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
     if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);
@@ -509,11 +510,10 @@ function applyShove(lean, by) {
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
 
-  // my two switches, as the authority's consent table for my body: the server checks it before it forwards anyone's
-  // knock-over, pose or grab (consent.js bodyTable). Every arrival (a world's presence plane is its own), every change.
-  const syncConsent = () => { if (CONFIG.renderer || CONFIG.spectate) return;
-    for (const [cls, mode] of bodyTable()) sendRequest('consent', { set: { class: cls, tier: 'strangers', mode } }).catch?.(() => {}); };
-  bus.on('hydrated', syncConsent); onConsentChange(syncConsent);
+  // my two switches as the authority's consent table for my body (consentsync.js): every arrival, every change; a refusal
+  // is a toast and a retry
+  const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate) });
+  onConsentChange(consentSync.sync);
 
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to

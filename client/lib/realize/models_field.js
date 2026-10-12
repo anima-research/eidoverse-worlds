@@ -9,18 +9,20 @@
 // flora_field.js / emitter_field.js.
 
 import { P } from '../scheduler.js';
+import { kindOf } from '../../../shared/protocol/kind.js';
+export { kindOf };
 
 /** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: 'model' | 'light'; lib only meaningful for models.
- *  @typedef {{ kind: 'model'|'light', lib?: string }} RealizedView */
+ *  drift. kind: kindOf's word; lib only meaningful for models.
+ *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', lib?: string }} RealizedView */
 
 /** Diff folded entities against the realized view.
  *
  *  Identity rules:
  *  - an id in state but not realized → create
  *  - realized but gone from state → retire
- *  - realized as one kind, folded as the other (a `light` verb landing on a
- *    model id, or a spawn replacing a light — the id namespace is flat) →
+ *  - realized as one kind, folded as another (a light component landing on an
+ *    Empty's id, or a model replacing a light — the id namespace is flat) →
  *    rebuild (retire + create)
  *  - a model whose `lib` changed → rebuild. The fold OVERWRITES a same-id
  *    spawn (that is what the reference fold does; the realizer projects
@@ -33,11 +35,6 @@ import { P } from '../scheduler.js';
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
-/** What the realizer builds for a folded entity: a legacy `light`-verb light,
- *  an Empty (a spawn with no lib — PROTOCOL §3.2: an invisible Object3D), or a
- *  model. One answer for planReconcile and models.js alike. */
-export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? 'empty' : 'model');
-
 /** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider (R 10-11:
  *  "present in the world as links, but not downloaded… until someone re-enables it"). Same rule as the engine's offChain. */
 export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k = stEntities[k]?.parent?.to, n++) if (stEntities[k]?.comp?.disabled === true) return true; return false; }
@@ -79,14 +76,11 @@ export function bandForDistance(d) {
  *  that cannot execute yet simply stays visible in the fold until both ends
  *  are live. */
 export function mountsTouching(stEntities, touchedId, childrenOf = null) {
-  // `childrenOf` (parent id -> Set of child ids, the hosted half's
-  // fold-parent index, §16.2.C) answers the carrier direction in
-  // O(children) instead of O(world); membership is identical to the scan
-  // below by construction (the index is maintained on every parent write).
+  // `childrenOf(id)` (the fold's own index, world.js) answers the carrier direction in O(children) instead of
+  // O(world); membership is the scan's below by construction (the index is kept at every ingest).
   if (childrenOf) {
     const out = stEntities[touchedId]?.parent ? [touchedId] : [];
-    const kids = childrenOf.get(touchedId);
-    if (kids) for (const cid of kids) out.push(cid);
+    for (const cid of childrenOf(touchedId)) out.push(cid);
     return out;
   }
   const out = [];

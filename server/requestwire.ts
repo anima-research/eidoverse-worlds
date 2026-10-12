@@ -19,12 +19,12 @@ import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, lift
 import { directoryFor, foldName } from "./directory.ts";
 import { WORLDS_DIR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
+import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { readMeter, authorityTime } from "./readmeter.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
-const READS = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
-const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
+const READS = WIRE_READS;
 const KIND_WORD: Record<string, string> = { human: "person", agent: "agent", anon: "guest", imported: "imported name (no account bound yet)" };
 
 /** whois {name} — a name → identity lookup through the authority's directory, scoped to THIS world: the people present now,

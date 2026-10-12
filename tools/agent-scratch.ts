@@ -18,7 +18,7 @@ import { openWorld } from "../server/filehost.ts";
 import { viewState } from "../shared/protocol/view.js";
 import { enc, encName } from "../shared/protocol/names.js";
 import { qNorm, qFromYaw } from "../shared/rot.js";
-import { makeReplica, stateView } from "../shared/protocol/replica.js";
+import { makeReplica, wireState } from "../shared/protocol/replica.js";
 
 // any model path the tests name: the lab's measured models where they exist, else one the door can name, unmeasured
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
@@ -39,7 +39,7 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
   let joined = false;
   /** the agent takes the door's current state as its next view */
   const sync = async (live: boolean, who: string | null = null, ts: number | null = null) => {
-    A.replica.adopt({ state: stateView(w.state()), head: -1 });
+    A.replica.adopt({ state: wireState(w.state()), head: -1 });
     await A.applyView(joined ? live : false, who, ts ?? T);
     joined = true;
   };

@@ -10,15 +10,14 @@
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
+import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
-import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
+import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
-import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./sculpt.js";
 import * as SR from "./scriptrules.js";
@@ -28,649 +27,30 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
-import { planVelocity } from "./launchplan.js";
-import { collisionBoxes } from "../structure.js";
+import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { planLaunch } from "./launchplan.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BODY_REACH } from "./physconst.js";
+import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
+import { CTX } from "./authority/ctx.js";
+import { Refusal, refuse, said } from "./authority/refuse.js";
+import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue } from "./authority/catalogue.js";
+export { LAB_CATALOGUE, withCatalogue } from "./authority/catalogue.js";
+import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, slug, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
+import { SPATIAL, WORK_BUDGET, clockMs, familyOf, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
+export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
+import { RANK, backward, banOf, creatorOf, effective, entryBy, ghostOf, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
+export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
 
-// ---------- the model catalogue (engine, slice 2) ----------
-// The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
-// (server/modelcatalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
-// list(query) → [name, entry][] }. An entry is { label, size?, box?, surfaces, solids?, sockets? }:
-//   box      [[x,y,z], [x,y,z]] in the model's frame (a GLB's origin is wherever its author put it); absent → the lab's
-//            convention, a size-box with the origin at the base centre;
-//   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
-//   size     absent → a model this server can name but not measure (no placement help, no collisions, said so).
-// request() sets CAT for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
-// own keys only: MODELS["constructor"] is Object (the lab authority accepted model "constructor"; L1's no-prototype rule)
-export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
-let CAT = LAB_CATALOGUE;
-let THROUGH = false; // the request's throughLock flag, set by request() for one synchronous call (like CAT)
-// is this identity a guest (no account: the authority directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
-let ISANON = () => false;
-// the directory knows this identity (a world opened without a directory, as in the lab, knows everyone)
-let KNOWNID = (_id) => true;
-const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
-const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
-const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
-// A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the authority
-// never read `structure`, so bodies walked through Commons walls and things were put inside them). Its geometry is the
-// structure's own collision boxes (shared/structure.js collisionBoxes: the same derivation the browser's colliders use),
-// in the thing's frame, as a measured model's `solids` are; its floors are surfaces (a body steps over a slab, a thing
-// rests on one), and a doorway is the absence of a box, so it stays walkable. The anchor's model is ignored, as the
-// browser hides it. Cached per structure VALUE (a write replaces a value, never changes it in place), so the spatial
-// index's identity checks still hold. Past STRUCT_MAX solid boxes the building's whole box stands (conservative, as
-// server/solids.ts does past its limit).
-const STRUCT_MAX = 512; const STRUCTGEO = new WeakMap();
-function structGeom(v) {
-  if (!v || typeof v !== "object" || Array.isArray(v) || v === PURGED) return undefined;
-  if (STRUCTGEO.has(v)) return STRUCTGEO.get(v);
-  let boxes = []; try { boxes = collisionBoxes(v); } catch { boxes = []; }
-  const ok = (b) => [b.x0, b.y0, b.z0, b.x1, b.y1, b.z1].every(Number.isFinite);
-  const lohi = (b) => [[Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)], [Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)]];
-  const walls = boxes.filter((b) => ok(b) && b.kind !== "floor").map(lohi);
-  // floors as surfaces, one per row run of tiles at one height (a 30 × 30 floor is 30 surfaces, not 900)
-  const rows = new Map(); for (const b of boxes) if (ok(b) && b.kind === "floor") { const [lo, hi] = lohi(b); const k = `${hi[1]}|${lo[2]}|${hi[2]}`; let a = rows.get(k); if (!a) rows.set(k, (a = [])); a.push([lo[0], hi[0], lo[1]]); }
-  const surfaces = [], floors = [];
-  for (const [k, a] of rows) { const [y, z0, z1] = k.split("|").map(Number); a.sort((p, q) => p[0] - q[0]);
-    for (let i = 0; i < a.length;) { let x0 = a[i][0], x1 = a[i][1], y0 = a[i][2]; i++; while (i < a.length && a[i][0] <= x1 + 1e-6) { x1 = Math.max(x1, a[i][1]); y0 = Math.min(y0, a[i][2]); i++; }
-      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push([[x0, y0, z0], [x1, y, z1]]); } }
-  const all = [...walls, ...floors];
-  let g;
-  if (!all.length) g = undefined;   // an empty plan (a building just started): nothing to stand on or bump into
-  else { const lo = [0, 1, 2].map((i) => Math.min(...all.map((b) => b[0][i]))), hi = [0, 1, 2].map((i) => Math.max(...all.map((b) => b[1][i])));
-    g = { label: "a building", structure: true, box: [lo, hi], size: hi.map((x, i) => x - lo[i]), surfaces, solids: walls.length > STRUCT_MAX ? [[lo, hi]] : walls }; }
-  STRUCTGEO.set(v, g); return g;
-}
-/** A thing's geometry: its building's (structure) if it has one, else its model's. */
-const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
-/** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
-export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
-// ---------- storage ----------
-const CHANGE = Symbol("admitted change write");
-export const posAt = (e, i) => { if (e && typeof e === "object") Object.defineProperty(e, "seq", { value: i, enumerable: false, configurable: true }); return e; };
-/**
- * A world over injected storage.
- * @param {{ name: string, entries: any[], getBlob: (h: string) => any, putBlob: (v: any) => string,
- *   writeLine: (line: string) => void, now: () => number,
- *   presence?: { bodies: object, holds: object }, savePresence?: (p: object) => void }} io
- *   entries: what readLog returned for the log so far, each with its seq attached by posAt (unenumerable).
- *   getBlob must verify a blob against its name and throw if it doesn't match (§2.2).
- *   writeLine appends one already-checked line (no trailing LF) to durable storage.
- *   now: the authority's clock in ms (§2.1 ts); presence: the unlogged presence plane (P1, P2).
- */
-export function worldOf(io) {
-  const { name, entries, getBlob, putBlob } = io;
-  const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
-  w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
-  w.random = io.random ?? null;
-  w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
-  w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
-  w.now = io.now;
-  // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/protocol/sandbox.js), never imported
-  // here (browsers import this file). No sandbox: scripts install, and every activation says "unavailable".
-  w.scripts = io.scripts ?? null;
-  // who is present beyond the authority's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
-  w.present = io.present ?? null;
-  // the presence plane: bodies and holds. Transient, never logged (P1, P2)
-  w.presence = io.presence ?? { bodies: {}, holds: {} };
-  w.savePresence = () => io.savePresence?.(w.presence);
-  // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
-  // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).
-  w.custody = () => io.custody ?? null;
-  // §2.1: moderation lives in a SEPARATE moderator log with the authority's enforcement, never in the world log
-  w.mod = io.mod ?? [];
-  w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; w.mod.push(r); io.appendMod?.(r); };
-  let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
-  // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
-  // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
-  w.state = () => { if (cache?.n === entries.length) return cache.st;
-    const fresh = entries.slice(cache?.n ?? 0);
-    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "act", "sim", "say"].includes(e.kind))) {
-      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
-      return (cache = { n: entries.length, st }).st; }
-    return (cache = { n: entries.length, st: fold(entries) }).st; };
-  // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
-  // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
-  const heads = [];
-  w.headAt = (seq) => { for (let i = heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1];
-      heads[i] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq] ?? null; };
-  // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
-  const ever = { n: 0, ids: new Set() };
-  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
-  w.sim = () => simFold(entries, w.now());
-  w.stateAt = (seq) => fold(entries, { until: seq });
-  // The authority re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
-  // §2.1: ts = the authority's admission time, an integer that never decreases along the log (a clock that steps back,
-  // an NTP slew or a VM restore, must not make the authority write a line every reader refuses)
-  w.nextTs = () => { let lastTs = 0; for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastTs = entries[i].ts; break; }
-    return Math.max(Math.floor(w.now()), lastTs); };
-  // §2.4 the chain: "the authority signs at least every write it commits". When custody can sign, every entry after
-  // genesis is a chain point {head, sig} (genesis can't be: the world id is the hash of genesis itself). head(i) is
-  // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
-  const render = (e, seq, chained = false) => {
-    const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.pinTs ?? w.nextTs() };
-    // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
-    // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
-    // body carries 16 random bytes (round-2 review R3). Readers take bodies by field, so the salt is invisible to them.
-    if (io.custody?.sign && ["act", "say", "sim"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
-      obj.body = { ...obj.body, salt: nonce16(w) };
-    if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
-      const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
-      obj.head = head; obj.sig = io.custody.sign(`eidoverse-head:${w.worldId}:${seq}:${head}`); }
-    const line = JSON.stringify(obj);
-    const [parsed] = readLog(line); let bad = parsed instanceof Malformed ? parsed : null;
-    if (!bad) try { checkEntry(parsed, seq); } catch (x) { bad = x; }
-    return { line, parsed, bad };
-  };
-  // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any is written, so a
-  // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
-  w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k); if (!bad) continue;
-    if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§1)`, "split it into smaller requests, or put big data in a blob and store its hash");
-    throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
-  w.append = (e, token) => {
-    if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (§7: one gate)");
-    w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
-    if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
-    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
-    if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
-    w.exists = true; return seq;
-  };
-  return w;
-}
-// 16 random bytes as base64url (a genesis nonce, a set's salt). io.random(n) → Uint8Array may be injected (a test that
-// compares two runs byte for byte seeds both alike); otherwise Web Crypto, in bun and browsers alike.
-const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.getRandomValues(new Uint8Array(16)); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
-const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
-// §2.4 "The chain": the skeleton keeps each set's value and salt only as commit = sha256(salt ‖ JCS(value)), and an
-// act/say/sim body only as {commit}; a body or op already {commit} is purged and stays as it is.
-const opCommit = (o) => ("commit" in o && !("value" in o) ? o.commit : sha256((o.salt ?? "") + jcs(o.value)));
-const skelOp = (o) => { const { value, salt, commit, ...rest } = o; return "value" in o || "commit" in o ? { ...rest, commit: opCommit(o) } : rest; };
-const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commit") return b.commit; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
-function skeleton(e) {
-  const { head, sig, ...s } = e;
-  if (["act", "say", "sim"].includes(e.kind)) s.body = { commit: bodyCommit(e.body) };
-  else if (e.kind === "change") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
-  return s;
-}
-const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
-/** Seal a whole log the authority didn't write line by line (a translation): the same salts and chain points render gives
- *  each line it appends (§2.4; round-2 review R3). entries[0] is genesis (never a chain point: the world id is its
- *  hash); every later entry gets a salt on each set and on its act/say/sim body, then {head, sig}. Returns new objects;
- *  `sign(msg)` is the sequencer key's, `random(n)` optional. */
-export function seal(entries, { sign, random } = {}) {
-  if (typeof sign !== "function") throw new Error("seal needs the sequencer's sign()");
-  const w = { random: random ?? null }; const out = []; let prev = "00".repeat(32); const wid = worldIdOf(entries[0]);
-  for (let i = 0; i < entries.length; i++) {
-    let e = JSON.parse(JSON.stringify(entries[i])); delete e.head; delete e.sig;
-    if (i > 0) {
-      if (e.kind === "change") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
-        e.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.verb === "set" ? salt({ verb: "set", ...e.body }) : e.body;
-        if (e.verb === "set") { const { verb: _v, ...b } = e.body; e.body = b; } }
-      else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
-    }
-    prev = chainStep(prev, e);
-    if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-head:${wid}:${i}:${prev}`); }
-    out.push(e);
-  }
-  return out;
-}
-// §3d M7: expect by version is {seq, head}, never a bare seq. A head this history doesn't have at that seq means the
-// version was read on a branch that was rewound (or in another world): refused, never compared by seq alone.
-function versionSeq(w, v, what) {
-  if (!(v && typeof v === "object" && !Array.isArray(v) && Number.isInteger(v.seq) && typeof v.head === "string" && Object.keys(v).length === 2))
-    refuse("shape", `${what} is a version {seq, head}, never a bare seq`, "inspect {id} → versions gives {seq, head} for each component; a write's result carries its own seq and head");
-  if (v.seq < 0 || v.seq >= w.entries.length || w.headAt(v.seq) !== v.head)
-    refuse("other-branch", `${what} {seq: ${v.seq}} names a head this world's history doesn't have at that seq: it was read on a branch that was rewound, or elsewhere`, "inspect again and redo the change on what's here");
-  return v.seq;
-}
-const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
-const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-// PROTOCOL §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
-// untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
-// A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
-const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
-// lock levels (R, 10-07): a lock is `true` or {rank: builder|moderator|owner}; only that rank and above — or whoever set it
-// — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
-export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
-export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
-const r3 = (n) => Math.round(n * 1000) / 1000;
-// a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
-// and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
-const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
-const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
-const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
-const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
-const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
-// a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values
-// are never mutated in place, as a live world's states already share them). A deep copy per preview made a batch of 50
-// creates copy a 2 000-thing world 100 times (review 10-06 S0-2).
-const scratch = (st, ops) => { const s = applyCow(cowState(st), ops); if (VOLATILE.has(st.entities)) VOLATILE.add(s.entities); return s; };
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "thing";
-
-// ---------- math (yaw-only rotation is enough for placement in this lab; q is stored whole) ----------
-const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
-const qYaw = (q) => 2 * Math.atan2(q[1], q[3]);
-function qmul(a, b) {
-  return [a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1], a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],
-          a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3], a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]];
-}
-function qrot(q, v) {
-  const [x, y, z, w] = q; const [vx, vy, vz] = v;
-  const tx = 2*(y*vz - z*vy), ty = 2*(z*vx - x*vz), tz = 2*(x*vy - y*vx);
-  return [vx + w*tx + (y*tz - z*ty), vy + w*ty + (z*tx - x*tz), vz + w*tz + (x*ty - y*tx)];
-}
-const qinv = (q) => [-q[0], -q[1], -q[2], q[3]];
-
-function worldT(st, id, depth = 0) {
-  const e = st.entities[id]; if (!e) return null;
-  const t = { ...COMPONENTS.transform.defaults, ...(e.c.transform ?? {}) };
-  const p = e.c.parent?.to;
-  if (!p || depth > 32 || !st.entities[p]) return t;
-  const pt = worldT(st, p, depth + 1);
-  const off = qrot(pt.q, t.pos.map((v, i) => v * pt.scale[i]));
-  return { pos: pt.pos.map((v, i) => v + off[i]), q: qmul(pt.q, t.q), scale: t.scale.map((v, i) => v * pt.scale[i]) };
-}
-function localFrom(st, parentId, wt) {
-  const pt = worldT(st, parentId);
-  const d = qrot(qinv(pt.q), wt.pos.map((v, i) => v - pt.pos[i]));
-  return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qr3(qmul(qinv(pt.q), wt.q)), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
-}
-function aabb(st, id) {
-  const e = st.entities[id]; const m = geomE(e); if (!m) return null;
-  const t = worldT(st, id); const [lo0, hi0] = boxOfM(m);
-  const corners = [];
-  for (const x of [lo0[0], hi0[0]]) for (const y of [lo0[1], hi0[1]]) for (const z of [lo0[2], hi0[2]]) {
-    const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]);
-    corners.push(p.map((v, i) => v + t.pos[i]));
-  }
-  const min = [0, 1, 2].map((i) => Math.min(...corners.map((c) => c[i])));
-  const max = [0, 1, 2].map((i) => Math.max(...corners.map((c) => c[i])));
-  return { min, max };
-}
-function solids(st, id) {
-  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
-  if (!m.solids) { const b = aabb(st, id); return b ? [b] : []; }
-  const t = worldT(st, id);
-  return m.solids.map(([lo, hi]) => { const cs = [];
-    for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); cs.push(p.map((v, i) => v + t.pos[i])); }
-    return { min: [0, 1, 2].map((i) => Math.min(...cs.map((c) => c[i]))), max: [0, 1, 2].map((i) => Math.max(...cs.map((c) => c[i]))) }; });
-}
-// Oriented boxes + the separating-axis test (F21): world-AABBs of rotated solids fatten into false overlaps.
-function obbs(st, id) {
-  const e = st.entities[id]; const m = geomE(e); if (!m) return [];
-  const t = worldT(st, id); const boxes = m.solids ?? [boxOfM(m)];
-  const ax = [qrot(t.q, [1, 0, 0]), qrot(t.q, [0, 1, 0]), qrot(t.q, [0, 0, 1])];
-  return boxes.map(([lo, hi]) => { const lc = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 * t.scale[i]);
-    const off = qrot(t.q, lc); return { c: t.pos.map((v, i) => v + off[i]), ax, h: [0, 1, 2].map((i) => Math.abs(hi[i] - lo[i]) / 2 * Math.abs(t.scale[i])) }; });
-}
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const satCost = (A, B) => (isI(A.ax) && isI(B.ax) ? 1 : 10);   // work units (the spatial index's budget): measured 0.1 / 1 µs
-const NONE = new Set();
-const isI = (ax) => ax[0][0] === 1 && ax[0][1] === 0 && ax[0][2] === 0 && ax[1][0] === 0 && ax[1][1] === 1 && ax[1][2] === 0 && ax[2][0] === 0 && ax[2][1] === 0 && ax[2][2] === 1;
-function satDepth(A, B) { // smallest penetration over the 15 axes; <= 0 means separated
-  // two unrotated boxes (most pairs): the 15 axes are the world's three, so the same numbers in the same order, without
-  // building them (a place's search tests thousands of pairs)
-  if (isI(A.ax) && isI(B.ax)) { let b = Infinity; for (let i = 0; i < 3; i++) { const p = A.h[i] + B.h[i] - Math.abs(B.c[i] - A.c[i]); if (p < b) b = p; if (b <= 0) return b; } return b; }
-  // the general case: the same axes in the same order (A's, B's, then their normalized cross products) and the same
-  // sums in the same order as ever (ra and rb summed from 0), without allocating them (a rotated pair cost ~8 µs)
-  const Ah = A.h, Bh = B.h, Aa = A.ax, Ba = B.ax; const d0 = B.c[0] - A.c[0], d1 = B.c[1] - A.c[1], d2 = B.c[2] - A.c[2]; let best = Infinity;
-  const p = (L0, L1, L2) => (0 + Ah[0] * Math.abs(Aa[0][0] * L0 + Aa[0][1] * L1 + Aa[0][2] * L2) + Ah[1] * Math.abs(Aa[1][0] * L0 + Aa[1][1] * L1 + Aa[1][2] * L2) + Ah[2] * Math.abs(Aa[2][0] * L0 + Aa[2][1] * L1 + Aa[2][2] * L2))
-    + (0 + Bh[0] * Math.abs(Ba[0][0] * L0 + Ba[0][1] * L1 + Ba[0][2] * L2) + Bh[1] * Math.abs(Ba[1][0] * L0 + Ba[1][1] * L1 + Ba[1][2] * L2) + Bh[2] * Math.abs(Ba[2][0] * L0 + Ba[2][1] * L1 + Ba[2][2] * L2))
-    - Math.abs(d0 * L0 + d1 * L1 + d2 * L2);
-  for (const ax of [Aa, Ba]) for (let i = 0; i < 3; i++) { const q = p(ax[i][0], ax[i][1], ax[i][2]); if (q < best) best = q; if (best <= 0) return best; }
-  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const a = Aa[i], b = Ba[j];
-    const c0 = a[1] * b[2] - a[2] * b[1], c1 = a[2] * b[0] - a[0] * b[2], c2 = a[0] * b[1] - a[1] * b[0]; const n = Math.hypot(c0, c1, c2); if (!(n > 1e-6)) continue;
-    const q = p(c0 / n, c1 / n, c2 / n); if (q < best) best = q; if (best <= 0) return best; }
-  return best;
-}
-const boxToObb = (b) => ({ c: [0, 1, 2].map((i) => (b.min[i] + b.max[i]) / 2), ax: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], h: [0, 1, 2].map((i) => (b.max[i] - b.min[i]) / 2) });
-const hits = (box, st, id, eps) => { const B = boxToObb(box); return obbs(st, id).some((o) => satDepth(B, o) > eps); };
-const overlap = (a, b, eps = 0.01) => [0, 1, 2].every((i) => a.min[i] < b.max[i] - eps && b.min[i] < a.max[i] - eps);
-const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
-  let p = st.entities[k].c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false;
-});
-const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
-
-// A surface is where something can stand. The model's measured surfaces are in its own frame with its own up, so they
-// hold while the thing stands (its up within UPRIGHT of the world's); a thing a tumbling engine laid on its side or upside
-// down has instead the face of each oriented box that now faces up (none, balanced on an edge). Heights and footprints
-// come from the full rotation (yaw-only reading put a tumbled crate's top half its height off).
-const UPRIGHT = Math.cos(10 * Math.PI / 180);
-function surfacesOf(st, id) {
-  const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
-  const t = worldT(st, id);
-  const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
-  if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
-    if (m.round) return [];   // a round thing (a ball, a bell) offers no face in any pose; an empty UPRIGHT list (a door, a wall) says nothing about lying
-    const out = []; const boxes = obbs(st, id);
-    // a point inside one of the thing's own boxes (a face flush under its back panel is no place to put anything)
-    const buried = (p, self) => boxes.some((o, k) => k !== self && o.ax.every((ax, i) => Math.abs(dot([p[0] - o.c[0], p[1] - o.c[1], p[2] - o.c[2]], ax)) < o.h[i] - 1e-6));
-    for (const [bi, o] of boxes.entries()) for (let j = 0; j < 3; j++) {
-      const u = o.ax[j][1]; if (Math.abs(u) < UPRIGHT) continue;
-      const n = o.ax[j].map((v) => v * Math.sign(u)); const top = o.c.map((v, i) => v + n[i] * o.h[j]);
-      if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
-      const [a, c] = [0, 1, 2].filter((k) => k !== j);
-      const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
-      out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
-    }
-    // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
-    // Faces within 1e-6 of each other are one height (float noise): each group takes its highest y, so the levels stay
-    // bottom to top however they're rounded, and orders by the face's own area (not its footprint, which grows with
-    // yaw), larger last: a shelf face-down offers its back, not its 3 cm side strips (reviews r7, r8)
-    out.sort((p, q) => p.y - q.y);
-    for (let i = 0; i < out.length;) { let k = i + 1; while (k < out.length && out[k].y - out[i].y <= 1e-6) k++;
-      const y = out[k - 1].y; const g = out.slice(i, k).map((x) => ({ ...x, y })).sort((p, q) => p.ar - q.ar); out.splice(i, k - i, ...g); i = k; }
-    return out.map(({ ar, ...x }, i) => ({ ...x, level: i }));
-  }
-  const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
-  const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
-  return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
-    if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
-      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => at(x, s.y, z));
-      return { id, level: i, y: yawOnly ? yOf(s.y) : Math.max(...cs.map((c) => c[1])), min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[2])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[2])) - k] };
-    }
-    return { id, level: i, y: yOf(s.y), min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
-}
-// ---------- the spatial index (review 10-06 S0-2 / security pass 2 H-A) ----------
-// The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
-// squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
-// what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
-//   Per thing: its world AABB, oriented boxes and surfaces, cached on its ENTITY OBJECT (a live world's states share every
-//   entity a write didn't touch: server/livehost.ts applyShared), valid while its model entry and every ancestor's entity
-//   object are the same ones. So a write re-measures only what it touched.
-//   Per folded state: a 4 m grid over those boxes (huge things on a list of their own), built on the state's first query.
-//   A state is never mutated once folded or previewed (admit's working copy is never queried), so neither is its index.
-// Every answer lists candidates in the state's key order, so a first-hit or best-so-far loop over them picks exactly what
-// the loop over Object.keys picked. The work budget (WORK, set per call by enter) bounds what one call may spend in these
-// searches, counted in units of about 0.1 µs of this laptop's time (measured: a candidate scanned ≈ 1, an axis-aligned
-// box test ≈ 1, a rotated one ≈ 80, a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
-// clock backstop (WORK_BUDGET.ms from the call's start, read every 64 units) bounds a host that is far slower. Past
-// either, a read or a solver is refused (too-costly) rather than holding every world's thread.
-export const WORK_BUDGET = { units: 350000, ms: 150 };
-const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
-let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
-const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
-  if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
-    refuse("too-costly", `${what} would take more of the authority's time than one request may have (it's shared by every world on this server)`, fix); } };
-const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
-function geoOf(st, id) {
-  const e = st.entities[id]; if (!e) return null;
-  // what its world box reads: its model entry, and the transform and parent VALUES of it and each ancestor (a value is
-  // replaced, never changed in place, so these identities say whether anything it depends on changed)
-  const m = geomE(e); const chain = [e.c.transform, e.c.parent]; let p = e.c.parent?.to, n = 0;
-  while (p && n++ <= 33 && st.entities[p]) { const x = st.entities[p]; chain.push(x, x.c.transform, x.c.parent); p = x.c.parent?.to; }
-  const g = GEO.get(e);
-  if (g && g.id === id && g.m === m && g.chain.length === chain.length && g.chain.every((x, i) => x === chain[i])) return g;
-  const box = m ? aabb(st, id) : null; const ob = box ? obbs(st, id) : []; const surfs = box ? surfacesOf(st, id) : [];
-  // each oriented box's own world AABB (a cheap reject before the 15-axis test), and the box the grid files it under
-  // (h: its projected half-size on each world axis, summed as satDepth sums it, so hitsIx can reject on it exactly)
-  const ext = ob.map((o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { h, min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; });
-  let q = null;
-  if (box) { q = { min: box.min.slice(), max: box.max.slice() };
-    for (const x of ext) for (let i = 0; i < 3; i++) { q.min[i] = Math.min(q.min[i], x.min[i]); q.max[i] = Math.max(q.max[i], x.max[i]); }
-    for (const s of surfs) { q.min[0] = Math.min(q.min[0], s.min[0]); q.max[0] = Math.max(q.max[0], s.max[0]); q.min[2] = Math.min(q.min[2], s.min[1]); q.max[2] = Math.max(q.max[2], s.max[1]); q.max[1] = Math.max(q.max[1], s.y); } }
-  const rec = { id, m, chain, box, obbs: ob, ext, surfs, q };
-  GEO.set(e, rec); return rec;
-}
-const cellOf = (v) => Math.floor(v / CELL);
-const cellKey = (i, k) => (i + 1e6) * 2e6 + (k + 1e6);
-// the grid cells a record is filed under (null: a huge thing, on the `big` list)
-const cellsOf = (g) => { if (g.cells !== undefined) return g.cells;
-  const x0 = cellOf(g.q.min[0]), x1 = cellOf(g.q.max[0]), z0 = cellOf(g.q.min[2]), z1 = cellOf(g.q.max[2]);
-  if ((x1 - x0 + 1) * (z1 - z0 + 1) > BIG || !Number.isFinite(x0 + x1 + z0 + z1)) return (g.cells = null);
-  const out = []; for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) out.push(cellKey(x, z)); return (g.cells = out); };
-// The index a state's queries use. Kept incrementally: a state that shares nearly every entity with the one indexed last
-// (the next state of the same world: a write, or a preview of one) is derived from it, re-filing only the things that
-// changed, appeared or went (and everything riding on them); anything else is built whole. Both give the same index.
-const LASTIX = new WeakMap(); // catalogue → the index built or derived last
-// a state that is changed in place after it's read (a batch's working copy, and previews of it): indexed whole, never
-// derived from or kept as the last (a derivation compares entity objects, which such a state changes under them)
-const VOLATILE = new WeakSet();
-function spatial(st) {
-  const ver = CAT.version ?? 0; let ix = SPATIAL.get(st);
-  if (ix && ix.cat === CAT && ix.ver === ver) return ix;
-  if (VOLATILE.has(st.entities)) { ix = buildIx(st, ver); SPATIAL.set(st, ix); return ix; }
-  const prev = LASTIX.get(CAT);
-  ix = (prev && prev.ver === ver && deriveIx(prev, st)) || buildIx(st, ver);
-  SPATIAL.set(st, ix); LASTIX.set(CAT, ix); return ix;
-}
-function fileIx(ix, id, g, cloned) {
-  const cs = cellsOf(g); if (!cs) { ix.big.push(id); return; }
-  for (const k of cs) { let a = ix.grid.get(k); if (!a) ix.grid.set(k, (a = [])); else if (cloned && !cloned.has(k)) { ix.grid.set(k, (a = a.slice())); } cloned?.add(k); a.push(id); }
-}
-function buildIx(st, ver) {
-  const ix = { cat: CAT, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
-  for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
-    if (offChain(st, id)) continue;   // switched off: nothing to stand on, bump into or overlap (componentspec disabled)
-    const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
-  return ix;
-}
-function deriveIx(prev, st) {
-  const E = st.entities, P = prev.ents; if (E === P) return null;
-  const keys = Object.keys(E); const changed = [];
-  for (const id of keys) if (E[id] !== P[id]) { changed.push(id); if (changed.length > 256) return null; }
-  const added = changed.filter((id) => !prev.order.has(id));
-  if (added.some((id) => /^(0|[1-9]\d*)$/.test(id))) return null;   // an integer-like key sorts first, not last: build whole
-  const removed = prev.order.size + added.length > keys.length ? [...prev.order.keys()].filter((id) => E[id] === undefined) : [];
-  // what rides on a changed or removed thing moved with it (its world box comes from the chain): re-file it too
-  const pk = kidsOfIx(prev, P); const touched = new Set([...changed, ...removed]); const todo = [...touched];
-  if (added.length) { const nu = new Set(added); for (const id of keys) if (nu.has(E[id].c.parent?.to)) todo.push(id); }   // a link to a thing that just appeared
-  while (todo.length) { const t = todo.pop(); touched.add(t); for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k); if (touched.size > 2048) return null; }
-  const ix = { cat: CAT, ver: prev.ver, ents: E, order: prev.order, next: prev.next, rec: new Map(prev.rec), grid: new Map(prev.grid), big: prev.big, kids: prev.kids, memo: new Map() };
-  if (added.length || removed.length) { ix.order = new Map(prev.order); for (const id of removed) ix.order.delete(id); for (const id of added) ix.order.set(id, ix.next++);
-    let last = -1; for (const id of keys) { const o = ix.order.get(id); if (!(o > last)) return null; last = o; } }   // the key order is what Object.keys says, or build whole
-  const cloned = new Set();
-  for (const id of touched) { const old = prev.rec.get(id);
-    if (old) { ix.rec.delete(id); const cs = cellsOf(old);
-      if (cs) for (const k of cs) { const a = ix.grid.get(k); if (!a) continue; const b = a.filter((x) => x !== id); if (b.length) ix.grid.set(k, b); else ix.grid.delete(k); cloned.add(k); } } }
-  ix.big = prev.big.filter((x) => !touched.has(x));
-  for (const id of touched) { if (E[id] === undefined || offChain(st, id)) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
-  // the children map is rebuilt (lazily) only when a parent link changed
-  if (added.length || removed.length || changed.some((id) => P[id]?.c.parent?.to !== E[id]?.c.parent?.to)) ix.kids = null;
-  return ix;
-}
-function kidsOfIx(ix, ents) {
-  if (ix.kids) return ix.kids; const kids = new Map();
-  for (const id of Object.keys(ents)) { const p = ents[id].c.parent?.to; if (p) { let a = kids.get(p); if (!a) kids.set(p, (a = [])); a.push(id); } }
-  return (ix.kids = kids);
-}
-const kidsMap = (st) => kidsOfIx(spatial(st), st.entities);
-/** For tests: does the index this state's queries use (built or derived) file exactly what a fresh build files? A list
- *  of differences, empty when it does. */
-export function indexAudit(w) {
-  const prevCat = CAT; CAT = w.catalogue ?? LAB_CATALOGUE;
-  try { const st = w.state(); const ix = spatial(st); const fresh = buildIx(st, ix.ver); const out = [];
-    const norm = (x) => ({ ids: [...x.rec.keys()].sort().join(), grid: [...x.grid.entries()].map(([k, a]) => `${k}:${[...a].sort().join()}`).sort().join(";"), big: [...x.big].sort().join(),
-      order: Object.keys(st.entities).filter((id) => x.order.has(id)).sort((a, b) => x.order.get(a) - x.order.get(b)).join(), boxes: [...x.rec.entries()].map(([id, g]) => `${id}:${JSON.stringify(g.q)}`).sort().join() });
-    const a = norm(ix), b = norm(fresh); for (const k of Object.keys(a)) if (a[k] !== b[k]) out.push(k);
-    if (JSON.stringify([...kidsMap(st).entries()]) !== JSON.stringify([...kidsOfIx({ kids: null }, st.entities).entries()])) out.push("kids");
-    for (const id of Object.keys(st.entities)) if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(aabb(st, id)) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(aabb(st, id) ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; }
-    return out; } finally { CAT = prevCat; }
-}
-// the things whose box meets [min, max] (closed: touching counts), in the state's key order
-function near(st, min, max) {
-  const ix = spatial(st);
-  const x0 = cellOf(min[0]), x1 = cellOf(max[0]), z0 = cellOf(min[2]), z1 = cellOf(max[2]);
-  // what's filed in those cells (and the huge things), once each, in key order: memoized per cell range (a search asks
-  // the same few ranges thousands of times)
-  const wide = !((x1 - x0 + 1) * (z1 - z0 + 1) <= ix.grid.size); const k0 = wide ? 0 : cellKey(x0, z0), k1 = wide ? -1 : cellKey(x1, z1);
-  let m1 = ix.memo.get(k0); if (!m1) { if (ix.memo.size > 4096) ix.memo.clear(); ix.memo.set(k0, (m1 = new Map())); }
-  let cand = m1.get(k1);
-  if (!cand) { const seen = new Set(); cand = [];
-    const take = (id) => { if (!seen.has(id)) { seen.add(id); cand.push(id); } };
-    if (wide) { for (const a of ix.grid.values()) a.forEach(take); }   // a query wider than the world: every filed thing once
-    else for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) ix.grid.get(cellKey(x, z))?.forEach(take);
-    ix.big.forEach(take);
-    if (cand.length > 1) cand.sort((a, b) => ix.order.get(a) - ix.order.get(b));
-    m1.set(k1, cand); }
-  const out = [];
-  for (const id of cand) { const q = ix.rec.get(id).q;
-    if (q.min[0] <= max[0] && q.max[0] >= min[0] && q.min[1] <= max[1] && q.max[1] >= min[1] && q.min[2] <= max[2] && q.max[2] >= min[2]) out.push(id); }
-  spend(10 + cand.length + (cand.length >> 2));
-  return out;
-}
-// hits(), through the index's cached boxes. The query box is axis-aligned, so the world's three axes are among the 15
-// the test takes its minimum over: a penetration of eps or less along one of them (the same numbers satDepth would
-// compute there: half-sizes summed, less the centres' distance) is already the answer. Only the rest run the full test.
-function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an oriented box (a caller testing many may pass its own)
-  const g = spatial(st).rec.get(id); if (!g) return false;
-  for (let k = 0; k < g.obbs.length; k++) { const x = g.ext[k], o = g.obbs[k]; spend(1);
-    if (B.h[0] + x.h[0] - Math.abs(o.c[0] - B.c[0]) <= eps || B.h[1] + x.h[1] - Math.abs(o.c[1] - B.c[1]) <= eps || B.h[2] + x.h[2] - Math.abs(o.c[2] - B.c[2]) <= eps) continue;
-    spend(satCost(B, o)); if (satDepth(B, o) > eps) return true; }
-  return false;
-}
-// descendants() through the index's children map (a set: callers here only ask membership)
-function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
-  for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
-
-function supportBelow(st, x, z, y, ignore = new Set()) {
-  let best = { y: 0, id: "ground" };
-  const ix = spatial(st);
-  for (const id of near(st, [x, -Infinity, z], [x, Infinity, z])) {
-    if (ignore.has(id)) continue;
-    for (const s of ix.rec.get(id).surfs)
-      if (x >= s.min[0] && x <= s.max[0] && z >= s.min[1] && z <= s.max[1] && s.y <= y + 0.02 && s.y > best.y) best = { y: s.y, id };
-  }
-  return best;
-}
-
-// Supported anywhere under its footprint (the engine's rule: a box rests on a top its footprint overlaps), not just
-// under its centre — so a thing physics left resting is never called floating by the authority (playtest 22, F5).
-function supportUnder(st, b, ignore) {
-  let best = { y: 0, id: "ground" };
-  const ix = spatial(st);
-  for (const id of near(st, [b.min[0], -Infinity, b.min[2]], [b.max[0], Infinity, b.max[2]])) { if (ignore.has(id)) continue;
-    for (const s of ix.rec.get(id).surfs) if (b.max[0] > s.min[0] && b.min[0] < s.max[0] && b.max[2] > s.min[1] && b.min[2] < s.max[1] && s.y <= b.min[1] + 0.02 && s.y > best.y) best = { y: s.y, id }; }
-  return best;
-}
-
-// ---------- rights ----------
-// The ladder, the closed permission list and the effective set live in shared/protocol/roles.js (the Sanctioned Society: ranked
-// membership only; banned and ghost are states outside it). Every rank comparison in the authority goes through rankOf /
-// whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
-const RANK = R.RANK;
-const wcOf = (st) => st.entities?.["@world"]?.c;
-const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && c[k]?.role === "owner"); };
-// §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
-// (`default-role`, what an imported world's `roles['*']` becomes); absence means visitor.
-// a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
-// may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
-// …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
-function roleOf(st, actor, anon = ISANON(actor)) {
-  const c = wcOf(st); if (!c) return "none";
-  return R.roleIdOf(c, actor, { anon, owners: ownersOf(st).length > 0 });
-}
-/** Where a person stands on the ladder (a role the world doesn't define reads as visitor; legacy none as -1). */
-const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, anon));
-/** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
- *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
-const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
-/** Effective rights {role, name, rank, can, permissions} (roles.js effectiveOf). */
-const effective = (st, actor, anon = ISANON(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
-const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || effective(st, actor).can.fly) : effective(st, actor).can[sw] === true;
-/** Does this identity hold any power that acts on people (mute, kick, ban, pauseScripts)? Opens the moderation log. */
-const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
-export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
-/** The role the authority gives `actor` in a folded state (a view: what a client should be told it may do here). */
-export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
-const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
-// ---------- views over the log: who did what (L2: derived, never stored) ----------
-const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
-// ---------- sanctions: views over the moderator log (research §5) ----------
-// Every sanction is a record with an optional `until` (the authority's clock, ms). Expiry is computed, never written: a view
-// reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the authority's clock). Records
-// name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted",
-// an old kick) is permanent for a ban and no cooldown for a kick.
-// Every record since the last LIFT of its kind (unban, unmute, unghost) that is still in force counts, and the STRONGEST
-// wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
-// owner's permanent one used to replace it, the newest record alone being read). Lifting goes through personLift.
-const latestOf = (w, who, verbs) => { let r = null; for (const m of w.mod) if (m.who === who && verbs.includes(m.verb)) r = m; return r; };
-const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());
-const sinceLift = (recs, verb, lifts) => { let out = []; for (const m of recs) { if (lifts.includes(m.verb)) out = []; else if (m.verb === verb) out.push(m); } return out; };
-const strongest = (a) => a.reduce((x, m) => (!x ? m : x.until === undefined ? x : m.until === undefined || m.until > x.until ? m : x), null);
-const recsOf = (w, who) => w.mod.filter((m) => m.who === who);
-/** The sanctions of one kind in force on `who` now, every one (a lift must be allowed over each). */
-export function inForceOf(w, who, kind, recs = recsOf(w, who)) {
-  const lifts = { ban: ["unban"], kick: ["unban"], mute: ["unmute"], ghost: ["unghost"] }[kind];
-  return sinceLift(recs, kind, lifts).filter((m) => inForce(w, m) && (kind !== "kick" || m.until !== undefined));
-}
-const banFrom = (w, who, recs) => strongest(inForceOf(w, who, "ban", recs));
-const kickFrom = (w, who, recs) => strongest(inForceOf(w, who, "kick", recs));
-const muteFrom = (w, who, channel, recs) => { const a = inForceOf(w, who, "mute", recs); if (!a.length) return null;
-  const channels = [...new Set(a.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
-  if (channel && !channels.includes(channel)) return null;
-  const top = strongest(a); return { ...top, channels, until: a.some((m) => m.until === undefined) ? undefined : Math.max(...a.map((m) => m.until)) }; };
-const ghostFrom = (w, who, recs) => strongest(inForceOf(w, who, "ghost", recs)) ?? (w.presence?.ghosts?.[who] ? { verb: "ghost", who, chosen: true, ts: w.presence.ghosts[who].ts } : null);
-/** The ban in force on `who` (the strongest record), or null. */
-export const banOf = (w, who) => banFrom(w, who, recsOf(w, who));
-export const isBanned = (w, who) => !!banOf(w, who);
-/** The kick whose cooldown still runs (they can't rejoin until m.until), or null. An unban ends it early. */
-export const kickOf = (w, who) => kickFrom(w, who, recsOf(w, who));
-/** The mute in force (channels: the union of every mute in force, until: the latest), or null; `channel` narrows it. */
-export const muteOf = (w, who, channel) => muteFrom(w, who, channel, recsOf(w, who));
-/** Ghost (PLAN 10-06: in the world, outside society): the sanction in force, else the mode its holder chose. */
-export const ghostOf = (w, who) => ghostFrom(w, who, recsOf(w, who));
-/** Everything in force now, per identity (the Moderation panel's Bans tab; the server's join, voice and ghost gates).
- *  One pass over the moderator log, so the server's sweep stays linear in it. */
-export function sanctionsNow(w) {
-  const by = new Map(); for (const m of w.mod) if (typeof m.who === "string") { let a = by.get(m.who); if (!a) by.set(m.who, (a = [])); a.push(m); }
-  for (const k of Object.keys(w.presence?.ghosts ?? {})) if (!by.has(k)) by.set(k, []);
-  const out = {}; for (const [x, recs] of by) { const b = banFrom(w, x, recs), k = kickFrom(w, x, recs), m = muteFrom(w, x, undefined, recs), g = ghostFrom(w, x, recs);
-    if (b || k || m || g) out[x] = { ...(b ? { ban: b } : {}), ...(k ? { kick: k } : {}), ...(m ? { mute: m } : {}), ...(g ? { ghost: g } : {}) }; }
-  return out;
-}
-// Who a change entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
-// differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
-// records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
-function entryBy(w, e) {
-  const c = w.entries[e.cause];
-  const by = isE(c) && c.kind === "act" ? c.actor : e.actor;
-  // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
-  return { seq: e.seq, by, rights: (isE(c) && c.kind === "act" && (c.body?.capability?.author || (isScriptActor(c.actor) && c.body?.sponsor))) || by };
-}
-// The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
-// present after it was last absent. null if it isn't present now. { seq, by, rights }.
-// The change entries that may touch `id`, newest first. A live world (server) keeps an index id → seqs so these
-// views cost the thing's own history, not the whole log's; without one (the suites) every entry is a candidate.
-function* backward(w, id) {
-  if (w.touching) { const a = w.touching(id); for (let k = a.length - 1; k >= 0; k--) yield a[k]; return; }
-  for (let i = w.entries.length - 1; i >= 0; i--) yield i;
-}
-export function creatorOf(w, id, comp) {
-  let found = null;
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
-      if (o.verb === "set" && o.comp === comp) found = e;
-      else if ((o.verb === "delete" && (o.comp === comp || o.comp === undefined)) || o.verb === "create") return found && entryBy(w, found); } }
-  return found && entryBy(w, found);
-}
-// Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
-export function lastSetterOf(w, id, comp) {
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
-    const ops = opsQuiet(e);
-    for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
-      return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
-  return null;
-}
-// Who made a thing: the view inspect shows (no stored `placer`).
-const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
-
+// ---------- storage: authority/storage.js ----------
+// ---------- math: authority/math.js ----------
+// ---------- the spatial index: authority/spatial.js ----------
+// ---------- rights, views over the log, sanctions: authority/rights.js ----------
 // ---------- the authority ----------
-class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }
-const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, fix, extra); };
-// A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the authority's
-// directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CAT). An old
-// escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
-// must match it.
-let NAMEOF = null;
-const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
-// verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
-const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
+// Refusal / refuse / said: authority/refuse.js
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -682,17 +62,17 @@ function wire(args) {
   return out;
 }
 
-// The authority's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID, the mint's world, the
-// work budget) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withAuthority):
+// The authority's per-call state: CTX (authority/ctx.js: the catalogue, throughLock, nameOf, isAnon, knownId, the mint's world,
+// the work budget, forking) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withAuthority):
 // review 10-06 S3 found two hand-written copies that already disagreed, and a nested call (leave → request(drop), or a
 // host callback re-entering the authority) reset the outer call's queues under it. enter() saves everything, sets this call's,
 // and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
 // the authority's own work.
 function enter(w, actor) {
-  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
-  CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w; WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
-  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
-  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; w.pinTs = saved.pinTs; };
+  const outer = { ...CTX }, wq = { changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
+  CTX.cat = w.catalogue ?? LAB_CATALOGUE; CTX.through = false; CTX.nameOf = w.nameOf ?? null; CTX.mintW = w; CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
+  CTX.isAnon = (id) => w.kindOf?.(id) === "anon"; CTX.knownId = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
+  return () => { Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ; w.heldQ = wq.heldQ; w.now = wq.now; w.pinTs = wq.pinTs; };
 }
 export function request(w, actor, verb, args = {}) {
   const exit = enter(w, actor);
@@ -726,13 +106,13 @@ export function request(w, actor, verb, args = {}) {
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
     // the returns that are due (each one a thing someone let go of that long ago)
-    if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
+    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
     const { throughLock, expect, ...plain } = args;
     if (throughLock !== undefined && typeof throughLock !== "boolean") refuse("shape", `throughLock is true or false, got ${JSON.stringify(throughLock)}`, "send throughLock: true to act through a lock you may remove");
-    THROUGH = throughLock === true;
+    CTX.through = throughLock === true;
     const bad = validate(verb, plain); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); }
     if (expect !== undefined) expectCheck(w, expect);
     if (verb === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
@@ -755,8 +135,6 @@ export function request(w, actor, verb, args = {}) {
 // what it didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
-// what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
-const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox", "effect"]);
 function logRefusal(w, actor, verb, args, code) {
   try {
     // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
@@ -918,10 +296,10 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: FORKING }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
-  if (!FORKING) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
+  if (!CTX.forking) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -940,7 +318,7 @@ const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const 
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
   for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let by = null;
-    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (ISANON(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
+    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (CTX.isAnon(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
   let n = 0; for (const id of G.ids) if (st.entities[id]) n++; return n;
 }
 function capacityCheck(w, st, s, who, norm) {
@@ -948,7 +326,7 @@ function capacityCheck(w, st, s, who, norm) {
   const cap = capacityOf(s); const before = Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0), after = Object.keys(s.entities).length - (s.entities["@world"] ? 1 : 0);
   if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before });
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
-  if (!ISANON(holder)) return;
+  if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
   if (g + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g });
 }
@@ -960,11 +338,11 @@ function lockCheck(w, st, who, role, k, op, at) {
   const level = lockLevel(st.entities[k]?.c.lock);
   const below = !who.cap && !mayLiftLock(w, st, who.actor, k);   // a level above you, and not yours
   const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" }) && !below;
-  if (THROUGH && mayUnlock) return;
+  if (CTX.through && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const lv = level === "builder" ? "" : ` at ${level} level`;
   const what = k === op.id ? `${op.id} is locked${lv}${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${lv}${whose}, so ${at} can't change`;
-  const fix = THROUGH && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
+  const fix = CTX.through && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
     : below ? `only ${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} may unlock it or act through it; you are ${role}`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift a builder-level lock, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
@@ -973,7 +351,7 @@ function lockCheck(w, st, who, role, k, op, at) {
 /** May `holder` lift k's lock (or act through it)? At its level or above, or whoever set it (R, 10-07: "whoever locked it,
  *  or anyone at the lock's rank"). Rights to delete the component are checked apart (L7: lacks). */
 function mayLiftLock(w, st, holder, k) {
-  if (rankOf(st, holder) >= RANK[lockLevel(st.entities[k]?.c.lock)]) return true;
+  if (rankOf(st, holder) >= lockRank(st.entities[k]?.c.lock)) return true;
   const by = lastSetterOf(w, k, "lock"); return !!by && !by.deleted && by.rights === holder;
 }
 // A write to a lock itself: changing or removing a lock is lifting it (its level or its locker), and nobody sets one above
@@ -988,10 +366,9 @@ function lockLevelCheck(w, st, s, who, op, at) {
     const by = lastSetterOf(w, op.id, "lock"); const level = lockLevel(cur);
     refuse("rank", `${op.id} is locked at ${level} level${by && !by.deleted ? ` by ${said(by.by)}` : ""}; only ${level === "owner" ? "an owner" : `a ${level} or above`} or whoever locked it may ${op.verb === "delete" ? "unlock" : "change"} it`,
       `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: level, needs: "rank" }); }
-  if (op.verb === "set" && rankOf(st, holder) < RANK[lockLevel(op.value)])
+  if (op.verb === "set" && rankOf(st, holder) < lockRank(op.value))
     refuse("rank", `${at}: a lock at ${lockLevel(op.value)} level is above your rank (${roleOf(st, holder)})`, "lock at your own level or below: true (builder) or {rank: 'builder'}", { needs: "rank" });
 }
-const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
   if (!["create", "set", "delete"].includes(verb)) refuse("shape", `op ${i}: '${verb}' isn't a state operation`, "create, set and delete (batches are flat)");
   if (!isEntityId(op.id)) refuse("shape", `'${op.id}' isn't an entity id`, "§3.1: a–z, 0–9 and '-', up to 64, or @world", { didYouMean: guess(String(op.id), []) });
@@ -1115,7 +492,7 @@ function seniority(w, st, who, op) {
 //   and any `can: true` (or legacy gen: true), must be permissions you hold. Ownership stays an owner's (seniority).
 function grantCheck(w, st, s, actor, op, at) {
   if (roleOf(st, actor) === "owner") return;
-  const me = effective(st, actor); const target = op.comp.slice(6); const anon = ISANON(target);
+  const me = effective(st, actor); const target = op.comp.slice(6); const anon = CTX.isAnon(target);
   if (target === actor) refuse("rights", "you can't change your own role", "ask someone ranked above you");
   const before = roleOf(st, target, anon);
   if (rankOf(st, target, anon) >= me.rank) refuse("rank", `${said(target)} is ${R.roleDef(wcOf(st), before)?.name ?? before}, not ranked below you (${me.name}); you can only change the roles of people below you`, "ask someone ranked above them", { needs: "rank" });
@@ -1179,7 +556,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   // (the fold never refuses); the importer splits them; a carried value (an import) passes.
   if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
   if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
-  if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
+  if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
@@ -1220,7 +597,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
-  if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
+  if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CTX.cat.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
   if (comp === "lock" && v !== true && !(obj && Object.keys(v).length === 1 && LOCK_LEVELS.includes(v.rank)))
     refuse("shape", `${at} is true (a builder-level lock) or {rank: 'builder' | 'moderator' | 'owner'}; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
@@ -1453,7 +830,7 @@ const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { reques
 
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
-  mintW = w;
+  CTX.mintW = w;
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
@@ -1636,11 +1013,9 @@ function merge7396(target, patch) {
   for (const [k, v] of Object.entries(patch)) { if (v === null) delete out[k]; else out[k] = merge7396(out[k], v); }
   return out;
 }
-let mintN = 0;
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
-let mintW = null;
 // review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
-function mint(st, base) { const ever = mintW?.everIds() ?? new Set(); let id;
+function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
 function buildCreate(ctx, a) {
@@ -1780,7 +1155,7 @@ function buildPlace(ctx, a) {
     if (!surfs.length) refuse("no-surface", `${a.on} has no surface to put things on`, `measure {id: '${a.on}'} shows its surfaces`);
     const s = surfs[a.level ?? surfs.length - 1] ?? refuse("no-surface", `${a.on} has levels 0–${surfs.length - 1}`, "");
     const want = a.offset ? [(s.min[0] + s.max[0]) / 2 + a.offset[0], (s.min[1] + s.max[1]) / 2 + a.offset[1]] : [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
-    let best = null, lastBlock = null; const whatWas = WORK.what;
+    let best = null, lastBlock = null; const whatWas = CTX.work.what;
     for (let pass = 0; pass < 2; pass++) {
       const [hx, hz] = half(yaw);
       // the 2.5 cm grid as ever (positions by the same running sum), searched nearest-first: ring by ring out from the
@@ -1793,7 +1168,7 @@ function buildPlace(ctx, a) {
       const nx = xs.length, nz = zs.length; let lastIdx = -1;
       const nearestIx = (arr, v) => { let lo = 0, hi = arr.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; } return lo > 0 && Math.abs(arr[lo - 1] - v) <= Math.abs(arr[lo] - v) ? lo - 1 : lo; };
       if (nx && nz) { const ci = nearestIx(xs, want[0]), ck = nearestIx(zs, want[1]);
-        WORK.what = `finding room for ${a.id} on ${a.on}`;
+        CTX.work.what = `finding room for ${a.id} on ${a.on}`;
         const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
         const cell = (i, k) => { spend(1); const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;   // every cell visited is work
           if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
@@ -1814,7 +1189,7 @@ function buildPlace(ctx, a) {
           for (const i of [ci - r, ci + r]) if (i >= 0 && i < nx) for (let k = Math.max(0, ck - r + 1); k <= Math.min(nz - 1, ck + r - 1); k++) cell(i, k); } }
       if (!best) break; if (a.facing && pass === 0) { yaw = faceYaw([best.x, 0, best.z]); best = null; } else break;
     }
-    WORK.what = whatWas;
+    CTX.work.what = whatWas;
     if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${r3(2 * hx)}×${r3(2 * hz)} m) doesn't fit free on ${a.on}'s level ${s.level} (${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m)${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
     if (best.d > 0.01) relaxed.push(`moved ${r3(best.d)} m from where you asked to stay clear and fully supported`);
     pos = [best.x, s.y, best.z]; support = a.on; if (a.attach === undefined) a.attach = true; // things rest on what supports them
@@ -1902,7 +1277,7 @@ function buildPlace(ctx, a) {
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
-  const B = boundsOf(st); let k = 0; const was = WORK.what; WORK.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
+  const B = boundsOf(st); let k = 0; const was = CTX.work.what; CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
   for (; k < ids.length; k++) { const id = ids[k];
     const g = ix.rec.get(id); const b = g?.box; if (!b) continue;
@@ -1926,7 +1301,7 @@ function warnings(st, ids, strict = false) {
   } catch (e) {
     if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
     out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the authority's time than one request may have; lint {id} checks one thing" });
-  } finally { WORK.what = was; }
+  } finally { CTX.work.what = was; }
   return out;
 }
 
@@ -2278,7 +1653,7 @@ function activate(w, id, name, ev) {
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
-    name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
+    name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? CTX.nameOf?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
   if (!dry) { const ms = performance.now() - t0;
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
@@ -2334,7 +1709,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     w.now = () => t;   // one clock for the pass, as a request has (physlive Q1): a rest's digest and its ts agree
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const n0 = w.entries.length;
-    WORK = { left: Infinity, until: Infinity, k: 0 };
+    CTX.work = { left: Infinity, until: Infinity, k: 0 };
     settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
     drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
@@ -2948,13 +2323,10 @@ function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
     ...sayOf(st, e.c) };
 }
 // batch 2: what its words and media say (shared/says.js, the same lines mcpl's look prints); things it names by their names
-const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: mintW?.now?.() ?? null });
+const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: CTX.mintW?.now?.() ?? null });
   return lines.length ? { says: lines } : {}; };
 
 // ---------- physics (design 20) ----------
-const REACH = 1.5;   // m from your body: arm plus a step
-const HAND_Y = 1.1; // where a held thing sits above your feet
-const MAX_HELD = 2; // things in your hands at once
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
@@ -3356,8 +2728,6 @@ function recentRests(w, now) {
   return out.reverse();
 }
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
-const KICK = { reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 };
-const noNeg0 = (n) => (n === 0 ? 0 : n); // I-JSON has no -0; an engine can make one (the same number, written as 0)
 // The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
 // Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
 // by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
@@ -3536,9 +2906,10 @@ function launch(w, actor, a, verb, g = null) {
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
-  const { v, notes } = planVelocity(a.v, g, ENGINES[spec.engine].maxSpeed, verb);   // one function with the predicting client (launchplan.js)
+  // one function with the predicting client (launchplan.js): the body it folds is this body, bit for bit
+  const L = planLaunch({ id: a.id, p: h.pose.pos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
   // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
   // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
   const riders = []; { const st = w.state(); const t = worldT(st, a.id);
@@ -3631,7 +3002,7 @@ const BODY_VERBS = {
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);
     if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|seat|carry}");
-    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
+    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
     const g = bodyGate(w, actor, to, a.kind, { spec: a.spec, why: a.why });
     if (!g.ok) refuse(g.code, g.reason, g.fix, { class: g.class });
     if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false, note: `${to} was asked; no answer in 20 s is no` };
@@ -3644,7 +3015,7 @@ const BODY_VERBS = {
       if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
     else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
       cls = C.INTIMATE_POINTS.has(point) ? "intimate" : C.SOCIAL_POINTS.has(point) ? "touch" : refuse("shape", `no point '${point}'`, [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
-      const t = P.bodies[to]; if (t && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
+      const t = P.bodies[to]; if (t && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
     delete P.reaches?.[actor];
     const g = bodyGate(w, actor, to, "touch", { cls, spec: { point, ...(a.at ? { at: a.at } : {}) }, why: a.why });
     if (!g.ok) { w.presenceDirty = true; refuse(g.code, g.reason, g.fix, { class: g.class, stripped: true }); }
@@ -3670,9 +3041,9 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
   const me = effective(st, actor);
   if (!powers.some((k) => me.can[k])) refuse("rights", `${verb === "ban" ? "banning" : verb === "kick" ? "kicking" : verb === "ghost" ? "ghosting someone" : verb === "warn" ? "warning someone" : "muting someone"} needs ${powers.length > 1 ? `one of ${powers.join(", ")}` : powers[0]}; you are ${me.role}`, "ask a moderator or an owner", { needs: powers.join("|") });
   if (a.who === actor) refuse("rank", `you can't ${verb} yourself`, "");
-  const them = roleOf(st, a.who, ISANON(a.who));
+  const them = roleOf(st, a.who, CTX.isAnon(a.who));
   if (noOwner && them === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be ${noOwner}`, "an owner made after them can be demoted first (roles:<them>); then act");
-  const tr = rankOf(st, a.who, ISANON(a.who));
+  const tr = rankOf(st, a.who, CTX.isAnon(a.who));
   if (tr >= me.rank) refuse("rank", `${said(a.who)} is ${R.roleDef(wcOf(st), them)?.name ?? them}; you (${me.name}) can't act on equal or higher ranks`, "ask someone ranked above them", { needs: "rank" });
   if (a.reason !== undefined && (typeof a.reason !== "string" || a.reason.length > R.REASON_MAX)) refuse("shape", `reason is text, up to ${R.REASON_MAX} characters`, "");
   return { target: { role: them, rank: tr } };
@@ -3767,7 +3138,7 @@ const VERBS = {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
-    return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
+    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
   lint(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
   history(w, actor, a) {
@@ -3982,13 +3353,12 @@ const VERBS = {
   // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent
   // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
   "fork-copy"(w, actor, a) {
-    if (!FORKING) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
+    if (!CTX.forking) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
     return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));
   },
 };
-let FORKING = false;
 /** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
-export function forkCopy(w, actor, args) { FORKING = true; try { return request(w, actor, "fork-copy", args); } finally { FORKING = false; } }
+export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
       // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
@@ -3996,7 +3366,7 @@ function buildBatch(ctx, a, w) { {
       const all = []; let st = ctx.st; let work = null;
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
       (a.ops ?? []).forEach((o, i) => {
-        if (clockMs() > WORK.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
+        if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
