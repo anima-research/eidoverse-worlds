@@ -951,7 +951,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
     ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok")); }
   { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
-    ok(code(r1) === "bounds" && code(r2) === "shape", "MS3 a size outside 0.05..200 and an unknown shape are refused", [r1.refused, r2.refused]); }
+    ok(code(r1) === "bounds" && code(r2) === "shape" && /each must be/.test(r1.refused?.reason ?? ""), "MS3 a size outside 0.05..200 (the definition's ranges, per element) and an unknown shape are refused", [r1.refused, r2.refused]); }
   { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];
     ok(r.ok && Math.abs(y - 1) < 1e-3, "MS4 place {on} a mesh box works: it has a size, and the ball lands on its top (y = 1)", r.refused ?? E("cup")?.transform);
     const b = call("bob", "create", { id: "mb2", components: { mesh: { shape: "box", size: [2, 0.5, 2] } }, place: { beside: "mb" } }); ok(b.ok, "MS4b place {beside} works for a mesh too", b.refused); }
@@ -962,7 +962,10 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     call("bob", "create", { id: "mc", components: { mesh: { shape: "cylinder", size: [0.6, 1.2, 9] }, transform: { pos: [-3, 0, 3] } } });
     const s = E("ms")?.physics?.shape, c = E("mc")?.physics?.shape;
     ok(s?.type === "sphere" && s.radius === 0.2 && s.pos[1] === 0.2, "MS7 a mesh sphere stamps a sphere (radius = size[0]/2, centred r up)", s);
-    ok(c?.type === "cylinder" && c.radius === 0.3 && c.halfHeight === 0.6, "MS8 a mesh cylinder stamps a cylinder {radius, halfHeight} from size[0], size[1]", c); }
+    ok(JSON.stringify(c) === JSON.stringify([[-0.3, 0, -0.3], [0.3, 1.2, 0.3]]), "MS8 a mesh cylinder stamps its bounding box (no carried engine reads a cylinder; review S1.1), size[0] wide and size[1] tall", c);
+    call("bob", "create", { id: "mp", components: { mesh: { shape: "capsule", size: [1, 0.2, 1] }, transform: { pos: [3, 0, -3] } } });
+    const m = call("bob", "measure", { id: "mp" }); const ps = E("mp")?.physics?.shape;
+    ok(m.ok && Math.abs(m.size[1] - 1) < 1e-6 && ps?.[1]?.[1] === 1, "MS8b a capsule shorter than its diameter is its diameter tall (review S2.3): measure and the stamp both say 1 m", { size: m.size, ps }); }
   { const r = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [2, 3, 4] } }); const sh = E("mb")?.physics?.shape;
     ok(r.ok && JSON.stringify(sh) === JSON.stringify([[-1, 0, -2], [1, 3, 2]]), "MS9 a mesh size change re-stamps its physics shape", r.refused ?? sh); }
 }

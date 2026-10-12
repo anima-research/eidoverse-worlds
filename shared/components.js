@@ -20,6 +20,7 @@
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
 import { ROT_MODES } from './euler.js';
+import { COMPONENTS } from './protocol/componentspec.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -511,18 +512,28 @@ export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !==
  *  refusal reads the same from either. `data: null` (removal) is always fine.
  *  Keys a record does not name are allowed, as in every bag (annotations
  *  ride along); the ones it names must have their type. */
+/** One place per thing (R 10-11): the refusal's words, the same from the authority and the Inspector. `has` is what the thing
+ *  already is (model | light | mesh), `wants` what was asked for. */
+export const ONE_PLACE = {
+  reason: (id, has, wants) => (has === 'light' ? `${id} is a light; a ${wants} goes on its own thing${wants === 'model' ? '' : ' under it'}`
+    : has === 'mesh' ? `${id} is a mesh; a ${wants} goes on its own thing${wants === 'light' ? ' under it' : ''}` : `${id} has a model; a ${wants} ${wants === 'light' ? 'goes on its own thing under it' : 'is its own thing'}`),
+  fix: (id, has, wants) => (wants === 'light' ? `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`
+    : wants === 'mesh' ? (has === 'light' ? 'create the mesh as its own thing and parent this light to it' : `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`)
+    : has === 'light' ? 'create the model as its own thing and parent this light to it' : 'create the model as its own thing, or delete the mesh first'),
+};
+export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
 export function compRefusal(type, data, ent = null) {
   if (data == null) return null;
   if (type === 'mesh') {
-    if (ent?.lib != null || ent?.comp?.model != null) return 'this thing has a model: a mesh is its own thing (one place per thing) — make a child, or remove the model first';
-    if (isBag(ent?.comp?.light)) return 'this thing is a light: a mesh goes on its own thing (one place per thing) — make the mesh and parent the light to it';
-    if (!isBag(data) || !['box', 'sphere', 'cylinder', 'plane', 'capsule'].includes(data.shape)) return 'a mesh component is {shape: box|sphere|cylinder|plane|capsule, size: [x, y, z]}';
+    if (ent?.lib != null || ent?.comp?.model != null) return `${ONE_PLACE.reason('this thing', 'model', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'model', 'mesh')}`;
+    if (isBag(ent?.comp?.light)) return `${ONE_PLACE.reason('this thing', 'light', 'mesh')} (one place per thing) — ${ONE_PLACE.fix('it', 'light', 'mesh')}`;
+    if (!isBag(data) || !MESH_SHAPES.includes(data.shape)) return `a mesh component is {shape: ${MESH_SHAPES.join('|')}, size: [x, y, z]}`;
     if (data.size !== undefined && !(Array.isArray(data.size) && data.size.length === 3 && data.size.every((x) => finite(x) && x >= 0.05 && x <= 200))) return 'mesh size is [x, y, z] in metres, each 0.05 to 200';
     return null;
   }
   if (type === 'light') {
     if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
-    if (isBag(ent?.comp?.mesh)) return 'this thing is a mesh: a light goes on its own thing under it (one place per thing) — Add Component ▸ Light makes that child';
+    if (isBag(ent?.comp?.mesh)) return `${ONE_PLACE.reason('this thing', 'mesh', 'light')} (one place per thing) — Add Component ▸ Light makes that child`;
     if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, important?, day?}';
     if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
     if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';
