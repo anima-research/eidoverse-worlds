@@ -71,12 +71,11 @@
 import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
-import { pictoRuns, hasPicto } from './edittheme.js';
-import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine } from './icons.js';
+import { WIDGETS, FACTS, paintFields, el, put, trimNum, R2D } from './widgets.js';
+export { trimNum, WIDGETS } from './widgets.js';
 // a name from either set: the line icons (24 grid) or the filled ones (the eye, R 10-10: the Hierarchy's eye drew nothing,
 // 'eye' being a filled-set name the line-set function didn't know)
-const iconSvg = (name, size = 18) => (hasIcon(name) ? strokeSvg(name, size) : hasFill(name) ? fsvg(name, size) : '');
-import { KEYHINTS, engage, release, withKeys } from './keyhints.js';
+import { KEYHINTS, engage, release } from './keyhints.js';
 export { parseEntry };
 
 // ---------------------------------------------------------------- DOM renderer
@@ -173,8 +172,6 @@ function guardActions(root) {
 
 let fieldClip = null;   // { value } — a copied field value, pasted by type (the OS clipboard gets a copy too)
 export const _fieldClip = () => fieldClip;   // probes
-const treeScroll = new Map();   // a tree field's scroll position, by its key, across rebuilds
-let treeDrag = null;   // the tree row being dragged (id), across the dragstart → drop pair
 
 export function renderDOM(body, fields, edit, ro = {}) {
   body.innerHTML = '';
@@ -219,27 +216,6 @@ export function closeContextMenu() {
   m.remove();
 }
 
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-const R2D = 180 / Math.PI;
-
-/** Set an element's text; in edit chrome (ro.icons) a mapped pictograph becomes its icons.js glyph —
- *  the same glyph the VR painter draws, so the two surfaces agree and no emoji font is relied on. */
-function put(e, s, icons) {
-  s = String(s ?? '');
-  if (!icons || !hasPicto(s)) { e.textContent = s; return e; }
-  e.textContent = '';
-  for (const r of pictoRuns(s)) {
-    if (typeof r === 'string') e.append(r);
-    else { const i = document.createElement('span'); i.className = 'sp-ico'; i.innerHTML = iconSvg(r.icon, 13); e.append(i); }
-  }
-  return e;
-}
 
 // scrub feel (R 10-04, Maya's Channel Box icons): how dragging a number feels, per viewer, never logged. speed: slow /
 // medium / fast; accel: the further you drag the faster it goes (Maya's "hyperbolic"; R's default). Modifiers while
@@ -256,13 +232,6 @@ export const SCRUB_TIP = KEYHINTS.scrub.before;
 // while scrubbing, the keys go on the status line (keyhints.js); the speed rides along
 function scrubHint(on) { if (on) engage('scrub'); else release(); }
 
-/** A number as edit mode writes it (R, 10-10, after Maya's channel box): no trailing zeros, a bare 0, a leading 0 before
- *  a fraction: 0.5 not 0.50, 0 not 0.00, 0.15 not .15, 2 not 2.00. `dp` is the most decimals shown. */
-export function trimNum(v, dp = 2) {
-  let s = (+v).toFixed(dp);
-  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
-  return s === '-0' ? '0' : s;
-}
 function stepper(value, f, commit) {
   const cur = { step: 0.1, dp: 2, ...f };   // options are LIVE: update() refreshes them (a typed value past softMax raises the next drag's cap)
   const { unit, deg, compact, disabled } = cur;
@@ -477,417 +446,7 @@ function fieldDOM(f, edit, ro = {}) {
   if (f.label != null && f.t !== 'btn' && f.t !== 'group' && f.t !== 'pop') { label = el('label', 'sp-label', f.label); row.append(label); }   // a pop's label is its button's face
   if (label && ro.icons) put(label, f.label, true);
   const setLabel = (nf) => { if (label && nf.label != null) put(label, nf.label, ro.icons); };
-  switch (f.t) {
-    case 'log': {
-      // a scrolling monospace tail (a script console): follows the bottom unless you scrolled up to read
-      const pre = el('pre', 'sp-log');
-      const put = (nf) => {
-        const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 8;
-        pre.textContent = (nf.lines ?? []).length ? nf.lines.join('\n') : (nf.empty ?? '');
-        pre.classList.toggle('empty', !(nf.lines ?? []).length);
-        if (atBottom) pre.scrollTop = pre.scrollHeight;
-      };
-      put(f);
-      row.append(pre);
-      row.update = (nf) => put(nf);
-      break;
-    }
-    case 'info': {
-      const s = put(el('span', 'sp-info'), f.value, ro.icons);
-      // a long value is cut at the panel's edge: hover shows it whole, a click unfolds it in place (R 10-11: 'reads as')
-      const full = () => { const t = s.textContent ?? ''; s.title = t.length > 40 ? t : ''; s.classList.toggle('sp-info-long', t.length > 40); };
-      full(); s.onclick = () => { if (s.classList.contains('sp-info-long')) s.classList.toggle('sp-info-open'); };
-      row.append(s);
-      row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); full(); };
-      break;
-    }
-    case 'num': {
-      const st = stepper(f.value ?? 0, f, (v, o) => edit(f.k, v, null, o));
-      // driven: the FIELD carries it (edit chrome) — a `~` inside its left end; the label keeps its axis colour
-      // …and it leads to its driver (Resonite's drive mark, Unity's animated tint; R 10-04: drivers are ordinary cards,
-      // the field points at them — no second list to drift): click goes to the driver's card
-      if (f.driven && ro.icons) { const d = el('span', 'sp-drv', '~'); d.title = `driven by ${f.drivenBy ? `its ${f.drivenBy} (${f.driven})` : f.driven} — click to go to its card`;
-        d.style.cursor = 'pointer'; d.onpointerdown = (e) => e.stopPropagation(); d.onclick = (e) => { e.stopPropagation(); edit('goto', f.driven); }; st.prepend(d); }
-      row.append(st);
-      row.update = (nf) => { setLabel(nf); st.update(nf); };
-      if (label && ro.icons && !f.disabled) {   // edit chrome: the channel's name is a handle too
-        label.classList.add('sp-chan');
-        // selecting channels, as in Maya's channel box (R 10-10 23:36): a click selects one; Ctrl toggles one; Shift selects
-        // the run from the last one clicked; dragging UP or DOWN the names selects the run under the pointer (sideways
-        // is still the scrub)
-        const chans = () => [...(row.parentElement?.children ?? [])].filter((r) => r.classList?.contains('sp-row') && r.querySelector('.sp-chan'));
-        const selectRun = (a, b, keep) => { const L = chans(); const i = L.indexOf(a), j = L.indexOf(b); if (i < 0 || j < 0) return;
-          if (!keep) for (const r of L) r.classList.remove('chan-sel'); for (let k = Math.min(i, j); k <= Math.max(i, j); k++) L[k].classList.add('chan-sel'); };
-        st.bindScrub(label, (e) => {
-          if (label._ranged) { label._ranged = false; return; }   // that press was a run drag, not a click
-          const sel = [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])];
-          if (e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); row.parentElement._chanAnchor = row; return; }   // keys: selectExtend
-          if (e.shiftKey && row.parentElement?._chanAnchor?.isConnected) { selectRun(row.parentElement._chanAnchor, row, false); return; }   // keys: selectExtend
-          const only = sel.length === 1 && sel[0] === row;
-          for (const r of sel) r.classList.remove('chan-sel');
-          if (!only) row.classList.add('chan-sel');
-          if (row.parentElement) row.parentElement._chanAnchor = row;
-        });
-        label.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; const y0 = e.clientY, x0 = e.clientX, keep = e.ctrlKey || e.metaKey;   // keys: selectExtend
-         
-          const move = (ev) => { if (!label._ranging) { if (Math.abs(ev.clientY - y0) < 6 || Math.abs(ev.clientY - y0) < Math.abs(ev.clientX - x0)) return; label._ranging = true; label._ranged = true; }
-            const over = document.elementFromPoint(x0, ev.clientY)?.closest?.('.sp-row'); if (over && chans().includes(over)) { selectRun(row, over, keep); row.parentElement._chanAnchor = row; } };
-          const up = () => { removeEventListener('pointermove', move, true); removeEventListener('pointerup', up, true); setTimeout(() => { label._ranging = false; label._ranged = false; }, 0); };
-          addEventListener('pointermove', move, true); addEventListener('pointerup', up, true); });
-      }
-      break;
-    }
-    case 'range': {
-      // the house's own <input type=range> (index.html styles it globally;
-      // --p drives the progress fill) — the same control the desk's dials use
-      const lo = f.min ?? 0, hi = f.max ?? 1, st = f.step ?? 0.01, dp = f.dp ?? 2;
-      const sl = el('input', 'sp-range'); sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = f.value ?? lo;
-      const out = el('span', 'sp-range-val', `${trimNum(+sl.value, dp)}${f.unit ?? ''}`);
-      const paint = () => sl.style.setProperty('--p', `${((sl.value - lo) / (hi - lo || 1)) * 100}%`);
-      paint();
-      const face = () => { paint(); out.textContent = `${trimNum(+sl.value, dp)}${f.unit ?? ''}`; };
-      // the panels contract: a drag PREVIEWS (opts.live), the release commits once
-      sl.oninput = () => { face(); edit(f.k, +sl.value, null, { live: true }); };
-      sl.onchange = () => { face(); edit(f.k, +sl.value); };
-      row.update = (nf) => { setLabel(nf); if (document.activeElement !== sl) { sl.value = nf.value ?? lo; face(); } };
-      row.append(sl, out);
-      break;
-    }
-    case 'vec3': {
-      const box = el('span', 'sp-vec');
-      let cur = [...(f.value ?? [0, 0, 0])];
-      const parts = cur.map((c, i) => stepper(c, f, (v, o) => {
-        if (f.link) { cur = [v, v, v]; edit(f.k, cur, null, o); return; }
-        cur = [...cur]; cur[i] = v; edit(f.k, cur, i, o);
-      }));
-      box.append(...parts);
-      row.append(box);
-      row.update = (nf) => { setLabel(nf); cur = [...(nf.value ?? cur)]; parts.forEach((p, i) => p.update({ value: cur[i] })); };
-      break;
-    }
-    case 'enum': {
-      const sel = el('select', 'sp-enum');
-      sel.disabled = !!f.disabled;
-      for (const o of f.options ?? []) {
-        const op = new Option(o.label ?? String(o.v), String(o.v));
-        op.selected = o.v === f.value;
-        sel.append(op);
-      }
-      sel.onchange = () => { const o = (f.options ?? []).find((x) => String(x.v) === sel.value); edit(f.k, o ? o.v : sel.value); };
-      row.append(sel);
-      row.update = (nf) => { setLabel(nf); if (document.activeElement !== sel) sel.value = String(nf.value); };
-      break;
-    }
-    case 'color': {
-      const inp = el('input', 'sp-color');
-      inp.type = 'color';
-      inp.disabled = !!f.disabled;
-      const hex = (v) => '#' + (v ?? 0xffffff).toString(16).padStart(6, '0');
-      inp.value = hex(f.value);
-      inp.oninput = () => edit(f.k, parseInt(inp.value.slice(1), 16), null, { live: true });
-      inp.onchange = () => { edit(f.k, parseInt(inp.value.slice(1), 16)); inp.blur(); };
-      row.append(inp);
-      row.update = (nf) => { setLabel(nf); if (document.activeElement !== inp) inp.value = hex(nf.value); };
-      break;
-    }
-    case 'group': {
-      row.classList.add(f.open === false ? 'closed' : 'open');
-      // the card's title: the fold arrow, then its provenance pill at the FRONT (R 10-11: "move the draft/server-only
-      // component pill to the front of the label row… to make it look more important"), then the name
-      const DOT = { draft: ['draft', 'a draft component: not part of the engine yet (it can still change)'], foreign: ['unknown', 'a component this client has no reader for: kept and replayed, not drawn'] };
-      const head = (hh, ff) => { hh.textContent = ''; hh.append(document.createTextNode(`${ff.open === false ? '▸' : '▾'} `));
-        if (ff.dot && DOT[ff.dot]) { const d = el('span', `sp-pill sp-pill-${ff.dot}`, DOT[ff.dot][0]); d.title = DOT[ff.dot][1]; hh.append(d); }
-        hh.append(put(el('span', 'sp-group-name'), ff.label, ro.icons)); return hh; };
-      const h = head(el('button', 'sp-group'), f);
-      h.onclick = () => edit('fold', f.k);
-      row.innerHTML = ''; row.append(h);
-      // a card's own actions on its title line, shown on hover (R 10-10: 'delete components right from the title line,
-      // like an x that shows up on the line when you hover over it'); the VR quad keeps its remove row instead
-      if (f.actions?.length) {
-        const acts = el('span', 'sp-gacts');
-        for (const a of f.actions) { const b = el('button', `sp-gact${a.danger ? ' danger' : ''}`); b.type = 'button'; b.title = a.title ?? a.label ?? ''; b.setAttribute('aria-label', b.title);
-          if (a.icon && hasIcon(a.icon)) b.innerHTML = iconSvg(a.icon, 13); else b.textContent = a.label ?? '';
-          b.onclick = (e) => { e.stopPropagation(); edit(a.k); }; acts.append(b); }
-        row.append(acts); row.classList.add('has-acts');
-      }
-      row.update = (nf) => { head(h, nf); };
-      break;
-    }
-    case 'tree': {
-      const box = el('div', 'sp-tree');
-      if (!f.rows?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
-      // drag a row onto another to reparent it (edit('drop', {id, onto})); onto
-      // the tree's empty space to make it a root ({onto: null}). The dragged
-      // id rides a module variable, not dataTransfer — synthetic DragEvents
-      // in a headless bench carry no data, and nothing else needs it.
-      const dropOn = (onto) => (e) => { e.preventDefault(); e.stopPropagation(); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); if (treeDrag && treeDrag !== onto) edit('drop', { id: treeDrag, onto }); treeDrag = null; };
-      box.ondragover = (e) => { if (treeDrag) { e.preventDefault(); e.dataTransfer && (e.dataTransfer.dropEffect = 'move'); } };
-      box.ondrop = dropOn(null);
-      for (const r of f.rows ?? []) {
-        const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
-        if (r.id != null) line.dataset.id = String(r.id);   // every row is findable by what it is (component rows too)
-        if (!r.noDrag) {
-          line.draggable = true;
-          line.ondragstart = (e) => { treeDrag = r.id; line.classList.add('dragging'); box.classList.add('dragging'); e.dataTransfer?.setData('text/plain', String(r.id)); };
-          line.ondragend = () => { treeDrag = null; line.classList.remove('dragging'); box.classList.remove('dragging'); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); };
-          line.ondragover = (e) => { if (treeDrag && treeDrag !== r.id) { e.preventDefault(); e.stopPropagation(); line.classList.add('drop'); } };
-          line.ondragleave = () => line.classList.remove('drop');
-          line.ondrop = dropOn(r.id);
-        }
-        line.style.paddingLeft = `${4 + (r.depth ?? 0) * 14}px`;
-        line.style.setProperty('--d', String(r.depth ?? 0));   // edit chrome draws one indent guide per level
-        if (r.dim) line.classList.add('dim');
-        // disclosure: a row with children folds them (edit('open', id))
-        const disc = el('button', `sp-disc${r.kids ? '' : ' none'}`, r.kids ? (r.open === false ? '▸' : '▾') : '');
-        disc.tabIndex = -1;
-        // Shift- or Alt-click: this one and everything under it (Maya's and Blender's Shift, Unity's Alt)
-        if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', e.shiftKey || e.altKey ? { id: r.id, deep: true } : r.id); };   // keys: treeFold
-        if (r.kids) disc.title = KEYHINTS.treeFold.before;
-        line.append(disc);
-        const main = el('span', 'sp-item-main');
-        main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
-        if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
-        main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // keys: selectExtend
-        main.title = withKeys(r.title ?? (r.sub ? `${r.label} — ${r.sub}` : r.label), 'selectExtend');   // r.title: what the row left out (its id, its kind)
-        // inline rename (Godot F2 / Blender double-click): a row that carries `rename` (its
-        // current label) swaps the label for an input; Enter or blur commits
-        // edit('rename', id, f, {value}), Esc cancels. The panel holds repaints while it's focused.
-        let beginRename = null;
-        if (r.rename != null) {
-          const lab = main.querySelector('.sp-item-label');
-          beginRename = () => {
-            const inp = el('input', 'sp-rename'); inp.value = r.rename; inp.placeholder = String(r.id);
-            lab.replaceWith(inp); line.draggable = false; inp.focus(); inp.select();
-            let done = false;
-            const end = (commit) => {
-              if (done) return; done = true;
-              const v = inp.value.trim();
-              inp.replaceWith(lab); line.draggable = !r.noDrag;
-              if (commit && v !== r.rename) edit('rename', r.id, f, { value: v });
-            };
-            inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); end(false); } };
-            inp.onblur = () => end(true);
-            inp.onclick = (e) => e.stopPropagation();
-          };
-          main.ondblclick = (e) => { e.stopPropagation(); beginRename(); };
-          line.dataset.id = String(r.id);
-          line._rename = beginRename;
-        }
-        const items = r.menu ?? f.menu;
-        if (items?.length) line.oncontextmenu = (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, items, (k) => (k === 'rename' && beginRename ? beginRename() : edit(k, r.id))); };
-        line.append(main);
-        if (items?.length) line.append(menuButton(line));
-        if (r.mine != null) {   // 👁: hidden in MY view only (myview.js) — never the shared component
-          const eye = el('button', `sp-mini sp-eye${r.mine ? ' on' : ''}`);
-          eye.innerHTML = iconSvg(r.mine ? 'eye-slash' : 'eye', 14);
-          eye.title = r.mine ? 'hidden in your view only — click to show it again' : 'click to hide it in your view only (nobody else is affected)';
-          eye.onclick = (e) => { e.stopPropagation(); edit('myhide', r.id); };
-          line.append(eye);
-        }
-        if (r.locked != null) {
-          // held: not locked itself, but it rides a locked thing, which holds it just the same (the authority's rule)
-          const held = !r.locked && !!r.heldBy;
-          const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}${held ? ' inherited' : ''}`);
-          lock.innerHTML = iconSvg(r.locked || held ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
-          const lv = r.lockLevel && r.lockLevel !== 'builder' ? ` (${r.lockLevel === 'owner' ? 'owners only' : 'moderators and up'})` : '';
-          lock.title = r.locked ? `locked${lv} — click to unlock` : held ? `held by ${r.heldByLabel ?? r.heldBy}'s lock — it moves only with it; unlock that to move this on its own` : 'click to lock in place';
-          if (held) lock.dataset.heldBy = r.heldBy;
-          // lockable: false = this viewer may not lift locks (a visitor, §5; or a level above their rank): the icon still says, the click doesn't
-          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? `locked${lv} (${r.lockLevel === 'owner' ? 'owners' : r.lockLevel === 'moderator' ? 'moderators and owners' : 'builders and owners'} can unlock it)` : held ? lock.title : 'not locked (builders and owners can lock it)'; }
-          lock.onclick = (e) => { e.stopPropagation(); if (lock.disabled) return; if (held) edit('find', r.heldBy); else edit('lock', r.id); };
-          line.append(lock);
-        }
-        box.append(line);
-      }
-      // the root zone: a full tree has no empty space to drop on, so while a
-      // row is in flight a strip at its foot says "no parent" and takes the drop
-      if (f.rootDrop && f.rows?.length) {
-        const zone = el('div', 'sp-tree-root', f.rootDrop);
-        zone.ondragover = (e) => { if (treeDrag) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drop'); } };
-        zone.ondragleave = () => zone.classList.remove('drop');
-        zone.ondrop = dropOn(null);
-        box.append(zone);
-      }
-      row.append(box);
-      // a changed tree is rebuilt (rows are shape), and a new box starts scrolled to the top: in a world where things
-      // move, that was every few frames, and the lower rows could not be reached (R 10-10: "entities ... I can't get
-      // to in the hierarchy"). The box keeps where it was scrolled to, by the field's key.
-      const tkey = f.k ?? 'tree';
-      box.addEventListener('scroll', () => treeScroll.set(tkey, box.scrollTop), { passive: true });
-      const back = () => { const y = treeScroll.get(tkey); if (y && box.isConnected) box.scrollTop = y; };
-      queueMicrotask(back); requestAnimationFrame(back);
-      break;   // rows are shape: a changed tree repaints
-    }
-    case 'json': {
-      // a component as JSON: multi-line, checked as you type (red = won't commit), commits on
-      // blur or Ctrl/Cmd+Enter, Esc reverts. `collapsed` tucks it behind a { } toggle — the
-      // escape hatch under a typed group, for keys its fields don't speak for.
-      const wrap = el('div', 'sp-json');
-      const tog = el('button', 'sp-json-tog', '{ } JSON');
-      const ta = el('textarea', 'sp-json-ta'); ta.spellcheck = false; ta.disabled = !!f.disabled; ta.title = withKeys(f.hint, 'jsonCommit');
-      const err = el('div', 'sp-json-err');
-      let base = f.value ?? '', open = !f.collapsed;
-      const size = () => { ta.rows = Math.min(14, Math.max(3, ta.value.split('\n').length)); };
-      const valid = () => {
-        try { if (ta.value.trim()) JSON.parse(ta.value); err.textContent = ''; ta.classList.remove('bad'); return true; }
-        catch (e) { err.textContent = String(e.message).replace(/^JSON\.parse: /, ''); ta.classList.add('bad'); return false; }
-      };
-      const show = () => { ta.hidden = !open; err.hidden = !open; tog.classList.toggle('on', open); };
-      ta.value = base; size();
-      tog.onclick = () => { open = !open; show(); if (open) ta.focus(); };
-      ta.oninput = () => { size(); valid(); };
-      ta.onblur = () => { if (ta.value !== base && valid()) edit(f.k, ta.value); };
-      ta.onkeydown = (e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ta.blur(); }   // keys: jsonCommit
-        else if (e.key === 'Escape') { ta.value = base; valid(); size(); ta.blur(); }
-      };
-      if (f.collapsed) wrap.append(tog);
-      wrap.append(ta, err); show();
-      row.append(wrap);
-      row.update = (nf) => { setLabel(nf); base = nf.value ?? ''; ta.disabled = !!nf.disabled; if (document.activeElement !== ta) { ta.value = base; size(); valid(); } };
-      break;
-    }
-    case 'text': {
-      // multiline (a story's text, a sign's words; batch 2): a textarea, committed when it loses focus or on Ctrl+Enter
-      const inp = f.multiline ? el('textarea', 'sp-text sp-textarea') : el('input', 'sp-text');
-      if (f.multiline) { inp.rows = 4; inp.style.cssText = 'width:100%;min-height:4.5em;resize:vertical;font:inherit;font-size:12px';
-        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { inp.blur(); e.stopPropagation(); } else if (e.key !== 'Escape') e.stopPropagation(); });   // keys: jsonCommit
-        inp.title = withKeys(f.hint, 'jsonCommit'); }
-      else if (f.hint) inp.title = f.hint;
-      let base = f.value ?? '';   // what Esc restores — the CURRENT value, refreshed by update() (the closure's f is the value at build time)
-      inp.value = base;
-      inp.disabled = !!f.disabled;
-      if (f.placeholder) inp.placeholder = f.placeholder;
-      inp.onchange = () => { edit(f.k, inp.value); inp.blur(); };
-      inp.onkeydown = (e) => { if (e.key === 'Escape') { inp.value = base; inp.blur(); e.stopPropagation(); } };
-      row.append(inp);
-      row.update = (nf) => { setLabel(nf); base = nf.value ?? ''; if (document.activeElement !== inp) inp.value = base; };
-      break;
-    }
-    case 'pop': {
-      // one button that opens a searchable list (Add Component, R 10-04): {label, items:[{k, label, category, hint,
-      // disabled}], recentKey}. Typing filters on name and hint, Enter takes the first, Esc or a click outside closes.
-      const b = el('button', `sp-btn sp-pop-btn${f.icon ? ' sp-btn-ico' : ''}`, f.label);
-      if (f.icon) b.insertAdjacentHTML('afterbegin', iconSvg(f.icon, 14));
-      b.title = f.hint ?? '';
-      b.onclick = (e) => { e.stopPropagation(); openPop(b, f, (k) => edit(k)); };
-      row.append(b);
-      row.update = (nf) => { b.lastChild.textContent = nf.label; f = nf; };
-      break;
-    }
-    case 'btn': {
-      const b = el('button', `sp-btn${f.danger ? ' danger' : ''}${f.icon ? ' sp-btn-ico' : ''}`);
-      const txt = el('span', '', f.label); txt.hidden = !f.label;   // an icon-only button: no empty span to push the glyph off centre
-      let ico = f.icon ?? null; if (ico) b.innerHTML = iconSvg(ico, 14);
-      b.append(txt);
-      b.disabled = !!f.disabled; b.classList.toggle('on', !!f.on); if (!f.label && f.hint) b.title = f.hint;
-      b.onclick = () => edit(f.k);
-      row.append(b);
-      // an icon toggle (the eye, the padlock) must redraw its picture, not only its words
-      row.update = (nf) => { txt.textContent = nf.label; txt.hidden = !nf.label; b.classList.toggle('on', !!nf.on); if (!nf.label && nf.hint) b.title = nf.hint;
-        if ((nf.icon ?? null) !== ico) { ico = nf.icon ?? null; b.querySelector('svg')?.remove(); if (ico) b.insertAdjacentHTML('afterbegin', iconSvg(ico, 14)); } };
-      break;
-    }
-    case 'tiles': {
-      const box = el('div', `sp-tiles${(f.options ?? []).some((o) => o.img) ? ' sp-tiles-img' : ''}`);
-      if (!f.options?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
-      for (const o of f.options ?? []) {
-        const b = el('button', `sp-tile${o.v === f.value ? ' on' : ''}`);
-        b.dataset.v = String(o.v);
-        b.title = o.hint ? `${o.label} — ${o.hint}` : o.label;
-        b.disabled = !!f.disabled;
-        if (o.img) {
-          const pic = el('span', 'sp-tile-pic');
-          const img = el('img'); img.alt = ''; img.loading = 'lazy'; img.src = o.img;
-          img.onerror = () => { img.style.visibility = 'hidden'; };
-          pic.append(img); b.append(pic);
-        } else if (o.icon) b.insertAdjacentHTML('beforeend', iconSvg(o.icon, 18));
-        b.append(el('span', 'sp-tile-label', o.label));
-        b.onclick = () => edit(f.k, o.v);
-        box.append(b);
-      }
-      row.append(box);
-      // a hint is not shape (a saved blueprint's "2 copies placed" changes under it): kept current in place
-      row.update = (nf) => {
-        const byV = new Map((nf.options ?? []).map((o) => [String(o.v), o]));
-        for (const b of box.querySelectorAll('.sp-tile')) {
-          b.classList.toggle('on', b.dataset.v === String(nf.value));
-          const o = byV.get(b.dataset.v);
-          if (o) b.title = o.hint ? `${o.label} — ${o.hint}` : o.label;
-        }
-      };
-      break;
-    }
-    case 'ref': {
-      // a reference to another entity: the value is its id (or null). A "pick"
-      // button arms the same click-to-name gesture attach uses — the next thing
-      // clicked, a tree row or the thing itself in the world, becomes the target.
-      const wrap = el('div', 'sp-ref');
-      const name = el('button', `sp-btn sp-ref-name${f.arming ? ' arming' : ''}`,
-        f.arming ? 'click a target…' : (f.value ?? '— pick —'));
-      name.disabled = !!f.disabled;
-      name.title = f.value ? `target: ${f.value} — click to re-pick` : 'click, then click the target';
-      name.onclick = () => edit(f.k);                       // arm / cancel (editpanels toggles)
-      wrap.append(name);
-      if (f.value != null && !f.arming) {
-        const clr = el('button', 'sp-btn sp-ref-clear', '✕');
-        clr.title = 'clear this reference';
-        clr.disabled = !!f.disabled;
-        clr.onclick = () => edit(f.k, null);
-        wrap.append(clr);
-      }
-      row.append(wrap);
-      row.update = (nf) => {
-        setLabel(nf);
-        name.classList.toggle('arming', !!nf.arming);
-        name.textContent = nf.arming ? 'click a target…' : (nf.value ?? '— pick —');
-      };
-      break;
-    }
-    case 'check': {
-      const inp = el('input');
-      inp.type = 'checkbox';
-      inp.checked = !!f.value;
-      inp.disabled = !!f.disabled;
-      // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
-      // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
-      // it was clicked to until the record agrees (or 3 s pass: then the record wins, e.g. a refusal).
-      let pending = null;
-      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked); };
-      row.append(inp);
-      row.update = (nf) => { setLabel(nf); const v = !!nf.value;
-        if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
-        pending = null; inp.checked = v; };
-      break;
-    }
-    case 'list': {
-      const box = el('div', 'sp-list');
-      if (!f.rows?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
-      for (const r of f.rows ?? []) {
-        const line = el('div', `sp-item${r.active ? ' active' : ''}${r.indent ? ' sp-item-sub-row' : ''}`);
-        if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
-        const main = el('span', 'sp-item-main');
-        if (r.icon) {   // the World row: its glyph, its kind and its name on ONE line
-          const head = el('span', 'sp-item-head'), i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : hasLine(r.icon) || !hasFill(r.icon) ? rsvg : fsvg)(r.icon, 14);   // any of the three sets
-          const lab = el('span', 'sp-item-label'); if (r.kind) lab.append(el('span', 'sp-item-kind', r.kind)); lab.append(r.label);
-          head.append(i, lab); main.append(head);
-        } else main.append(el('span', 'sp-item-label', r.label));
-        if (r.sub) main.append(el('span', 'sp-item-sub', r.sub));
-        if (r.title) main.title = r.title;
-        main.onclick = () => edit(f.k ?? 'row', r.id);   // a keyed list routes its rows; unkeyed lists keep 'row'
-        line.append(main);
-        for (const a of r.actions ?? []) {
-          const b = el('button', `sp-mini${a.danger ? ' danger' : ''}${a.hover ? ' sp-hov' : ''}`, a.label); if (a.title) b.title = a.title;
-          b.onclick = (e) => { e.stopPropagation(); edit(a.k, r.id); };
-          line.append(b);
-        }
-        box.append(line);
-      }
-      row.append(box);
-      break;
-    }
-  }
+  WIDGETS[f.t]?.dom?.(f, { row, label, setLabel, edit, ro, el, put, stepper, openPop, contextMenu, menuButton });
   // right-click a value field → copy value / paste value / copy path / reset to default. Reads
   // the LIVE field (update() keeps it current: the closure's f is the value at build time).
   if (f.k != null && ['num', 'text', 'enum', 'check', 'color', 'range', 'json'].includes(f.t)) {
@@ -930,7 +489,7 @@ function fieldDOM(f, edit, ro = {}) {
   // the 'reset to default'? it feels like a right-click menu item anyway")
   if (f.def !== undefined && ['num', 'enum', 'color', 'range'].includes(f.t) && !/(?:^|:)(?:pos|rot)\./.test(f.k ?? '')) {
     const same = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)) : a === b);
-    const face = f.t === 'color' ? '#' + (+f.def).toString(16).padStart(6, '0') : f.deg ? `${Math.round(f.def * R2D)}°` : String(f.def);
+    const face = f.t === 'color' ? FACTS.hex(+f.def) : f.deg ? `${Math.round(f.def * R2D)}°` : String(f.def);
     const rv = el('button', 'sp-revert', '↺'); rv.tabIndex = -1; rv.title = `revert to default (${face})`;
     rv.onclick = (e) => { e.stopPropagation(); edit(f.k, f.def); };
     rv.hidden = same(f.value, f.def) || !!f.disabled;
@@ -964,203 +523,40 @@ function tokens() {
     head: 'rgba(255,255,255,0.06)', driven: '#b48cff',
   };
 }
-let C = tokens();
-
 export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12, title = '', theme = null } = {}) {
   if (theme === 'edit') return paintEdit(canvas, fields, { width, title });   // edit mode's frames: their own look, under the VR floor (editpaint.js)
-  const rows = [];
-  let folded = false;
-  for (const f of fields) {
-    if (f.t === 'group') { folded = f.open === false; rows.push(f); continue; }
-    if (folded || f.deskOnly) continue;
-    rows.push(f, ...(f.t === 'list' || f.t === 'tree' ? (f.rows ?? []).map((r) => ({ _row: r, parent: f })) : []));
-  }
-  C = tokens();
-  const HEAD = title ? 30 : 0;                       // the frame's small always-on header
-  const H = HEAD + rows.length * rowH + pad * 2;
-  canvas.width = width; canvas.height = H;
+  const C = tokens();
   const g = canvas.getContext('2d');
   const regions = [];
-  g.fillStyle = C.bg; g.fillRect(0, 0, width, H);
-  let y = 0;
   const font = (px, w = 400) => { g.font = `${w} ${px}px system-ui, sans-serif`; };
-
-  if (title) {
-    g.fillStyle = C.head; g.fillRect(0, 0, width, HEAD);
-    g.fillStyle = C.line; g.fillRect(0, HEAD - 1, width, 1);
-    font(13, 600); g.fillStyle = C.label;
-    g.fillText(title.toUpperCase(), pad, HEAD * 0.66);
-    y = HEAD;
-  }
-  y += pad;
-  for (const f of rows) {
-    if (f._row) { // a list or tree row
-      const r = f._row; const tree = f.parent.t === 'tree';
-      const ind = tree ? (r.depth ?? 0) * 18 : 0;
-      g.fillStyle = r.active ? 'rgba(143,232,200,0.16)' : C.row;
-      g.fillRect(pad, y + 2, width - pad * 2, rowH - 4);
-      font(15, r.active ? 600 : 400); g.fillStyle = C.text;
-      g.fillText(String(r.label).slice(0, 34), pad + 10 + ind, y + rowH * 0.62);
-      if (tree && (r.sub || r.badges?.length)) {
-        font(11); g.fillStyle = C.label;
-        g.fillText([r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · ').slice(0, 40), pad + 10 + ind + Math.min(220, r.label.length * 9 + 14), y + rowH * 0.62);
+  const S = {
+    kind: 'legacy', edit: false, g, regions, C, font, width, rowH, pad, vx: width * 0.34,
+    paintStepper: (f, val, x, y, k, axis, dp, w) => paintStepper(g, regions, C, f, val, x, y, rowH, k, axis, dp, w),
+    roundRect,
+    begin(items) {
+      const HEAD = title ? 30 : 0;                       // the frame's small always-on header
+      const H = HEAD + items.length * rowH + pad * 2;
+      canvas.width = width; canvas.height = H;
+      g.fillStyle = C.bg; g.fillRect(0, 0, width, H);
+      let y = 0;
+      if (title) {
+        g.fillStyle = C.head; g.fillRect(0, 0, width, HEAD);
+        g.fillStyle = C.line; g.fillRect(0, HEAD - 1, width, 1);
+        font(13, 600); g.fillStyle = C.label;
+        g.fillText(title.toUpperCase(), pad, HEAD * 0.66);
+        y = HEAD;
       }
-      regions.push({ x: pad, y, w: width * 0.6, h: rowH, action: f.parent.k ?? 'row', payload: r.id });
-      if (tree && r.kids) {   // a disclosure glyph, its own hit region ahead of the row's
-        font(13); g.fillStyle = C.label; g.fillText(r.open === false ? '▸' : '▾', pad + ind - 4, y + rowH * 0.62);
-        regions.unshift({ x: pad + ind - 8, y, w: 16, h: rowH, action: 'open', payload: r.id });
-      }
-      if (tree) {
-        const bw = 34, bx = width - pad - bw;
-        g.fillStyle = r.locked ? C.accent : '#2a3342';
-        g.fillRect(bx, y + 7, bw, rowH - 14);
-        font(13, 600); g.fillStyle = r.locked ? '#14100c' : C.text;
-        g.fillText(r.locked ? 'L' : 'l', bx + 12, y + rowH * 0.62);
-        if (r.lockable !== false) regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: 'lock', payload: r.id });
-        y += rowH; continue;
-      }
-      let bx = width - pad;
-      for (const a of [...(r.actions ?? [])].reverse()) {
-        const bw = Math.max(52, a.label.length * 9 + 18);
-        bx -= bw + 6;
-        g.fillStyle = a.danger ? C.danger : C.well;
-        g.fillRect(bx, y + 7, bw, rowH - 14);
-        font(13, 500); g.fillStyle = C.text;
-        g.fillText(a.label, bx + 9, y + rowH * 0.6);
-        regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: a.k, payload: r.id });
-      }
-      y += rowH; continue;
-    }
-    if (f.t === 'group') {
-      g.fillStyle = C.line; g.fillRect(pad, y + rowH - 6, width - pad * 2, 1);
-      font(14, 600); g.fillStyle = C.accent;
-      g.fillText(`${f.open === false ? '▸' : '▾'} ${f.label}`, pad, y + rowH * 0.62);
-      regions.push({ x: pad, y, w: width - pad * 2, h: rowH, action: 'fold', payload: f.k });
-      y += rowH; continue;
-    }
-    if (f.label != null) { font(13); g.fillStyle = f.driven ? C.driven : C.label; g.fillText(f.label, pad, y + rowH * 0.6); }
-    const vx = width * 0.34;
-    const mark = regions.length;   // a disabled field paints but takes no hits
-    switch (f.t) {
-      case 'enum': {
-        let bx = vx;
-        for (const o of f.options ?? []) {
-          const lab = String(o.label ?? o.v); const bw = Math.max(40, lab.length * 8 + 16);
-          const on = o.v === f.value;
-          g.fillStyle = on ? C.accent : '#2a3342';
-          g.fillRect(bx, y + 7, bw, rowH - 14);
-          font(13, on ? 600 : 400); g.fillStyle = on ? '#14100c' : C.text;
-          g.fillText(lab, bx + 8, y + rowH * 0.62);
-          regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: f.k, payload: o.v });
-          bx += bw + 4;
-          if (bx > width - pad - 40) break;
-        }
-        break;
-      }
-      case 'color': {
-        const s = rowH - 14;
-        g.fillStyle = '#' + (f.value ?? 0xffffff).toString(16).padStart(6, '0');
-        g.fillRect(vx, y + 7, s * 1.6, s);
-        g.strokeStyle = C.label; g.lineWidth = 1; g.strokeRect(vx, y + 7, s * 1.6, s);
-        // an 8-swatch palette: the keyboard-free way to pick a color
-        const PAL = [0xffffff, 0xffd9a0, 0xff8a5c, 0xe05a5a, 0x7cc47c, 0x5fa8ff, 0xb48cff, 0x202020];
-        let bx = vx + s * 1.6 + 8;
-        for (const c of PAL) {
-          g.fillStyle = '#' + c.toString(16).padStart(6, '0');
-          g.fillRect(bx, y + 9, s - 4, s - 4);
-          regions.push({ x: bx, y: y + 9, w: s - 4, h: s - 4, action: f.k, payload: c });
-          bx += s;
-        }
-        break;
-      }
-      case 'tiles': {   // legacy quads: the tiles as one line of pills (edit chrome paints a grid)
-        let bx = pad;
-        for (const o of f.options ?? []) {
-          const lab = String(o.label ?? o.v); const bw = Math.max(40, lab.length * 8 + 16);
-          if (bx + bw > width - pad) break;
-          const on = o.v === f.value;
-          g.fillStyle = on ? C.accent : '#2a3342';
-          g.fillRect(bx, y + 7, bw, rowH - 14);
-          font(13, on ? 600 : 400); g.fillStyle = on ? '#14100c' : C.text;
-          g.fillText(lab, bx + 8, y + rowH * 0.62);
-          regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: f.k, payload: o.v });
-          bx += bw + 4;
-        }
-        break;
-      }
-      case 'info': font(15); g.fillStyle = C.text; g.fillText(String(f.value ?? '').slice(0, 30), vx, y + rowH * 0.6); break;
-      case 'log': font(13); g.fillStyle = C.label; g.fillText(String((f.lines ?? []).at(-1) ?? f.empty ?? '').slice(0, 44), pad, y + rowH * 0.6); break;   // newest line only: a quad has no scrollback
-      case 'text': font(15); g.fillStyle = C.label; g.fillText(String(f.value ?? '—').slice(0, 26), vx, y + rowH * 0.6); break;
-      case 'json': font(13); g.fillStyle = C.label; g.fillText(String(f.value ?? '—').replace(/\s+/g, ' ').slice(0, 34), vx, y + rowH * 0.6); break;   // display-only: no keyboard in a headset
-      case 'btn': {
-        const bw = Math.max(90, f.label.length * 9 + 24);
-        g.fillStyle = f.danger ? C.danger : C.accent;
-        g.fillRect(pad, y + 6, bw, rowH - 12);
-        font(15, 600); g.fillStyle = f.danger ? C.text : '#14100c';
-        g.fillText(f.label, pad + 12, y + rowH * 0.62);
-        regions.push({ x: pad, y: y + 6, w: bw, h: rowH - 12, action: f.k });
-        break;
-      }
-      case 'ref': {
-        // the reference name box arms the laser-pick; the next thing the
-        // pointer selects (a row or the thing in the world) names the target.
-        const txt = f.arming ? 'click a target…' : (f.value ?? '— pick —');
-        const bw = Math.max(120, txt.length * 8 + 24);
-        g.fillStyle = f.arming ? C.accent : C.row;
-        g.fillRect(vx, y + 6, bw, rowH - 12);
-        font(15); g.fillStyle = f.arming ? '#14100c' : C.text;
-        g.fillText(txt, vx + 10, y + rowH * 0.62);
-        regions.push({ x: vx, y: y + 6, w: bw, h: rowH - 12, action: f.k });
-        if (f.value != null && !f.arming) {                 // a ✕ to clear
-          const cx = vx + bw + 8;
-          g.fillStyle = C.danger; font(15, 600);
-          g.fillText('✕', cx, y + rowH * 0.62);
-          regions.push({ x: cx - 4, y: y + 6, w: 24, h: rowH - 12, action: f.k, payload: null });
-        }
-        break;
-      }
-      case 'check': {
-        const s = rowH - 16;
-        g.strokeStyle = C.label; g.lineWidth = 2;
-        g.strokeRect(vx, y + 8, s, s);
-        if (f.value) {
-          g.strokeStyle = C.accent; g.lineWidth = 3;
-          g.beginPath();
-          g.moveTo(vx + s * 0.2, y + 8 + s * 0.55);
-          g.lineTo(vx + s * 0.45, y + 8 + s * 0.8);
-          g.lineTo(vx + s * 0.85, y + 8 + s * 0.2);
-          g.stroke();
-        }
-        regions.push({ x: vx, y: y + 8, w: s, h: s, action: f.k, payload: !f.value });
-        break;
-      }
-      case 'range': {
-        const lo = f.min ?? 0, hi = f.max ?? 1, st = f.step ?? 0.01, dp = f.dp ?? 2;
-        const v = Math.min(hi, Math.max(lo, +(f.value ?? lo)));
-        const tw = width - pad - vx - 64, ty = y + rowH / 2, frac = (v - lo) / (hi - lo || 1);
-        g.fillStyle = C.well; roundRect(g, vx, ty - 4, tw, 8, 4); g.fill();
-        g.fillStyle = C.accent; roundRect(g, vx, ty - 4, Math.max(8, tw * frac), 8, 4); g.fill();
-        g.beginPath(); g.arc(vx + tw * frac, ty, 9, 0, Math.PI * 2); g.fillStyle = C.text; g.fill();
-        font(15); g.fillStyle = C.text; g.textAlign = 'right'; g.fillText(`${trimNum(v, dp)}${f.unit ?? ''}`, width - pad, y + rowH * 0.62); g.textAlign = 'left';
-        // one region for the whole track: the hit's fraction along it is the value
-        regions.push({ x: vx - 6, y: y + 4, w: tw + 12, h: rowH - 8, action: f.k, slider: { lo, hi, st } });
-        break;
-      }
-      case 'num': paintStepper(g, regions, f, +(f.value ?? 0), vx, y, rowH, f.k, null, f.dp); break;
-      case 'vec3': {
-        const seg = (width - vx - pad) / 3;
-        (f.value ?? [0, 0, 0]).forEach((c, i) =>
-          paintStepper(g, regions, f, +c, vx + seg * i, y, rowH, f.k, f.link ? null : i, f.dp, seg - 8));
-        break;
-      }
-    }
-    if (f.disabled) regions.length = mark;
-    y += rowH;
-  }
-  return regions;
+      return y + pad;
+    },
+    prep(f, y, h) {
+      if (f && f.label != null) { font(13); g.fillStyle = f.driven ? C.driven : C.label; g.fillText(f.label, pad, y + rowH * 0.6); }
+      return { ...S, y, h };
+    },
+  };
+  return paintFields(fields, S);
 }
 
-function paintStepper(g, regions, f, val, x, y, rowH, k, axis, dp = 2, w = 150) {
+function paintStepper(g, regions, C, f, val, x, y, rowH, k, axis, dp = 2, w = 150) {
   const bump = 26, mid = w - bump * 2;
   g.fillStyle = C.well;
   g.fillRect(x, y + 7, bump, rowH - 14);
@@ -1172,9 +568,7 @@ function paintStepper(g, regions, f, val, x, y, rowH, k, axis, dp = 2, w = 150) 
   g.font = '500 14px system-ui';
   const face = f.deg ? `${Math.round(val * R2D)}°` : trimNum(val, dp) + (f.unit ? ` ${f.unit}` : '');
   g.fillText(face, x + bump + 8, y + rowH * 0.62);
-  // deltas are on the WIRE scale (radians for deg fields): the dispatcher adds
-  // them to the current value and never has to know what the face showed
-  const d = f.deg ? (f.step ?? 1) / R2D : (f.step ?? 0.1);
+  const d = FACTS.delta(f);
   regions.push({ x, y: y + 7, w: bump, h: rowH - 14, action: k, payload: { axis, delta: -d } });
   regions.push({ x: x + bump + mid, y: y + 7, w: bump, h: rowH - 14, action: k, payload: { axis, delta: +d } });
 }
