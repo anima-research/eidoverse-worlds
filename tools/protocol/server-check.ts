@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
-import { makeReplica, stateFromView } from "../../shared/protocol/replica.js";
+import { makeReplica, stateFromWire } from "../../shared/protocol/replica.js";
 import { viewState } from "../../shared/protocol/view.js";
 import { enc } from "../../shared/protocol/names.js";
 import { worldPose } from "../../shared/hierarchy.js";
@@ -403,7 +403,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
   const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
     return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));
-  const neuView = viewState(stateFromView(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
+  const neuView = viewState(stateFromWire(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
   ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
   const replica = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl")))).entities;
   ok(JSON.stringify(replica[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", socket: "seat" }) && JSON.stringify(replica[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",

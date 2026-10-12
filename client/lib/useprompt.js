@@ -5,7 +5,7 @@
 // no seat to offer); E uses it through the door, and a refusal reads in a person's words (editwrites showRefusal). Not in
 // edit mode (E rotates there), not while typing (controller.js filters), not in a headset (no hint bar there).
 import { THREE } from './core.js';
-import { comps, entities } from './world.js';
+import { bags, bagOf, entities } from './world.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
 import { xrActive } from './xrask.js';
@@ -30,7 +30,7 @@ export function usable() {
   let fx = 0, fz = 0;
   if (hooks.camera?.getWorldDirection) { hooks.camera.getWorldDirection(_d); fx = _d.x; fz = _d.z; }
   let best = null, bestS = Infinity;
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     const rx = bag.reactions; if (!isBag(rx) || !Object.keys(rx).length) continue;
     const obj = entities.get(id); if (!obj?.getWorldPosition) continue;
     obj.getWorldPosition(_v);
@@ -48,7 +48,7 @@ export function usable() {
 }
 /** Every action a thing offers (its reactions), in its own order: [{action, verb, who?, barred?}]. */
 export function actionsOf(id) {
-  const bag = comps.get(id), rx = bag?.reactions; if (!isBag(rx)) return [];
+  const bag = bagOf(id), rx = bag?.reactions; if (!isBag(rx)) return [];
   return Object.keys(rx).map((action) => {
     const h = rx[action] ?? {};
     const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;

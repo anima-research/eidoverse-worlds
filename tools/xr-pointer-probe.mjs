@@ -269,7 +269,7 @@ try {
     H.up('right'); await H.frames(6); out.none = read().visible;
     // world entities: a box registered in the world's entity table for the check (then removed) — PLAIN first (no
     // components: a wall), then INTERACTABLE (a sockets component, as a chair has)
-    const world = await import('./lib/world.js');
+    const world = await import('./lib/world.js'); const { replica } = await import('./lib/net.js');
     const from = H.handFrom('right'), h = H.head(), at = from.clone().addScaledVector(h.f, 2.2).add(new T.Vector3(0, 0.2, 0));
     const box = new T.Mesh(new T.BoxGeometry(0.6, 0.6, 0.6), new T.MeshBasicNodeMaterial({ color: 0x556677 }));
     box.position.copy(at); box.lookAt(from.x, at.y, from.z); box.userData.entityId = 'probe-box'; EW.scene.add(box); box.updateMatrixWorld(true);
@@ -285,7 +285,8 @@ try {
       H.xr.setXrPref('dotVisibility', 'always'); await H.frames(4);
       out.plainAlways = { dot: read().visible, kind: H.dbg().dot.kind };
       H.xr.setXrPref('dotVisibility', 'contextual');
-      world.comps.set('probe-box', { sockets: { seat: { pose: 'sitchair' } } }); await H.frames(5);
+      // the record every reader holds is the fold's (world.js bagOf reads replica.st, C7c): the probe's fake entity gets a fake record there
+      replica.st.entities['probe-box'] = { born: 0, c: { transform: {}, sockets: { seat: { pose: 'sitchair' } } } }; await H.frames(5);
       const d = read(), fn = from.clone().sub(at).setY(0).normalize();   // the face toward the hand: its plane is 0.3 m out along fn
       const toRay = d.p.clone().sub(from).cross(at.clone().sub(from).normalize()).length();
       out.ent = { visible: d.visible, kind: H.dbg().dot.kind, beam: beam(), want, ent: H.dbg().ent, lift: +(d.p.clone().sub(at).dot(fn) - 0.3).toFixed(4), onRay: +toRay.toFixed(4), facing: +d.n.dot(fn).toFixed(4), angDiam: +(d.diam / eyeP().distanceTo(d.p)).toFixed(5) };
@@ -293,7 +294,7 @@ try {
       H.xr.setXrPref('pointerVisibility', 'never'); await H.frames(3); out.entNeverBeam = { dot: read().visible, beam: H.dbg().laser.visible };
       H.xr.setXrPref('pointerVisibility', 'contextual'); H.xr.setXrPref('dotVisibility', 'never'); await H.frames(3); out.entNeverDot = { dot: read().visible, beam: H.dbg().laser.visible };
       H.xr.setXrPref('dotVisibility', 'contextual');
-    } finally { world.entities.delete('probe-box'); world.comps.delete('probe-box'); box.removeFromParent(); }
+    } finally { world.entities.delete('probe-box'); delete replica.st.entities['probe-box']; box.removeFromParent(); }
     return out;
   }, { bg: spots.bg }, 60000);
   console.log('  · dot', J(dot));

@@ -1,13 +1,15 @@
 // parity — the scene against the view (EW.foldParity() in the console): does what this page DRAWS agree with the view
 // of its own fold (state.js)? Run it in any live world, after any suspect sequence of edits. It compares the fold's
-// OWN outputs (entity ids, component bags, parents) and deliberately not realization (transforms mid-motion, loaded
+// OWN outputs (entity ids, what each is, parents) and deliberately not realization (transforms mid-motion, loaded
 // meshes): those diverge by design while an object is in flight or riding a motion.
+// (compDiffs — the realizer's `comps` mirror against the view — is retired with the mirror, C7c: every reader holds the
+// fold's own record (world.js bagOf), so there is no second bag to drift. The key stays, always empty, for the benches.)
 
 import { state } from './state.js';
-import { entities, entityMeta, comps } from './world.js';
+import { entities } from './world.js';
+import { realizedAs } from './realize/models.js';
 import { kindOf } from '../../shared/protocol/kind.js';
 
-const jstr = (v) => JSON.stringify(v ?? null);
 
 export function foldParity() {
   const shadow = state.st;
@@ -23,15 +25,10 @@ export function foldParity() {
   for (const id of shadowIds) {
     if (!legacyIds.has(id)) continue;
     out.checked++;
-    const legacyBag = comps.get(id) ?? null;
-    const shadowBag = shadow.entities[id].comp ?? null;
-    if (jstr(legacyBag) !== jstr(shadowBag)) {
-      out.compDiffs.push({ id, legacy: legacyBag, shadow: shadowBag });
-    }
     // identity: the fold's word on WHAT this id is (a light? which model?)
     // vs what the scene realized — where same-id-spawn overwrite semantics
-    // would drift first (a still-loading reservation has no meta yet: skip)
-    const meta = entityMeta.get(id);
+    // would drift first (a still-loading reservation is tracked as nothing yet: skip)
+    const meta = realizedAs(id);
     if (meta) {
       const ent = shadow.entities[id];
       const sceneKind = meta.kind;

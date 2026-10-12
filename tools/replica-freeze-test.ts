@@ -6,7 +6,7 @@
 // Why: the realizer's `comps` clone (models.js syncComps, gone in C7c) was the only thing between an evaluator's stray
 // `bag.x = …` and this client's fold. With every reader on replica.st, the guard has to be the record itself.
 import { scratchWorld } from "./protocol/scratchworld.ts";
-import { makeReplica, stateView } from "../shared/protocol/replica.js";
+import { makeReplica, wireState } from "../shared/protocol/replica.js";
 import { digest } from "../shared/protocol/fold.js";
 
 let pass = 0, fail = 0;
@@ -17,7 +17,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 const throws = (f: () => void) => { try { f(); return false; } catch { return true; } };
 
 const W = scratchWorld("freeze").seed({ crate: { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, comp: { label: "crate", sockets: { top: { pos: [0, 1, 0] } } } } });
-const cutAt = () => JSON.parse(JSON.stringify({ state: stateView(W.state()), head: W.entries().length - 1 }));
+const cutAt = () => JSON.parse(JSON.stringify({ state: wireState(W.state()), head: W.entries().length - 1 }));
 
 console.log("\nfrozen by default (every suite runs with the guard):");
 {

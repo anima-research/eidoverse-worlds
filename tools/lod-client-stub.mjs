@@ -17,6 +17,8 @@ import { KTX2_KEY } from '../shared/ktx2.js';   // the stub publishes the REAL g
 import { LOD_RECIPE } from '../server/store-variants.ts';   // …and the REAL recipe: the literal here went stale when #205 derived it
 import * as THREE_ from '../client/node_modules/three/build/three.module.js';
 import { askFor, tierOf } from '../client/lib/lod_policy.js';
+import { state } from '../client/lib/state.js';
+import { kindOf } from '../shared/protocol/kind.js';
 
 // ---- core.js ----------------------------------------------------------------
 // makePlaceholder wants the node material class from three/webgpu; the
@@ -148,7 +150,13 @@ export const clearStatusChip = (id) => { chips.delete(id); };
 // ---- world.js (its maps) ----------------------------------------------------
 export const entities = new Map();
 export const entityMeta = new Map();
+/** the suite's driver: a record set here wins; otherwise the record is read from the view state.js holds (the fold's
+ *  record as the realizer reads it — world.js bagOf reads replica.st; this cone has no replica, so the view stands in) */
 export const comps = new Map();
+const recordOfView = (e) => (e ? { ...(e.lib != null ? { model: e.lib } : {}), transform: {}, ...(e.parent ? { parent: e.parent } : {}), ...(e.comp ?? {}) } : null);
+export const bagOf = (id) => comps.get(id) ?? recordOfView(state.st.entities?.[id]);
+export function* bags() { const seen = new Set(); for (const [id, c] of comps) { seen.add(id); yield [id, c]; } for (const id of Object.keys(state.st.entities ?? {})) if (!seen.has(id) && id !== '@world') yield [id, bagOf(id)]; }
+export const metaOf = (id) => entityMeta.get(id) ?? (state.st.entities?.[id] ? { kind: kindOf(state.st.entities[id]), ...(state.st.entities[id].lib ? { lib: state.st.entities[id].lib } : {}) } : null);
 export const avatarMounts = new Map();
 export const editHolds = new Set();
 export function findPart(root, name) {

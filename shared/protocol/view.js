@@ -34,11 +34,17 @@ export function parentOf(c) {
   const p = c?.parent;
   return p && typeof p.to === "string" ? { to: idOut(p.to), ...(typeof p.socket === "string" ? { socket: p.socket } : {}) } : null;
 }
+/** Is this key of a fold record a component (not its model/transform/parent, not an imported:* field)? */
+export const isCompKey = (k) => k !== "model" && k !== "transform" && k !== "parent" && !k.startsWith(IMP);
+/** The record's component keys, as the fold spells them. */
+export const compKeys = (c) => Object.keys(c ?? {}).filter(isCompKey);
+/** …and its [key, value] pairs. */
+export const compEntries = (c) => Object.entries(c ?? {}).filter(([k]) => isCompKey(k));
 /** The record's component bag (every key but model/transform/parent/imported:*), keys names.dec'd, values cloned; undefined when empty. */
 export function compOf(c) {
   let comp;
   for (const [k, v] of Object.entries(c ?? {})) {
-    if (k === "model" || k === "transform" || k === "parent" || k.startsWith(IMP)) continue;
+    if (!isCompKey(k)) continue;
     (comp ??= {})[idOut(k)] = clone(v);
   }
   return comp;

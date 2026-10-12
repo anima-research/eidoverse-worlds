@@ -11,7 +11,7 @@
 //                    wholesale, removed by delete {id, component}
 //   3. the browser   client/lib/realize/models.js + state.js + the real bus, over tools/lod-client-stub.mjs's cone
 //                    (no renderer, no network), fed the views a client folds (hydrate the cut's view, then
-//                    applyView after each write): the bag is mirrored and announced, nobody claims it, nothing is
+//                    applyView after each write): the bag is announced, nobody claims it, nothing is
 //                    reported; motion.js's frame loop skips it
 //   4. the inspector shared/editschema.js — a raw-JSON field, editable by a door `set`; the edit's ops go through the
 //                    real authority on a scratch world and are read back
@@ -98,8 +98,7 @@ for (let i = 0; i < 4; i++) { M.residencySweep?.(); await settle(); }
 const obj = stub.entities.get('crate');
 check('the entity realizes normally (an unknown comp blocks nothing)', !!obj && typeof obj.traverse === 'function',
   `entities.get('crate') = ${obj}`);
-check('the bag is mirrored into the comps map evaluators read, verbatim', jeq(stub.comps.get('crate')?.[TYPE], D1), JSON.stringify(stub.comps.get('crate')));
-check('…as a CLONE, never an alias of the folded state', stub.comps.get('crate')?.[TYPE] !== S.state.st.entities.crate?.comp?.[TYPE]);
+check('the record evaluators read (world.js bagOf: the fold\'s own, no mirror to fill) carries it verbatim', jeq(stub.bagOf('crate')?.[TYPE], D1), JSON.stringify(stub.bagOf('crate')));
 check('the join announces it on the bus like any component ({id, type, data})',
   heard.some((h) => h.id === 'crate' && h.type === TYPE && jeq(h.data, D1)), JSON.stringify(heard));
 
@@ -110,7 +109,7 @@ await settle();
 const live = heard.filter((h) => h.id === 'crate' && h.type === TYPE);
 check('a live replace and a live removal are each announced (data, then null)',
   live.length === 2 && jeq(live[0].data, D2) && live[1].data === null, JSON.stringify(heard));
-check('after the removal the comps map holds nothing for the entity', !stub.comps.has('crate'), JSON.stringify(stub.comps.get('crate')));
+check('after the removal the record evaluators read no longer carries it', stub.bagOf('crate')?.[TYPE] === undefined, JSON.stringify(stub.bagOf('crate')));
 check('the realizer reported nothing at any point (no error path was taken)', spy.reports.length === 0, JSON.stringify(spy.reports));
 
 // motion.js's per-frame loop walks the same map: an unknown key, and an

@@ -444,7 +444,7 @@ try {
 
   // the pivot (research 52): handles sit at the pivot, and a turn goes ABOUT it (the thing swings round, not in place)
   check("(setup) a crate 'pv' with its pivot 1 m along its own x", (await bobReq("create", { id: "pv", model: CRATE, components: { transform: { pos: [10, 0, 10], q: [0, 0, 0, 1], scale: [1, 1, 1] }, pivot: { pos: [1, 0, 0] } } })).ok);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pv') && !!m.comps.get('pv')?.pivot)`, 12000);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pv') && !!m.bagOf('pv')?.pivot)`, 12000);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pv'); (await import('/lib/build.js')).setTool('rotate'); return true;`);
   check("PV1 the rotate handles sit at the pivot (11, 0, 10), not the origin", await waitFor(`(() => { const g = __gizmo(); return g.attached === 'pv' && g.viaProxy && Math.abs(g.proxyPos[0] - 11) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })()`), await evalJson(`__gizmo().proxyPos`));
   const nPv = myActs().length;

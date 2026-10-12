@@ -344,14 +344,14 @@ check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.que
   check('…titled "driven by motion — editing moves its rest pose"', ['x', 'y', 'z'].every((a) => L[a]?.title?.startsWith('driven by motion — editing moves its rest pose')), JSON.stringify(L.x?.title));   // + the scrub modifiers line
 }
 check('amp / period are the Bob card\'s rows, once each (no "motion · " lane)', await evalJson(`(() => { const L = ${numLabels}; return L.filter((l) => l === 'amp').length === 1 && L.filter((l) => l === 'period').length === 1 && !L.some((l) => /^motion · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
-const t0 = await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.motion?.t0)`);
+const t0 = await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.motion?.t0)`);
 check('the fold stamped a t0', typeof t0 === 'number' && t0 > 0, String(t0));
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'amp').querySelector('.sp-num'); i.value = '+=0.2'; i.dispatchEvent(new Event('change')); return true; })()`);
-check('amp is 0.5 after +=0.2', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.comps.get('benchlamp')?.motion?.amp ?? 0) - 0.5) < 1e-9)`));
-check('…and t0 was kept (no phase restart)', (await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.motion?.t0)`)) === t0);
+check('amp is 0.5 after +=0.2', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.bagOf('benchlamp')?.motion?.amp ?? 0) - 0.5) < 1e-9)`));
+check('…and t0 was kept (no phase restart)', (await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.motion?.t0)`)) === t0);
 // was the Motion group's "come to rest" button; B's card carries its own remove (the same verb: motion type null)
 await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-btn')].find((x) => x.textContent === 'remove Bob'); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
-check('the Bob card\'s "remove Bob" removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.motion)`));
+check('the Bob card\'s "remove Bob" removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.motion)`));
 
 console.log('\nsockets: a seat on the light — a Seats card, list, per-slot channels, ✕ through the merged write:');
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'benchlamp', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } })), true`);
@@ -365,22 +365,22 @@ if (process.env.EDIT_SHOT) {   // a look, not a trust: the grey scope is a desig
   console.log(`  screenshot → ${process.env.EDIT_SHOT}`);
 }
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'seat yaw').querySelector('.sp-num'); i.value = '90'; i.dispatchEvent(new Event('change')); return true; })()`);
-check('typing 90 into a degree channel lands as π/2 in the fold (not π/2/57)', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.comps.get('benchlamp')?.sockets?.seat?.yaw ?? 0) - Math.PI / 2) < 1e-3)`), 'yaw=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.sockets?.seat?.yaw)`)));
+check('typing 90 into a degree channel lands as π/2 in the fold (not π/2/57)', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.bagOf('benchlamp')?.sockets?.seat?.yaw ?? 0) - Math.PI / 2) < 1e-3)`), 'yaw=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.sockets?.seat?.yaw)`)));
 check('no raw-JSON row for a type an editor speaks for', await evalJson(`![...${insp}.querySelectorAll('.sp-f-text .sp-label')].some((l) => /^(sockets|motion)$/.test(l.textContent))`));
 // a settle before the ✕: the bench fires verbs faster than a person, and the
 // server's VERB_RATE window (12 per 4 s) is the one thing that can make this
 // click do nothing with no error in the page — the detail prints refusals
 await sleep(1500);
 await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-mini.danger')].find((x) => x.textContent === '✕'); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
-check('✕ removes the only seat → sockets comp gone', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.sockets)`), 'sockets=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.sockets)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+check('✕ removes the only seat → sockets comp gone', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.sockets)`), 'sockets=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.sockets)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
 
 console.log('\nhierarchy: label · hidden · filter · disclosure · duplicate · arrows:');
 await sleep(1500);   // settle: the verb-rate window (see the ✕ note above)
 const hier = `[...document.querySelectorAll('.frame.edit')].find((f) => /Hierarchy/.test(f.querySelector('.fr-title')?.textContent))`;
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text')].find((r) => r.querySelector('.sp-label')?.textContent === 'name').querySelector('.sp-text'); i.value = 'porch'; i.dispatchEvent(new Event('change')); return true; })()`);
-check('label typed in the header → the hierarchy row shows it', await waitFor(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent === 'porch  (benchlamp)')`), 'rows=' + await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].map((l) => l.textContent).join('|')`) + ' label-comp=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.label)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+check('label typed in the header → the hierarchy row shows it', await waitFor(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent === 'porch  (benchlamp)')`), 'rows=' + await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].map((l) => l.textContent).join('|')`) + ' label-comp=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.label)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
 await evalJson(`(() => { const c = [...${insp}.querySelectorAll('.sp-f-check')].find((r) => r.querySelector('.sp-label')?.textContent === 'hidden').querySelector('input'); c.checked = true; c.dispatchEvent(new Event('change')); return true; })()`);
-check('hidden checkbox → the mesh is not drawn (obj.visible false, still in the fold)', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.visible === false && !!m.comps.get('benchlamp')?.hidden)`));
+check('hidden checkbox → the mesh is not drawn (obj.visible false, still in the fold)', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.visible === false && !!m.bagOf('benchlamp')?.hidden)`));
 await evalJson(`(() => { const c = [...${insp}.querySelectorAll('.sp-f-check')].find((r) => r.querySelector('.sp-label')?.textContent === 'hidden').querySelector('input'); c.checked = false; c.dispatchEvent(new Event('change')); return true; })()`);
 check('…and back', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.visible === true)`));
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('light', { id: 'lamp3', pos: [1, 1.5, 1], color: 0xffffff, intensity: 4, range: 3 })), true`);
@@ -409,7 +409,7 @@ await evalJson(`(() => { const s = ${hier}.querySelector('.schema-scroll'); s.fo
 check('↑ selects the previous', await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'benchlamp')`));
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', altKey: true, bubbles: true })), true`);
 await evalJson(`dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', altKey: true, bubbles: true })), true`);   // let go (see the W note: a held D strafes)
-check('Alt+D duplicates: a new light carrying the SOURCE\'s components (minus lock), nudged', await waitFor(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); const o = m.entities.get(id); if (!o) return false; const strip = (b) => { const c = { ...(b ?? {}) }; delete c.lock; return JSON.stringify(c); }; return strip(m.comps.get(id)) === strip(m.comps.get('benchlamp')) && Math.abs(o.position.x - 1.5) < 0.01; })`), await evalJson(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); return JSON.stringify({ id, comps: m.comps.get(id), src: m.comps.get('benchlamp'), pos: m.entities.get(id)?.position.toArray() }); })`));
+check('Alt+D duplicates: a new light carrying the SOURCE\'s components (minus lock), nudged', await waitFor(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); const o = m.entities.get(id); if (!o) return false; const strip = (b) => { const c = { ...(b ?? {}) }; delete c.lock; return JSON.stringify(c); }; return strip(m.bagOf(id)) === strip(m.bagOf('benchlamp')) && Math.abs(o.position.x - 1.5) < 0.01; })`), await evalJson(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); return JSON.stringify({ id, comps: m.bagOf(id), src: m.bagOf('benchlamp'), pos: m.entities.get(id)?.position.toArray() }); })`));
 check('…and the copy is selected', await waitFor(`import('/lib/scenegraph.js').then((m) => /^benchlamp~[0-9a-f]{4}$/.test(m.sceneSelected() ?? ''))`));
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
@@ -476,10 +476,10 @@ check('undo puts it back — and pops the GIZMO\'s entry, not an older one (the 
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await waitFor(`globalThis.__gizmo?.().attached === 'benchlamp'`);
 await evalJson(`import('/lib/inspect.js').then((m) => m.commitEdit('benchlamp', 'flags.lock', true)), true`);
-check('locking the thing detaches the gizmo (a handle you can\'t drag is a lie)', await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('benchlamp')?.lock) && globalThis.__gizmo?.().attached === null`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached }; })()`)));
+check('locking the thing detaches the gizmo (a handle you can\'t drag is a lie)', await waitFor(`import('/lib/world.js').then((m) => !!m.bagOf('benchlamp')?.lock) && globalThis.__gizmo?.().attached === null`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached }; })()`)));
 await sleep(600);
 await evalJson(`import('/lib/inspect.js').then((m) => m.commitEdit('benchlamp', 'flags.lock', false)), true`);
-check('unlocking re-attaches', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.lock) && globalThis.__gizmo?.().attached === 'benchlamp'`));
+check('unlocking re-attaches', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.lock) && globalThis.__gizmo?.().attached === 'benchlamp'`));
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('select')), true`);
 check('select tool → no gizmo', await waitFor(`globalThis.__gizmo?.().attached === null`));
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('move')), true`);
@@ -528,11 +528,11 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   await sleep(400);
   const qBefore = JSON.stringify(((await rec()) as any).q);
   await openAdv(); await setOrder('ZXY'); await toTab('inspector');
-  check('rotate order → ZXY writes comp rotOrder and leaves q bit-identical (changing the order never moves the thing)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder === 'ZXY') && import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities.crate1.q) === ${JSON.stringify(qBefore)})`), JSON.stringify(await rec()));
-  check('…and the channels now read that same q in ZXY (recomposing them in ZXY gives q)', await waitFor(`(async () => (await import('/lib/world.js')).comps.get('crate1')?.rotOrder === 'ZXY' && ${orderSel}?.value === 'ZXY' && await ${facesCompose('ZXY')})()`), JSON.stringify(await evalJson(faces)));
+  check('rotate order → ZXY writes comp rotOrder and leaves q bit-identical (changing the order never moves the thing)', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.rotOrder === 'ZXY') && import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities.crate1.q) === ${JSON.stringify(qBefore)})`), JSON.stringify(await rec()));
+  check('…and the channels now read that same q in ZXY (recomposing them in ZXY gives q)', await waitFor(`(async () => (await import('/lib/world.js')).bagOf('crate1')?.rotOrder === 'ZXY' && ${orderSel}?.value === 'ZXY' && await ${facesCompose('ZXY')})()`), JSON.stringify(await evalJson(faces)));
   await sleep(400);
   await openAdv(); await setOrder('XYZ'); await toTab('inspector');
-  check('back to XYZ removes the comp (absent means XYZ)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder == null)`), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1'))`)));
+  check('back to XYZ removes the comp (absent means XYZ)', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.rotOrder == null)`), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('crate1'))`)));
   await sleep(400);
   await type('rotate y', '90');
   check('rotate y = 90 (XYZ\'s middle axis): the Transform card says it is in gimbal lock', await waitFor(`${cardRows('Transform')}.some((r) => r.classList.contains('sp-f-info') && /gimbal lock/.test(r.textContent))`), JSON.stringify(await evalJson(cardLabels('Transform'))));
@@ -676,7 +676,7 @@ check('scene section renders the light fields through editorsFor', await waitFor
 console.log('\nref field: pick another entity as a value (look.target):');
 // add an empty `look` comp to benchlamp so its ref field appears, then select it
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'benchlamp', type: 'look', data: {} })), true`);
-await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('benchlamp')?.look)`);
+await waitFor(`import('/lib/world.js').then((m) => !!m.bagOf('benchlamp')?.look)`);
 await evalJson(`(() => { const R = [...${hier}.querySelectorAll('.sp-tree-row')]; const r = R.find((x) => /active.*benchlamp|benchlamp/.test(x.querySelector('.sp-item-label').textContent)); r.querySelector('.sp-item-main').click(); return true; })()`);
 check('the look comp gives benchlamp a ref field reading "— pick —"', await waitFor(`(() => { const w = ${insp}; if (!w) return false; const r = [...w.querySelectorAll('.sp-f-ref')].find((x) => x.querySelector('.sp-label')?.textContent === 'target'); return !!r && /pick/.test(r.querySelector('.sp-ref-name').textContent); })()`), 'refs=' + JSON.stringify(await evalJson(`(() => { const w = ${insp}; return w ? [...w.querySelectorAll('.sp-f-ref .sp-ref-name')].map((n) => n.textContent) : 'no inspector'; })()`)));
 // click the ref name → arm the pick
@@ -684,12 +684,12 @@ await evalJson(`(() => { const w = ${insp}; const r = [...w.querySelectorAll('.s
 check('clicking the ref arms the pick (the name says "click a target…" and __editLayout reports it)', await waitFor(`(() => { const w = ${insp}; const r = [...w.querySelectorAll('.sp-f-ref')].find((x) => x.querySelector('.sp-label')?.textContent === 'target'); return !!r && /click a target/.test(r.querySelector('.sp-ref-name').textContent); })()`));
 // click the lamp3 row → it becomes the target (a ROW-click completion)
 await evalJson(`(() => { const R = [...${hier}.querySelectorAll('.sp-tree-row')]; const r = R.find((x) => /lamp3/.test(x.querySelector('.sp-item-label').textContent)); r.querySelector('.sp-item-main').click(); return true; })()`);
-check('picking the lamp3 row commits look.target = lamp3', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.look?.target === 'lamp3')`), 'look=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.look)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+check('picking the lamp3 row commits look.target = lamp3', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.look?.target === 'lamp3')`), 'look=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.look)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
 check('…and the inspector stayed on benchlamp (re-selected after the pick)', await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'benchlamp')`));
 check('…and the ref field now shows the target id, not "pick"', await waitFor(`(() => { const w = ${insp}; const r = [...w.querySelectorAll('.sp-f-ref')].find((x) => x.querySelector('.sp-label')?.textContent === 'target'); return !!r && /lamp3/.test(r.querySelector('.sp-ref-name').textContent); })()`));
 // the ✕ clears it
 await evalJson(`(() => { const w = ${insp}; const r = [...w.querySelectorAll('.sp-f-ref')].find((x) => x.querySelector('.sp-label')?.textContent === 'target'); r.querySelector('.sp-ref-clear').click(); return true; })()`);
-check('the ✕ clears the reference → look comp gone (its only field emptied)', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.look)`), 'look=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.look)`)));
+check('the ✕ clears the reference → look comp gone (its only field emptied)', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.look)`), 'look=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.look)`)));
 
 console.log('\nDel / Backspace act on what the INSPECTOR shows (a tree pick), not the last viewport pick:');
 {
@@ -727,7 +727,7 @@ console.log('\nDel / Backspace act on what the INSPECTOR shows (a tree pick), no
   await rowClick('delA'); await sleep(100);
   await waitFor(`JSON.stringify(globalThis.__editPanels?.().selection) === '["delA"]'`);   // the click collapsed the pair to delA (not a stale two)
   await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'delA', type: 'lock', data: true })), true`);
-  await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('delA')?.lock)`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.bagOf('delA')?.lock)`);
   await painted();
   await key('KeyX');
   await sleep(600);
@@ -770,7 +770,7 @@ console.log('\npicture + sound in the inspector (schema groups; uploads through 
     const m = JSON.parse(String(ev.data));
     if (m.method === 'Page.fileChooserOpened' && nextFile) void cdp.send('DOM.setFileInputFiles', { files: [nextFile], backendNodeId: m.params.backendNodeId });
   });
-  const comp = (t: string) => evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.${t} ?? null)`);
+  const comp = (t: string) => evalJson(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.${t} ?? null)`);
   // a person's click carries user ACTIVATION, which the file chooser requires (Chrome: "File chooser dialog can only be
   // shown with a user activation"); a plain Runtime.evaluate click does not — say it is a gesture
   const btn = async (label: string) => (await cdp.send<any>('Runtime.evaluate', { userGesture: true, returnByValue: true, expression: `(() => { const b = ${label.startsWith('+ ') ? popItem(label) : `[...${insp}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)})`}; if (!b) return false; b.click(); return true; })()` }))?.result?.value;
@@ -781,26 +781,26 @@ console.log('\npicture + sound in the inspector (schema groups; uploads through 
 check('a model with named parts: Add Component offers "+ Picture" and "+ Sound"', await waitFor(`(() => { const t = ${popItems}; return t.includes('+ Picture') && t.includes('+ Sound'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
   nextFile = png;
   check('+ Picture opens the chooser', await btn('+ Picture'));
-  check('…the image goes through /upload and hangs on the first named part', await waitFor(`import('/lib/world.js').then((m) => { const p = m.comps.get('crate1')?.picture; return !!p && p.src.startsWith('store/images/') && typeof p.part === 'string' && p.part.length > 0; })`, 10000), JSON.stringify(await comp('picture')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+  check('…the image goes through /upload and hangs on the first named part', await waitFor(`import('/lib/world.js').then((m) => { const p = m.bagOf('crate1')?.picture; return !!p && p.src.startsWith('store/images/') && typeof p.part === 'string' && p.part.length > 0; })`, 10000), JSON.stringify(await comp('picture')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
   check('the inspector grows a Picture card whose part is a dropdown', await waitFor(`!![...${insp}.querySelectorAll('.sp-f-enum')].find((r) => r.querySelector('.sp-label')?.textContent === 'part')`));
   await field('what it shows', 'a red square, hung by the bench');
-  check('typing "what it shows" updates look, keeps src', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.picture?.look === 'a red square, hung by the bench' && m.comps.get('crate1').picture.src.startsWith('store/images/'))`), JSON.stringify(await comp('picture')));
+  check('typing "what it shows" updates look, keeps src', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.picture?.look === 'a red square, hung by the bench' && m.bagOf('crate1').picture.src.startsWith('store/images/'))`), JSON.stringify(await comp('picture')));
   await field('image', 'https://example.com/x.png');
   await sleep(500);
   check('a URL is refused before the wire (src unchanged)', ((await comp('picture')) as any)?.src?.startsWith('store/images/'), JSON.stringify(await comp('picture')));
   check('the legacy Scene section still shows ONE picture editor, its own (no double from the schema)', await evalJson(`document.querySelectorAll('#sec-scene [data-pe-root]').length === 1 && ![...document.querySelectorAll('#sec-scene [data-fe] .sp-label')].some((l) => l.textContent === 'what it shows')`));
   // was the picture group's "take down"; B's Picture card removes itself (the same comp picture null)
-  check('the Picture card\'s "remove Picture" takes it down', (await btn('remove Picture')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.picture)`));
+  check('the Picture card\'s "remove Picture" takes it down', (await btn('remove Picture')) && await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('crate1')?.picture)`));
   nextFile = wav;
   check('+ Sound opens the chooser', await btn('+ Sound'));
-  check('…the audio goes through /upload and lands PAUSED (no t0)', await waitFor(`import('/lib/world.js').then((m) => { const s = m.comps.get('crate1')?.sound; return !!s && s.src.startsWith('store/audio/') && s.playing === false && s.t0 == null; })`, 10000), JSON.stringify(await comp('sound')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
-  check('▶ play starts it with a t0', (await btn('▶ play')) && await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.sound?.playing === true && m.comps.get('crate1').sound.t0 > 0)`), JSON.stringify(await comp('sound')));
+  check('…the audio goes through /upload and lands PAUSED (no t0)', await waitFor(`import('/lib/world.js').then((m) => { const s = m.bagOf('crate1')?.sound; return !!s && s.src.startsWith('store/audio/') && s.playing === false && s.t0 == null; })`, 10000), JSON.stringify(await comp('sound')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+  check('▶ play starts it with a t0', (await btn('▶ play')) && await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.sound?.playing === true && m.bagOf('crate1').sound.t0 > 0)`), JSON.stringify(await comp('sound')));
   const t0 = ((await comp('sound')) as any)?.t0;
   await sleep(300);
   await field('volume', '0.5');
-  check('turning the volume of a PLAYING sound keeps its t0', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.sound?.volume === 0.5 && m.comps.get('crate1').sound.t0 === ${t0})`), JSON.stringify(await comp('sound')));
+  check('turning the volume of a PLAYING sound keeps its t0', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.sound?.volume === 0.5 && m.bagOf('crate1').sound.t0 === ${t0})`), JSON.stringify(await comp('sound')));
   // was the sound group's "silence"; B's Sound card removes itself
-  check('the Sound card\'s "remove Sound" silences it', (await btn('remove Sound')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sound)`));
+  check('the Sound card\'s "remove Sound" silences it', (await btn('remove Sound')) && await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('crate1')?.sound)`));
   await cdp.send('Page.setInterceptFileChooserDialog', { enabled: false });
 }
 
@@ -833,21 +833,21 @@ console.log('\nAdd Component (design §3/§5): categories, blocked entries say w
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
   await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
   const addBtn = (name: string) => name.startsWith('+ ') ? popItem(name) : `[...${insp}.querySelectorAll('.sp-btn')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
-  const isLocked = `import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.lock === true)`;
+  const isLocked = `import('/lib/world.js').then((m) => m.bagOf('benchlamp')?.lock === true)`;
   check('Add Component is ONE button after the cards, and its list groups entries under category captions', await evalJson(`(() => { const G = ${cardTitles}; const b = ${insp}.querySelectorAll('.sp-pop-btn'); if (b.length !== 1 || G.includes('Add Component')) return false; ${insp}.querySelector('.sp-pop-btn').click(); const caps = [...document.querySelectorAll('.sp-pop-cat')].length; document.querySelector('.sp-pop-search')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return caps >= 3; })()`), JSON.stringify(await evalJson(cardTitles)));
   check('a light is offered "+ Lock"; "+ Model" is there but disabled, titled with why', await evalJson(`(() => { const l = ${addBtn('+ Lock')}, m = ${addBtn('+ Model')}; return !!l && !l.disabled && !!m && m.disabled && (m.title ?? '').length > 10; })()`), JSON.stringify(await evalJson(`(() => { const m = ${addBtn('+ Model')}; return m ? { disabled: m.disabled, why: m.closest('.sp-row')?.title } : null; })()`)));
   await evalJson(`(${addBtn('+ Lock')}.click(), true)`);
-  check('+ Lock adds the lock component', await waitFor(isLocked), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp'))`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+  check('+ Lock adds the lock component', await waitFor(isLocked), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.bagOf('benchlamp'))`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
   check('…a Lock card appears with its checked "locked" box, and "+ Lock" leaves Add Component', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent === '▾ Lock'); const box = i >= 0 ? R[i + 1]?.querySelector('input[type=checkbox]') : null; return !!box && box.checked && R[i + 1].querySelector('.sp-label')?.textContent === 'locked' && !${addBtn('+ Lock')}; })()`), JSON.stringify(await evalJson(cardTitles)));
   await sleep(600);
   await evalJson(`(${addBtn('remove Lock')}.click(), true)`);
-  check('the Lock card\'s "remove Lock" takes the component off, and "+ Lock" is offered again', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.lock) && !${cardTitles}.includes('Lock') && !!${addBtn('+ Lock')}`), JSON.stringify(await evalJson(cardTitles)));
+  check('the Lock card\'s "remove Lock" takes the component off, and "+ Lock" is offered again', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.lock) && !${cardTitles}.includes('Lock') && !!${addBtn('+ Lock')}`), JSON.stringify(await evalJson(cardTitles)));
   await sleep(600);
   await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
   check('one undo puts the Lock back (remove is an ordinary edit)', await waitFor(isLocked));
   await sleep(600);
   await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
-  check('…and one more takes it off again (the add undoes too)', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.lock)`));
+  check('…and one more takes it off again (the add undoes too)', await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('benchlamp')?.lock)`));
 }
 
 console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was Components ▸ + seat…):');
@@ -858,7 +858,7 @@ console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was 
   check('a model without sockets is offered "+ Seats"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(popItems)));
   await evalJson(`(${btn}.click(), true)`);
   check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/seatedit.js').then((m) => m.seatArmed())`), JSON.stringify(await evalJson(`({ btn: (() => { const b = ${btn}; return b ? { disabled: b.disabled, title: b.closest('.sp-row')?.title } : null; })(), hint: document.querySelector('#hintbar')?.textContent, sel: globalThis.__editPanels?.().selection, errs: (window.__errs ?? []).slice(-3), refused: window.__refused })`)));
-  check('…and wrote nothing yet', await evalJson(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sockets)`));
+  check('…and wrote nothing yet', await evalJson(`import('/lib/world.js').then((m) => !m.bagOf('crate1')?.sockets)`));
   await evalJson(`(document.activeElement?.blur?.(), dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true)`);
   check('Esc cancels the arming', await waitFor(`import('/lib/seatedit.js').then((m) => !m.seatArmed())`));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } }), true))`);
@@ -897,14 +897,14 @@ check('the Inspector has no filter box', await evalJson(`![...${insp}.querySelec
 
 console.log('\nrename in the tree: double-click, F2, or the row menu; commits the label comp:');
 {
-  const label = () => evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.label ?? null)`);
+  const label = () => evalJson(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.label ?? null)`);
   const rowOf = `[...${hier}.querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'crate1')`;
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
   await sleep(300);
   await evalJson(`(${rowOf}.querySelector('.sp-item-main').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })), true)`);
   check('double-click swaps the label for an input', await waitFor(`!!${rowOf}?.querySelector('input.sp-rename')`));
   await evalJson(`(() => { const i = ${rowOf}.querySelector('input.sp-rename'); i.value = 'the old bell'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
-  check('Enter commits the label comp', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.label === 'the old bell')`), JSON.stringify(await label()));
+  check('Enter commits the label comp', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.label === 'the old bell')`), JSON.stringify(await label()));
   check('…and the row shows it', await waitFor(`/the old bell/.test(${rowOf}?.querySelector('.sp-item-label')?.textContent ?? '')`));
   await evalJson(`(() => { const sc = ${hier}.querySelector('.schema-scroll'); sc.focus(); sc.dispatchEvent(new KeyboardEvent('keydown', { code: 'F2', key: 'F2', bubbles: true })); return true; })()`);
   check('F2 on the focused tree renames the selected row', await waitFor(`!!${rowOf}?.querySelector('input.sp-rename')`));
@@ -915,13 +915,13 @@ console.log('\nrename in the tree: double-click, F2, or the row menu; commits th
   await evalJson(`([...document.querySelectorAll('.sp-ctx-item')].find((i) => /rename/.test(i.textContent))?.click(), true)`);
   check('the row menu has "rename (F2)" and it opens the input', await waitFor(`!!${rowOf}?.querySelector('input.sp-rename')`));
   await evalJson(`(() => { const i = ${rowOf}.querySelector('input.sp-rename'); i.value = ''; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return true; })()`);
-  check('an empty name clears the label (the row shows its id again)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.label == null)`), JSON.stringify(await label()));
+  check('an empty name clears the label (the row shows its id again)', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.label == null)`), JSON.stringify(await label()));
 }
 
 console.log('\nJSON: raw comps as a multi-line editor; every typed group keeps a { } JSON hatch:');
 {
   const V = (v: string, a: any) => evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('${v}', ${JSON.stringify(a)}), true))`);
-  const comp = (t: string) => evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.[${JSON.stringify(t)}] ?? null)`);
+  const comp = (t: string) => evalJson(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.[${JSON.stringify(t)}] ?? null)`);
   await V('comp', { id: 'crate1', type: 'recipe', data: { wood: 2 } });
   await V('comp', { id: 'crate1', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } });
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
@@ -932,13 +932,13 @@ console.log('\nJSON: raw comps as a multi-line editor; every typed group keeps a
   await sleep(500);
   check('…and commits nothing', JSON.stringify(await comp('recipe')) === '{"wood":2}', JSON.stringify(await comp('recipe')));
   await typeInto(rowTa('recipe'), '{\n  "wood": 3,\n  "nails": 12\n}');
-  check('valid JSON commits on blur (wholesale)', await waitFor(`import('/lib/world.js').then((m) => JSON.stringify(m.comps.get('crate1')?.recipe) === '{"wood":3,"nails":12}')`), JSON.stringify(await comp('recipe')));
+  check('valid JSON commits on blur (wholesale)', await waitFor(`import('/lib/world.js').then((m) => JSON.stringify(m.bagOf('crate1')?.recipe) === '{"wood":3,"nails":12}')`), JSON.stringify(await comp('recipe')));
   const hatch = `[...${insp}.querySelectorAll('.sp-json-tog')].map((b) => b.closest('.sp-row')).find((r) => /"seat"/.test(r.querySelector('.sp-json-ta')?.value ?? ''))`;
   check('the sockets group has a collapsed { } JSON hatch', await waitFor(`(() => { const r = ${hatch}; return !!r && r.querySelector('.sp-json-ta').hidden === true; })()`));
   await evalJson(`(${hatch}.querySelector('.sp-json-tog').click(), true)`);
   check('the toggle opens it', await evalJson(`${hatch}.querySelector('.sp-json-ta').hidden === false`));
   await typeInto(`${hatch}.querySelector('.sp-json-ta')`, JSON.stringify({ seat: { pos: [0, 0.5, 0], yaw: 0, part: 'plank' } }, null, 2));
-  check('a key no field speaks for (socket part) is editable through the hatch', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.sockets?.seat?.part === 'plank')`), JSON.stringify(await comp('sockets')));
+  check('a key no field speaks for (socket part) is editable through the hatch', await waitFor(`import('/lib/world.js').then((m) => m.bagOf('crate1')?.sockets?.seat?.part === 'plank')`), JSON.stringify(await comp('sockets')));
   await V('comp', { id: 'crate1', type: 'recipe', data: null });
   await V('comp', { id: 'crate1', type: 'sockets', data: null });
 }

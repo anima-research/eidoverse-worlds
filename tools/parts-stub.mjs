@@ -3,6 +3,10 @@
 // renderer cone.
 export const entities = new Map();
 export const comps = new Map();
+export const entityMeta = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const reindexCollider = () => {};
 
 // motion.js itself needs only the four names above, but its import cone now
