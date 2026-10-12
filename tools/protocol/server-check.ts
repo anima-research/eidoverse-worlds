@@ -267,6 +267,15 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const wz = await vic.req("whois", { name: "zed" });
   ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && wz.people[0].kind === "person" && !JSON.stringify(wz).includes("local:"),
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
+  // ---- DR: a live drag is relayed with who is dragging, and its last sample says end (docs/WIRE.md: a live drag is a claim) ----
+  { const da = await client(srv.port, "garden", "Dana", REPLICA); const db = await client(srv.port, "garden", "Dev", REPLICA);
+    await ann.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+    const mk = await da.req("create", { id: "drg", model: "test/cup.glb", place: { at: [2, 2] } });
+    const k0 = db.msgs.length; da.send({ type: "drag", id: "drg", pos: [2.5, 0, 2], yaw: 0 }); await sleep(300); da.send({ type: "drag", id: "drg", pos: [3, 0, 2], yaw: 0, end: true }); await sleep(400);
+    const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === "drg");
+    ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
+    await ann.req("delete", { id: "@world", component: "default-role" });   // back to the world as the later checks expect it
+    da.close(); db.close(); await sleep(200); }
   // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
   { const z1 = await client(srv.port, "garden", "zeph", { ...REPLICA, account: "acct-zp" }); const n1 = z1.snapshot?.you; z1.close(); await sleep(200);
     const z2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-zp" }); const n2 = z2.snapshot?.you, r2 = z2.snapshot?.renameRefused; z2.close(); await sleep(200);

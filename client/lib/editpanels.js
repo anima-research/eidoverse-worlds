@@ -249,6 +249,8 @@ function badgesFor(id) {
 }
 
 // ---------------------------------------------------------------- hierarchy
+let claimsByOthers = {};   // id -> name, from build.js's drag claims (bus 'claims')
+bus.on('claims', (c) => { claimsByOthers = c ?? {}; repaintAll(); });
 function hierarchyFields() {
   // the tree is the FOLD's (shared/hierarchy.js): a child whose model is still
   // loading sits under its parent, not at the root; seated people ride as rows
@@ -271,6 +273,7 @@ function hierarchyFields() {
     const off = offIn(world, id);   // switched off (itself or above): not loaded, so not 'loading…'
     if (!entities.get(id) && !off) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
+    if (claimsByOthers[id]) badges.push(`editing: ${claimsByOthers[id]}`);   // a live drag by someone else (build.js claims)
     if (off) badges.push(world[id]?.comp?.disabled === true ? 'off' : 'off (above)');
     const bpLink = world[id]?.comp?.['copy-of'];
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);

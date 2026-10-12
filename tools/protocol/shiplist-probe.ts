@@ -523,6 +523,26 @@ try {
   check("CT1 with clickthrough set, the same click passes through it (nothing behind: null)", after === null, after);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null); await sleep(300);
   });
+  // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
+  await stage("CL", async () => {
+  const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'clbox', model: '${CRATE}', components: { label: 'Claimed', transform: { pos: [${me[0]} + 1.5, 0, ${me[1]} + 1], scale: 0.3 } } });`);
+  check("(setup) a crate to be dragged by someone else", made?.ok, made);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('clbox') && !!m.comps.get('clbox'))`, 15000); await sleep(400);
+  await key("KeyE"); await sleep(600);   // edit mode: the Hierarchy is up
+  const seen = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 350));
+    const bd = await import('/lib/build.js'); const rows = [...document.querySelectorAll('[data-frame="hierarchy"] .schema-scroll *')].map((e) => e.textContent).filter((t) => /editing: Zed/.test(t)).length;
+    return { claims: bd.claimsNow(), rows };`);
+  check("CL1 while Zed's drag samples flow, clbox is claimed by Zed and the Hierarchy row says so", seen?.claims?.clbox === 'Zed' && seen.rows > 0, seen);
+  const ended = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed', end: true }); await new Promise((r) => setTimeout(r, 300));
+    const bd = await import('/lib/build.js'); return bd.claimsNow();`);
+  check("CL2 the last sample (end) drops the claim at once", !ended?.clbox, ended);
+  const lapsed = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 2200));
+    const bd = await import('/lib/build.js'); return bd.claimsNow();`);
+  check("CL3 …and silence drops it after 1.5 s", !lapsed?.clbox, lapsed);
+  await key("KeyE"); await sleep(300);
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'clbox' });`).catch(() => null); await sleep(300);
+  });
   // ---- AC: aim at the cursor (R, 10-10: a throw "just aims away from your camera view, not at the spot you're aiming with
   // your cursor", and "my character would try to drop it where the cursor is, not right at their feet") ----
   await stage("AC", async () => {

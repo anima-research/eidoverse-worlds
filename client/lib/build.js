@@ -484,15 +484,27 @@ function relayDrag() {
   sendDrag(selected.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
 }
 
-// remote drags: apply transiently, no log involvement
-bus.on('drag', ({ id, pos, yaw, q }) => {
+// remote drags: apply transiently, no log involvement. A live drag is a CLAIM (locking design 10-11, R: "while someone
+// drags/edits a thing, presence says who"): while samples flow, `by` is editing `id`; an amber box marks it and the
+// Hierarchy says 'editing: <name>'; it lapses on the last sample (`end`) or CLAIM_MS of silence. Presence only.
+const CLAIM_MS = 1500;
+const claims = new Map();   // id -> { by, at, box }
+const claimBox = () => { const b = new THREE.Box3Helper(new THREE.Box3(), 0xe0a33a); b.userData.noCamCollide = true; scene.add(b); return b; };
+function endClaim(id) { const c = claims.get(id); if (!c) return; claims.delete(id); c.box.removeFromParent(); bus.emit('claims', claimsNow()); }
+/** Probe/Hierarchy surface: who is editing what right now, by id. */
+export const claimsNow = () => Object.fromEntries([...claims].map(([id, c]) => [id, c.by]));
+setInterval(() => { const now = performance.now(); for (const [id, c] of claims) if (now - c.at > CLAIM_MS) endClaim(id); }, 250);
+bus.on('drag', ({ id, pos, yaw, q, by, end }) => {
   const obj = entities.get(id);
   if (!obj) return;
-  obj.position.set(...pos);
+  if (Array.isArray(pos) && pos.length === 3) obj.position.set(...pos);
   if (Array.isArray(q) && q.length === 4) obj.quaternion.set(q[0], q[1], q[2], q[3]);   // the rotate gizmo's full turn
   else if (yaw != null) obj.rotation.y = yaw;
   reindexCollider(id);
+  if (end) { endClaim(id); return; }
+  if (typeof by === 'string' && by) { let c = claims.get(id); if (!c) { c = { by, at: 0, box: claimBox() }; claims.set(id, c); c.at = performance.now(); bus.emit('claims', claimsNow()); } c.at = performance.now(); c.by = by; c.box.box.setFromObject(obj); }
 });
+bus.on('cut-adopted', () => { for (const id of [...claims.keys()]) endClaim(id); });
 
 // ============================================================ commits + undo
 
@@ -700,6 +712,8 @@ addEventListener('mouseup', () => {
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
     if (!same) commitPlace(moved);          // release commits ONE clean entry
   }
+  // the last sample says so: others drop the claim at once rather than after CLAIM_MS
+  if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
   dragging = null;
 });
 
