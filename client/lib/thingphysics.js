@@ -85,9 +85,59 @@ function startPull(id) {
 // the hand is empty (server order: the log, then presence). From that entry on the fold has it: stop drawing it in the
 // hand, or a frame between the two messages would leave it drawn there after the realizer placed it.
 onWorldChange((ev) => {
-  if (ev.type === 'change' && holds[ev.id] && ['pose', 'parent', 'gone', 'born'].includes(ev.what)) { const { [ev.id]: _, ...rest } = holds; holds = rest; released(ev.id); }
-  else if (ev.type === 'reset') holds = {};
+  if (ev.type === 'change' && holds[ev.id] && ['pose', 'parent', 'gone', 'born'].includes(ev.what)) { const { [ev.id]: _, ...rest } = holds; holds = rest; released(ev.id);
+    if (ev.what === 'pose' || ev.what === 'parent') startSettle(ev.id); }
+  else if (ev.type === 'change' && settles.has(ev.id)) { if (ev.what === 'pose' || ev.what === 'parent') startSettle(ev.id); else if (ev.what === 'gone' || ev.what === 'born') endSettle(ev.id, false); }
+  else if (ev.type === 'reset') { holds = {}; settles.clear(); }
 });
+// ---- settling: the way out of a hand (R 10-11 23:17, "lerp on put/attach"). A put, a place onto something, a mount:
+// the row moves the thing from the hand to its rest in one frame. The truth takes it at once (the fold, the object's own
+// transform, whereIs, the collider's place); what is DRAWN eases from where the hand had it over SETTLE_MS, the pull's
+// own ease the other way round (startPull: the thing comes to the hand; this: the hand's place lets it go). Rotation too.
+// The next row for the thing restarts the ease from what is drawn; a grab hands it to the pull; gone ends it. Presence
+// only: nothing sent, nothing logged; the collider sits the ease out (as a flight's does) and comes back at the truth.
+// A launch (throw, drop) is the engine's flight, not this.
+let SETTLE_MS = 120;   // lab knob (physicsApi.settle(ms))
+const settles = new Map();   // id -> { from: {p, q} world, drawn: {p, q} world, t0, dur, truth: {p, q} local | null (read on the first frame, after the realizer wrote it) }
+const drawnHeld = new Map();   // id -> {p, q} world: where drawHeld last put a held thing (the hand's place, as drawn)
+function startSettle(id) {
+  const obj = entities.get(id); if (!obj || presOwns(id) || compsOf(id)?.motion) return;
+  const s = settles.get(id); const at = s?.drawn ?? drawnHeld.get(id);
+  if (s?.truth) { obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); }   // the realizer's write lands on the truth, never on a drawn pose
+  const from = at ? { p: at.p.clone(), q: at.q.clone() } : (obj.updateWorldMatrix(true, false), { p: obj.getWorldPosition(new THREE.Vector3()), q: obj.getWorldQuaternion(new THREE.Quaternion()) });
+  settles.set(id, { from, drawn: { p: from.p.clone(), q: from.q.clone() }, t0: performance.now(), dur: SETTLE_MS, truth: null });
+  drawnHeld.delete(id);
+}
+function endSettle(id, restore = true) {
+  const s = settles.get(id); if (!s) return; settles.delete(id);
+  const obj = entities.get(id);
+  if (restore && obj && s.truth) { obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false); }
+  if (s.truth && !holds[id] && !presOwns(id)) suspendCollider(id, false);
+}
+const easeOut = (k) => 1 - (1 - k) ** 3;
+const _sp = new THREE.Vector3(), _sq = new THREE.Quaternion(), _st = new THREE.Quaternion();
+function drawSettles(now) {
+  for (const [id, s] of settles) {
+    const obj = entities.get(id);
+    if (!obj || holds[id] || presOwns(id)) { endSettle(id, false); continue; }
+    if (!s.truth) { s.truth = { p: obj.position.clone(), q: obj.quaternion.clone() }; suspendCollider(id, true); }
+    const k = s.dur > 0 ? Math.min(1, (now - s.t0) / s.dur) : 1;
+    if (k >= 1) { endSettle(id); continue; }
+    obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false);
+    obj.getWorldPosition(_sp); obj.getWorldQuaternion(_st);
+    const e = easeOut(k);
+    _sp.lerpVectors(s.from.p, _sp, e); _sq.copy(s.from.q).slerp(_st, e);
+    setWorldPose(obj, _sp, _sq); s.drawn.p.copy(_sp); s.drawn.q.copy(_sq);
+  }
+}
+/** The truth's world position of a settling thing (what a request may read: Covenant III), or null when it isn't one. */
+function settledTruth(id) {
+  const s = settles.get(id), obj = entities.get(id); if (!s?.truth || !obj) return null;
+  const p = obj.position.clone(), q = obj.quaternion.clone();
+  obj.position.copy(s.truth.p); obj.quaternion.copy(s.truth.q); obj.updateWorldMatrix(true, false); const w = obj.getWorldPosition(new THREE.Vector3());
+  obj.position.copy(p); obj.quaternion.copy(q); obj.updateWorldMatrix(true, false);
+  return w;
+}
 export const holdsNow = () => holds;
 /** What I hold, per the authority. */
 // newest first: what I picked up last is what I put down, throw or use first (R, 10-10: "you drop the last thing you
@@ -304,9 +354,12 @@ function drawHeld() {
         if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
         at.q = bq.clone().multiply(r); } }
     const pull = pulls.get(id);
-    if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else { const e = 1 - (1 - k) ** 3; at.p.lerpVectors(pull.from, at.p, e); } }
+    if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else at.p.lerpVectors(pull.from, at.p, easeOut(k)); }
     setWorldPose(obj, at.p, at.q);
+    let d = drawnHeld.get(id); if (!d) drawnHeld.set(id, (d = { p: new THREE.Vector3(), q: new THREE.Quaternion() }));
+    obj.updateWorldMatrix(true, false); obj.getWorldPosition(d.p); obj.getWorldQuaternion(d.q);
   }
+  for (const id of drawnHeld.keys()) if (!holds[id]) drawnHeld.delete(id);
   poseHolders();
 }
 // What holding does to each holder's body (avatar.js setHoldPose): the grip's finger preset on each holding hand, and,
@@ -440,6 +493,7 @@ function frame(wall) {
   const now = performance.now();
   drawFlights(wall ?? serverNow(), now);
   drawHeld();
+  drawSettles(now);
   drawPressFx();
   tickTrack(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
@@ -470,6 +524,7 @@ const dynamicIds = () => { const es = replica.st?.entities ?? {}; return Object.
 /** Where the thing is now, as the authority sees it: someone's hand, the air (the engine), or the log. */
 function whereIs(id) {
   const b = pres?.bodies?.[id]; if (b && !b.resting) return b.p;
+  const st = settledTruth(id); if (st) return st.toArray();
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
 }
@@ -758,7 +813,7 @@ const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p &
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
