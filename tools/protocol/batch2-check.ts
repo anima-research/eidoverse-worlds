@@ -166,7 +166,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   // ---------------- K: kept ----------------
   { id: "K1", what: "look {…} is still refused as a near-miss of lock (the old editor's LookAt wrote it)", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       return { r: code(s.call("olive", "set", { id: "lamp", component: "look", value: { target: "lamp" } })) }; },
     good: (o) => o.r === "schema" },
   { id: "K2", what: "a store picture on a part and a store sound keep working (today's shapes, minus the renamed look)", run(s) { cast(s);
@@ -336,20 +336,20 @@ const cases: Case[] = [
 
   // ---------------- L: look-at ----------------
   { id: "L1", what: "look-at {target: lamp}: admitted with its defaults written out (yaw, forward z, up y, 240°/s, 12 m); look-at:<part> too", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
+      s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
       const r = s.call("olive", "set", { id: "statue", component: "look-at", value: { target: "lamp" } });
       const p = s.call("olive", "set", { id: "statue", component: "look-at:head", value: { target: "@viewer" } });
       return { r: show(r), v: comp(s, "statue", "look-at"), p: show(p), pv: comp(s, "statue", "look-at:head") }; },
     good: (o) => o.r === "ok" && o.v?.mode === "yaw" && o.v?.forward === "z" && o.v?.up === "y" && o.v?.speed === 240 && o.v?.range === 12 && o.p === "ok" && o.pv?.mode === "yaw" },
   { id: "L2", what: "look-at target: 'lmap' refused not-found (did you mean lamp); '@viewers' refused with the list; itself and a thing riding it refused (loop); @nearest and an identity admitted", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
+      s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
       s.call("olive", "create", { id: "hat", model: "book", components: { parent: { to: "statue" } } });
       const set = (target: string) => s.call("olive", "set", { id: "statue", component: "look-at", value: { target } });
       const typo = set("lmap");
       return { typo: code(typo), dym: typo.refused?.didYouMean, at: code(set("@viewers")), self: code(set("statue")), kid: code(set("hat")), near: show(set("@nearest")), who: show(set("u-" + "a".repeat(20))) }; },
     good: (o) => o.typo === "not-found" && o.dym?.[0] === "lamp" && o.at === "shape" && o.self === "loop" && o.kid === "loop" && o.near === "ok" },
   { id: "L3", what: "one driver per node: look-at + a spin on the same node refused in either order, naming both; a spinning part + a whole-thing look-at fine; bob + look-at fine; look-at on a dynamic thing refused", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       for (const id of ["a", "b", "c", "d", "e"]) s.call("olive", "create", { id, model: "crate", place: { at: [3 + ["a", "b", "c", "d", "e"].indexOf(id) * 2, 0] } });
       const LA0 = { target: "lamp" };
       s.call("olive", "set", { id: "a", component: "motion", value: { type: "spin", axis: "y", degPerSec: 30 } }); const a = s.call("olive", "set", { id: "a", component: "look-at", value: LA0 });
@@ -376,7 +376,7 @@ const cases: Case[] = [
       return { above: above.q, behind: ang(behind.q), slew: ang(slew.q), back: Math.abs(ang(back.q)) }; },
     good: (o) => !o.none && Math.abs(ang(o.above) - 30) < 1e-6 && o.behind === 90 && o.slew === 45 && o.back === 180 },
   { id: "L7", what: "what an agent reads for each target kind (a thing by its name, the viewer, the nearest, a part)", run(s) { cast(s);
-      s.call("olive", "create", { id: "lamp", model: "table-lamp", components: { label: "the lamp" }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lamp", components: { label: "the lamp", transform: { pos: [0, 0, 0] } } });
       for (const id of ["a", "b", "c"]) s.call("olive", "create", { id, model: "crate", place: { at: [3 + ["a", "b", "c"].indexOf(id) * 2, 0] } });
       s.call("olive", "set", { id: "a", component: "look-at", value: { target: "lamp" } });
       s.call("olive", "set", { id: "b", component: "look-at", value: { target: "@viewer" } });
@@ -387,14 +387,14 @@ const cases: Case[] = [
   // ---------------- C: Credits (History, by person) ----------------
   { id: "C1", what: "creditsOf: bob made it; ann moved it three times within minutes (one session: 'moved it') and lit it; ordered by first contribution", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
-      s.call("bob", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } });
-      for (let i = 0; i < 3; i++) s.call("ann", "place", { id: "lamp", at: [i, 1] }, 60000);
+      s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
+      for (let i = 0; i < 3; i++) s.call("ann", "set", { id: "lamp", component: "transform", value: { pos: [i, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } }, 60000);   // a light-only thing has no size to place
       s.call("ann", "set", { id: "lamp", component: "light", value: { kind: "point" } });
       const people = CR.creditsOf?.(s.entries(), "lamp") ?? null;
       return { people: people?.map((p: any) => [p.by, p.did.map((d: any) => `${d.what}${d.n > 1 ? ` ×${d.n}` : ""}`)]) }; },
     good: (o) => JSON.stringify(o.people) === JSON.stringify([["bob", ["made it"]], ["ann", ["moved it", "lit it"]]]) },
   { id: "C2", what: "creditsOf: vic's refused set (a visitor) never counts", run(s) { cast(s);
-      s.call("bob", "create", { id: "lamp", model: "table-lamp", place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       const r = s.call("vic", "set", { id: "lamp", component: "label", value: "mine" });
       const people = CR.creditsOf?.(s.entries(), "lamp") ?? null;
       return { r: code(r), who: people?.map((p: any) => p.by) }; },
