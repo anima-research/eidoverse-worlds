@@ -573,6 +573,14 @@ function rebuildMesh(id) {
   bus.emit('entity', { id, kind: 'place' });
 }
 
+/** The Inspector's live preview of a mesh card scrub: the geometry as the field reads now, before release. The fold's
+ *  echo (rebuildMesh, keyed) settles it. */
+export function previewMesh(id, m) {
+  const obj = entities.get(id); const t = tracked.get(id); if (!obj || t?.kind !== 'mesh') return false;
+  const r = readMesh(m); if (!r) return false;
+  obj.geometry.dispose(); obj.geometry = meshGeometry(r); t.mesh = null;   // null: the next fold word rebuilds and refits
+  return true;
+}
 const CREATE = { light: createLight, empty: createEmpty, model: createModel, mesh: createMesh };
 
 // An Empty is invisible, so in EDIT MODE it wears a small wireframe marker

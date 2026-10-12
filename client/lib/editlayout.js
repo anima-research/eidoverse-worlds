@@ -147,6 +147,8 @@ function build() {
     menu('Create', () => [
       { label: 'Empty', run: () => holdGhost('@empty', 'empty'), title: 'a bare entity: a place to parent things under (Unity\'s Create Empty)' },
       { label: 'Light', run: () => holdGhost('@light', 'light'), title: 'a point light, placed where you click' },
+      ...[['box', 'Box'], ['sphere', 'Sphere'], ['cylinder', 'Cylinder'], ['plane', 'Plane'], ['capsule', 'Capsule']].map(([k, lab]) => ({ label: lab, run: () => holdGhost(`@mesh:${k}`, k),
+        title: `a ${k}: a parametric body with no model (its mesh card sets shape and size), placed where you click` })),
       { label: 'Model from the library…', run: () => { L = useTab(L, 'build'); save(); apply(); setTimeout(() => document.querySelector('[data-frame="build"] input[type="text"], [data-frame="build"] input')?.focus(), 50); },
         title: 'the Build tab: search the library, click a model, click the world' },
       { label: 'Blueprint…', run: () => { L = useTab(L, 'build'); save(); apply(); }, title: 'the Build tab\'s Blueprints: saved groups of things, placed as copies' },

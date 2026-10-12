@@ -317,5 +317,28 @@ console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):
   check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
 }
 
+// R 10-12 (primitives): the mesh card, its ops, the Material card on a mesh thing, one place per thing
+console.log("\nmesh (a parametric body with no model):");
+{
+  const cube = { pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: { mesh: { shape: "box", size: [1, 2, 3] }, label: "box" } };
+  const s = inspectSchema(cube, "m1", { materials: [{ slot: "surface", name: "surface", color: 0x9a9a9a, roughness: 0.8, metalness: 0, opacity: 1, emissive: 0 }] });
+  const G = s.groups.map((g) => g.group);
+  check("a mesh thing: a mesh card (shape + size x/y/z) and the Material card (every thing with meshes), no raw-JSON twin", G.includes("mesh") && G.includes("hmat") && !fieldAt(s, "comp.mesh") && fieldAt(s, "mesh.shape")?.value === "box" && fieldAt(s, "mesh.size.y")?.value === 2 && fieldAt(s, "mesh.size.x")?.min === 0.05 && fieldAt(s, "mesh.size.x")?.max === 200, JSON.stringify(G));
+  check("the Material card names its one slot 'surface'", s.groups.find((g) => g.group === "hmat")?.fields.some((f: any) => f.k === "own|surface"));
+  const r = editOps(cube, "m1", { "mesh.size.x": "+=0.5", "mesh.shape": "cylinder" });
+  const v = val(r, "mesh");
+  check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
+  check("a size below 0.05 clamps to the hard min; an unknown shape is an error, not an op", val(editOps(cube, "m1", { "mesh.size.z": "0" }), "mesh")?.size[2] === 0.05 && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
+  const addL = editOps(cube, "m1", { "comp.+": "Light" });
+  check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "m1-light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
+  const addM = editOps(chair, "c1", { "comp.+": "Mesh" });
+  check("Add Component ▸ Mesh on a model is refused with the one-place text", addM.ops.length === 0 && /one place per thing/.test(addM.errors[0] ?? ""), JSON.stringify(addM.errors));
+  const addM2 = editOps(lamp, "lamp", { "comp.+": "Mesh" });
+  check("…and on a light too", addM2.ops.length === 0 && /one place per thing/.test(addM2.errors[0] ?? ""), JSON.stringify(addM2.errors));
+  const addM3 = editOps({ pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} }, "e", { "comp.+": "Mesh" });
+  check("on an Empty it writes mesh {shape: box, size: [1,1,1]}", JSON.stringify(val(addM3, "mesh")) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), JSON.stringify(addM3));
+  check("the header says what it is: 'box'", inspectSchema(cube, "m1").sections.libLabel === "box", JSON.stringify(inspectSchema(cube, "m1").sections.libLabel));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

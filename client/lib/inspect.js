@@ -24,7 +24,7 @@
 import { materialsOf } from './matoverride.js';
 import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { entities } from './world.js';
-import { boxOf } from './realize/models.js';
+import { boxOf, previewMesh } from './realize/models.js';
 import { state } from './state.js';
 import { net, sendDrag } from './net.js';
 import { THREE } from './core.js';
@@ -43,6 +43,13 @@ const htmlEditors = [];
 let hooks = { casting: null };
 
 export function registerHandler(group, fn) { if (!handlers.has(group)) handlers.set(group, []); handlers.get(group).push(fn); }
+// a mesh card scrub (size x/y/z, shape) shows on the thing before release; the commit goes through editOps as any field's
+registerHandler('mesh', (id, _obj, k, value, opts) => {
+  if (!opts?.live) return false;
+  const cur = { ...(foldRecord(id)?.comp?.mesh ?? {}) }; const n = Number(value);
+  if (k === 'shape') cur.shape = String(value); else if (/^size\.[xyz]$/.test(k) && Number.isFinite(n)) { cur.size = [...(Array.isArray(cur.size) ? cur.size : [1, 1, 1])]; cur.size['xyz'.indexOf(k.slice(5))] = n; } else return false;
+  return previewMesh(id, cur);
+});
 export function registerEditor(fn) { htmlEditors.push(fn); }
 /** editpanels installs the undo stack and the light coalescer at init —
  *  importing build.js from here would close an import loop through

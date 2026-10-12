@@ -50,6 +50,13 @@ async function paintBuild(body) {
   prim.title = 'place a light source';
   prim.onclick = () => holdGhost('@light', 'light');
   body.appendChild(prim);
+  for (const shape of ['box', 'sphere', 'cylinder', 'plane', 'capsule']) {
+    const b = document.createElement('button');
+    b.textContent = `▢ add ${shape}`;
+    b.title = `place a ${shape}: a parametric body with no model`;
+    b.onclick = () => holdGhost(`@mesh:${shape}`, shape);
+    body.appendChild(b);
+  }
 
   const search = document.createElement('input');
   search.type = 'search';
