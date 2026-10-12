@@ -820,7 +820,8 @@ function casterPass() {
   let enables = 0;
   // hysteresis: something already casting keeps casting until it's well past the edge (1.25× the last caster's distance),
   // so walking along a row of crates doesn't make shadows blink on and off at the boundary (R: 'instead of popping')
-  const edge = casterBudget > 0 && ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
+  // (a budget of 0 keeps nothing: the old `casterBudget > 0 && … : Infinity` kept the first four casting forever)
+  const edge = casterBudget === 0 ? -1 : ranked.length >= casterBudget ? ranked[casterBudget - 1].d * 1.5625 : Infinity;
   for (let i = 0; i < ranked.length; i++) {
     const { c, d } = ranked[i];
     const want = i < casterBudget || (c.casting && d <= edge && i < casterBudget + 4);

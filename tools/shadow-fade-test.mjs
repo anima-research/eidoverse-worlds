@@ -97,6 +97,14 @@ for (let i = 0; i < 12; i++) updateRig(t += 16);
 check('castShadow false once the fade hits 0', far.userData.shadowFade === 0 && far.castShadow === false);
 check('near was never touched', near.castShadow === true && near.userData.shadowFade === 1);
 
+console.log('BUDGET 0 — nothing is kept by hysteresis (the edge was Infinity at 0: the first four stayed forever)');
+setCasterBudget(2);
+updateRig(t += 301); for (let i = 0; i < 22; i++) updateRig(t += 16);
+check('two cast again', near.castShadow && far.castShadow && rig.fadingCount() === 0);
+setCasterBudget(0);
+updateRig(t += 301); for (let i = 0; i < 22; i++) updateRig(t += 16);
+check('at budget 0 every caster fades out and stops casting', !near.castShadow && !far.castShadow && rig.fadingCount() === 0, JSON.stringify(rigDebug().casterList));
+
 console.log('HARD FLIP — a mesh whose material is not a node material');
 setCasterBudget(3);
 const plain = makeCaster('plain', 3, false);
