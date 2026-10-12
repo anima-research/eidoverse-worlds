@@ -36,6 +36,7 @@ import { r3, noNeg0, unNegZero } from "./round.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
+import { Refusal, refuse, said } from "./authority/refuse.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
@@ -657,13 +658,7 @@ export function lastSetterOf(w, id, comp) {
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 
 // ---------- the authority ----------
-class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }
-const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, fix, extra); };
-// A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the authority's
-// directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CTX.cat). An old
-// escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
-// must match it.
-const said = (id) => CTX.nameOf?.(String(id)) ?? dec(String(id)) ?? String(id);
+// Refusal / refuse / said: authority/refuse.js
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
