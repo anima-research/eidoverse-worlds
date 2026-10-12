@@ -43,6 +43,10 @@ export const shadowsOn = () => shadows;
 export const setShadows = (on) => { calls.push(['setShadows', on]); shadows = !!on; };
 export const shadowRes = () => res;
 export const setShadowRes = (n) => { calls.push(['setShadowRes', n]); res = n; };
+let casters = 24;
+export const CASTER_CHOICES = [6, 12, 24, 48, 96];
+export const getCasterCeiling = () => casters;
+export const setCasterCeiling = (k) => { calls.push(['setCasterCeiling', k]); casters = +k; };
 
 // ---- xrpanels.js: the quad registry, kept so the suite can drive a panel's dispatch
 export const xrPanels = new Map();
