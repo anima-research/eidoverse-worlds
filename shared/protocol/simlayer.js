@@ -113,6 +113,9 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
   const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const E = () => eidosim;
+  // every engine write counts (out.rev): a client re-copies its presentation sim only when this moved, not on every entry
+  // (STRIKES PH-S2: ~100 JSON copies of the whole sim during a cascade, one per chat line too)
+  out.rev = from?.rev ?? 0; const SE = (...args) => { out.rev++; return eidosim.simEntry(...args); };
   const tickOf = (ts) => (out.sim ? E().tickOf(out.sim, ts) : 0);
   const advance = (ts) => {
     if (!out.sim) return;
@@ -164,10 +167,10 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       applyInPlace(st, ops, seq);
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++;   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
-          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
+          SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
         }
         return;
       }
@@ -175,7 +178,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       let relock = false;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
-          if (o.comp === "terrain") { E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
+          if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, engineView(st)); out.launched = {}; }
           continue; }
         const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
@@ -195,7 +198,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
           // rest unlogged: its parent's rest or a write to its parent doesn't cancel it (review of 8377ec52 #6)
           if (id !== o.id && out.launched[id] && out.sim.bodies[id]) continue;
           const view = engineView(st); const gone = !view.entities[id];
-          E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
+          SE(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }
       }
@@ -203,7 +206,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
       // Re-seat every thing at rest whose knockability no longer matches (review of 8377ec52 #3–#5)
       if (relock) { const view = engineView(st);
         for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
-          E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
+          SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
     } else if (e.kind === "sim" && out.sim) {
       const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
@@ -211,12 +214,12 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // the launch's stamped state (p, v, q, w) is the body's exactly: the engine flies it from there
-        eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "launch", args: { id: a.id, p: a.p, v: a.v, q: a.q, w: a.w } }, view);
+        SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "launch", args: { id: a.id, p: a.p, v: a.v, q: a.q, w: a.w } }, view);
         out.launched[a.id] = { seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
       } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
         // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
         // it's put down (an authored transform reseats it) or thrown (a launch)
-        E().simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
+        SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
         delete out.launched[a.id];
         out.lifted.add(a.id);
       }

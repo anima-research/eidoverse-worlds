@@ -16,7 +16,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
   ["physlive", "physlive-check.ts", 1],
-  ["phystick", "phystick-check.ts", 1],  // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
+  ["phystick", "phystick-check.ts", 1],
+  ["sclock", "sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping  // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physseeds", "physseeds-check.ts", 1], // research physics-seeds 10-07: shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
   ["eidosim", "eidosim-check.ts", 1], // eidosim's adapter: any schedule reaching tick T gives the same bits; spin capped like v; a mirror is the same box
   ["eidosim-live", "eidosim-live-check.ts", 1], // eidosim at the authority: locks (own, ancestor, descendant) hold against knocks; knocked children rest on the record; spheres on the live host

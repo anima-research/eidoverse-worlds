@@ -24,6 +24,20 @@ export function noteRoundTrip(t0, t, t1) {
   if (rtt.length > RTT_KEEP) rtt.shift();
 }
 const bestOffset = () => (rtt.length ? rtt.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset : clockOffset ?? 0);
-export const serverNow = () => localNow() + bestOffset();
+// The offset the screen uses slews toward the best estimate (5% of elapsed time, so a 100 ms correction takes 2 s) instead
+// of stepping to each new minimum-RTT sample: a step moved every flight by the delta in one frame (STRIKES PH-S2 'display
+// clock jumps', R's 'steppy'). A correction over SLEW_SNAP_MS is a real resync and is taken at once.
+const SLEW_RATE = 0.05, SLEW_SNAP_MS = 500;
+let shown = null;   // { v: offset shown, at: localNow of the last read }
+function shownOffset() {
+  const best = bestOffset(), now = localNow();
+  if (shown === null || Math.abs(best - shown.v) > SLEW_SNAP_MS) { shown = { v: best, at: now }; return best; }
+  const step = Math.max(0, now - shown.at) * SLEW_RATE; shown.at = now;
+  const d = best - shown.v; shown.v += Math.abs(d) <= step ? d : Math.sign(d) * step;
+  return shown.v;
+}
+export const serverNow = () => localNow() + shownOffset();
+/** Probe/test surface: the raw best estimate and what is shown. */
+export const clockDebug = () => ({ best: bestOffset(), shown: shown?.v ?? null });
 /** The smallest recent round trip (ms), or null before the first: how sure the estimate is. */
 export const clockRtt = () => (rtt.length ? Math.min(...rtt.map((x) => x.rtt)) : null);
