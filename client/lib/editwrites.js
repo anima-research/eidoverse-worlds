@@ -22,7 +22,7 @@ import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../.
 import { plain, warnPlain } from './plainwords.js';
 import { chooseCenter } from './confirmcenter.js';
 import { chooseXR, xrActive } from './xrask.js';
-import { flashHint, toast } from './ui.js';
+import { flashHint, toast, claimStatus } from './ui.js';
 
 export { replicaActive };
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
@@ -82,7 +82,7 @@ export function showWarnings(what, r) {
   const ws = Array.isArray(r?.warnings) ? r.warnings.filter((w) => w && w.kind !== 'unchecked') : [];
   if (!ws.length) return null;
   const text = `Done, but ${ws.slice(0, 3).map(warnPlain).join('; ')}${ws.length > 3 ? ` (and ${ws.length - 3} more)` : ''}`;
-  toast(text, 'info', 7000);
+  claimStatus('warn', { priority: 3, content: text, ttl: 6000 });   // on the one status bar, about what I just did (not a toast: DESIGN-status-bar.md)
   bus.emit('edit-warned', { what, warnings: ws, text });
   return text;
 }

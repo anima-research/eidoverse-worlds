@@ -31,7 +31,7 @@ import { scaleOf } from '../../shared/scale3.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
-import { flashHint, collapseAll, panelFrame, html } from './ui.js';
+import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from './ui.js';
 import { paint, escapeHtml } from './markup.js';
 import { pushHostHook } from './autohooks.js';
 import { clickable } from './selectmask.js';
@@ -173,22 +173,19 @@ outline.visible = false;
 outline.userData.noCamCollide = true;
 scene.add(outline);
 
+// the selection line lives IN the one status bar (ui.js claimStatus, DESIGN-status-bar.md): a node it owns, claimed at
+// priority 4 while something is selected, released when nothing is. The lock checkbox rides inside the node.
 let inspector = null;
 function ensureInspector() {
-  if (!inspector) {
-    inspector = document.createElement('div');
-    inspector.className = 'panel edit-selbar';
-    inspector.style.cssText = `position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
-      z-index:7; padding:9px 13px; font-size:var(--fs-sm); display:flex; gap:14px; align-items:center;`;
-    document.body.appendChild(inspector);
-  }
+  if (!inspector) { inspector = document.createElement('div'); inspector.className = 'edit-selbar'; }
   return inspector;
 }
+const showSelbar = () => claimStatus('selection', { priority: 4, node: ensureInspector() });
 /** The inspector bar as a surface other editors write to — seatedit paints
  *  its anchor line through this rather than reaching into the element. */
 export function setInspectorHtml(line) {   // text, or markup built with html`` (markup.js)
   paint(ensureInspector(), line);
-  inspector.style.display = 'flex';
+  showSelbar();
 }
 function showInspector(id) {
   const meta = entityMeta.get(id) ?? {};
@@ -212,9 +209,9 @@ function showInspector(id) {
     const on = ev.target.checked;
     Edits.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
   };
-  inspector.style.display = 'flex';
+  showSelbar();
 }
-export function hideInspector() { if (inspector) inspector.style.display = 'none'; }
+export function hideInspector() { releaseStatus('selection'); }
 
 export function select(id) {
   const obj = entities.get(id);

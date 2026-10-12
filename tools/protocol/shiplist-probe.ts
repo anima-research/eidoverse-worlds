@@ -128,7 +128,7 @@ try {
   const w0 = await evalJson(`__warned.length`);
   await page(`const e = await import('/lib/editwrites.js'); return (await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' })).ok;`);
   check("W1 a write the authority warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), await evalJson(`__warned.at(-1) ?? null`));
-  check("W2 …on screen (a toast)", await waitFor(`[...document.querySelectorAll('.toast')].some((t) => /Done, but “Floating crate”/.test(t.textContent))`, 3000));
+  check("W2 …on screen, on the one status bar (a warning about my own edit; DESIGN-status-bar.md)", await waitFor(`/Done, but “Floating crate”/.test(document.getElementById('hintbar').textContent) && !document.getElementById('hintbar').classList.contains('gone')`, 3000));
 
   });
   // ---- V: a moderator's warning in a headset ----

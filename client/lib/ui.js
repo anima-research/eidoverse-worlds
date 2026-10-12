@@ -99,64 +99,82 @@ export function setHud(parts) { el.hud.innerHTML = parts; }
 // The hint bar shows TEXT unless it is handed markup built with html`` (markup.js): a plain string — a person's name, a
 // thing's label, an error from anywhere — is shown as the characters it is, never parsed (security pass 3, H1: a guest
 // named <img onerror=…> ran script in the browser of anyone they knocked over).
-export function setHint(line, { sticky = false } = {}) {
-  paint(el.hint, line);
-  el.hint.classList.remove('gone');
-  if (!sticky) setTimeout(() => el.hint.classList.add('gone'), 30000);
+// ============================================================ ONE status bar (notes/eidoverse/DESIGN-status-bar.md)
+// R 10-11 23:24: "We're up to three status bars here and they all stack on/over each other… Maybe they all share one bar
+// and we just use a priority system to determine which displays? Lantern is the default if nothing is otherwise
+// drawing attention". So: #hintbar is the one bar at the lantern's spot, and everything CLAIMS it with a priority:
+//   1 attn      a refusal (attention colour, copy pill, holds while pointed at)
+//   2 keys      the engaged gesture's keys (keyhints `during`)
+//   3 flash     a moment's notice ("panels hidden · Tab", "locked", the authority's warnings on my own edit)
+//   4 selection edit mode's selection line (name · keys · lock)
+//   5 ambient   the standing offer from the world ("X — sit")
+// The lowest number live shows; when it ends, the next live one shows (no stacking, no gaps). The lantern pill is the
+// resting content: it yields while any claim shows and comes back when none does. Content: text (shown as the
+// characters it is — security pass 3, H1), markup built with html``, or a node (the selection line, with its checkbox).
+const claims = new Map();   // id → { id, priority, content, node, tone, hold, ttl, timer }
+let hovering = false;
+const winner = () => { let w = null; for (const c of claims.values()) if (!w || c.priority < w.priority) w = c; return w; };
+export function claimStatus(id, { priority = 3, content = null, node = null, tone = null, ttl = null, hold = false } = {}) {
+  const old = claims.get(id); if (old?.timer) clearTimeout(old.timer);
+  const c = { id, priority, content, node, tone, hold, ttl, timer: null };
+  const arm = (ms) => { c.timer = setTimeout(() => { if (claims.get(id) !== c) return;
+    if (c.hold && hovering && winner() === c) { arm(1500); return; }   // pointed at: it stays until the pointer leaves
+    claims.delete(id); showStatus(); }, ms); };
+  if (ttl) arm(ttl);
+  claims.set(id, c); showStatus();
 }
+export function releaseStatus(id) { const c = claims.get(id); if (!c) return; if (c.timer) clearTimeout(c.timer); claims.delete(id); showStatus(); }
+export const statusShown = () => winner()?.id ?? null;
+const pillYield = (on) => document.getElementById('lantern-pill')?.classList.toggle('yield', on);
+function addCopy(h) {
+  // a refusal can be copied (R 10-11: "a little 'copy' icon on status errors… would be useful to grab and paste them for
+  // you"): its text is selectable, a copy button sits at its end, and pointing at it holds it on screen
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'hint-copy'; b.title = 'copy this message'; b.textContent = '⧉';
+  b.onclick = (e) => { e.stopPropagation(); const t = [...h.childNodes].filter((n) => n !== b).map((n) => n.textContent).join('').trim();
+    navigator.clipboard?.writeText(t).then(() => { b.textContent = '✓'; }, () => { b.textContent = 'select it to copy'; }); };
+  h.append(b);   // at the end of the words (R 10-11 22:48); an attn bar wraps, so a long reason never cuts it off
+}
+function showStatus() {
+  const c = winner(), h = el.hint;
+  h.classList.toggle('attn', c?.tone === 'attn');
+  h.classList.toggle('has-node', !!c?.node);
+  if (!c) { h.classList.add('gone'); h._t = null; delete h.dataset.keyhint; pillYield(false); return; }
+  if (c.node) h.replaceChildren(c.node); else { paint(h, c.content); if (c.tone === 'attn') addCopy(h); }
+  if (c.id === 'keys') h.dataset.keyhint = '1'; else delete h.dataset.keyhint;
+  h._t = c.id === 'flash' || c.id === 'hint' ? (c.timer ?? -1) : null;   // "a flash owns the bar": readers of _t keep working
+  h.classList.remove('gone'); pillYield(true);
+}
+
+export function setHint(line, { sticky = false } = {}) { claimStatus('hint', { priority: 3, content: line, ttl: sticky ? null : 30000 }); }
 
 // The ambient hint is what the bar shows when nothing louder is happening —
 // a standing offer from the world ("X — sit"), set and cleared by proximity.
-// A flash (emote names, mode switches) borrows the bar and gives it back.
 let ambientHint = null;
 export function setAmbientHint(line) {
-  if (lineKey(line) === lineKey(ambientHint)) return;   // don't fight setHint's boot message over nothing
+  if (lineKey(line) === lineKey(ambientHint)) return;
   ambientHint = line;
-  if (el.hint._t) return;             // a flash owns the bar; it restores us when done
-  if (ambientHint) { paint(el.hint, ambientHint); el.hint.classList.remove('gone'); }
-  else el.hint.classList.add('gone');
+  if (ambientHint) claimStatus('ambient', { priority: 5, content: ambientHint }); else releaseStatus('ambient');
 }
 // Esc put every panel away (windows.js): say how to get them back, for a few seconds; when they come back, stop saying it
 // …and the lantern's resting line goes away with them and comes back with them (commandbar.js setPillQuiet)
 bus.on('esc-quiet', (did) => {
   setPillQuiet(did === 'closed');
-  if (did === 'closed') flashHint(html`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Tab</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
-  else if (did === 'restored' && el.hint._t && /hidden · Tab to bring back/.test(el.hint.textContent)) endFlash();
+  if (did === 'closed') flashHint(html`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Tab</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the space
+  else if (did === 'restored' && statusShown() === 'flash' && /hidden · Tab to bring back/.test(el.hint.textContent)) endFlash();
 });
-/** Borrow the hint bar for a moment. `line` is text unless built with html`` (markup.js). */
+/** Borrow the bar for a moment. `line` is text unless built with html`` (markup.js). tone 'attn': something you asked for
+ *  didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status bar at the bottom that fades away
+ *  after a few seconds"), every time you ask — it outranks everything and holds while pointed at. */
 export function flashHint(line, ms = 2600, tone = null) {
-  delete el.hint.dataset.keyhint;   // a flash takes the bar from an engaged gesture's keys
-  paint(el.hint, line);
-  // tone 'attn': something you asked for didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status
-  // bar at the bottom that fades away after a few seconds"), every time you ask
-  el.hint.classList.toggle('attn', tone === 'attn');
-  // a refusal can be copied (R 10-11: "a little 'copy' icon on status errors… would be useful to grab and paste them for
-  // you"): its text is selectable, a copy button sits at its end, and pointing at it holds it on screen
-  if (tone === 'attn') {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'hint-copy'; b.title = 'copy this message'; b.textContent = '⧉';
-    b.onclick = (e) => { e.stopPropagation(); const t = [...el.hint.childNodes].filter((n) => n !== b).map((n) => n.textContent).join('').trim();
-      navigator.clipboard?.writeText(t).then(() => { b.textContent = '✓'; }, () => { b.textContent = 'select it to copy'; }); };
-    el.hint.append(b);   // at the end of the words (R 10-11 22:48); an attn bar wraps, so a long reason never cuts it off
-  }
-  el.hint.classList.remove('gone');
-  clearTimeout(el.hint._t);
-  el.hint._t = setTimeout(endFlash, ms);
-  el.hint.onpointerenter = () => { if (el.hint.classList.contains('attn')) { clearTimeout(el.hint._t); el.hint._t = -1; } };
-  el.hint.onpointerleave = () => { if (el.hint.classList.contains('attn') && el.hint._t === -1) el.hint._t = setTimeout(endFlash, 2500); };
+  claimStatus('flash', { priority: tone === 'attn' ? 1 : 3, content: line, tone, ttl: ms, hold: tone === 'attn' });
 }
-// keyhints.js: a gesture's keys hold the bar while you're engaged (R 10-04: the status line, once engaged), then give it back
+function endFlash() { releaseStatus('flash'); }
+el.hint.onpointerenter = () => { hovering = true; };
+el.hint.onpointerleave = () => { hovering = false; };
+// the engaged gesture's keys (keyhints.js engage/release): what the keys do RIGHT NOW, while the hand is on something
 addEventListener('ew-keyhint', (e) => {
-  if (e.detail) { clearTimeout(el.hint._t); el.hint._t = -1; paint(el.hint, html`<span>${e.detail}</span>`); el.hint.classList.remove('gone'); el.hint.dataset.keyhint = '1'; }
-  else if (el.hint.dataset.keyhint) { delete el.hint.dataset.keyhint; endFlash(); }
+  if (e.detail) claimStatus('keys', { priority: 2, content: html`<span>${e.detail}</span>` }); else releaseStatus('keys');
 });
-// a flash is over (its time ran out, or what it said stopped being true): the bar goes back to the ambient offer or away
-function endFlash() {
-  clearTimeout(el.hint._t);
-  el.hint._t = null;
-  el.hint.classList.remove('attn');
-  if (ambientHint) paint(el.hint, ambientHint);
-  else el.hint.classList.add('gone');
-}
 
 // ============================================================ cursors
 // The loupe cursor is inked with --fg (white — live 09-04: 'non-accent for now'). CSS url() cursors can't read
