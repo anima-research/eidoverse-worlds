@@ -10,7 +10,7 @@
 // spawn realizes (mountsTouching). Nothing is remembered twice.
 //
 // This module writes the maps every consumer shares (world.js entities/
-// entityMeta/comps/avatarMounts) and emits the bus events they subscribe
+// avatarMounts; a thing's components are the fold's own record, world.js bagOf) and emits the bus events they subscribe
 // to ('entity', 'comp', 'mount') — motion, emitters, panels, controller,
 // remotes, and the terrain re-seat all read those, not this file. Loads go
 // through the scheduler: keyed, owned, prioritized by live camera distance
@@ -34,7 +34,9 @@ import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
 import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
-import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
+import { entities, bagOf, avatarMounts, findPart, editHolds } from '../world.js';
+import { compKeys } from '../../../shared/protocol/view.js';
+import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn } from './models_field.js';
@@ -68,9 +70,8 @@ const _v = new THREE.Vector3();
 // a placeholder tier that cost pipelines would be the disease it treats.
 // Placeholders are real entities to the maps (a `place` moves them, a mount
 // seats them, motion swings them, panels list them); they are invisible to
-// the camera's collision (noCamCollide) and to colliders/shadows, and they
-// carry no entityMeta — which is what keeps the parity probe's identity
-// check honestly silent about them.
+// the camera's collision (noCamCollide) and to colliders/shadows, and the
+// parity probe's identity check reads `tracked`, not them.
 
 const libGeom = new Map();   // lib -> {bbox} — fed by the 'geom' message
 /** A model's box in its own frame (before scale), as the server measured it: [[min], [max]], or null until known. */
@@ -364,7 +365,6 @@ function realizeModel(id, cur, obj) {
   if (sc) applyScale(obj, sc);
   obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
-  entityMeta.set(id, { actor: cur.actor, kind: 'model', lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
   applyHidden(id);   // a thing hidden before its model arrived stays hidden
   bus.emit('entity', { id, kind: 'spawn' });
@@ -461,6 +461,8 @@ function runPromoteTail(id, obj) {
  *  grace (§16.2.D) counts these: fps dips while boulders are still landing
  *  are loading, not a performance regime. */
 export const promoteTailPending = () => promoteTail.size;
+/** What the realizer holds a thing AS ({kind, lib?}): the parity probe's word against the fold's; null for a reservation. */
+export const realizedAs = (id) => { const t = tracked.get(id); return t ? { kind: t.kind, ...(t.lib ? { lib: t.lib } : {}) } : null; };
 
 /** Drain within ~4ms, at least one item per frame — registered as the
  *  'promote-tail' system (main.js, near 'build'). */
@@ -494,7 +496,6 @@ function createHost(id, ent, kind) {
   g.userData.base = restOf(g, ent);
   setEmptyMarker(g, editing);
   entities.set(id, g);
-  entityMeta.set(id, { actor: ent.actor, kind, ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   scene.add(g);
   applyHidden(id);
   bus.emit('entity', { id, kind: 'spawn' });
@@ -513,8 +514,6 @@ function relabelHost(id) {
   const kind = kindOf(ent);
   if (kind === 'model' || kind === t.kind) return;
   t.kind = kind;
-  const meta = entityMeta.get(id);
-  if (meta) meta.kind = kind;
 }
 /** A light is an Empty that casts (syncCompLight hangs the cast and the gizmo on it); a mesh is an Empty until the mesh
  *  realizer lands (a sibling branch) — both are tracked under their own kind so the planner's identity rule and the
@@ -680,8 +679,6 @@ function retire(id) {
   }
   indexSceneMount(id, null);      // if the retired thing itself rode a carrier
   entities.delete(id);
-  entityMeta.delete(id);
-  comps.delete(id);
   releaseCaster(id);
   removeCollider(id);
   tracked.delete(id);
@@ -690,19 +687,10 @@ function retire(id) {
 
 // ---- components -------------------------------------------------------------
 
-/** Mirror the folded bag into the comps map every evaluator reads. Cloned:
- *  evaluators must never alias (and accidentally mutate) shadow state. */
-function syncComps(id) {
-  const bag = state.st.entities[id]?.comp;
-  if (bag && Object.keys(bag).length) comps.set(id, structuredClone(bag));
-  else comps.delete(id);
-}
-
 function emitCompBag(id) {
-  syncComps(id);
   syncCompLight(id);   // every path that re-announces the bag re-derives the light
-  const bag = comps.get(id);
-  if (bag) for (const [type, data] of Object.entries(bag)) bus.emit('comp', { id, type, data });
+  const bag = bagOf(id);
+  if (bag) for (const type of compKeys(bag)) bus.emit('comp', { id, type, data: bag[type] });
 }
 
 /** comp {type:'hidden', data:true} = not drawn, still there (the collider,
@@ -710,15 +698,14 @@ function emitCompBag(id) {
  *  the convention every surface — inspector, hierarchy, look() — honours. */
 function applyHidden(id) {
   const obj = entities.get(id);
-  if (obj) obj.visible = comps.get(id)?.hidden !== true && !isMineHidden(id) && !isolatedOut(id);   // hidden for everyone, or just in my view (myview.js: the eye, isolate)
+  if (obj) obj.visible = bagOf(id)?.hidden !== true && !isMineHidden(id) && !isolatedOut(id);   // hidden for everyone, or just in my view (myview.js: the eye, isolate)
 }
 bus.on('myview', ({ id }) => applyHidden(id));
 
 function onComp(id, type) {
-  syncComps(id);
   // switched off or back on: the thing and everything under it go (deepest first) or come back (the top first)
   if (type === 'disabled') { reconcileSubtree(id); bus.emit('disabled-changed', { id }); return; }
-  const data = comps.get(id)?.[type] ?? null;
+  const data = bagOf(id)?.[encName(type)] ?? null;   // the diff names components as the view spells them
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
   if (type === 'light') syncCompLight(id);
@@ -928,8 +915,6 @@ function demote(id) {
   scene.add(grp);
   applyHidden(id);   // hidden survives the stand-in box (placeholder / demote)
   syncCompLight(id); // the lamp's light follows it onto the stand-in
-  // entityMeta and comps STAY — labels and evaluators read fold truth, and
-  // the parity probe's identity check compares fold-to-fold either way
   resStats.demotes++;
   bus.emit('entity', { id, kind: 'demote' });   // emitters retire their handle
 }

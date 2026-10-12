@@ -16,7 +16,9 @@ import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
 // net.js does NOT import this module (its own note: "live grants keep it fresh
 // via world.js"), so this direction closes no cycle.
-import { net } from './net.js';
+import { net, replica } from './net.js';
+import { enc, dec } from '../../shared/protocol/names.js';
+import { kindOf } from '../../shared/protocol/kind.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
@@ -36,14 +38,22 @@ import { applySeatCorrection } from './seatcore.js';
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
  *  duplicate spawn in the same tick can't create two bodies for one id. */
 export const entities = new Map();
-/** id -> { actor, lib, ts } — provenance, for the build inspector. */
-export const entityMeta = new Map();
-/** id -> component bag, fed by `comp` verbs (and `motion`, which is sugar for
- *  the motion component). Mirrors the server's blind fold: data is opaque
- *  here too — meaning lives in whichever evaluator consumes a type (motion.js
- *  reads `motion`; mounting reads `sockets`; the server reads `reactions`).
- *  Unknown types just sit in the bag, forward-compatible. */
-export const comps = new Map();
+/** A thing's fold record as this client folds it (shared/protocol/replica.js): {model?, transform, parent?, …components},
+ *  component keys as the fold spells them (shared/protocol/names.js). ONE record for every reader — the Hierarchy, the
+ *  Inspector, every evaluator (motion.js reads `motion`; mounting reads `sockets`; the server reads `reactions`) — so
+ *  nothing is held beside the fold to drift (C7c; the `comps` Map the realizer mirrored it into is gone). Frozen in
+ *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it.
+ *  Read it where you need it; never keep it across an ingest — a write replaces the record (the frozen one is thawed
+ *  by copy), so a kept reference goes stale. */
+export const bagOf = (id) => replica.st?.entities?.[enc(String(id))]?.c ?? null;
+/** Every placed thing's [id, record], ids as the page spells them (the world entity excluded). */
+export function* bags() {
+  const es = replica.st?.entities; if (!es) return;
+  for (const k in es) if (k !== '@world') yield [dec(k) ?? k, es[k].c];
+}
+/** What a thing IS as realized and where from, for the panels: {kind, lib?} — the fold's word (shared/protocol/kind.js),
+ *  the realizer keeps no second copy (entityMeta is gone, C7c). */
+export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { lib: c.model } : {}) } : null; };
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
  *  their mounts live here for remotes/controller to consume. */
 export const avatarMounts = new Map();
@@ -332,7 +342,7 @@ export function findPart(root, name) {
  *  flat-zone center is a socket pos verbatim. A socket that names a `part`
  *  (a node motion.js animates, e.g. a swing's seat assembly) keeps the same
  *  coords but RIDES that part's motion instead of standing on the rest pose. */
-const socketOf = (id, slot) => (slot ? comps.get(id)?.sockets?.[slot] : null);
+const socketOf = (id, slot) => (slot ? bagOf(id)?.sockets?.[slot] : null);
 
 /** World-space position of a socket, for reach checks and hints. Ignores the
  *  part's motion on purpose: "how far is the seat" should not oscillate with
@@ -381,7 +391,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   if (!m) return null;
   const parent = entities.get(m.to);
   if (!parent) return null;
-  const sock = (comps.get(m.to)?.sockets ?? {})[m.slot] ?? {};
+  const sock = (bagOf(m.to)?.sockets ?? {})[m.slot] ?? {};
   const body = bodyOf(sock);
   parent.updateWorldMatrix(true, false);
   _mtF.set(...(m.offset ?? sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);

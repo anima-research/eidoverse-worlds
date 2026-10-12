@@ -33,7 +33,8 @@
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import * as Sel from './edit/selection.js';
-import { entities, entityMeta, comps, avatarMounts } from './world.js';
+import { entities, metaOf, bagOf, avatarMounts } from './world.js';
+import { compEntries } from '../../shared/protocol/view.js';
 import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { requestDebug, replica } from './net.js';
@@ -59,8 +60,7 @@ let arming = null;         // child id waiting for a parent click
 
 function badgesFor(id) {
   const out = [];
-  const bag = comps.get(id) ?? {};
-  for (const [type, data] of Object.entries(bag)) {
+  for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'motion' || type.startsWith('motion:')) {
       out.push(`${type}(${data?.type ?? '…'})`);
     } else if (type === 'sockets' || type === 'reactions') {
@@ -106,7 +106,7 @@ function paintScene(force = false) {
   const { roots, kids, riders } = treeData();
   const rows = [];
   const row = (id, depth) => {
-    const meta = entityMeta.get(id);
+    const meta = metaOf(id);
     const short = (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
@@ -125,8 +125,8 @@ function paintScene(force = false) {
   let eds = [];
   if (selected && entities.has(selected)) {
     const obj = entities.get(selected);
-    const meta = entityMeta.get(selected);
-    const bag = comps.get(selected);
+    const meta = metaOf(selected);
+    const bag = bagOf(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
     const isLight = !!obj?.userData?.isLight;
 
@@ -156,8 +156,7 @@ function paintScene(force = false) {
     // blind fold: any comp type, known or invented this morning, shows as a
     // row and edits as raw JSON. A saved edit replaces that type's data
     // WHOLESALE (that is the comp verb's contract); ✕ removes (data: null).
-    const bagObj = bag ?? {};
-    const compRows = Object.entries(bagObj).map(([type, data]) => {
+    const compRows = compEntries(bag).map(([type, data]) => {
       if (editingComp === type) {
         return `<div style="margin:2px 0"><b>${esc(type)}</b>
           <textarea data-ce="json" spellcheck="false" style="width:100%;height:90px;font-size:11px;font-family:inherit">${esc(JSON.stringify(data, null, 1))}</textarea>

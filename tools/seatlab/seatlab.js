@@ -22,7 +22,7 @@
 
 import { THREE, scene } from '/lib/core.js';
 import { remotes } from '/lib/remotes.js';
-import { entities, comps, avatarMounts, socketWorldPos, mountTransform } from '/lib/world.js';
+import { entities, bagOf, avatarMounts, socketWorldPos, mountTransform } from '/lib/world.js';
 import { makeAvatar } from '/lib/avatar.js';
 import { seatClaim, SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y, nameFromAvatarPath, SEAT_CLIP_FILE } from '/lib/seatcore.js';
 import { vrmaShaLoaded } from '/lib/assets.js';
@@ -40,7 +40,7 @@ export function measureSeat(riderId, { localAvatar = null } = {}) {
   if (!m) return { error: `${riderId} is not mounted` };
   const parent = entities.get(m.to);
   if (!parent) return { error: `mount parent ${m.to} not present` };
-  const sock = comps.get(m.to)?.sockets?.[m.slot] ?? null;
+  const sock = bagOf(m.to)?.sockets?.[m.slot] ?? null;
 
   // ---- the seat's claim ----------------------------------------------------
   const seatPos = socketWorldPos(m.to, m.slot, _sock);

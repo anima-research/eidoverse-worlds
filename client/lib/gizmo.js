@@ -14,7 +14,7 @@
 
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus } from './base.js';
-import { entities, comps } from './world.js';
+import { entities, bagOf } from './world.js';
 import { sendDrag } from './net.js';
 import { registerSystem } from './frameloop.js';
 import { sceneSelected } from './scenegraph.js';
@@ -42,7 +42,7 @@ let lastSent = 0;
 const proxy = new THREE.Object3D(); proxy.name = 'edit-gizmo-pivot';
 let viaProxy = false, offset = null;
 const _m = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pp = new THREE.Vector3(), _ps = new THREE.Vector3();
-const pivotOf = (id) => { const p = comps.get(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : null; };
+const pivotOf = (id) => { const p = bagOf(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : null; };
 /** Put the proxy at obj's pivot in the world, turned as obj is, unscaled. */
 function seatProxy(obj, piv) {
   obj.updateWorldMatrix(true, false);

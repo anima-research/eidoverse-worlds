@@ -53,7 +53,10 @@ export const makeLightGizmo = () => new THREE.Object3D();
 export const findPart = () => null;
 export const entities = new Map();
 export const entityMeta = new Map();
-export const comps = new Map();
+export const comps = new Map();   // the suite's driver: what bagOf answers
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const editHolds = new Map();
 export const reindexCollider = () => {};
 export const heightAt = () => 0;

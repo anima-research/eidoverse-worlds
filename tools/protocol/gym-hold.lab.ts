@@ -23,7 +23,7 @@ try {
     const box = new T.Box3().setFromObject(o), size = box.getSize(new T.Vector3());
     const look = () => { o.updateWorldMatrix(true, false); const q = o.getWorldPosition(new T.Vector3()), me = c.myState.pos; const cam = k.camera.position;
       return { camDist: +cam.distanceTo(new T.Vector3(me.x, me.y + 1.45, me.z)).toFixed(2), ball: [+(q.x - me.x).toFixed(2), +q.y.toFixed(2), +(q.z - me.z).toFixed(2)], body: [+me.x.toFixed(2), +me.z.toFixed(2)] }; };
-    const out = { size: size.toArray().map((v) => +v.toFixed(2)), boxMinY: +box.min.y.toFixed(2), origin: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], comps: Object.keys(w.comps.get('${id}') ?? {}), physics: w.comps.get('${id}')?.physics, scale: o.scale.toArray(), before: look() };
+    const out = { size: size.toArray().map((v) => +v.toFixed(2)), boxMinY: +box.min.y.toFixed(2), origin: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], comps: Object.keys(w.bagOf('${id}') ?? {}), physics: w.bagOf('${id}')?.physics, scale: o.scale.toArray(), before: look() };
     const g = await t.physicsApi.grab('${id}'); out.grab = { ok: !!g?.ok, code: g?.refused?.code ?? null }; await new Promise((z) => setTimeout(z, 1500)); out.held = look(); { const me = c.myState.pos, q = o.getWorldPosition(new T.Vector3()); out.heldGap = +(Math.hypot(q.x - me.x, q.z - me.z) - size.x / 2).toFixed(2); }
     const pr = t.physicsApi.put('${id}'); out.trace = []; for (let i = 0; i < 30; i++) { out.trace.push(look()); await new Promise((z) => setTimeout(z, 100)); } await pr; out.after = look(); return out;`);
   console.log(JSON.stringify({ ...r, trace: undefined }));

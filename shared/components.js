@@ -21,6 +21,7 @@
 
 import { ROT_MODES } from './euler.js';
 import { kindOf } from './protocol/kind.js';
+import { recordOf } from './protocol/view.js';
 import { qNorm, qFromYaw } from './rot.js';
 import { WEATHERS, CLOUDS } from './forecast.js';
 
@@ -289,6 +290,7 @@ function compBag(inst) {
  *  nothing is dropped; tools/components-corpus-test.ts counts them. */
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
+  ent = recordOf(ent);
   const out = [];
   const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (view.js), kept through the round trip
   // rotOrder rides the comp bag (written by `comp`, so it folds blind on every

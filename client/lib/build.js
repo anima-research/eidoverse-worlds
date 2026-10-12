@@ -23,7 +23,7 @@ import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
 import { makeLightGizmo } from './lights.js';
-import { entities, entityMeta, comps, editHolds } from './world.js';
+import { entities, metaOf, bagOf, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
 import { net, sendDrag } from './net.js';
@@ -191,7 +191,7 @@ export function setInspectorHtml(line) {   // text, or markup built with html`` 
   inspector.style.display = 'flex';
 }
 function showInspector(id) {
-  const meta = entityMeta.get(id) ?? {};
+  const meta = metaOf(id) ?? {};
   ensureInspector();
   // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
   const own = Edits.compsOf(id)?.label;
@@ -537,7 +537,7 @@ function selectWhenHere(id, ms = 3000) {
 // on a locked id for everyone, locker included); these guards keep the local
 // gesture honest — no preview that would have to snap back on refusal, and a
 // hint that teaches the unlock instead of a silent dead hand.
-function isLocked(id) { return !!comps.get(id)?.lock; }
+function isLocked(id) { return !!bagOf(id)?.lock; }
 function commitPlace(before) {
   if (!selected) return;
   const o = selected.obj;

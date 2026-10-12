@@ -46,6 +46,8 @@ export const CONFIG = {
   token: params.get('key') || store?.getItem('ew-key') || '',
   name: params.get('name') || store?.getItem('ew-name') ||
     `guest-${Math.random().toString(36).slice(2, 6)}`,
+  // a dev host (the probes, a local server, ?dev): the guards that throw loudly instead of letting drift pass
+  dev: params.has('dev') || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(globalThis.location?.hostname ?? ''),
 };
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
