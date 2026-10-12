@@ -208,9 +208,14 @@ console.log("\nE2. every glyph edit chrome names exists (a missing icon paints N
   for (const m of src("editlayout.js").matchAll(/icon: '([A-Za-z0-9]+)'|iconSvg\('([A-Za-z0-9]+)'/g)) names.add(m[1] ?? m[2]);
   for (const m of src("structure_ui.js").matchAll(/'([A-Za-z0-9]+)'\],|, '([A-Za-z0-9]+)'\);/g)) names.add(m[1] ?? m[2]);
   for (const m of src("widgets.js").matchAll(/iconSvg\(r\.locked \? '([A-Za-z]+)' : '([A-Za-z]+)'/g)) { names.add(m[1]); names.add(m[2]); }
-  for (const m of src("editpanels.js").matchAll(/icon: '([A-Za-z0-9]+)'/g)) names.add(m[1]);   // the Create panel's buttons
-  const missing = [...names].filter((n) => !icons.has(n));
-  check(`all ${names.size} named glyphs are in icons.js`, names.size >= 20 && missing.length === 0, "missing: " + missing.join(", ") + " · seen: " + [...names].join(","));
+  // the Hierarchy's environment rows (editpanels ENV) are drawn only by the DOM tree, which takes a glyph from any of the
+  // three sets; every other name can reach a canvas painter, which strokes the Lucide set alone
+  const env = /const ENV = \[([\s\S]*?)\];/.exec(src("editpanels.js"))?.[1] ?? "";
+  const domOnly = new Set<string>([...env.matchAll(/icon: '([A-Za-z0-9]+)'/g)].map((m) => m[1]));
+  for (const m of src("editpanels.js").replace(env, "").matchAll(/icon: '([A-Za-z0-9]+)'/g)) names.add(m[1]);   // the Create panel's buttons
+  for (const n of domOnly) names.add(n);
+  const missing = [...names].filter((n) => domOnly.has(n) ? !(icons.has(n) || icons.hasFill(n) || icons.hasLine(n)) : !icons.has(n));
+  check(`all ${names.size} named glyphs are in icons.js (the ${domOnly.size} DOM-only environment rows in any set)`, names.size >= 20 && domOnly.size >= 4 && missing.length === 0, "missing: " + missing.join(", ") + " · seen: " + [...names].join(","));
 }
 
 console.log("\nF. text on its surface meets 4.5:1:");
