@@ -57,6 +57,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["create needs scope.create", "authority.js", "if (!cap.create) refuse(\"scope\", `${cap.key} doesn't declare create: true`", "if (false) refuse(\"scope\", `${cap.key} doesn't declare create: true`", ["B22"]],
   ["created things stay in the subtree", "authority.js", "if (cap?.kind === \"script\") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", "if (false) for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some(", ["B22"]],
   ["a script's body effect meets consent", "authority.js", "const g = bodyGate(w, `script:${id}`, b.to, b.act, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
+  ["the beat drains scripts", "authority.js", "drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts", "/* mutant */   // what the beat logged reaches scripts", ["E6"]],
+  ["enter() restores the outer call's queues", "authority.js", "Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ;", "Object.assign(CTX, outer); w.sayQ = wq.sayQ;", ["E5"]],
   ["bodies need scope.bodies", "authority.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
   ["sponsor-wide body allowance", "authority.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
@@ -698,6 +700,18 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), dr = s.call("vic", "drop", { id: "ball" });
       return { setup: [show(mv), show(gr), show(dr)], nested: show(HOSTCB.nested), lamp: comp(s, "lamp", "t/n"), released: comp(s, "ball", "t/released"), moved: comp(s, "ball", "t/moved") }; },
     good: (o) => o.setup.every((x: string) => x === "ok") && o.nested === "ok" && o.lamp === 1 && o.released?.by === "vic" && o.moved === true },
+  { id: "E6", what: "the beat reaches scripts: a rest the heartbeat logs (settle, no request) fires changed:transform (second review 10-11 S2-2)", run(s) { cast(s);
+      if (!D.settle) return { absent: true };
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "mat", model: "crate", place: { at: [3, 0] } });
+      install(s, "bob", "mat", "land", `world.on("changed:transform", (e) => world.set("self", "t/landed", { id: e.id, by: e.by }));\n`, { scope: { ids: ["self", "ball"], comps: ["t/landed"] }, on: ["changed:transform"] });
+      const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), th = s.call("vic", "throw", { id: "ball", v: [0, 6, 0] });
+      const n0 = s.entries().length; let beats = 0, wrote = 0;
+      for (let k = 0; k < 200 && !wrote; k++) { s.advance(66); wrote = D.settle(s.w()); beats++; }
+      const rest = s.entries().slice(n0).find((e: any) => e.kind === "change" && e.actor === "sim");
+      return { setup: [show(mv), show(gr), show(th)], beats, wrote, rest: !!rest, landed: comp(s, "mat", "t/landed") }; },
+    good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
   // ---------------- P: param.<name> ----------------
   { id: "P1", what: "param.<name>: a script writes a signal into a component's data (a seat pose reads it); the schema keeps the rest of the value checked", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // a light is its own thing (one place per thing, 10-11): no model here
