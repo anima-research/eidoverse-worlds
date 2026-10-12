@@ -19,6 +19,7 @@
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
 import { scratchWorld, flat } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
+import { registerDraft } from "../shared/drafts.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -338,6 +339,34 @@ console.log("\nmesh (a parametric body with no model):");
   const addM3 = editOps({ pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} }, "e", { "comp.+": "Mesh" });
   check("on an Empty it writes mesh {shape: box, size: [1,1,1]}", JSON.stringify(val(addM3, "mesh")) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), JSON.stringify(addM3));
   check("the header says what it is: 'box'", inspectSchema(cube, "m1").sections.libLabel === "box", JSON.stringify(inspectSchema(cube, "m1").sections.libLabel));
+}
+
+// R 10-12 10:09 (the trusted rung, docs/COMPONENT-LADDER.md): a draft this client reads is offered under "drafts" with an
+// amber chip and the unproven hint; once the owner trusts it in this world it sits in the main list with a blue chip
+// and no hint; a draft nothing here reads is never offered
+console.log("\ntrusted drafts (the ladder's second rung):");
+{
+  registerDraft("hesperus/material", { title: "Material", summary: "override its look", category: "Look", applies: (e: any) => e?.lib != null || e?.comp?.mesh != null });
+  const plain = { lib: "statue.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp: {} };
+  const un = inspectSchema(plain, "m1", { materials: [] }).sections.add.find((a: any) => a.name === "hesperus/material");
+  check("TD1 untrusted: hesperus/material is offered under the 'drafts' heading, amber chip, the unproven hint", un?.category === "drafts" && un?.chip === "amber" && /unproven: this client reads it; the engine doesn't/.test(un?.hint ?? ""), JSON.stringify(un));
+  const tr = inspectSchema(plain, "m1", { materials: [], trusted: ["hesperus/material"] }).sections.add.find((a: any) => a.name === "hesperus/material");
+  check("TD2 trusted here: it sits in the main list (its own category), blue chip, no hint", tr?.category === "Look" && tr?.chip === "blue" && !/unproven/.test(tr?.hint ?? ""), JSON.stringify(tr));
+  const no = inspectSchema({ ...plain, comp: { "mica/heart": { beats: 1 } } }, "m1", { materials: [], trusted: ["mica/heart"] }).sections.add;
+  check("TD3 a draft with no reader here is not offered, trusted or not", !no.some((a: any) => a.name === "mica/heart"), JSON.stringify(no.map((a: any) => a.name)));
+  check("TD4 a draft already on the thing is not offered again", !inspectSchema({ ...plain, comp: { "hesperus/material": {} } }, "m1", { materials: [] }).sections.add.some((a: any) => a.name === "hesperus/material"));
+  check("TD5 a draft is offered only where its reader applies (a material needs meshes)", !inspectSchema(lamp, "lamp").sections.add.some((a: any) => a.name === "hesperus/material"));
+  const add = editOps(plain, "m1", { "comp.+": "hesperus/material" }, { materials: [] });
+  check("TD6 adding it writes the draft's blank value", JSON.stringify(val(add, "hesperus/material")) === "{}" && add.errors.length === 0, JSON.stringify(add));
+  const ov = { ...plain, comp: { "hesperus/material": { color: 0xff0000 } } };
+  const card = (live: any) => inspectSchema(ov, "m1", live).sections.list.find((x: any) => x.key === "hesperus/material");
+  check("TD7 the card: draft (amber dot) when untrusted, trusted (blue dot) when the world trusts it", card({ materials: [] })?.draft === true && !card({ materials: [] })?.trusted && card({ materials: [], trusted: ["hesperus/material"] })?.trusted === true, JSON.stringify([card({ materials: [] }), card({ materials: [], trusted: ["hesperus/material"] })]));
+  const btn = (live: any) => inspectSchema(ov, "m1", live).groups.find((g: any) => g.group === "hmat")?.fields.find((f: any) => f.k === "trust");
+  check("TD8 an owner sees 'trust this in this world' / 'stop trusting'; a non-owner sees no button", /trust this in this world/.test(btn({ materials: [], mayTrust: true })?.label ?? "") && /stop trusting/.test(btn({ materials: [], mayTrust: true, trusted: ["hesperus/material"] })?.label ?? "") && !btn({ materials: [] }), JSON.stringify([btn({ materials: [], mayTrust: true }), btn({ materials: [] })]));
+  const t1 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["mica/heart"] });
+  check("TD9 the button writes @world.trusted with the name added (the rest kept)", JSON.stringify(flat(t1.ops).find((o: any) => o.args.id === "@world")?.args) === JSON.stringify({ id: "@world", component: "trusted", value: { components: ["mica/heart", "hesperus/material"] } }), JSON.stringify(t1));
+  const t2 = editOps(ov, "m1", { "hmat.trust": true }, { materials: [], mayTrust: true, trusted: ["hesperus/material"] });
+  check("TD10 …and removes it when it was trusted (an empty list deletes the component)", flat(t2.ops).some((o: any) => o.verb === "delete" && o.args.id === "@world" && o.args.component === "trusted"), JSON.stringify(t2));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -37,6 +37,7 @@ import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, par
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
+import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
@@ -503,6 +504,10 @@ export function inspectSchema(ent, id, live = {}) {
     if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
     if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
       fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
+    // the ladder's second rung (R 10-12): the world's owner may trust this draft here; everyone else sees only the chip
+    if (live.mayTrust === true) fields.push(isTrusted(MATK, live.trusted)
+      ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: 'Takes hesperus/material off this world\'s trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.' }
+      : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: 'Not engine-official, but used and trusted in this world: the owner\'s word (@world.trusted). It moves into the main Add Component list with a blue chip. The engine still doesn\'t read it.' });
     groups.push({ group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields });
   }
 
@@ -771,6 +776,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
           continue;   // a one-slot override lives inside the Material card
         } else if (inst.key === 'hesperus/material' && g('hmat')) {
           sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
+          if (isTrusted(inst.key, live.trusted)) sec.trusted = true;   // …blue once the world's owner trusts it here
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
         } else {
@@ -785,7 +791,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
   if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
     const anySlot = Object.keys(ent.comp ?? {}).some((k) => k.startsWith('hesperus/material:'));
-    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true });
+    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true, ...(isTrusted('hesperus/material', live.trusted) ? { trusted: true } : {}) });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
   // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
@@ -805,6 +811,14 @@ function componentSections(ent, groups, live = {}, id = '?') {
     });
   for (const name of ['Model', 'Structure', 'Parent']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
+  // the ladder's drafts (docs/COMPONENT-LADDER.md): only what this client has a reader for, where it applies, once.
+  // Trusted here (the owner's @world.trusted): the main list, blue. A plain draft: under "drafts", amber, unproven.
+  for (const d of draftsRead()) {
+    if (ent?.comp?.[d.name] != null || !d.applies(ent)) continue;
+    const trusted = isTrusted(d.name, live.trusted);
+    add.push({ name: d.name, label: d.title, category: trusted ? d.category : 'drafts', summary: d.summary, hash: null, draft: true, chip: trusted ? 'blue' : 'amber',
+      ...(trusted ? { trusted: true } : { hint: UNPROVEN_HINT }) });
+  }
   // the header's `lib` line reads the Model component (design §5), so it can
   // never disagree with the Model card; an Empty and a light say what they are
   const model = components.find((c) => c.type === 'Model')?.params.lib;
@@ -812,6 +826,13 @@ function componentSections(ent, groups, live = {}, id = '?') {
   // parenting lives on the Parent card (R, 10-04), not the header
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
     lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.comp?.mesh) && MESH_SHAPES.includes(ent.comp.mesh.shape) ? ent.comp.mesh.shape : ent?.comp?.light ? 'light' : 'empty' };
+}
+
+/** The one request the "trust this in this world" button sends: @world.trusted with `name` toggled; an emptied list
+ *  removes the component. The authority gates it (owner), and refuses a malformed list (shared/drafts.js trustRefusal). */
+export function trustOp(name, live = {}) {
+  const next = toggleTrusted(Array.isArray(live.trusted) ? live.trusted : [], name);
+  return next.length ? OP.set('@world', TRUSTED, { components: next }) : OP.unset('@world', TRUSTED);
 }
 
 // ---------------------------------------------------------------- needs
@@ -872,6 +893,7 @@ export function planNeeds(ent, id, name, value) {
  *  part motion, the type name for an Annotation, or a need's choice. Returns
  *  { ops, errors, choice? } — a `choice` sends nothing and asks. */
 export function addOps(ent, id, name, value) {
+  if (readsDraft(name)) { if (ent?.comp?.[name] != null) return { ops: [], errors: [`${id} already has ${name}`] }; return { ops: [OP.set(id, name, draftsRead().find((d) => d.name === name).blank)], errors: [] }; }
   const np = planNeeds(ent, id, name, value);
   if (np.choice) return { ops: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
   const own = addOwnOps(ent, id, name, np.ops.length ? undefined : value);
@@ -1220,6 +1242,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); break; }
         if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); break; }
         if (fk === 'reset') { comps.set(ck, null); break; }
+        if (fk === 'trust') { ops.push(trustOp(MATK, live)); break; }
         const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
         if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
           if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); break; } }
