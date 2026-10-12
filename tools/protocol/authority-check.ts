@@ -15,7 +15,7 @@ import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/protocol/authority.js";
 import { fold, readLog, digest, opsOf, PURGED } from "../../shared/protocol/fold.js";
-import { makeReplica, stateView, stateFromView } from "../../shared/protocol/replica.js";
+import { makeReplica, wireState, stateFromWire } from "../../shared/protocol/replica.js";
 import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
 import { MODELS } from "../../shared/protocol/labmodels.js";
 import { enc, encName, dec } from "../../shared/protocol/names.js";
@@ -434,7 +434,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
-  c.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
+  c.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
   let steps = 0, bad = null; const same = (a, b) => { const d = diffView(a, b); return !d.things.length && !d.world.length; };
   const step = (what, actor, verb, args) => { const from = w.entries.length; const r = call(actor, verb, args);
     const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
@@ -461,11 +461,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "create", { id: "gap-1", model: "crate", place: { at: [3, 3] } }); c.ingest(JSON.parse(JSON.stringify(w.entries.slice(c.head + 1))), c.head + 1);
   call("ann", "set", { id: "gap-1", component: "label", value: "x" }); const from = w.entries.length; ok(call("ann", "set", { id: "gap-1", component: "label", value: "y" }).ok, "K4 (precondition) the edit after the missed one is written");
   ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
-  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
+  const c2 = makeReplica(); c2.adopt(JSON.parse(JSON.stringify({ state: wireState(w.state()), head: w.entries.length - 1 })));
   now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
-  const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
-  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
+  const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
+  ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
@@ -889,7 +889,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(b(s2).t0 >= now + 100 - 300_000 && b(s2).utt === 4, "CP8 …t0 is clamped into the 5-minute utterance window", b(s2));
   ok(b(s5).t0 <= now + 600 && b(s5).t0 >= now, "CP8 …a t0 in the future is clamped to now", b(s5));
   ok(!("spoken" in b(s3)) && !("utt" in b(s3)) && !("t0" in b(s3)) && !("utt" in b(s4)), "CP8 …a malformed trio (utt -1, or no spoken) leaves a plain say", [b(s3), b(s4)]);
-  const k = makeReplica(); k.adopt({ state: stateView(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
+  const k = makeReplica(); k.adopt({ state: wireState(fold(E.slice(0, s1.seq))), head: s1.seq - 1 });
   const got = k.ingest([E[s1.seq]], s1.seq).says[0];
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes

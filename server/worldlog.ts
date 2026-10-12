@@ -262,7 +262,7 @@ export class WorldLog {
   access(): Any { const a = this.live.state().entities?.["@world"]?.c?.access; return a && typeof a === "object" ? a : null; }
   /** Has this identity a roles:<id> here (access.join 'listed')? */
   listedHere(actor: string): boolean { return !!this.live.state().entities?.["@world"]?.c?.[`roles:${actor}`]; }
-  /** Slice 3b: what a client that folds the log adopts at join: the fold itself (shared/protocol/replica.js stateView), its head,
+  /** Slice 3b: what a client that folds the log adopts at join: the fold itself (shared/protocol/replica.js wireState), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;

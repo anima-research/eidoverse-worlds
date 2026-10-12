@@ -36,7 +36,9 @@ import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
 import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
 import { simEntry } from '../../shared/sim.js';
-import { planVelocity } from '../../shared/protocol/launchplan.js';
+import { planLaunch } from '../../shared/protocol/launchplan.js';
+import { REACH, HAND_Y, KICK } from '../../shared/protocol/physconst.js';
+import { r3 } from '../../shared/protocol/round.js';
 import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
 import { plain, nameOf } from './plainwords.js';
@@ -44,8 +46,6 @@ import { html } from './markup.js';
 import { xrActive } from './xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
-const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
-const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the authority's punt reach, from the feet
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved
 const THROW = { speed: 8, arc: 0.45, lob: 0.6 };   // a desktop throw with no aim: the way my body faces, ~26° up; aimed: a lob of ~34° or steeper
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
@@ -169,7 +169,6 @@ function presenceIdOf(actorId) {
 // ---------------------------------------------------------------- the body the authority tracks
 let arrived = false, moving = null, lastTrack = 0, trackedAt = null, lastMove = null, lastTeleport = 0, arriveFails = 0;
 const feet = () => { const p = hooks?.myPos(); return p ? [p.x, p.y, p.z] : null; };
-const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
@@ -417,9 +416,9 @@ const swapFrom = new Map();  // id -> drawn world position before a copy swap (t
 function planRelease(id, pos, v, w) {
   const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
   const obj = entities.get(id); if (!obj) return null;
-  const vv = planVelocity(v, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw').v;   // the authority's own arithmetic (launchplan.js)
   const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
-  return { id, p: pos, q, v: vv, ...(w ? { w } : {}) };
+  const { notes: _n, ...entry } = planLaunch({ id, p: pos, q, v, ...(w ? { w } : {}) }, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw');   // the authority's own arithmetic (launchplan.js)
+  return entry;
 }
 function predict(args) {
   if (presV !== replica.simVersion || !pres) { pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++; if (!pres) return false; }

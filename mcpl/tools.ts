@@ -22,6 +22,7 @@
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
 import { bodyOf } from "../shared/components.js";
+import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody } from "../shared/sockbody.js";
 import { dec as decName } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
@@ -918,7 +919,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const schema = inspectSchema(rec, id, { world, box: rec.lib ? await ag.modelBox(String(rec.lib)) : null });
       if (a.json) return text(JSON.stringify(schema));
       const kids = childrenOf(world, id);
-      const head = `[${id}] ${rec.kind === "light" ? "light" : rec.lib == null ? "empty" : String(rec.lib).split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}`
+      const head = `[${id}] ${kindOf(rec) === "model" ? String(rec.lib).split("/").pop() : kindOf(rec)}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}`
         + `\nparent: ${rec.parent ? `${rec.parent.to}${rec.parent.socket ? ` (socket ${rec.parent.socket})` : ""} — its Transform below is LOCAL to ${rec.parent.to}` : "none (a root: its Transform is the world's)"}`
         + `\nchildren: ${kids.length ? kids.join(", ") : "none"}`
         + (() => { const h = String((rec as any)?.comp?.["copy-of"]?.hash ?? "").replace(/^sha256:/, ""); if (!h) return ""; const b = ag.worldBlueprints()[h]; return `\nblueprint: a copy of \"${b?.name ?? "?"}\" (${h.slice(0, 12)})`; })();
@@ -966,7 +967,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const line = (e: any) => {
         const c = e.comp ?? {};
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "sockets" ? `sockets(${Object.keys(c.sockets ?? {}).join(",")})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.lib === "(light)" ? "light" : !e.lib ? "empty" : String(e.lib).split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.kind === "model" ? String(e.lib).split("/").pop() : e.kind}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
       const hit = (e: any) => !q || [e.id, e.lib, e.comp?.label ?? "", ...Object.keys(e.comp ?? {})].join(" ").toLowerCase().includes(q);
       const L: string[] = [];

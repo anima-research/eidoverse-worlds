@@ -31,7 +31,7 @@
 // removed, the part eases back to its authored rest pose.
 
 import { THREE, camera } from './core.js';
-import { entities, comps, findPart } from './world.js';
+import { entities, bags, bagOf, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { serverNow } from './remotes.js';
 // The closed forms themselves live in motioneval.js — a dependency-free
@@ -133,7 +133,7 @@ export function tickMotion() {
   // first frame arrives.
   const nowMs = serverNow();
   _seenParts.clear();
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     for (const key in bag) {
       const isWhole = key === 'motion';
       if (!isWhole && !key.startsWith('motion:')) continue;
@@ -165,7 +165,7 @@ export function tickMotion() {
         // closed forms — the agent's look() runs the SAME call, which is the
         // whole point (#82). This side just applies the result to the object.
         // the entity's pivot component is the default hinge (research 52), in its parent's units: scaled by its own scale
-        const pv = comps.get(id)?.pivot?.pos;
+        const pv = bagOf(id)?.pivot?.pos;
         const r = evalWholeMotion(Array.isArray(pv) && pv.length === 3 ? { ...base, pivot: [pv[0] * obj.scale.x, pv[1] * obj.scale.y, pv[2] * obj.scale.z] } : base, m, nowMs);
         if (!r.ok) {
           // A motion this evaluator won't vouch for (unknown type, malformed

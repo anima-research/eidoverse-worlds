@@ -7,7 +7,7 @@
 //
 // The pure halves (openFraction, openPose) live in motioneval.js (no THREE, no DOM: tools/protocol/shiplist-check.ts and an
 // agent can read them); tickOpenables applies them.
-import { entities, comps, findPart } from './world.js';
+import { entities, bags, bagOf, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { qAxisAngle, openFraction, openPose, OPEN_DEFAULTS } from './motioneval.js';
 export { openFraction, openPose, OPEN_DEFAULTS };
@@ -18,7 +18,7 @@ const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 /** Once a frame (main.js). Only things with an openable are visited; a shut one nobody has opened is never touched, so
  *  edit-mode gestures on it stay the gizmo's. */
 export function tickOpenables(now = performance.now()) {
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     const o = bag.openable; if (!isBag(o)) continue;
     const want = o.open === true ? 1 : 0;
     let r = tweens.get(id);
@@ -27,7 +27,7 @@ export function tickOpenables(now = performance.now()) {
       Object.assign(r, { from: f, to: want, t0: now, dur: Math.max(0, (Number.isFinite(o.time) ? o.time : OPEN_DEFAULTS.time) * 1000 * Math.abs(want - f)) }); }
     apply(id, bag, o, r, openFraction(r, now));
   }
-  for (const [id, r] of tweens) if (!isBag(comps.get(id)?.openable)) { restore(id, r); tweens.delete(id); }
+  for (const [id, r] of tweens) if (!isBag(bagOf(id)?.openable)) { restore(id, r); tweens.delete(id); }
 }
 
 function apply(id, bag, o, r, f) {

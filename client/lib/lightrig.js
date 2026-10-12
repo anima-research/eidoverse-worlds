@@ -51,7 +51,7 @@
 
 import { THREE, scene, camera, renderer, sun } from './core.js';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
-import { CONFIG, tee } from './base.js';
+import { CONFIG, tee, bus } from './base.js';
 import { warmDepth } from './warmqueue.js';
 
 // ---- the fixed inventory ----------------------------------------------------
@@ -770,6 +770,8 @@ export function releaseCaster(id) {
   if (c) { c.released = true; fading.delete(c); }   // a queued warm re-reads this and skips the work
   casters.delete(id);
 }
+// the realizer's word that a realized object is going (realize/lifecycle.js): the caster slot and the lamps it owned go with it
+bus.on('realized', ({ id, owner }) => { releaseCaster(id); releaseOwner(owner); });
 export const casterCount = () => casters.size;
 export function setCasterBudget(k) { casterBudget = Math.max(0, Math.min(casterCeiling, k)); }
 export const getCasterBudget = () => casterBudget;

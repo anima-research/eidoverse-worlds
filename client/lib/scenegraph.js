@@ -32,7 +32,9 @@
 
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
-import { entities, entityMeta, comps, avatarMounts } from './world.js';
+import * as Sel from './edit/selection.js';
+import { entities, metaOf, bagOf, avatarMounts } from './world.js';
+import { compEntries } from '../../shared/protocol/view.js';
 import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { requestDebug, replica } from './net.js';
@@ -54,13 +56,11 @@ const _wp = new THREE.Vector3();
 
 let sceneApi = null;
 let sceneBody = null;
-let selected = null;       // entity id shown in the inspector
 let arming = null;         // child id waiting for a parent click
 
 function badgesFor(id) {
   const out = [];
-  const bag = comps.get(id) ?? {};
-  for (const [type, data] of Object.entries(bag)) {
+  for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'motion' || type.startsWith('motion:')) {
       out.push(`${type}(${data?.type ?? '…'})`);
     } else if (type === 'sockets' || type === 'reactions') {
@@ -92,6 +92,7 @@ let editingComp = null;    // comp type whose JSON is open, or true for a new on
 
 function paintScene(force = false) {
   if (!sceneBody) return;
+  const selected = sceneSelected();
   // don't yank an editor out from under the user: an open JSON textarea, or
   // any focused editor control (a light slider mid-drag, a half-typed pos
   // field), holds repaints — the echo of a committed verb queues one, and it
@@ -105,8 +106,8 @@ function paintScene(force = false) {
   const { roots, kids, riders } = treeData();
   const rows = [];
   const row = (id, depth) => {
-    const meta = entityMeta.get(id);
-    const short = (meta?.lib ?? meta?.mesh ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
+    const meta = metaOf(id);
+    const short = (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
@@ -124,8 +125,8 @@ function paintScene(force = false) {
   let eds = [];
   if (selected && entities.has(selected)) {
     const obj = entities.get(selected);
-    const meta = entityMeta.get(selected);
-    const bag = comps.get(selected);
+    const meta = metaOf(selected);
+    const bag = bagOf(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
     const isLight = !!obj?.userData?.isLight;
 
@@ -155,8 +156,7 @@ function paintScene(force = false) {
     // blind fold: any comp type, known or invented this morning, shows as a
     // row and edits as raw JSON. A saved edit replaces that type's data
     // WHOLESALE (that is the comp verb's contract); ✕ removes (data: null).
-    const bagObj = bag ?? {};
-    const compRows = Object.entries(bagObj).map(([type, data]) => {
+    const compRows = compEntries(bag).map(([type, data]) => {
       if (editingComp === type) {
         return `<div style="margin:2px 0"><b>${esc(type)}</b>
           <textarea data-ce="json" spellcheck="false" style="width:100%;height:90px;font-size:11px;font-family:inherit">${esc(JSON.stringify(data, null, 1))}</textarea>
@@ -193,11 +193,9 @@ function paintScene(force = false) {
     el.onclick = () => {
       const id = el.dataset.id;
       if (arming && arming !== id) { doAttach(arming, id); arming = null; return; }
-      selected = id === selected ? null : id;
       arming = null;
       editingComp = null;
-      paintScene(true);
-      bus.emit('sg:selected', selected);
+      if (id === selected) Sel.clear(); else Sel.set([id]);   // 'selection' repaints
     };
   }
   sceneBody.querySelector('[data-act="find"]')?.addEventListener('click', () => {
@@ -258,7 +256,7 @@ function paintScene(force = false) {
   sceneBody.querySelector('[data-act="detach"]')?.addEventListener('click', () => doDetach(selected));
   sceneBody.querySelector('[data-act="remove"]')?.addEventListener('click', () => {
     del([selected]);
-    selected = null;
+    Sel.clear();
   });
 }
 
@@ -267,25 +265,28 @@ function paintScene(force = false) {
  *  for build.js — clicking a thing in edit mode and clicking its row are the
  *  same act, so the inspector (transform, semantic editors, comp bag) arrives
  *  with the selection instead of hiding behind a second gesture. */
-export const sceneSelected = () => selected;
+export const sceneSelected = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids[0] ?? null : null; };
 // while the edit-mode frames are up they ARE the inspector: a selection must
 // not also yank the World panel open onto the section they retire
 let editUI = false;
 bus.on('edit-mode', (on) => { editUI = !!on; });
 /** Clear the inspector's selection (Esc, Edit ▸ deselect) — sceneSelect refuses a null id. */
 export function sceneDeselect() {
-  if (selected == null) return;
-  selected = null; arming = null; editingComp = null;
-  bus.emit('sg:selected', null);
-  if (sceneApi?.isOpen) paintScene(true);
+  if (sceneSelected() == null) return;
+  arming = null; editingComp = null;
+  Sel.clear();
 }
 export function sceneSelect(id) {
-  if (!sceneApi || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: it isn't realized, it's still there
-  selected = id;
+  if (id == null || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: it isn't realized, it's still there
   arming = null;
   editingComp = null;
-  bus.emit('sg:selected', selected);
-  if (editUI) { if (sceneApi.isOpen) paintScene(true); return; }
+  if (!Sel.set([id])) followSelection(Sel.selection());   // already selected: still bring the row into view
+}
+/** The panel follows the selection, whoever set it (a viewport pick, the Hierarchy, a command). */
+function followSelection({ ids, kind }) {
+  const id = kind === 'things' ? ids[0] ?? null : null;
+  if (!sceneApi) return;
+  if (id == null || editUI) { if (sceneApi.isOpen) paintScene(true); return; }
   const reveal = () => {
     paintScene(true);
     sceneBody?.querySelector(`.sg-row[data-id="${CSS.escape(id)}"]`)
@@ -412,4 +413,5 @@ export function initSceneGraph() {
   bus.on('entity', repaint);
   bus.on('comp', repaint);
   bus.on('mount', repaint);
+  bus.on('selection', followSelection);
 }

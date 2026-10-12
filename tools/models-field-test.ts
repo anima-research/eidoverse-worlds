@@ -22,7 +22,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 console.log(`\nmodels_field — the pure planner\n`);
 
 const model = (lib: string, extra: object = {}) => ({ lib, pos: [0, 0, 0], actor: "t", ts: 1, ...extra });
-const light = () => ({ kind: "light", pos: [0, 1, 0], color: 0xffd9a0, intensity: 16, range: 10, actor: "t", ts: 1 });
+const light = () => ({ pos: [0, 1, 0], comp: { light: { color: 0xffd9a0, intensity: 16, range: 10 } }, actor: "t", ts: 1 });
 
 // 1. fresh world: everything creates, nothing retires
 {

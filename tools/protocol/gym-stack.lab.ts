@@ -37,7 +37,7 @@ try {
       if (first !== null && landed === null && Math.abs(y - (y0 - 0.5)) < 0.03) { landed = dt; mark('rider-near-landing'); }
       if (landed !== null && dt > landed + 800) break; }
     const sh = t.simShown(); const b = sh?.bodies?.['${RIDER}']; const sl = await import('/shared/protocol/simlayer.js'); const rm = await import('/lib/remotes.js');
-    const probe = { shownTick: sh?.tick, target: sh ? sl.tickOf(sh, rm.serverNow()) : null, body: b ? { p: b.p, v: b.v, resting: b.resting, sleep: b.sleep, kind: b.kind } : null, bodyIds: sh ? Object.keys(sh.bodies) : null, parentNow: w.comps.get('${RIDER}')?.parent?.to ?? null, objParent: w.entities.get('${RIDER}').parent?.userData?.entityId ?? w.entities.get('${RIDER}').parent?.type, canonBodies: Object.keys(n.replica.sim?.bodies ?? n.replica.sim?.sim?.bodies ?? {}) };
+    const probe = { shownTick: sh?.tick, target: sh ? sl.tickOf(sh, rm.serverNow()) : null, body: b ? { p: b.p, v: b.v, resting: b.resting, sleep: b.sleep, kind: b.kind } : null, bodyIds: sh ? Object.keys(sh.bodies) : null, parentNow: w.bagOf('${RIDER}')?.parent?.to ?? null, objParent: w.entities.get('${RIDER}').parent?.userData?.entityId ?? w.entities.get('${RIDER}').parent?.type, canonBodies: Object.keys(n.replica.sim?.bodies ?? n.replica.sim?.sim?.bodies ?? {}) };
     const gg = await g; return { probe, walked, grab: gg?.ok ?? gg?.refused?.code, ev, ys: ys.slice(0, 80) };`);
   console.log(JSON.stringify(r));
 } finally { await cleanup(0); }

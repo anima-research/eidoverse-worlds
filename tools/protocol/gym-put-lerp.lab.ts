@@ -43,7 +43,7 @@ const PUT = (settleMs: number) => `const t = await import('/lib/thingphysics.js'
     if (!seen && (on || (!t.physicsApi.holds()['${ID}'] && Math.hypot(p[0] - hand[0], p[1] - hand[1], p[2] - hand[2]) > 0.05))) { seen = true; truth = t.physicsApi.whereIs('${ID}'); }
     if (seen) { samples.push({ dt, p, on, truth: t.physicsApi.whereIs('${ID}') }); if (!on && ++over >= 3) break; } }
   const r = await pr; const after = wp().toArray();
-  return { grab: !!g?.ok, put: !!r?.ok, refused: r?.refused ?? null, spot, hand, truth, samples, after, parent: w.comps.get('${ID}')?.parent?.to ?? null, y: after[1] };`;
+  return { grab: !!g?.ok, put: !!r?.ok, refused: r?.refused ?? null, spot, hand, truth, samples, after, parent: w.parentIdOf('${ID}') ?? null, y: after[1] };`;
 const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 try {
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${SRC ? "Riannon" : ME}&world=${SRC ? "gym" : WORLD}` });

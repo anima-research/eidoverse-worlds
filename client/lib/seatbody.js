@@ -12,7 +12,7 @@
 // own motion lands on the seat (motion warping, Unreal's name for it, done as a time-lock rather than root motion).
 
 import { THREE } from './core.js';
-import { avatarMounts, mountTransform, comps, entities, findPart } from './world.js';
+import { avatarMounts, mountTransform, bagOf, entities, findPart } from './world.js';
 import { bodyOf, evalPose, choosePose, reachWins } from '../../shared/sockbody.js';
 import { socketSignals } from './socksignals.js';
 import { xrHandWorld } from './xrbody.js';
@@ -31,7 +31,7 @@ const _m = new THREE.Matrix4(), _mv = new THREE.Vector3(), _mq = new THREE.Quate
  *  whose socket shares the group — all from presence, so every client gathers the same list. */
 export function seatChoices(riderId, m, body) {
   if (!body?.sync) return m?.pose ? [{ name: m.pose, at: m.at ?? 0 }] : [];
-  const S = comps.get(m.to)?.sockets ?? {};
+  const S = bagOf(m.to)?.sockets ?? {};
   const out = [];
   for (const [id, o] of avatarMounts) {
     if (o.to !== m.to || !o.pose) continue;
@@ -67,7 +67,7 @@ function thingPoint(id, at, part, out, qIn = null, qOut = null) {
 export function driveSeat(av, riderId, { dt, nowMs, path = null, local = false, xr = null }) {
   const m = avatarMounts.get(riderId);
   if (!m || !av) return null;
-  const comp = comps.get(m.to);
+  const comp = bagOf(m.to);
   const sock = comp?.sockets?.[m.slot];
   const body = bodyOf(sock);
   if (!body) return null;

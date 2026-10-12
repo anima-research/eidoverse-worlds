@@ -47,7 +47,7 @@ const pngFile = join(mkdtempSync(join(tmpdir(), 'picedit-')), 'red square.png');
 writeFileSync(pngFile, PNG);
 
 const state = (pg: any) => pg.evaluate(async () => {
-  const { entities, findPart, comps } = await import('/lib/world.js');
+  const { entities, findPart, bagOf } = await import('/lib/world.js');
   const { _hung } = await import('/lib/pictures.js');
   const root = entities.get('console'); const part = root ? findPart(root, 'screenplane') : null;
   const h = _hung.get('console');
@@ -60,7 +60,7 @@ const state = (pg: any) => pg.evaluate(async () => {
     block: !!block, parts: opts, src: (block?.querySelector('[data-pe="src"]') as any)?.value ?? null,
     msg: block?.querySelector('[data-pe="msg"]')?.textContent ?? null,
     down: !!block?.querySelector('[data-pe="down"]'),   // rendered only when the bag holds a picture: the repaint's receipt
-    comp: comps.get('console')?.picture ?? null,
+    comp: bagOf('console')?.picture ?? null,
   };
 });
 const until = async (pg: any, pred: (s: any) => boolean, ms = 30000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await state(pg); if (pred(s)) return s; await new Promise((r) => setTimeout(r, 200)); } return s; };
@@ -106,11 +106,11 @@ try {
   check('C. …with the normalized bag in the fold (src, part, look, lit)', s.comp?.src === uploaded && s.comp?.part === 'screenplane' && s.comp?.look === 'a red square, hung by hand' && s.comp?.lit === 'self' && s.comp?.flip === false, JSON.stringify(s.comp));
 
   // D. a URL typed into src is refused in the block, and no comp goes out
-  const seqBefore = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.comps.get('console')?.picture)));
+  const seqBefore = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf('console')?.picture)));
   await pg.fill('[data-pe="src"]', 'https://example.com/trollface.png');
   await pg.click('[data-pe="hang"]');
   s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
-  const seqAfter = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.comps.get('console')?.picture)));
+  const seqAfter = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf('console')?.picture)));
   check('D. a URL source is refused in the block, naming the rule, and nothing was sent', /not an allowed picture source/.test(s.msg ?? '') && seqBefore === seqAfter && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter }));
   // D2. force the repaint a late echo would cause (any comp event queues one)
   // and require the refusal AND the control to survive it. Without the

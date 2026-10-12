@@ -20,11 +20,11 @@ import * as OP from './protocol/requests.js';
 import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
-import { socketQ } from './components.js';
+import { socketQ, lightOf } from './components.js';
+import { kindOf } from './protocol/kind.js';
+import { r9 } from './protocol/round.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
-const r3 = (v) => +(+v).toFixed(4);
-const r9 = (v) => +(+v).toFixed(9);
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
@@ -118,13 +118,12 @@ export function childrenOf(world, id) {
   return Object.keys(world ?? {}).filter((k) => world[k]?.parent?.to === id).sort();
 }
 
-/** What a row says a thing IS, in a word or two: a light, an Empty, or its model's file stem. */
+/** What a row says a thing IS, in a word or two: kindOf's word, or a model's file stem (+ light for an imported lamp). */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const lit = ent.comp?.light && typeof ent.comp.light === 'object';
-  const mesh = ent.comp?.mesh && typeof ent.comp.mesh === 'object' ? ent.comp.mesh.shape : null;
-  if (ent.lib == null) return typeof mesh === 'string' ? `${mesh}${lit ? ' + light' : ''}` : lit ? 'light' : 'empty';
-  const plus = lit ? ' + light' : '';
+  const kind = kindOf(ent);
+  const plus = lightOf(ent) ? ' + light' : '';
+  if (kind !== 'model') return kind === 'mesh' ? `${kind}${plus}` : kind;   // a mesh may carry a light as a model may (primitives)
   return `${String(ent.lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ')}${plus}`;
 }
 

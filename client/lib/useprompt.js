@@ -5,7 +5,7 @@
 // no seat to offer); E uses it through the door, and a refusal reads in a person's words (editwrites showRefusal). Not in
 // edit mode (E rotates there), not while typing (controller.js filters), not in a headset (no hint bar there).
 import { THREE } from './core.js';
-import { comps, entities } from './world.js';
+import { bags, bagOf, entities } from './world.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
 import { xrActive } from './xrask.js';
@@ -16,7 +16,8 @@ import { flashHint } from './ui.js';
 import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
 
-export const USE_REACH = 2.5;   // m, feet to the thing (Roblox's prompt reaches ~10 studs ≈ 2.8 m)
+import { USE_REACH } from '../../shared/protocol/physconst.js';
+export { USE_REACH };
 let hooks = null;               // { myPos(): {x,y,z}, camera, editing(): bool, busy(): bool (photo mode, limp) }
 export function initUsePrompt(h) { hooks = h; }
 
@@ -29,7 +30,7 @@ export function usable() {
   let fx = 0, fz = 0;
   if (hooks.camera?.getWorldDirection) { hooks.camera.getWorldDirection(_d); fx = _d.x; fz = _d.z; }
   let best = null, bestS = Infinity;
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     const rx = bag.reactions; if (!isBag(rx) || !Object.keys(rx).length) continue;
     const obj = entities.get(id); if (!obj?.getWorldPosition) continue;
     obj.getWorldPosition(_v);
@@ -47,7 +48,7 @@ export function usable() {
 }
 /** Every action a thing offers (its reactions), in its own order: [{action, verb, who?, barred?}]. */
 export function actionsOf(id) {
-  const bag = comps.get(id); let rx = bag?.reactions; if (!isBag(rx)) rx = {};
+  const bag = bagOf(id); let rx = bag?.reactions; if (!isBag(rx)) rx = {};
   // an openable thing with nothing that opens it offers 'open' on its own (the authority's implicit toggle; R 10-11
   // 23:17: the gym door had only `openable`, so clicking it did nothing)
   if (isBag(bag?.openable) && !Object.values(rx).some((h) => h?.kind === 'toggle' && (h.component ?? 'openable') === 'openable')) rx = { open: { kind: 'toggle', component: 'openable', field: 'open' }, ...rx };

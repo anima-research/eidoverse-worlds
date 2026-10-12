@@ -17,10 +17,11 @@
 // door refuses the move (code `locked`), so that is now checked at the door.
 
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
-import { scratchWorld, flat } from "./protocol/scratchworld.ts";
+import { scratchWorld, flat, foldRecordOf } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
 import { registerDraft } from "../shared/drafts.js";
 import { worldSchema, worldEditOps } from "../shared/worldentity.js";
+import { componentsOf } from "../shared/components.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -39,6 +40,24 @@ const chair = { lib: "furniture/chair.glb", pos: [1, 0, 2], yaw: 1.5708, actor: 
 const lamp = { pos: [0, 2, 0], yaw: 0, actor: "r", ts: 1, comp: { light: { color: 0xff8800, intensity: 20, range: 6, important: true } } };
 const swing = { lib: "swing.glb", pos: [5, 0, 5], yaw: 0, actor: "r", ts: 1, comp: { motion: { type: "pendulum", axis: [1, 0, 0], amp: 0.4, period: 3, t0: 123 }, "motion:plank": { type: "spin", rpm: 10 } } };
 const cargo = { lib: "crate.glb", pos: [9, 9, 9], yaw: 0, actor: "r", ts: 1, parent: { to: "truck", offset: [0, 1, 0] } };
+
+console.log("\nthe fold record is the one input (C7b): every fixture read as `c` gives the schema its view gives");
+{
+  // (a fixture written with a yaw reaches the ops through qFromYaw once on the view path and twice on the fold path: 1 ulp)
+  const J = (v: any) => JSON.stringify(v, (_k, x) => (typeof x === "number" ? +x.toFixed(9) : x));
+  for (const [name, rec] of Object.entries({ chair, lamp, swing, cargo })) {
+    const c = foldRecordOf(rec);
+    check(`${name}: inspectSchema(c) ≡ inspectSchema(view)`, J(inspectSchema(c, name)) === J(inspectSchema(rec, name)));
+    check(`${name}: editOps(c) ≡ editOps(view) for a pose + a flag edit`, J(editOps(c, name, { "pos.x": "+=1", "flags.lock": true })) === J(editOps(rec, name, { "pos.x": "+=1", "flags.lock": true })));
+  }
+  // the authority accepts `delete {component: "transform"}` (review S2-1): a label-only Empty's record is {label} alone —
+  // no transform, no model — and must still read as the fold record it is, never as a view
+  const bare = Object.assign(Object.create(null), { label: "an empty" });
+  check("a record with no transform and no model (transform deleted) is still a fold record: its name reads", fieldAt(inspectSchema(bare, "e1"), "flags.label")?.value === "an empty", JSON.stringify(fieldAt(inspectSchema(bare, "e1"), "flags.label")));
+  check("…and componentsOf keeps its Label", componentsOf(bare).components.some((c: any) => c.type === "Label" && c.params.text === "an empty"), JSON.stringify(componentsOf(bare).components.map((c: any) => c.type)));
+  const frozen = foldRecordOf(swing); const deep = (x: any) => { if (x && typeof x === "object") { Object.freeze(x); for (const k of Object.keys(x)) deep(x[k]); } }; deep(frozen);
+  check("a FROZEN fold record (the client's replica in dev) reads without a throw", (() => { try { inspectSchema(frozen, "s"); editOps(frozen, "s", { "motion.amp": 0.5 }); return true; } catch (e) { return false; } })());
+}
 
 console.log("\nschema is a function of the record:");
 {

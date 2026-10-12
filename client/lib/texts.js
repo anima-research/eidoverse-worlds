@@ -13,7 +13,7 @@
 //   - Centred on the thing's origin (Godot Label3D). Its world extent is held to 30 m whatever the transform's scale.
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
-import { entities, comps } from './world.js';
+import { entities, bagOf } from './world.js';
 import { layoutLines } from '../../shared/text.js';
 import { COMPONENTS } from '../../shared/protocol/componentspec.js';
 
@@ -106,6 +106,6 @@ bus.on('comp', ({ id, type, data }) => { if (type === 'text') applyFrom(id, data
 bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove') { pending.delete(id); drop(id); }
   else if (kind === 'demote') { const s = signs.get(id); if (s) { pending.set(id, s.v); drop(id); } }
-  else if (kind === 'spawn' || kind === 'placeholder') { const v = pending.get(id) ?? signs.get(id)?.v ?? comps.get(id)?.text; if (v) { drop(id); build(id, v); } }
+  else if (kind === 'spawn' || kind === 'placeholder') { const v = pending.get(id) ?? signs.get(id)?.v ?? bagOf(id)?.text; if (v) { drop(id); build(id, v); } }
 });
 bus.on('world-reset', () => { pending.clear(); for (const id of [...signs.keys()]) drop(id); });
