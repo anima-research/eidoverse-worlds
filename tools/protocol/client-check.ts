@@ -70,6 +70,10 @@ try {
 
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
+    // every reader runs under a catch-all that lands in console.error (state.js subscribers, the realizer's report()), so a
+    // frozen-write throw (C7a: the fold's records are frozen on a dev host) never reaches the window's error event: catch it here.
+    // three.js's WebGPU destroyAttribute TypeError on sky dispose is not a reader's and is filtered by its message.
+    window.__cerr = []; { const e = console.error.bind(console); console.error = (...a) => { const t = a.map((x) => (x && x.stack) ? String(x.stack) : String(x)).join(' '); if (/read only|not extensible|Cannot (add|delete|assign|define)|TypeError/.test(t) && !/destroyAttribute/.test(t)) __cerr.push(t.slice(0, 300)); return e(...a); }; }
     window.__refused = []; window.__asked = [];
     window.__v1sent = []; { const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m && m.type === 'verb') __v1sent.push(m.verb); } catch {} return send.call(this, d); }; }
     import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('edit-lock-asked', (e) => __asked.push(e)); });` });
@@ -669,6 +673,7 @@ try {
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
   check("N1 no '[state] seq gap' noise: the v1 numbering a client derives is sparse by design (seq×1000+k), and the log stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
+  check("errors: no reader threw into a frozen record (console.error carries what the catch-alls swallow)", await evalJson(`__cerr.length === 0`), await evalJson(`__cerr.slice(0, 3)`));
   bob.close();
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[client-check] ${tally.passed} passed, ${tally.failed} failed`);

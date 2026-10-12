@@ -42,7 +42,9 @@ export const entities = new Map();
  *  component keys as the fold spells them (shared/protocol/names.js). ONE record for every reader — the Hierarchy, the
  *  Inspector, every evaluator (motion.js reads `motion`; mounting reads `sockets`; the server reads `reactions`) — so
  *  nothing is held beside the fold to drift (C7c; the `comps` Map the realizer mirrored it into is gone). Frozen in
- *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it. */
+ *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it.
+ *  Read it where you need it; never keep it across an ingest — a write replaces the record (the frozen one is thawed
+ *  by copy), so a kept reference goes stale. */
 export const bagOf = (id) => replica.st?.entities?.[enc(String(id))]?.c ?? null;
 /** Every placed thing's [id, record], ids as the page spells them (the world entity excluded). */
 export function* bags() {
