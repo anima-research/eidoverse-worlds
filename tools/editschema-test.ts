@@ -19,6 +19,7 @@
 import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../shared/editschema.js";
 import { scratchWorld, flat, foldRecordOf } from "./protocol/scratchworld.ts";
 import { qHeading } from "../shared/rot.js";
+import { componentsOf } from "../shared/components.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -47,6 +48,11 @@ console.log("\nthe fold record is the one input (C7b): every fixture read as `c`
     check(`${name}: inspectSchema(c) ≡ inspectSchema(view)`, J(inspectSchema(c, name)) === J(inspectSchema(rec, name)));
     check(`${name}: editOps(c) ≡ editOps(view) for a pose + a flag edit`, J(editOps(c, name, { "pos.x": "+=1", "flags.lock": true })) === J(editOps(rec, name, { "pos.x": "+=1", "flags.lock": true })));
   }
+  // the authority accepts `delete {component: "transform"}` (review S2-1): a label-only Empty's record is {label} alone —
+  // no transform, no model — and must still read as the fold record it is, never as a view
+  const bare = Object.assign(Object.create(null), { label: "an empty" });
+  check("a record with no transform and no model (transform deleted) is still a fold record: its name reads", fieldAt(inspectSchema(bare, "e1"), "flags.label")?.value === "an empty", JSON.stringify(fieldAt(inspectSchema(bare, "e1"), "flags.label")));
+  check("…and componentsOf keeps its Label", componentsOf(bare).components.some((c: any) => c.type === "Label" && c.params.text === "an empty"), JSON.stringify(componentsOf(bare).components.map((c: any) => c.type)));
   const frozen = foldRecordOf(swing); const deep = (x: any) => { if (x && typeof x === "object") { Object.freeze(x); for (const k of Object.keys(x)) deep(x[k]); } }; deep(frozen);
   check("a FROZEN fold record (the client's replica in dev) reads without a throw", (() => { try { inspectSchema(frozen, "s"); editOps(frozen, "s", { "motion.amp": 0.5 }); return true; } catch (e) { return false; } })());
 }
