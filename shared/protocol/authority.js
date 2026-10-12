@@ -1524,11 +1524,15 @@ function commit(w, actor, verb, args, build) {
 // what is under them. A held, locked or already flying child is left alone. A move or a turn is not a geometry write: the
 // stack rides along, as it always did.
 function resettleRiders(w, actor, ops, before, after0, act, notes) { let after = after0;
-  const scaleOf = (st, id) => JSON.stringify(st.entities[id]?.c.transform?.scale ?? [1, 1, 1]);
-  const hosts = new Set(ops.filter((o) => o.verb === "set" && before.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || (o.comp === "transform" && scaleOf(before, o.id) !== scaleOf(after, o.id)))).map((o) => o.id));
+  // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
+  // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
+  // geometry is a change like any other (r2 S2.3)
+  const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
+  const hosts = new Set(ops.filter((o) => (o.verb === "set" || o.verb === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
   if (!hosts.size) return;
+  // a child on a SOCKET rides the socket, not the top: it is never a rider (r2 S2.2: a cup on its perch was torn off and dropped)
   const riders = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
-    return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
+    return hosts.has(c.parent?.to) && !c.parent.socket && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!riders.length) return;
   const spec = after.entities["@world"]?.c["physics-engine"];
   if (spec && carried(spec)) {
@@ -1544,13 +1548,18 @@ function resettleRiders(w, actor, ops, before, after0, act, notes) { let after =
     if (dropped.length) notes.push({ fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" });
     return;
   }
-  const setOps = riders.map((k) => { const b = aabb(after, k); const below = supportUnder(after, b, new Set([k, ...descendants(after, k)])); const wt = worldT(after, k);
-    const lt = localFrom(after, after.entities[k].c.parent.to, { ...wt, pos: [wt.pos[0], r3(wt.pos[1] - (b.min[1] - below.y)), wt.pos[2]] });
-    return setOp(k, "transform", { ...after.entities[k].c.transform, pos: lt.pos }); }).filter((o) => JSON.stringify(o.value) !== JSON.stringify(after.entities[o.id].c.transform));
+  // no engine: set each rider down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
+  // counts faces at or below where the rider stands; r2 S1.1). A host that lost its body frees its riders to the world
+  const setOps = riders.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);
+    const lift = hb ? Math.max(0, hb.max[1] - b.min[1]) : 0; const probe = { min: [b.min[0], b.min[1] + lift, b.min[2]], max: [b.max[0], b.max[1] + lift, b.max[2]] };
+    const below = supportUnder(after, probe, new Set([k, ...descendants(after, k)])); const wpos = [wt.pos[0], r3(wt.pos[1] - (b.min[1] - below.y)), wt.pos[2]];
+    if (!hb) return [delOp(k, "parent"), setOp(k, "transform", { pos: wpos, q: qr3(wt.q), scale: wt.scale.map(r3) })];
+    const lt = localFrom(after, host, { ...wt, pos: wpos });
+    const v = { ...after.entities[k].c.transform, pos: lt.pos }; return JSON.stringify(v) === JSON.stringify(after.entities[k].c.transform) ? [] : [setOp(k, "transform", v)]; });
   if (!setOps.length) return;
-  const plan = admit(w, after, { actor, cap: { kind: "system", ids: riders, comps: ["transform"] } }, setOps);
+  const plan = admit(w, after, { actor, cap: { kind: "system", ids: riders, comps: ["transform", "parent"] } }, setOps);
   changeEntry(w, plan, act);
-  notes.push({ setDown: setOps.map((o) => o.id), why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto it" });
+  notes.push({ setDown: [...new Set(setOps.map((o) => o.id))], why: "they were resting on a thing whose shape changed; with no physics running they were set straight down onto what is under them now" });
 }
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
 // log, as physics.shape: the AUTHORITY's measurement of its model (model-local box [[min], [max]]), never the asker's word.
@@ -1576,7 +1585,7 @@ function stampShapes(ctx, ops) {
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
-  const out = ops.slice(); const stamped = [];
+  const out = ops.slice(); const stamped = [], unstamped = [], rounded = [];
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;
     const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : e.c.mesh !== undefined ? meshShape(e.c.mesh) : null;
@@ -1588,9 +1597,12 @@ function stampShapes(ctx, ops) {
       if (ph.shape !== undefined && ops.some((o) => o.verb === "set" && o.comp === "physics" && o.id === id && o.value?.shape !== undefined))
         ctx.notes.push({ id, component: "physics", field: "shape", why: "stamped by the authority: a shape is its measurement of the model (Covenant III), never the asker's" }); }
     const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
-    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); stamped.push(id); }
+    if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); if (next.shape) stamped.push(id); else unstamped.push(id); }
+    if (want && (e.c.mesh?.shape === "cylinder" || e.c.mesh?.shape === "capsule")) rounded.push(id);
   }
   if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model or a mesh are colliders, with the authority's measured shape" });
+  if (unstamped.length) ctx.notes.push({ component: "physics", unstamped: unstamped.length <= 12 ? unstamped : unstamped.length, why: "its body is gone, so its measured shape is gone with it: it is no collider now" });
+  if (rounded.length) ctx.notes.push({ component: "physics", field: "shape", ids: rounded.length <= 12 ? rounded : rounded.length, why: "a cylinder or a capsule is stamped as its bounding BOX: no carried engine reads a cylinder, so it collides, stacks and measures as a box" });
   return out;
 }
 // batch 2: a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,

@@ -104,6 +104,18 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const sc = call(W, "rowan", "set", { id: "mp", component: "transform", value: { pos: [-6, 0, 6], q: [0, 0, 0, 1], scale: [2.5, 0.5, 2.5] } }); T += 8000; call(W, "vic", "look", {});
   const c4 = st(W).entities.crate3.c; const w4 = c4.parent?.to === "mp" ? c4.transform.pos[1] * 0.5 : c4.transform.pos[1];
   const ws = c4.parent?.to === "mp" ? (c4.transform.scale ?? [1, 1, 1]).map((v, i) => v * [2.5, 0.5, 2.5][i]) : (c4.transform.scale ?? [1, 1, 1]);
+  // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the riders
+  call(W, "rowan", "set", { id: "plinth", component: "sockets", value: { perch: { pos: [0.5, 0.3, 0.5] } } });
+  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  const n1 = openWorld(root, W).entries.length; const same = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); T += 8000; call(W, "vic", "look", {});
+  ok(same.ok && openWorld(root, W).entries.length - n1 === 2 && !(same.notes ?? []).some((n) => n.fell), "SE14 re-asserting the plinth's mesh value re-drops nothing: 2 rows, no fell note (r2 S2.1)", { rows: openWorld(root, W).entries.length - n1, notes: same.notes });
+  const grow = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.5, 1.5] } }); T += 8000; call(W, "vic", "look", {});
+  const cup = st(W).entities.cup.c;
+  ok(grow.ok && (grow.notes ?? []).some((n) => n.fell?.includes("crate")) && !(grow.notes ?? []).some((n) => n.fell?.includes("cup")) && cup.parent?.socket === "perch", "SE15 the crate re-drops on a resize, the cup on the perch socket stays on it (r2 S2.2)", { notes: grow.notes, cup: cup.parent });
+  call(W, "rowan", "delete", { id: "cup" });   // (the engine stands a socketed child at its host's origin: pre-existing, simlayer worldPose reads no sockets; out of the crate's way)
+  const del = call(W, "rowan", "delete", { id: "plinth", component: "mesh" }); T += 8000; call(W, "vic", "look", {});
+  const c5 = st(W).entities.crate.c;
+  ok(del.ok && (del.notes ?? []).some((n) => n.fell?.includes("crate")) && !(del.notes ?? []).some((n) => n.stamped) && !c5.parent && c5.transform.pos[1] < 0.05, "SE16 deleting the plinth's mesh re-drops the crate (it lands on the floor, unparented); the reply says unstamped, not stamped (r2 S2.3)", { notes: del.notes, pos: c5.transform.pos, parent: c5.parent ?? null });
   ok(q3.ok && on && sc.ok && (sc.notes ?? []).some((n) => n.fell?.includes("crate3")) && Math.abs(w4 - 0.3) < 0.05 && ws.every((v) => Math.abs(v - 1) < 1e-3), "SE13 shrinking a MODEL plinth's scale under a resting crate re-drops it too (its own scale stays 1, it is not sheared): lands at world y = 0.3", { walk, punt: q3.ok ? true : q3.refused, on, set: sc.ok ? sc.notes : sc.refused, pos: c4.transform.pos, worldScale: ws, parent: c4.parent ?? null }); }
 
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);

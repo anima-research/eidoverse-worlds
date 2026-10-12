@@ -965,9 +965,31 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     ok(JSON.stringify(c) === JSON.stringify([[-0.3, 0, -0.3], [0.3, 1.2, 0.3]]), "MS8 a mesh cylinder stamps its bounding box (no carried engine reads a cylinder; review S1.1), size[0] wide and size[1] tall", c);
     call("bob", "create", { id: "mp", components: { mesh: { shape: "capsule", size: [1, 0.2, 1] }, transform: { pos: [3, 0, -3] } } });
     const m = call("bob", "measure", { id: "mp" }); const ps = E("mp")?.physics?.shape;
-    ok(m.ok && Math.abs(m.size[1] - 1) < 1e-6 && ps?.[1]?.[1] === 1, "MS8b a capsule shorter than its diameter is its diameter tall (review S2.3): measure and the stamp both say 1 m", { size: m.size, ps }); }
+    ok(m.ok && Math.abs(m.size[1] - 1) < 1e-6 && ps?.[1]?.[1] === 1, "MS8b a capsule shorter than its diameter is its diameter tall (review S2.3): measure and the stamp both say 1 m", { size: m.size, ps });
+    const rn = call("bob", "set", { id: "mc", component: "mesh", value: { shape: "cylinder", size: [0.6, 1.4, 9] } });
+    ok(rn.ok && (rn.notes ?? []).some((n) => n.field === "shape" && /bounding BOX/.test(n.why ?? "") && n.ids?.includes("mc")), "MS8c the reply says a cylinder is stamped as its bounding box (r2 S3), not left to read as round", rn.notes); }
   { const r = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [2, 3, 4] } }); const sh = E("mb")?.physics?.shape;
     ok(r.ok && JSON.stringify(sh) === JSON.stringify([[-1, 0, -2], [1, 3, 2]]), "MS9 a mesh size change re-stamps its physics shape", r.refused ?? sh); }
+}
+// ---- MS (no engine): a resized host sets its resting riders down from above its new top (r2 S1.1: a grown host buried them);
+// a host that loses its body frees them (r2 S2.3); a socketed child is never a rider (r2 S2.2); a no-op write re-drops nothing (r2 S2.1)
+{ const name = "mesh-noeng"; T += 1000;
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c; const wy = (id) => call("bob", "measure", { id }).bounds?.min?.[1];
+  call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  call("bob", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, sockets: { perch: { pos: [0.5, 0.8, 0.5] } }, transform: { pos: [0, 0, 0] } } });
+  const c = call("bob", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic" } }, place: { on: "plinth" } });
+  call("bob", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  ok(c.ok && E("crate")?.parent?.to === "plinth" && Math.abs(wy("crate") - 0.8) < 1e-3, "MS10 a crate placed on the plinth rides it at 0.8", { c: c.refused ?? null, y: wy("crate"), parent: E("crate")?.parent });
+  const s1 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
+  ok(s1.ok && Math.abs(wy("crate") - 0.3) < 1e-3 && (s1.notes ?? []).some((n) => n.setDown?.includes("crate")), "MS10a shrunk to 0.3: the crate is set down to 0.3 (no engine)", { y: wy("crate"), notes: s1.notes });
+  const s2 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
+  ok(s2.ok && Math.abs(wy("crate") - 1.0) < 1e-3 && E("crate")?.parent?.to === "plinth", "MS10b grown to 1.0: the crate is set down from ABOVE the new top, at 1.0, not buried inside (r2 S1.1)", { y: wy("crate"), notes: s2.notes });
+  ok(E("cup")?.parent?.socket === "perch" && JSON.stringify(E("cup")?.transform?.pos) === "[0,0,0]", "MS10c the cup on the perch socket was never a rider: it stays on its socket (r2 S2.2)", E("cup"));
+  const n0 = W().entries.length; const s3 = call("bob", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 1.0, 1.5] } });
+  ok(s3.ok && W().entries.length - n0 === 2 && !(s3.notes ?? []).some((n) => n.setDown || n.fell), "MS10d re-asserting the same mesh value writes 2 rows and re-drops nothing (r2 S2.1)", { rows: W().entries.length - n0, notes: s3.notes });
+  const d = call("bob", "delete", { id: "plinth", component: "mesh" });
+  ok(d.ok && !E("crate")?.parent && Math.abs(wy("crate")) < 1e-3 && !(d.notes ?? []).some((n) => n.stamped), "MS10e deleting the plinth's mesh frees the crate to the world and sets it on the ground; the reply doesn't say 'stamped' (r2 S2.3)", { y: wy("crate"), parent: E("crate")?.parent ?? null, notes: d.notes });
 }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
