@@ -35,6 +35,7 @@ import { REACH, HAND_Y, MAX_HELD, KICK, BODY_REACH } from "./physconst.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
+import { CTX } from "./authority/ctx.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's authority read its own table (./labmodels.js). The engine's models are library paths measured from their GLBs
@@ -44,16 +45,11 @@ import { shapeError, isBoxShape } from "./shapes.js";
 //            convention, a size-box with the origin at the base centre;
 //   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
 //   size     absent → a model this server can name but not measure (no placement help, no collisions, said so).
-// request() sets CAT for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
+// request() sets CTX.cat for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
 // own keys only: MODELS["constructor"] is Object (the lab authority accepted model "constructor"; L1's no-prototype rule)
 export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
-let CAT = LAB_CATALOGUE;
-let THROUGH = false; // the request's throughLock flag, set by request() for one synchronous call (like CAT)
-// is this identity a guest (no account: the authority directory's kind "anon")? set by request() from w.kindOf (security review 10-06 H4)
-let ISANON = () => false;
-// the directory knows this identity (a world opened without a directory, as in the lab, knows everyone)
-let KNOWNID = (_id) => true;
-const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
+CTX.cat = LAB_CATALOGUE;
+const modelOf = (name) => (typeof name === "string" ? CTX.cat.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
 // A building (`structure`) is solid where its walls are, not where its placeholder model is (review 10-07 N2: the authority
@@ -88,7 +84,7 @@ function structGeom(v) {
 /** A thing's geometry: its building's (structure) if it has one, else its model's. */
 const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
-export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
+export function withCatalogue(w, fn) { const prev = CTX.cat; CTX.cat = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CTX.cat = prev; } }
 
 // ---------- storage ----------
 const CHANGE = Symbol("admitted change write");
@@ -386,16 +382,15 @@ function surfacesOf(st, id) {
 //   Per folded state: a 4 m grid over those boxes (huge things on a list of their own), built on the state's first query.
 //   A state is never mutated once folded or previewed (admit's working copy is never queried), so neither is its index.
 // Every answer lists candidates in the state's key order, so a first-hit or best-so-far loop over them picks exactly what
-// the loop over Object.keys picked. The work budget (WORK, set per call by enter) bounds what one call may spend in these
+// the loop over Object.keys picked. The work budget (CTX.work, set per call by enter) bounds what one call may spend in these
 // searches, counted in units of about 0.1 µs of this laptop's time (measured: a candidate scanned ≈ 1, an axis-aligned
 // box test ≈ 1, a rotated one ≈ 80, a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
 // clock backstop (WORK_BUDGET.ms from the call's start, read every 64 units) bounds a host that is far slower. Past
 // either, a read or a solver is refused (too-costly) rather than holding every world's thread.
 export const WORK_BUDGET = { units: 350000, ms: 150 };
 const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
-let WORK = { left: Infinity, until: Infinity, k: 0 };   // outside any call (a test reading the index): no budget
-const spend = (n, what = WORK.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
-  if ((WORK.left -= n) < 0 || ((WORK.k += n) >= 64 && ((WORK.k = 0), clockMs() > WORK.until))) { WORK.left = -1; WORK.until = -Infinity;
+const spend = (n, what = CTX.work.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
+  if ((CTX.work.left -= n) < 0 || ((CTX.work.k += n) >= 64 && ((CTX.work.k = 0), clockMs() > CTX.work.until))) { CTX.work.left = -1; CTX.work.until = -Infinity;
     refuse("too-costly", `${what} would take more of the authority's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
 function geoOf(st, id) {
@@ -432,19 +427,19 @@ const LASTIX = new WeakMap(); // catalogue → the index built or derived last
 // derived from or kept as the last (a derivation compares entity objects, which such a state changes under them)
 const VOLATILE = new WeakSet();
 function spatial(st) {
-  const ver = CAT.version ?? 0; let ix = SPATIAL.get(st);
-  if (ix && ix.cat === CAT && ix.ver === ver) return ix;
+  const ver = CTX.cat.version ?? 0; let ix = SPATIAL.get(st);
+  if (ix && ix.cat === CTX.cat && ix.ver === ver) return ix;
   if (VOLATILE.has(st.entities)) { ix = buildIx(st, ver); SPATIAL.set(st, ix); return ix; }
-  const prev = LASTIX.get(CAT);
+  const prev = LASTIX.get(CTX.cat);
   ix = (prev && prev.ver === ver && deriveIx(prev, st)) || buildIx(st, ver);
-  SPATIAL.set(st, ix); LASTIX.set(CAT, ix); return ix;
+  SPATIAL.set(st, ix); LASTIX.set(CTX.cat, ix); return ix;
 }
 function fileIx(ix, id, g, cloned) {
   const cs = cellsOf(g); if (!cs) { ix.big.push(id); return; }
   for (const k of cs) { let a = ix.grid.get(k); if (!a) ix.grid.set(k, (a = [])); else if (cloned && !cloned.has(k)) { ix.grid.set(k, (a = a.slice())); } cloned?.add(k); a.push(id); }
 }
 function buildIx(st, ver) {
-  const ix = { cat: CAT, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
+  const ix = { cat: CTX.cat, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
   for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
     if (offChain(st, id)) continue;   // switched off: nothing to stand on, bump into or overlap (componentspec disabled)
     const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
@@ -461,7 +456,7 @@ function deriveIx(prev, st) {
   const pk = kidsOfIx(prev, P); const touched = new Set([...changed, ...removed]); const todo = [...touched];
   if (added.length) { const nu = new Set(added); for (const id of keys) if (nu.has(E[id].c.parent?.to)) todo.push(id); }   // a link to a thing that just appeared
   while (todo.length) { const t = todo.pop(); touched.add(t); for (const k of pk.get(t) ?? []) if (!touched.has(k)) todo.push(k); if (touched.size > 2048) return null; }
-  const ix = { cat: CAT, ver: prev.ver, ents: E, order: prev.order, next: prev.next, rec: new Map(prev.rec), grid: new Map(prev.grid), big: prev.big, kids: prev.kids, memo: new Map() };
+  const ix = { cat: CTX.cat, ver: prev.ver, ents: E, order: prev.order, next: prev.next, rec: new Map(prev.rec), grid: new Map(prev.grid), big: prev.big, kids: prev.kids, memo: new Map() };
   if (added.length || removed.length) { ix.order = new Map(prev.order); for (const id of removed) ix.order.delete(id); for (const id of added) ix.order.set(id, ix.next++);
     let last = -1; for (const id of keys) { const o = ix.order.get(id); if (!(o > last)) return null; last = o; } }   // the key order is what Object.keys says, or build whole
   const cloned = new Set();
@@ -483,14 +478,14 @@ const kidsMap = (st) => kidsOfIx(spatial(st), st.entities);
 /** For tests: does the index this state's queries use (built or derived) file exactly what a fresh build files? A list
  *  of differences, empty when it does. */
 export function indexAudit(w) {
-  const prevCat = CAT; CAT = w.catalogue ?? LAB_CATALOGUE;
+  const prevCat = CTX.cat; CTX.cat = w.catalogue ?? LAB_CATALOGUE;
   try { const st = w.state(); const ix = spatial(st); const fresh = buildIx(st, ix.ver); const out = [];
     const norm = (x) => ({ ids: [...x.rec.keys()].sort().join(), grid: [...x.grid.entries()].map(([k, a]) => `${k}:${[...a].sort().join()}`).sort().join(";"), big: [...x.big].sort().join(),
       order: Object.keys(st.entities).filter((id) => x.order.has(id)).sort((a, b) => x.order.get(a) - x.order.get(b)).join(), boxes: [...x.rec.entries()].map(([id, g]) => `${id}:${JSON.stringify(g.q)}`).sort().join() });
     const a = norm(ix), b = norm(fresh); for (const k of Object.keys(a)) if (a[k] !== b[k]) out.push(k);
     if (JSON.stringify([...kidsMap(st).entries()]) !== JSON.stringify([...kidsOfIx({ kids: null }, st.entities).entries()])) out.push("kids");
     for (const id of Object.keys(st.entities)) if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(aabb(st, id)) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(aabb(st, id) ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; }
-    return out; } finally { CAT = prevCat; }
+    return out; } finally { CTX.cat = prevCat; }
 }
 // the things whose box meets [min, max] (closed: touching counts), in the state's key order
 function near(st, min, max) {
@@ -561,7 +556,7 @@ const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Ob
 // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
 // may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
 // …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
-function roleOf(st, actor, anon = ISANON(actor)) {
+function roleOf(st, actor, anon = CTX.isAnon(actor)) {
   const c = wcOf(st); if (!c) return "none";
   return R.roleIdOf(c, actor, { anon, owners: ownersOf(st).length > 0 });
 }
@@ -571,7 +566,7 @@ const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, ano
  *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
 const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
 /** Effective rights {role, name, rank, can, permissions} (roles.js effectiveOf). */
-const effective = (st, actor, anon = ISANON(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
+const effective = (st, actor, anon = CTX.isAnon(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || effective(st, actor).can.fly) : effective(st, actor).can[sw] === true;
 /** Does this identity hold any power that acts on people (mute, kick, ban, pauseScripts)? Opens the moderation log. */
 const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
@@ -666,11 +661,10 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }
 const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, fix, extra); };
 // A person's name as they spell it, for a refusal's words. An actor is an opaque id (u-…); its name lives in the authority's
-// directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CAT). An old
+// directory, outside the log (§2.3), injected as io.nameOf and read here for one request at a time (like CTX.cat). An old
 // escaped identity (x--416e6e…) still reads back as "Ann". The identity itself rides as a field (`by`) for whoever
 // must match it.
-let NAMEOF = null;
-const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
+const said = (id) => CTX.nameOf?.(String(id)) ?? dec(String(id)) ?? String(id);
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -682,17 +676,17 @@ function wire(args) {
   return out;
 }
 
-// The authority's per-call state: the module's request globals (CAT, THROUGH, NAMEOF, ISANON, KNOWNID, the mint's world, the
-// work budget) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withAuthority):
+// The authority's per-call state: CTX (authority/ctx.js: the catalogue, throughLock, nameOf, isAnon, knownId, the mint's world,
+// the work budget, forking) and the world's per-call queues and clock. ONE save/restore for every entry point (request, withAuthority):
 // review 10-06 S3 found two hand-written copies that already disagreed, and a nested call (leave → request(drop), or a
 // host callback re-entering the authority) reset the outer call's queues under it. enter() saves everything, sets this call's,
 // and returns the restore; `actor` is the asker a request names (the directory may not know a founder yet), null for
 // the authority's own work.
 function enter(w, actor) {
-  const saved = { CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK, changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
-  CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false; NAMEOF = w.nameOf ?? null; mintW = w; WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
-  ISANON = (id) => w.kindOf?.(id) === "anon"; KNOWNID = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
-  return () => { ({ CAT, THROUGH, NAMEOF, ISANON, KNOWNID, mintW, WORK } = saved); w.changedQ = saved.changedQ; w.sayQ = saved.sayQ; w.heldQ = saved.heldQ; w.now = saved.now; w.pinTs = saved.pinTs; };
+  const outer = { ...CTX }, wq = { changedQ: w.changedQ, sayQ: w.sayQ, heldQ: w.heldQ, now: w.now, pinTs: w.pinTs };
+  CTX.cat = w.catalogue ?? LAB_CATALOGUE; CTX.through = false; CTX.nameOf = w.nameOf ?? null; CTX.mintW = w; CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 };
+  CTX.isAnon = (id) => w.kindOf?.(id) === "anon"; CTX.knownId = (id) => (actor != null && id === actor) || !w.kindOf || w.kindOf(id) != null;   // the asker is known (a founder names themself)
+  return () => { Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ; w.heldQ = wq.heldQ; w.now = wq.now; w.pinTs = wq.pinTs; };
 }
 export function request(w, actor, verb, args = {}) {
   const exit = enter(w, actor);
@@ -726,13 +720,13 @@ export function request(w, actor, verb, args = {}) {
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
     // the returns that are due (each one a thing someone let go of that long ago)
-    if (h && w.exists) { WORK = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); WORK = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
+    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it
     // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
     const { throughLock, expect, ...plain } = args;
     if (throughLock !== undefined && typeof throughLock !== "boolean") refuse("shape", `throughLock is true or false, got ${JSON.stringify(throughLock)}`, "send throughLock: true to act through a lock you may remove");
-    THROUGH = throughLock === true;
+    CTX.through = throughLock === true;
     const bad = validate(verb, plain); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); }
     if (expect !== undefined) expectCheck(w, expect);
     if (verb === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, fix, ...rest } = b2; refuse(code, `place: ${reason}`, fix, rest); } }
@@ -916,10 +910,10 @@ function admit(w, st, who, ops) {
     applyCow(s, [op]); norm.push(op); // one entity copied per op it touches, not the world (s is this write's own copy)
   });
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: FORKING }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
-  if (!FORKING) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
+  if (!CTX.forking) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
@@ -938,7 +932,7 @@ const capacityOf = (st) => { const v = st.entities["@world"]?.c.capacity; const 
 function guestMade(w, st) {
   const G = (w.__guests ??= { n: 0, ids: new Set() });
   for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let by = null;
-    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (ISANON(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
+    for (const o of opsQuiet(e)) { if (o.verb === "create") { by ??= entryBy(w, e).rights; if (CTX.isAnon(by)) G.ids.add(o.id); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
   let n = 0; for (const id of G.ids) if (st.entities[id]) n++; return n;
 }
 function capacityCheck(w, st, s, who, norm) {
@@ -946,7 +940,7 @@ function capacityCheck(w, st, s, who, norm) {
   const cap = capacityOf(s); const before = Object.keys(st.entities).length - (st.entities["@world"] ? 1 : 0), after = Object.keys(s.entities).length - (s.entities["@world"] ? 1 : 0);
   if (after > before && after > cap.things) refuse("full", `this world holds ${before} things and its limit is ${cap.things} (@world.capacity.things): ${after - before} more won't fit`, `delete something first; the world's owner may raise it: set {id: '@world', component: 'capacity', value: {things: <n>}} (at most ${COMPONENTS.capacity.ranges.things.max})`, { limit: cap.things, things: before });
   const holder = who.cap?.kind === "reaction" ? who.cap.author : who.cap?.kind === "script" ? who.cap.sponsor : who.actor;
-  if (!ISANON(holder)) return;
+  if (!CTX.isAnon(holder)) return;
   const g = guestMade(w, st);
   if (g + made > cap.guestThings) refuse("full", `guests (people without an account) have ${g} things standing here, and this world lets guests have ${cap.guestThings} (@world.capacity.guestThings), all of them together`, "sign in to build more, or ask the world's owner to raise capacity.guestThings", { limit: cap.guestThings, things: g });
 }
@@ -958,11 +952,11 @@ function lockCheck(w, st, who, role, k, op, at) {
   const level = lockLevel(st.entities[k]?.c.lock);
   const below = !who.cap && !mayLiftLock(w, st, who.actor, k);   // a level above you, and not yours
   const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" }) && !below;
-  if (THROUGH && mayUnlock) return;
+  if (CTX.through && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const lv = level === "builder" ? "" : ` at ${level} level`;
   const what = k === op.id ? `${op.id} is locked${lv}${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${lv}${whose}, so ${at} can't change`;
-  const fix = THROUGH && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
+  const fix = CTX.through && who.cap ? "throughLock covers your own edits, not a handler or a held thing; unlock it first"
     : below ? `only ${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} may unlock it or act through it; you are ${role}`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift a builder-level lock, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
@@ -1112,7 +1106,7 @@ function seniority(w, st, who, op) {
 //   and any `can: true` (or legacy gen: true), must be permissions you hold. Ownership stays an owner's (seniority).
 function grantCheck(w, st, s, actor, op, at) {
   if (roleOf(st, actor) === "owner") return;
-  const me = effective(st, actor); const target = op.comp.slice(6); const anon = ISANON(target);
+  const me = effective(st, actor); const target = op.comp.slice(6); const anon = CTX.isAnon(target);
   if (target === actor) refuse("rights", "you can't change your own role", "ask someone ranked above you");
   const before = roleOf(st, target, anon);
   if (rankOf(st, target, anon) >= me.rank) refuse("rank", `${said(target)} is ${R.roleDef(wcOf(st), before)?.name ?? before}, not ranked below you (${me.name}); you can only change the roles of people below you`, "ask someone ranked above them", { needs: "rank" });
@@ -1176,7 +1170,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   // (the fold never refuses); the importer splits them; a carried value (an import) passes.
   if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
   if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
-  if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
+  if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
@@ -1217,7 +1211,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
-  if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
+  if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CTX.cat.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
   if (comp === "lock" && v !== true && !(obj && Object.keys(v).length === 1 && LOCK_LEVELS.includes(v.rank)))
     refuse("shape", `${at} is true (a builder-level lock) or {rank: 'builder' | 'moderator' | 'owner'}; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
@@ -1450,7 +1444,7 @@ const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { reques
 
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
-  mintW = w;
+  CTX.mintW = w;
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
@@ -1633,11 +1627,9 @@ function merge7396(target, patch) {
   for (const [k, v] of Object.entries(patch)) { if (v === null) delete out[k]; else out[k] = merge7396(out[k], v); }
   return out;
 }
-let mintN = 0;
 // a fresh id: never one this world has had (§3d H7), nor one already used in this request
-let mintW = null;
 // review 10-07 H5: <slug>-<26 base32> (shared/protocol/ids.js), never <slug>-<count>, which two forks minted alike
-function mint(st, base) { const ever = mintW?.everIds() ?? new Set(); let id;
+function mint(st, base) { const ever = CTX.mintW?.everIds() ?? new Set(); let id;
   do id = mintId(slug(base)); while (st.entities[id] || ever.has(id)); return id; }
 
 function buildCreate(ctx, a) {
@@ -1777,7 +1769,7 @@ function buildPlace(ctx, a) {
     if (!surfs.length) refuse("no-surface", `${a.on} has no surface to put things on`, `measure {id: '${a.on}'} shows its surfaces`);
     const s = surfs[a.level ?? surfs.length - 1] ?? refuse("no-surface", `${a.on} has levels 0–${surfs.length - 1}`, "");
     const want = a.offset ? [(s.min[0] + s.max[0]) / 2 + a.offset[0], (s.min[1] + s.max[1]) / 2 + a.offset[1]] : [(s.min[0] + s.max[0]) / 2, (s.min[1] + s.max[1]) / 2];
-    let best = null, lastBlock = null; const whatWas = WORK.what;
+    let best = null, lastBlock = null; const whatWas = CTX.work.what;
     for (let pass = 0; pass < 2; pass++) {
       const [hx, hz] = half(yaw);
       // the 2.5 cm grid as ever (positions by the same running sum), searched nearest-first: ring by ring out from the
@@ -1790,7 +1782,7 @@ function buildPlace(ctx, a) {
       const nx = xs.length, nz = zs.length; let lastIdx = -1;
       const nearestIx = (arr, v) => { let lo = 0, hi = arr.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; } return lo > 0 && Math.abs(arr[lo - 1] - v) <= Math.abs(arr[lo] - v) ? lo - 1 : lo; };
       if (nx && nz) { const ci = nearestIx(xs, want[0]), ck = nearestIx(zs, want[1]);
-        WORK.what = `finding room for ${a.id} on ${a.on}`;
+        CTX.work.what = `finding room for ${a.id} on ${a.on}`;
         const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
         const cell = (i, k) => { spend(1); const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;   // every cell visited is work
           if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
@@ -1811,7 +1803,7 @@ function buildPlace(ctx, a) {
           for (const i of [ci - r, ci + r]) if (i >= 0 && i < nx) for (let k = Math.max(0, ck - r + 1); k <= Math.min(nz - 1, ck + r - 1); k++) cell(i, k); } }
       if (!best) break; if (a.facing && pass === 0) { yaw = faceYaw([best.x, 0, best.z]); best = null; } else break;
     }
-    WORK.what = whatWas;
+    CTX.work.what = whatWas;
     if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${r3(2 * hx)}×${r3(2 * hz)} m) doesn't fit free on ${a.on}'s level ${s.level} (${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m)${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
     if (best.d > 0.01) relaxed.push(`moved ${r3(best.d)} m from where you asked to stay clear and fully supported`);
     pos = [best.x, s.y, best.z]; support = a.on; if (a.attach === undefined) a.attach = true; // things rest on what supports them
@@ -1899,7 +1891,7 @@ function buildPlace(ctx, a) {
 // after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
-  const B = boundsOf(st); let k = 0; const was = WORK.what; WORK.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
+  const B = boundsOf(st); let k = 0; const was = CTX.work.what; CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
   for (; k < ids.length; k++) { const id = ids[k];
     const g = ix.rec.get(id); const b = g?.box; if (!b) continue;
@@ -1923,7 +1915,7 @@ function warnings(st, ids, strict = false) {
   } catch (e) {
     if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
     out.push({ kind: "unchecked", things: ids.length - k, why: "checking the rest would take more of the authority's time than one request may have; lint {id} checks one thing" });
-  } finally { WORK.what = was; }
+  } finally { CTX.work.what = was; }
   return out;
 }
 
@@ -2275,7 +2267,7 @@ function activate(w, id, name, ev) {
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, st,
     near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
-    name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? NAMEOF?.(who) ?? dec(who) ?? null : null) });
+    name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? CTX.nameOf?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
   if (!dry) { const ms = performance.now() - t0;
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
@@ -2331,7 +2323,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     w.now = () => t;   // one clock for the pass, as a request has (physlive Q1): a rest's digest and its ts agree
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const n0 = w.entries.length;
-    WORK = { left: Infinity, until: Infinity, k: 0 };
+    CTX.work = { left: Infinity, until: Infinity, k: 0 };
     settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
     drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
@@ -2945,7 +2937,7 @@ function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
     ...sayOf(st, e.c) };
 }
 // batch 2: what its words and media say (shared/says.js, the same lines mcpl's look prints); things it names by their names
-const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: mintW?.now?.() ?? null });
+const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities[x] ? st.entities[x].c.label ?? modelOf(st.entities[x].c.model)?.label ?? x : said(x)), now: CTX.mintW?.now?.() ?? null });
   return lines.length ? { says: lines } : {}; };
 
 // ---------- physics (design 20) ----------
@@ -3663,9 +3655,9 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
   const me = effective(st, actor);
   if (!powers.some((k) => me.can[k])) refuse("rights", `${verb === "ban" ? "banning" : verb === "kick" ? "kicking" : verb === "ghost" ? "ghosting someone" : verb === "warn" ? "warning someone" : "muting someone"} needs ${powers.length > 1 ? `one of ${powers.join(", ")}` : powers[0]}; you are ${me.role}`, "ask a moderator or an owner", { needs: powers.join("|") });
   if (a.who === actor) refuse("rank", `you can't ${verb} yourself`, "");
-  const them = roleOf(st, a.who, ISANON(a.who));
+  const them = roleOf(st, a.who, CTX.isAnon(a.who));
   if (noOwner && them === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be ${noOwner}`, "an owner made after them can be demoted first (roles:<them>); then act");
-  const tr = rankOf(st, a.who, ISANON(a.who));
+  const tr = rankOf(st, a.who, CTX.isAnon(a.who));
   if (tr >= me.rank) refuse("rank", `${said(a.who)} is ${R.roleDef(wcOf(st), them)?.name ?? them}; you (${me.name}) can't act on equal or higher ranks`, "ask someone ranked above them", { needs: "rank" });
   if (a.reason !== undefined && (typeof a.reason !== "string" || a.reason.length > R.REASON_MAX)) refuse("shape", `reason is text, up to ${R.REASON_MAX} characters`, "");
   return { target: { role: them, rank: tr } };
@@ -3760,7 +3752,7 @@ const VERBS = {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith(BLUEPRINTS)).map(([k, v]) => ({ hash: `sha256:${k.slice(BLUEPRINTS.length)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
-    return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
+    return { ok: true, models: CTX.cat.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
   lint(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities), true) }; },
   history(w, actor, a) {
@@ -3975,13 +3967,12 @@ const VERBS = {
   // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent
   // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
   "fork-copy"(w, actor, a) {
-    if (!FORKING) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
+    if (!CTX.forking) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
     return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));
   },
 };
-let FORKING = false;
 /** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
-export function forkCopy(w, actor, args) { FORKING = true; try { return request(w, actor, "fork-copy", args); } finally { FORKING = false; } }
+export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
       // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
@@ -3989,7 +3980,7 @@ function buildBatch(ctx, a, w) { {
       const all = []; let st = ctx.st; let work = null;
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
       (a.ops ?? []).forEach((o, i) => {
-        if (clockMs() > WORK.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
+        if (clockMs() > CTX.work.until) spend(Infinity, `a batch of ${a.ops.length} ops`, "split it into smaller batches");   // the clock backstop
         // sky/weather are sets on @world.sky with the old merge meaning, so they batch like any set (one act, one undo)
         const B = { create: buildCreate, set: buildSet, delete: buildDelete, place: buildPlace,
           sky: (c, x) => buildSky(c, x, w), weather: (c, x) => buildWeather(c, x, w) }[o.verb];
