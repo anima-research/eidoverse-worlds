@@ -52,7 +52,7 @@ plugin({
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
       '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$',
       '^\\./core\\.js$', '^\\./warmqueue\\.js$', '^\\./loadwork\\.js$', '^\\./lightrig\\.js$',
-      '^\\./emitters\\.js$', '^\\./terrain\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$']) {
+      '^\\./emitters\\.js$', '^\\./terrain\\.js$', '^\\./breadcrumbs\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$', '^\\./statuschips\\.js$']) {
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
   },

@@ -168,3 +168,8 @@ export function findPart(root, name) {
 // governor.js (VR alpha) imports the shadow switch + resolution from lightrig; inert here
 export const shadowsOn = () => true;
 export const shadowRes = () => 2048;
+
+// breadcrumbs.js: frameloop.js (the governor's cone) stamps each system's name; the real module reads `location`
+// and reaches net.js → assets.js → materials.js → core.js's `ground`, none of which this cone has
+export const BC = () => {};
+export const XR_BOOT = false;   // core.js: frameloop.js never arms the XR loop here
