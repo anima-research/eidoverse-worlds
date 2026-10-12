@@ -37,7 +37,7 @@ import { state, onWorldChange } from '../state.js';
 import { prepareObject } from '../materials.js';
 import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
-import { planStructure, makeShader } from '../../shared/structure.js';
+import { planStructure, makeShader } from '../../../shared/structure.js';
 import { defsRegistry } from '../defs.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from

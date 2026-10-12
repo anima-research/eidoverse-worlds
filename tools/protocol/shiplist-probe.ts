@@ -517,12 +517,17 @@ try {
   check("(setup) the crate is realized in the page", seen && dbg?.has, { seen, dbg });
   const at = () => page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return cu.thingAt(r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height);`);
+  const pixel = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('ctbox'); o.updateWorldMatrix(true, true);
+    const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera), r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
   const before = await at();
   check("CT0 a click on it finds it", before === 'ctbox', before);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'ctbox', component: 'clickthrough', value: true });`); await sleep(600);
   const after = await at();
-  check("CT1 with clickthrough set, the same click passes through it (nothing behind: null)", after === null, after);
-  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null); await sleep(300);
+  // what lies behind it is the earlier stages' business (the full run leaves box1 there): the same pixel with ctbox gone
+  await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null);
+  await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('ctbox'))`, 8000); await sleep(300);
+  const behind = await page(`const cu = await import('/lib/clickuse.js'); return cu.thingAt(${pixel[0]}, ${pixel[1]});`);
+  check("CT1 with clickthrough set, the same click passes through it to whatever is behind (as if it were gone)", after !== 'ctbox' && after === behind, { after, behind });
   });
   // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
   await stage("CL", async () => {

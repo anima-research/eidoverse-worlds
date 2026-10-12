@@ -9,7 +9,7 @@
 // Every spelling the wire has is an ALIAS here (design §2.4, §6): `lib`,
 // `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …,
 // `comp.light` on any entity, `comp.collider`, and the Empty — a spawn with no
-// `lib`. (The v1 light verb's `kind: "light"` entity is gone from the view:
+// `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
 // the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
 // what a thing is.) `componentsOf` reads any folded entity as a component list,
 // and `entityOf` writes a component list back to exactly those bytes; an
