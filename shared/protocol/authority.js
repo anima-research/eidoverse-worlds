@@ -1424,10 +1424,11 @@ function handlerCheck(at, act, h) {
 }
 // L3: a rest must equal the engine's value. The gate asks the engine itself, not the caller.
 function restCheck(w, cap, after) {
-  const sf = w.sim(); const id = cap.ids[0]; const b = sf.sim?.bodies[id];
-  if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
-  if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
-  if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, "");
+  const sf = w.sim();
+  for (const id of cap.ids) { const b = sf.sim?.bodies[id];   // every body the rest names (one change may rest a launch's whole batch)
+    if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
+    if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
+    if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, ""); }
 }
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
@@ -2932,42 +2933,60 @@ const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is meas
 // cause is the launch, it goes through admit like every write, and admit checks it against the engine. The engine
 // digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
 // that left the world) is a SEPARATE entry caused by a system act, so a rest and a correction never look alike.
+const REST_COALESCE_TICKS = 15;   // ~0.5 s at 33 ms: PHYSICS §4.4's settlement window
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
+  let digested = false;
   for (let guard = 0; guard < 64; guard++) {
     // the lowest first (R 10-10 23:23, the gym log): pyr-9 settled onto pyr-6, and then pyr-6's own rest in the same view
     // moved pyr-6 and dragged pyr-9, now its child, 19 cm into pyr-7. A support rests before what it carries.
-    const sf = w.sim(); let r = null;
-    for (const x of sf.rested) if (!skip.has(`${x.id}@${x.seq}`) && (!r || x.p[1] < r.p[1] - 1e-6)) r = x; if (!r) return;
-    const st = w.state(); const t = worldT(st, r.id);
-    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })];
-    let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
-    catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
-    w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
-    const rest = changeEntry(w, plan, r.seq);
-    const st2 = w.state(); const B = boundsOf(st2);
-    if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
-      // it landed outside the world: lost. The authority returns it to where it was picked up, as its own act.
-      const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
-      const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
-      changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
-      continue;
+    const sf = w.sim(); let due = sf.rested.filter((x) => !skip.has(`${x.id}@${x.seq}`)).sort((a, b) => a.p[1] - b.p[1]); if (!due.length) return;
+    // a launch's rests are logged together: when its last body rests, or when its oldest unlogged rest is REST_COALESCE_TICKS
+    // old (a cascade rests one crate at a time over seconds; a heartbeat pass would otherwise log one body per beat, which is
+    // what one-digest-one-change per body cost). The rest tick is the engine's either way; only the entry's ts is later.
+    const ready = (seq) => { const mine = due.filter((x) => x.seq === seq); const flying = Object.entries(sf.launched).some(([id, l]) => l.seq === seq && sf.sim.bodies[id] && !sf.sim.bodies[id].resting);
+      return !flying || Math.min(...mine.map((x) => x.tick)) <= sf.sim.tick - REST_COALESCE_TICKS; };
+    due = due.filter((x) => ready(x.seq)); if (!due.length) return;
+    // one change per launch per pass, every body that launch set moving in it (PHYSICS §1 already reads a rest so; STRIKES
+    // PH-S2-5: one digest + one change per body was 1.16 KB and 2.4 entries per rested body), and one digest per pass: every
+    // rest in a pass is at the same clock. A batch one body spoils falls back to one rest at a time (its refusal names it).
+    const batch = due.filter((x) => x.seq === due[0].seq);
+    const st = w.state();
+    const opsFor = (r) => { const t = worldT(st, r.id); return [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })]; };
+    let plan = null, group = batch;
+    try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: batch.map((r) => r.id), comps: ["transform", "parent"], launch: batch[0].seq } }, batch.flatMap(opsFor)); }
+    catch (e) { if (!(e instanceof Refusal)) throw e;
+      if (batch.length === 1) { w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e.code, reason: e.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } // 33 F2: on
+      group = [batch[0]];
+      try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [batch[0].id], comps: ["transform", "parent"], launch: batch[0].seq } }, opsFor(batch[0])); }
+      catch (e2) { if (!(e2 instanceof Refusal)) throw e2; w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e2.code, reason: e2.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } }
+    if (!digested) { w.append({ kind: "sim", actor: "sim", cause: group[0].seq, verb: "digest", body: { digest: digestOf(sf.sim) } }); digested = true; }
+    const rest = changeEntry(w, plan, group[0].seq);
+    for (const r of group) {
+      const st2 = w.state(); const B = boundsOf(st2);
+      if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
+        // it landed outside the world: lost. The authority returns it to where it was picked up, as its own act.
+        const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
+        const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
+        changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
+        continue;
+      }
+      // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
+      // ON = what its footprint touches (R 10-10: a pyramid's top crate sits over the gap between two crates; read under its
+      // centre, the gap led down to the crate a row lower, and the top crate was parented 0.5 m above it: carry that one
+      // and it rode along in mid-air). Nothing within 3 cm under its footprint: not parented.
+      // and never onto a HELD thing (R 10-10 evening): a held thing still stands in the log where it was picked up, so the
+      // crates that fell off it settled back onto it and were carried off in her hands
+      const fam = new Set([r.id, ...descendants(st2, r.id)]); const bx = aabb(st2, r.id);
+      for (const k of Object.keys(w.presence.holds)) if (st2.entities[k]) for (const d of [k, ...descendants(st2, k)]) fam.add(d);
+      const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
+      if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
+      const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
+      const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
+      const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
+      changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
     }
-    // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
-    // ON = what its footprint touches (R 10-10: a pyramid's top crate sits over the gap between two crates; read under its
-    // centre, the gap led down to the crate a row lower, and the top crate was parented 0.5 m above it: carry that one
-    // and it rode along in mid-air). Nothing within 3 cm under its footprint: not parented.
-    // and never onto a HELD thing (R 10-10 evening): a held thing still stands in the log where it was picked up, so the
-    // crates that fell off it settled back onto it and were carried off in her hands
-    const fam = new Set([r.id, ...descendants(st2, r.id)]); const bx = aabb(st2, r.id);
-    for (const k of Object.keys(w.presence.holds)) if (st2.entities[k]) for (const d of [k, ...descendants(st2, k)]) fam.add(d);
-    const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
-    if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
-    const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
-    const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
-    const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
-    changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
   }
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.

@@ -64,5 +64,17 @@ function world(name, N) {
   for (let k = 0; k < 20; k++) B.beat(0, 3);
   const pb = B.w.simPeek(); ok(pb.sim.tick === ta && digestOf(pb.sim) === da, "T3 catching up by bounded passes is bit-identical to advancing straight", { ta, tb: pb.sim.tick, da, db: digestOf(pb.sim) });
 }
+// T4: log growth. One digest per settle pass and one change per launch per pass (STRIKES PH-S2-5: it was one of each per body,
+// 42 digests for a 40-crate knock).
+{
+  const { w, call, beat } = world("t4", 40);
+  const n0 = w.entries.length; ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T4 throw");
+  const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
+  for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
+  const L = w.entries.slice(n0); const digests = L.filter((e) => e.kind === "sim" && e.verb === "digest").length;
+  const rested = restsOf(w.entries).length; const changes = L.filter((e) => e.kind === "change" && w.entries[e.cause]?.kind === "sim").length;
+  console.log("T4 counts", JSON.stringify({ rested, digests, changes, entries: L.length }));
+  ok(rested >= 30 && digests <= rested / 3 && changes <= rested / 3, "T4 a 40-crate knock logs far fewer digests and rest changes than bodies", { rested, digests, changes, entries: L.length });
+}
 console.log(`phystick: ${passes} ok, ${fails} failed${NO_TICK ? " (NO_TICK: the old shape)" : ""}`);
 process.exit(fails ? 1 : 0);
