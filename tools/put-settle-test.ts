@@ -55,6 +55,10 @@ state.onWorldChange((ev: any) => {
   if (ev.what === 'pose' && obj && ent) { obj.position.set(...ent.pos); if (ent.q) obj.quaternion.set(...ent.q); obj.userData.base = { pos: [...ent.pos], q: [...(ent.q ?? [0, 0, 0, 1])] }; }
 });
 
+// …and models.js's 'pose-revert' (the fold's pose re-asserted on request)
+bus.on('pose-revert', ({ id }: any) => { const obj = S.entities.get(id), ent = state.state.st.entities[id];
+  if (obj && ent) { obj.position.set(...ent.pos); if (ent.q) obj.quaternion.set(...ent.q); } });
+
 // me: a body at the origin facing +z (no VRM: the hand is in front of the chest, handOf's fallback)
 const me = { root: new THREE.Object3D(), vrm: null };
 tp.initThingPhysics({ myPos: () => me.root.position, me: () => me, camera: null, editing: () => false, myState: () => ({ yaw: 0 }) });
@@ -163,6 +167,20 @@ tick(T3 + 30); frame();
 check('gone: an ease was on', (tp.physicsApi.settling?.() ?? []).length === 1);
 state.applyView({ entities: {} }); frame();
 check('gone at t=30: the ease is gone with the thing', !(tp.physicsApi.settling?.() ?? []).length, J(tp.physicsApi.settling?.()));
+
+// ---- a put back to the very pose it had: no row moves it (the fold didn't change), the hold just ends — eased all the same
+const T5 = 15000;
+state.applyView(view([3, 0, 3], q0)); S.entities.set('crate', crate); crate.position.set(3, 0, 3); crate.quaternion.identity();   // born again after the 'gone' above
+tick(T5 - 1000); bus.emit('holds', { crate: { by: 'me' } });
+for (let t = T5 - 1000; t < T5; t += 16) { tick(t); frame(); }
+const HAND5 = world(crate);
+tick(T5); bus.emit('holds', {}); frame();
+check('same-pose put: an ease starts when the hold ends with no row', (tp.physicsApi.settling?.() ?? []).includes('crate'), J(tp.physicsApi.settling?.()));
+check('same-pose put: t=0 drawn in the hand', same(world(crate), HAND5, 1e-4), J(world(crate).p.toArray()));
+tick(T5 + 60); frame();
+check('same-pose put: t=60 between', between(world(crate), HAND5, { p: new THREE.Vector3(3, 0, 3), q: new THREE.Quaternion() }) || world(crate).p.distanceTo(new THREE.Vector3(3, 0, 3)) < HAND5.p.distanceTo(new THREE.Vector3(3, 0, 3)), J(world(crate).p.toArray()));
+tick(T5 + 120); frame();
+check('same-pose put: t=120 exactly the fold\'s pose (it never stays drawn in the hand)', same(world(crate), { p: new THREE.Vector3(3, 0, 3), q: new THREE.Quaternion() }, 1e-9), J(world(crate).p.toArray()));
 
 // ---- a launch (a throw/drop: the engine's flight owns it) is not a put: left to the flight's own smoothing
 // (pres.bodies is the flight's; with no engine here there is none, so this only pins the guard's shape)

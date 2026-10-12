@@ -67,7 +67,10 @@ let holds = {};     // id -> the authority's hold record: { by: identity, hand?,
 const pulls = new Map();   // id -> { from: Vector3, t0, dur }: a new hold eases from where the thing was into the hand
 bus.on('holds', (h) => {
   const before = holds; holds = h && typeof h === 'object' ? h : {};
-  for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id); }
+  for (const id of Object.keys(before)) if (!holds[id]) { released(id); pulls.delete(id);
+    // a hold that ends with no row moving the thing (a put back to the very pose it had: the fold didn't change, so no
+    // change event ever re-asserts it): ask the realizer for the fold's pose and ease to it, as a put does
+    if (!presOwns(id) && entities.has(id)) { startSettle(id); bus.emit('pose-revert', { id }); } }
   for (const id of Object.keys(holds)) if (!before[id] || before[id].by !== holds[id].by) { suspendCollider(id, true); startPull(id); }
   // a use still pressed on a thing that has left my hand (taken, dropped with the button down): its up goes now (the authority
   // takes it from whoever pressed down), and the press stops riding my presence (review 10-06)
