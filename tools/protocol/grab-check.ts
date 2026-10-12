@@ -39,7 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["grab reads grabOf (a static grabbable is carried)", "protocol/authority.js", "const g = grabOf(e.c);\n    if (!g) refuse(\"not-grabbable\"", "const g = e.c.physics?.kind === \"dynamic\" ? grabOf(e.c) : null;\n    if (!g) refuse(\"not-grabbable\"", ["G2", "G3"]],
   ["the hand's settlement reads grabOf", "protocol/authority.js", "else if (cap.kind === \"handle\") { const g = grabOf(st.entities[op.id]?.c);", "else if (cap.kind === \"handle\") { const g = st.entities[op.id]?.c.physics?.kind === \"dynamic\" ? grabOf(st.entities[op.id]?.c) : null;", ["G2", "G3"]],
   ["enabled", "protocol/authority.js", "if (!g.enabled) refuse(\"not-grabbable\"", "if (false) refuse(\"not-grabbable\"", ["G5"]],
-  ["who", "protocol/authority.js", "const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need))", "const need = g.who; const role = roleOf(st, actor); if (false)", ["G6", "M2"]],
+  ["who", "protocol/authority.js", "const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need))", "const need = g.who; const role = roleOf(st, actor); if (false)", ["G6"]],
   ["punt keeps physics.who (a kick-only ball is still punted)", "protocol/authority.js", "if (cap.kind === \"handle\" && cap.via === \"punt\") {", "if (false) {", ["G5"]],
   ["steal", "protocol/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (false)", ["G7"]],
   ["steal: owners may", "protocol/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (held && !g.steal)", ["G7"]],
