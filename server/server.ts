@@ -230,6 +230,12 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   }
 } });
 
+// The engine's heartbeat: every world's sim advances and its rests log on this cadence, not inside whoever's request
+// comes next (DESIGN-physics-responsiveness §1). FRAME_MS is the finest beat the scheduler has; the pass is bounded by
+// engine ticks, so a stall catches up over several beats.
+registerSystem({ name: "physics", everyMs: FRAME_MS, fn: () => {
+  for (const w of worlds.values()) { try { w.log?.settle(); } catch (err) { console.error(`[world:${w.name}] physics settle`, err); } }
+} });
 registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
     try { w.scripts.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }

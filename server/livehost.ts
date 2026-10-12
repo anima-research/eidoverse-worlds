@@ -93,6 +93,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   if (st.status === "ok" && Object.values(st.entities ?? {}).some((e: Any) => Object.keys(e.c).some((k) => k.startsWith("script:")))) w.scripts?.warm?.();
   w.state = () => st;
   w.sim = () => sim.view(w.now()); // the authority's clock: one per request (authority.js request pins it)
+  w.simCapTs = (maxTicks: number) => sim.capTs(maxTicks);
+  w.simPeek = () => sim.view();   // where the engine stands, without advancing it (checks)
   w.touching = (id: string) => touching.get(id) ?? [];
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {

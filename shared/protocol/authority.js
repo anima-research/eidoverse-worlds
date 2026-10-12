@@ -2314,6 +2314,24 @@ function withAuthority(w, fn) {
  * act's cause is the entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on
  * its own clock (server: once a second); it never runs inside a request.
  */
+/**
+ * The engine's heartbeat (DESIGN-physics-responsiveness §1). Advances the sim toward the authority's clock, at most `maxTicks`
+ * engine ticks a pass (a stall catches up over several passes, never by a longer step: the bits stay the law's), and logs
+ * what came to rest, returns what is due back, expires asks. A host calls this at tick cadence; a request still settles
+ * first (the fallback for a host without a heartbeat) and finds nothing left to do. Returns how many entries it wrote.
+ */
+export function settle(w, { maxTicks = 8 } = {}) {
+  if (!w.exists || w.state().status !== "ok") return 0;
+  return withAuthority(w, () => {
+    const clock = w.now; const t0 = clock(); const cap = w.simCapTs?.(maxTicks); const t = cap !== null && cap !== undefined && cap < t0 ? cap : t0;
+    w.now = () => t;   // one clock for the pass, as a request has (physlive Q1): a rest's digest and its ts agree
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
+    const n0 = w.entries.length;
+    WORK = { left: Infinity, until: Infinity, k: 0 };
+    settleSim(w); returnDue(w); expireAsks(w);
+    return w.entries.length - n0;
+  });
+}
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   return withAuthority(w, () => {

@@ -232,7 +232,10 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     out.rested.sort((x, y) => x.tick - y.tick);
     return out;
   };
-  return { feed, view };
+  // the clock a pass bounded to `maxTicks` engine ticks may reach (DESIGN-physics-responsiveness §1): a stall catches up over
+  // several passes, never by a longer step (Covenant I/IV: the bits are the law's). null: no engine, nothing to bound.
+  const capTs = (maxTicks) => (out.sim ? out.sim.epoch.ts + (out.sim.tick + maxTicks) * out.sim.epoch.tickMs : null);
+  return { feed, view, capTs };
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
