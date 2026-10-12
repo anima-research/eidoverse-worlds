@@ -16,6 +16,7 @@ import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, material
 import { MODELS } from "./labmodels.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
 import { dec } from "./names.js";
+import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
 import { sha256Bytes, hexBytes } from "./hash.js";
@@ -669,8 +670,6 @@ const refuse = (code, reason, fix, extra) => { throw new Refusal(code, reason, f
 // must match it.
 let NAMEOF = null;
 const said = (id) => NAMEOF?.(String(id)) ?? dec(String(id)) ?? String(id);
-// verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
-const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -755,8 +754,6 @@ export function request(w, actor, verb, args = {}) {
 // what it didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
-// what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost
-const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox", "effect"]);
 function logRefusal(w, actor, verb, args, code) {
   try {
     // a verb the authority doesn't have is recorded too (an agent's invented verb is part of what it tried), when it's a name
