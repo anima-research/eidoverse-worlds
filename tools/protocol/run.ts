@@ -81,7 +81,7 @@ for (const [name, file, tail] of SUITES) {
   }
   const r = Bun.spawnSync(cmd, { cwd: ENGINE, env: senv });
   const out = (r.stdout.toString() + r.stderr.toString()).trimEnd().split("\n");
-  const fails = out.filter((l) => /^\s*FAIL\b/.test(l));
+  const fails = out.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
   const ok = r.exitCode === 0;
   if (!ok) failed.push(name);
   console.log(`\n== ${name} (${file}) ${ok ? "PASS" : `FAIL (exit ${r.exitCode})`} ${((performance.now() - t) / 1000).toFixed(1)} s`);
