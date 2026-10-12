@@ -24,6 +24,7 @@ import { RECORDS } from './components.js';
 import { WEATHERS, CLOUDS, hoursAt, effectiveSky } from './forecast.js';
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
 import { fieldAt, parseEntry } from './editschema.js';
+import { TRUSTED } from './drafts.js';
 
 export const WORLD_ID = '@world';
 export const isWorldId = (id) => id === WORLD_ID;
@@ -228,10 +229,20 @@ export function worldSchema(st, live = {}) {
   ] : [{ t: 'info', label: '', value: 'nothing growing. Pick a planting in Build ▸ World' }];
   groups.push({ group: 'grass', label: 'Grass', fields: grassFields });
 
+  // Trusted components (docs/COMPONENT-LADDER.md, the second rung; R 10-12): the drafts this world's owner trusts here,
+  // @world.trusted — live.trusted is the list as the client read it (mayTrust: this viewer is the owner)
+  const trusted = Array.isArray(live.trusted) ? live.trusted : [];
+  const trustedFields = trusted.length ? trusted.flatMap((n) => [{ t: 'info', label: 'trusted', value: n, hint: 'a draft used and trusted in this world: a blue chip, offered in the main Add Component list. The engine still doesn\'t read it' },
+    ...(live.mayTrust === true ? [{ t: 'btn', k: `remove|${n}`, label: `stop trusting ${n}`, danger: true, hint: 'back to a plain draft (amber, under "drafts"). Nothing stored changes' }] : [])])
+    : [{ t: 'info', label: '', value: 'none: every draft here is unproven. An owner trusts one from its card on a thing' }];
+  groups.push({ group: TRUSTED, label: 'Trusted components', fields: trustedFields });
+
   // the cards (design §5): one per component, in the inspector's order
   const have = new Set(worldComponents(st).components.map((c) => c.type));
   const list = groups.map(({ group, fields }) => {
     const type = { sky: 'Sky', weather: 'Weather', terrain: 'Terrain', grass: 'Grass' }[group];
+    if (!type) return { type: 'Trusted', key: group, title: 'Trusted components', hash: null, category: 'World', summary: 'the drafts this world\'s owner trusts here (@world.trusted): not engine-official, but used and trusted in this world',
+      fields: fields.filter((x) => x.k != null).map((x) => `${group}.${x.k}`), removable: false, info: fields.filter((x) => x.t === 'info' && x.value).map((x) => [x.label, x.value]), present: trusted.length > 0 };
     const rec = RECORDS[type];
     return { type, key: group, title: type, hash: rec.hash, category: rec.category, summary: rec.summary,
       fields: fields.filter((x) => x.k != null).map((x) => `${group}.${x.k}`), removable: false,
@@ -252,9 +263,10 @@ export function worldEditOps(st, edits, live = {}) {
   const schema = worldSchema(st, live);
   const errors = [];
   let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false, noSky = false, noGround = false;   // ground: the terrain patch
+  let untrust = null;   // names to take off @world.trusted
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
-    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.*; inspect @world lists them)`); continue; }
+    if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.* trusted.*; inspect @world lists them)`); continue; }
     if (f.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
     const group = key.slice(0, key.indexOf('.')); const k = key.slice(key.indexOf('.') + 1);
     let v = raw;
@@ -292,6 +304,7 @@ export function worldEditOps(st, edits, live = {}) {
         else ground[k] = v;
         break;
       case 'grass': if (k === 'mow') mow = true; else (grassPatch ??= {})[k] = v; break;
+      case TRUSTED: if (k.startsWith('remove|')) (untrust ??= new Set()).add(k.slice(7)); break;
     }
   }
   const ops = [];
@@ -303,6 +316,7 @@ export function worldEditOps(st, edits, live = {}) {
   else if (ground) ops.push(terrainOp({ ...clone(terrain), ...ground }));
   if (mow) { if (isBag(grass)) ops.push(grassOp(null)); }
   else if (grassPatch) ops.push(grassOp({ ...clone(grass), ...grassPatch }));
+  if (untrust) { const next = (Array.isArray(live.trusted) ? live.trusted : []).filter((n) => !untrust.has(n)); ops.push(next.length ? OP.set(WORLD_ID, TRUSTED, { components: next }) : OP.unset(WORLD_ID, TRUSTED)); }
   return { ops, errors };
 }
 

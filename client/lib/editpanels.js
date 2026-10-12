@@ -554,7 +554,7 @@ function pushCards(f, schema, id, opts = {}) {
     const acts = sec.removable && sec.key ? [{ k: `ed:remove.${sec.key}`, icon: 'x', title: `remove ${sec.title}`, danger: true }] : [];
     // provenance (R 10-10: 'a colored dot'): amber = a draft this client reads (docs/COMPONENT-LADDER.md), hollow = a
     // namespaced component nothing here reads; a core component has none
-    const dot = sec.draft ? 'draft' : (sec.key && String(sec.key).includes('/') ? 'foreign' : null);
+    const dot = sec.trusted ? 'trusted' : sec.draft ? 'draft' : (sec.key && String(sec.key).includes('/') ? 'foreign' : null);
     f.push({ t: 'group', k: key, actions: acts, ...(dot ? { dot } : {}), label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${(sec.hash ?? 'draft').slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
     // the channel box: an alias (pos.yaw, the heading) stays addressable for
@@ -691,15 +691,15 @@ function inspectorFields() {
       // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
       const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
       adds.push({ t: 'pop', k: 'c:+pop', label: 'Add Component…', icon: 'plus', cls: 'sp-add', deskOnly: true, unfold: true, bar: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
-        items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked, keywords: ADD_WORDS[a.name] ?? [],
-          hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
+        items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.label ?? a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked, keywords: ADD_WORDS[a.name] ?? [], ...(a.chip ? { chip: a.chip } : {}),
+          hint: a.blocked ?? (a.hint ? `${a.summary} — ${a.hint}` : a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
       adds.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
       for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
         adds.push({ t: 'info', label: '', value: cat });
         for (const a of schema.sections.add.filter((x) => x.category === cat)) {
           const viaGesture = { Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Sockets: 'ed:sockets.add' }[a.name];
-          adds.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}${a.brings ? ' (+ its need)' : a.asks ? '…' : ''}`, disabled: !!a.blocked,
-            hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) });
+          adds.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.label ?? a.name}${a.brings ? ' (+ its need)' : a.asks ? '…' : a.chip === 'amber' ? ' (draft)' : a.chip === 'blue' ? ' (trusted here)' : ''}`, disabled: !!a.blocked,
+            hint: a.blocked ?? (a.hint ? `${a.summary} — ${a.hint}` : a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) });
         }
       }
     }
