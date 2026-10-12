@@ -7,13 +7,14 @@
 export const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 
 // what a ghost may still do: read the world (not its chat: history hides says from a ghost), walk, leave, end a chosen ghost.
-// The moderation reads (modlog, bans) are not here: a ghost reads the world, not its moderation record.
+// The moderation reads (modlog, bans) are not here and never will be: a ghost has no powers by definition — ghost+moderator
+// is an oxymoron (R, 2026-10-12). A moderator who wants the modlog un-ghosts first.
 export const GHOST_OK = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox", "effect"]);
 
-// the authority's reads a SPECTATOR is still refused at the door (spectators may read, not write — and these two it may
-// not read either). Pinned as today's behaviour, not decided: whether a spectator may `scripts`/`effect` is R's call
-// (REFACTOR-C3-2026-10-12). Letting them in = removing them here.
-export const SPECTATOR_GATED = new Set(["scripts", "effect"]);
+// the authority's reads a SPECTATOR is refused at the door. Empty since 2026-10-12: a world's scripts and effects are part
+// of what a spectator is looking at, and reading changes nothing (Hesperus's call, R deferred). Kept as a class so a
+// future gate is one entry here, not a second literal.
+export const SPECTATOR_GATED = new Set([]);
 
 // the door's reads: metered as reads and the only requests a spectator may send. The authority's reads less the gated
 // two, plus the door's own answers that write nothing: `wait` (the presence long-poll) and `whois` (the server's

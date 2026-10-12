@@ -1,8 +1,8 @@
 // tools/protocol/verbclasses-check.ts — the verb classes have ONE home (shared/protocol/verbclasses.js). The authority's
 // READ_ONLY/GHOST_OK and the wire's spectator READS/PERSON_ACTS used to be four literals in two files that had already
 // drifted (DEBT-SURVEY 10-12 #10). This pin holds the classes as they stood on 2026-10-12 — the wire's set and the
-// authority's are NOT equal today (a spectator is refused `scripts`/`effect`, which the authority calls reads; the wire
-// admits `wait`/`whois`, which write nothing to the log but aren't the authority's reads) — and refuses two copies.
+// authority's differ only by the wire's own answers (`wait`/`whois`, which write nothing to the log but aren't the
+// authority's reads); since 10-12 a spectator may read `scripts`/`effect` too (SPECTATOR_GATED is empty) — and refuses two copies.
 //   bun tools/protocol/verbclasses-check.ts
 import { readFileSync } from "node:fs";
 import { ENGINE } from "./common.ts";
@@ -17,7 +17,7 @@ const sub = (a: Set<string>, b: Set<string>) => [...a].every((v) => b.has(v));
 // the classes as of 2026-10-12 (behaviour pinned; a change here is a decision, with R)
 const READ_ONLY_PIN = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 const GHOST_OK_PIN = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "ghost", "inbox", "effect"]);
-const WIRE_READS_PIN = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans"]);
+const WIRE_READS_PIN = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans", "scripts", "effect"]);
 const PERSON_ACTS_PIN = new Set(["warn", "mute", "unmute", "kick", "ban", "unban", "ghost", "unghost"]);
 
 // one source: the shared table
