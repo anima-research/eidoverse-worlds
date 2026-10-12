@@ -88,5 +88,44 @@ function world(name, N) {
   const lost = w.entries.find((e) => e.kind === "act" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
   ok(!!lost && lost.body.home === true && Math.hypot(at[0], at[1], at[2] - 2) < 1e-6, "T5 it rested outside and was sent home, not back to the hand", { lost: lost?.body, at });
 }
+// T6: a checkpoint. After a knock has rested and 20 s of quiet, the beat writes sim:checkpoint naming a blob with the cut;
+// opening the same world again starts the sim from it (feeding only later entries), far faster, and lands on the same bits.
+{
+  const { w, call, beat, now } = world("t6", 30);
+  ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T6 throw");
+  const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
+  for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
+  const n1 = w.entries.length; for (let k = 0; k < 40; k++) beat(1000);   // 40 s of quiet beats
+  const ck = w.entries.slice(n1).filter((e) => e.kind === "sim" && e.verb === "checkpoint");
+  ok(ck.length === 1 && ck[0].body.at === w.entries.indexOf(ck[0]) - 1 && typeof ck[0].body.state === "string", "T6 one checkpoint, right after the entry it names, with a blob", ck.map((e) => e.body));
+  const fromGenesis = w.sim(); const dA = digestOf(fromGenesis.sim);   // both views at the same clock
+  const dir = `${root}t6`; const a0 = performance.now(); const w2 = openLive(dir, "t6", { now }); const openMs = performance.now() - a0;
+  const again = w2.sim(); const dB = digestOf(again.sim);
+  ok(w2.bootedFrom === w.entries.indexOf(ck[0]) && dA === dB && JSON.stringify(Object.keys(again.launched).sort()) === JSON.stringify(Object.keys(fromGenesis.launched).sort()),
+    "T6 reopened from the checkpoint: the same sim digest and the same launched set", { bootedFrom: w2.bootedFrom, ckSeq: w.entries.indexOf(ck[0]), dA, dB });
+  const b0 = performance.now(); const w3 = openLive(`${root}t6`, "t6", { now, simModels: {} }); const genesisMs = performance.now() - b0;   // same open path; reports the cost
+  ok(openMs < 1500, `T6 opening from the checkpoint is quick (${openMs.toFixed(0)} ms; this world's history re-simulated takes longer)`, { openMs, genesisMs });
+  // a throw after reopening still flies and rests from the checkpointed state
+  w2.simPeek(); const r = (() => { let T2 = now() + 100; const w2now = () => T2; return { call: (v, args, s = 100) => { T2 += s; return request(w2, "rowan", v, args); } }; })();
+  { const bp = w2.state().entities.ball.c.transform.pos; r.call("move", { to: [bp[0], 0, bp[2] - 0.5] }); }   // bodies are presence: the reopened world has none until I move; the ball rested where the knock left it
+  { const g = r.call("grab", { id: "ball" }); const th = g.ok ? r.call("throw", { id: "ball", v: [0, 2, 3] }) : null; ok(g.ok && th?.ok, "T6 …and the reopened world takes a new throw", { g: g.refused, th: th?.refused }); }
+}
+// T7: a purge after a checkpoint discards it: the bytes may sit in the cut, so the blob is deleted and the next open folds
+// the sim from genesis (a purge is retroactive, L1).
+{
+  const { w, call, beat, now } = world("t7", 6);
+  call("rowan", "set", { id: "cr-0", component: "label", value: "secret" });
+  ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T7 throw");
+  const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
+  for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
+  for (let k = 0; k < 40; k++) beat(1000);
+  const ck = w.entries.filter((e) => e.kind === "sim" && e.verb === "checkpoint"); const blobFile = `${root}t7/blobs/${String(ck[0]?.body.state).replace(/[^a-z0-9]/g, "-")}.json`;
+  ok(ck.length === 1 && fs.existsSync(blobFile), "T7 a checkpoint with its blob on disk", { ck: ck.length, blobFile: fs.existsSync(blobFile) });
+  const target = w.entries.findIndex((e) => e.kind === "change" && e.verb === "set" && e.body?.comp === "label");
+  w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } });
+  ok(!fs.existsSync(blobFile), "T7 the purge deleted the checkpoint's blob", { blobFile });
+  const w2 = openLive(`${root}t7`, "t7", { now });
+  ok(w2.bootedFrom === null && digestOf(w2.sim().sim) === digestOf(w.sim().sim), "T7 reopened from genesis (no checkpoint after the purge), same bits", { bootedFrom: w2.bootedFrom });
+}
 console.log(`phystick: ${passes} ok, ${fails} failed${NO_TICK ? " (NO_TICK: the old shape)" : ""}`);
 process.exit(fails ? 1 : 0);

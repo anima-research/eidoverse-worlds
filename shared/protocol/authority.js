@@ -28,7 +28,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -2329,9 +2329,29 @@ export function settle(w, { maxTicks = 8 } = {}) {
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const n0 = w.entries.length;
     WORK = { left: Infinity, until: Infinity, k: 0 };
-    settleSim(w); returnDue(w); expireAsks(w);
+    settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
     return w.entries.length - n0;
   });
+}
+// A checkpoint is a persisted joiner cut (DESIGN-physics-responsiveness §2; STRIKES PH-S1-1: boot re-simulated every flight
+// the world ever had, 6.5 s for the gym's 94 launches and growing). At a quiet moment (nothing in flight, nothing waiting to
+// be logged) after launches have happened, the authority writes one `sim:checkpoint` entry whose body names a blob holding
+// the sim cut exactly as a joiner gets it (simCutOf), with the cut's engine and digest beside it. A host that carries the
+// engine opens the world from the last valid checkpoint and feeds only the entries after it; any other reader folds past
+// an unknown sim verb unchanged. The fold itself is never checkpointed: it is cheap and always exact from genesis.
+const CHECKPOINT_QUIET_MS = 20000;
+function checkpointSim(w) {
+  if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
+  const E = w.entries; let last = -1, launches = 0, newest = -Infinity;
+  for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!e || typeof e !== "object" || e.kind !== "sim") continue;
+    if (e.verb === "checkpoint") { last = s; break; } if (e.verb === "launch") { launches++; if (e.ts > newest) newest = e.ts; } }
+  if (!launches || w.now() - newest < CHECKPOINT_QUIET_MS) return;
+  const sf = w.sim(); if (!sf.sim || sf.foreign || Object.keys(livePoses(sf)).length || sf.rested.length || (w.unsettled?.length ?? 0)) return;
+  // the cut rides as a JSON string: the blob store canonicalises objects (sorted keys), and the engine's object order is the
+  // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
+  const cut = simCutOf(sf, E);
+  const state = w.putBlob({ cutJson: JSON.stringify(cut) });
+  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine, build: sf.spec.build }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];

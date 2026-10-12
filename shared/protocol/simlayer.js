@@ -237,7 +237,10 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
   };
   // the clock a pass bounded to `maxTicks` engine ticks may reach (DESIGN-physics-responsiveness §1): a stall catches up over
   // several passes, never by a longer step (Covenant I/IV: the bits are the law's). null: no engine, nothing to bound.
-  const capTs = (maxTicks) => (out.sim ? out.sim.epoch.ts + (out.sim.tick + maxTicks) * out.sim.epoch.tickMs : null);
+  const capTs = (maxTicks) => { if (!out.sim) return null;
+    // nothing in flight: advancing is one jump, so no bound (bounded, a heartbeat slower than maxTicks ticks fell behind for good)
+    if (!Object.values(out.sim.bodies).some((b) => !b.resting)) return null;
+    return out.sim.epoch.ts + (out.sim.tick + maxTicks) * out.sim.epoch.tickMs; };
   return { feed, view, capTs };
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
