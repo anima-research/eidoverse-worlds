@@ -10,7 +10,7 @@
 import { bodyOf, socketQ } from "../components.js";
 import { checkSockets } from "../sockbody.js";
 import { DEFAULT_WHO, grabOf, checkGrabbable, wantsHome, fitsSocket, socketRadius, pickGrip, offsetOk, describeGrab } from "../grab.js";
-import { readLog, fold, opsOf, applyOps, applyInPlace, cloneState, cowState, applyCow, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
+import { fold, opsOf, applyOps, cowState, applyCow, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, PURGED, DIALECT, VERSION, keyOk } from "./fold.js";
 import { mintId, PERSON_ID } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC } from "./verbspec.js";
@@ -18,7 +18,6 @@ import { dec } from "./names.js";
 import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
-import { sha256Bytes, hexBytes } from "./hash.js";
 import * as C from "./consent.js";
 import * as TR from "./sculpt.js";
 import * as SR from "./scriptrules.js";
@@ -28,7 +27,7 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, BODY_REACH } from "./physconst.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
@@ -37,168 +36,11 @@ import { CTX } from "./authority/ctx.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue } from "./authority/catalogue.js";
+import { CHANGE, IMPORTED_ONLY, VOLATILE, clone, createOps, delOp, isE, lockedC, nonce16, opsQuiet, qr3, scratch, setOp, slug, versionOf, versionSeq, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
+export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank } from "./authority/storage.js";
 
 
-// ---------- storage ----------
-const CHANGE = Symbol("admitted change write");
-export const posAt = (e, i) => { if (e && typeof e === "object") Object.defineProperty(e, "seq", { value: i, enumerable: false, configurable: true }); return e; };
-/**
- * A world over injected storage.
- * @param {{ name: string, entries: any[], getBlob: (h: string) => any, putBlob: (v: any) => string,
- *   writeLine: (line: string) => void, now: () => number,
- *   presence?: { bodies: object, holds: object }, savePresence?: (p: object) => void }} io
- *   entries: what readLog returned for the log so far, each with its seq attached by posAt (unenumerable).
- *   getBlob must verify a blob against its name and throw if it doesn't match (§2.2).
- *   writeLine appends one already-checked line (no trailing LF) to durable storage.
- *   now: the authority's clock in ms (§2.1 ts); presence: the unlogged presence plane (P1, P2).
- */
-export function worldOf(io) {
-  const { name, entries, getBlob, putBlob } = io;
-  const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
-  w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
-  w.random = io.random ?? null;
-  w.kindOf = io.kindOf ?? null; // id → human|agent|anon|legacy (the directory): an anonymous identity gets a smaller budget
-  w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
-  w.now = io.now;
-  // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/protocol/sandbox.js), never imported
-  // here (browsers import this file). No sandbox: scripts install, and every activation says "unavailable".
-  w.scripts = io.scripts ?? null;
-  // who is present beyond the authority's own bodies (a server's connected people): () => [{id, at: [x,y,z] | null}]
-  w.present = io.present ?? null;
-  // the presence plane: bodies and holds. Transient, never logged (P1, P2)
-  w.presence = io.presence ?? { bodies: {}, holds: {} };
-  w.savePresence = () => io.savePresence?.(w.presence);
-  // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:
-  // io.custody = { sequencer() → "ed25519:…", keyOf(who, make?) → "ed25519:…" | null } (server/filehost.ts keeps the keys).
-  w.custody = () => io.custody ?? null;
-  // §2.1: moderation lives in a SEPARATE moderator log with the authority's enforcement, never in the world log
-  w.mod = io.mod ?? [];
-  w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; w.mod.push(r); io.appendMod?.(r); };
-  let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
-  // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
-  // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
-  w.state = () => { if (cache?.n === entries.length) return cache.st;
-    const fresh = entries.slice(cache?.n ?? 0);
-    if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "act", "sim", "say"].includes(e.kind))) {
-      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
-      return (cache = { n: entries.length, st }).st; }
-    return (cache = { n: entries.length, st: fold(entries) }).st; };
-  // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
-  // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
-  const heads = [];
-  w.headAt = (seq) => { for (let i = heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1];
-      heads[i] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq] ?? null; };
-  // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
-  const ever = { n: 0, ids: new Set() };
-  w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
-  w.sim = () => simFold(entries, w.now());
-  w.stateAt = (seq) => fold(entries, { until: seq });
-  // The authority re-reads every line it writes with the strict reader: it can never write what a reader would refuse.
-  // §2.1: ts = the authority's admission time, an integer that never decreases along the log (a clock that steps back,
-  // an NTP slew or a VM restore, must not make the authority write a line every reader refuses)
-  w.nextTs = () => { let lastTs = 0; for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastTs = entries[i].ts; break; }
-    return Math.max(Math.floor(w.now()), lastTs); };
-  // §2.4 the chain: "the authority signs at least every write it commits". When custody can sign, every entry after
-  // genesis is a chain point {head, sig} (genesis can't be: the world id is the hash of genesis itself). head(i) is
-  // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
-  const render = (e, seq, chained = false) => {
-    const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.pinTs ?? w.nextTs() };
-    // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
-    // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
-    // body carries 16 random bytes (round-2 review R3). Readers take bodies by field, so the salt is invisible to them.
-    if (io.custody?.sign && ["act", "say", "sim"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
-      obj.body = { ...obj.body, salt: nonce16(w) };
-    if (chained && e.kind !== "genesis" && io.custody?.sign && w.worldId) {
-      const head = chainStep(seq === 0 ? "00".repeat(32) : w.headAt(seq - 1), obj);
-      obj.head = head; obj.sig = io.custody.sign(`eidoverse-head:${w.worldId}:${seq}:${head}`); }
-    const line = JSON.stringify(obj);
-    const [parsed] = readLog(line); let bad = parsed instanceof Malformed ? parsed : null;
-    if (!bad) try { checkEntry(parsed, seq); } catch (x) { bad = x; }
-    return { line, parsed, bad };
-  };
-  // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any is written, so a
-  // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
-  w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k); if (!bad) continue;
-    if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§1)`, "split it into smaller requests, or put big data in a blob and store its hash");
-    throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };
-  w.append = (e, token) => {
-    if (e.kind === "change" && token !== CHANGE) throw new Error("authority bug: a change entry must come from changeEntry (§7: one gate)");
-    w.fits(e); const { line, parsed, bad } = render(e, entries.length, true); const seq = entries.length;
-    if (bad) throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); // e.g. the chain fields tipped it over a cap
-    entries.push(posAt(parsed, seq)); Object.defineProperty(parsed, "bytes", { value: line.length, enumerable: false }); io.writeLine(line);
-    if (e.kind === "genesis") w.worldId = worldIdOf(parsed);
-    w.exists = true; return seq;
-  };
-  return w;
-}
-// 16 random bytes as base64url (a genesis nonce, a set's salt). io.random(n) → Uint8Array may be injected (a test that
-// compares two runs byte for byte seeds both alike); otherwise Web Crypto, in bun and browsers alike.
-const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.getRandomValues(new Uint8Array(16)); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
-const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
-// §2.4 "The chain": the skeleton keeps each set's value and salt only as commit = sha256(salt ‖ JCS(value)), and an
-// act/say/sim body only as {commit}; a body or op already {commit} is purged and stays as it is.
-const opCommit = (o) => ("commit" in o && !("value" in o) ? o.commit : sha256((o.salt ?? "") + jcs(o.value)));
-const skelOp = (o) => { const { value, salt, commit, ...rest } = o; return "value" in o || "commit" in o ? { ...rest, commit: opCommit(o) } : rest; };
-const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commit") return b.commit; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
-function skeleton(e) {
-  const { head, sig, ...s } = e;
-  if (["act", "say", "sim"].includes(e.kind)) s.body = { commit: bodyCommit(e.body) };
-  else if (e.kind === "change") s.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map((o) => (o?.verb === "set" ? skelOp(o) : o)) } : e.verb === "set" ? skelOp(e.body) : e.body;
-  return s;
-}
-const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
-/** Seal a whole log the authority didn't write line by line (a translation): the same salts and chain points render gives
- *  each line it appends (§2.4; round-2 review R3). entries[0] is genesis (never a chain point: the world id is its
- *  hash); every later entry gets a salt on each set and on its act/say/sim body, then {head, sig}. Returns new objects;
- *  `sign(msg)` is the sequencer key's, `random(n)` optional. */
-export function seal(entries, { sign, random } = {}) {
-  if (typeof sign !== "function") throw new Error("seal needs the sequencer's sign()");
-  const w = { random: random ?? null }; const out = []; let prev = "00".repeat(32); const wid = worldIdOf(entries[0]);
-  for (let i = 0; i < entries.length; i++) {
-    let e = JSON.parse(JSON.stringify(entries[i])); delete e.head; delete e.sig;
-    if (i > 0) {
-      if (e.kind === "change") { const salt = (o) => (o?.verb === "set" && "value" in o && o.salt === undefined ? { ...o, salt: nonce16(w) } : o);
-        e.body = e.verb === "batch" ? { ...e.body, ops: (e.body.ops ?? []).map(salt) } : e.verb === "set" ? salt({ verb: "set", ...e.body }) : e.body;
-        if (e.verb === "set") { const { verb: _v, ...b } = e.body; e.body = b; } }
-      else if (["act", "say", "sim"].includes(e.kind) && e.body && typeof e.body === "object" && !Array.isArray(e.body) && !("salt" in e.body)) e.body = { ...e.body, salt: nonce16(w) };
-    }
-    prev = chainStep(prev, e);
-    if (i > 0) { e.head = prev; e.sig = sign(`eidoverse-head:${wid}:${i}:${prev}`); }
-    out.push(e);
-  }
-  return out;
-}
-// §3d M7: expect by version is {seq, head}, never a bare seq. A head this history doesn't have at that seq means the
-// version was read on a branch that was rewound (or in another world): refused, never compared by seq alone.
-function versionSeq(w, v, what) {
-  if (!(v && typeof v === "object" && !Array.isArray(v) && Number.isInteger(v.seq) && typeof v.head === "string" && Object.keys(v).length === 2))
-    refuse("shape", `${what} is a version {seq, head}, never a bare seq`, "inspect {id} → versions gives {seq, head} for each component; a write's result carries its own seq and head");
-  if (v.seq < 0 || v.seq >= w.entries.length || w.headAt(v.seq) !== v.head)
-    refuse("other-branch", `${what} {seq: ${v.seq}} names a head this world's history doesn't have at that seq: it was read on a branch that was rewound, or elsewhere`, "inspect again and redo the change on what's here");
-  return v.seq;
-}
-const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
-const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-// PROTOCOL §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
-// untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
-// A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
-const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
-// lock levels live beside the rank ladder they index (roles.js); re-exported for the door's readers
-export { LOCK_LEVELS, lockLevel, lockRank } from "./roles.js";
-const { LOCK_LEVELS, lockLevel, lockRank } = R;
-// a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
-// and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
-const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
-const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
-const IMPORTED_ONLY = (comp) => typeof comp === "string" && /^imported(?:-(?:behavior|bans|epoch|guard))?(?::|$)/.test(comp);
-const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
-const createOps = (id, comps) => [{ verb: "create", id }, ...Object.entries(comps).map(([k, v]) => setOp(id, k, v))];
-// a preview of ops on st: copy-on-write (the same state applyOps gives, sharing every entity the ops don't touch; values
-// are never mutated in place, as a live world's states already share them). A deep copy per preview made a batch of 50
-// creates copy a 2 000-thing world 100 times (review 10-06 S0-2).
-const scratch = (st, ops) => { const s = applyCow(cowState(st), ops); if (VOLATILE.has(st.entities)) VOLATILE.add(s.entities); return s; };
-const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "thing";
-
+// ---------- storage: authority/storage.js ----------
 // ---------- math (yaw-only rotation is enough for placement in this lab; q is stored whole) ----------
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const qYaw = (q) => 2 * Math.atan2(q[1], q[3]);
@@ -375,9 +217,7 @@ const cellsOf = (g) => { if (g.cells !== undefined) return g.cells;
 // (the next state of the same world: a write, or a preview of one) is derived from it, re-filing only the things that
 // changed, appeared or went (and everything riding on them); anything else is built whole. Both give the same index.
 const LASTIX = new WeakMap(); // catalogue → the index built or derived last
-// a state that is changed in place after it's read (a batch's working copy, and previews of it): indexed whole, never
-// derived from or kept as the last (a derivation compares entity objects, which such a state changes under them)
-const VOLATILE = new WeakSet();
+// VOLATILE (the "indexed whole" mark): authority/storage.js, beside scratch which propagates it
 function spatial(st) {
   const ver = CTX.cat.version ?? 0; let ix = SPATIAL.get(st);
   if (ix && ix.cat === CTX.cat && ix.ver === ver) return ix;
@@ -525,7 +365,6 @@ const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
 export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 /** The role the authority gives `actor` in a folded state (a view: what a client should be told it may do here). */
 export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
-const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 // ---------- sanctions: views over the moderator log (research §5) ----------
