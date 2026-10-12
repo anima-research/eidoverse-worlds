@@ -468,3 +468,7 @@ the log stays exact for everyone.
   with spin, the state sample, one clock).
 - *Placeholder (§4.1, reserved):* when live authority exists, taking a resting
   thing into it by touch MUST be a `lift` in the log, exactly as a grab is.
+
+## Lost at the edge
+
+A flight that crosses the world's edge is lost there and then: the sim layer reports it rested where it is (`lost`), the rest is admitted without the engine's resting flag, and the authority sends it home on the same pass. Bounds bound x, z and the sky (`max[1]`); the floor is the terrain's, never `bounds.min[1]` (the default bounds' min y sits above the default heightfield). (10-11, attack-physics P1/P2.)

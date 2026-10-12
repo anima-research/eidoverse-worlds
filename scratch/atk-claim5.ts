@@ -1,0 +1,25 @@
+// @ts-nocheck
+import { sock, show } from "./atk-access-lib.ts";
+let s0=await sock(); await s0.join("gym","riannon");
+const BM=(await s0.req("find",{kind:"model",query:"ball"}))?.models?.[0]?.model;
+const BALL="atk-ball-"+Date.now().toString(36);
+const log=(t,r)=>console.log(`  ${t.padEnd(44)} ${show(r)}`);
+console.log("ball model:",BM);
+log("create ball @[1.2,8]", await s0.req("create",{id:BALL,model:BM,components:{physics:{kind:"dynamic",who:"visitor"},grabbable:{who:"visitor"}},place:{at:[1.2,8]}}));
+s0.close();
+let A=await sock(); await A.join("gym","atk-grab-A");
+let B=await sock(); await B.join("gym","atk-grab-B");
+log("A arrive", await A.req("move",{to:[0,0,8],teleport:true}));
+log("B arrive", await B.req("move",{to:[0.2,0,8],teleport:true}));
+log("A step", await A.req("move",{to:[0.5,0,8]}));
+log("B step", await B.req("move",{to:[0.5,0,8]}));
+log("A grab", await A.req("grab",{id:BALL}));
+log("B grab same (CONTENTION)", await B.req("grab",{id:BALL}));
+A.close(); await new Promise(r=>setTimeout(r,900));
+let C=await sock(); await C.join("gym","atk-grab-C");
+await C.req("move",{to:[0,0,8],teleport:true}); await C.req("move",{to:[0.5,0,8]});
+log("C grab after A dropped socket (EXPIRY)", await C.req("grab",{id:BALL}));
+log("C put", await C.req("put",{id:BALL}));
+log("B grab now (A gone,C put)", await B.req("grab",{id:BALL}));
+await B.req("put",{id:BALL}); B.close(); C.close();
+let o2=await sock(); await o2.join("gym","riannon"); await o2.req("delete",{id:BALL}); o2.close();

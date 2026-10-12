@@ -229,8 +229,13 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
     if (now !== undefined) { if (now > clock) clock = now; advance(clock); }
     out.clock = clock;
     out.rested = [];
+    // a flying body that has crossed the world's edge is lost THERE: it rests on the record where it is now, and the
+    // authority sends it home (attack-physics P1: a ball flew 300 m out for a minute, untouchable, simulated every pass)
+    const B = boundsIn(st);
     if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
-      const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, ...(b.q ? { q: b.q } : {}), tick: l.restTick ?? out.sim.tick });
+      const b = out.sim.bodies[id]; if (!b) continue;
+      if (b.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, ...(b.q ? { q: b.q } : {}), tick: l.restTick ?? out.sim.tick });
+      else if (B && outside(B, b.p)) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, ...(b.q ? { q: b.q } : {}), tick: out.sim.tick, lost: true });
     }
     out.rested.sort((x, y) => x.tick - y.tick);
     return out;
@@ -246,6 +251,10 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
 // A view over the log alone (no engine): every rest, where it put the body, and what the authority did after it.
+// @world.bounds as a reader uses it: malformed = none (the authority's boundsOf, kept apart so this file imports nothing of it)
+const outside = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];   // x, z and the sky; the floor is the terrain's
+const boundsIn = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  return B && v3(B.min) && v3(B.max) ? B : null; };
 export function restsOf(entries) {
   const out = [];
   entries.forEach((e, seq) => {

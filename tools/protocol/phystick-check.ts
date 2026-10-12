@@ -137,5 +137,21 @@ function world(name, N) {
   const w2 = openLive(`${root}t7`, "t7", { now });
   ok(w2.bootedFrom === null && digestOf(w2.sim().sim) === digestOf(w.sim().sim), "T7 reopened from genesis (no checkpoint after the purge), same bits", { bootedFrom: w2.bootedFrom });
 }
+// T8: a thing that CROSSES the edge is lost there and then, not when it finally stops rolling 300 m out (attack-physics P1:
+// ball-7 flew 45–66 s outside, untouchable; P2: y was never checked). Within 2 s of sim time it is home and off the engine.
+{
+  for (const [name, v] of [["t8", [30, 8, 0]], ["t8y", [0, 40, 0]]]) {
+    const { w, call, beat } = world(name, 0);
+    call("rowan", "set", { id: "@world", component: "bounds", value: { min: [-6, -1, -6], max: [6, 20, 6] } });
+    call("rowan", "set", { id: "ball", component: "home", value: { pos: [0, 0, 2], q: [0, 0, 0, 1] } });
+    ok(call("rowan", "throw", { id: "ball", v }).ok, `${name} throw`);
+    let k = 0; for (; k < 60; k++) { beat(TICK); if (w.entries.some((e) => e.kind === "act" && e.verb === "return-lost")) break; }
+    const lost = w.entries.find((e) => e.kind === "act" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
+    const b = w.simPeek().sim?.bodies?.ball;
+    ok(!!lost && lost.body.home === true && k < 60, `${name} crossing the edge sends it home within 2 s (${k} ticks)`, { lost: lost?.body, k });
+    ok(Math.hypot(at[0], at[1], at[2] - 2) < 1e-6 && (!b || b.resting), `${name} it is at home and the engine no longer flies it`, { at, flying: b && !b.resting });
+  }
+}
+
 console.log(`phystick: ${passes} ok, ${fails} failed${NO_TICK ? " (NO_TICK: the old shape)" : ""}`);
 process.exit(fails ? 1 : 0);

@@ -1432,7 +1432,8 @@ function handlerCheck(at, act, h) {
 function restCheck(w, cap, after) {
   const sf = w.sim();
   for (const id of cap.ids) { const b = sf.sim?.bodies[id];   // every body the rest names (one change may rest a launch's whole batch)
-    if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
+    const lost = sf.rested.some((r) => r.id === id && r.seq === cap.launch && r.lost);   // crossed the edge in flight: rests on the record where it is
+    if (!lost && (!b || !b.resting || sf.launched[id]?.seq !== cap.launch)) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
     if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
     if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, ""); }
 }
@@ -1603,6 +1604,8 @@ function needThing(ctx, id) {
 // are admit's; this only turns what was asked into a plain value.
 // @world.bounds as the readers use it: a malformed one already in a log (written before the authority checked it) is
 // treated as no bounds, never a crash in every create's reply (review T0d)
+// x, z and the sky; the floor is the terrain's (bounds.min[1] sits above the default heightfield)
+const outsideWorld = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 function resolve(ctx, id, comp, value, prev) {
@@ -1921,7 +1924,7 @@ function warnings(st, ids, strict = false) {
     const mounted = ancestors(st, id).some((p) => { const pb = ix.rec.get(p)?.box; return pb && pb.min[1] <= b.min[1] && pb.max[1] >= b.max[1]; });
     const under = supportUnder(st, b, fam);
     if (b.min[1] - under.y > 0.03 && !hungFrom && !mounted) out.push({ id, kind: "floating", gap: r3(b.min[1] - under.y), above: under.id });
-    if (B && (b.min[0] < B.min[0] || b.max[0] > B.max[0] || b.min[2] < B.min[2] || b.max[2] > B.max[2])) out.push({ id, kind: "out-of-bounds", bounds: B });
+    if (B && (outsideWorld(B, b.min) || outsideWorld(B, b.max))) out.push({ id, kind: "out-of-bounds", bounds: B });
   }
   } catch (e) {
     if (strict || !(e instanceof Refusal) || e.code !== "too-costly") throw e;
@@ -2974,7 +2977,7 @@ function settleSim(w) {
     // old (a cascade rests one crate at a time over seconds; a heartbeat pass would otherwise log one body per beat, which is
     // what one-digest-one-change per body cost). The rest tick is the engine's either way; only the entry's ts is later.
     const ready = (seq) => { const mine = due.filter((x) => x.seq === seq); const flying = Object.entries(sf.launched).some(([id, l]) => l.seq === seq && sf.sim.bodies[id] && !sf.sim.bodies[id].resting);
-      return !flying || Math.min(...mine.map((x) => x.tick)) <= sf.sim.tick - REST_COALESCE_TICKS; };
+      return !flying || mine.some((x) => x.lost) || Math.min(...mine.map((x) => x.tick)) <= sf.sim.tick - REST_COALESCE_TICKS; };
     due = due.filter((x) => ready(x.seq)); if (!due.length) return;
     // one change per launch per pass, every body that launch set moving in it (PHYSICS §1 already reads a rest so; STRIKES
     // PH-S2-5: one digest + one change per body was 1.16 KB and 2.4 entries per rested body), and one digest per pass: every
@@ -2993,7 +2996,7 @@ function settleSim(w) {
     const rest = changeEntry(w, plan, group[0].seq);
     for (const r of group) {
       const st2 = w.state(); const B = boundsOf(st2);
-      if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
+      if (B && outsideWorld(B, r.p)) {
         // it landed outside the world: lost. The authority sends it home when it has one (R 10-11 00:07: "ball rolled out
         // of world bounds and now I can't touch it"), else back to where it was picked up, as its own act.
         const old = st.entities[r.id].c; const hm = old.home;
@@ -3091,7 +3094,7 @@ const PHYSICS_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
     const st = w.state(); const B = boundsOf(st);
-    if (B && (a.to[0] < B.min[0] || a.to[0] > B.max[0] || a.to[2] < B.min[2] || a.to[2] > B.max[2])) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
+    if (B && outsideWorld(B, a.to)) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, up to y ${B.max[1]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
     const me = w.presence.bodies[actor]; const now = w.now(); const to = a.to.slice();
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
