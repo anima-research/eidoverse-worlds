@@ -94,6 +94,8 @@ try {
   const b = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'bounds', value: { min: [${edge}, 0, -60], max: [60, 30, 60] } });`);
   check("(setup) this world's edge 1.2 m to my -x", b?.ok, b);
   await sleep(800);
+  const fenceAll = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`); const fence = fenceAll?.box;
+  check("WB0 the edge is drawn: a fence at exactly this world's bounds", Array.isArray(fence) && fence[0]?.[0] === edge && fence[1]?.[0] === 60, fenceAll);
   const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
     const why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); await new Promise((z) => setTimeout(z, 800));
     const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [c.myState.pos.x + 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
@@ -106,6 +108,8 @@ try {
   await page(`const c = await import('/lib/controller.js'); await c.walkTo(${me0[0]}, ${me0[1]}, { ms: 6000 }); c.myState.yaw = ${me0[2]}; await new Promise((z) => setTimeout(z, 600)); return true;`);   // and face the way I did: later stages place things where I look
   const after = await page(`const n = await import('/lib/net.js'); const c = await import('/lib/controller.js'); return { bounds: n.replica.st?.entities?.['@world']?.c?.bounds ?? null, crate: !!n.replica.st?.entities?.wbcrate, back: +Math.hypot(c.myState.pos.x - (${me0[0]}), c.myState.pos.z - (${me0[1]})).toFixed(3), yaw: +c.myState.yaw.toFixed(3) };`);
   check("WB2 (cleanup) the test's edge and crate are gone again", !after.bounds && !after.crate, after);
+  const fence2 = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`);
+  check("WB2b …and so is the fence", fence2 && fence2.box === null, fence2);
   });
   // ---- F: a refusal, in a person's words ----
   await stage("F", async () => {

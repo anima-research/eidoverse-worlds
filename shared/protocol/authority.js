@@ -2966,8 +2966,12 @@ function settleSim(w) {
     for (const r of group) {
       const st2 = w.state(); const B = boundsOf(st2);
       if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
-        // it landed outside the world: lost. The authority returns it to where it was picked up, as its own act.
-        const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
+        // it landed outside the world: lost. The authority sends it home when it has one (R 10-11 00:07: "ball rolled out
+        // of world bounds and now I can't touch it"), else back to where it was picked up, as its own act.
+        const old = st.entities[r.id].c; const hm = old.home;
+        const viaHome = hm && Array.isArray(hm.pos) && hm.pos.length === 3 && Array.isArray(hm.q) && hm.q.length === 4 ? returnPlan(w, st2, r.id, { home: hm }) : null;
+        if (viaHome?.plan) { changeEntry(w, viaHome.plan, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest, home: true }))); continue; }
+        const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
         const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
         changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
         continue;

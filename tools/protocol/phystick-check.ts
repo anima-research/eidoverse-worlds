@@ -76,5 +76,17 @@ function world(name, N) {
   console.log("T4 counts", JSON.stringify({ rested, digests, changes, entries: L.length }));
   ok(rested >= 30 && digests <= rested / 3 && changes <= rested / 3, "T4 a 40-crate knock logs far fewer digests and rest changes than bodies", { rested, digests, changes, entries: L.length });
 }
+// T5: a thing that leaves the world comes back to its HOME when it has one (else, as before, to where it was picked up)
+{
+  const { w, call, beat } = world("t5", 0);
+  call("rowan", "set", { id: "@world", component: "bounds", value: { min: [-6, -1, -6], max: [6, 20, 6] } });
+  call("rowan", "set", { id: "ball", component: "home", value: { pos: [0, 0, 2], q: [0, 0, 0, 1] } });
+  call("rowan", "drop", { id: "ball" }); call("rowan", "move", { to: [4.6, 0, 0] }); call("rowan", "grab", { id: "ball" });
+  ok(call("rowan", "throw", { id: "ball", v: [14, 2, 0] }).ok, "T5 throw it out of the world");
+  const flying = () => Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting);
+  for (let k = 0; k < 1800; k++) { beat(TICK); if (k > 2 && !flying() && w.simPeek().rested.length === 0) break; }
+  const lost = w.entries.find((e) => e.kind === "act" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
+  ok(!!lost && lost.body.home === true && Math.hypot(at[0], at[1], at[2] - 2) < 1e-6, "T5 it rested outside and was sent home, not back to the hand", { lost: lost?.body, at });
+}
 console.log(`phystick: ${passes} ok, ${fails} failed${NO_TICK ? " (NO_TICK: the old shape)" : ""}`);
 process.exit(fails ? 1 : 0);
