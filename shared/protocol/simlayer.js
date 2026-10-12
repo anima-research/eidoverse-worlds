@@ -73,7 +73,7 @@ function engineEntity(st, id, models = MODELS, fixed = null) {
   return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
     ...(e.c.physics?.kind === "dynamic" && !(fixed ?? fixedSet(st)).has(id) ? { kind: "dynamic" } : {}) };
 }
-function engineViewM(st, models = MODELS) {
+export function engineViewM(st, models = MODELS) {
   const entities = {}, fixed = fixedSet(st);
   for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models, fixed); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;

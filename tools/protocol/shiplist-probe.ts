@@ -543,6 +543,39 @@ try {
   await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
   check("AC3 the menu names the thing bare (no quotes), in its own accent span", mi?.name === "Aimed" && !/[“”"]/.test(mi.text), mi);
   });
+  // ---- PR: my own throw, predicted (DESIGN-physics-responsiveness §3; R 10-10: "balls teleport right out of my hands").
+  // The lab knob physicsApi.lag(300) delays the request, as a slow round trip would; the control arm turns prediction off
+  // and shows the old shape (the thing waits in the hand for the whole lag), the real arm shows it leave at once. ----
+  await stage("PR", async () => {
+  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x += 9; c.myState.pos.z -= 9; b.bus.emit('cut-adopted'); return true;`);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1200);
+  await page(`const m = await import('/lib/net.js'); const st = m.replica.st; if (!st?.entities?.['@world']?.c?.['physics-engine']) await m.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } }); return true;`); await sleep(600);
+  const pm = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  // one crate per arm (a thrown one lands out of reach); a gentle throw straight ahead at 2 m/s
+  const mk = async (id: string) => { const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: 'Predicted', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'visitor' }, transform: { pos: [${pm[0] + 0.7}, 0, ${pm[1] + 0.3}], scale: 0.3 } } });`);
+    check(`(setup) a crate for the throw (${id})`, made?.ok, made); await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${id}'))`); await sleep(800); };
+  // one throw, sampled every frame for 1.2 s: when the drawn crate first leaves the hand (> 5 cm), and the largest one-frame move
+  const arm = async (predictOn: boolean, id: string) => { await mk(id); return page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
+    const r = await t.physicsApi.grab('${id}'); if (!r?.ok) return { grab: r }; await new Promise((res) => setTimeout(res, 900));
+    t.physicsApi.predict(${predictOn}); t.physicsApi.lag(300);
+    const o = w.entities.get('${id}'), v = new T.Vector3(); const at = () => { o.updateWorldMatrix(true, false); return o.getWorldPosition(v).toArray(); };
+    const p0 = at(), t0 = performance.now(), S = []; let prev = p0, jump = 0, left = null;
+    const done = t.physicsApi.throw(2);
+    await new Promise((res) => { const f = () => { const p = at(), now = performance.now() - t0; const d = Math.hypot(p[0] - p0[0], p[1] - p0[1], p[2] - p0[2]), j = Math.hypot(p[0] - prev[0], p[1] - prev[1], p[2] - prev[2]);
+      if (left === null && d > 0.05) left = now; if (j > jump) jump = j; prev = p; S.push([Math.round(now), +d.toFixed(3)]); if (now < 1200) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+    const reply = await done; t.physicsApi.lag(0); t.physicsApi.predict(true);
+    await new Promise((res) => setTimeout(res, 2500));
+    return { ok: !!reply?.ok, refused: reply?.refused ?? null, left, jump: +jump.toFixed(3), pending: t.physicsApi.pending(), swaps: t.physicsApi.swaps(), tail: S.filter((x, i) => i % 6 === 0).slice(0, 14) };`); };
+  const control = await arm(false, 'prbox0');
+  check("PR0 (control) with prediction off and a 300 ms request lag, the thrown crate waits in the hand for the lag", control?.ok && control.left !== null && control.left >= 250, control);
+  const real = await arm(true, 'prbox1');
+  check("PR1 with prediction the crate leaves the hand at least 150 ms sooner than without, under the same lag", real?.ok && real.left !== null && control?.left !== null && real.left < control.left - 150, { real: real?.left, control: control?.left });
+  check("PR2 …and when the real entry lands no single frame moves it more than 35 cm (the guess and the truth agree, or the difference decays)", real?.ok && real.jump < 0.35, real);
+  check("PR3 …and nothing is left pending once the entry is in", real?.ok && Object.keys(real.pending ?? {}).length === 0, real?.pending);
+  // back where this stage found me: later stages move relative to here
+  await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 9; c.myState.pos.z += 9; b.bus.emit('cut-adopted'); return true;`);
+  await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(800);
+  });
   // ---- RB: a reset button made from the Edit menu's helpers, used by its left-click offer (R, 10-10) ----
   await stage("RB", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);

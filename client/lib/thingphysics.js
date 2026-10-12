@@ -34,7 +34,9 @@ import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf } from '../../shared/protocol/simlayer.js';
+import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
+import { simEntry } from '../../shared/sim.js';
+import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
 import { plain, nameOf } from './plainwords.js';
 import { html } from './markup.js';
@@ -115,7 +117,9 @@ const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
 // R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
 // this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
+let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop request by this much, as a slow round trip would
 async function sendRequest(verb, args) {
+  if (lagMs && (verb === 'throw' || verb === 'drop')) await new Promise((res) => setTimeout(res, lagMs));
   const r = await rawSend(verb, args);
   if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
   arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
@@ -337,12 +341,59 @@ const presOwns = (id) => !!pres?.bodies?.[id];
 const _dq = new THREE.Quaternion(), _p = new THREE.Vector3();
 /** Console/probe surface: the displayed sim (a copy), and the canonical fold's view. */
 export const simShown = () => pres;
+// ---- my own release, predicted (DESIGN-physics-responsiveness §3; STRIKES PH-S1-3: a throw stayed in the hand one round
+// trip, then jumped RTT/2 along the arc). On send, the launch is folded into the PRESENTATION copy only, at the tick the
+// entry will most likely take (now + rtt/2 + one tick), with the inputs the authority will stamp (p as sent, q as sent, v
+// scaled by grabbable.throw and capped as launch() does). When the real entry arrives the fresh copy of the canonical fold
+// is the truth: same tick and inputs give the same bits (Covenant IV), so nothing shows; otherwise the truth replaces it
+// and a per-body draw offset decays the difference (Fiedler's error offset, never a blend of states). A refusal, or no
+// entry within PENDING_MS, removes it and the thing eases back into the hand. Nothing here is ever read back into a
+// request (Covenant III): whereIs, reach and the canonical fold never see a provisional body.
+const pending = new Map();   // id -> { ts, args, sentAt }
+const PENDING_MS = 4000, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;
+let predictOn = true;        // lab knob (physicsApi.predict(false)): the old shape, for the probe's control arm
+const swapFrom = new Map();  // id -> drawn world position before a copy swap (the offset starts from it)
+function planRelease(id, pos, v, w) {
+  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
+  const obj = entities.get(id); if (!obj) return null;
+  const g = grabOf(compsOf(id)); let vv = v;
+  if (g && typeof g.throw === 'number' && g.throw !== 1) vv = vv.map((n) => n * g.throw);
+  const max = ENGINES[canon.spec?.engine]?.maxSpeed; const sp = Math.hypot(...vv); if (max && sp > max) vv = vv.map((n) => n * max / sp);
+  const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
+  return { id, p: pos, q, v: vv, ...(w ? { w } : {}) };
+}
+function predict(args) {
+  if (presV !== replica.simVersion || !pres) { pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++; if (!pres) return false; }
+  const now = serverNow(); const ts = now + clockRtt() / 2 + pres.epoch.tickMs;
+  pending.set(args.id, { ts, args, sentAt: now }); applyPending(args.id); return true;
+}
+function applyPending(id) {
+  const pd = pending.get(id); if (!pd || !pres?.epoch || !replica.st) return;
+  const floor = pres.epoch.ts + pres.tick * pres.epoch.tickMs; const ts = Math.max(pd.ts, floor);   // never earlier than what's drawn
+  const view = engineViewM(replica.st, {}); const base = view.entities[id]; if (!base) return;
+  view.entities[id] = { ...base, pos: pd.args.p };
+  simEntry(pres, { seq: -1, ts, actor: net.you, verb: 'launch', args: pd.args }, view);
+  if (pres.bodies[id]) pres.bodies[id].provisional = true;
+}
+function unpredict(id) {
+  if (!pending.delete(id)) return;
+  const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); pulls.set(id, { from: obj.getWorldPosition(new THREE.Vector3()), t0: performance.now(), dur: 150 }); }
+  presV = -1;   // the next frame takes a fresh copy of the truth, where it is still in the hand
+}
+const pendingNow = () => Object.fromEntries([...pending].map(([id, p]) => [id, { ts: p.ts, sentAt: p.sentAt }]));
 function drawFlights(wall, now) {
   const canon = replica.sim;
   if (!canon?.sim || canon.foreign) { if (pres) { for (const id of Object.keys(pres.bodies)) suspendCollider(id, false); } pres = null; prev.clear(); return; }
-  if (presV !== replica.simVersion) {
+  // while one of my releases is still a guess (no entry yet), keep this copy: a fresh copy of the canonical fold stands at
+  // the latest entry's tick, which may be past the guess's, and re-folding the guess there would restart it from the hand
+  // (full probe 10-11: a 0.6 m forward jump when the truth then landed). Other bodies' news waits one round trip, no more.
+  const guessing = pres && presV !== -1 && pending.size > 0 && ![...pending].some(([id, pd]) => canon.launched[id] || wall - pd.sentAt > PENDING_MS);
+  if (presV !== replica.simVersion && !guessing) {
     const was = pres ? Object.keys(pres.bodies) : [];
+    swapFrom.clear(); if (pres) for (const id of was) { const o = entities.get(id); if (o) { o.updateWorldMatrix(true, false); swapFrom.set(id, o.getWorldPosition(new THREE.Vector3())); } }
     pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++;
+    // my predicted releases: the real launch folded is the truth (drop the guess); not yet, re-fold the guess into this copy
+    for (const [id, pd] of pending) { if (canon.launched[id] || wall - pd.sentAt > PENDING_MS) pending.delete(id); else applyPending(id); }
     for (const id of was) if (!pres.bodies[id] && !holds[id]) suspendCollider(id, false);   // its rest is the fold's now
   }
   const target = tickOf(pres, wall);
@@ -367,6 +418,11 @@ function drawFlights(wall, now) {
     const pv = b.resting ? undefined : prev.get(id);
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
+    // a copy swap that moved this body's drawn place: carry the difference as a draw offset and let it decay (2 cm: gone;
+    // a metre or more: fast; 3 m: snap; a logged rest eases too, a slide beats a pop). The truth (base.pos, colliders) never carries it.
+    const from = swapFrom.get(id); if (from) { swapFrom.delete(id); const d = from.sub(_p); if (d.length() >= OFFSET_DEAD) { stats.swaps.push({ id, tick: pres.tick, target, k: +k.toFixed(2), prov: !!b.provisional, resting: !!b.resting, d: +d.length().toFixed(3), from: from.toArray().map((n) => +n.toFixed(3)), to: _p.toArray().map((n) => +n.toFixed(3)) }); if (stats.swaps.length > 12) stats.swaps.shift(); }
+      if (d.length() >= OFFSET_DEAD && d.length() < OFFSET_SNAP) sp.dp = d; else delete sp.dp; }
+    if (sp.dp) { if (sp.dp.length() < OFFSET_DEAD) delete sp.dp; else { _p.add(sp.dp); sp.dp.multiplyScalar(sp.dp.length() >= 1 ? 0.8 : 0.9); } }
     const q = sp.q;
     // the engine carries the body's own rotation: draw that, nothing invented (a body without one keeps the rotation it has)
     if (b.q) { q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k)); }
@@ -374,9 +430,10 @@ function drawFlights(wall, now) {
     if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
   }
   for (const id of spins.keys()) if (!pres.bodies[id]) spins.delete(id);
+  swapFrom.clear();
 }
 
-const stats = { frames: 0, ms: 0, clones: 0, maxMs: 0 };
+const stats = { frames: 0, ms: 0, clones: 0, maxMs: 0, swaps: [] };   // swaps: the last copy swaps that moved a drawn body (probe)
 /** One presentation frame. `wall` (the server clock, ms) may be given: a probe can sample the real applier at exact
  *  display times without depending on the page's frame rate (simworld's bench rule). */
 function frame(wall) {
@@ -492,7 +549,9 @@ export async function throwHeld(arg) {
   // level axis across the throw, faster for a harder throw. A VR hand sends its own measured spin instead.
   const fl = Math.hypot(v[0], v[2]), sp = Math.hypot(...v), mag = Math.min(8, 0.8 * sp);
   const w = fl > 0.2 ? [v[2] / fl * mag, 0, -v[0] / fl * mag].map(r3) : null;
-  const r = await sendRequest('throw', { id, v, ...(w ? { w } : {}), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  const sent = pos ? pos.toArray().map(r3) : null; const plan = planRelease(id, sent, v, w); if (plan) predict(plan);
+  const r = await sendRequest('throw', { id, v, ...(w ? { w } : {}), ...(sent ? { pos: sent } : {}), ...(plan ? { q: plan.q } : {}) });
+  if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused('throw', r, id);
 }
 /** A hand's grab (VR grip, or any caller with a hand position [x, y, z]): the nearest thing it can carry within reach of
@@ -509,7 +568,9 @@ export async function release(v = [0, 0, 0], name) {
   const id = name || myHolds()[0]; if (!id) return null;
   await track(true);
   const pos = letGoAt(heldPos(id)); const still = v.every((n) => Math.abs(n) < 0.05);
-  const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  const sent = pos ? pos.toArray().map(r3) : null; const plan = still ? null : planRelease(id, sent, v.map(r3), null); if (plan) predict(plan);
+  const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(sent ? { pos: sent } : {}), ...(plan ? { q: plan.q } : {}) });
+  if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused(still ? 'drop' : 'throw', r, id);
 }
 /** /punt [thing] [power]: kick the named thing, or the nearest at your feet, through it from where you stand. */
@@ -690,7 +751,7 @@ const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f
 const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, inReach, whereFromMe, canPutAt,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */

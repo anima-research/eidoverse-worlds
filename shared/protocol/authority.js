@@ -3494,6 +3494,10 @@ function launch(w, actor, a, verb, g = null) {
   // spin cap). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
   if (a.w !== undefined && !(Array.isArray(a.w) && a.w.length === 3 && a.w.every((n) => Number.isFinite(n) && Math.abs(n) <= 1000))) refuse("shape", "w is [x, y, z]: spin in rad/s about world axes (each within ±1000)", "e.g. w: [0, 6.28, 0] turns once a second about up");
   if (a.t !== undefined && !Number.isFinite(a.t)) refuse("shape", "t is a time on the authority's clock (ms)", "leave it out if you don't know it");
+  // q as let go (PHYSICS §4.2): the launch carries it, so a client that predicts its own throw folds the same inputs
+  // bit for bit (DESIGN-physics-responsiveness §3). A unit quaternion, else refused.
+  if (a.q !== undefined) { if (!(Array.isArray(a.q) && a.q.length === 4 && a.q.every(Number.isFinite) && Math.abs(Math.hypot(...a.q) - 1) < 1e-3)) refuse("shape", "q is the thing's orientation as let go: a unit quaternion [x, y, z, w]", "leave it out to use the hold's");
+    h.pose.q = a.q.map(noNeg0); }
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
