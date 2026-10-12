@@ -104,7 +104,9 @@ eidosim@1.0.0, the law (its constants are its version):
   the substeps. Contact slop 5 mm; speculative distance 2 cm.
 - **Swept collisions**: a moving body is swept against everything at rest
   (colliders and sleeping bodies) by conservative advancement, so a fast body
-  doesn't cross a thin wall between ticks.
+  doesn't cross a thin wall between ticks. Two moving bodies are not swept
+  against each other: thrown at each other fast enough, they can pass (review
+  physics.md #8; body–body time of impact is a later build).
 - **A height-field ground** (`shared/terrainmath.js`).
 - **Waking and knocking**: a dynamic thing at rest that no hand rule holds fixed
   (not locked, under nothing locked, holding nothing locked) is a sleeping body.
@@ -184,7 +186,7 @@ before the field existed: the engine's own law.
 | `frictionCombine`, `restitutionCombine` | `average` \| `min` \| `multiply` \| `max` | its material's, else `average` (friction) and `max` (restitution) |
 | `linearDamping`, `angularDamping` | 1/s | the engine's law (eidosim: none) |
 | `centerOfMass` | [x, y, z] m, own frame | the centroid of its stamped shape |
-| `ccd` | bool | the engine's law (eidosim sweeps every body) |
+| `ccd` | bool | the engine's law (eidosim sweeps every moving body against what rests; two flying bodies don't sweep against each other) |
 | `layers`, `mask` | 32-bit collision layers | layers 1; mask all (0xffffffff). Two things collide only if each one's mask holds a layer of the other |
 
 How the names map (recalled from each engine's public API; a mapping, not an
@@ -277,7 +279,22 @@ updates; VRChat splits them the same way):
 - **Body authority** is the person's own: never transferred, never
   sim-owned, never shared. Contact between people is each receiver's machine
   applying another's puppet force to its own body, so consent is enforced
-  where it lands. It is never logged.
+  where it lands. It is never logged. **Bodies are not sim inputs because
+  the log is results, never processes; a body in the engine is a process.**
+  A body has no `physics` component and the engine never sees it: a flight
+  passes through a body. The body's client may `catch` (existing) or,
+  *reserved*, `deflect {id, v, w?}` (a `sim` entry: the thing leaves the body
+  with the state the client gives it, under the body's consent, like a
+  launch; refused until built). A thing under live authority that meets a
+  body delivers a `shove` to that body's client under its consent table
+  (actor: the thing's live authority, carrying the thing's `id` and `v`);
+  the thing's own motion ignores the body. Carrying a person is a consent
+  class (`carry`, PROTOCOL body consent; reserved): the carried person's
+  client parents their own body to the carrier's hand, and may stop at any
+  moment. When avatar bodies are simulated, they are simulated the way
+  Boneworks does it and Fusion networks it: a physics rig in the presence
+  plane, per client, driven toward its tracked targets, with a force-driven
+  puppet of every other body; never in the engine, never in the log.
 - **Live simulation authority** over a thing is presence: transient, cheap,
   unlogged. *Reserved; the rules are fixed now:*
   - **The toucher or holder simulates it.** Whoever grabs a thing, or (with
@@ -286,6 +303,30 @@ updates; VRChat splits them the same way):
   - **Grab beats touch.** Two counters order it (Fiedler 2018): `oseq`
     increments on each grab, `aseq` on each touch takeover and each rest; an
     increase in `oseq` wins over an increase in `aseq`; the latest grab wins.
+    A touch takeover by impact (a hand or a body meeting a thing, Fusion's
+    `ImpactUtilities`, VRChat's collision transfer) bids `aseq` only, never
+    `oseq`: a held thing is never taken by bumping into it.
+  - **The holder's switch.** The latest grab wins because `grabbable.steal`
+    defaults to `true`; under `steal: false` a held thing's `oseq` cannot
+    advance until a `launch` or a settlement, and the second `grab` is
+    refused (`held`). *Reserved:* `steal: "ask"` (the holder's client is
+    asked, as a body act is) is a value the authority refuses until built.
+  - **Claims are ordered by admission, never by a sender's `t`** (§5.1 says
+    the same of releases): two grabs in one beat resolve in the order the
+    door admitted them. *Reserved on `@world.physics-engine`, refused until
+    read:* `claimDebounceMs` (default 200: an equal-priority `aseq` takeover
+    within it is refused, Overte's `SimulationOwner` debounce) and
+    `liveAuthorityExpiryMs` (default 5000: a live authority silent that long
+    is expired, and its thing is settled from the last accepted state or
+    released into the engine).
+  - **Two hands on one thing is one authority** (research 10-11, C: every
+    system that ships has one simulator per thing; Bonelab Fusion lets a
+    second hand act only as a force inside the holder's sim). *Reserved:*
+    `cohold` is a verb the authority refuses until built. Its rule is fixed:
+    the second person's hand is a `reach` that tracks the grip; it acts on
+    the thing only inside the holder's sim, as a puppet contact; it never
+    streams the thing's state and never advances `oseq`. A release while
+    co-held is the holder's `launch`; the rest is attributed to both.
   - **The door is the arbiter.** It relays every claim, orders handovers
     optimistically (a local take, corrected by the arbiter), and refuses
     stale ones. It is *not* the edit lease, which governs history.
@@ -390,9 +431,12 @@ free dynamic things knocked by what flies. ⚑ Open: joints in the log (the
 engine has them; no component names them yet); capsules, convex and compound
 shapes; flying bodies colliding with each other mid-flight under two
 different launches is engine-defined attribution (the touching launch);
-shared live physics between several hands (two people genuinely holding one
-thing is unsolved everywhere: Entanglement queues the second hand, Photon
-forbids it). `motion` is never integrated by the sim: it is a closed form of
+shared live physics between several hands is solved one way everywhere that
+ships (research 10-11, C): one simulator per thing, a holder-side theft
+switch, claims ordered by the arbiter; the second hand, where it exists at
+all (Bonelab Fusion, MIT, `LabFusion/src/Entities`), is a force inside the
+holder's sim. §4.1 fixes the same here (`steal`, admission order, `cohold`
+reserved) and Overte's `SimulationOwner.h` supplies the two numbers. `motion` is never integrated by the sim: it is a closed form of
 time, which an engine that can carries as a kinematic collider (§3.3).
 
 ## 7. Other engines — moddable physics

@@ -335,7 +335,8 @@ request moves a copy to a newer version, keeping its own overrides.
   rest caused by its launch). The log never depends on reconstructing where
   a ride was.
 - **Body consent.** Every body has one table of act classes (near, follow,
-  social touch, intimate touch, pose, shove, move, voice), each set to
+  social touch, intimate touch, pose, shove, move, voice; `carry` is
+  reserved, PHYSICS §4.1), each set to
   everyone, ask, or nobody, separately for strangers and friends — the same
   table for humans and agents. Silence is no. The authority refuses before
   delivery, and the target's own client has the final word. Consent is
