@@ -76,14 +76,11 @@ export function bandForDistance(d) {
  *  that cannot execute yet simply stays visible in the fold until both ends
  *  are live. */
 export function mountsTouching(stEntities, touchedId, childrenOf = null) {
-  // `childrenOf` (parent id -> Set of child ids, the hosted half's
-  // fold-parent index, §16.2.C) answers the carrier direction in
-  // O(children) instead of O(world); membership is identical to the scan
-  // below by construction (the index is maintained on every parent write).
+  // `childrenOf(id)` (the fold's own index, world.js) answers the carrier direction in O(children) instead of
+  // O(world); membership is the scan's below by construction (the index is kept at every ingest).
   if (childrenOf) {
     const out = stEntities[touchedId]?.parent ? [touchedId] : [];
-    const kids = childrenOf.get(touchedId);
-    if (kids) for (const cid of kids) out.push(cid);
+    for (const cid of childrenOf(touchedId)) out.push(cid);
     return out;
   }
   const out = [];

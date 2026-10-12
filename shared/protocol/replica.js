@@ -57,6 +57,21 @@ const thawed = (e) => ({ born: e.born, c: Object.assign(Object.create(null), e.c
 export function makeReplica({ freeze = true } = {}) {
   const v = { active: false, st: null, head: -1, worldId: null, you: null, names: Object.create(null), stats: { ingested: 0, resyncs: 0 }, frozen: !!freeze };
   const freezeAll = () => { if (freeze && v.st) for (const id of Object.keys(v.st.entities)) freezeRecord(v.st.entities[id]); };
+  // The tree's edges, indexed from the records' own `parent` fields (ids as the fold spells them): rebuilt at adopt,
+  // kept at every ingest from the ops' ids (an op names the one record it touched; a parent edge lives on the child).
+  // One index for every reader — the realizer's carrier checks, the sockets re-seat, the Hierarchy — in place of
+  // the maps each kept by hand beside the fold (C12b, survey #11). A carrier that is gone while a child still names
+  // it keeps that child listed: the index answers what the records say, exactly as a scan would.
+  const kids = new Map(), par = new Map();
+  const link = (id, to) => { let s = kids.get(to); if (!s) kids.set(to, (s = new Set())); s.add(id); par.set(id, to); };
+  const unlink = (id) => { const was = par.get(id); if (was === undefined) return; const s = kids.get(was); if (s) { s.delete(id); if (!s.size) kids.delete(was); } par.delete(id); };
+  const reindex = (id) => { const to = v.st?.entities?.[id]?.c?.parent?.to; const want = typeof to === "string" ? to : null; if (par.get(id) === want) return; unlink(id); if (want !== null) link(id, want); };
+  const rebuildIndex = () => { kids.clear(); par.clear(); if (v.st) for (const id of Object.keys(v.st.entities)) reindex(id); };
+  /** Children of `id` in id order (the fold's edges; [] for an id with none). */
+  v.childrenOf = (id) => { const s = kids.get(id); return s ? [...s].sort() : []; };
+  v.parentOf = (id) => par.get(id) ?? null;
+  /** The ids above `id`, nearest first; stops at a carrier that is absent or a cycle (an old log may hold one). */
+  v.ancestors = (id) => { const out = []; const seen = new Set([id]); for (let p = par.get(id); p !== undefined && v.st?.entities?.[p] && !seen.has(p); p = par.get(p)) { out.push(p); seen.add(p); } return out; };
   // actors are opaque ids (u-…); their display names come from the authority's directory, never from the log (§2.3)
   const learn = (names) => { if (names && typeof names === "object") { learnNames(names); for (const [k, n] of Object.entries(names)) if (typeof n === "string") v.names[k] = n; } };
   v.nameOf = (id) => actorName(id);
@@ -81,9 +96,10 @@ export function makeReplica({ freeze = true } = {}) {
     v.st = stateFromWire(snap.state); v.head = Number.isInteger(snap.head) ? snap.head : -1; v.worldId = snap.worldId ?? null; v.active = true;
     v.you = typeof snap.you === "string" ? snap.you : null; learn(snap.names);
     freezeAll();
+    rebuildIndex();
     startSim(snap);
   };
-  v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; };
+  v.reset = () => { v.active = false; v.st = null; v.head = -1; v.worldId = null; E = []; folder = null; v.sim = null; v.simVersion++; kids.clear(); par.clear(); };
   /** A copy of the canonical sim (null when the world runs no carried engine), to advance for display. */
   v.simClone = () => (v.sim?.sim ? JSON.parse(JSON.stringify(v.sim.sim)) : null);
   /** The engine's state at display time t (ms, the authority's clock): a cached copy, advanced forward only. */
@@ -112,7 +128,7 @@ export function makeReplica({ freeze = true } = {}) {
           const ops = opsOf(e);
           if (freeze) for (const o of ops) { const ent = typeof o?.id === "string" ? v.st.entities[o.id] : undefined; if (ent && Object.isFrozen(ent.c)) v.st.entities[o.id] = thawed(ent); }
           try { applyInPlace(v.st, ops, seq); changed = true; }
-          finally { if (freeze) for (const o of ops) if (typeof o?.id === "string") freezeRecord(v.st.entities[o.id]); }
+          finally { for (const o of ops) if (typeof o?.id === "string") { if (freeze) freezeRecord(v.st.entities[o.id]); reindex(o.id); } }
         } catch (x) { if (!(x instanceof Malformed)) throw x; ok = false; }
       }
       // (only launches are kept: a later rest names its launch as its cause; nothing else is read back)
