@@ -316,14 +316,21 @@ function stepper(value, f, commit) {
     num.classList.remove('scrub');
     try { (d.src ?? num).releasePointerCapture(d.id); } catch { /* already released */ }
     scrubHint(false);
-    if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; }
+    if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; for (const q of d.peers ?? []) q.p.peer.restore(q.w0); }
   };
   // the same drag from the value box and from the channel's NAME (R, 10-10: "make the channel lines themselves
   // selectable and scrub-able just like their value boxes. This is a Maya feature that I love")
+  // a peer is another selected channel's stepper: it begins where it stands, follows the same face delta, and commits
+  // or restores with the leader (the channel box's run, R 10-11 23:13: "scrubbing on then only affects one still")
+  wrap.peer = { begin: () => ({ w0: wire, face0: +toFace(wire) }),
+    to: (face, live) => { const w = soft(toWire(face)); wire = w; show(w); commit(w, live ? { live: true } : undefined); },
+    restore: (w0) => { show(w0); commit(w0, { live: true }); wire = w0; } };
+  const peersOf = () => (wrap.peers?.() ?? []).filter((p) => p && p !== wrap && p.peer).map((p) => ({ p, ...p.peer.begin() }));
   const bindScrub = (src, onClick) => {
   src.addEventListener('pointerdown', (e) => {
     if (disabled || e.button !== 0) return;
-    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false, src, onClick };
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && wrap.onSelectKey) { e.preventDefault(); wrap.onSelectKey(e); return; }   // Shift/Ctrl-click a value box: select, as on its name (keys: selectExtend)
+    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false, src, onClick, peers: [] };
   });
   src.addEventListener('pointermove', (e) => {
     if (!drag || drag.src !== src) return;
@@ -341,12 +348,15 @@ function stepper(value, f, commit) {
       num.blur();
       scrubHint(true);
       document.addEventListener('keydown', onDragKey, true);
+      drag.peers = peersOf();
     }
     let face = drag.face0 + scrubTravel(drag.dist) * perPx();
     if (e.ctrlKey || e.metaKey) face = Math.round(face);   // keys: scrub
     const w = soft(toWire(face));
     drag.cur = w; wire = w; show(w);
     commit(w, { live: true });
+    drag.dFace = face - drag.face0;
+    for (const q of drag.peers) q.p.peer.to(e.ctrlKey || e.metaKey ? Math.round(q.face0 + drag.dFace) : q.face0 + drag.dFace, true);
   });
   const endDrag = (e) => {
     if (!drag || drag.src !== src) return;
@@ -356,7 +366,15 @@ function stepper(value, f, commit) {
       num.classList.remove('scrub');
       scrubHint(false);
       try { src.releasePointerCapture(d.id); } catch { /* fine */ }
-      if (d.cur != null && d.cur !== d.w0) commit(d.cur); else if (d.cur != null) commit(d.w0, { live: true });
+      if (d.cur != null && d.cur !== d.w0 && d.peers?.length && wrap.commitRun && wrap.key) {
+        // the run commits as ONE edit (one request, one Ctrl+Z): every peer shows its final face and the leader carries them all
+        const pairs = { [wrap.key]: +toFace(d.cur) };
+        for (const q of d.peers) { const face = q.face0 + (d.dFace ?? 0); q.p.peer.to(face, true); if (q.p.key) pairs[q.p.key] = face; }
+        wrap.commitRun(pairs);
+      } else {
+        if (d.cur != null && d.cur !== d.w0) commit(d.cur); else if (d.cur != null) commit(d.w0, { live: true });
+        for (const q of d.peers ?? []) { if (d.cur != null && d.cur !== d.w0) q.p.peer.to(q.face0 + (d.dFace ?? 0), false); else q.p.peer.restore(q.w0); }
+      }
     } else if (e.type === 'pointerup') { if (d.onClick) d.onClick(e); else { num.focus(); num.select(); } }   // a click: type (the box), select (the name)
   };
   src.addEventListener('pointerup', endDrag);
@@ -364,7 +382,7 @@ function stepper(value, f, commit) {
   src.addEventListener('lostpointercapture', () => { if (drag?.armed && drag.src === src) endDrag({ type: 'lost' }); });
   };
   bindScrub(num, null);
-  wrap.bindScrub = bindScrub;
+  wrap.bindScrub = bindScrub; wrap.num = num;
 
   if (!compact) {
     const minus = el('button', 'sp-bump', '−');
@@ -508,18 +526,20 @@ function fieldDOM(f, edit, ro = {}) {
       // the field points at them — no second list to drift): click goes to the driver's card
       if (f.driven && ro.icons) { const d = el('span', 'sp-drv', '~'); d.title = `driven by ${f.drivenBy ? `its ${f.drivenBy} (${f.driven})` : f.driven} — click to go to its card`;
         d.style.cursor = 'pointer'; d.onpointerdown = (e) => e.stopPropagation(); d.onclick = (e) => { e.stopPropagation(); edit('goto', f.driven); }; st.prepend(d); }
-      row.append(st);
+      row.append(st); row._st = st;
       row.update = (nf) => { setLabel(nf); st.update(nf); };
       if (label && ro.icons && !f.disabled) {   // edit chrome: the channel's name is a handle too
         label.classList.add('sp-chan');
+        // a scrub on a selected channel moves every selected channel by the same amount (Maya's channel box)
+        st.key = f.k; st.commitRun = (pairs) => edit('__run', pairs);
+        st.peers = () => (row.classList.contains('chan-sel') ? [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])].map((r) => r._st).filter((x) => x && x !== st) : []);
         // selecting channels, as in Maya's channel box (R 10-10 23:36): a click selects one; Ctrl toggles one; Shift selects
         // the run from the last one clicked; dragging UP or DOWN the names selects the run under the pointer (sideways
         // is still the scrub)
         const chans = () => [...(row.parentElement?.children ?? [])].filter((r) => r.classList?.contains('sp-row') && r.querySelector('.sp-chan'));
         const selectRun = (a, b, keep) => { const L = chans(); const i = L.indexOf(a), j = L.indexOf(b); if (i < 0 || j < 0) return;
           if (!keep) for (const r of L) r.classList.remove('chan-sel'); for (let k = Math.min(i, j); k <= Math.max(i, j); k++) L[k].classList.add('chan-sel'); };
-        st.bindScrub(label, (e) => {
-          if (label._ranged) { label._ranged = false; return; }   // that press was a run drag, not a click
+        const selectKey = (e) => {
           const sel = [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])];
           if (e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); row.parentElement._chanAnchor = row; return; }   // keys: selectExtend
           if (e.shiftKey && row.parentElement?._chanAnchor?.isConnected) { selectRun(row.parentElement._chanAnchor, row, false); return; }   // keys: selectExtend
@@ -527,13 +547,16 @@ function fieldDOM(f, edit, ro = {}) {
           for (const r of sel) r.classList.remove('chan-sel');
           if (!only) row.classList.add('chan-sel');
           if (row.parentElement) row.parentElement._chanAnchor = row;
-        });
-        label.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; const y0 = e.clientY, x0 = e.clientX, keep = e.ctrlKey || e.metaKey;   // keys: selectExtend
-         
-          const move = (ev) => { if (!label._ranging) { if (Math.abs(ev.clientY - y0) < 6 || Math.abs(ev.clientY - y0) < Math.abs(ev.clientX - x0)) return; label._ranging = true; label._ranged = true; }
+        };
+        st.bindScrub(label, (e) => { if (label._ranged) { label._ranged = false; return; } selectKey(e); });   // a click on the name
+        st.onSelectKey = selectKey;   // Shift/Ctrl-click on the value box
+        // dragging UP or DOWN a name OR a value box selects the run under the pointer (sideways is still the scrub)
+        const rangeDrag = (src) => src.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; const y0 = e.clientY, x0 = e.clientX, keep = e.ctrlKey || e.metaKey;   // keys: selectExtend
+          const move = (ev) => { if (!src._ranging) { if (Math.abs(ev.clientY - y0) < 6 || Math.abs(ev.clientY - y0) < Math.abs(ev.clientX - x0)) return; src._ranging = true; src._ranged = true; src.blur?.(); }
             const over = document.elementFromPoint(x0, ev.clientY)?.closest?.('.sp-row'); if (over && chans().includes(over)) { selectRun(row, over, keep); row.parentElement._chanAnchor = row; } };
-          const up = () => { removeEventListener('pointermove', move, true); removeEventListener('pointerup', up, true); setTimeout(() => { label._ranging = false; label._ranged = false; }, 0); };
+          const up = () => { removeEventListener('pointermove', move, true); removeEventListener('pointerup', up, true); setTimeout(() => { src._ranging = false; src._ranged = false; }, 0); };
           addEventListener('pointermove', move, true); addEventListener('pointerup', up, true); });
+        rangeDrag(label); rangeDrag(st.num);
       }
       break;
     }

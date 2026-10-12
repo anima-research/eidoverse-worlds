@@ -6,7 +6,14 @@
 <!-- the favicon: the hand-set 32 and 16 px masters (notes: logo small/mark-{32,16}.svg; 16 has no room for
      the peg's head, so its peg is a bar), inline so it costs no request. Brand mint on a dark tab strip, a
      deeper mint on a light one (mint on white all but vanishes). /favicon.ico (server/routes.ts) is the 32. -->
-<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}/* the name in the profile header is the control (R 10-11): text until you point at it */
+<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}
+</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
+<link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
+<title>eidoverse-worlds</title>
+<style>
+/* (moved 10-11: these rules had been appended INSIDE the favicon's data-URL <style> at line 9, so none of them applied:
+   the profile name control, the Add Component band, the provenance pills; R saw "draftMaterial" in one grey) */
+/* the name in the profile header is the control (R 10-11): text until you point at it */
 .pf-name { all: unset; font-weight: 700; cursor: pointer; border-radius: 4px; padding: 0 3px; margin-left: -3px; }
 .pf-name:hover, .pf-name:focus-visible { background: rgba(255,255,255,.08); box-shadow: inset 0 -1px 0 var(--brand, #7cf); }
 .pf-rename-dlg { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(0,0,0,.45); }
@@ -35,10 +42,6 @@
 .sp-pill { display: inline-block; margin: 0 6px 0 1px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 15px; letter-spacing: .02em; text-transform: uppercase; vertical-align: 1px; }
 .sp-pill-draft { background: color-mix(in srgb, #e0a33a 22%, transparent); color: #e0a33a; box-shadow: inset 0 0 0 1px color-mix(in srgb, #e0a33a 55%, transparent); }
 .sp-pill-foreign { background: transparent; color: var(--e-dim, #999); box-shadow: inset 0 0 0 1px currentColor; }
-</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
-<link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
-<title>eidoverse-worlds</title>
-<style>
 /* ===========================================================================
    DESIGN TOKENS — the one block that owns the client's whole look.
    Modding the UI's colors = editing (or live-overriding) THIS BLOCK ONLY;
@@ -1806,7 +1809,9 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-step.compact .sp-num { height: 20px; border-color: transparent; }
 .frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
 .frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 0 1px 4px; margin: 0; }   /* no negative margins: they pulled every number field 8 px left of the other rows (R 10-10, spin's axis vs rate) */
-.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: var(--e-accent-bg); box-shadow: inset 0 0 0 1px var(--e-accent); }
+/* a selected channel: a soft, slightly larger block behind the name, no outline (R 10-11 23:13: "not so harsh to look at") */
+.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: color-mix(in srgb, var(--e-accent) 22%, transparent); padding: 3px 6px 3px 6px; margin: -2px 0 -2px -2px; border-radius: 4px; }
+.frame.edit .sp-row.chan-sel .sp-num { background: color-mix(in srgb, var(--e-accent) 12%, transparent); }
 /* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
 .frame.edit .sp-step { position: relative; }
 .frame.edit .sp-step .sp-unit { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); margin: 0; color: var(--e-faint); font-size: 11px; pointer-events: none; }

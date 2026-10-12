@@ -3172,6 +3172,17 @@ const PHYSICS_VERBS = {
     const spec = st.entities["@world"]?.c["physics-engine"];
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
+    // it CARRIES (grabbable.carries, a tray): what rests over it rides along as its children from now on, so it comes up
+    // in the hand and flies with a throw (R 10-11 23:19: "I picked up the tray but all the other entities on it fell
+    // straight through it even though 'can carry other entities' was checked"); nothing is launched
+    let carriedUp = [];
+    if (g.carries && dependents.length) {
+      carriedUp = dependents.filter((k) => !w.presence.holds[k]);
+      const ops = carriedUp.flatMap((k) => { const wt = worldT(st, k); const s3 = scratch(st, [setOp(k, "parent", { to: a.id })]);
+        return [setOp(k, "parent", { to: a.id, order: "a0" }), setOp(k, "transform", localFrom(s3, a.id, wt))]; });
+      if (ops.length) plan = admit(w, st, { actor, cap: { kind: "system", ids: carriedUp, comps: ["transform", "parent"] } }, ops);
+      dependents.length = 0;
+    }
     if (dependents.length && !(spec && carried(spec))) {
       const ops = dependents.map((k) => { const b = aabb(st, k); const below = supportUnder(st, b, new Set([k, ...fam, ...descendants(st, k)])); const tk = worldT(st, k);
         return setOp(k, "transform", { ...tk, pos: [tk.pos[0], r3(tk.pos[1] - (b.min[1] - below.y)), tk.pos[2]] }); });
@@ -3180,8 +3191,9 @@ const PHYSICS_VERBS = {
     // picking a thing up takes it out of the world's physics (no collider left at its old spot), and that changes the
     // sim, so it goes through the log (Covenant III: presence never feeds the sim otherwise)
     let act = null;
-    if ((spec && carried(spec)) || dependents.length) rateCheck(w, actor); // this grab will be logged
+    if ((spec && carried(spec)) || dependents.length || carriedUp.length) rateCheck(w, actor); // this grab will be logged
     const actOnce = () => (act ??= w.append(actOf(w, actor, "grab", a)));
+    if (carriedUp.length && plan) { changeEntry(w, plan, actOnce()); notes.push({ carried: carriedUp, why: `they were resting on ${a.id}, which carries: they ride along as its children now` }); }
     if (spec && carried(spec)) { w.append({ kind: "sim", actor, cause: actOnce(), verb: live ? "catch" : "lift", body: { id: a.id } });
       if (live) notes.push({ id: a.id, why: "caught it in the air (logged: the sim had it)" }); }
     if (dependents.length) {

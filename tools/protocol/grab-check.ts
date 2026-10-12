@@ -22,6 +22,7 @@
 //   F   the independent review's findings (10-06), each red before its fix
 // @ts-nocheck
 import fs from "node:fs";
+import { ENGINES } from "../../shared/protocol/simlayer.js";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
@@ -555,6 +556,16 @@ const cases: Case[] = [
       const again = s.call("vic", "use", { id: "hose", args: { held: true, phase: "up" } });
       return { on, up: show(up), off: comp(s, "hose", "t/burning"), again: code(again) }; },
     good: (o) => o.on === true && o.up === "ok" && o.off === false && o.again === "not-holding" },
+  { id: "F9", what: "a thing that CARRIES (a tray) takes what rests over it along as its children when picked up; nothing falls (R 10-11 23:19)", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) } });
+      s.call("olive", "create", { id: "tray9", model: "crate", components: { grabbable: { who: "visitor", carries: true }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [4, 4] } });
+      const top = s.call("olive", "lint", { id: "tray9" }); const box = top.box ?? top.bounds; const y = (box?.max?.[1] ?? 1) + 0.001;
+      s.call("olive", "create", { id: "cup9", model: "book", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [4, y, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+      const before = comp(s, "cup9", "parent")?.to ?? null;
+      s.call("vic", "move", { to: [4, 0, 4.6] }); const g = s.call("vic", "grab", { id: "tray9" });
+      const launched = s.w().entries.filter((e) => e.kind === "sim" && e.verb === "launch" && e.body?.id === "cup9").length;
+      return { before, g: show(g), carried: g.notes?.find((n) => n.carried)?.carried ?? null, parent: comp(s, "cup9", "parent")?.to ?? null, launched }; },
+    good: (o) => o.before === null && o.g === "ok" && Array.isArray(o.carried) && o.carried.includes("cup9") && o.parent === "tray9" && o.launched === 0 },
   { id: "F4", what: "a copy of a returning thing goes home to where the copy stands, not to the original's home", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
       const c = s.call("olive", "create", { from: "torch", id: "torch-2", at: { pos: [5, 0, 5] } });

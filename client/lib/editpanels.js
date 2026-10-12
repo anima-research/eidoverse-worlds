@@ -759,6 +759,10 @@ function inspectorFields() {
 function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
+  // a scrubbed RUN of channels (Maya's channel box): one edit for all of them, FACE values, one Ctrl+Z (panels.js commitRun)
+  if (action === '__run' && id && id !== WORLD_ID && payload && typeof payload === 'object') {
+    const edits = Object.fromEntries(Object.entries(payload).map(([k, v]) => [String(k).replace(/^(ch|ed):/, ''), v]));
+    const r = commitMany(id, edits, 'channels'); endGesture(); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); repaintAll(); return; }
   if (action === 'history') { bus.emit('edit-righttab', 'history'); return; }
   if (action === 'goto') {   // a driven field's ~: open the driver's card and bring it into view
     const g = `c:${payload}`; if (!isOpen(id, g)) toggleFold(id, g);
@@ -834,7 +838,10 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     const k = action.slice(7);
     const driven = drivenBy(id, obj);
     const before = gesture?.before ?? restPose(id, obj);
-    const next = { ...before, pos: [...before.pos] };
+    // from the pose the channels SHOW (a run scrubs several at once: each channel's preview keeps the others', and the
+    // leader's release carries them all; R 10-11 23:13: "scrubbing on then only affects one still")
+    const shown = gesture?.cur ?? before;
+    const next = { ...shown, pos: [...shown.pos] };
     const val = (cur) => (typeof payload === 'object' && payload && 'delta' in payload ? cur + payload.delta : payload);
     if (k === 'yaw') next.yaw = round(val(before.yaw), 4);
     else if (k === 'scale') next.scale = Math.max(0.01, round(val(before.scale)));
@@ -842,7 +849,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     if (next.pos.some(Number.isNaN)) return;
     if (live) {
       // a live call back AT the start pose is a cancelled/no-op drag ending
-      if (JSON.stringify(next) === JSON.stringify(before)) gesture = null; else gesture ??= { before };
+      if (JSON.stringify(next) === JSON.stringify(before)) gesture = null; else { gesture ??= { before }; gesture.cur = next; }
       if (!driven) {   // a driven thing can't preview: the motion owns the frame
         obj.position.set(...next.pos); obj.rotation.y = next.yaw; obj.scale.setScalar(next.scale);
         reindexCollider(id); refreshOutline();
