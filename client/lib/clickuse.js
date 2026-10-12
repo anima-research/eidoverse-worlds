@@ -31,7 +31,9 @@ const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 export function offersOf(id, { spot = null } = {}) {
   // its name as its builder wrote it, no quotes: the menu draws it in the accent colour (R, 10-10)
   const L = comps.get(id)?.label, name = typeof L === 'string' && L.trim() ? L.trim().slice(0, 40) : (nameOf(id) ?? id), held = physicsApi.mine().includes(id);
-  const out = [], add = (k, pre, post, run) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run });
+  // every offer that needs me near it carries `reach`: the click walks me there first (R 10-11 23:32: "the walk-to rule
+  // should probably apply to any use action"); without one the offer runs where I stand
+  const near = () => physicsApi.inReach(id), out = [], add = (k, pre, post, run, reach = null) => out.push({ k, label: `${pre}${name}${post}`, parts: [pre, name, post], run, ...(reach ? { reach } : {}) });
   // from the menu a put or a throw is the plain one: at my feet, the way I face (the cursor's spot is the click and the C key)
   if (held) { add('put', 'put ', ' down', () => physicsApi.put(id)); add('throw', 'throw ', '', () => physicsApi.throw()); }
   // holding something else, on another thing: set it down on that thing where the click landed (R, 10-10: "you can't click
@@ -39,11 +41,11 @@ export function offersOf(id, { spot = null } = {}) {
   const inHand = physicsApi.mine().find((h) => h !== id);
   if (!held && inHand && spot) { const H = comps.get(inHand)?.label, hn = typeof H === 'string' && H.trim() ? H.trim().slice(0, 40) : (nameOf(inHand) ?? inHand);
     out.push({ k: 'puton', label: `put ${hn} on ${name}`, parts: [`put ${hn} on `, name, ''], run: () => putAtSpot(inHand, onTop(id, spot)) }); }
-  else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id));
-  for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb));
+  else if (canGrab(id)) add('grab', 'pick up ', '', () => physicsApi.grab(id), near);
+  for (const a of actionsOf(id)) add(`use:${a.action}`, `${a.verb} `, a.barred ? ` (${a.barred})` : '', () => useThing(id, a.action, a.verb), near);
   const seat = seatOf(id);
-  if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id));
-  if (!held && comps.get(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id));
+  if (seat) add('sit', `${seat.action ?? 'sit'} on `, '', () => trySitOn(id), near);
+  if (!held && comps.get(id)?.physics?.kind === 'dynamic') add('punt', 'kick ', '', () => physicsApi.punt(id), () => physicsApi.canPunt(id));
   return out;
 }
 
@@ -68,11 +70,12 @@ export function thingAt(clientX, clientY) {
 // Too far to be what you meant: say so, in the status bar. A move key on the way cancels, quietly.
 const WALK_MAX = 14;   // m along the floor
 async function fetchIt(id, offer) {
-  if (physicsApi.inReach(id)) return offer.run();
+  const reach = offer.reach ?? (() => physicsApi.inReach(id));
+  if (reach()) return offer.run();
   const w = physicsApi.whereFromMe(id); if (!w) return offer.run();
   if (w.flat > WALK_MAX) { flashHint(`${nameOf(id) ?? id} is ${w.flat.toFixed(0)} m away — too far to walk over for it; go closer`, 3800, 'attn'); return null; }
-  const why = await walkTo(w.at[0], w.at[2], { until: () => physicsApi.inReach(id) });
-  if (why === 'arrived' && physicsApi.inReach(id)) return offer.run();
+  const why = await walkTo(w.at[0], w.at[2], { until: reach });
+  if (why === 'arrived' && reach()) return offer.run();
   if (why === 'blocked' || why === 'timeout' || why === 'arrived') flashHint(`couldn't get to ${nameOf(id) ?? id}: something is in the way`, 3800, 'attn');
   return null;
 }
@@ -122,9 +125,9 @@ addEventListener('mouseup', (e) => {
   if (!over && heldNow && p.b === 0) { const spot = aimPoint(e.clientX, e.clientY); void (spot ? putAtSpot(heldNow, spot) : physicsApi.put(heldNow)); return; }
   const id = over ?? heldNow; if (!id) return;
   const offers = offersOf(id); if (!offers.length) return;
-  if (p.b === 0) { void (offers[0].k === 'grab' ? fetchIt(id, offers[0]) : offers[0].run()); return; }
+  if (p.b === 0) { void (offers[0].reach ? fetchIt(id, offers[0]) : offers[0].run()); return; }
   const menu = over && heldNow ? offersOf(id, { spot: aimPoint(e.clientX, e.clientY) }) : offers;
-  contextMenu(e.clientX, e.clientY, menu.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { void menu.find((o) => o.k === k)?.run(); });
+  contextMenu(e.clientX, e.clientY, menu.map((o) => ({ k: o.k, label: o.label, parts: o.parts })), (k) => { const o = menu.find((x) => x.k === k); if (o) void (o.reach ? fetchIt(id, o) : o.run()); });
 });
 let hoverAt = 0, hand = '';
 canvas.addEventListener('mousemove', (e) => {

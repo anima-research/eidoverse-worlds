@@ -47,7 +47,11 @@ export function usable() {
 }
 /** Every action a thing offers (its reactions), in its own order: [{action, verb, who?, barred?}]. */
 export function actionsOf(id) {
-  const bag = comps.get(id), rx = bag?.reactions; if (!isBag(rx)) return [];
+  const bag = comps.get(id); let rx = bag?.reactions; if (!isBag(rx)) rx = {};
+  // an openable thing with nothing that opens it offers 'open' on its own (the authority's implicit toggle; R 10-11
+  // 23:17: the gym door had only `openable`, so clicking it did nothing)
+  if (isBag(bag?.openable) && !Object.values(rx).some((h) => h?.kind === 'toggle' && (h.component ?? 'openable') === 'openable')) rx = { open: { kind: 'toggle', component: 'openable', field: 'open' }, ...rx };
+  if (!Object.keys(rx).length) return [];
   return Object.keys(rx).map((action) => {
     const h = rx[action] ?? {};
     const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;

@@ -522,7 +522,7 @@ try {
   check("CT0 a click on it finds it", before === 'ctbox', before);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: 'ctbox', component: 'clickthrough', value: true });`); await sleep(600);
   const after = await at();
-  check("CT1 with clickthrough set, the same click passes through it (nothing behind: null)", after === null, after);
+  check("CT1 with clickthrough set, the same click passes through it (to whatever is behind, or nothing)", after !== 'ctbox', after);   // a full run leaves other stages' crates behind it
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'ctbox' });`).catch(() => null); await sleep(300);
   });
   // ---- CL: a live drag by someone else is a claim: an amber box and 'editing: <name>' in the Hierarchy, gone on end ----
@@ -913,7 +913,7 @@ try {
     const items = await evalJson(`[...document.querySelectorAll('.edit-menu[data-menu="viewport"] .edit-menu-item')].map((b) => b.textContent)`);
     await evalJson(`([...document.querySelectorAll('.edit-menu[data-menu="viewport"] .edit-menu-item')].find((b) => b.textContent.includes('${word}'))?.click(), true)`); await sleep(300); return items; };
   const v0 = await vis(); const items = await pickV("isolate selected"); const v1 = await vis();
-  check("VM1 Viewport ▸ isolate selected: only the selection is drawn (in my view)", items?.length === 4 && v0.anchor && v0.gate && v1.cuball && v1.anchor === false && v1.gate === false, { items, v0, v1 });
+  check("VM1 Viewport ▸ isolate selected: only the selection is drawn (in my view)", items?.length === 5 && v0.anchor && v0.gate && v1.cuball && v1.anchor === false && v1.gate === false, { items, v0, v1 });
   const after = await pickV("isolate selected"); const v2 = await vis();
   check("VM2 …it shows as ticked, and choosing it again brings everything back", /✓ isolate/.test(after?.[0] ?? "") && v2.anchor && v2.gate, { after, v2 });
   await pickV("flat shaded");

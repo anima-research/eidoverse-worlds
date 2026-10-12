@@ -566,6 +566,14 @@ const cases: Case[] = [
       const launched = s.w().entries.filter((e) => e.kind === "sim" && e.verb === "launch" && e.body?.id === "cup9").length;
       return { before, g: show(g), carried: g.notes?.find((n) => n.carried)?.carried ?? null, parent: comp(s, "cup9", "parent")?.to ?? null, launched }; },
     good: (o) => o.before === null && o.g === "ok" && Array.isArray(o.carried) && o.carried.includes("cup9") && o.parent === "tray9" && o.launched === 0 },
+  { id: "F10", what: "reach is to the nearest point of a thing's box, not its origin: standing against a big crate is in reach (R 10-11 23:27, a barrel)", run(s) { cast(s);
+      s.call("olive", "create", { id: "big", model: "crate", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [4, 4, 4] } } });
+      const m = s.call("olive", "measure", { id: "big" }); const b = m.bounds; if (!b) return { measure: show(m), keys: Object.keys(m) };
+      const x = b.max[0] + 0.35, cy = (b.min[1] + b.max[1]) / 2;   // 35 cm from its face; the origin is further than the hand reaches
+      s.call("vic", "move", { to: [x, 0, 0] }); const g = s.call("vic", "grab", { id: "big" });
+      const originDist = Math.hypot(x - 0, 1 - 0, 0);
+      return { g: show(g), why: g.refused?.reason, originDist: +originDist.toFixed(2), half: +((b.max[0] - b.min[0]) / 2).toFixed(2), cy }; },
+    good: (o) => o.g === "ok" && o.originDist > 1.5 },
   { id: "F4", what: "a copy of a returning thing goes home to where the copy stands, not to the original's home", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
       const c = s.call("olive", "create", { from: "torch", id: "torch-2", at: { pos: [5, 0, 5] } });

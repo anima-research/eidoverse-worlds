@@ -65,5 +65,14 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(on && g.ok && th.ok && d(vOf("a"), vOf("tray")) > 0.05 && d(vOf("b"), vOf("tray")) > 0.05 && d(vOf("a"), vOf("b")) > 0.05,
     "SE7 thrown with spin, each rider leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });
 }
+// R 10-11 23:36/23:47: a domino that came to rest on a FALLEN domino was parented under it — a child of a rotated,
+// non-uniformly scaled parent is sheared ("splortched"). A rest never parents under a non-uniform host unless the child
+// sits square on its axes.
+{ const W = "shear"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "open", build: "visitor" } });
+  const h = Math.sin(Math.PI / 12), c = Math.cos(Math.PI / 12);   // a wide flat slab turned 30° about up, static
+  call(W, "rowan", "create", { id: "slab", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [0, 0, 0], q: [0, h, 0, c], scale: [2, 0.3, 1] } } });
+  box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); T += 6000; call(W, "vic", "look", {});
+  const chip = st(W).entities.chip.c; const q = chip.transform.q ?? [0, 0, 0, 1];
+  ok(chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

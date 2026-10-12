@@ -144,7 +144,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
     const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the authority's state", i.notForYou);
     call("olive", "set", { id: "gate", component: "lock", value: true });
-    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the authority (v1: use stays open)"); }
+    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the authority (v1: use stays open)");
+    // an openable thing with nothing that opens it offers 'open' on its own (R 10-11 23:17: the gym door had only openable)
+    call("bob", "create", { id: "hatch", model: "door", components: { openable: { open: false } } });
+    const u1 = call("vic", "use", { id: "hatch", action: "open" }), o1 = W().state().entities.hatch.c.openable.open;
+    const u2 = call("vic", "use", { id: "hatch" }), o2 = W().state().entities.hatch.c.openable.open;
+    ok(u1.ok && o1 === true && u2.ok && o2 === false, "P37b an openable thing with no reactions opens and shuts on its own 'open' (the implicit toggle), with or without the action named", { u1: code(u1), o1, u2: code(u2), o2 }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });

@@ -1555,8 +1555,9 @@ function touched(ops, st) {
 const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
-function lastTouch(w, id, comp) {
+function lastTouch(w, id, comp, { editsOnly = false } = {}) {
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
+    if (editsOnly && w.entries[e.cause]?.body?.capability) continue;   // a use's own write (a toggle flipped it): not an author
     for (const o of opsQuiet(e)) { if (o.id !== id) continue;
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) return { seq: i, actor: e.actor }; } }
   return null;
@@ -1949,7 +1950,8 @@ function pivotOf(st, id) {
 // L7: a `use` exercises a capability the handler holds. It is scoped to the component the handler names, and good
 // only while the handler's author (whoever last set `reactions`) could still make that change themselves.
 function reactionCap(ctx, id, comp, action) {
-  const lt = lastTouch(ctx.w, id, "reactions"); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, "");
+  const implicit = !ctx.st.entities[id]?.c.reactions?.[action] && action === "open" && implicitOpens(ctx.st.entities[id]);
+  const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, "");
   ctx.actExtra = { capability: { reaction: action, author: lt.actor, grantedAt: lt.seq } };
   ctx.cap = { kind: "reaction", ids: [id], comps: [comp], author: lt.actor, action };
 }
@@ -1979,7 +1981,7 @@ function buildUse(ctx, a) {
     const { clip, ...body } = pick.body;
     return { presence: true, attach: { to: a.id, socket: pick.slot, ...body }, note: `you ${action} on ${a.id} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
-  const h = e.c.reactions?.[action];
+  const h = handlerOf(e, action);
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
   if (h?.kind === "reset") {
@@ -2055,13 +2057,18 @@ const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless]
 // the sockets a person can attach to: the thing's own, else its model's
 const bodySockets = (st, id) => { const e = st.entities[id]; const S = e?.c.sockets ?? modelOf(e?.c.model)?.sockets ?? {};
   return Object.entries(S).map(([slot, s]) => ({ slot, body: bodyOf(s) })).filter((x) => x.body); };
+// an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
+// 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
+const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
+function implicitOpens(e) { return !!(e?.c.openable && typeof e.c.openable === "object") && !Object.values(e.c.reactions ?? {}).some((h) => h?.kind === "toggle" && (h.component ?? "openable") === "openable"); }
+function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {
   const e = st.entities[id];
-  return [...new Set([...Object.keys(e?.c.reactions ?? {}), ...bodySockets(st, id).map((x) => x.body.action)])];
+  return [...new Set([...Object.keys(e?.c.reactions ?? {}), ...(implicitOpens(e) ? ["open"] : []), ...bodySockets(st, id).map((x) => x.body.action)])];
 }
 function offersFor(st, id, actor) {
   const e = st.entities[id]; const can = [], notForYou = [];
-  for (const act of actionsOf(st, id)) { const h = e.c.reactions?.[act];
+  for (const act of actionsOf(st, id)) { const h = handlerOf(e, act);
     if (h?.who && rankOf(st, actor) < whoRank(st, h.who)) notForYou.push({ action: act, why: `needs ${h.who}` });
     else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });
     else can.push(act); }
@@ -2971,6 +2978,12 @@ const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is meas
 // digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
 // that left the world) is a SEPARATE entry caused by a system act, so a rest and a correction never look alike.
 const REST_COALESCE_TICKS = 15;   // ~0.5 s at 33 ms: PHYSICS §4.4's settlement window
+// a child of a NON-UNIFORMLY scaled parent is sheared unless its local rotation keeps the parent's axes (a crate on a flat
+// tray sits square: fine; a tumbled crate that rested on a fallen domino: "splortched", R 10-11 23:36)
+const uniformScale = (sc) => Math.max(...sc) - Math.min(...sc) <= 0.01 * Math.max(...sc);
+const axisAligned = (q) => { const [x, y, z, w] = q; const ax = [[1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)], [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)]];
+  return ax.every((v) => v.some((c) => Math.abs(c) > 0.995)); };
+const shearFree = (parentScale, localQ) => uniformScale(parentScale) || axisAligned(localQ);
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
@@ -3023,8 +3036,11 @@ function settleSim(w) {
       for (const k of Object.keys(w.presence.holds)) if (st2.entities[k]) for (const d of [k, ...descendants(st2, k)]) fam.add(d);
       const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
       if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
-      const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
-      const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
+      // never under a support whose scale isn't uniform (a domino: a crate at [1, 2, 0.2]): a child of a rotated, non-uniformly
+      // scaled parent is SHEARED by the composition (R 10-11 23:36: a crate "splortched" after a domino fell with it on top)
+      const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]); const lt = localFrom(s3, sup.id, wt);
+      if (!shearFree(worldT(st2, sup.id).scale, lt.q)) continue;
+      const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", lt)];
       const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
       changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
     }
@@ -3151,7 +3167,11 @@ const PHYSICS_VERBS = {
     const here = held ? held.pose.pos : live ? live.pos : eb ? eb.p : t.pos; // where it IS: someone's hand, the air, the engine (rested, not yet logged: second review S2-1), or the log
     // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
-    const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
+    // reach is to the NEAREST POINT of its box when it stands in the world, not to its origin (a barrel's origin is at its
+    // base: standing against it is in reach; R 10-11 23:27). In a hand or in the air: to where it is.
+    const hp = handOf(me), bx = !held && !live && !eb ? aabb(st, a.id) : null;
+    const reachPt = bx ? [0, 1, 2].map((i) => Math.min(bx.max[i], Math.max(bx.min[i], hp[i]))) : here;
+    const d = dist(hp, reachPt); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
     const how = holdHow(a, g); // which hand, by which grip or offset: refused before anything is written
     const prev = w.presence.holds[a.id]; const notes = [];
     if (d > REACH) notes.push({ id: a.id, pulled: r3(d), why: `it was ${r3(d)} m away; its grabbable.range lets it fly to your hand` });
@@ -3177,9 +3197,11 @@ const PHYSICS_VERBS = {
     // straight through it even though 'can carry other entities' was checked"); nothing is launched
     let carriedUp = [];
     if (g.carries && dependents.length) {
-      carriedUp = dependents.filter((k) => !w.presence.holds[k]);
-      const ops = carriedUp.flatMap((k) => { const wt = worldT(st, k); const s3 = scratch(st, [setOp(k, "parent", { to: a.id })]);
-        return [setOp(k, "parent", { to: a.id, order: "a0" }), setOp(k, "transform", localFrom(s3, a.id, wt))]; });
+      const ps = worldT(st, a.id).scale;
+      carriedUp = dependents.filter((k) => !w.presence.holds[k]).map((k) => { const wt = worldT(st, k); const s3 = scratch(st, [setOp(k, "parent", { to: a.id })]); return { k, lt: localFrom(s3, a.id, wt) }; })
+        .filter((x) => shearFree(ps, x.lt.q));
+      const ops = carriedUp.flatMap(({ k, lt }) => [setOp(k, "parent", { to: a.id, order: "a0" }), setOp(k, "transform", lt)]);
+      carriedUp = carriedUp.map((x) => x.k);
       if (ops.length) plan = admit(w, st, { actor, cap: { kind: "system", ids: carriedUp, comps: ["transform", "parent"] } }, ops);
       dependents.length = 0;
     }

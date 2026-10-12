@@ -482,7 +482,12 @@ function nearest(ok, ids = dynamicIds(), prio = () => 0) {
 }
 const rangeOf = (id) => grabOf(compsOf(id))?.range ?? REACH;
 const prioOf = (id) => grabOf(compsOf(id))?.priority ?? 0;
-const inHand = (p, f, id) => { const d = Math.hypot(p[0] - f[0], p[1] - (f[1] + HAND_Y), p[2] - f[2]); return d <= (id ? rangeOf(id) : REACH) ? d : null; };
+const _rh = new THREE.Vector3(), _rn = new THREE.Vector3();
+/** reach is measured to the NEAREST POINT of the thing's box when it stands in the world (R 10-11 23:27: a barrel's origin
+ *  is at its base, so standing against it read as out of reach and the walk-to found the barrels "in the way") */
+const nearestOf = (p, id, hand) => { const o = id && !myHolds().includes(id) ? entities.get(id) : null; if (!o) return p;
+  try { _bx.setFromObject(o); if (_bx.isEmpty()) return p; _bx.clampPoint(_rh.set(hand[0], hand[1], hand[2]), _rn); return [_rn.x, _rn.y, _rn.z]; } catch { return p; } };
+const inHand = (p, f, id) => { const hand = [f[0], f[1] + HAND_Y, f[2]], q = nearestOf(p, id, hand); const d = Math.hypot(q[0] - hand[0], q[1] - hand[1], q[2] - hand[2]); return d <= (id ? rangeOf(id) : REACH) ? d : null; };
 const atFeet = (p, f) => { const dh = Math.hypot(p[0] - f[0], p[2] - f[2]), dy = p[1] - f[1]; return dh <= KICK.reach && dy >= KICK.below && dy <= KICK.above ? dh : null; };
 
 /** Pick something up: the named thing, or the nearest you can reach. */
@@ -529,7 +534,8 @@ export async function drop(name) {
  *  the distance needs, up to the engine's limit. No aim: ahead of my body, the way it faces. A number is a speed. */
 export async function throwHeld(arg) {
   const id = myHolds()[0]; if (!id) return say('you aren\'t holding anything');
-  await track(true);
+  // the guess goes up BEFORE the body's position is confirmed with the door (track awaits a move's round trip, which
+  // queues behind the engine's beat while dominoes fly: R 10-11 23:17 "throwing with C still takes a good 1-2 s")
   const pos = letGoAt(heldPos(id)), aim = Array.isArray(arg) && arg.length === 3 && arg.every(Number.isFinite) ? arg : null;
   let v;
   if (aim && pos) {
@@ -549,6 +555,7 @@ export async function throwHeld(arg) {
   const fl = Math.hypot(v[0], v[2]), sp = Math.hypot(...v), mag = Math.min(8, 0.8 * sp);
   const w = fl > 0.2 ? [v[2] / fl * mag, 0, -v[0] / fl * mag].map(r3) : null;
   const sent = pos ? pos.toArray().map(r3) : null; const plan = planRelease(id, sent, v, w); if (plan) predict(plan);
+  await track(true);
   const r = await sendRequest('throw', { id, v, ...(w ? { w } : {}), ...(sent ? { pos: sent } : {}), ...(plan ? { q: plan.q } : {}) });
   if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused('throw', r, id);
@@ -749,8 +756,9 @@ const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f
 /** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
 const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
+const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */
