@@ -17,7 +17,7 @@
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({ name: 'settings-stubs', setup(b) {
-  for (const m of ['core', 'base', 'governor', 'lightrig', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
+  for (const m of ['core', 'base', 'governor', 'lightrig', 'materials', 'xrpanels', 'net', 'catalog', 'avatar', 'controller', 'capnotice', 'assets', 'mictoggle'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./settings-panels-stub.mjs') }));
 } });
 
