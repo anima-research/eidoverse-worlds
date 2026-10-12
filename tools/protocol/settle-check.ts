@@ -5,7 +5,7 @@
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";
-import { ENGINES } from "../../shared/protocol/simlayer.js";
+import { ENGINES, restsOf } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
 const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
 let pass = 0, fail = 0;
@@ -74,5 +74,18 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); T += 6000; call(W, "vic", "look", {});
   const chip = st(W).entities.chip.c; const q = chip.transform.q ?? [0, 0, 0, 1];
   ok(chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
+// R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box dropped from a height
+// falls and rests on the floor; a crate thrown onto a static mesh box rests on it and is parented to it
+{ const W = "mesh"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  call(W, "rowan", "create", { id: "fall", components: { mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [4, 0, 4] } } });
+  call(W, "vic", "move", { to: [4, 0, 3.3] }); const p = call(W, "vic", "punt", { id: "fall", v: [0, 2, 0] }); T += 8000; call(W, "vic", "look", {});
+  const f = st(W).entities.fall.c; const rested = restsOf(openWorld(root, W).entries).some((x) => x.id === "fall");
+  ok(p.ok && rested && Math.abs(f.transform.pos[1]) < 0.02 && !f.parent, "SE9 a dynamic mesh box punted up has a body: it flies, comes back down and its rest is logged on the floor", { punt: p.ok ?? p.refused, rested, pos: f.transform.pos, parent: f.parent ?? null });
+  call(W, "rowan", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, transform: { pos: [0, 0, 0] } } });
+  box(W, "crate", [0, 1.0, 0]);
+  call(W, "vic", "move", { to: [2, 0, 1] }); const mv = call(W, "vic", "move", { to: [0, 0, -1.2] }); const q = call(W, "vic", "punt", { id: "crate", v: [0, 0.5, 0] }); T += 8000; call(W, "vic", "look", {});
+  const c = st(W).entities.crate.c;
+  ok(q.ok && c.parent?.to === "plinth" && Math.abs(c.transform.pos[1] - 0.8) < 0.05, "SE10 a crate dropped onto a static mesh box rests on its top (y = 0.8) and is its child: the mesh is a collider", { mv: mv.ok ? true : mv.refused, punt: q.ok ? true : q.refused, pos: c.transform.pos, parent: c.parent ?? null }); }
+
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
