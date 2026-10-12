@@ -11,7 +11,7 @@ import { makeSection, flashHint } from './ui.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
   AVATAR_DETAILS, getAvatarDetail, setAvatarDetail } from './governor.js';
-import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './lightrig.js';
+import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES, CASTER_CHOICES, getCasterCeiling, setCasterCeiling } from './lightrig.js';
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { FOLIAGE_MODES, getFoliageMode, setFoliageMode } from './foliage.js';
@@ -74,19 +74,20 @@ function videoFields() {
   return [
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
-    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution')] : []),
+    ...(shadowsOn() ? [pick('shadowres', SHADOW_RES, shadowRes(), 'shadow resolution'), pick('casters', CASTER_CHOICES, getCasterCeiling(), 'shadow casters')] : []),
     pick('particles', PARTICLE_TIERS, getParticleTier(), 'particles'),
     pick('foliage', FOLIAGE_MODES, getFoliageMode(), 'textured transparency'),
     pick('detail', Object.keys(AVATAR_DETAILS), getAvatarDetail(), 'avatar detail'),
     { t: 'check', k: 'msaa', label: 'antialiasing (on reload)', value: msaaOn },
     // batch 2 (R 10-07): the safety row rides the same VR quad (the desk has its own 🛡 safety section, below)
-    { t: 'check', k: 'untrusted', label: `🛡 ${UNTRUSTED_WORDS.label.toLowerCase()}`, value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
+    { t: 'check', k: 'untrusted', label: UNTRUSTED_WORDS.label.toLowerCase(), value: allowUntrusted(), hint: UNTRUSTED_WORDS.hint },
   ];
 }
 function videoDispatch(k, v) {
   if (k === 'scale') setRenderScale(v);
   else if (k === 'shadows') setShadows(!!v);
   else if (k === 'shadowres') setShadowRes(+v);
+  else if (k === 'casters') setCasterCeiling(+v);
   else if (k === 'particles') setParticleTier(v);
   else if (k === 'foliage') setFoliageMode(v);
   else if (k === 'detail') setAvatarDetail(v);
@@ -149,10 +150,16 @@ export function initVideoPanel() {
       SHADOW_RES.map((v) => [v, `${v}²`]), shadowRes(),
       (v) => { setShadowRes(+v); flashHint(`shadow resolution: ${v}²`); });
     resRow.hidden = !shadowsOn();
+    const castRow = selectRow('shadow casters',
+      'How many things near you cast shadows at once (the nearest win; the rest still receive them). More looks richer and costs a shadow draw each. Under load the engine sheds some and brings them back after.',
+      CASTER_CHOICES.map((v) => [v, `${v} nearest`]), getCasterCeiling(),
+      (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
+    castRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',
       'All cast shadows — the sun’s and the lamp shadow. Off is the cheapest single change on a weak GPU; flipping it recompiles nothing.',
-      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
+      shadowsOn(), (on) => { setShadows(on); resRow.hidden = !on; castRow.hidden = !on; flashHint(`shadows ${on ? 'on' : 'off'}`); }));
     body.appendChild(resRow);
+    body.appendChild(castRow);
 
     body.appendChild(selectRow('particles',
       'How many sprites particle effects draw. auto lets the engine thin them under load and restore them after.',
@@ -180,9 +187,10 @@ export function initVideoPanel() {
     if (body.dataset.init) return;
     body.dataset.init = '1';
     body.appendChild(checkRow(UNTRUSTED_WORDS.label, UNTRUSTED_WORDS.hint, allowUntrusted(), (on) => {
-      setAllowUntrusted(on); flashHint(on ? '🛡 links from any site play for you now' : '🛡 only this server\'s files and trusted hosts play for you');
+      setAllowUntrusted(on); flashHint(on ? 'links from any site play for you now' : 'only this server\'s files and trusted hosts play for you');   // no emoji outside Chat and Emotes (R)
     }));
-    const p = document.createElement('div'); p.className = 'row wide'; p.style.cssText = 'font-size:11px;color:var(--dim);line-height:1.4';
+    // the explanation runs the panel's full width (R 10-10: it was squeezed into the label column, a word a line)
+    const p = document.createElement('div'); p.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:2px 8px 6px;font-size:11px;color:var(--dim);line-height:1.4';
     p.textContent = UNTRUSTED_WORDS.hint; body.appendChild(p);
   }, { id: 'safety', host: 'settings' });
 }

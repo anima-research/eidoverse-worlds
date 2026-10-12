@@ -182,5 +182,20 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   ws.close(); proc.kill();
 }
 
+// ---- RS: reservations of research 10-11 C (PHYSICS §4.1): names the door refuses until built ----
+{
+  const FH = await imp("server/filehost.ts"); const root = scratch("physseeds-rs"); fs.mkdirSync(root + "worlds", { recursive: true });
+  for (const f of ["rs.jsonl", "rs.presence.json"]) fs.rmSync(`${root}worlds/${f}`, { force: true });
+  process.env.PROTOCOL_NOW = String(1800000000000);
+  const rq = (verb, args = {}) => AU.request(FH.openWorld(root, "rs"), "rowan", verb, args);
+  const made = rq("create-world", { title: "rs" }); const rs = ["cohold", "deflect", "carry"].map((v) => rq(v, { id: "x" }));
+  ok("RS1", made.ok && rs.every((r) => r.ok === false && /verb/.test(r.refused?.code ?? "")), "cohold, deflect and carry are reserved verbs: the authority refuses each as a verb it doesn't have", rs.map((r) => r.refused?.code));
+  const pe = (v) => (typeof AU.schemaRefusal === "function" ? AU.schemaRefusal("physics-engine", v) : "no schemaRefusal");
+  ok("RS2", pe({ engine: "eidosim@1.0.0" }) === null && pe({ engine: "eidosim@1.0.0", claimDebounceMs: 200 }) && pe({ engine: "eidosim@1.0.0", liveAuthorityExpiryMs: 5000 }),
+    "claimDebounceMs and liveAuthorityExpiryMs on @world.physics-engine are reserved: refused until an authority reads them", [pe({ engine: "eidosim@1.0.0", claimDebounceMs: 200 })]);
+  const CS2 = await imp("shared/protocol/componentspec.js");
+  ok("RS3", CS2.COMPONENTS?.grabbable?.defaults?.steal === true && typeof CS2.COMPONENTS?.grabbable?.defaults?.steal === "boolean", "grabbable.steal is the holder's switch, a boolean defaulting to true (the latest grab wins); 'ask' is reserved", CS2.COMPONENTS?.grabbable?.defaults?.steal);
+}
+
 console.log(`\nphysseeds: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

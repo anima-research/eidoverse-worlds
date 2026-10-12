@@ -26,7 +26,7 @@ const EMOJI_ICON = {
   '👋': 'hand-waving',
   '🐞': 'bug',
   '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun',
-  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality',
+  '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality', '🛡': 'shield',
 };
 // The load list is INJECTED, not imported: assets.js reaches the engine (GLTFLoader),
 // and ui.js is shared with a client that has no renderer and therefore never loads an
@@ -124,12 +124,25 @@ bus.on('esc-quiet', (did) => {
   else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
 });
 /** Borrow the hint bar for a moment. `line` is text unless built with html`` (markup.js). */
-export function flashHint(line, ms = 2600) {
+export function flashHint(line, ms = 2600, tone = null) {
   delete el.hint.dataset.keyhint;   // a flash takes the bar from an engaged gesture's keys
   paint(el.hint, line);
+  // tone 'attn': something you asked for didn't happen, and why (R, 10-10: "an 'attention' color feedback in the status
+  // bar at the bottom that fades away after a few seconds"), every time you ask
+  el.hint.classList.toggle('attn', tone === 'attn');
+  // a refusal can be copied (R 10-11: "a little 'copy' icon on status errors… would be useful to grab and paste them for
+  // you"): its text is selectable, a copy button sits at its end, and pointing at it holds it on screen
+  if (tone === 'attn') {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'hint-copy'; b.title = 'copy this message'; b.textContent = '⧉';
+    b.onclick = (e) => { e.stopPropagation(); const t = [...el.hint.childNodes].filter((n) => n !== b).map((n) => n.textContent).join('').trim();
+      navigator.clipboard?.writeText(t).then(() => { b.textContent = '✓'; }, () => { b.textContent = 'select it to copy'; }); };
+    el.hint.prepend(b);   // first: a long reason is cut at the bar's end, and the button must not be
+  }
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
   el.hint._t = setTimeout(endFlash, ms);
+  el.hint.onpointerenter = () => { if (el.hint.classList.contains('attn')) { clearTimeout(el.hint._t); el.hint._t = -1; } };
+  el.hint.onpointerleave = () => { if (el.hint.classList.contains('attn') && el.hint._t === -1) el.hint._t = setTimeout(endFlash, 2500); };
 }
 // keyhints.js: a gesture's keys hold the bar while you're engaged (R 10-04: the status line, once engaged), then give it back
 addEventListener('ew-keyhint', (e) => {
@@ -140,6 +153,7 @@ addEventListener('ew-keyhint', (e) => {
 function endFlash() {
   clearTimeout(el.hint._t);
   el.hint._t = null;
+  el.hint.classList.remove('attn');
   if (ambientHint) paint(el.hint, ambientHint);
   else el.hint.classList.add('gone');
 }
@@ -886,14 +900,15 @@ export function toggleEMenu(force) {
 // left of a right one, under a top rail, over a bottom one. Clamped to the viewport. Never remembered: a dropdown
 // hangs from what opened it.
 function anchorBeside(node) {
-  const h = el.hud.getBoundingClientRect();
+  // flush with the RAIL's box, not the glyph inside it (R 10-10: it sat 4 px low and 2 px out, which read as an error)
+  const h = el.dock.getBoundingClientRect();
   const edge = el.dock.dataset.edge || 'left';
   node.style.left = node.style.top = '0px'; node.style.right = node.style.bottom = 'auto';
   const r = node.getBoundingClientRect();
-  let x = h.right + 6, y = h.top;
-  if (edge === 'right') x = h.left - 6 - r.width;
-  else if (edge === 'top') { x = h.left; y = h.bottom + 6; }
-  else if (edge === 'bottom') { x = h.left; y = h.top - 6 - r.height; }
+  let x = h.right, y = h.top;
+  if (edge === 'right') x = h.left - r.width;
+  else if (edge === 'top') { x = h.left; y = h.bottom; }
+  else if (edge === 'bottom') { x = h.left; y = h.top - r.height; }
   node.style.left = `${Math.round(Math.max(4, Math.min(innerWidth - r.width - 4, x)))}px`;
   node.style.top = `${Math.round(Math.max(4, Math.min(innerHeight - r.height - 4, y)))}px`;
 }

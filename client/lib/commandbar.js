@@ -309,7 +309,7 @@ const EMARK = () => fsvg('lantern', 20) || '∃';
 
 function paintPill() {
   const fresh = pill.classList.contains('fresh');
-  pill.innerHTML = `<span class="lp-glyph" aria-hidden="true">${EMARK().replace(/width="20" height="20"/, `width="${fresh ? 20 : 16}" height="${fresh ? 20 : 16}"`)}</span>`
+  pill.innerHTML = `<span class="lp-glyph" aria-hidden="true">${EMARK().replace(/width="20" height="20"/, `width="20" height="20"`)}</span>`
     + `<span class="lp-text">${fresh ? '<kbd>WASD</kbd> move · type or say anything — try <q>wave</q>' : 'type or say anything'}</span>`
     + `<kbd class="lp-chord">${CHORD}</kbd>`;
 }

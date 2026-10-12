@@ -222,7 +222,7 @@ await C("R1", "every entry Add Component offers (a modelled thing; a swinging on
   return [!out.length, out];
 });
 await C("R2", "a set handler whose value the authority would refuse is refused when it's written, in plain terms", () => {
-  const W = world(); W.call("create", { id: "lamp", model: "table-lamp", components: { light: { intensity: 4 } }, place: { at: [0, 0] } });
+  const W = world(); W.call("create", { id: "lamp", components: { label: "lamp", light: { intensity: 4 }, transform: { pos: [0, 0, 0] } } });
   const r = W.call("set", { id: "lamp", component: "reactions", value: { glow: { kind: "set", component: "light", field: "intensity", value: "bright" } } });
   const good = W.call("set", { id: "lamp", component: "reactions", value: { glow: { kind: "set", component: "light", field: "intensity", value: 40 } } });
   return [!r.ok && /intensity/.test(r.refused.reason) && good.ok && W.call("use", { id: "lamp" }, "vic").ok, { r: why(r), good: why(good) }];
@@ -242,7 +242,7 @@ await C("R3b", "a toggle naming the openable without a field opens and closes it
   return [r.ok && open1 === true && open2 === false, { r: why(r), open1, open2 }];
 });
 await C("R4", "a toggle of a number (light.intensity) is refused when written, saying a toggle flips true/false; of a true/false field (light.shadows), taken", () => {
-  const W = world(); W.call("create", { id: "lamp", model: "table-lamp", components: { light: { intensity: 4 } }, place: { at: [0, 0] } });
+  const W = world(); W.call("create", { id: "lamp", components: { label: "lamp", light: { intensity: 4 }, transform: { pos: [0, 0, 0] } } });
   const n = W.call("set", { id: "lamp", component: "reactions", value: { t: { kind: "toggle", component: "light", field: "intensity" } } });
   const b = W.call("set", { id: "lamp", component: "reactions", value: { t: { kind: "toggle", component: "light", field: "shadows" } } });
   return [!n.ok && /true\/false/.test(n.refused.reason) && b.ok, { n: why(n), b: why(b) }];   // says why in a toggle's terms

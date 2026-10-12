@@ -15,6 +15,8 @@ import { serverNow } from './remotes.js';
 import { sendRequest } from './net.js';
 import { plain } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
+import { handsHint, physicsApi as _phys } from './thingphysics.js';
+const myHoldsNow = () => _phys.mine().length > 0;
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { mergePose } from '../../shared/humanoid.js';
@@ -237,6 +239,9 @@ export function chooseSeatPose(name) {
  *  A seat someone is already on is taken (one occupant per socket); the seat
  *  I'm on doesn't count. */
 const _sitV = new THREE.Vector3();
+// R 10-11 00:47: X near the crates lifted her ~5 m: a seat declared on a sign 3 m up counted as 'near' (only the ground
+// distance was read). A plain X offers only a seat you could climb onto; naming one (/sit <name>) still reaches any.
+const SEAT_RISE = { up: 1.6, down: 1.0 };
 function nearestSeat(arg, reach) {
   const want = arg ? String(arg).toLowerCase() : null;
   const mine = avatarMounts.get(CONFIG.name);
@@ -253,6 +258,7 @@ function nearestSeat(arg, reach) {
       const p = socketWorldPos(id, slot, _sitV);
       if (!p) continue;
       const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);
+      if (!want && (p.y - myState.pos.y > SEAT_RISE.up || myState.pos.y - p.y > SEAT_RISE.down)) continue;   // out of climbing reach
       if (d < bestD) { bestD = d; best = { id, slot, d, body }; }
     }
   }
@@ -293,6 +299,22 @@ export function trySitOn(arg, slot = null) {
   return true;
 }
 
+// "I'm working on this" (R, 10-10): while my camera is free of my body in edit mode, the body holds a working pose, so
+// the people around it can see I've stepped out: forearms raised as at a console, head bent to it. Mine to give up: it
+// ends when the camera comes back (the Body switch, or B), and any pose I held before is not restored (moving ends a
+// pose anyway).
+// R, 10-10, on seeing it: "extend the arms out further in front of the body and rotate the hands palm out, kind of like a
+// mage casting magic". Arms forward and a little down (Y −80°, Z −15°), elbows barely bent, wrists back 80° so the palms face out.
+// R 10-10 23:33: 'relax the elbows and spread the arms apart like 15 degrees' (7.5° each arm, elbows 15° → 35°)
+const WORKING_POSE = { leftUpperArm: [0.0772, -0.5863, -0.1053, 0.7995], rightUpperArm: [0.0772, 0.5863, 0.1053, 0.7995], leftLowerArm: [0, -0.3007, 0, 0.9537], rightLowerArm: [0, 0.3007, 0, 0.9537],
+  leftHand: [0, 0, 0.6428, 0.766], rightHand: [0, 0, -0.6428, 0.766], head: [0.0872, 0, 0, 0.9962] };
+let working = false;
+bus.on('edit-freecam', (on) => {
+  const me = getMe(); if (!me) return;
+  if (on && !working) { working = true; me.setPose(WORKING_POSE); myState.pose = WORKING_POSE; }
+  else if (!on && working) { working = false; if (myState.pose === WORKING_POSE) { myState.pose = null; me.clearPose(); } }
+});
+
 // The world's standing offer, kept current at a walk: when a declared seat
 // is within reach the hint bar says so — an affordance nobody can discover
 // is indistinguishable from one that doesn't exist. Checked ~2×/s.
@@ -312,6 +334,8 @@ export function updateSeatHint(dt) {
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
       : b.leaveBy === 'script' ? 'this seat lets you go when the world does' : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
   else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
+  // my hands come first: what I hold and how to let go (it must never be a secret), else what's in reach to pick up
+  if (!downed) { const hh = handsHint(); if (hh && (myHoldsNow() || !hint)) hint = hh; }
   if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
   setAmbientHint(hint);
 }

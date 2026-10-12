@@ -207,6 +207,15 @@ function playground(clock = "pinned") {
   const early = makeReplica(); early.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(x.w), you: "vic" })));
   const from = x.L().length; x.call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] }, 100);
   early.ingest(x.L().slice(from), from);
+  // the screen re-copies its sim only when the engine moved: a say leaves simVersion alone, a launch bumps it (PH-S2 #6).
+  // Its own world, so stage F's digests and rests are untouched.
+  { const z = playground("ticking");
+    const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(z.w), you: "vic" })));
+    const v0 = rep.simVersion; const f2 = z.L().length; z.call("rowan", "say", { text: "hello" }, 50); rep.ingest(z.L().slice(f2), f2);
+    ok(rep.simVersion === v0, "F0 a say entry doesn't bump the client's simVersion (no re-copy of the presentation sim)", { v0, now: rep.simVersion });
+    const f3 = z.L().length; const g = z.call("rowan", "grab", { id: "ball" }, 50); const th = z.call("rowan", "throw", { id: "ball", v: [0.2, 3, 2] }, 50); rep.ingest(z.L().slice(f3), f3);   // contiguous: the lift rides along
+    ok(g.ok && th.ok, "F0 (setup) grab and throw", { g: g.refused, th: th.refused });
+    ok(rep.simVersion > v0, "F0 …and a launch does", { v0, now: rep.simVersion }); }
   // presentation: each client advances its OWN copy of the sim to a display time, never its canonical fold
   const flown = []; let last = null;
   for (let t = 0; t < 120; t++) { const p = early.simAt?.(x.at() + t * 33); const b = p?.bodies?.ball; if (b) { flown.push(b.p.slice()); last = b; } }

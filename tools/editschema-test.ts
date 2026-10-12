@@ -43,7 +43,7 @@ console.log("\nschema is a function of the record:");
   const s = inspectSchema(chair, "c1");
   const G = s.groups.map((g) => g.group);
   // step 3: the channel box's Rotate channels are their own group, `rot` (tools/channelbox-test.ts)
-  check("a chair: pos · rot · parent · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","comp"]', JSON.stringify(G));
+  check("a chair: pos · rot · parent · flags · sockets · hmat (its Material card, R 10-10) · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","hmat","comp"]', JSON.stringify(G));
   check("locked → transform stays editable and says moving it asks first (the door decides, §5)", fieldAt(s, "pos.x")!.disabled !== true && /locked — moving it asks first/.test(fieldAt(s, "pos.x")!.hint), JSON.stringify(fieldAt(s, "pos.x")));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
   check("unknown comp 'local/recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.local/recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
@@ -51,7 +51,9 @@ console.log("\nschema is a function of the record:");
   const l = inspectSchema(lamp, "lamp");
   check("a lamp: a light group from the component's values", fieldAt(l, "light.intensity")?.value === 20 && fieldAt(l, "light.important")?.value === true && fieldAt(l, "light.range")?.value === 6);
   const w = inspectSchema(swing, "s");
-  check("a driven thing: transform tinted, rest pose", fieldAt(w, "pos.x")!.driven === "motion" && fieldAt(w, "pos.x")!.value === 5);
+  // a pendulum about x (no pivot) swings rotate x: that channel is driven; its position isn't, and shows the rest pose
+  const wRot = w.groups.flatMap((g: any) => g.fields).find((f: any) => f.label === "rotate x");
+  check("a driven thing: the channel its pendulum swings is tinted (rotate x), its position is not, and shows the rest pose", wRot?.driven === "motion" && !fieldAt(w, "pos.x")!.driven && fieldAt(w, "pos.x")!.value === 5, JSON.stringify({ rot: wRot?.driven, pos: fieldAt(w, "pos.x")?.driven }));
   check("motion group covers the whole comp AND the part", fieldAt(w, "motion.amp")?.t === "num" && fieldAt(w, "motion.plank|degPerSec")?.value === 60);
   check("axis vector reads back as a name", fieldAt(w, "motion.axis")?.value === "x");
   const m = inspectSchema(cargo, "k");
@@ -140,7 +142,11 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   check("a new slot name declares a seat (pos default [0,0.5,0], no rotation, body) and keeps the others", ns.back.pos[1] === 0.7 && ns.back.pos[0] === 0 && ns.back.q === undefined && ns.back.yaw === undefined && !!ns.back.body && !!ns.seat && !!ns.side, JSON.stringify(ns));
   const ch = channels(inspectSchema(swing, "s"));
   check("channels() carries the group and lists pos before motion", ch[0].group === "pos" && ch.findIndex((c) => c.group === "motion") > ch.findIndex((c) => c.group === "pos"));
-  check("a label longer than 80 chars is cut", val(editOps(unlocked, "c1", { "flags.label": "x".repeat(100) }), "label").length === 80);
+  check("a label longer than 80 chars is refused, with the count (the authority caps it at 80)", (editOps(unlocked, "c1", { "flags.label": "x".repeat(100) }).errors ?? []).some((e) => /label: 100 characters; at most 80/.test(e)));
+  check("flags.clickthrough writes the clickthrough comp (true); off writes no true", val(editOps(unlocked, "c1", { "flags.clickthrough": true }), "clickthrough") === true && sets(editOps(unlocked, "c1", { "flags.clickthrough": false }), "clickthrough").every((o: any) => o.args.value !== true));
+  { const signed = { ...unlocked, comp: { ...unlocked.comp, text: { text: "hi" } } };
+    check("text.outlineColor is a colour the card writes", val(editOps(signed, "c1", { "text.outlineColor": "#ff8800" }), "text")?.outlineColor === 0xff8800); }
+  check("a description longer than 500 chars is refused the same way", (editOps(unlocked, "c1", { "flags.description": "y".repeat(501) }).errors ?? []).some((e) => /description: 501 characters; at most 500/.test(e)));
   const fire = { ...chair, comp: { particles: { preset: "fire", count: 150, origin: [0, 0.25, 0] } } };
   // R 10-07: an older value is written back in today's shape on its first edit: origin is at, the knobs are the effect's params
   const pr = editOps(fire, "c1", { "particles.at|1": "+=0.5", "particles.param|count": 900, "particles.param|quality": "low" });
@@ -244,6 +250,71 @@ console.log("\nthe JSON escape hatch: every typed group, addressed to its comp, 
   check("comp.picture as JSON still runs normalizePicture: an http link is refused, nothing sent", !url.ops.length && /https/.test(url.errors[0] ?? ""), JSON.stringify(url));
   const bad = editOps(ent, "x", { "comp.local/recipe": "{ nope" });
   check("invalid JSON is an error, not an op", !bad.ops.length && /not valid JSON/.test(bad.errors[0] ?? ""));
+}
+
+console.log("\nphysics as fields (R 10-10: 'hard to interact with unless you know code'):");
+{
+  const box = { lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], comp: { physics: { kind: "dynamic", who: "visitor", shape: [[-1, 0, -1], [1, 2, 1]] } } };
+  const m = inspectSchema(box, "pb1"); const g = m.groups.find((x: any) => x.group === "physics");
+  check("a physics component gets its own card of fields (body, pushed by, mass, friction, bounciness, fast mover) and its JSON hatch",
+    !!g && ["kind", "who", "mass", "friction", "restitution", "ccd"].every((k) => g.fields.some((f: any) => f.k === k)) && g.fields.some((f: any) => f.t === "json" && f.collapsed) && !m.groups.find((x: any) => x.group === "comp")?.fields?.some((f: any) => f.k === "physics"));
+  const r = editOps(box, "pb1", { "physics.friction": "0.3", "physics.mass": "" });
+  const v = r.ops[0]?.args?.value;
+  check("an edit writes the whole physics value once: friction set, a blank mass stays absent, the rest kept", r.ops.length === 1 && v?.friction === 0.3 && !("mass" in v) && v?.kind === "dynamic" && Array.isArray(v?.shape), JSON.stringify(r));
+  const bad = editOps(box, "pb1", { "physics.restitution": "2" });
+  check("bounciness above 1 is refused before it is sent", !bad.ops.length && /restitution/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+}
+
+console.log("\nMaterial, the draft hesperus/material (docs/COMPONENT-LADDER.md):");
+{
+  const live = { materials: [{ slot: "wood", name: "Wood", color: 0x8a5a2b, roughness: 0.8, metalness: 0, opacity: 1, emissive: 0 }] };
+  const plain = { lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], comp: {} };
+  const m = inspectSchema(plain, "m1", live); const sec = m.sections.list.find((x: any) => x.title === "Material");
+  check("every thing with a model has a Material card listing its own materials, marked a draft, with an override button", !!sec && sec.draft && sec.present === false && fieldAt(m, "hmat.override") != null && m.groups.find((g: any) => g.group === "hmat").fields.some((f: any) => f.t === "color" && f.disabled && f.value === 0x8a5a2b));
+  const r = editOps(plain, "m1", { "hmat.override": true }, live);
+  check("'override' writes an empty hesperus/material (blank fields = the model's own)", r.ops.length === 1 && r.ops[0].args?.component === "hesperus/material" && JSON.stringify(r.ops[0].args?.value) === "{}", JSON.stringify(r));
+  const ov = { ...plain, comp: { "hesperus/material": { color: 0xff0000 } } };
+  const r2 = editOps(ov, "m1", { "hmat.roughness": "0.2", "hmat.metalness": "" }, live); const v = r2.ops[0]?.args?.value;
+  check("an edit keeps the rest of the override; a blank field stays absent", r2.ops.length === 1 && v?.color === 0xff0000 && v?.roughness === 0.2 && !("metalness" in v), JSON.stringify(r2));
+  const bad = editOps(ov, "m1", { "hmat.opacity": "3" }, live);
+  check("opacity above 1 is refused before it is sent", !bad.ops.length && /opacity/.test(bad.errors[0] ?? ""));
+  const back = editOps(ov, "m1", { "hmat.reset": true }, live);
+  check("'back to the model's own' removes the override", back.ops.length === 1 && /unset|delete/.test(back.ops[0].verb ?? ""), JSON.stringify(back));
+  { const sp = { id: "s1", lib: "x.glb", comp: { transform: { pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, motion: { type: "spin", axis: "y", degPerSec: 45 } } };
+    const g = inspectSchema(sp, "s1", {}).groups; const nums = g.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && /^(translate|rotate|scale) [xyz]$/.test(f.label ?? ""));
+    const drv = nums.filter((f: any) => f.driven).map((f: any) => f.label).sort();
+    check("a spin about y marks only rotate y as driven (not translate, not scale, not the other rotations)", JSON.stringify(drv) === JSON.stringify(["rotate y"]), JSON.stringify(drv));
+    const ax = g.flatMap((x: any) => x.fields).find((f: any) => f.t === "enum" && /axis/.test(f.label ?? ""));
+    check("the motion axis menu offers x, y, z (a negative rate turns it the other way)", JSON.stringify(ax?.options?.map((o: any) => o.v)) === JSON.stringify(["x", "y", "z"]), JSON.stringify(ax?.options));
+    const bob = { ...sp, comp: { ...sp.comp, motion: { type: "bob", amplitude: 0.3 } } };
+    const bd = inspectSchema(bob, "s1", {}).groups.flatMap((x: any) => x.fields).filter((f: any) => f.t === "num" && f.driven).map((f: any) => f.label).sort();
+    check("a bob marks only translate y", JSON.stringify(bd) === JSON.stringify(["translate y"]), JSON.stringify(bd)); }
+  const two = { materials: [{ slot: "material-020", name: "Material.020", color: 0x8a5a2b, roughness: 0.8, metalness: 0 }, { slot: "brass-trim", name: "Brass_trim", color: 0xb08d57, roughness: 0.3, metalness: 1 }] };
+  const sl = inspectSchema(plain, "m1", two); const own = sl.groups.find((g: any) => g.group === "hmat").fields.filter((f: any) => String(f.k).startsWith("own|"));
+  check("its own materials read as people would say them: 'Material.020' is 'material 1', 'Brass_trim' stays 'Brass trim'; each a read-only swatch", own.map((f: any) => f.label).join("|") === "material 1|Brass trim" && own.every((f: any) => f.t === "color" && f.disabled), own.map((f: any) => f.label));
+  const add = editOps(plain, "m1", { "hmat.slot|brass-trim|add": true }, two);
+  check("'change Brass trim only…' writes hesperus/material:brass-trim", add.ops.length === 1 && add.ops[0].args?.component === "hesperus/material:brass-trim", JSON.stringify(add));
+  const slotEnt = { ...plain, comp: { "hesperus/material:brass-trim": { color: 0x00ff00 } } };
+  const se = editOps(slotEnt, "m1", { "hmat.slot|brass-trim|roughness": "0.5" }, two);
+  check("…and its fields edit that slot only", se.ops.length === 1 && se.ops[0].args?.component === "hesperus/material:brass-trim" && se.ops[0].args?.value?.color === 0x00ff00 && se.ops[0].args?.value?.roughness === 0.5, JSON.stringify(se));
+  const cards = inspectSchema(slotEnt, "m1", two).sections.list.filter((x: any) => x.title === "Material");
+  check("a one-slot override lives inside the one Material card (no card of its own)", cards.length === 1 && cards[0].fields.includes("hmat.slot|brass-trim|roughness"), cards.map((x: any) => x.fields));
+  const gone = { ...plain, comp: { "hesperus/material:old-paint": { color: 0xff0000 } } };
+  const gf = inspectSchema(gone, "m1", two).groups.find((g: any) => g.group === "hmat").fields;
+  check("an override for a material the model no longer has says so, and can be removed", gf.some((f: any) => /no such material/.test(f.value ?? "")) && editOps(gone, "m1", { "hmat.slot|old-paint|reset": true }, two).ops.length === 1);
+  const ms = inspectSchema(ov, "m1", live).sections.list.filter((x: any) => x.title === "Material");
+  check("with an override there is ONE Material card (the override's), removable", ms.length === 1 && ms[0].removable && ms[0].key === "hesperus/material");
+}
+
+// Home (R 10-11: "'Home' should probably get a proper UI"): a card of its own, not only the JSON hatch
+{
+  const crate = { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, actor: "r", ts: 1, comp: { home: { pos: [6, 1, 0], q: [0, 0.7071068, 0, 0.7071068], scale: [0.25, 0.25, 0.25] } } };
+  const g = inspectSchema(crate, "t").groups.find((x) => x.group === "home");
+  const f = (k) => g?.fields.find((x) => x.k === k);
+  check("HM1 home gets its own card: position x/y/z, turn, size", !!g && f("pos.y")?.value === 1 && Math.round(f("turn")?.value) === 90 && f("scale")?.value === 0.25, JSON.stringify(g?.fields?.map((x) => [x.k, x.value])));
+  const r = editOps(crate, "t", { "home.pos.y": 2, "home.turn": 180 });
+  const v = sets(r, "home")[0]?.args.value;
+  check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

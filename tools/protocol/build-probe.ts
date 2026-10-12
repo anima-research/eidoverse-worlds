@@ -6,7 +6,7 @@
 //       Create panel has no second "undo building edit"
 //   GH  placing a model: Q / E turn it and , / . size it BEFORE the click (the status line says so), and the click
 //       places it turned and sized, as ONE create
-//   SC  the Inspector's "new script…" makes a script: upload, then ONE act (script:<name> + its use reaction); a
+//   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); a
 //       visitor's use runs it; the Inspector lists it
 // The writes go through the real edit code (structure_ui.js, build.js, scriptnew.js, editpanels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
@@ -133,8 +133,8 @@ try {
   // ---- SC: a new script from the Inspector ----
   { const thing = myActs().at(-1)?.e.body?.request?.id;
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('${thing}'); return true;`);
-    const btn = `[...document.querySelectorAll('[data-frame="inspector"] button')].find((b) => /new script/.test(b.textContent))`;
-    check("SC1 the Inspector offers 'new script…' on the selected thing", await waitFor(`!!(${btn}) && !(${btn}).disabled`), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] button')].map((b) => b.textContent).slice(0, 30)`));
+    const btn = `[...document.querySelectorAll('[data-frame="inspector"] button')].find((b) => /Add Script/.test(b.textContent))`;
+    check("SC1 the Inspector offers 'Add Script…' on the selected thing", await waitFor(`!!(${btn}) && !(${btn}).disabled`), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] button')].map((b) => b.textContent).slice(0, 30)`));
     await evalJson(`(${btn})?.click(), true`);
     check("SC2 …it opens the card, a template that runs as it stands already in it", await waitFor(`!!document.querySelector('#script-new .sn-src') && /world\\.on\\("use"/.test(document.querySelector('#script-new .sn-src').value)`));
     const n0 = myActs().length;

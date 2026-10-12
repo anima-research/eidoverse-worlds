@@ -27,6 +27,7 @@
 const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
 // the postures every body has, and the library's other seated clips (any library clip name works; these are offered)
 const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
+import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './protocol/requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './picture.js';
 import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
@@ -45,6 +46,21 @@ import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
+/** Which channels a whole-entity motion moves: { t: Set of translate axes, r: Set of rotate axes }. */
+export function motionChannels(m) {
+  const all = new Set(['x', 'y', 'z']), none = () => new Set();
+  const letter = (axis, dflt) => { const v = typeof axis === 'string' ? AXES[axis.toLowerCase()] : Array.isArray(axis) ? axis : AXES[dflt];
+    if (!v) return all; const nz = [0, 1, 2].filter((i) => Math.abs(v[i]) > 1e-9); return nz.length === 1 ? new Set(['xyz'[nz[0]]]) : all; };
+  const pivoted = Array.isArray(m?.pivot) && m.pivot.some((n) => Math.abs(n) > 1e-9);
+  switch (m?.type) {
+    case 'spin': return { t: pivoted ? all : none(), r: letter(m.axis, 'y') };
+    case 'pendulum': return { t: pivoted ? all : none(), r: letter(m.axis, 'x') };
+    case 'bob': return { t: letter(m.axis, 'y'), r: none() };
+    case 'orbit': return { t: new Set(['x', 'z']), r: m.face === false ? none() : new Set(['y']) };
+    case 'path': return { t: all, r: m.rot === false ? none() : new Set(['y']) };
+    default: return { t: all, r: all };
+  }
+}
 export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'bob', 'path'];
 // a spin's or an orbit's rate in °/s, read as client/lib/motioneval.js rateOf reads it (shared/ can't import the client;
 // tools/protocol/shiplist-check.ts holds the two together): degPerSec, else 360 / period, else an old rpm × 6, else the default
@@ -120,9 +136,9 @@ export function inspectSchema(ent, id, live = {}) {
   const tf = { disabled: !!partRide, hint: locked ? 'locked — moving it asks first' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
   const pos = pv.pos ?? [0, 0, 0];
   const transform = [
-    { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'z', label: 'translate z', value: round(pos[2]), step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'z', label: 'translate z', value: round(pos[2]), def: 0, step: 0.1, dp: 2, unit: 'm', ...tf },
   ];
   const rotation = [];
   let gimbal = false;
@@ -150,14 +166,19 @@ export function inspectSchema(ent, id, live = {}) {
       let e;
       if (!pv.q) e = [0, pv.yaw ?? 0, 0];
       else { const r = eulerFromQ(pv.q, order, live.euler ?? uprightHint(pv)); e = r.e; gimbal = r.locked; }
-      ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), step: 5, deg: true, ...tf }));
+      ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), def: 0, step: 5, deg: true, ...tf }));
     }
     ['x', 'y', 'z', 'w'].forEach((a, i) => rotation.push({ t: 'num', k: `q${a}`, label: `quat ${a}`, value: round(q[i], 6), step: 0.01, dp: 4, min: -1, max: 1, row: 'quat', ...tf,
       hint: tf.hint ?? 'the stored orientation (unit quaternion x y z w); normalized on commit' }));
   }
   const driven = c.motion?.type && !c.motion.part ? 'motion' : null;   // a whole-entity motion composes onto this REST pose
   // drivenBy: the card's own title (a pendulum's card is Pendulum), so the field's ~ names what you'll land on
-  if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); }
+  // only the channels the motion actually moves (R 10-11: "spin doesn't impact scale or translate, and only the rotation axes
+  // in question"); an unknown type marks every channel it might own
+  if (driven) { const ch = motionChannels(c.motion);
+    for (const f of [...transform, ...rotation]) { if (f.t !== 'num') continue; const lb = String(f.label ?? '');
+      const hit = /^translate ([xyz])$/.test(lb) ? ch.t.has(lb.slice(-1)) : /^rotate ([xyz])$/.test(lb) ? ch.r.has(lb.slice(-1)) : /^quat /.test(lb) ? ch.r.size > 0 : lb === 'heading' ? ch.r.has('y') : false;
+      if (hit) { f.driven = driven; f.drivenBy = String(c.motion.type).replace(/^./, (x) => x.toUpperCase()); } } }
   if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
   groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
   if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
@@ -182,6 +203,11 @@ export function inspectSchema(ent, id, live = {}) {
     ...(locked ? [{ t: 'enum', k: 'lockLevel', label: 'lock level', value: LOCK_LEVEL(c.lock), def: 'builder', options: LOCK_LEVEL_OPTIONS,
       hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
+    { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it (R 10-11)' },
+    { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
+    // selection layer (R 10-11; the draft hesperus/layer): 'auto' is its default by kind; a builder may set it
+    { t: 'enum', k: 'layer', label: 'layer', value: LAYERS.includes(c[LAYER_KEY]) ? c[LAYER_KEY] : 'auto', options: [{ v: 'auto', label: `auto (${defaultLayer(ent)})` }, ...LAYERS.map((v) => ({ v, label: v }))],
+      hint: 'which selection layer it is on: each person chooses in Select ▾ which layers their clicks can land on (the Hierarchy selects anything). auto = by kind; anything riding an avatar is on people' },
     { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
     // R 10-07: how it is described to anyone who reads rather than sees (alt text); what it can do and its state are read
     // out from its components (shared/a11y.js), shown below as everyone who reads it gets it
@@ -266,8 +292,10 @@ export function inspectSchema(ent, id, live = {}) {
       fields.push({ t: 'enum', k: k('type'), label: `${P}type`, value: m.type, options: types.map((v) => ({ v, label: v })) });
       if (['pendulum', 'spin', 'bob'].includes(m.type)) {
         const ax = axisName(m, m.type === 'pendulum' ? 'x' : 'y');
-        const opts = Object.keys(AXES).map((v) => ({ v, label: v }));
-        fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: ax === 'custom' ? [...opts, { v: 'custom', label: 'custom' }] : opts });
+        // x, y, z only (R 10-11: "not sure why we have a negative axis as an option when we can do negative degrees", and the
+        // authority refused '-x'); a stored negative or custom axis still shows as itself
+        const opts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
+        fields.push({ t: 'enum', k: k('axis'), label: `${P}axis`, value: ax, options: opts.some((o) => o.v === ax) ? opts : [...opts, { v: ax, label: ax }] });
       }
       switch (m.type) {
         case 'pendulum':
@@ -375,22 +403,93 @@ export function inspectSchema(ent, id, live = {}) {
     const opts = (list) => list.map((v) => ({ v, label: v }));
     const grips = Object.keys(g.grips);
     groups.push({ group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
-      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'off: not now (a dynamic ball stays kickable)' },
+      { t: 'check', k: 'enabled', label: 'can be picked up', value: g.enabled, hint: 'Off: nobody can pick it up for now. (A loose ball can still be kicked.)' },
       { t: 'enum', k: 'who', label: 'who may', value: g.who, def: GRAB_DEFAULTS.who, options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) },
-      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'off: nobody takes it from whoever holds it (owners still may)' },
-      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'from the hand; past 1.5 m it flies to you' },
-      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'wins over lower when several are in reach (the key, not the table)' },
+      { t: 'check', k: 'steal', label: 'can be taken from a hand', value: g.steal, hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' },
+      { t: 'num', k: 'range', label: 'reach', value: g.range, def: GRAB_DEFAULTS.range, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' },
+      { t: 'num', k: 'priority', label: 'priority', value: g.priority, def: 0, step: 1, dp: 0, min: -10, max: 10, hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' },
       { t: 'enum', k: 'hold', label: 'hold', value: g.hold, def: GRAB_DEFAULTS.hold, options: [['auto', 'auto: while gripping in VR, sticky on desktop'], ['press', 'only while gripping'], ['toggle', 'sticky everywhere (a tool)']].map(([v, label]) => ({ v, label })) },
-      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'how a body without tracked hands holds it' },
-      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'a second hand on a secondary grip steers it; off, a second hand takes it over' },
-      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: '× the release velocity; 0 = it can only be dropped' },
+      { t: 'enum', k: 'pose', label: 'body pose', value: raw.pose ?? 'by size', def: 'by size', options: opts(['by size', ...GRAB_POSES]), hint: 'How an avatar on desktop (no tracked hands) holds it: in one hand, carried in both arms, like a torch, like a pistol, in two hands, or on the shoulder. "by size" picks one hand for small things and both arms for big ones.' },
+      { t: 'check', k: 'twoHanded', label: 'two-handed', value: g.twoHanded, hint: 'On: it can be held in both hands at once, like a rifle or a broom. The first hand carries it and the second hand aims it. Off: only one hand holds it, so grabbing it with your other hand moves it to that hand.' },
+      { t: 'check', k: 'carries', label: 'can carry other entities', value: g.carries, hint: 'On: picking it up brings along whatever is resting on it, like a tray of food. Off: only it comes up, and what was on it falls off, like taking a book out of a pile.' },
+      { t: 'num', k: 'throw', label: 'throw', value: g.throw, def: GRAB_DEFAULTS.throw, step: 0.1, dp: 2, min: 0, max: 3, unit: '×', hint: 'How hard it flies when thrown: 1 is normal, 2 is twice as fast, 0 means it can only be dropped.' },
       { t: 'enum', k: 'release', label: 'let go', value: g.release, def: GRAB_DEFAULTS.release, options: [['drop', 'it falls, or is set down'], ['stay', 'it stays where you let go'], ['return', 'it goes home']].map(([v, label]) => ({ v, label })) },
-      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: '0 = never; unheld that long, it goes home' },
-      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'keywords: a socket whose accepts shares one takes it when let go nearby' },
-      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'a reactions action: what the use button fires while held (down / up for press and release)' },
-      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'up to 40 characters' },
-      { t: 'info', label: 'grips', value: grips.length ? grips.join(', ') : 'none: held where it is grabbed (edit grips in the JSON below)' },
+      { t: 'num', k: 'returnAfter', label: 'goes home after', value: g.returnAfter, def: 0, step: 5, dp: 0, min: 0, max: 3600, unit: 's', hint: 'Left lying around for this many seconds, it returns to its home spot. 0 = it never returns on its own.' },
+      { t: 'text', k: 'fits', label: 'fits sockets', value: g.fits.join(', '), placeholder: 'key, sword…', hint: 'Words that say what it is (key, sword…). Let go near a socket that accepts one of these words and it snaps into the socket.' },
+      { t: 'text', k: 'use', label: 'use while held', value: g.use ? [g.use.down ?? '', g.use.up ?? ''].filter((x, i) => x || i === 0).join(' / ') : '', placeholder: 'action, or down / up', hint: 'What happens when you press the use button while holding it: the name of one of this thing\'s actions. Two names as "down / up" run one on press and the other on release.' },
+      { t: 'text', k: 'prompt', label: 'hover text', value: g.prompt ?? '', placeholder: 'Pick up…', hint: 'The words shown when you point at it, in place of "pick up …". Up to 40 characters.' },
+      { t: 'btn', k: 'gripedit', label: grips.length ? `edit grips (${grips.length}): ${grips.join(', ')}` : 'add grips…', hint: 'Where the hand takes hold of it, and how. Opens a see-through hand you drag into place; mirror it for the other hand, then try it.' },
     ] });
+  }
+
+  // physics (R 10-10: 'hard to interact with unless you know code'): what a builder tunes, as fields; the measured shape as
+  // a fact; everything else (layers, combine rules, centre of mass) through the JSON hatch the group grows below.
+  // A blank number means its absence: the engine's own reading (componentspec's absentMeans), not zero.
+  if (c.physics && typeof c.physics === 'object') {
+    const ph = c.physics; const opt = (v) => (typeof v === 'number' ? String(v) : '');
+    const sh = ph.shape; const box = Array.isArray(sh) && sh.length === 2 && sh.every((p) => Array.isArray(p) && p.length === 3) ? sh[1].map((v, i) => Math.abs(v - sh[0][i])) : null;
+    const shapeWords = box ? `a box ${box.map((v) => v.toFixed(2)).join(' × ')} m` : sh == null ? 'none yet: measured when its model loads' : (typeof sh === 'object' && sh.kind ? `${sh.kind}` : 'measured');
+    groups.push({ group: 'physics', label: 'physics', types: ['physics'], fields: [
+      { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: [['dynamic', 'dynamic'], ['static', 'static'], ['kinematic', 'kinematic'], ['none', 'none']].map(([v, label]) => ({ v, label })),
+        hint: 'How the physics treats it. Dynamic: falls, tumbles, can be pushed. Static: solid, never moves (walls, floors). Kinematic: moves only when its motion or a script moves it, and pushes others. None: no collisions at all.' },
+      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: 'Who can kick it or knock it around.' }] : []),
+      { t: 'text', k: 'mass', label: 'mass (kg)', value: opt(ph.mass), placeholder: 'from its size', hint: 'How heavy it is. Leave it blank and it is worked out from its size, as if it were as dense as water.' },
+      { t: 'text', k: 'friction', label: 'friction', value: opt(ph.friction), placeholder: 'engine default', hint: 'How much it grips what it slides on: 0 is ice, 1 is rubber (up to 10).' },
+      { t: 'text', k: 'restitution', label: 'bounciness', value: opt(ph.restitution), placeholder: 'engine default', hint: 'How much it bounces: 0 lands dead, 1 bounces back as high as it fell.' },
+      { t: 'check', k: 'ccd', label: 'fast mover', value: ph.ccd === true, hint: 'On for small things that fly fast (a thrown ball, a bullet), so they don\'t pass through thin walls. Costs a little more.' },
+      { t: 'info', label: 'shape', value: shapeWords, hint: 'Its collision shape, measured from its model by the server. To change how it bumps into things, use a Collider component.' },
+    ] });
+  }
+
+  // Home: where the reset button sends it (R 10-11: "'Home' should probably get a proper UI"). Position, turn and size, and
+  // what it hangs under; the component's JSON stays below like every card's. A tilted home (a q that isn't a turn about
+  // up) shows its turn and says so; editing the turn writes a level one.
+  if (c.home && typeof c.home === 'object' && Array.isArray(c.home.pos)) {
+    const h = c.home, q = Array.isArray(h.q) && h.q.length === 4 ? h.q : [0, 0, 0, 1];
+    const yaw = Math.atan2(2 * (q[3] * q[1] + q[0] * q[2]), 1 - 2 * (q[1] * q[1] + q[2] * q[2])) * 180 / Math.PI;
+    const level = Math.abs(q[0]) < 1e-4 && Math.abs(q[2]) < 1e-4;
+    const sc = h.scale == null ? null : Array.isArray(h.scale) ? h.scale : [h.scale, h.scale, h.scale];
+    const fields = [
+      ...['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `pos.${ax}`, label: `position ${ax}`, axis: ax, value: round(h.pos[i] ?? 0), def: 0, step: 0.05, dp: 3, unit: 'm', compact: true, hint: `Where the reset puts it back, along ${ax}${h.parent ? ` (in ${h.parent}'s frame)` : ''}.` })),
+      { t: 'num', k: 'turn', label: 'turn', value: round(yaw, 1), def: 0, step: 5, dp: 1, unit: '°', compact: true, hint: level ? 'Which way it faces when it goes home, turned about up.' : 'Which way it faces when it goes home. Its home is tilted too: editing this sets a level turn.' },
+      ...(sc ? (sc[0] === sc[1] && sc[1] === sc[2] ? [{ t: 'num', k: 'scale', label: 'size', value: round(sc[0]), def: 1, step: 0.05, dp: 3, compact: true, hint: 'Its size at home (1 is the model as made).' }]
+        : ['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `scale.${ax}`, label: `size ${ax}`, axis: ax, value: round(sc[i]), def: 1, step: 0.05, dp: 3, compact: true }))) : []),
+      { t: 'info', label: 'under', value: h.parent ? String(h.parent) : 'nothing: the world', hint: 'What it hangs under at home; set by "set home here".' },
+      { t: 'btn', k: 'sethere', label: 'set home to where it is now', hint: 'Records its current place, turn, size and parent as home (Edit ▸ set home here does the same).' },
+    ];
+    groups.push({ group: 'home', label: 'Home', types: ['home'], fields });
+  }
+
+  // Material: the DRAFT hesperus/material (docs/COMPONENT-LADDER.md rung 1). Every thing with a model shows the card:
+  // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
+  // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
+  if (ent.lib) {
+    const MATK = 'hesperus/material'; const ov = c[MATK] && typeof c[MATK] === 'object' ? c[MATK] : null;
+    const own = Array.isArray(live.materials) ? live.materials : [];
+    const label = (m, i) => matLabel(m?.name, i);
+    const fields = own.slice(0, 12).map((m, i) => ({ t: 'color', k: `own|${m.slot}`, label: label(m, i), value: m.color ?? 0xffffff, disabled: true,
+      hint: `The model's own material "${m.name}": roughness ${m.roughness ?? '—'}, metalness ${m.metalness ?? '—'}.` }));
+    if (!own.length) fields.push({ t: 'info', k: 'own|none', label: 'model', value: 'its materials show once the model has loaded' });
+    const block = (pre, o, base, title) => {
+      const num = (k, lab, hint, hi = 1) => ({ t: 'text', k: `${pre}${k}`, label: lab, value: typeof o[k] === 'number' ? String(o[k]) : '', placeholder: base?.[k] != null ? `model's: ${base[k]}` : "model's own", hint: `${hint} 0 to ${hi}; blank keeps the model's own.` });
+      if (title) fields.push({ t: 'info', k: `${pre}head`, label: '', value: title });
+      fields.push({ t: 'color', k: `${pre}color`, label: 'colour', value: Number.isInteger(o.color) ? o.color : (base?.color ?? 0xffffff), hint: "Its base colour." },
+        num('roughness', 'roughness', '0 is mirror-smooth, 1 is matte:'),
+        num('metalness', 'metalness', '0 is plastic, wood, paint; 1 is bare metal:'),
+        { t: 'color', k: `${pre}emissive`, label: 'glow', value: Number.isInteger(o.emissive) ? o.emissive : 0x000000, hint: 'The colour it glows with, lit or not. Black is no glow.' },
+        num('emissiveStrength', 'glow amount', 'How bright the glow is:', 20),
+        num('opacity', 'opacity', '1 is solid, 0 is invisible:'),
+        { t: 'btn', k: `${pre}reset`, label: "back to the model's own", hint: 'Removes this override.' }); };
+    if (ov) block('', ov, own[0], own.length > 1 ? 'every material' : null);
+    const slotKeys = Object.keys(c).filter((k) => k.startsWith(`${MATK}:`) && c[k] && typeof c[k] === 'object');
+    for (const k of slotKeys) { const slot = k.slice(MATK.length + 1); const at = own.findIndex((m) => m.slot === slot);
+      if (own.length && at < 0) fields.push({ t: 'info', k: `slot|${slot}|gone`, label: slot.slice(0, 18), value: "this model has no such material any more: the override does nothing", hint: `hesperus/material:${slot}` },
+        { t: 'btn', k: `slot|${slot}|reset`, label: 'remove it', hint: 'Removes the override for a material this model no longer has.' });
+      else block(`slot|${slot}|`, c[k], own[at], `${label(own[at], at)} only`); }
+    if (!ov) fields.push({ t: 'btn', k: 'override', label: own.length > 1 ? 'change every material…' : 'override its look…', hint: "Change its colour, roughness, metalness, glow or opacity. Fields you leave blank keep the model's own." });
+    if (own.length > 1) for (const [i, m] of own.slice(0, 12).entries()) if (!slotKeys.includes(`${MATK}:${m.slot}`))
+      fields.push({ t: 'btn', k: `slot|${m.slot}|add`, label: `change ${label(m, i)} only…`, hint: `Override just the model's material "${m.name}".` });
+    groups.push({ group: 'hmat', label: 'Material', types: [...(ov ? [MATK] : []), ...slotKeys], fields });
   }
 
   if (c.particles && typeof c.particles === 'object') {
@@ -483,14 +582,16 @@ export function inspectSchema(ent, id, live = {}) {
   // text (batch 2): a sign
   if (isBag(c.text)) {
     const tx = c.text; const D = SPEC.text.defaults;
+    const lumaInt = (c) => (0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)) / 255;   // as texts.js picks the edge
     groups.push({ group: 'text', label: 'text', types: ['text'], fields: [
       { t: 'text', k: 'text', label: 'says', value: tx.text ?? '', multiline: true, hint: `${graphemes(tx.text ?? '')} / ${SPEC.text.ranges.text.maxLen} characters, ≤ 16 lines` },
       { t: 'num', k: 'size', label: 'size', value: tx.size ?? D.size, def: D.size, step: 0.01, dp: 2, min: 0.02, max: 2, unit: 'm', hint: 'the height of a line' },
       { t: 'num', k: 'width', label: 'width', value: tx.width ?? D.width, def: D.width, step: 0.1, dp: 2, min: 0.1, max: 10, unit: 'm', hint: 'where lines wrap' },
       { t: 'enum', k: 'align', label: 'align', value: tx.align ?? D.align, def: D.align, options: ['left', 'center', 'right'].map((v) => ({ v, label: v })) },
       { t: 'color', k: 'color', label: 'colour', value: Number.isInteger(tx.color) ? tx.color : D.color, def: D.color },
-      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'a contrasting edge, so it reads on any background' },
-      { t: 'check', k: 'plate', label: 'background', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
+      { t: 'check', k: 'outline', label: 'outline', value: tx.outline !== false, hint: 'an edge around the letters, so they read on any background' },
+      ...(tx.outline !== false ? [{ t: 'color', k: 'outlineColor', label: 'outline colour', value: Number.isInteger(tx.outlineColor) ? tx.outlineColor : (lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff), def: lumaInt(Number.isInteger(tx.color) ? tx.color : D.color) > 0.5 ? 0x000000 : 0xffffff, hint: 'left alone, the one that contrasts with the text colour' }] : []),
+      { t: 'check', k: 'plate', label: 'plate', value: Number.isInteger(tx.background), hint: 'a plate behind the words' },
       ...(Number.isInteger(tx.background) ? [{ t: 'color', k: 'background', label: 'plate colour', value: tx.background }] : []),
       { t: 'enum', k: 'billboard', label: 'faces', value: tx.billboard ?? D.billboard, def: D.billboard, options: [{ v: 'off', label: 'flat (readable from both sides)' }, { v: 'yaw', label: 'turns to face you' }, { v: 'full', label: 'always faces you' }] },
       { t: 'enum', k: 'lit', label: 'lit', value: tx.lit ?? D.lit, def: D.lit, options: [{ v: 'self', label: 'glows (unlit)' }, { v: 'scene', label: 'takes the scene\'s light' }] },
@@ -514,7 +615,7 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'hidden', 'label', 'sockets', 'grabbable', 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
+  const claimed = new Set(['lock', 'hidden', 'disabled', 'clickthrough', 'label', 'sockets', 'grabbable', ...(c.home && typeof c.home === 'object' && Array.isArray(c.home.pos) ? ['home'] : []), 'hesperus/material', LAYER_KEY, ...Object.keys(c).filter((k) => k.startsWith('hesperus/material:')), ...(c.physics && typeof c.physics === 'object' ? ['physics'] : []), 'particles', 'picture', 'sound', 'story', 'text', ...laKeys, ...mk, ...scriptKeys,
     ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
@@ -572,6 +673,13 @@ const MACHINE_PART = [/^(tripo_)?(part|mesh|node|object|geometry|group|primitive
  *  ("seat plank"), else its place in the model ("part 2": its index in the
  *  model's named parts when the viewer knows them, else the name's own
  *  trailing number + 1, else its order among this entity's part motions). */
+/** A model material's name for a person: generator names ("Material.020", "material_3", "lambert2") become "material N"
+ *  by its place on the model; real words ("Wood", "Brass_trim") stay. */
+export function matLabel(name, i = 0) {
+  const n = String(name ?? '').trim();
+  if (!n || /^(material|mat|lambert|phong|blinn|standard(surface)?|default(material)?|initialshadinggroup|tripo[_a-z]*|mesh|node)([_.\- ]?\d+)*$/i.test(n) || MACHINE_PART.some((re) => re.test(n))) return `material ${i + 1}`;
+  return n.replace(/[_]+/g, ' ').replace(/\.\d+$/, '').trim().slice(0, 24);
+}
 export function partLabel(name, parts = null, ordinal = 1) {
   const n = String(name);
   if (!MACHINE_PART.some((re) => re.test(n))) return n.replace(/[_]+/g, ' ').trim();
@@ -589,7 +697,8 @@ function componentSections(ent, groups, live = {}, id = '?') {
   let partOrdinal = 0;
   for (const inst of components) {
     const rec = RECORDS[inst.type];
-    const sec = { type: inst.type, key: inst.key ?? null, title: inst.type, hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
+    // every card's title starts with a capital (R 10-10: 'physics' was the only one that didn't)
+    const sec = { type: inst.type, key: inst.key ?? null, title: String(inst.type).charAt(0).toUpperCase() + String(inst.type).slice(1), hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
     switch (inst.type) {
       case 'Transform': {
         // the channel box: Translate, Rotate, Scale, the order, and the
@@ -644,13 +753,25 @@ function componentSections(ent, groups, live = {}, id = '?') {
         } else if (inst.type === 'Annotation' && inst.key.startsWith('script:') && g('script')) {
           const name = inst.key.slice(7);            // a script: its switch first, then its JSON (src, scope, on, knobs)
           sec.title = `Script · ${name}`; sec.fields = [`script.${name}`, `script.json|${inst.key}`]; sec.removable = true;
+        } else if (String(inst.key ?? '').startsWith('hesperus/material:') && g('hmat')) {
+          continue;   // a one-slot override lives inside the Material card
+        } else if (inst.key === 'hesperus/material' && g('hmat')) {
+          sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
+        } else if (inst.key === 'physics' && g('physics')) {
+          sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields (R 10-10), not raw JSON
         } else {
           sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
           sec.removable = inst.type !== 'Captions';
           if (inst.type === 'Annotation') sec.title = inst.key;
         }
     }
+    if (typeof sec.title === 'string' && sec.title) sec.title = sec.title.charAt(0).toUpperCase() + sec.title.slice(1);   // every card starts with a capital (R 10-10: 'physics')
     out.push(sec);
+  }
+  // R 10-10: every thing with a model shows a Material card, its model's own materials, even with no override yet
+  if (g('hmat') && !components.some((x) => x.key === 'hesperus/material')) {
+    const anySlot = Object.keys(ent.comp ?? {}).some((k) => k.startsWith('hesperus/material:'));
+    out.push({ type: 'Material', key: null, title: 'Material', hash: null, category: 'Look', summary: "its model's own materials, and an override", fields: refs('hmat'), removable: false, present: anySlot, draft: true });
   }
   // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
   // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
@@ -675,7 +796,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card (R, 10-04), not the header
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'description' || f.k === 'reads'), list: out, add,
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'clickthrough' || f.k === 'description' || f.k === 'reads'), list: out, add,
     lib, libLabel: lib != null ? libLabel(lib) : ent?.comp?.light ? 'light' : 'empty' };
 }
 
@@ -762,6 +883,9 @@ function addOwnOps(ent, id, name, value) {
   // so a later change of the engine's defaults cannot change this lamp
   if (name === 'Light') {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
+    // one place per thing (R 10-11; the authority refuses a light on a model): on a model, the light is a CHILD thing a
+    // metre up, so its pose is its own and the gizmo moves one thing
+    if (c.model != null || ent?.lib != null) return { ops: [OP.create(`${id}-light`, { transform: { pos: [0, 1, 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
   }
   if (name === 'Collider') {
@@ -969,8 +1093,11 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
         else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
-        else if (k === 'label') { const s = String(raw ?? '').trim(); flagsComp('label', s ? s.slice(0, 80) : null); }
-        else if (k === 'description') { const s = String(raw ?? '').trim(); flagsComp('description', s || null); }
+        else if (k === 'clickthrough') flagsComp('clickthrough', bool(raw) ? true : null);
+        else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
+        else if (k === 'layer') { const v = String(raw ?? 'auto'); if (v !== 'auto' && !LAYERS.includes(v)) { errors.push(`flags.layer: one of auto, ${LAYERS.join(', ')}`); break; } flagsComp(LAYER_KEY, v === 'auto' ? null : v); }
+        else if (k === 'label') { const s = String(raw ?? '').trim(); if (graphemes(s) > SPEC.label.maxLen) errors.push(`label: ${graphemes(s)} characters; at most ${SPEC.label.maxLen}`); else flagsComp('label', s || null); }
+        else if (k === 'description') { const s = String(raw ?? '').trim(); if (graphemes(s) > SPEC.description.maxLen) errors.push(`description: ${graphemes(s)} characters; at most ${SPEC.description.maxLen}`); else flagsComp('description', s || null); }
         break;
       }
       case 'light': {
@@ -1062,9 +1189,49 @@ export function editOps(ent, id, edits, live = {}) {
         comps.set('openable', next);
         break;
       }
+      case 'hmat': {
+        const MATK = 'hesperus/material';
+        const m = /^slot\|([^|]+)\|(.+)$/.exec(k); const ck = m ? `${MATK}:${m[1]}` : MATK; const fk = m ? m[2] : k;
+        if (m && !/^[a-z][a-z0-9-]{0,47}$/.test(m[1])) { errors.push(`material: '${m[1]}' isn't a slot name`); break; }
+        if (fk === 'override' || fk === 'add') { if (c[ck] == null) comps.set(ck, {}); break; }
+        if (fk === 'reset') { comps.set(ck, null); break; }
+        const next = comps.get(ck) ?? JSON.parse(JSON.stringify(c[ck] ?? {}));
+        if (fk === 'color' || fk === 'emissive') { const n = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').replace(/^#/, ''), 16);
+          if (raw === null || raw === '') delete next[fk]; else if (Number.isInteger(n) && n >= 0 && n <= 0xffffff) next[fk] = n; else { errors.push(`material.${fk}: a colour`); break; } }
+        else if (['roughness', 'metalness', 'opacity', 'emissiveStrength'].includes(fk)) {
+          const t = String(raw ?? '').trim(); const hi = fk === 'emissiveStrength' ? 20 : 1;
+          if (!t) delete next[fk]; else { const n = Number(t); if (!Number.isFinite(n) || n < 0 || n > hi) { errors.push(`material.${fk}: a number from 0 to ${hi}, or blank`); break; } next[fk] = round(n, 3); } }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set(ck, next);
+        break;
+      }
+      case 'home': {
+        const next = comps.get('home') ?? JSON.parse(JSON.stringify(c.home ?? {}));
+        const n = num(f, raw); if (n == null) break;   // (home.sethere is the client's: it reads where the thing is now)
+        if (k.startsWith('pos.')) { next.pos = [...(next.pos ?? [0, 0, 0])]; next.pos['xyz'.indexOf(k[4])] = round(n, 4); }
+        else if (k === 'turn') { const a = n * Math.PI / 360; next.q = [0, round(Math.sin(a), 6), 0, round(Math.cos(a), 6)]; }
+        else if (k === 'scale') next.scale = round(n, 4);
+        else if (k.startsWith('scale.')) { const s3 = Array.isArray(next.scale) ? [...next.scale] : [next.scale ?? 1, next.scale ?? 1, next.scale ?? 1]; s3['xyz'.indexOf(k[6])] = round(n, 4); next.scale = s3; }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set('home', next);
+        break;
+      }
+      case 'physics': {
+        const next = comps.get('physics') ?? JSON.parse(JSON.stringify(c.physics ?? {}));
+        if (k === 'kind' || k === 'who') next[k] = String(raw);
+        else if (k === 'ccd') { if (bool(raw)) next.ccd = true; else delete next.ccd; }
+        else if (['mass', 'friction', 'restitution'].includes(k)) {
+          const t = String(raw ?? '').trim(); if (!t) { delete next[k]; }
+          else { const n = Number(t); const lim = { mass: [1e-6, 1e6], friction: [0, 10], restitution: [0, 1] }[k];
+            if (!Number.isFinite(n) || n < lim[0] || n > lim[1]) { errors.push(`physics.${k}: a number from ${k === 'mass' ? 'just above 0' : lim[0]} to ${lim[1]}, or blank`); break; }
+            next[k] = round(n, 4); } }
+        else { errors.push(`${key}: no such field`); break; }
+        comps.set('physics', next);
+        break;
+      }
       case 'grabbable': {
         const next = comps.get('grabbable') ?? JSON.parse(JSON.stringify(c.grabbable ?? {}));
-        if (['enabled', 'steal', 'twoHanded'].includes(k)) next[k] = bool(raw);
+        if (['enabled', 'steal', 'twoHanded', 'carries'].includes(k)) next[k] = bool(raw);
         else if (['range', 'priority', 'throw', 'returnAfter'].includes(k)) { const n = num(f, raw); if (n == null) break; next[k] = k === 'priority' ? Math.round(n) : round(n); }
         else if (k === 'pose') { if (raw === 'by size' || raw == null || raw === '') delete next.pose; else next.pose = String(raw); }
         else if (k === 'fits') { const w = String(raw ?? '').split(/[,\s]+/).map((x) => x.trim()).filter(Boolean); if (w.length) next.fits = w; else delete next.fits; }
@@ -1157,7 +1324,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (group === 'story' && k === 'marks') { const ids = String(raw ?? '').split(/[\s,]+/).filter(Boolean); if (ids.length) next.marks = ids; else delete next.marks; }
         else if (k === 'title' || k === 'text') next[k] = String(raw ?? '');
         else if (group === 'text' && (k === 'size' || k === 'width')) { const n = num(f, raw); if (n == null) break; next[k] = round(n); }
-        else if (group === 'text' && (k === 'color' || k === 'background')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
+        else if (group === 'text' && (k === 'color' || k === 'background' || k === 'outlineColor')) { const n = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/i, ''), 16) : +raw; if (!Number.isInteger(n) || n < 0 || n > 0xffffff) { errors.push(`${key}: a colour 0xRRGGBB`); break; } next[k] = n; }
         else if (group === 'text' && k === 'plate') { if (bool(raw)) next.background = Number.isInteger(next.background) ? next.background : 0x202020; else delete next.background; }
         else if (group === 'text' && k === 'outline') next.outline = bool(raw);
         else if (group === 'text' && ['align', 'billboard', 'lit'].includes(k)) next[k] = String(raw);

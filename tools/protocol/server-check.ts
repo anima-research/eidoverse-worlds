@@ -49,7 +49,7 @@ process.on("exit", () => { for (const p of procs) try { p.kill(); } catch {} });
 async function startServer(tree: string, worlds: string, opt: string, tag: string) {
   const port = await freePort(8990 + procs.length * 7);
   const logf = path.join(root, `${tag}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
   for (let i = 0; i < 100; i++) { await sleep(150); try { const r = await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) }); if (r.ok) return { port, proc: p, log: logf }; } catch {} } // bounded: on this host a closed local port can drop the SYN instead of refusing it
@@ -147,9 +147,10 @@ bob.send({ type: "verb", verb: "remove", args: { id: "cup" } }); await sleep(300
   ok(!r.ops.length && /merged into `lock`/.test(r.errors.join(" ")), "S3 the old guard flag is refused by name by the shared planner every surface plans with: guard merged into lock (§5)", r); }
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
-ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't lock-guarded");
+ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).refused?.code === "locked", "S3 a label is lock-guarded too (a lock covers everything, 10-11)");
+ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup", throughLock: true })).ok, "S3 …and Bob, who may lift it, labels through it");
 
-const u = await bob.req("undo", {});
+const u = await bob.req("undo", { throughLock: true });   // the label sits on a locked table: undoing it is an edit too
 ok(u.ok && u.after?.cup && u.after.cup.label === null, "S4 Bob undoes his own last act (the label goes)", u);
 // F2 (decided 10-05): revert goes along rank, never upward. A visitor can't undo Bob's act; an owner may (here the
 // table's lock still stops it, which is the lock doing its job, not rank)
@@ -189,8 +190,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the act tool exposes the protocol's vocabulary (relational place)", dr.content[0].text.slice(0, 200));
   const un0 = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
   ok(un0.isError && /locked/.test(un0.content[0].text), "S5 undoing that place is refused now (the inverse goes through admit: the table is locked)", un0.content[0].text.slice(0, 200));
-  await HANDLERS.act(ag, { verb: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "act");
-  const un = await HANDLERS.act(ag, { verb: "undo", args: {} }, {} as any, "act");
+  await HANDLERS.act(ag, { verb: "set", args: { id: "agentcup", component: "label", value: "mine", throughLock: true } }, {} as any, "act");
+  const un = await HANDLERS.act(ag, { verb: "undo", args: { throughLock: true } }, {} as any, "act");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
   // slice 3c: the agent folds the log stream itself (joined replica), never the v1 projection
   ok(ag.replica?.active === true && ag.entities.has("agentcup"), "S5b the agent folds the authority's own stream, and sees what it made there", [ag.replica?.active, [...ag.entities.keys()]]);
@@ -266,6 +267,34 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const wz = await vic.req("whois", { name: "zed" });
   ok(wz.ok && wz.people?.length === 1 && wz.people[0].id === ZED && wz.people[0].here === false && wz.people[0].role === "visitor" && wz.people[0].kind === "person" && !JSON.stringify(wz).includes("local:"),
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
+  // ---- DR: a live drag is relayed with who is dragging, and its last sample says end (docs/WIRE.md: a live drag is a claim) ----
+  { const da = await client(srv.port, "garden", "Dana", REPLICA); const db = await client(srv.port, "garden", "Dev", REPLICA);
+    await ann.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+    const mk = await da.req("create", { id: "drg", model: "test/cup.glb", place: { at: [2, 2] } });
+    const k0 = db.msgs.length; da.send({ type: "drag", id: "drg", pos: [2.5, 0, 2], yaw: 0 }); await sleep(300); da.send({ type: "drag", id: "drg", pos: [3, 0, 2], yaw: 0, end: true }); await sleep(400);
+    const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === "drg");
+    ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
+    await ann.req("delete", { id: "@world", component: "default-role" });   // back to the world as the later checks expect it
+    da.close(); db.close(); await sleep(200); }
+  // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
+  { const z1 = await client(srv.port, "garden", "zeph", { ...REPLICA, account: "acct-zp" }); const n1 = z1.snapshot?.you; z1.close(); await sleep(200);
+    const z2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-zp" }); const n2 = z2.snapshot?.you, r2 = z2.snapshot?.renameRefused; z2.close(); await sleep(200);
+    const z3 = await client(srv.port, "garden", "zeph-three", { ...REPLICA, account: "acct-zp" }); const n3 = z3.snapshot?.you, r3 = z3.snapshot?.renameRefused;
+    ok(n1 === "zeph" && n2 === "zeph-two" && !r2 && n3 === "zeph-two" && r3?.tried === "zeph-three", "RN1 one rename is free; a second inside the cooldown is refused and the last name stands", { n1, n2, r2, n3, r3, e1: z1.of("error")[0], e2: z2.of("error")[0], e3: z3.of("error")[0] });
+    // the trap: an account that typed a TAKEN name got a suffixed one it never asked for; that must not start its cooldown
+    const y1 = await client(srv.port, "garden", "yan", { ...REPLICA, account: "acct-y" }); const m1 = y1.snapshot?.you; y1.close(); await sleep(200);
+    const y2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-y" }); const m2 = y2.snapshot?.you, q2 = y2.snapshot?.renameRefused; y2.close(); await sleep(200);
+    const y3 = await client(srv.port, "garden", "yan", { ...REPLICA, account: "acct-y" }); const m3 = y3.snapshot?.you, q3 = y3.snapshot?.renameRefused;
+    ok(m1 === "yan" && m2 !== "zeph-two" && /^zeph-two/.test(String(m2)) && !q2, "RN2 a taken name is suffixed for the newcomer (zeph-two is worn by another account)", { m1, m2, q2 });
+    ok(m3 === "yan" && !q3, "RN3 …and going back to their own name is not refused: the suffixed name was never their choice, so it started no cooldown", { m3, q3 });
+    z3.close(); y3.close(); await sleep(200);
+    // the same account re-arriving under a new name is a takeover: the old socket's later close must not depart the body
+    const t1 = await client(srv.port, "garden", "tango", { ...REPLICA, account: "acct-tk" }); await t1.req("move", { to: [1, 0, 1] });
+    const t2 = await client(srv.port, "garden", "tango-two", { ...REPLICA, account: "acct-tk" }); const mv = await t2.req("move", { to: [1.2, 0, 1] });
+    t1.close(); await sleep(500);
+    const after = await t2.req("punt", { id: "no-such-thing" });
+    ok(t2.snapshot?.you === "tango-two" && mv?.ok && after?.refused?.code !== "not-here", "RN4 a rename reconnect is a takeover: when the old socket closes, the body is still in the world", { you: t2.snapshot?.you, mv: mv?.refused, after: after?.refused });
+    t2.close(); await sleep(200); }
   const wa = await vic.req("whois", { name: "Ann" }), wk = await vic.req("whois", { name: KIM });
   ok(wa.people?.[0]?.role === "owner" && wa.people[0].here === true && wk.people?.[0]?.name === "Kim" && wk.people[0].role === "builder", "CM3 …the authority's role (an owner reads as owner, not v1's visitor), and an identity works as the name", [wa, wk]);
   const ww = await vic.req("whois", { name: "Watcher" });

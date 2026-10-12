@@ -39,6 +39,7 @@ import { requestDebug, replica } from './net.js';
 import { sendOps, del, revertPose } from './editwrites.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { state } from './state.js';
+import { offIn } from './realize/models_field.js';
 import { makeSection, flashHint, html } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
@@ -279,7 +280,7 @@ export function sceneDeselect() {
   if (sceneApi?.isOpen) paintScene(true);
 }
 export function sceneSelect(id) {
-  if (!sceneApi || !entities.has(id)) return;
+  if (!sceneApi || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: it isn't realized, it's still there
   selected = id;
   arming = null;
   editingComp = null;

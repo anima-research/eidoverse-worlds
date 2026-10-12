@@ -28,20 +28,26 @@ import { entities } from './world.js';
 import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
-import { replica, net, sendRequest, identities } from './net.js';
+import { colliderFor } from './bodyscale.js';
+import { replica, net, sendRequest as rawSend, identities } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { register as registerAction } from './actions.js';
 import { setPressFx, pressFxOn } from './emitters.js';
-import { advanceSim, tickOf } from '../../shared/protocol/simlayer.js';
+import { advanceSim, tickOf, ENGINES, engineViewM } from '../../shared/protocol/simlayer.js';
+import { simEntry } from '../../shared/sim.js';
+import { planVelocity } from '../../shared/protocol/launchplan.js';
+import { clockRtt } from './serverclock.js';
 import { onWorldChange } from './state.js';
-import { plain } from './plainwords.js';
+import { plain, nameOf } from './plainwords.js';
+import { html } from './markup.js';
+import { xrActive } from './xrask.js';
 import { grabOf, holdPoseOf, fingerPose, armPose, bothArms, pickGrip, HAND_REACH, NEAR_GRAB } from '../../shared/grab.js';
 
 const REACH = 1.5, HAND_Y = 1.1;                  // the authority's: a hand reaches 1.5 m from feet + 1.1 m (authority.js)
 const KICK = { reach: 1.6, below: -0.5, above: 2.0 }; // the authority's punt reach, from the feet
 const TRACK_MS = 200, TRACK_MIN = 0.05;           // the body track: at most 5 moves a second, only when moved
-const THROW = { speed: 8, arc: 0.45 };            // a desktop throw: along the view's heading, ~26° up
+const THROW = { speed: 8, arc: 0.45, lob: 0.6 };   // a desktop throw with no aim: the way my body faces, ~26° up; aimed: a lob of ~34° or steeper
 const PUNT_POWER = 4;                             // physobj's default: a barrel hops a couple of metres
 
 let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing(): bool }
@@ -50,6 +56,7 @@ let hooks = null;   // { myPos(): {x,y,z}, me(): Avatar|null, camera, editing():
 // displayed flights never advanced between folds (R, 10-10: "object location updates every few seconds", a domino
 // "stuck in this tilted position"). Every probe passed its own wall, so none saw it.
 export function initThingPhysics(h) { hooks = h; pushHostHook(() => frame()); }
+export const myAvatar = () => hooks?.me() ?? null;
 // Am I in a headset? xr.js binds this (it imports this module, never the other way round): a tracked body holds with
 // its own hands, so the hold pose's arms are only for a body without them.
 let presenting = () => false;
@@ -83,7 +90,13 @@ onWorldChange((ev) => {
 });
 export const holdsNow = () => holds;
 /** What I hold, per the authority. */
-export const myHolds = () => Object.keys(holds).filter((id) => holds[id].by === net.you);
+// newest first: what I picked up last is what I put down, throw or use first (R, 10-10: "you drop the last thing you
+// picked up first"). The order is this client's own (when it first saw each hold); the wire carries none.
+const heldSeen = new Map(); let heldN = 0;
+export const myHolds = () => { const mine = Object.keys(holds).filter((id) => holds[id].by === net.you);
+  for (const id of mine) if (!heldSeen.has(id)) heldSeen.set(id, ++heldN);
+  for (const id of heldSeen.keys()) if (!mine.includes(id)) heldSeen.delete(id);
+  return mine.sort((a, b) => heldSeen.get(b) - heldSeen.get(a)); };
 function released(id) {
   // the realizer re-asserts where the log has it on its next change; until the fold or the sim owns it again, the
   // last drawn pose stays (a put's change entry and a throw's launch both arrive BEFORE this message: server order)
@@ -103,6 +116,17 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
 const worldHasPhysics = () => { const es = replica.st?.entities; if (!es) return false; if (es['@world']?.c['physics-engine']) return true;
   for (const id in es) if (es[id].c.physics?.kind === 'dynamic' || es[id].c.grabbable) return true; return false; };
 bus.on('cut-adopted', () => { arrived = false; trackedAt = null; holds = {}; stuck = null; arriveFails = 0; });   // a fresh cut: try at once
+// R 10-10 ("Couldn't grab: your body isn't in the world yet", after a rename): the authority had no body for me while
+// this client thought it had arrived. Whatever the cause, the refusal says so: re-arrive once and send it again.
+let lagMs = 0;   // lab knob (physicsApi.lag): delay a throw/drop request by this much, as a slow round trip would
+async function sendRequest(verb, args) {
+  if (lagMs && (verb === 'throw' || verb === 'drop')) await new Promise((res) => setTimeout(res, lagMs));
+  const r = await rawSend(verb, args);
+  if (verb === 'move' || r?.refused?.code !== 'not-here') return r;
+  arrived = false; trackedAt = null; arriveFails = 0; stuck = null;
+  return (await track(true)) ? rawSend(verb, args) : r;
+}
+export { sendRequest as requestWithBody };
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false) {
   if (!replica.active || !net.joined) return false;
@@ -182,7 +206,7 @@ function handOf(actorId, side = 'right', out = _hp) {
 const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3();
 const _px = new THREE.Vector3(), _py = new THREE.Vector3(), _pz = new THREE.Vector3(), _pm = new THREE.Matrix4();
 const PALM_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);   // grip frame in a T-pose hand bone
-function palmOf(actorId, side, out) {
+export function palmOf(actorId, side, out) {
   const av = avatarOf(actorId); const H = av?.vrm?.humanoid; if (!H) return null;
   const raw = (n) => H.getRawBoneNode?.(n) ?? null;
   const hand = raw(`${side}Hand`); if (!hand) return null;
@@ -237,7 +261,14 @@ function heldPose(id, h, obj) {
   obj.getWorldScale(_ws);
   if (!tracked(h.by) && g && bothArms(holdPoseOf(g, sizeOf(id, obj))) && !grip) {
     const a = palmOf(h.by, 'right', P1), b = palmOf(h.by, 'left', P2);
-    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); return { p: _tp.copy(a.p).lerp(b.p, 0.5).sub(_held), q: null }; }
+    if (a && b) { obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq); _tp.copy(a.p).lerp(b.p, 0.5);
+      // carried in both arms it sits AGAINST the body, not around it: its centre goes out in front by what it is deep,
+      // less the arm's reach to the palms (R, 10-10: a wrecking ball held by its centre swallowed the avatar)
+      const av = avatarOf(h.by), sz = sizeOf(id, obj);
+      if (av?.root && Array.isArray(sz)) { const fx = _tp.x - av.root.position.x, fz = _tp.z - av.root.position.z, fl = Math.hypot(fx, fz);
+        const push = Math.max(0, Math.max(sz[0], sz[2]) / 2 - Math.max(0, fl - 0.12));
+        if (fl > 1e-3 && push > 0) { _tp.x += fx / fl * push; _tp.z += fz / fl * push; } }
+      return { p: _tp.sub(_held), q: null }; }
   }
   const palm = (grip || h.offset) ? palmOf(h.by, side, P1) : null;
   if (palm && grip) {
@@ -255,12 +286,23 @@ function heldPose(id, h, obj) {
   obj.getWorldQuaternion(_hq); _held.copy(localCentre(id, obj)).applyQuaternion(_hq);
   return { p: _tp.copy(hand).sub(_held), q: null };
 }
+// R 10-10 evening: a thing held with no grip (or carried in both arms) kept its world orientation as she turned. It now
+// keeps the turn it had relative to the holder's body when it was taken (yaw only: the body turns about up).
+const heldTurn = new Map();   // `${id}|${by}` → the thing's rotation in the holder's yaw frame
+const _bq = new THREE.Quaternion(), _bodyQ = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+function bodyYawQ(by) { const av = avatarOf(by); if (!av?.root) return null; av.root.getWorldQuaternion(_bq);
+  const f = new THREE.Vector3(0, 0, 1).applyQuaternion(_bq); return _bodyQ.setFromAxisAngle(_up, Math.atan2(f.x, f.z)); }
 function drawHeld() {
   const now = performance.now();
+  for (const k of heldTurn.keys()) { const [id, by] = k.split('|'); if (holds[id]?.by !== by) heldTurn.delete(k); }
   for (const [id, h] of Object.entries(holds)) {
     if (pres?.bodies?.[id]) continue;              // thrown or dropped: the launch is folded, the flight draws it
     const obj = entities.get(id); if (!obj) continue;
     const at = heldPose(id, h, obj); if (!at) continue;
+    if (!at.q) { const bq = bodyYawQ(h.by);
+      if (bq) { const key = `${id}|${h.by}`; let r = heldTurn.get(key);
+        if (!r) { r = bq.clone().invert().multiply(obj.getWorldQuaternion(new THREE.Quaternion())); heldTurn.set(key, r); }
+        at.q = bq.clone().multiply(r); } }
     const pull = pulls.get(id);
     if (pull) { const k = Math.min(1, (now - pull.t0) / pull.dur); if (k >= 1) pulls.delete(id); else { const e = 1 - (1 - k) ** 3; at.p.lerpVectors(pull.from, at.p, e); } }
     setWorldPose(obj, at.p, at.q);
@@ -300,12 +342,57 @@ const presOwns = (id) => !!pres?.bodies?.[id];
 const _dq = new THREE.Quaternion(), _p = new THREE.Vector3();
 /** Console/probe surface: the displayed sim (a copy), and the canonical fold's view. */
 export const simShown = () => pres;
+// ---- my own release, predicted (DESIGN-physics-responsiveness §3; STRIKES PH-S1-3: a throw stayed in the hand one round
+// trip, then jumped RTT/2 along the arc). On send, the launch is folded into the PRESENTATION copy only, at the tick the
+// entry will most likely take (now + rtt/2 + one tick), with the inputs the authority will stamp (p as sent, q as sent, v
+// scaled by grabbable.throw and capped as launch() does). When the real entry arrives the fresh copy of the canonical fold
+// is the truth: same tick and inputs give the same bits (Covenant IV), so nothing shows; otherwise the truth replaces it
+// and a per-body draw offset decays the difference (Fiedler's error offset, never a blend of states). A refusal, or no
+// entry within PENDING_MS, removes it and the thing eases back into the hand. Nothing here is ever read back into a
+// request (Covenant III): whereIs, reach and the canonical fold never see a provisional body.
+const pending = new Map();   // id -> { ts, args, sentAt }
+const PENDING_MS = 1500, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;   // a reply normally lands within 300 ms; while a guess is pending, others' news waits (second review S3)
+let predictOn = true;        // lab knob (physicsApi.predict(false)): the old shape, for the probe's control arm
+const swapFrom = new Map();  // id -> drawn world position before a copy swap (the offset starts from it)
+function planRelease(id, pos, v, w) {
+  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
+  const obj = entities.get(id); if (!obj) return null;
+  const vv = planVelocity(v, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw').v;   // the authority's own arithmetic (launchplan.js)
+  const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
+  return { id, p: pos, q, v: vv, ...(w ? { w } : {}) };
+}
+function predict(args) {
+  if (presV !== replica.simVersion || !pres) { pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++; if (!pres) return false; }
+  const now = serverNow(); const ts = now + clockRtt() / 2 + pres.epoch.tickMs;
+  pending.set(args.id, { ts, args, sentAt: now }); applyPending(args.id); return true;
+}
+function applyPending(id) {
+  const pd = pending.get(id); if (!pd || !pres?.epoch || !replica.st) return;
+  const floor = pres.epoch.ts + pres.tick * pres.epoch.tickMs; const ts = Math.max(pd.ts, floor);   // never earlier than what's drawn
+  const view = engineViewM(replica.st, {}); const base = view.entities[id]; if (!base) return;
+  view.entities[id] = { ...base, pos: pd.args.p };
+  simEntry(pres, { seq: -1, ts, actor: net.you, verb: 'launch', args: pd.args }, view);
+  if (pres.bodies[id]) pres.bodies[id].provisional = true;
+}
+function unpredict(id) {
+  if (!pending.delete(id)) return;
+  const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); pulls.set(id, { from: obj.getWorldPosition(new THREE.Vector3()), t0: performance.now(), dur: 150 }); }
+  presV = -1;   // the next frame takes a fresh copy of the truth, where it is still in the hand
+}
+const pendingNow = () => Object.fromEntries([...pending].map(([id, p]) => [id, { ts: p.ts, sentAt: p.sentAt }]));
 function drawFlights(wall, now) {
   const canon = replica.sim;
   if (!canon?.sim || canon.foreign) { if (pres) { for (const id of Object.keys(pres.bodies)) suspendCollider(id, false); } pres = null; prev.clear(); return; }
-  if (presV !== replica.simVersion) {
+  // while one of my releases is still a guess (no entry yet), keep this copy: a fresh copy of the canonical fold stands at
+  // the latest entry's tick, which may be past the guess's, and re-folding the guess there would restart it from the hand
+  // (full probe 10-11: a 0.6 m forward jump when the truth then landed). Other bodies' news waits one round trip, no more.
+  const guessing = pres && presV !== -1 && pending.size > 0 && ![...pending].some(([id, pd]) => canon.launched[id] || wall - pd.sentAt > PENDING_MS);
+  if (presV !== replica.simVersion && !guessing) {
     const was = pres ? Object.keys(pres.bodies) : [];
+    swapFrom.clear(); if (pres) for (const id of was) { const o = entities.get(id); if (o) { o.updateWorldMatrix(true, false); swapFrom.set(id, o.getWorldPosition(new THREE.Vector3())); } }
     pres = replica.simClone(); presV = replica.simVersion; tickSeen = -1; stats.clones++;
+    // my predicted releases: the real launch folded is the truth (drop the guess); not yet, re-fold the guess into this copy
+    for (const [id, pd] of pending) { if (canon.launched[id] || wall - pd.sentAt > PENDING_MS) pending.delete(id); else applyPending(id); }
     for (const id of was) if (!pres.bodies[id] && !holds[id]) suspendCollider(id, false);   // its rest is the fold's now
   }
   const target = tickOf(pres, wall);
@@ -323,10 +410,18 @@ function drawFlights(wall, now) {
     //  over a hold the authority hasn't yet said is over)
     const b = pres.bodies[id]; const obj = entities.get(id); if (!obj) continue;
     let sp = spins.get(id);
-    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone() }; spins.set(id, sp); suspendCollider(id, true); }
+    if (!sp) { obj.getWorldQuaternion(_hq); sp = { q: _hq.clone() }; spins.set(id, sp); suspendCollider(id, true);
+      // the engine owns a launched body until its rest: it hangs from the scene, not from what it rode on (R 10-11: a stack's
+      // riders stayed under the box she took, dragged along by its hold, until the rest re-parented them seconds later)
+      if (obj.parent && !obj.parent.isScene) bus.emit('flight-detach', { id }); }
     const pv = b.resting ? undefined : prev.get(id);
     if (pv) _p.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k, pv[2] + (b.p[2] - pv[2]) * k);
     else _p.set(b.p[0], b.p[1], b.p[2]);
+    // a copy swap that moved this body's drawn place: carry the difference as a draw offset and let it decay (2 cm: gone;
+    // a metre or more: fast; 3 m: snap; a logged rest eases too, a slide beats a pop). The truth (base.pos, colliders) never carries it.
+    const from = swapFrom.get(id); if (from) { swapFrom.delete(id); const d = from.sub(_p); if (d.length() >= OFFSET_DEAD) { stats.swaps.push({ id, tick: pres.tick, target, k: +k.toFixed(2), prov: !!b.provisional, resting: !!b.resting, d: +d.length().toFixed(3), from: from.toArray().map((n) => +n.toFixed(3)), to: _p.toArray().map((n) => +n.toFixed(3)) }); if (stats.swaps.length > 12) stats.swaps.shift(); }
+      if (d.length() >= OFFSET_DEAD && d.length() < OFFSET_SNAP) sp.dp = d; else delete sp.dp; }
+    if (sp.dp) { if (sp.dp.length() < OFFSET_DEAD) delete sp.dp; else { _p.add(sp.dp); sp.dp.multiplyScalar(sp.dp.length() >= 1 ? 0.8 : 0.9); } }
     const q = sp.q;
     // the engine carries the body's own rotation: draw that, nothing invented (a body without one keeps the rotation it has)
     if (b.q) { q.set(b.q[0], b.q[1], b.q[2], b.q[3]); if (pv?.q) q.copy(_dq.copy(pv.q).slerp(q, k)); }
@@ -334,9 +429,10 @@ function drawFlights(wall, now) {
     if (obj.userData.base?.pos) { obj.userData.base.pos[0] = b.p[0]; obj.userData.base.pos[1] = b.p[1]; obj.userData.base.pos[2] = b.p[2]; }
   }
   for (const id of spins.keys()) if (!pres.bodies[id]) spins.delete(id);
+  swapFrom.clear();
 }
 
-const stats = { frames: 0, ms: 0, clones: 0, maxMs: 0 };
+const stats = { frames: 0, ms: 0, clones: 0, maxMs: 0, swaps: [] };   // swaps: the last copy swaps that moved a drawn body (probe)
 /** One presentation frame. `wall` (the server clock, ms) may be given: a probe can sample the real applier at exact
  *  display times without depending on the page's frame rate (simworld's bench rule). */
 function frame(wall) {
@@ -355,10 +451,17 @@ const say = (t) => logChat('*', t);
 const REPEAT_MS = 5000, saidAt = new Map();
 // (keyed by the words with their numbers taken out: a too-fast or solid reason names a distance or a spot that changes
 // every step, so the same refusal never matched itself; review round 2)
-const refused = (what, r, id = '') => { const x = r?.refused, text = plain(what, r), now = performance.now(), key = `${what}|${id}|${x?.code ?? ''}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;   // + the thing: 'crate 2' and 'crate 3' stay two (review round 3)
+const refused = (what, r, id = '') => { const x = r?.refused, now = performance.now();
+  // a let-go out of reach is the server's body track a step behind mine, not something she did (R 10-11: 'Not obvious what's wrong')
+  const text = x?.code === 'out-of-reach' && (what === 'throw' || what === 'drop') ? `Couldn't ${what} it from there: the server still has you a step back from where you see yourself. Try again — standing still a moment helps` : plain(what, r);
+  // at a desk: the status bar, in the attention colour, EVERY time you ask (R, 10-10: the chat line came "not every time
+  // I try - only every 5s or so"; it is no longer a chat line). The event below (a headset's card, the probes) keeps
+  // its once-per-5-s rule: a squeeze repeated is not news.
+  if (!xrActive()) flashHint(text, 3800, 'attn');
+  const key = `${what}|${id}|${x?.code ?? ''}|${text.replace(/-?\d+(?:\.\d+)?/g, '#')}`;   // + the thing: 'crate 2' and 'crate 3' stay two (review round 3)
   if (now - (saidAt.get(key) ?? -Infinity) < REPEAT_MS) return r;
   saidAt.delete(key); saidAt.set(key, now); if (saidAt.size > 64) saidAt.delete(saidAt.keys().next().value);
-  say(text); bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
+  bus.emit('thingphysics-refused', { verb: what, refused: x, text }); return r; };   // a person's words (plainwords.js)
 // what a hand may pick up: grabbable (shared/grab.js grabOf: the authority's own reader, so a dynamic thing with no grabbable
 // counts, as at the authority); what a foot may punt: physics {kind: 'dynamic'}
 let gIds = { st: null, head: -2, ids: [] };   // per fold (the fold is applied in place: keyed by its object and its head)
@@ -394,10 +497,23 @@ export async function grab(name) {
   return r;
 }
 /** Set down what you hold (straight down onto what's below your hand). */
-export async function put(name) {
+export async function put(name, spot = null) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
-  const r = await sendRequest('put', { id });
+  // a spot [x, z] (where the cursor is): set it down there, on whatever is below; the authority checks my reach
+  if (Array.isArray(spot)) { const r = await sendRequest('put', { id, at: [r3(spot[0]), r3(spot[1])] }); return r?.ok ? r : refused('put', r, id); }
+  // in front of my feet, clear of my body (the authority's default is under the hand, which is inside my own footprint:
+  // a wrecking ball set down there shoved me 0.67 m aside, and the camera with me; R, 10-10). The authority works out
+  // the height and what it lands on.
+  const f = feet(), yaw = hooks?.myState?.()?.yaw, obj = entities.get(id), sz = obj ? sizeOf(id, obj) : null;
+  const out = Math.min(1.2, colliderFor(hooks?.me?.()?.userScale).r + (Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15) + 0.12);   // my walking capsule + its half-width + a gap
+  // in front of me; facing the world's edge, beside me, else behind (the authority refuses a spot past its bounds)
+  const B = compsOf('@world')?.bounds, half = Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15;
+  const inside = (x, z) => !B?.min || (x - half >= B.min[0] && x + half <= B.max[0] && z - half >= B.min[2] && z + half <= B.max[2]);
+  let at = null;
+  if (f && Number.isFinite(yaw)) for (const turn of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) { const x = f[0] + Math.sin(yaw + turn) * out, z = f[2] + Math.cos(yaw + turn) * out;
+    if (inside(x, z)) { at = [r3(x), r3(z)]; break; } }
+  const r = await sendRequest('put', { id, ...(at ? { at } : {}) });
   return r?.ok ? r : refused('put', r, id);
 }
 /** Let go: it falls (with physics) from where your hand is. */
@@ -408,18 +524,33 @@ export async function drop(name) {
   return r?.ok ? r : refused('drop', r, id);
 }
 /** Throw what you hold along your view, from your hand. */
+/** Throw what I hold (the newest). `aim`: a world point [x, y, z] to land on (where the cursor is: R, 10-10, "it just aims
+ *  away from your camera view, not at the spot you're aiming with your cursor"): a lob that comes down there, as hard as
+ *  the distance needs, up to the engine's limit. No aim: ahead of my body, the way it faces. A number is a speed. */
 export async function throwHeld(arg) {
   const id = myHolds()[0]; if (!id) return say('you aren\'t holding anything');
-  const speed = Math.min(20, Math.max(1, parseFloat(arg) || THROW.speed));
-  // where you look, as an arc: the view's heading, lifted by THROW.arc, and higher when you look up (a third-person
-  // camera always looks down at your body: its pitch alone would throw everything flat into the ground)
-  const cam = hooks?.camera; const dir = new THREE.Vector3(0, 0, 1);
-  if (cam) cam.getWorldDirection(dir);
-  const h = Math.hypot(dir.x, dir.z) || 1, up = Math.min(1.2, THROW.arc + Math.max(0, Math.asin(Math.max(-1, Math.min(1, dir.y)))));
-  const v = [dir.x / h * Math.cos(up) * speed, Math.sin(up) * speed, dir.z / h * Math.cos(up) * speed].map(r3);
   await track(true);
-  const pos = heldPos(id);
-  const r = await sendRequest('throw', { id, v, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  const pos = letGoAt(heldPos(id)), aim = Array.isArray(arg) && arg.length === 3 && arg.every(Number.isFinite) ? arg : null;
+  let v;
+  if (aim && pos) {
+    const dx = aim[0] - pos.x, dz = aim[2] - pos.z, d = Math.hypot(dx, dz), dy = aim[1] - pos.y;
+    if (d < 0.3) v = [0, 1, 0];   // at my own feet: let it go
+    else { // a lob at THROW.lob that passes through the point: v² = g d² / (2 cos²θ (d tanθ − Δy)); steeper when the point is high
+      let th = Math.max(THROW.lob, Math.atan2(dy, d) + 0.35); th = Math.min(1.25, th);
+      const den = 2 * Math.cos(th) ** 2 * (d * Math.tan(th) - dy);
+      const sp = Math.min(20, Math.max(1.5, den > 1e-6 ? Math.sqrt(9.81 * d * d / den) : 20));
+      v = [dx / d * Math.cos(th) * sp, Math.sin(th) * sp, dz / d * Math.cos(th) * sp].map(r3); }
+  } else {
+    const speed = Math.min(20, Math.max(1, parseFloat(arg) || THROW.speed)), yaw = hooks?.myState?.()?.yaw ?? 0;
+    v = [Math.sin(yaw) * Math.cos(THROW.arc) * speed, Math.sin(THROW.arc) * speed, Math.cos(yaw) * Math.cos(THROW.arc) * speed].map(r3);
+  }
+  // a thrown thing tumbles forward, as an overhand throw does (R 10-10: "naturally there would be some" spin): about the
+  // level axis across the throw, faster for a harder throw. A VR hand sends its own measured spin instead.
+  const fl = Math.hypot(v[0], v[2]), sp = Math.hypot(...v), mag = Math.min(8, 0.8 * sp);
+  const w = fl > 0.2 ? [v[2] / fl * mag, 0, -v[0] / fl * mag].map(r3) : null;
+  const sent = pos ? pos.toArray().map(r3) : null; const plan = planRelease(id, sent, v, w); if (plan) predict(plan);
+  const r = await sendRequest('throw', { id, v, ...(w ? { w } : {}), ...(sent ? { pos: sent } : {}), ...(plan ? { q: plan.q } : {}) });
+  if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused('throw', r, id);
 }
 /** A hand's grab (VR grip, or any caller with a hand position [x, y, z]): the nearest thing it can carry within reach of
@@ -435,8 +566,10 @@ export async function grabNear(at, within = 0.6) {
 export async function release(v = [0, 0, 0], name) {
   const id = name || myHolds()[0]; if (!id) return null;
   await track(true);
-  const pos = heldPos(id); const still = v.every((n) => Math.abs(n) < 0.05);
-  const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  const pos = letGoAt(heldPos(id)); const still = v.every((n) => Math.abs(n) < 0.05);
+  const sent = pos ? pos.toArray().map(r3) : null; const plan = still ? null : planRelease(id, sent, v.map(r3), null); if (plan) predict(plan);
+  const r = await sendRequest(still ? 'drop' : 'throw', { id, ...(still ? {} : { v: v.map(r3) }), ...(sent ? { pos: sent } : {}), ...(plan ? { q: plan.q } : {}) });
+  if (!r?.ok) unpredict(id);
   return r?.ok ? r : refused(still ? 'drop' : 'throw', r, id);
 }
 /** /punt [thing] [power]: kick the named thing, or the nearest at your feet, through it from where you stand. */
@@ -586,7 +719,7 @@ const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
     run: () => (myHolds().length ? put() : grab()) },
   { code: 'KeyC', key: 'C', id: 'body:throw', title: 'throw what you hold / punt what\'s at your feet', keywords: ['throw', 'kick', 'punt', 'toss'],
-    run: () => (myHolds().length ? throwHeld() : punt()) },
+    run: () => (myHolds().length ? throwHeld(hooks?.aim?.() ?? undefined) : punt()) },   // at the spot under the cursor (main.js hands me aim())
 ];
 for (const { code, ...a } of KEYS) registerAction({ ...a, group: 'body' });
 bus.on('key', (e) => {
@@ -594,8 +727,30 @@ bus.on('key', (e) => {
   KEYS.find((k) => k.code === e.code)?.run();
 });
 
+/** The hint bar's line about my hands (localbody.js updateSeatHint): what I hold and how to let go, else what's in reach
+ *  to pick up. R, 10-10: "there's no help option to assist me while I'm holding anything". Null in a headset, in edit mode,
+ *  outside a world. */
+export function handsHint() {
+  if (!replica.active || hooks?.editing?.() || xrActive()) return null;
+  const held = myHolds()[0];
+  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click a spot to set it down there · <kbd>T</kbd> at your feet · <kbd>C</kbd> throws at the cursor · right-click for more`;
+  const near = nearest(inHand, grabbableIds(), prioOf);
+  return near ? html`click or <kbd>T</kbd> to pick up <b>${nameOf(near) ?? near}</b>` : null;
+}
+
 /** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown,
+/** Could my hand set something down at this spot on the floor from where I stand (the authority's reach, with a margin)? */
+// where a let-go starts: the thing as drawn in my hand, but never further from the authority's hand than its reach. A big
+// thing carried two-armed is drawn pushed out from the chest, and the authority's track of a walking body runs a step
+// behind: R 10-11 14:25, 'Couldn't throw: … is 1.586 m from your hand as the authority tracks your body; you can reach 1.5 m'
+const letGoAt = (pos) => { const f = feet(); if (!pos || !f) return pos; const h = new THREE.Vector3(f[0], f[1] + HAND_Y, f[2]);
+  const d = pos.distanceTo(h), lim = REACH - 0.15; return d <= lim ? pos : h.lerp(pos, lim / d); };
+const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f[0], y - (f[1] + HAND_Y), z - f[2]) <= REACH - 0.08; };
+/** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
+const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
+/** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
+const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), inReach, whereFromMe, canPutAt,
   /** the held things whose fx this client is drawing now (grabbable's presence tier) */
   fx: () => pressFxOn(),
   /** what a hand may do with a thing (shared/grab.js grabOf over this client's fold), or null */

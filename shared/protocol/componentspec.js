@@ -13,7 +13,7 @@ export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   transform: { on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { on: "thing", type: "string", help: "which model it shows: a name from find {kind: 'model'}, or its content address eido:sha256/<64 hex> (spec/EIDO-URIS.md; a glTF binary by its role)" },
-  label:     { type: "string", help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
+  label:     { type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
   // name / description / role+state. label stays the name; description is how the thing is described to any text-based
   // reader (alt text), one plain string, like label and picture.alt; what it can do and its state are GENERATED from its
@@ -28,6 +28,8 @@ export const COMPONENTS = {
   collider:  { on: "thing", fields: { shape: "string" }, enums: { shape: ["exact", "box", "sphere"] }, help: "how it collides: {shape: exact (its triangles) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box)}; absent, its size decides" },
   stage:     { on: "thing", fields: { speaker: "any" }, help: "the caption bot's stage mark: {speaker?: who is speaking here}" },
   hidden:    { on: "thing", type: "bool", help: "true: not drawn by any client (it's still there: it collides, look and inspect list it). Delete it to show the thing again" },
+  clickthrough: { on: "thing", type: "bool", help: "true: a pointer click passes through it to whatever is behind (it is still drawn, collides, and can be grabbed by a hand or a tool; the editor still selects it). Delete it to make it a click target again" },
+  disabled:  { on: "thing", type: "bool", help: "true: switched off. It stays in the record and the Hierarchy, but no client loads or draws it, it has no collider and no physics, and nothing may grab, punt, use or sit on it; what hangs under it is switched off with it. Delete it to switch the thing back on" },
   pivot:     { on: "thing", help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   // attaching to a NAMED point on the parent is general (Unreal AttachToComponent's SocketName, Roblox Attachment,
   // Godot BoneAttachment3D): socket names one of the parent's sockets
@@ -61,6 +63,9 @@ export const COMPONENTS = {
   // using it (VRChat Station, Roblox Seat): chairs, swings, saddles, a car's seats. Things attach with parent {to, socket}.
   sockets:   { on: "thing", map: "object", help: "{<name>: {pos: [x,y,z] (its own frame), q? [x,y,z,w] (its rotation: a rocket seat lies on its back), part? (a model node it rides), accepts? [keywords] + radius? (m, default 0.15): a thing released within radius whose grabbable.fits shares a keyword snaps in (a key on its hook, a sword in its rack), body?: what a person's body does there: {action ('sit'; what 'use' calls it), anchor (root, the default | hips | feet | head: the body point on the socket), pose (a clip; {clip, time: 'phase'}; or a blend {by: 'speed'|'steer'|…|'param.<name>', clips: [[0,'idle'],[2,'walk']]}), poses {<name>: pose} + sync, approach [x,y,z,yaw], enter/leave (clips), exit [x,y,z], reach {leftHand: {at, q?, part?, hint?, vr: snap|track|near}}, hold {<bone>: q}, look {yaw: [min,max]°, pitch, up: world|socket}, input {move: none|drive|walk, look: free|aim|locked} (one drive per thing), leaveBy (jump|menu|script), fromSeat, who (builder|owner)}}}" },
   // the numbers a thing exposes to the bodies on it (a pose blends by `param.<name>`); scripts write them
+  // where a thing goes back to when a reset sends it home (R 10-10): {pos, q, parent?: {to, socket?}} in its parent's frame.
+  // grabbable.home (older) means the same for a grabbable; a reset reads home first.
+  home:      { on: "thing", refPaths: { "parent.to": "ref" }, fields: { pos: "vec3", q: "array", scale: "any", parent: "any" }, absentMeans: { scale: "its size in the world is kept as it is when the reset runs" }, help: "where it goes back to when a reset sends it home: {pos: [x,y,z], q?: [x,y,z,w], scale? (else its size in the world is kept), parent?: {to, socket?}} (its parent's frame). Stamped where it stands when a reset handler naming it is written" },
   params:    { on: "thing", map: "number", help: "{<name>: number}: values a socket's pose can blend by (param.<name>); scripts write them" },
   reactions: { help: "{<action>: handler}: what happens when someone uses it. Each handler may add who: 'builder'|'owner' (who may use it) and fix: text (shown on refusal).",
     handlers: {
@@ -76,6 +81,10 @@ export const COMPONENTS = {
       // batch 2: a doorbell plays its sound again from the top, whether or not it's playing (set can't restart it, toggle
       // would stop it): the authority writes sound {…, playing: true, t0: now}
       play: { args: {}, example: { ring: { kind: "play" } } },
+      // R 10-10: a reset button (VRChat's shape: each thing remembers a home, a button lists what it sends home; research
+      // notes/eidoverse/RESEARCH-grips-and-reset-2026-10-10.md). Each target goes back to its home component (or its
+      // grabbable.home), out of any hand; a target with no home, gone or locked is skipped and named in the reply.
+      reset: { args: { targets: "the ids it sends home: 1 to 64 things. Each needs a home (stamped where it stands when the handler is written, if it has none)" }, example: { reset: { kind: "reset", targets: ["ball-0", "ball-1"] } } },
       impulse: { args: { strength: "a push: the speed it gives the thing at its centre, m/s (default 0.5). A use may give its own push as args.impulse [x,y,z] (m/s)", angular: "or a turn: the turn rate it adds about the thing's axis, rad/s (instead of strength)" }, example: { push: { kind: "impulse", strength: 0.5 } } } },
     common: { kind: "the handler kind", who: "who may use it: builder|owner", fix: "text shown on refusal" } },
   // R 10-07: the behaviour is `openable` (a door, a gate, a lid, a hatch, a cabinet), not the asset. The conventional shape
@@ -153,7 +162,8 @@ export const COMPONENTS = {
                 help: "why this thing is here, a museum label: {title (≤ 80), text (≤ 1000; plain text, a blank line between paragraphs), marks? [ids] (≤ 8: what it marks or commemorates)}. Shown on Inspect and in look" },
   // words in the world (batch 2): signage, on the canvas text path (a browser font stack: CJK, RTL and emoji). Long-form
   // text (a book, a library) will be its own component; this one stays a sign
-  text:       { on: "thing", fields: { text: "string", size: "number", width: "number", align: "string", color: "int", outline: "bool", background: "int", billboard: "string", lit: "string" },
+  text:       { on: "thing", fields: { text: "string", size: "number", width: "number", align: "string", color: "int", outline: "bool", outlineColor: "int", background: "int", billboard: "string", lit: "string" },
+                absentMeans: { outlineColor: "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark" },
                 defaults: { size: 0.15, width: 2, align: "center", color: 0xffffff, outline: true, billboard: "off", lit: "self" }, required: ["text"],
                 enums: { align: ["left", "center", "right"], billboard: ["off", "yaw", "full"], lit: ["self", "scene"] },
                 ranges: { text: { maxLen: 400 }, size: { min: 0.02, max: 2 }, width: { min: 0.1, max: 10 }, color: { min: 0, max: 0xffffff }, background: { min: 0, max: 0xffffff } }, clean: { text: "lines" },

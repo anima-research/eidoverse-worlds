@@ -493,21 +493,30 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   // the rows a card owns: from its header to the next header (renderDOM draws groups as flat markers)
   const cardRows = (title: string) => `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent.slice(2) === ${JSON.stringify(title)}); if (i < 0) return []; const out = []; for (const r of R.slice(i + 1)) { if (r.querySelector('.sp-group')) break; out.push(r); } return out; })()`;
   const cardLabels = (title: string) => `${cardRows(title)}.map((r) => r.querySelector('.sp-label')?.textContent ?? r.textContent)`;
+  // R 10-10 23:38: rotation order and the quaternion (were the Inspector's 'Advanced') live in the Attributes tab now
+  const attr = `document.querySelector('[data-frame="attributes"]')`;
+  const ADV = 'Rotation, as stored';
+  const advRows = `(() => { const R = [...${attr}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent.slice(2) === ${JSON.stringify(ADV)}); if (i < 0) return []; const out = []; for (const r of R.slice(i + 1)) { if (r.querySelector('.sp-group')) break; out.push(r); } return out; })()`;
+  const advLabels = `${advRows}.map((r) => r.querySelector('.sp-label')?.textContent ?? r.textContent)`;
+  const toTab = (t: string) => evalJson(`import('/lib/base.js').then((m) => (m.bus.emit('edit-righttab', ${JSON.stringify(t)}), true))`);
+  const openAdv = async () => { await toTab('attributes'); await waitFor(`!![...${attr}.querySelectorAll('.sp-group')].find((g) => g.textContent.slice(2) === ${JSON.stringify(ADV)})`);
+    await evalJson(`([...${attr}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ ' + ${JSON.stringify(ADV)})?.click(), true)`); await waitFor(`!![...${attr}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ ' + ${JSON.stringify(ADV)})`); };
+  const typeAttr = (label: string, v: string) => evalJson(`(() => { const r = ${advRows}.find((x) => x.querySelector('.sp-label')?.textContent === ${JSON.stringify(label)}); const i = r?.querySelector('.sp-num'); if (!i) return false; i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); return true; })()`);
   const chan = (label: string) => `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === ${JSON.stringify(label)})?.querySelector('.sp-num')`;
   const type = (label: string, v: string) => evalJson(`(() => { const i = ${chan(label)}; if (!i) return false; i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); return true; })()`);
   const faces = `['rotate x', 'rotate y', 'rotate z'].map((l) => +[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === l)?.querySelector('.sp-num').value)`;
   const rec = () => evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1)`);
-  const orderSel = `${cardRows('Advanced')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate order')?.querySelector('select')`;
+  const orderSel = `${advRows}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate order')?.querySelector('select')`;
   const setOrder = (v: string) => evalJson(`(() => { const s = ${orderSel}; if (!s) return false; s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); return true; })()`);
   // in-page: does the fold's q equal the channels' faces recomposed in this order? (the shared math, not a copy)
   const facesCompose = (order: string) => `import('/shared/euler.js').then((E) => import('/lib/state.js').then((S) => { const f = ${faces}.map((d) => d * Math.PI / 180); const q = E.qFromEuler(f, ${JSON.stringify(order)}); const e = S.state.st.entities.crate1; return !!e.q && E.sameRotation(q, e.q, 1e-3); }))`;
 
   check('the Transform card is Maya\'s channel box: translate x/y/z, rotate x/y/z, scale (rotate order lives in Advanced, R 10-04; the heading alias not drawn)', await waitFor(`JSON.stringify(${cardLabels('Transform')}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'rotate x', 'rotate y', 'rotate z', 'scale'])`), JSON.stringify(await evalJson(cardLabels('Transform'))));
   check('…the Rotate rows carry their axis (x / y / z label colours)', await evalJson(`['x', 'y', 'z'].every((a) => ${cardRows('Transform')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate ' + a)?.dataset.axis === a)`));
-  check('the Advanced group follows the Transform card, collapsed (header only: rotate order and the quaternion, R 10-04)', await evalJson(`(() => { const G = ${cardTitles}; return G[G.indexOf('Transform') + 1] === 'Advanced' && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Advanced') && ${cardRows('Advanced')}.length === 0; })()`), JSON.stringify(await evalJson(cardTitles)));
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Advanced')?.click(), true)`);
-  await waitFor(`!![...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Advanced')`);
+  check('the Inspector has no Advanced group: rotation order and the quaternion are in the Attributes tab (R 10-10 23:38)', await evalJson(`!${cardTitles}.includes('Advanced')`), JSON.stringify(await evalJson(cardTitles)));
+  await openAdv();
   check('rotate order is a dropdown of Maya\'s six orders + quaternion, reading XYZ', await evalJson(`(() => { const s = ${orderSel}; return !!s && [...s.options].map((o) => o.value).join() === 'XYZ,XZY,YXZ,YZX,ZXY,ZYX,quat' && s.value === 'XYZ'; })()`), JSON.stringify(await evalJson(`(() => { const s = ${orderSel}; return s ? [s.value, [...s.options].map((o) => o.value)] : null; })()`)));
+  await toTab('inspector'); await sleep(300);
 
   await type('rotate x', '30');
   check('typing rotate x = 30 writes q (30° about X) into the fold, pos and scale untouched', await waitFor(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.crate1; const h = 15 * Math.PI / 180; return Array.isArray(e.q) && Math.abs(Math.abs(e.q[0] * Math.sin(h) + e.q[3] * Math.cos(h)) - 1) < 1e-6 && e.pos[0] === 3 && e.pos[2] === 3 && (e.scale ?? 1) === 1; })`), JSON.stringify(await rec()));
@@ -518,34 +527,32 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   check('…and those three faces recomposed in XYZ ARE the fold\'s q', await waitFor(facesCompose('XYZ')), JSON.stringify(await rec()));
   await sleep(400);
   const qBefore = JSON.stringify(((await rec()) as any).q);
-  await setOrder('ZXY');
+  await openAdv(); await setOrder('ZXY'); await toTab('inspector');
   check('rotate order → ZXY writes comp rotOrder and leaves q bit-identical (changing the order never moves the thing)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder === 'ZXY') && import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities.crate1.q) === ${JSON.stringify(qBefore)})`), JSON.stringify(await rec()));
   check('…and the channels now read that same q in ZXY (recomposing them in ZXY gives q)', await waitFor(`(async () => (await import('/lib/world.js')).comps.get('crate1')?.rotOrder === 'ZXY' && ${orderSel}?.value === 'ZXY' && await ${facesCompose('ZXY')})()`), JSON.stringify(await evalJson(faces)));
   await sleep(400);
-  await setOrder('XYZ');
+  await openAdv(); await setOrder('XYZ'); await toTab('inspector');
   check('back to XYZ removes the comp (absent means XYZ)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder == null)`), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1'))`)));
   await sleep(400);
   await type('rotate y', '90');
   check('rotate y = 90 (XYZ\'s middle axis): the Transform card says it is in gimbal lock', await waitFor(`${cardRows('Transform')}.some((r) => r.classList.contains('sp-f-info') && /gimbal lock/.test(r.textContent))`), JSON.stringify(await evalJson(cardLabels('Transform'))));
   await sleep(400);
-  check('the open Advanced group holds rotate order and quat x / y / z / w', await waitFor(`JSON.stringify(${cardLabels('Advanced')}) === JSON.stringify(['rotate order', 'quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(cardLabels('Advanced'))));
-  check('…reading the fold\'s q', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; const v = ${cardRows('Advanced')}.filter((r) => r.querySelector('.sp-num')).map((r) => +r.querySelector('.sp-num').value); return v.length === 4 && v.every((x, i) => Math.abs(x - q[i]) < 1e-3); })`), JSON.stringify([await evalJson(`${cardRows('Quaternion')}.map((r) => r.querySelector('.sp-num').value)`), ((await rec()) as any).q]));
+  await openAdv();
+  check('the open \'Rotation, as stored\' group (Attributes) holds rotate order and quat x / y / z / w', await waitFor(`JSON.stringify(${advLabels}) === JSON.stringify(['rotate order', 'quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(advLabels)));
+  check('…reading the fold\'s q', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; const v = ${advRows}.filter((r) => r.querySelector('.sp-num')).map((r) => +r.querySelector('.sp-num').value); return v.length === 4 && v.every((x, i) => Math.abs(x - q[i]) < 1e-3); })`), JSON.stringify([await evalJson(`${cardRows('Quaternion')}.map((r) => r.querySelector('.sp-num').value)`), ((await rec()) as any).q]));
   const qLock = ((await rec()) as any).q;
-  await type('quat w', '2');
+  await typeAttr('quat w', '2');
   check('typing quat w = 2 commits a NORMALIZED q (clamped to 1, then the whole q scaled to unit length)', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; return Array.isArray(q) && Math.abs(Math.hypot(...q) - 1) < 1e-9 && q[3] > ${qLock[3]} + 1e-3; })`), JSON.stringify(await rec()));
   await sleep(600);
   await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
   check('one undo puts the gimbal-locked q back', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; return Array.isArray(q) && q.every((x, i) => Math.abs(x - ${JSON.stringify(qLock)}[i]) < 1e-9); })`, 10000), JSON.stringify(await rec()) + ' want=' + JSON.stringify(qLock));
-  // folding the Transform card must fold its Quaternion row too (renderDOM draws groups as FLAT markers, so a
-  // sub-header that is open would otherwise reopen its rows under a closed card)
+  // folding the Transform card hides its rows (the quaternion rows now live in Attributes: nothing nested to fold)
+  await toTab('inspector'); await sleep(300);
   await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Transform')?.click(), true)`);
-  check('folding Transform hides its rows AND the open Advanced group inside it', await waitFor(`(() => { const L = [...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent); return [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform') && !L.includes('rotate x') && !L.includes('quat w') && !${cardTitles}.includes('Quaternion'); })()`), JSON.stringify({ groups: await evalJson(cardTitles), labels: await evalJson(`[...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent)`) }));
-  // folds persist per lib (localStorage): put both back the way later sections expect them
-  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform')`);
+  check('folding Transform hides its rows', await waitFor(`(() => { const L = [...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent); return !L.includes('rotate x') && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform'); })()`));
+  // folds persist per lib (localStorage): put it back the way later sections expect it
   await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Transform')?.click(), true)`);
-  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▾ Advanced')`);
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Advanced')?.click(), true)`);
-  check('…and unfolding brings the card back with the Advanced group as it was left', await waitFor(`${cardLabels('Transform')}.includes('rotate x') && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Advanced')`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent)`)));
+  check('…and unfolding brings the card back', await waitFor(`${cardLabels('Transform')}.includes('rotate x')`));
 }
 
 console.log('\npick: an armed attach completes on a viewport click, not only a row click; both attach paths undo:');

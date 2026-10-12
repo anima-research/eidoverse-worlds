@@ -56,7 +56,9 @@ const UNRELATED = [
   ["client/index.html", /./, "a library version"],
 ];
 // the wire rules' own exceptions, each with why
-const RULES_EXEMPT: [string, RegExp, string][] = [];   // (the first eidosim's entries retired 2026-10-09: it lives in the importer now)
+const RULES_EXEMPT: [string, RegExp, string][] = [   // (the first eidosim's entries retired 2026-10-09: it lives in the importer now)
+  ["mcpl/tools.ts", /TOOL_ALIASES|renamed with no alias|is now called/, "the alias table: an old tool name still answers, and says what it is now called (STRIKES A-S1-2)"],
+];
 const IMPORTS = [
   /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'`](\.{1,2}\/[^"'`$]+)["'`]/g,     // static, side-effect, dynamic, template (up to a ${), require
   /new\s+URL\s*\(\s*["'`](\.{1,2}\/[^"'`$]+)["'`]\s*,\s*import\.meta\.url/g,                  // workers and assets resolved from the module

@@ -69,7 +69,7 @@ async function paintLog(body, { more = false } = {}) {
   const line = (x) => `<div class="rp-row"><div class="rp-main"><span class="rp-dim">${new Date(x.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span> `
     + `<b>${esc(x.by ?? nameOf(x.actor))}</b>${x.actor && x.actor !== 'system' ? badge(x.actor) : ''} <span class="rp-verb" data-verb="${esc(x.verb)}">${esc(x.verb === 'role' ? (x.role ? `made ${x.role}` : 'took a role from') : x.verb)}</span> <b>${esc(x.name ?? nameOf(x.who))}</b></div>`
     + `<div class="rp-sub">${[x.reason, x.channels ? x.channels.join(' + ') : null, x.until !== undefined ? `ends ${ends(x.until)}` : null, x.verb === 'auto-cooldown' ? x.why : null].filter(Boolean).map(esc).join(' · ')}</div></div>`;
-  const head = `<div class="rp-filters"><input type="search" class="rp-search" placeholder="person (name or u-…)" value="${esc(modWho ? nameOf(modWho) : '')}">`
+  const head = `<div class="rp-filters"><input type="search" class="rp-search" placeholder="find a person by name" value="${esc(modWho ? nameOf(modWho) : '')}">`
     + `<div class="pm-chips">${VERB_CHIPS.map(([v, l]) => `<button type="button" class="pm-chip" data-v="${v}" aria-pressed="${modVerbs.has(v)}">${l}</button>`).join('')}</div></div>`;
   if (!more) body.innerHTML = `${head}<div class="rp-list"></div>`;
   const list = body.querySelector('.rp-list');

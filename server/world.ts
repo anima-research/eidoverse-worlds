@@ -32,6 +32,7 @@ export function wireRights(rights: typeof onRightsChanged) { onRightsChanged = r
 // ------------------------------------------------------------------- clients
 
 export type Client = {
+  renamed?: boolean; renameRefused?: { tried: string; until: number };   // the join's rename and its cooldown (server.ts)
   id: string;          // participant's display name in this world (their identity is actorId, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;

@@ -262,7 +262,50 @@ let vy = 0, grounded = true, mantle = null, airborneFor = 0, jumped = false, wan
 // camera
 export let camYaw = 0, camPitch = 0.32, camDist = 4.2;
 const _lastFinitePos = new THREE.Vector3();
-let dragging = false, dragBtn = 0;
+let dragging = false, dragBtn = 0, dragMode = 'orbit';
+// EDIT CAMERA: in edit mode the orbit's centre may leave the body (pan, frame) and the camera may pull far back.
+// The offset is from the BODY, so walking carries the view along; leaving edit mode drops it.
+export const editPan = new THREE.Vector3();
+const EDIT_DIST = 80, PLAY_DIST = 16;
+// THE WORLD'S EDGE (R, 10-10 23:00: she ran 44 m out in a world bounded at ±20; the authority refuses every move outside
+// its bounds, so its track of her body stopped at the edge and every put and throw after was '25 m from you'). The body
+// stops at @world.bounds as at a wall, less its capsule, and says so once in the status bar.
+let boundsSrc = () => null, edgeSaidAt = 0;
+export function setBoundsHook(fn) { boundsSrc = typeof fn === 'function' ? fn : () => null; }
+export function worldBounds() { const B = boundsSrc(); const ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  return B && ok(B.min) && ok(B.max) ? B : null; }
+export function clampToBounds(x, z, pad = 0.25) { const B = worldBounds(); if (!B) return [x, z];
+  return [Math.min(B.max[0] - pad, Math.max(B.min[0] + pad, x)), Math.min(B.max[2] - pad, Math.max(B.min[2] + pad, z))]; }
+function keepInBounds() { const [x, z] = clampToBounds(myState.pos.x, myState.pos.z);
+  if (x === myState.pos.x && z === myState.pos.z) return; myState.pos.x = x; myState.pos.z = z;
+  const now = performance.now(); if (now - edgeSaidAt > 4000) { edgeSaidAt = now; flashHint("that's the edge of this world", 2500); } }
+let autoWalk = null; const _autoV = new THREE.Vector3();
+/** Walk my body toward (x, z) as if the keys were held, until `until()` is true (or I'm there). Resolves 'arrived',
+ *  'cancelled' (a move key, edit mode), 'blocked' (no progress for 0.9 s) or 'timeout'. One walk at a time. */
+export function walkTo(x, z, { until = null, ms = 12000 } = {}) {
+  endAutoWalk('cancelled'); [x, z] = clampToBounds(x, z);
+  return new Promise((done) => { const now = performance.now(); autoWalk = { x, z, until, ms, t0: now, best: Infinity, bestAt: now, done, run: Math.hypot(x - myState.pos.x, z - myState.pos.z) > 3.5 }; });
+}
+function endAutoWalk(why) { const a = autoWalk; if (!a) return; autoWalk = null; a.done(why); }
+export const isAutoWalking = () => !!autoWalk;
+// FREE CAMERA (R, 10-10: "maybe we need an 'editor camera' mode on the top line ... fly the camera in free mode with
+// WASD ... the character can hit an 'I'm working on this' pose"). Edit mode only. The orbit's centre is a point in the
+// WORLD, not an offset from my body: WASD flies that point, the body stays where it stood, and walls don't push the eye.
+// Leaving edit mode (B) puts the view back on the body at once and KEEPS the spot: B again returns to it. The Body/Free
+// switch is the full reset.
+const freeCam = { on: false, focus: new THREE.Vector3(), dist: 6, yaw: 0, pitch: 0.32, saved: false };
+export const isFreeCam = () => freeCam.on && editingNow();
+export const freeCamState = () => ({ on: freeCam.on, focus: freeCam.focus.toArray(), dist: freeCam.dist });
+export function setFreeCam(on) {
+  on = !!on && editingNow();
+  if (on === freeCam.on) return on;
+  if (on) { freeCam.focus.set(myState.pos.x, myState.pos.y + deskEyeY(), myState.pos.z).add(editPan); editPan.set(0, 0, 0); }
+  else { editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); freeCam.saved = false; }
+  freeCam.on = on;
+  bus.emit('edit-freecam', on);
+  return on;
+}
+const _panR = new THREE.Vector3(), _panU = new THREE.Vector3(), _flyF = new THREE.Vector3();
 export const mouse = new THREE.Vector2();
 export let firstPerson = false;
 export let photoMode = false;
@@ -358,10 +401,22 @@ function toggleSit() {
 
 canvas.addEventListener('mousedown', (e) => {
   if (pointerClaimed()) return;
-  // In edit mode a left-drag belongs to the object under it; look with the
-  // right button (or leave edit mode). Outside it, either button looks.
-  if (e.button === 2 || (e.button === 0 && !editingNow())) { dragging = true; dragBtn = e.button; }
+  // Outside edit mode either button looks. In edit mode a left-drag belongs to the object under it, so the camera
+  // has an editor's controls (R, 10-10: "we need camera moving controls in edit mode. I would suggest Blender or Maya"):
+  //   Alt+left  orbit (over anything)      middle, or Alt+middle  pan      Alt+right  dolly      right  orbit
+  //   left on bare space  orbit (build.js says so: 'edit-bare-press')       wheel  dolly      F  frame the selection
+  if (editingNow()) {
+    if (e.button === 1) { e.preventDefault(); dragging = true; dragMode = 'pan'; }
+    else if (e.altKey) { e.preventDefault(); dragging = true; dragMode = e.button === 2 ? 'dolly' : 'orbit'; }
+    else if (e.button === 2) { dragging = true; dragMode = 'orbit'; }
+    if (dragging) dragBtn = e.button;
+    return;
+  }
+  if (e.button === 2 || e.button === 0) { dragging = true; dragBtn = e.button; dragMode = 'orbit'; }
 });
+bus.on('edit-bare-press', () => { dragging = true; dragBtn = 0; dragMode = 'orbit'; });   // a left press on nothing, in edit mode
+addEventListener('keyup', (e) => { if (e.key === 'Alt' && editingNow()) e.preventDefault(); });   // a bare Alt release would focus the browser's menu bar mid-edit
+canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });   // no autoscroll / paste on a middle press
 // set by build.js so the controller doesn't have to import it (build imports us)
 let editingNow = () => false;
 export function setEditingProbe(fn) { editingNow = fn; }
@@ -406,6 +461,20 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 bus.on('edit-mode', (on) => { if (on && locked) document.exitPointerLock(); });
+bus.on('edit-mode', (on) => {
+  if (!on) {
+    if (freeCam.on) { Object.assign(freeCam, { dist: camDist, yaw: camYaw, pitch: camPitch, saved: true }); bus.emit('edit-freecam', false); }   // B: back in my body, the spot kept
+    editPan.set(0, 0, 0); camDist = Math.min(camDist, PLAY_DIST); camPitch = THREE.MathUtils.clamp(camPitch, -0.9, 1.2);
+  } else if (freeCam.on && freeCam.saved) { camDist = freeCam.dist; camYaw = freeCam.yaw; camPitch = freeCam.pitch; freeCam.saved = false; bus.emit('edit-freecam', true); }   // B again: where I left the camera
+});
+/** Frame a point (F on a selection): the orbit centres on it, far enough back to see `radius` of it. Edit mode only. */
+export function frameOn(point, radius = 1) {
+  if (!editingNow()) return false;
+  if (freeCam.on) freeCam.focus.copy(point); else
+  editPan.set(point.x - myState.pos.x, point.y - (myState.pos.y + deskEyeY()), point.z - myState.pos.z);
+  camDist = THREE.MathUtils.clamp(radius * 2.6 + 1, 1.5, EDIT_DIST);
+  return true;
+}
 
 addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat) return;
@@ -429,16 +498,24 @@ function relock() {
 }
 
 addEventListener('mousemove', (e) => {
-  if (locked || dragging) {
+  if (dragging && dragMode === 'pan') {
+    // along the view's own right and up, a screen's worth per screen at this distance
+    camera.matrixWorld.extractBasis(_panR, _panU, _dir);
+    const k = Math.max(camDist, 1) * 0.0016;
+    (freeCam.on ? freeCam.focus : editPan).addScaledVector(_panR, -e.movementX * k).addScaledVector(_panU, e.movementY * k);
+  } else if (dragging && dragMode === 'dolly') {
+    camDist = THREE.MathUtils.clamp(camDist * Math.exp((e.movementY - e.movementX) * 0.006), 0.8, EDIT_DIST);
+  } else if (locked || dragging) {
     camYaw -= e.movementX * 0.005;
-    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, -0.9, 1.2);
+    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, editingNow() ? -1.45 : -0.9, editingNow() ? 1.45 : 1.2);
   }
   if (!locked) mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // right-drag orbit
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, 16);
+  // in edit mode the wheel is proportional (a step far out covers more ground) and reaches further
+  camDist = editingNow() ? THREE.MathUtils.clamp(camDist * Math.exp(e.deltaY * 0.0012), 0.8, EDIT_DIST) : THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, PLAY_DIST);
   const wasFP = firstPerson;
   // Hysteresis: enter FP under 0.4m, don't leave until past 0.7m. A single
   // threshold flickers 1P/3P at the boundary — nauseating, and loudest for
@@ -538,9 +615,39 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
+  // AUTO-WALK (R, 10-10: click something out of reach and "your avatar could sprint/walk over until it's in grabbing
+  // distance and get it"). The same inputs a hand on the keys would give, so everything downstream (speed, collision,
+  // the walk clip, what the authority sees) is ordinary walking. Any real input ends it; so does arriving, getting
+  // nowhere, or running out of time.
+  if (autoWalk) {
+    const a = autoWalk, dx = a.x - myState.pos.x, dz = a.z - myState.pos.z, d = Math.hypot(dx, dz), now = performance.now();
+    if (Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08 || editingNow()) endAutoWalk('cancelled');
+    else if (a.until?.() || d < 0.12) endAutoWalk('arrived');
+    else if (now - a.t0 > a.ms) endAutoWalk('timeout');
+    else { if (d < a.best - 0.05) { a.best = d; a.bestAt = now; }
+      if (now - a.bestAt > 900) endAutoWalk('blocked');
+      else { _autoV.set(dx / d, 0, dz / d).applyAxisAngle(UP, -camYaw); strafe = _autoV.x; fwd = -_autoV.z; } }
+  }
+  if (isFreeCam()) {
+    // WASD flies the camera's centre: forward is where the camera looks (so W climbs when you look up), the speed grows
+    // with the distance you've pulled back, Shift is three times faster
+    if (Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08) {
+      camera.matrixWorld.extractBasis(_panR, _panU, _flyF);
+      const sp = Math.max(camDist, 3) * 1.1 * (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 3 : 1) * dt;
+      freeCam.focus.addScaledVector(_flyF, -fwd * sp).addScaledVector(_panR, strafe * sp);
+    }
+    fwd = 0; strafe = 0;   // the body stays where it stood
+  }
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
   wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
-  const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  // walking brings the edit camera home (R, 10-10: "when you use 'f' to frame, can you make it so that using WASD
+  // automatically resets the camera back to your character?"): the pan eases out and a far pull-back comes in
+  if (moving && editingNow() && (editPan.lengthSq() > 0 || camDist > PLAY_DIST)) {
+    const k = Math.exp(-dt / 0.12);
+    editPan.multiplyScalar(k); if (editPan.lengthSq() < 1e-4) editPan.set(0, 0, 0);
+    if (camDist > PLAY_DIST) camDist = Math.max(PLAY_DIST, PLAY_DIST + (camDist - PLAY_DIST) * k - 0.01);
+  }
+  const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || !!autoWalk?.run;   // a long auto-walk runs
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.
   const creeping = keys.has('AltLeft') || keys.has('AltRight');
@@ -553,11 +660,15 @@ export function updateMe(dt, me) {
   myState.speed = THREE.MathUtils.lerp(myState.speed, target, 1 - Math.exp(-10 * dt));
   if (myState.speed < 0.02) myState.speed = 0;
 
+  // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I
+  // throw or set down "ahead" goes where my eyes are. Not on a seat, not while the edit camera is off on its own.
+  if (firstPerson && !moving && !myState.seat && !isFreeCam()) { myState.yaw += angleDelta(myState.yaw, camYaw + Math.PI) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw)); }
   if (moving) {
     _dir.set(strafe, 0, -fwd).normalize().applyAxisAngle(UP, camYaw);
     const targetYaw = Math.atan2(_dir.x, _dir.z);
     myState.yaw += angleDelta(myState.yaw, targetYaw) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw));   // the accumulator wraps too (the owner's recorder: root 7.62 = 1.34 + 2π after setCamYaw already wrapped)
     myState.pos.addScaledVector(_dir, myState.speed * dt);
+    keepInBounds();
     const R = 78; // stay on the island
     const r = Math.hypot(myState.pos.x, myState.pos.z);
     if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }
@@ -739,6 +850,9 @@ export function updateFollowCamera(dt, me) {
   if (xrPresenting()) return;   // the rig carries the camera; the body stays visible (own head hidden by layers)
   const headY = deskEyeY(me?.userScale);   // 1.45 m for a 100% body; the chosen size lifts or lowers the eye
   const focus = _eye.set(myState.pos.x, myState.pos.y + headY, myState.pos.z);
+  const free = isFreeCam();
+  if (free) focus.copy(freeCam.focus); else
+  if (editingNow() && !firstPerson) focus.add(editPan);   // the edit camera's centre (pan, frame)
 
   if (firstPerson) {
     // Seated/lying (and any held ragdoll pose) put the head somewhere the
@@ -785,13 +899,17 @@ export function updateFollowCamera(dt, me) {
   // with three fresh Vector3s per frame, to learn this one number.
   const farD = focus.distanceTo(want);
   _cdir.copy(want).sub(focus).normalize();
-  const hitT = raySegment(focus, _cdir, farD);
+  // the free camera is an editor's: it passes through. So does the body camera once its centre has left the body (F, a
+  // pan): the centre is then INSIDE the framed thing, and the wall rule pulled the eye in to its middle (R, 10-10: F in
+  // Body mode put the camera inside the barrel)
+  const off = free || (editingNow() && editPan.lengthSq() > 1e-6);
+  const hitT = off ? null : raySegment(focus, _cdir, farD);
   const allowed = hitT !== null ? Math.min(farD, hitT - 0.22) : farD;
   if (allowed < farD) {
     want.copy(focus).addScaledVector(_cdir, Math.max(0.35, allowed));
   }
   // never let the eye go under the floor
-  want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
+  if (!off) want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
 
   camera.position.lerp(want, 1 - Math.exp(-(allowed < farD ? 26 : 14) * dt));
   camera.lookAt(focus.x + shoulder.x * 0.5, focus.y - 0.1, focus.z + shoulder.z * 0.5);

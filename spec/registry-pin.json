@@ -43,7 +43,8 @@
   "enums": {
    "shape": [
     "exact",
-    "box"
+    "box",
+    "sphere"
    ]
   },
   "on": "thing"
@@ -55,6 +56,14 @@
   "on": "thing"
  },
  "hidden": {
+  "type": "bool",
+  "on": "thing"
+ },
+ "clickthrough": {
+  "type": "bool",
+  "on": "thing"
+ },
+ "disabled": {
   "type": "bool",
   "on": "thing"
  },
@@ -292,6 +301,18 @@
   }
  },
  "sockets": {
+  "on": "thing"
+ },
+ "home": {
+  "fields": {
+   "pos": "vec3",
+   "q": "array",
+   "scale": "any",
+   "parent": "any"
+  },
+  "absentMeans": {
+   "scale": "its size in the world is kept as it is when the reset runs"
+  },
   "on": "thing"
  },
  "params": {
@@ -544,6 +565,7 @@
    "align": "string",
    "color": "int",
    "outline": "bool",
+   "outlineColor": "int",
    "background": "int",
    "billboard": "string",
    "lit": "string"
@@ -572,6 +594,9 @@
     "self",
     "scene"
    ]
+  },
+  "absentMeans": {
+   "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark"
   },
   "on": "thing"
  },

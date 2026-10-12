@@ -72,7 +72,10 @@ import { makeFrame } from './windows.js';
 import { parseEntry } from '../../shared/editschema.js';
 import { paintEdit } from './editpaint.js';
 import { pictoRuns, hasPicto } from './edittheme.js';
-import { svg as iconSvg } from './icons.js';
+import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine } from './icons.js';
+// a name from either set: the line icons (24 grid) or the filled ones (the eye, R 10-10: the Hierarchy's eye drew nothing,
+// 'eye' being a filled-set name the line-set function didn't know)
+const iconSvg = (name, size = 18) => (hasIcon(name) ? strokeSvg(name, size) : hasFill(name) ? fsvg(name, size) : '');
 import { KEYHINTS, engage, release, withKeys } from './keyhints.js';
 export { parseEntry };
 
@@ -110,7 +113,12 @@ export function makeSchemaFrame(key, opts) {
     // Rebuilding under a focused input eats the caret mid-edit; hold the
     // refresh until focus leaves the panel, then paint the queued state.
     if (holdUntilBlur()) return;
+    // keep what is in view where it is (R 10-11 01:00: hiding a thing with the eye added a line above the Hierarchy's rows,
+    // and every row jumped down, then back up on showing it): the first row in view, by its id, sits at the same height
+    const top = scroll.getBoundingClientRect().top; let anchor = null;
+    if (scroll.scrollTop > 0) for (const e of scroll.querySelectorAll('[data-id]')) { const t = e.getBoundingClientRect().top; if (t >= top) { anchor = { id: e.dataset.id, at: t }; break; } }
     live = { key, ...renderDOM(scroll, fields, edit, ro) };
+    if (anchor) { const e = [...scroll.querySelectorAll('[data-id]')].find((x) => x.dataset.id === anchor.id); if (e) scroll.scrollTop += e.getBoundingClientRect().top - anchor.at; }
   }
   function holdUntilBlur() {
     const a = document.activeElement;
@@ -165,6 +173,7 @@ function guardActions(root) {
 
 let fieldClip = null;   // { value } — a copied field value, pasted by type (the OS clipboard gets a copy too)
 export const _fieldClip = () => fieldClip;   // probes
+const treeScroll = new Map();   // a tree field's scroll position, by its key, across rebuilds
 let treeDrag = null;   // the tree row being dragged (id), across the dragstart → drop pair
 
 export function renderDOM(body, fields, edit, ro = {}) {
@@ -176,7 +185,7 @@ export function renderDOM(body, fields, edit, ro = {}) {
   for (const f of fields) {
     let row = null;
     if (f.t === 'group') { folded = f.open === false || !!f.vrOnly; row = f.vrOnly ? null : fieldDOM(f, via, ro); }   // a vrOnly group hides its rows too
-    else if (!folded && !f.vrOnly) row = fieldDOM(f, via, ro);   // vrOnly: the quad's stand-in for a key the desktop has
+    else if ((!folded || f.unfold) && !f.vrOnly) row = fieldDOM(f, via, ro);   // vrOnly: the quad's stand-in for a key the desktop has; unfold: shown even under a folded card (the Add Component bar)
     rows.push(row);
     if (row) body.append(row);
   }
@@ -189,6 +198,7 @@ export function contextMenu(x, y, items, pick) {
   const m = el('div', 'sp-ctx');
   for (const it of items) {
     const b = el('button', `sp-ctx-item${it.danger ? ' danger' : ''}`, it.label);
+    if (Array.isArray(it.parts)) { b.textContent = ''; b.append(it.parts[0], el('span', 'sp-ctx-name', it.parts[1]), it.parts[2] ?? ''); }   // a thing's name, in the accent colour
     if (it.title) b.title = it.title;
     b.onclick = () => { closeContextMenu(); pick(it.k); };
     m.append(b);
@@ -246,6 +256,13 @@ export const SCRUB_TIP = KEYHINTS.scrub.before;
 // while scrubbing, the keys go on the status line (keyhints.js); the speed rides along
 function scrubHint(on) { if (on) engage('scrub'); else release(); }
 
+/** A number as edit mode writes it (R, 10-10, after Maya's channel box): no trailing zeros, a bare 0, a leading 0 before
+ *  a fraction: 0.5 not 0.50, 0 not 0.00, 0.15 not .15, 2 not 2.00. `dp` is the most decimals shown. */
+export function trimNum(v, dp = 2) {
+  let s = (+v).toFixed(dp);
+  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s === '-0' ? '0' : s;
+}
 function stepper(value, f, commit) {
   const cur = { step: 0.1, dp: 2, ...f };   // options are LIVE: update() refreshes them (a typed value past softMax raises the next drag's cap)
   const { unit, deg, compact, disabled } = cur;
@@ -253,7 +270,7 @@ function stepper(value, f, commit) {
   const num = el('input', 'sp-num');
   num.type = 'text'; num.inputMode = 'decimal'; num.autocomplete = 'off'; num.spellcheck = false;
   if (disabled) num.disabled = true;
-  const toFace = (w) => (deg ? w * R2D : w).toFixed(deg ? 0 : cur.dp);
+  const toFace = (w) => trimNum(deg ? w * R2D : w, deg ? 0 : cur.dp);
   const toWire = (face) => (deg ? face / R2D : face);
   const hard = (w) => Math.min(cur.max ?? Infinity, Math.max(cur.min ?? -Infinity, w));
   const soft = (w) => Math.min(cur.softMax ?? cur.max ?? Infinity, Math.max(cur.softMin ?? cur.min ?? -Infinity, w));
@@ -297,16 +314,20 @@ function stepper(value, f, commit) {
     const d = drag; drag = null;
     document.removeEventListener('keydown', onDragKey, true);
     num.classList.remove('scrub');
-    try { num.releasePointerCapture(d.id); } catch { /* already released */ }
+    try { (d.src ?? num).releasePointerCapture(d.id); } catch { /* already released */ }
     scrubHint(false);
     if (d.armed) { show(d.w0); commit(d.w0, { live: true }); wire = d.w0; }
   };
-  num.addEventListener('pointerdown', (e) => {
+  // the same drag from the value box and from the channel's NAME (R, 10-10: "make the channel lines themselves
+  // selectable and scrub-able just like their value boxes. This is a Maya feature that I love")
+  const bindScrub = (src, onClick) => {
+  src.addEventListener('pointerdown', (e) => {
     if (disabled || e.button !== 0) return;
-    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false };
+    drag = { id: e.pointerId, x0: e.clientX, lastX: e.clientX, w0: wire, face0: +toFace(wire), dist: 0, armed: false, src, onClick };
   });
-  num.addEventListener('pointermove', (e) => {
-    if (!drag) return;
+  src.addEventListener('pointermove', (e) => {
+    if (!drag || drag.src !== src) return;
+    if (src._ranging) { drag = null; return; }   // a channel name dragged UP or DOWN selects channels (below), never scrubs
     const dx = e.clientX - drag.lastX; drag.lastX = e.clientX;
     // accumulate BEFORE the arm check (Godot :113 then :117): the pixels
     // inside the click slop still count, or a drag that wanders back lands
@@ -315,7 +336,7 @@ function stepper(value, f, commit) {
     if (!drag.armed) {
       if (Math.abs(e.clientX - drag.x0) < 4) return;           // click-vs-drag slop
       drag.armed = true;
-      try { num.setPointerCapture(drag.id); } catch { /* no capture here */ }
+      try { src.setPointerCapture(drag.id); } catch { /* no capture here */ }
       num.classList.add('scrub');
       num.blur();
       scrubHint(true);
@@ -328,19 +349,22 @@ function stepper(value, f, commit) {
     commit(w, { live: true });
   });
   const endDrag = (e) => {
-    if (!drag) return;
+    if (!drag || drag.src !== src) return;
     const d = drag; drag = null;
     if (d.armed) {
       document.removeEventListener('keydown', onDragKey, true);
       num.classList.remove('scrub');
       scrubHint(false);
-      try { num.releasePointerCapture(d.id); } catch { /* fine */ }
+      try { src.releasePointerCapture(d.id); } catch { /* fine */ }
       if (d.cur != null && d.cur !== d.w0) commit(d.cur); else if (d.cur != null) commit(d.w0, { live: true });
-    } else if (e.type === 'pointerup') { num.focus(); num.select(); }   // a click: type
+    } else if (e.type === 'pointerup') { if (d.onClick) d.onClick(e); else { num.focus(); num.select(); } }   // a click: type (the box), select (the name)
   };
-  num.addEventListener('pointerup', endDrag);
-  num.addEventListener('pointercancel', endDrag);
-  num.addEventListener('lostpointercapture', () => { if (drag?.armed) endDrag({ type: 'lost' }); });
+  src.addEventListener('pointerup', endDrag);
+  src.addEventListener('pointercancel', endDrag);
+  src.addEventListener('lostpointercapture', () => { if (drag?.armed && drag.src === src) endDrag({ type: 'lost' }); });
+  };
+  bindScrub(num, null);
+  wrap.bindScrub = bindScrub;
 
   if (!compact) {
     const minus = el('button', 'sp-bump', '−');
@@ -365,7 +389,7 @@ let popOpen = null;
 function openPop(anchor, f, pick) {
   popOpen?.close();
   const LS = `ew-recent-${f.recentKey ?? 'pop'}`;
-  let recent = []; try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }
+  let recent = []; if (!f.plain) try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }   // plain: a short menu of switches, no search box, no recents
   // opaque, inside the viewport, one row lit (review 10-07 S10: it drew over the fields behind it, ran off the right and
   // bottom edges, and every row wore the brand-green button look). Its look is index.html's .sp-pop rules.
   const box = el('div', 'sp-pop');
@@ -377,13 +401,14 @@ function openPop(anchor, f, pick) {
   // below the button when it fits, else above it, else as low as the viewport allows
   const top = r.bottom + 4 + h <= innerHeight - M ? r.bottom + 4 : r.top - 4 - h >= M ? r.top - 4 - h : innerHeight - M - h;
   box.style.top = `${Math.round(Math.max(M, top))}px`;
-  const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = 'search components…';
+  const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = f.placeholder ?? 'search components…';
   const list = el('div', 'sp-pop-list');
+  if (f.plain) { inp.style.cssText = 'position:absolute;opacity:0;height:0;border:0;padding:0;pointer-events:none'; box.style.width = '190px'; }   // kept for the keys (↑↓ Enter Esc), unseen
   box.append(inp, list);
   const items = f.items ?? [];
   const take = (it) => {
     if (it.disabled) return;
-    try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
+    if (!f.plain) try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
     close(); pick(it.k);
   };
   let shown = [], active = 0, rows = [];
@@ -428,9 +453,20 @@ function openPop(anchor, f, pick) {
   paint(); inp.focus();
 }
 
+/** The row's menu as a BUTTON (R, 10-10: "buttons in VR to the right of anywhere that would get a right-click menu,
+ *  hidden on desktop"; Resonite's inspector does the same: a small button per field opens its menu, no right-click).
+ *  It opens exactly what a right-click on the row opens. CSS shows it only on a frame staged for a headset
+ *  (#xr-stage: domquad.js), so the desktop row is unchanged. */
+function menuButton(row) {
+  const b = el('button', 'sp-ctxbtn', '⋯'); b.tabIndex = -1; b.title = 'menu'; b.setAttribute('aria-label', 'menu for this row');
+  b.onpointerdown = (e) => e.stopPropagation();   // not a scrub, not a drag of the row
+  b.onclick = (e) => { e.stopPropagation(); const r = b.getBoundingClientRect();
+    row.oncontextmenu?.(new MouseEvent('contextmenu', { bubbles: false, cancelable: true, clientX: r.left, clientY: r.bottom })); };
+  return b;
+}
 function fieldDOM(f, edit, ro = {}) {
-  const row = el('div', `sp-row sp-f-${f.t}`);   // sp-f- prefix: never collide with element classes
-  const ax = /(?:^|:)(?:pos|rot|scale)\.([xyz])$/.exec(f.k ?? '');
+  const row = el('div', `sp-row sp-f-${f.t}${f.bar ? ' sp-bar' : ''}${f.cls ? ' ' + f.cls : ''}`);   // cls: a field's own look (the Inspector's name line)   // sp-f- prefix: never collide with element classes; sp-bar: side by side
+  const ax = /(?:^|:)(?:pos|rot|scale)\.s?([xyz])$/.exec(f.k ?? '');   // pos.x, rot.y, pos.sz (scale's channels)
   if (ax) row.dataset.axis = ax[1];   // the channel's axis: edit chrome colours its label x/y/z
   if (f.disabled) row.classList.add('disabled');
   if (f.dim) { row.style.opacity = '0.55'; row.style.fontSize = '0.9em'; }   // secondary: an id beside its name
@@ -438,7 +474,7 @@ function fieldDOM(f, edit, ro = {}) {
   else if (f.hint) row.title = f.hint;
   if (f.t === 'num' && !f.disabled) row.title = row.title ? `${row.title}\n${SCRUB_TIP}` : SCRUB_TIP;   // the modifiers, where the hand is
   let label = null;
-  if (f.label != null && f.t !== 'btn' && f.t !== 'group') { label = el('label', 'sp-label', f.label); row.append(label); }
+  if (f.label != null && f.t !== 'btn' && f.t !== 'group' && f.t !== 'pop') { label = el('label', 'sp-label', f.label); row.append(label); }   // a pop's label is its button's face
   if (label && ro.icons) put(label, f.label, true);
   const setLabel = (nf) => { if (label && nf.label != null) put(label, nf.label, ro.icons); };
   switch (f.t) {
@@ -458,8 +494,11 @@ function fieldDOM(f, edit, ro = {}) {
     }
     case 'info': {
       const s = put(el('span', 'sp-info'), f.value, ro.icons);
+      // a long value is cut at the panel's edge: hover shows it whole, a click unfolds it in place (R 10-11: 'reads as')
+      const full = () => { const t = s.textContent ?? ''; s.title = t.length > 40 ? t : ''; s.classList.toggle('sp-info-long', t.length > 40); };
+      full(); s.onclick = () => { if (s.classList.contains('sp-info-long')) s.classList.toggle('sp-info-open'); };
       row.append(s);
-      row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); };
+      row.update = (nf) => { setLabel(nf); put(s, nf.value, ro.icons); full(); };
       break;
     }
     case 'num': {
@@ -471,6 +510,31 @@ function fieldDOM(f, edit, ro = {}) {
         d.style.cursor = 'pointer'; d.onpointerdown = (e) => e.stopPropagation(); d.onclick = (e) => { e.stopPropagation(); edit('goto', f.driven); }; st.prepend(d); }
       row.append(st);
       row.update = (nf) => { setLabel(nf); st.update(nf); };
+      if (label && ro.icons && !f.disabled) {   // edit chrome: the channel's name is a handle too
+        label.classList.add('sp-chan');
+        // selecting channels, as in Maya's channel box (R 10-10 23:36): a click selects one; Ctrl toggles one; Shift selects
+        // the run from the last one clicked; dragging UP or DOWN the names selects the run under the pointer (sideways
+        // is still the scrub)
+        const chans = () => [...(row.parentElement?.children ?? [])].filter((r) => r.classList?.contains('sp-row') && r.querySelector('.sp-chan'));
+        const selectRun = (a, b, keep) => { const L = chans(); const i = L.indexOf(a), j = L.indexOf(b); if (i < 0 || j < 0) return;
+          if (!keep) for (const r of L) r.classList.remove('chan-sel'); for (let k = Math.min(i, j); k <= Math.max(i, j); k++) L[k].classList.add('chan-sel'); };
+        st.bindScrub(label, (e) => {
+          if (label._ranged) { label._ranged = false; return; }   // that press was a run drag, not a click
+          const sel = [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])];
+          if (e.ctrlKey || e.metaKey) { row.classList.toggle('chan-sel'); row.parentElement._chanAnchor = row; return; }   // keys: selectExtend
+          if (e.shiftKey && row.parentElement?._chanAnchor?.isConnected) { selectRun(row.parentElement._chanAnchor, row, false); return; }   // keys: selectExtend
+          const only = sel.length === 1 && sel[0] === row;
+          for (const r of sel) r.classList.remove('chan-sel');
+          if (!only) row.classList.add('chan-sel');
+          if (row.parentElement) row.parentElement._chanAnchor = row;
+        });
+        label.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; const y0 = e.clientY, x0 = e.clientX, keep = e.ctrlKey || e.metaKey;   // keys: selectExtend
+         
+          const move = (ev) => { if (!label._ranging) { if (Math.abs(ev.clientY - y0) < 6 || Math.abs(ev.clientY - y0) < Math.abs(ev.clientX - x0)) return; label._ranging = true; label._ranged = true; }
+            const over = document.elementFromPoint(x0, ev.clientY)?.closest?.('.sp-row'); if (over && chans().includes(over)) { selectRun(row, over, keep); row.parentElement._chanAnchor = row; } };
+          const up = () => { removeEventListener('pointermove', move, true); removeEventListener('pointerup', up, true); setTimeout(() => { label._ranging = false; label._ranged = false; }, 0); };
+          addEventListener('pointermove', move, true); addEventListener('pointerup', up, true); });
+      }
       break;
     }
     case 'range': {
@@ -478,10 +542,10 @@ function fieldDOM(f, edit, ro = {}) {
       // --p drives the progress fill) — the same control the desk's dials use
       const lo = f.min ?? 0, hi = f.max ?? 1, st = f.step ?? 0.01, dp = f.dp ?? 2;
       const sl = el('input', 'sp-range'); sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = f.value ?? lo;
-      const out = el('span', 'sp-range-val', `${(+sl.value).toFixed(dp)}${f.unit ?? ''}`);
+      const out = el('span', 'sp-range-val', `${trimNum(+sl.value, dp)}${f.unit ?? ''}`);
       const paint = () => sl.style.setProperty('--p', `${((sl.value - lo) / (hi - lo || 1)) * 100}%`);
       paint();
-      const face = () => { paint(); out.textContent = `${(+sl.value).toFixed(dp)}${f.unit ?? ''}`; };
+      const face = () => { paint(); out.textContent = `${trimNum(+sl.value, dp)}${f.unit ?? ''}`; };
       // the panels contract: a drag PREVIEWS (opts.live), the release commits once
       sl.oninput = () => { face(); edit(f.k, +sl.value, null, { live: true }); };
       sl.onchange = () => { face(); edit(f.k, +sl.value); };
@@ -528,10 +592,25 @@ function fieldDOM(f, edit, ro = {}) {
     }
     case 'group': {
       row.classList.add(f.open === false ? 'closed' : 'open');
-      const h = put(el('button', 'sp-group'), `${f.open === false ? '▸' : '▾'} ${f.label}`, ro.icons);
+      // the card's title: the fold arrow, then its provenance pill at the FRONT (R 10-11: "move the draft/server-only
+      // component pill to the front of the label row… to make it look more important"), then the name
+      const DOT = { draft: ['draft', 'a draft component: not part of the engine yet (it can still change)'], foreign: ['unknown', 'a component this client has no reader for: kept and replayed, not drawn'] };
+      const head = (hh, ff) => { hh.textContent = ''; hh.append(document.createTextNode(`${ff.open === false ? '▸' : '▾'} `));
+        if (ff.dot && DOT[ff.dot]) { const d = el('span', `sp-pill sp-pill-${ff.dot}`, DOT[ff.dot][0]); d.title = DOT[ff.dot][1]; hh.append(d); }
+        hh.append(put(el('span', 'sp-group-name'), ff.label, ro.icons)); return hh; };
+      const h = head(el('button', 'sp-group'), f);
       h.onclick = () => edit('fold', f.k);
       row.innerHTML = ''; row.append(h);
-      row.update = (nf) => { put(h, `${nf.open === false ? '▸' : '▾'} ${nf.label}`, ro.icons); };
+      // a card's own actions on its title line, shown on hover (R 10-10: 'delete components right from the title line,
+      // like an x that shows up on the line when you hover over it'); the VR quad keeps its remove row instead
+      if (f.actions?.length) {
+        const acts = el('span', 'sp-gacts');
+        for (const a of f.actions) { const b = el('button', `sp-gact${a.danger ? ' danger' : ''}`); b.type = 'button'; b.title = a.title ?? a.label ?? ''; b.setAttribute('aria-label', b.title);
+          if (a.icon && hasIcon(a.icon)) b.innerHTML = iconSvg(a.icon, 13); else b.textContent = a.label ?? '';
+          b.onclick = (e) => { e.stopPropagation(); edit(a.k); }; acts.append(b); }
+        row.append(acts); row.classList.add('has-acts');
+      }
+      row.update = (nf) => { head(h, nf); };
       break;
     }
     case 'tree': {
@@ -546,6 +625,7 @@ function fieldDOM(f, edit, ro = {}) {
       box.ondrop = dropOn(null);
       for (const r of f.rows ?? []) {
         const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
+        if (r.id != null) line.dataset.id = String(r.id);   // every row is findable by what it is (component rows too)
         if (!r.noDrag) {
           line.draggable = true;
           line.ondragstart = (e) => { treeDrag = r.id; line.classList.add('dragging'); box.classList.add('dragging'); e.dataTransfer?.setData('text/plain', String(r.id)); };
@@ -560,13 +640,15 @@ function fieldDOM(f, edit, ro = {}) {
         // disclosure: a row with children folds them (edit('open', id))
         const disc = el('button', `sp-disc${r.kids ? '' : ' none'}`, r.kids ? (r.open === false ? '▸' : '▾') : '');
         disc.tabIndex = -1;
-        if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', r.id); };
+        // Shift- or Alt-click: this one and everything under it (Maya's and Blender's Shift, Unity's Alt)
+        if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', e.shiftKey || e.altKey ? { id: r.id, deep: true } : r.id); };   // keys: treeFold
+        if (r.kids) disc.title = KEYHINTS.treeFold.before;
         line.append(disc);
         const main = el('span', 'sp-item-main');
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
         if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
         main.onclick = (e) => edit(f.k, r.id, f, { extend: e.shiftKey || e.ctrlKey || e.metaKey });   // keys: selectExtend
-        main.title = withKeys(r.sub ? `${r.label} — ${r.sub}` : r.label, 'selectExtend');
+        main.title = withKeys(r.title ?? (r.sub ? `${r.label} — ${r.sub}` : r.label), 'selectExtend');   // r.title: what the row left out (its id, its kind)
         // inline rename (Godot F2 / Blender double-click): a row that carries `rename` (its
         // current label) swaps the label for an input; Enter or blur commits
         // edit('rename', id, f, {value}), Esc cancels. The panel holds repaints while it's focused.
@@ -594,6 +676,7 @@ function fieldDOM(f, edit, ro = {}) {
         const items = r.menu ?? f.menu;
         if (items?.length) line.oncontextmenu = (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, items, (k) => (k === 'rename' && beginRename ? beginRename() : edit(k, r.id))); };
         line.append(main);
+        if (items?.length) line.append(menuButton(line));
         if (r.mine != null) {   // 👁: hidden in MY view only (myview.js) — never the shared component
           const eye = el('button', `sp-mini sp-eye${r.mine ? ' on' : ''}`);
           eye.innerHTML = iconSvg(r.mine ? 'eye-slash' : 'eye', 14);
@@ -626,6 +709,13 @@ function fieldDOM(f, edit, ro = {}) {
         box.append(zone);
       }
       row.append(box);
+      // a changed tree is rebuilt (rows are shape), and a new box starts scrolled to the top: in a world where things
+      // move, that was every few frames, and the lower rows could not be reached (R 10-10: "entities ... I can't get
+      // to in the hierarchy"). The box keeps where it was scrolled to, by the field's key.
+      const tkey = f.k ?? 'tree';
+      box.addEventListener('scroll', () => treeScroll.set(tkey, box.scrollTop), { passive: true });
+      const back = () => { const y = treeScroll.get(tkey); if (y && box.isConnected) box.scrollTop = y; };
+      queueMicrotask(back); requestAnimationFrame(back);
       break;   // rows are shape: a changed tree repaints
     }
     case 'json': {
@@ -678,22 +768,25 @@ function fieldDOM(f, edit, ro = {}) {
     case 'pop': {
       // one button that opens a searchable list (Add Component, R 10-04): {label, items:[{k, label, category, hint,
       // disabled}], recentKey}. Typing filters on name and hint, Enter takes the first, Esc or a click outside closes.
-      const b = el('button', 'sp-btn sp-pop-btn', f.label);
+      const b = el('button', `sp-btn sp-pop-btn${f.icon ? ' sp-btn-ico' : ''}`, f.label);
+      if (f.icon) b.insertAdjacentHTML('afterbegin', iconSvg(f.icon, 14));
       b.title = f.hint ?? '';
       b.onclick = (e) => { e.stopPropagation(); openPop(b, f, (k) => edit(k)); };
       row.append(b);
-      row.update = (nf) => { b.textContent = nf.label; f = nf; };
+      row.update = (nf) => { b.lastChild.textContent = nf.label; f = nf; };
       break;
     }
     case 'btn': {
       const b = el('button', `sp-btn${f.danger ? ' danger' : ''}${f.icon ? ' sp-btn-ico' : ''}`);
-      const txt = el('span', '', f.label);
-      if (f.icon) b.innerHTML = iconSvg(f.icon, 14);
+      const txt = el('span', '', f.label); txt.hidden = !f.label;   // an icon-only button: no empty span to push the glyph off centre
+      let ico = f.icon ?? null; if (ico) b.innerHTML = iconSvg(ico, 14);
       b.append(txt);
-      b.disabled = !!f.disabled;
+      b.disabled = !!f.disabled; b.classList.toggle('on', !!f.on); if (!f.label && f.hint) b.title = f.hint;
       b.onclick = () => edit(f.k);
       row.append(b);
-      row.update = (nf) => { txt.textContent = nf.label; };
+      // an icon toggle (the eye, the padlock) must redraw its picture, not only its words
+      row.update = (nf) => { txt.textContent = nf.label; txt.hidden = !nf.label; b.classList.toggle('on', !!nf.on); if (!nf.label && nf.hint) b.title = nf.hint;
+        if ((nf.icon ?? null) !== ico) { ico = nf.icon ?? null; b.querySelector('svg')?.remove(); if (ico) b.insertAdjacentHTML('afterbegin', iconSvg(ico, 14)); } };
       break;
     }
     case 'tiles': {
@@ -757,24 +850,35 @@ function fieldDOM(f, edit, ro = {}) {
       inp.type = 'checkbox';
       inp.checked = !!f.value;
       inp.disabled = !!f.disabled;
-      inp.onchange = () => edit(f.k, inp.checked);
+      // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
+      // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
+      // it was clicked to until the record agrees (or 3 s pass: then the record wins, e.g. a refusal).
+      let pending = null;
+      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked); };
       row.append(inp);
-      row.update = (nf) => { setLabel(nf); inp.checked = !!nf.value; };
+      row.update = (nf) => { setLabel(nf); const v = !!nf.value;
+        if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
+        pending = null; inp.checked = v; };
       break;
     }
     case 'list': {
       const box = el('div', 'sp-list');
       if (!f.rows?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
       for (const r of f.rows ?? []) {
-        const line = el('div', `sp-item${r.active ? ' active' : ''}`);
+        const line = el('div', `sp-item${r.active ? ' active' : ''}${r.indent ? ' sp-item-sub-row' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
         const main = el('span', 'sp-item-main');
-        main.append(el('span', 'sp-item-label', r.label));
+        if (r.icon) {   // the World row: its glyph, its kind and its name on ONE line
+          const head = el('span', 'sp-item-head'), i = el('span', 'sp-ico'); i.innerHTML = (hasIcon(r.icon) ? iconSvg : hasLine(r.icon) || !hasFill(r.icon) ? rsvg : fsvg)(r.icon, 14);   // any of the three sets
+          const lab = el('span', 'sp-item-label'); if (r.kind) lab.append(el('span', 'sp-item-kind', r.kind)); lab.append(r.label);
+          head.append(i, lab); main.append(head);
+        } else main.append(el('span', 'sp-item-label', r.label));
         if (r.sub) main.append(el('span', 'sp-item-sub', r.sub));
+        if (r.title) main.title = r.title;
         main.onclick = () => edit(f.k ?? 'row', r.id);   // a keyed list routes its rows; unkeyed lists keep 'row'
         line.append(main);
         for (const a of r.actions ?? []) {
-          const b = el('button', `sp-mini${a.danger ? ' danger' : ''}`, a.label);
+          const b = el('button', `sp-mini${a.danger ? ' danger' : ''}${a.hover ? ' sp-hov' : ''}`, a.label); if (a.title) b.title = a.title;
           b.onclick = (e) => { e.stopPropagation(); edit(a.k, r.id); };
           line.append(b);
         }
@@ -790,6 +894,8 @@ function fieldDOM(f, edit, ro = {}) {
     let live = f;
     const upd = row.update;
     row.update = (nf) => { live = nf; upd?.(nf); };
+    // a selected channel resets with the others (dry: would it change anything?)
+    row._reset = (dry = false) => { const can = live.def !== undefined && live.value !== live.def && !live.disabled; if (can && !dry) edit(live.k, live.def); return can; };
     row.oncontextmenu = (e) => {
       if (/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '') && e.target.type !== 'checkbox' && e.target.type !== 'color') return;   // keep the native text menu in a text box
       e.preventDefault();
@@ -798,19 +904,31 @@ function fieldDOM(f, edit, ro = {}) {
         { k: 'copy', label: 'copy value' },
         ...(canPaste ? [{ k: 'paste', label: `paste value  (${String(fieldClip.value).slice(0, 18)})` }] : []),
         ...(live.path ? [{ k: 'path', label: `copy path  (${live.path})` }] : []),
-        ...(live.def !== undefined && live.value !== live.def && !live.disabled ? [{ k: 'reset', label: 'reset to default' }] : []),
+        ...((() => { const many = row.classList.contains('chan-sel') ? [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])].filter((r) => r._reset?.(true)) : [];
+          return many.length > 1 ? [{ k: 'resetsel', label: `reset the ${many.length} selected channels` }] : live.def !== undefined && live.value !== live.def && !live.disabled ? [{ k: 'reset', label: 'reset to default' }] : []; })()),
       ];
       contextMenu(e.clientX, e.clientY, items, (k) => {
         if (k === 'copy') { fieldClip = { value: live.value }; try { navigator.clipboard?.writeText?.(typeof live.value === 'string' ? live.value : JSON.stringify(live.value)); } catch { /* the in-page clip is enough */ } }
         else if (k === 'paste') edit(live.k, fieldClip.value);
         else if (k === 'path') { fieldClip = { value: live.path }; try { navigator.clipboard?.writeText?.(live.path); } catch { /* ok */ } }
         else if (k === 'reset') edit(live.k, live.def);
+        else if (k === 'resetsel') void (async () => {
+          // one after another: each write names the value it replaces, so the next must see the last one land (two at once
+          // and the authority refuses the second as 'changed'; seen in the probe: x reset, z did not)
+          for (const r of [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])]) {
+            if (!r._reset?.()) continue;
+            for (let t = 0; t < 30 && r._reset?.(true); t++) await new Promise((z) => setTimeout(z, 50));
+          }
+        })();
       });
     };
+    row.append(menuButton(row));
   }
   // revert-to-default (Godot's ↺ / Blender's Backspace): a field that declares `def` grows a
   // small ↺ while its value differs; clicking commits the default through the same edit path
-  if (f.def !== undefined && ['num', 'enum', 'color', 'range'].includes(f.t)) {
+  // …except the transform's channels: there the reset is the right-click menu's (R, 10-10: "why does only scale get
+  // the 'reset to default'? it feels like a right-click menu item anyway")
+  if (f.def !== undefined && ['num', 'enum', 'color', 'range'].includes(f.t) && !/(?:^|:)(?:pos|rot)\./.test(f.k ?? '')) {
     const same = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b)) : a === b);
     const face = f.t === 'color' ? '#' + (+f.def).toString(16).padStart(6, '0') : f.deg ? `${Math.round(f.def * R2D)}°` : String(f.def);
     const rv = el('button', 'sp-revert', '↺'); rv.tabIndex = -1; rv.title = `revert to default (${face})`;
@@ -1023,7 +1141,7 @@ export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12,
         g.fillStyle = C.well; roundRect(g, vx, ty - 4, tw, 8, 4); g.fill();
         g.fillStyle = C.accent; roundRect(g, vx, ty - 4, Math.max(8, tw * frac), 8, 4); g.fill();
         g.beginPath(); g.arc(vx + tw * frac, ty, 9, 0, Math.PI * 2); g.fillStyle = C.text; g.fill();
-        font(15); g.fillStyle = C.text; g.textAlign = 'right'; g.fillText(`${v.toFixed(dp)}${f.unit ?? ''}`, width - pad, y + rowH * 0.62); g.textAlign = 'left';
+        font(15); g.fillStyle = C.text; g.textAlign = 'right'; g.fillText(`${trimNum(v, dp)}${f.unit ?? ''}`, width - pad, y + rowH * 0.62); g.textAlign = 'left';
         // one region for the whole track: the hit's fraction along it is the value
         regions.push({ x: vx - 6, y: y + 4, w: tw + 12, h: rowH - 8, action: f.k, slider: { lo, hi, st } });
         break;
@@ -1052,7 +1170,7 @@ function paintStepper(g, regions, f, val, x, y, rowH, k, axis, dp = 2, w = 150) 
   g.fillText('−', x + 8, y + rowH * 0.62);
   g.fillText('+', x + bump + mid + 7, y + rowH * 0.62);
   g.font = '500 14px system-ui';
-  const face = f.deg ? `${Math.round(val * R2D)}°` : val.toFixed(dp) + (f.unit ? ` ${f.unit}` : '');
+  const face = f.deg ? `${Math.round(val * R2D)}°` : trimNum(val, dp) + (f.unit ? ` ${f.unit}` : '');
   g.fillText(face, x + bump + 8, y + rowH * 0.62);
   // deltas are on the WIRE scale (radians for deg fields): the dispatcher adds
   // them to the current value and never has to know what the face showed

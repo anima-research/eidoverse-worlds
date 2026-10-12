@@ -170,4 +170,16 @@ const schedules = (mkf: () => any, T: number) => {
     for (let k = 1; k <= 15; k++) S.advanceSim(sim, k); return sim; };
   const st = run(null), dy = run("dynamic");
   ok(st.bodies.ball.p[0] < 0 && dy.bodies.ball.p[0] < 0.5 && !!dy.bodies.wall, "S11 a 20 m/s ball stops at a 10 cm wall, static or knockable (and knocks the knockable one)", { static: st.bodies.ball.p[0], dynamic: dy.bodies.ball.p[0], wallMoved: !!dy.bodies.wall }); }
+{ // S11 (Covenant IV, review physics.md #11b): a CASCADE advanced with a JSON round trip between every tick equals the
+  // straight advance, and no state number is ever -0 (JSON drops the sign: a -0 would diverge on the first round trip).
+  const ents: any = {}; for (let i = 0; i < 24; i++) ents["d" + i] = { pos: [i * 0.7, 0, 0], yaw: 0, lib: "crate", scale: 1, kind: "dynamic" };
+  const Ls = [{ id: "d0", p: [-1, 0.6, 0], v: [7, 1.5, 0], w: [0, 0, -3] }];
+  const a = mk(ents, Ls), b = mk(ents, Ls); let diverged = -1, negZero = 0, woken = 0;
+  const scan = (x: any) => { if (typeof x === "number") { if (Object.is(x, -0)) negZero++; } else if (x && typeof x === "object") for (const v of Object.values(x)) scan(v); };
+  let rt: any = b;
+  for (let t = 1; t <= 400; t++) { S.advanceSim(a, t); rt = clone(rt); S.advanceSim(rt, t); scan(a);
+    if (diverged < 0 && J(S.simSnapshot(a)) !== J(S.simSnapshot(rt))) diverged = t; }
+  woken = Object.values(a.bodies).filter((x: any) => x.woken).length;
+  ok(diverged < 0 && negZero === 0 && woken >= 4, "S11 a cascade with a JSON round trip every tick equals the straight advance, and never holds a -0", { diverged, negZero, woken });
+}
 console.log(`eidosim-check: ${pass} passed, ${fail} failed`); if (fail) process.exit(1);

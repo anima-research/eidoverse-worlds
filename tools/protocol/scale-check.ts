@@ -353,16 +353,16 @@ const cases: Case[] = [
     good: (o) => o.put === "ok" && o.nested === "ok" && o.annLeft && o.before?.length === 1 && JSON.stringify(o.after) === JSON.stringify(o.before) },
   { id: "R2", what: "…and a leave nested in another leave (a host callback during its drops) doesn't end the outer leave's settlement: its later drops are still never rate-refused", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
-      for (let k = 0; k < 3; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "visitor", ...(k < 2 ? { release: "return" } : {}) } } });   // two go home: the third lands alone
+      for (let k = 0; k < 2; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "visitor", ...(k < 1 ? { release: "return" } : {}) } } });   // one goes home: the second lands alone (two hands: MAX_HELD, 10-10; it was three)
       s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "visitor" } } });
       s.call("ann", "move", { to: [3, 0, 0.5] }); s.call("ann", "grab", { id: "ball" });
       for (let i = 0; i < 64; i++) s.call("vic", "move", { to: [0, 0, 0.5 + (i % 2) * 0.1], teleport: true }, 10);   // vic's budget for this window is spent (each an act)
-      for (let k = 0; k < 3; k++) s.call("vic", "grab", { id: `b-${k}` }, 10);
+      for (let k = 0; k < 2; k++) s.call("vic", "grab", { id: `b-${k}` }, 10);
       const w = s.w(); const save = w.savePresence; let nested: any = null;
       let fired = false; w.savePresence = () => { save(); if (!fired && w.leaving === "vic") { fired = true; nested = D.request(w, "ann", "leave", {}); } };
       const r = s.call("vic", "leave", {}, 10); w.savePresence = save;
       return { nested: show(nested), dropped: r.dropped?.map((d: any) => d.ok), why: r.dropped?.map((d: any) => d.refused ?? null), held: Object.keys(w.presence.holds) }; },
-    good: (o) => o.nested === "ok" && JSON.stringify(o.dropped) === "[true,true,true]" && o.held.length === 0 },
+    good: (o) => o.nested === "ok" && JSON.stringify(o.dropped) === "[true,true]" && o.held.length === 0 },
 
   // ---------------- G: guards ----------------
   { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): check {}, look, and placing a book on a turned desk with a box in its middle each take under ${BOUND_MS} ms`, run(s) { cast(s);

@@ -206,7 +206,7 @@ await C("N9", "§4 says it: bare names are refused unless registered, a namespac
 // ---- D: every parameter written down (H2) ----
 const stored = (W: any, id: string, comp: string) => W.state().entities[id]?.c[comp];
 await C("D1", "a spot light's cone is written into it (angle π/4, inner 0); a point light carries no cone; important and day are written", () => {
-  const W = world(); mk(W, "a"); mk(W, "b");
+  const W = world(); for (const id of ["a", "b"]) if (!W.call("create", { id, components: { label: id } }).ok) throw new Error("create");   // bare things: a light never shares a thing with a model (one place per thing, 10-11)
   const ra = W.call("set", { id: "a", component: "light", value: { kind: "spot" } }), rb = W.call("set", { id: "b", component: "light", value: { kind: "point" } });
   const a = stored(W, "a", "light"), b = stored(W, "b", "light");
   return [ra.ok && rb.ok && a.angle === Math.PI / 4 && a.inner === 0 && !("angle" in b) && a.important === false && a.day === true && b.intensity === 16, [a, b]]; });

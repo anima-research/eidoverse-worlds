@@ -43,10 +43,11 @@ const attacks = [
   // H1c was "pin bypass: set motion {type:'spin'} on a pinned thing", refused by the lab's pin. PROTOCOL §5 gave
   // `lock` v1's exact meaning, and v1's matrix (tools/locktest.ts) keeps motion open on a locked thing: a motion
   // animates it in place (today's are pendulum/spin/bob), it doesn't relocate it. So this is a guard now: it must work.
-  { id: "H1c", guard: true, what: "motion {type:'spin'} on a locked thing stays open, as in v1's lock matrix (§5; the lab's pin refused it)", run(s) { cast(s);
+  // R 10-11 16:21: a lock now covers EVERYTHING on the thing (review C-S1-1): H1c is an attack again, refused.
+  { id: "H1c", what: "motion {type:'spin'} on a locked thing (a lock covers every component, 10-11)", run(s) { cast(s);
       s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       return { open: s.call("bob", "set", { id: "statue", component: "motion", value: { type: "spin" } }), move: s.call("bob", "set", { id: "statue", component: "transform", value: { pos: [0, 0, 0] } }) }; },
-    baseBad: () => true, nowGood: (o) => ok(o.open) && o.move.refused?.code === "locked" },
+    baseBad: (o) => ok(o.open), nowGood: (o) => o.open.refused?.code === "locked" && o.move.refused?.code === "locked" },
   { id: "H1d", what: "one change, two answers: `placer` refused by set, written by a visitor's use", run(s) { cast(s);
       s.call("bob", "create", { id: "bell", model: "bell", place: { at: [1, 1] } });
       const direct = s.call("bob", "set", { id: "bell", component: "placer", value: { who: "olive" } });

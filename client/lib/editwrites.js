@@ -215,3 +215,17 @@ export function lockedBy(id) {
 
 // harness window: the stacks and the module, for the suites (tools/protocol/client-check.ts)
 globalThis.__editWrites = () => ({ undo: [...undoStack], redo: [...redoStack], active: replicaActive() });
+
+/** Set home here (R, 10-10): where each selected thing goes back to when a reset sends it home: where it stands now. */
+export function setHomeHere(ids) {
+  const ops = ids.map((id) => { const c = compsOf(id); if (!c) return null; const t = c.transform ?? {};
+    return OP.set(idIn(id), 'home', { pos: (t.pos ?? [0, 0, 0]).slice(), q: (t.q ?? [0, 0, 0, 1]).slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }); }).filter(Boolean);
+  return ops.length ? sendOps(ops, { what: ids.length > 1 ? `set ${ids.length} homes here` : `set ${ids[0]}'s home here` }) : Promise.resolve({ ok: true, noop: true });
+}
+/** Make a reset button: the button's reactions gain 'reset', sending the targets home (each gets a home where it stands, by the authority). */
+export function makeResetButton(button, targets) {
+  const c = compsOf(button) ?? {}; const reactions = { ...(c.reactions ?? {}), reset: { kind: 'reset', targets: targets.map(idIn) } };
+  return sendOps([OP.set(idIn(button), 'reactions', reactions)], { what: `make ${button} a reset button for ${targets.length} thing${targets.length > 1 ? 's' : ''}` });
+}
+/** One component written whole (the grip editor's grabbable), with expect, undoable. */
+export function setComp(id, comp, value, what) { return sendOps([OP.set(idIn(id), comp, value)], { what }); }

@@ -12,6 +12,8 @@ import { join } from "node:path";
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
 import { TRUST_NAMES } from "./config.ts";
+// how often a person may change the name they show (moderation: a name is how people recognise who did what)
+const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan, addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
@@ -228,6 +230,12 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   }
 } });
 
+// The engine's heartbeat: every world's sim advances and its rests log on this cadence, not inside whoever's request
+// comes next (DESIGN-physics-responsiveness §1). FRAME_MS is the finest beat the scheduler has; the pass is bounded by
+// engine ticks, so a stall catches up over several beats.
+registerSystem({ name: "physics", everyMs: FRAME_MS, fn: () => {
+  for (const w of worlds.values()) { try { w.log?.settle(); } catch (err) { console.error(`[world:${w.name}] physics settle`, err); } }
+} });
 registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
     try { w.scripts.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
@@ -452,7 +460,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         c.ws.close?.(4004, "reserved name");
         return null;
       }
-      if (!account && TRUST_NAMES) account = `local:${c.id.toLowerCase()}`;
+      // a private door: the account is the one the client keeps (msg.account), else the typed name — so a person can show a
+      // new name and stay who they are (R 10-11). Typed, so the door's markup rule holds for it too.
+      if (!account && TRUST_NAMES) { const keep = typeof msg.account === "string" ? nameAtDoor(msg.account.trim().slice(0, LIMITS.ID_LEN), { typed: false }).name : "";
+        account = `local:${(keep || c.id).toLowerCase()}`; }
       // a connection that has joined stays who it proved it was: travel keeps the identity; a new one needs a new socket
       if (c.account !== undefined && c.account !== account) {
         ws.send(JSON.stringify({ type: "error", error: "this connection already joined as someone else — reconnect to join as another identity" }));
@@ -464,7 +475,14 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     }
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
     // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).
-    // The newcomer is the one renamed; an anonymous one is marked as a guest.
+    // RENAME COOLDOWN (R 10-11: "you can only rename yourself every so often (moderation reasons)"): a typed name that
+    // differs from the one this account wore is a rename; inside the cooldown the old name stands and the client is told
+    // when it may change. A case change is free; a sign-in's name (Discord's) is the provider's, not counted here.
+    c.renamed = false; c.renameRefused = undefined;
+    // The newcomer is the one renamed; an anonymous one is marked as a guest. The collision pass runs FIRST, so the
+    // cooldown below judges the name the person will actually wear (STRIKES P-S2-5: judged on the typed name, then
+    // suffixed, then stamped, it trapped someone under a name they never asked for).
+    const typed = c.id;
     if (!c.spectator) {
       const dir = directoryFor(WORLDS_DIR);
       const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && o.account !== c.account)
@@ -477,10 +495,19 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         c.id = n;
       }
     }
+    if (!c.spectator && c.account && !auth && !c.tokenVerified) {
+      const dir = directoryFor(WORLDS_DIR); const id0 = dir.idOfSub(c.account); const e0 = id0 ? dir.entry(id0) : null;
+      if (e0 && foldName(e0.name) !== foldName(c.id)) {
+        const until = (e0.renamedAt ?? 0) + RENAME_COOLDOWN_MS;
+        if (Date.now() < until) { c.renameRefused = { tried: typed, until }; c.id = e0.name; }
+        else c.renamed = foldName(c.id) === foldName(typed);   // a suffixed name wasn't their choice: no cooldown starts on it
+      }
+    }
     // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
     // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
     // never yields their id, so it never yields their role.
     c.actorId = directoryFor(WORLDS_DIR).resolve({ sub: c.account ?? null, name: c.id, agent: !!c.tokenVerified });
+    if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // Bans — checked once identity is SETTLED (id/sub/reserved names all
     // resolved above), before the body enters. A global ban closes every
     // door; a per-world ban closes this one. Spectating counts: a ban is
@@ -614,7 +641,9 @@ function installJoin(c: Client, w: World) {
       for (const other of [...w.clients]) {
         // a takeover is the SAME ACCOUNT re-arriving (H1): a typed name never kicks anyone, and anonymous sessions
         // never take over (each is its own guest)
-        if (other !== c && other.id === c.id && !!c.account && other.account === c.account
+        // …and the same account under a NEW name is a takeover too (R 10-10 18:13, "Body not in the world yet. I just changed
+        // my name": the renamed connection wasn't superseded, so its old socket's close departed the body under her feet)
+        if (other !== c && !!c.account && other.account === c.account
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
@@ -717,6 +746,9 @@ function buildSnapshot(w: World, c: Client) {
       type: "snapshot",
       world: w.name,
       you: c.id,
+      // when this account may next change its name (and the name it just tried, if that was too soon)
+      ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),
+      ...(c.renameRefused ? { renameRefused: c.renameRefused } : {}),
       // your durable subject, when the authority vouched for one
       ...(c.sub ? { yourSub: c.sub } : {}),
       gen: c.gen,   // your surfaceSession — echo it in attestations

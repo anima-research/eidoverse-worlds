@@ -8,9 +8,11 @@ import { THREE } from './core.js';
 import { comps, entities } from './world.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
-import { send } from './editwrites.js';
 import { xrActive } from './xrask.js';
-import { nameOf } from './plainwords.js';
+import { nameOf, plain } from './plainwords.js';
+import { sendRequest } from './net.js';
+import { requestWithBody } from './thingphysics.js';
+import { flashHint } from './ui.js';
 import { html } from './markup.js';
 import * as OP from '../../shared/protocol/requests.js';
 
@@ -38,17 +40,33 @@ export function usable() {
     if (s < bestS) { bestS = s; best = id; }
   }
   if (!best) return null;
-  const bag = comps.get(best); const rx = bag.reactions;
+  const all = actionsOf(best);
   // the action: one open to everyone if there is one (a builder-only bolt beside a door isn't what E does)
-  const action = Object.keys(rx).find((k) => !rx[k]?.who) ?? Object.keys(rx)[0];
-  const h = rx[action] ?? {};
-  const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;
-  const field = h.kind === 'toggle' ? (h.field ?? ((h.component ?? 'openable') === 'openable' ? 'open' : undefined)) : undefined;   // same rule as the door's toggleOf
-  const cur = comp && field && isBag(bag[comp]) ? bag[comp][field] === true : null;
-  // a door that's open says "close" (ProximityPrompt's ActionText follows the state)
-  const verb = comp === 'openable' && field === 'open' ? (cur ? 'close' : 'open') : action;
-  const barred = h.kind === 'toggle' && h.unless && isBag(bag[comp]) && bag[comp][h.unless] === true ? h.unless : null;
-  return { id: best, action, verb, ...(barred ? { barred } : {}) };
+  const u = all.find((a) => !a.who) ?? all[0];
+  return { id: best, action: u.action, verb: u.verb, ...(u.barred ? { barred: u.barred } : {}) };
+}
+/** Every action a thing offers (its reactions), in its own order: [{action, verb, who?, barred?}]. */
+export function actionsOf(id) {
+  const bag = comps.get(id), rx = bag?.reactions; if (!isBag(rx)) return [];
+  return Object.keys(rx).map((action) => {
+    const h = rx[action] ?? {};
+    const comp = h.kind === 'toggle' ? (h.component ?? 'openable') : null;
+    const field = h.kind === 'toggle' ? (h.field ?? ((h.component ?? 'openable') === 'openable' ? 'open' : undefined)) : undefined;   // same rule as the door's toggleOf
+    const cur = comp && field && isBag(bag[comp]) ? bag[comp][field] === true : null;
+    // a door that's open says "close" (ProximityPrompt's ActionText follows the state)
+    const verb = comp === 'openable' && field === 'open' ? (cur ? 'close' : 'open') : action;
+    const barred = h.kind === 'toggle' && h.unless && isBag(bag[comp]) && bag[comp][h.unless] === true ? h.unless : null;
+    return { action, verb, ...(h.who ? { who: h.who } : {}), ...(barred ? { barred } : {}) };
+  });
+}
+/** Use one action of one thing (the mouse: clickuse.js). The door's reply. */
+export async function useThing(id, action, verb = action) {
+  // a use that doesn't work says why in the status bar, in the attention colour, every time (R, 10-10: "same goes for
+  // objects you click to use but it doesn't work for some reason"); it was a 9 s toast
+  const req = OP.use(id, action), what = `${verb} ${id}`; const r = await requestWithBody(req.verb, req.args);   // re-arrives once on 'not-here'
+  if (r && !r.ok && r.refused) { const text = plain(what, r); flashHint(text, 4200, 'attn'); bus.emit('edit-refused', { what, refused: r.refused, text, agentText: text }); }
+  bus.emit('use-prompt', { id, action, ok: !!r?.ok });
+  return r;
 }
 
 /** The hint bar's line for it, or null. */
@@ -59,9 +77,7 @@ export function usePromptHint() {
 /** Use what E points at. Returns the door's reply (or null when there's nothing in reach). */
 export async function useNearest() {
   const u = usable(); if (!u) return null;
-  const r = await send(OP.use(u.id, u.action), { what: `${u.verb} ${u.id}`, record: false });   // a use isn't an edit: no undo step
-  bus.emit('use-prompt', { id: u.id, action: u.action, ok: !!r?.ok });
-  return r;
+  return useThing(u.id, u.action, u.verb);   // a use isn't an edit: no undo step
 }
 
 registerAction({ id: 'body:use', key: 'E', title: 'use what\'s in front of you (open a door, ring a bell)', keywords: ['use', 'open', 'interact', 'press'], icon: 'hand', group: 'body', run: () => { void useNearest(); } });

@@ -147,6 +147,8 @@ function prependLine(who, text, ts, seq) {
  *  bot's telemetry looks like everything that has ever happened here. */
 export function noteHistoryContext({ total = null, shown = 0, spanMs = null } = {}) {
   if (!logEl) return;
+  // one note, ever: every rejoin (each server restart) prepended another, until the pane was a column of them (R 10-10)
+  logEl.querySelectorAll('.hist-note').forEach((n) => n.remove());
   // `total` is unknown for worlds folded before it was recorded. Saying
   // "showing 40 of 0" would be worse than saying nothing; saying "there is
   // more" is true either way.
@@ -994,7 +996,7 @@ export function initChat({ send, whisper, typing, people, person }) {
   getPeople = people ?? (() => []);
 
   frame = makeFrame('chat', {
-    title: 'chat',
+    title: 'Chat',
     x: 10, y: -10, w: 390, h: 200, minW: 240, minH: 100,
       className: 'chat-frame',
       // THE ARROWS NEVER RE-EVALUATED ON A RESIZE. paintArrows compares
@@ -1392,7 +1394,7 @@ bus.on('pinged', () => {
 // Honest about the gap in its title.
 const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
 export const chatXRPanel = {
-  id: 'chat', title: 'chat',
+  id: 'chat', title: 'Chat',
   fields: () => [
     ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
                       : [{ t: 'info', label: '·', value: 'nothing said yet' }]),

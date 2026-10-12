@@ -18,7 +18,7 @@ import path from "node:path";
 import { custodyFileIn } from "./keyfiles.ts";
 import { readLog, fold, opsOf, applyInPlace, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
-import { simFolder } from "../shared/protocol/simlayer.js";
+import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { directoryFor } from "./directory.ts";
@@ -83,22 +83,42 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // ---- the views, built once from the log, then advanced per entry ----
   let st = fold(entries);
   const touching = new Map<string, number[]>();
-  const sim = simFolder(entries, { models: opts.simModels ?? {} });
+  // the sim starts from the last VALID checkpoint (authority checkpointSim): its blob present and hashing to its name, written
+  // right after the entry it says (at = seq - 1), no purge after it (a purge is retroactive: its bytes may sit in the cut), an
+  // engine this host carries, and the cut's sim hashing to the digest the entry recorded. Anything else: from genesis, as before.
+  const ckpt = (() => {
+    let lastPurge = -1; for (let s = entries.length - 1; s >= 0; s--) if (isE(entries[s]) && entries[s].kind === "purge") { lastPurge = s; break; }
+    for (let s = entries.length - 1; s > lastPurge; s--) { const e = entries[s]; if (!isE(e) || e.kind !== "sim" || e.verb !== "checkpoint") continue;
+      const b = e.body ?? {}; if (b.at !== s - 1 || typeof b.state !== "string") { w.log?.(`checkpoint at ${s} malformed; skipped`); continue; }
+      let blob: Any; try { blob = getBlob(b.state); } catch (err) { console.warn(`[world:${name}] checkpoint ${s}: ${(err as Error).message}; skipped`); continue; }
+      let cut: Any = null; try { cut = typeof blob?.cutJson === "string" ? JSON.parse(blob.cutJson) : null; } catch { cut = null; }
+      if (!cut?.spec || !carried(cut.spec) || !cut.sim || digestOf(cut.sim) !== b.sim) { console.warn(`[world:${name}] checkpoint ${s}: ${!cut ? "no cut in the blob" : !carried(cut.spec) ? `engine ${cut.spec?.engine}@${cut.spec?.build} not carried` : "digest mismatch"}; skipped`); continue; }
+      return { seq: s, cut }; }
+    return null;
+  })();
+  // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
+  // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
+  const sim = simFolder(entries, { models: opts.simModels ?? {}, ...(ckpt ? { from: { ...ckpt.cut, st: fold(entries, { until: ckpt.seq }) } } : {}) });
   const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "change") return;
     for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = touching.get(id as string); if (!a) touching.set(id as string, (a = [])); a.push(seq); } };
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
-  for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s)) sim.feed(s); }
+  for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s) && (!ckpt || s > ckpt.seq)) sim.feed(s); }
+  w.bootedFrom = ckpt ? ckpt.seq : null;
 
   // a world that holds scripts starts its sandbox processes now, so its first activation doesn't wait for one
   if (st.status === "ok" && Object.values(st.entities ?? {}).some((e: Any) => Object.keys(e.c).some((k) => k.startsWith("script:")))) w.scripts?.warm?.();
   w.state = () => st;
   w.sim = () => sim.view(w.now()); // the authority's clock: one per request (authority.js request pins it)
+  w.simCapTs = (maxTicks: number) => sim.capTs(maxTicks);
+  w.simPeek = () => sim.view();   // where the engine stands, without advancing it (checks)
   w.touching = (id: string) => touching.get(id) ?? [];
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {
     const seq = baseAppend(e, token); const x = entries[seq];
     if (x.kind === "genesis" || x.kind === "purge") st = fold(entries); // genesis starts the world; a purge is retroactive (L1)
     else if (x.kind === "change") st = applyShared(st, opsOf(x), seq);
+    if (x.kind === "purge") for (const e of entries) if (isE(e) && e.kind === "sim" && e.verb === "checkpoint" && typeof e.body?.state === "string") {   // the purged bytes may sit in a cut: gone (§12)
+      try { fs.unlinkSync(blobPath(e.body.state)); } catch { /* already gone */ } }
     index(seq, x);
     if (st.status === "ok") sim.feed(seq);
     opts.onAppend?.(seq, x);

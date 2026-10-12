@@ -81,7 +81,7 @@ Every message belongs to exactly one plane:
 | `state` | presence | embodied | `{s: [sample, …]}` | **reserved** (spec/PHYSICS.md §4.3): each sample `{id, by, aseq, oseq, t, p, q, v, w, sleep}`, absolute and latest-wins. Checked (`shared/presencewire.js stateSampleError`) and refused until live simulation authority exists. |
 | `typing` | presence | embodied, or bound voice leg | `{to?, state?}` | state ∈ ear/think/tool/mic (whitelist). |
 | `caption` | presence | embodied, or bound voice leg | `{text≤500, utt?}` | live speech pacing; the finished utterance lands as one `say`. |
-| `drag` | presence | builder+ | `{id, pos, yaw}` | live build feedback; the release is one `set transform` request. |
+| `drag` | presence | builder+ | `{id, pos, yaw, q?, end?}` | live build feedback, relayed with `by` (the sender's name); the release is one `set transform` request, sent after a last sample with `end: true`. **A live drag is a claim** (locking design 10-11): while samples flow, `by` is editing `id`; clients show it (a tint, `editing: <name>` in the Hierarchy) and may warn before editing it; it lapses on `end` or 1.5 s of silence. Presence: never logged, never a lease. |
 | `anim` | presence | embodied | `{dur, tracks≤64KB, loop?}` | one-shot custom clip, relayed once. |
 | `puppet` | presence | embodied | `{target, pose?, anim?, ragdoll?}` | ROUTED to target, who decides; ragdoll = `true` or `{lean:[x,y,z]}`. |
 | `bodydrag` | presence | embodied | `{target, grab?/end?/pose?/p?/yaw?/sim?/pinAt?/unpin?/pins?}` | ragdoll takeover stream, routed to the body's owner; `sim` = ≤24 joints × {j,p,v}. |

@@ -187,6 +187,7 @@ export function worldSchema(st, live = {}) {
       ...(k === 'hours' && !clocked && (s.rate ?? 0) !== 0 ? { hint: ro.hint ?? 'the hour now — the day turns at the rate below; setting it re-anchors the day here' } : {}) });
     if (k === 'rate') skyFields.push({ t: 'enum', k: 'clouds', label: 'clouds', value: s.clouds ?? 'cumulus', def: 'cumulus', options: CLOUDS.map((v) => ({ v, label: v })), ...ro });
   }
+  if (sky != null) skyFields.push({ t: 'btn', k: 'remove', label: 'remove the sky', danger: true, hint: 'back to a plain clear sky (weather goes with it)', ...ro });
   groups.push({ group: 'sky', label: 'Sky', fields: skyFields });
 
   // Weather — state.sky's weather half; under a forecast a pick is a manual
@@ -212,6 +213,7 @@ export function worldSchema(st, live = {}) {
     { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? 0, min: 0, softMax: 200, step: 1, dp: 0, unit: 'm', ...ro },
     ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
   ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
+  if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...ro });
   groups.push({ group: 'terrain', label: 'Terrain', fields: terrainFields });
 
   // Grass
@@ -249,7 +251,7 @@ export function worldEditOps(st, edits, live = {}) {
   const now = live.now ?? 0;
   const schema = worldSchema(st, live);
   const errors = [];
-  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false;   // ground: the terrain patch
+  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false, noSky = false, noGround = false;   // ground: the terrain patch
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
     if (!f || f.t === 'info') { errors.push(`${key}: no such field on ${WORLD_ID} (sky.* weather.state terrain.* grass.*; inspect @world lists them)`); continue; }
@@ -268,6 +270,7 @@ export function worldEditOps(st, edits, live = {}) {
     } else if (f.t === 'text') v = String(raw ?? '').trim();
     switch (group) {
       case 'sky':
+        if (k === 'remove') { noSky = true; break; }
         skyPatch ??= {};
         if (k === 'clock') {
           if (v === 'real') Object.assign(skyPatch, { clock: 'real', tz: sky?.tz ?? DEFAULT_TZ });
@@ -283,6 +286,7 @@ export function worldEditOps(st, edits, live = {}) {
         break;
       case 'weather': weather = v; break;
       case 'terrain':
+        if (k === 'remove') { noGround = true; break; }
         ground ??= {};
         if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: hex(v) }));
         else ground[k] = v;
@@ -291,9 +295,12 @@ export function worldEditOps(st, edits, live = {}) {
     }
   }
   const ops = [];
-  if (skyPatch) ops.push(skyOp(skyReissue(sky, skyPatch, now)));
+  // R 10-11: "no way to get rid of the weather, sky, or terrain once created": remove is a plain component delete
+  if (noSky) { if (sky != null) ops.push(OP.unset(WORLD_ID, 'sky')); }
+  else if (skyPatch) ops.push(skyOp(skyReissue(sky, skyPatch, now)));
   if (weather != null) ops.push(weatherOp(weather));
-  if (ground) ops.push(terrainOp({ ...clone(terrain), ...ground }));
+  if (noGround) { if (terrain != null) ops.push(OP.unset(WORLD_ID, 'terrain')); }
+  else if (ground) ops.push(terrainOp({ ...clone(terrain), ...ground }));
   if (mow) { if (isBag(grass)) ops.push(grassOp(null)); }
   else if (grassPatch) ops.push(grassOp({ ...clone(grass), ...grassPatch }));
   return { ops, errors };

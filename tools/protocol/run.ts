@@ -15,7 +15,9 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["attack", "attack-check.ts", 2],     // §6 proofs 2–3: 25d H1/H2/H4 attacks through the authority (admit, L7)
   ["gaps", "gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
-  ["physlive", "physlive-check.ts", 1], // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
+  ["physlive", "physlive-check.ts", 1],
+  ["phystick", "phystick-check.ts", 1],
+  ["sclock", "sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping  // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded // design 20 as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physseeds", "physseeds-check.ts", 1], // research physics-seeds 10-07: shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
   ["eidosim", "eidosim-check.ts", 1], // eidosim's adapter: any schedule reaching tick T gives the same bits; spin capped like v; a mirror is the same box
   ["eidosim-live", "eidosim-live-check.ts", 1], // eidosim at the authority: locks (own, ancestor, descendant) hold against knocks; knocked children rest on the record; spheres on the live host
@@ -34,6 +36,11 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["fork-reset", "fork-reset-check.ts", 1], // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
+  ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
+  ["reset", "reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
+  ["settle", "settle-check.ts", 1],
+  ["disabled", "disabled-check.ts", 1],   // a switched-off thing (R 10-11): no handling, no body, nothing stands on it; back on, all returns     // what a thing at rest is attached to
+  ["histdiff", "history-diff-check.ts", 1], // history {id}: each entry says what changed (a field, from what to what)
   ["consent", "consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0)
   ["history-rows", "history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "scale-check.ts", 1],       // the authority at scale: every request under 50 ms at 72/500/2 000 things; gates before work; capacity; indoors (review 10-06)
@@ -74,7 +81,7 @@ for (const [name, file, tail] of SUITES) {
   }
   const r = Bun.spawnSync(cmd, { cwd: ENGINE, env: senv });
   const out = (r.stdout.toString() + r.stderr.toString()).trimEnd().split("\n");
-  const fails = out.filter((l) => /^\s*FAIL\b/.test(l));
+  const fails = out.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
   const ok = r.exitCode === 0;
   if (!ok) failed.push(name);
   console.log(`\n== ${name} (${file}) ${ok ? "PASS" : `FAIL (exit ${r.exitCode})`} ${((performance.now() - t) / 1000).toFixed(1)} s`);

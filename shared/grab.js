@@ -19,6 +19,7 @@
 //     grips       {}            {<name>: {pos, q?, hand?, role?, fingers?, hold?, part?}}: where the PALM goes, in the
 //                               thing's own frame (+Z out of the palm, +Y along the fingers' base)
 //     twoHanded   false         a second hand on a secondary grip steers it (false: a second hand takes it over)
+//     carries     (absent=false) a tray: what rests on it comes along when it is picked up (false: it falls off; R 10-10)
 //     throw       1             0..3: scales the release velocity (0: it can only be dropped)
 //     release     'drop'        drop | stay (hangs where you let go) | return (goes home)
 //     returnAfter 0             s, 0..3600: goes home after this long unheld (0: never)
@@ -43,7 +44,7 @@ export const HANDS = ['left', 'right', 'either'];
 export const ROLES = ['primary', 'secondary'];
 export const FINGERS = ['fist', 'pinch', 'point', 'flat', 'open', 'trigger'];
 export const RELEASES = ['drop', 'stay', 'return'];
-export const KEYS = ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'pose', 'grips', 'twoHanded', 'throw', 'release', 'returnAfter', 'home', 'fits', 'use', 'prompt', 'fx'];
+export const KEYS = ['enabled', 'who', 'steal', 'range', 'priority', 'hold', 'pose', 'grips', 'twoHanded', 'carries', 'throw', 'release', 'returnAfter', 'home', 'fits', 'use', 'prompt', 'fx'];
 export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'fingers', 'hold', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
@@ -106,6 +107,7 @@ function fill(v, source) {
   g.pose = POSES.includes(v.pose) ? v.pose : null;
   g.grips = isObj(v.grips) ? Object.fromEntries(Object.entries(v.grips).map(([k, x]) => [k, gripOf(x)]).filter(([k, x]) => x && NAME_RE.test(k))) : {};
   g.twoHanded = v.twoHanded === true;
+  g.carries = v.carries === true;
   g.throw = num(v.throw) ? Math.min(3, Math.max(0, v.throw)) : 1;
   g.release = RELEASES.includes(v.release) ? v.release : 'drop';
   g.returnAfter = num(v.returnAfter) ? Math.min(3600, Math.max(0, v.returnAfter)) : 0;
@@ -236,7 +238,7 @@ export const bothArms = (preset) => !!ARMS[preset]?.other;
 export function checkGrabbable(v, at = 'grabbable') {
   if (!isObj(v)) return bad('shape', `${at} must be an object {who?, grips?, release?, …} ({} takes every default)`);
   let r = keys(at, v, KEYS, 'grabbable'); if (r) return r;
-  for (const k of ['enabled', 'steal', 'twoHanded']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
+  for (const k of ['enabled', 'steal', 'twoHanded', 'carries']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
   if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
   if (v.hold !== undefined && !HOLDS.includes(v.hold)) return bad('shape', `${at}.hold is ${HOLDS.join(', ')} (auto: press-to-hold in VR, sticky on desktop)`);
   if (v.pose !== undefined && !POSES.includes(v.pose)) return bad('shape', `${at}.pose is ${POSES.join(', ')} (leave it out: chosen by size)`);

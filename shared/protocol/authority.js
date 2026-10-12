@@ -28,7 +28,8 @@ import { mediaTier, tierWords } from "../mediasrc.js";
 import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
+import { planVelocity } from "./launchplan.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -443,6 +444,7 @@ function fileIx(ix, id, g, cloned) {
 function buildIx(st, ver) {
   const ix = { cat: CAT, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
   for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
+    if (offChain(st, id)) continue;   // switched off: nothing to stand on, bump into or overlap (componentspec disabled)
     const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
   return ix;
 }
@@ -465,7 +467,7 @@ function deriveIx(prev, st) {
     if (old) { ix.rec.delete(id); const cs = cellsOf(old);
       if (cs) for (const k of cs) { const a = ix.grid.get(k); if (!a) continue; const b = a.filter((x) => x !== id); if (b.length) ix.grid.set(k, b); else ix.grid.delete(k); cloned.add(k); } } }
   ix.big = prev.big.filter((x) => !touched.has(x));
-  for (const id of touched) { if (E[id] === undefined) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
+  for (const id of touched) { if (E[id] === undefined || offChain(st, id)) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
   // the children map is rebuilt (lazily) only when a parent link changed
   if (added.length || removed.length || changed.some((id) => P[id]?.c.parent?.to !== E[id]?.c.parent?.to)) ix.kids = null;
   return ix;
@@ -808,14 +810,13 @@ function guess(s, opts) {
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   system   — the authority's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
 //   founding — the `new` act's first write to @world, by an owner named in genesis, once.
-// What a lock guards (§5, the first protocol's lock matrix): nothing may MOVE, REPLACE or REMOVE a locked thing
-// or anything attached to it. Move = transform or parent (or a punt); replace = model; remove = deleting the thing.
-// Everything that doesn't relocate it stays open: labels, lights,
-// reactions, sockets, `use`, sitting on it, and motion (the old matrix keeps motion open: "sit / use / motion / other comps
-// all stay open while locked"; today's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
-// physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
-// and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose the first protocol's meaning.
-const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
+// What a lock guards (§5; R 10-11 16:21, Second Life's Locked): EVERYTHING on the locked thing and on anything attached to
+// it — every component set, added or removed, its place, its parent, its model, its removal — until the lock is lifted
+// (throughLock: a request by someone who may lift it acts through it). The first protocol's matrix left labels, lights,
+// motion, physics and reactions open; review 10-11 C-S1-1 showed what that let a builder do to an owner-locked piece
+// (switch it off, hide it, take its physics away). USE stays open: a lock stops authoring, not using, so a handler's own
+// writes may change a locked thing's state (a door's openable, a label) but never move, re-parent, swap or remove it.
+const RELOCATES = new Set(["transform", "parent", "model"]);   // what even USE may not change on a locked thing (a lock covers everything else for authoring)
 // L7 rate (round-2 review R6): per actor, over a 10 s window by the authority's clock. Counted in ENTRIES and in BYTES, with
 // talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
 // make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
@@ -900,7 +901,12 @@ function admit(w, st, who, ops) {
     lockLevelCheck(w, st, s, who, op, at);
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
-    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp) || op.comp.startsWith("terrain-tile:"))) { // a rest is the engine's word on a released thing: locks guard authored writes
+    // a lock covers EVERYTHING on the thing and on what hangs under it (R 10-11 16:21, Second Life's Locked): every component
+    // set, added or removed, not only where it stands (review 10-11 C-S1-1: a builder could switch off, hide or un-physics an
+    // owner-locked thing). Open still: USE (a reaction's own writes), the engine's rest, the authority's follow-ups, and the
+    // thing's own lock (lockLevelCheck says who may lift it).
+    else if (!made.has(op.id) && !["rest", "system"].includes(cap?.kind) && !(op.comp === "lock" && lockedC(s.entities[op.id]?.c))
+      && (cap?.kind !== "reaction" || op.comp === undefined || RELOCATES.has(op.comp))) {   // use stays open, but no handler moves, re-parents, swaps or removes a locked thing
       // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
       // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
       // put or throw settles it. Its OWN lock still binds, and picking it up off a locked thing is refused at grab.
@@ -1168,6 +1174,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
+  // one place per thing (R 10-11 00:37; the answer: anything that needs its own place goes on a child): a light and a model
+  // never share an entity, so a light's pose is its own and the editor's gizmo moves one thing. Existing logs keep folding
+  // (the fold never refuses); the importer splits them; a carried value (an import) passes.
+  if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
+  if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
@@ -1223,12 +1234,18 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "§0 rule 2: no stored derived values; inspect shows the pivot as a view");
+  if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
+    if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || (v.scale !== undefined && !(typeof v.scale === "number" ? v.scale > 0 : nums(v.scale, 3) && v.scale.every((x) => x > 0))) || Object.keys(v).some((k) => !["pos", "q", "scale", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to" || k === "socket"))))
+      refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], scale?, parent?: {to, socket?}}`, "e.g. {pos: [0, 0, 2]}"); }
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
       if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§3.1");
       if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'openable', field: 'locked', value: true}");
       for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, "");
+      if (h.kind === "reset" && !(Array.isArray(h.targets) && h.targets.length >= 1 && h.targets.length <= 64 && h.targets.every((t) => typeof t === "string")))
+        refuse("shape", `reactions.${act} (reset) names what it sends home: targets [1 to 64 ids]`, "e.g. {reset: {kind: 'reset', targets: ['ball-0', 'ball-1']}}");
+      if (h.kind === "reset") { const gone = h.targets.filter((t) => !s.entities[t]); if (gone.length) refuse("not-found", `reactions.${act} (reset) names ${gone.join(", ")}, which ${gone.length > 1 ? "aren't" : "isn't"} here`, "", { didYouMean: guess(gone[0], Object.keys(s.entities)) }); }
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
@@ -1413,10 +1430,11 @@ function handlerCheck(at, act, h) {
 }
 // L3: a rest must equal the engine's value. The gate asks the engine itself, not the caller.
 function restCheck(w, cap, after) {
-  const sf = w.sim(); const id = cap.ids[0]; const b = sf.sim?.bodies[id];
-  if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
-  if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
-  if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, "");
+  const sf = w.sim();
+  for (const id of cap.ids) { const b = sf.sim?.bodies[id];   // every body the rest names (one change may rest a launch's whole batch)
+    if (!b || !b.resting || sf.launched[id]?.seq !== cap.launch) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
+    if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
+    if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, ""); }
 }
 function changeShape(plan, cause, w) {
   // §2.4: in a chained log every set carries a salt (base64url, 16 random bytes), so a purged value's commit can't be
@@ -1439,7 +1457,7 @@ function commit(w, actor, verb, args, build) {
   const sent = clone(args); // L4: the act is the request AS SENT (builders may annotate their own copy)
   const st = w.state();
   const ctx = { st, actor, w, notes: [], refs: new Set() };
-  const ops = stampMedia(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx))));
+  const ops = stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))));
   const plan = admit(w, st, { actor, cap: ctx.cap, restores: ctx.restores }, ops);
   if (args.dry) return { ok: true, dry: true, would: plan.ops, notes: ctx.notes, ...warnOrNot(warnings(plan.after, [...ctx.refs])) };
   const actE = actOf(w, actor, verb, sent, ctx.actExtra);
@@ -1447,6 +1465,16 @@ function commit(w, actor, verb, args, build) {
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
+  // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
+  // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
+  // after was refused from a hand the two no longer agreed on.)
+  { let let_go = false;
+    for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h) continue;
+      // switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing can't be thrown, so it's set down where
+      // the record has it. Keep this set in step with simlayer's RELEASES.
+      if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
+        delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
+    if (let_go) w.savePresence(); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
@@ -1540,7 +1568,29 @@ function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   return out;
 }
 const opsTouching = (e, id) => opsQuiet(e).filter((o) => o.id === id);
+// What one change did to a thing, in a few words a person can read (R 10-10 23:55: "Is there a reason the history isn't more
+// explicit? ... does the World log actually not know what I set at any of these logged spots?" It does: every entry
+// carries the whole new value). Per component: the fields that differ from its previous value, 'a → b'.
+function historyDiff(w, id, at, ops) {
+  const out = {};
+  const prevOf = (comp) => { for (const j of backward(w, id)) { if (j >= at) continue; const e = w.entries[j]; if (!isE(e) || e.kind !== "change") continue;
+    const os = opsTouching(e, id); for (let k = os.length - 1; k >= 0; k--) { const o = os[k]; if (o.verb === "set" && o.comp === comp) return o.value; if (o.verb === "delete" && (o.comp === comp || o.comp === undefined)) return undefined; if (o.verb === "create") return undefined; } }
+    return undefined; };
+  const word = (v) => v === undefined ? "none" : v === true ? "on" : v === false ? "off" : typeof v === "number" ? String(+v.toPrecision(4)) : typeof v === "string" ? JSON.stringify(v.length > 24 ? v.slice(0, 23) + "…" : v)
+    : Array.isArray(v) && v.length <= 4 && v.every((n) => typeof n === "number") ? `(${v.map((n) => +n.toPrecision(3)).join(", ")})` : Array.isArray(v) ? `[${v.length}]` : "{…}";
+  for (const o of ops) {
+    if (!o.comp || (o.verb !== "set" && o.verb !== "delete")) continue;
+    const was = prevOf(o.comp), now = o.verb === "delete" ? undefined : o.value; const bits = [];
+    if (was && now && typeof was === "object" && typeof now === "object" && !Array.isArray(was) && !Array.isArray(now)) {
+      for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) if (JSON.stringify(was[k]) !== JSON.stringify(now[k])) bits.push(`${k} ${word(was[k])} → ${word(now[k])}`);
+    } else if (JSON.stringify(was) !== JSON.stringify(now)) bits.push(was === undefined ? `set ${word(now)}` : now === undefined ? `removed (was ${word(was)})` : `${word(was)} → ${word(now)}`);
+    if (bits.length) out[o.comp] = bits.slice(0, 4).join(", ") + (bits.length > 4 ? ` (+${bits.length - 4})` : "");
+  }
+  return Object.keys(out).length ? out : null;
+}
 
+// a switched-off thing (componentspec disabled, itself or what it hangs under) can't be handled: it's a link in the record
+function offRefuse(st, id, what) { const k = offChain(st, id); if (k) refuse("disabled", k === id ? `${id} is switched off, so it can't be ${what}` : `${id} hangs under ${k}, which is switched off, so it can't be ${what}`, `an editor switches it back on: delete {id: '${k}', component: 'disabled'}`); }
 function needThing(ctx, id) {
   const e = ctx.st.entities[id];
   if (!e) refuse("not-found", `no thing called '${id}'`, "look lists what's here", { didYouMean: guess(String(id), Object.keys(ctx.st.entities)) });
@@ -1896,6 +1946,7 @@ function reactionCap(ctx, id, comp, action) {
 }
 function buildUse(ctx, a) {
   const e = ctx.st.entities[a.id]; if (!e) refuse("not-found", `no '${a.id}'`, "", { didYouMean: guess(a.id, Object.keys(ctx.st.entities)) });
+  offRefuse(ctx.st, a.id, "used");
   const offers = actionsOf(ctx.st, a.id);
   // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
   // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
@@ -1922,6 +1973,26 @@ function buildUse(ctx, a) {
   const h = e.c.reactions?.[action];
   if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
+  if (h?.kind === "reset") {
+    reactionCap(ctx, a.id, "transform", action); ctx.refs.add(a.id);
+    const ops = [], sent = [], skipped = [];
+    for (const t of h.targets) { const te = ctx.st.entities[t];
+      if (!te) { skipped.push({ id: t, why: "it isn't here any more" }); continue; }
+      const home = te.c.home ?? grabOf(te.c)?.home;
+      if (!home) { skipped.push({ id: t, why: "it has no home" }); continue; }
+      if ([t, ...ancestors(ctx.st, t)].some((k) => lockedC(ctx.st.entities[k]?.c))) { skipped.push({ id: t, why: "it is locked" }); continue; }
+      const hp = home.parent; if (hp && !ctx.st.entities[hp.to]) { skipped.push({ id: t, why: `its home parent ${hp.to} is gone` }); continue; }
+      // a launched thing is the engine's until it rests (no write may touch it: inFlight in admit); for now a reset skips it and says so
+      { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
+      if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) continue;   // home already (and its size), in no hand
+      ops.push(...(hp ? [setOp(t, "parent", { order: "a0", ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
+        setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) }));
+      sent.push(t); ctx.refs.add(t); }
+    ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
+    if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
+    if (!ops.length) refuse("nothing-to-reset", `everything is already home${skipped.length ? `; skipped: ${skipped.map((x) => `${x.id} (${x.why})`).join(", ")}` : ""}`, "");
+    return ops;
+  }
   if (h?.kind === "impulse") {
     if (e.c.motion && e.c.motion.type !== "pendulum") refuse("no-body", `${a.id} moves by '${e.c.motion.type}', which a push doesn't change`, "an impulse swings a pendulum (motion {type: 'pendulum'})");
     const mo = { ...(e.c.motion?.type === "pendulum" ? e.c.motion : PENDULUM) }; delete mo.pivot;
@@ -2250,6 +2321,46 @@ function withAuthority(w, fn) {
  * act's cause is the entry that made its sponsor (its latest install). Then the cascades it set off. A host calls this on
  * its own clock (server: once a second); it never runs inside a request.
  */
+/**
+ * The engine's heartbeat (DESIGN-physics-responsiveness §1). Advances the sim toward the authority's clock, at most `maxTicks`
+ * engine ticks a pass (a stall catches up over several passes, never by a longer step: the bits stay the law's), and logs
+ * what came to rest, returns what is due back, expires asks. A host calls this at tick cadence; a request still settles
+ * first (the fallback for a host without a heartbeat) and finds nothing left to do. Returns how many entries it wrote.
+ */
+export function settle(w, { maxTicks = 8 } = {}) {
+  if (!w.exists || w.state().status !== "ok") return 0;
+  return withAuthority(w, () => {
+    const clock = w.now; const t0 = clock(); const cap = w.simCapTs?.(maxTicks); const t = cap !== null && cap !== undefined && cap < t0 ? cap : t0;
+    w.now = () => t;   // one clock for the pass, as a request has (physlive Q1): a rest's digest and its ts agree
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
+    const n0 = w.entries.length;
+    WORK = { left: Infinity, until: Infinity, k: 0 };
+    settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
+    drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
+    return w.entries.length - n0;
+  });
+}
+// A checkpoint is a persisted joiner cut (DESIGN-physics-responsiveness §2; STRIKES PH-S1-1: boot re-simulated every flight
+// the world ever had, 6.5 s for the gym's 94 launches and growing). At a quiet moment (nothing in flight, nothing waiting to
+// be logged) after launches have happened, the authority writes one `sim:checkpoint` entry whose body names a blob holding
+// the sim cut exactly as a joiner gets it (simCutOf), with the cut's engine and digest beside it. A host that carries the
+// engine opens the world from the last valid checkpoint and feeds only the entries after it; any other reader folds past
+// an unknown sim verb unchanged. The fold itself is never checkpointed: it is cheap and always exact from genesis.
+const CHECKPOINT_QUIET_MS = 20000;
+function checkpointSim(w) {
+  if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
+  // incremental (second review S2-3: a whole-log scan every beat until the first checkpoint): what's been counted stays counted
+  const E = w.entries; const k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity });
+  for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object" || e.kind !== "sim") continue;
+    if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; } else if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } }
+  if (!k.launches || w.now() - k.newest < CHECKPOINT_QUIET_MS) return;
+  const sf = w.sim(); if (!sf.sim || sf.foreign || Object.keys(livePoses(sf)).length || sf.rested.length || (w.unsettled?.length ?? 0)) return;
+  // the cut rides as a JSON string: the blob store canonicalises objects (sorted keys), and the engine's object order is the
+  // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
+  const cut = simCutOf(sf, E);
+  const state = w.putBlob({ cutJson: JSON.stringify(cut) });
+  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine, build: sf.spec.build }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+}
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   return withAuthority(w, () => {
@@ -2321,8 +2432,10 @@ function orphanLifts(w) {
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && e.body?.id) lifted.set(e.body.id, { seq, by: e.actor });
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(e.body?.id);
     else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      if (o.id === "@world" && o.comp === "physics-engine") { lifted.clear(); continue; }
-      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent", "model", "physics"].includes(o.comp)) lifted.delete(o.id); }
+      // the same lifecycle as the engine's (simlayer RELEASES): what ends a hold is a write that moves it, re-parents it,
+      // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
+      // (review of 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
+      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)) lifted.delete(o.id); }
   });
   return lifted;
 }
@@ -2841,38 +2954,71 @@ const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities
 // ---------- physics (design 20) ----------
 const REACH = 1.5;   // m from your body: arm plus a step
 const HAND_Y = 1.1; // where a held thing sits above your feet
+const MAX_HELD = 2; // things in your hands at once
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
 // cause is the launch, it goes through admit like every write, and admit checks it against the engine. The engine
 // digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
 // that left the world) is a SEPARATE entry caused by a system act, so a rest and a correction never look alike.
+const REST_COALESCE_TICKS = 15;   // ~0.5 s at 33 ms: PHYSICS §4.4's settlement window
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
+  let digested = false;
   for (let guard = 0; guard < 64; guard++) {
-    const sf = w.sim(); const r = sf.rested.find((x) => !skip.has(`${x.id}@${x.seq}`)); if (!r) return;
-    const st = w.state(); const t = worldT(st, r.id);
-    const ops = [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })];
-    let plan; try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [r.id], comps: ["transform", "parent"], launch: r.seq } }, ops); }
-    catch (e) { if (!(e instanceof Refusal)) throw e; w.unsettled.push({ id: r.id, launch: r.seq, refused: e.code, reason: e.reason }); skip.add(`${r.id}@${r.seq}`); continue; } // 33 F2: one refused rest must never stall every later one
-    w.append({ kind: "sim", actor: "sim", cause: r.seq, verb: "digest", body: { digest: digestOf(sf.sim) } });
-    const rest = changeEntry(w, plan, r.seq);
-    const st2 = w.state(); const B = boundsOf(st2);
-    if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
-      // it landed outside the world: lost. The authority returns it to where it was picked up, as its own act.
-      const old = st.entities[r.id].c; const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
-      const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
-      changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
-      continue;
+    // the lowest first (R 10-10 23:23, the gym log): pyr-9 settled onto pyr-6, and then pyr-6's own rest in the same view
+    // moved pyr-6 and dragged pyr-9, now its child, 19 cm into pyr-7. A support rests before what it carries.
+    const sf = w.sim(); let due = sf.rested.filter((x) => !skip.has(`${x.id}@${x.seq}`)).sort((a, b) => a.p[1] - b.p[1]); if (!due.length) return;
+    // a launch's rests are logged together: when its last body rests, or when its oldest unlogged rest is REST_COALESCE_TICKS
+    // old (a cascade rests one crate at a time over seconds; a heartbeat pass would otherwise log one body per beat, which is
+    // what one-digest-one-change per body cost). The rest tick is the engine's either way; only the entry's ts is later.
+    const ready = (seq) => { const mine = due.filter((x) => x.seq === seq); const flying = Object.entries(sf.launched).some(([id, l]) => l.seq === seq && sf.sim.bodies[id] && !sf.sim.bodies[id].resting);
+      return !flying || Math.min(...mine.map((x) => x.tick)) <= sf.sim.tick - REST_COALESCE_TICKS; };
+    due = due.filter((x) => ready(x.seq)); if (!due.length) return;
+    // one change per launch per pass, every body that launch set moving in it (PHYSICS §1 already reads a rest so; STRIKES
+    // PH-S2-5: one digest + one change per body was 1.16 KB and 2.4 entries per rested body), and one digest per pass: every
+    // rest in a pass is at the same clock. A batch one body spoils falls back to one rest at a time (its refusal names it).
+    const batch = due.filter((x) => x.seq === due[0].seq);
+    const st = w.state();
+    const opsFor = (r) => { const t = worldT(st, r.id); return [...(st.entities[r.id].c.parent ? [delOp(r.id, "parent")] : []), setOp(r.id, "transform", { pos: r.p.slice(), q: r.q ? r.q.slice() : t.q, scale: t.scale })]; };
+    let plan = null, group = batch;
+    try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: batch.map((r) => r.id), comps: ["transform", "parent"], launch: batch[0].seq } }, batch.flatMap(opsFor)); }
+    catch (e) { if (!(e instanceof Refusal)) throw e;
+      if (batch.length === 1) { w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e.code, reason: e.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } // 33 F2: on
+      group = [batch[0]];
+      try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [batch[0].id], comps: ["transform", "parent"], launch: batch[0].seq } }, opsFor(batch[0])); }
+      catch (e2) { if (!(e2 instanceof Refusal)) throw e2; w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e2.code, reason: e2.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } }
+    if (!digested) { w.append({ kind: "sim", actor: "sim", cause: group[0].seq, verb: "digest", body: { digest: digestOf(sf.sim) } }); digested = true; }
+    const rest = changeEntry(w, plan, group[0].seq);
+    for (const r of group) {
+      const st2 = w.state(); const B = boundsOf(st2);
+      if (B && (r.p[0] < B.min[0] || r.p[0] > B.max[0] || r.p[2] < B.min[2] || r.p[2] > B.max[2])) {
+        // it landed outside the world: lost. The authority sends it home when it has one (R 10-11 00:07: "ball rolled out
+        // of world bounds and now I can't touch it"), else back to where it was picked up, as its own act.
+        const old = st.entities[r.id].c; const hm = old.home;
+        const viaHome = hm && Array.isArray(hm.pos) && hm.pos.length === 3 && Array.isArray(hm.q) && hm.q.length === 4 ? returnPlan(w, st2, r.id, { home: hm }) : null;
+        if (viaHome?.plan) { changeEntry(w, viaHome.plan, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest, home: true }))); continue; }
+        const back = [setOp(r.id, "transform", old.transform), ...(old.parent ? [setOp(r.id, "parent", old.parent)] : [])];
+        const p2 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, back);
+        changeEntry(w, p2, w.append(actEntry(w, "system", "return-lost", { id: r.id, rest })));
+        continue;
+      }
+      // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
+      // ON = what its footprint touches (R 10-10: a pyramid's top crate sits over the gap between two crates; read under its
+      // centre, the gap led down to the crate a row lower, and the top crate was parented 0.5 m above it: carry that one
+      // and it rode along in mid-air). Nothing within 3 cm under its footprint: not parented.
+      // and never onto a HELD thing (R 10-10 evening): a held thing still stands in the log where it was picked up, so the
+      // crates that fell off it settled back onto it and were carried off in her hands
+      const fam = new Set([r.id, ...descendants(st2, r.id)]); const bx = aabb(st2, r.id);
+      for (const k of Object.keys(w.presence.holds)) if (st2.entities[k]) for (const d of [k, ...descendants(st2, k)]) fam.add(d);
+      const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
+      if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
+      const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
+      const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
+      const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
+      changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
     }
-    // it rests ON something: name that as its parent, as place does, so it rides with it (the relation is the authority's word)
-    const fam = new Set([r.id, ...descendants(st2, r.id)]); const sup = supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
-    if (sup.id === "ground") continue;
-    const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]);
-    const attach = [setOp(r.id, "parent", { to: sup.id, order: "a0" }), setOp(r.id, "transform", localFrom(s3, sup.id, wt))];
-    const p3 = admit(w, st2, { actor: "system", cap: { kind: "system", ids: [r.id], comps: ["transform", "parent"] } }, attach);
-    changeEntry(w, p3, w.append(actEntry(w, "system", "settle", { id: r.id, onto: sup.id, rest })));
   }
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
@@ -2904,8 +3050,10 @@ function body(w, actor) {
 }
 function holdOf(w, actor, id) {
   const h = w.presence.holds[id];
+  // gone first: a delete now releases the hold itself (9d7bc99b), so a put of a deleted thing found no hold and said
+  // 'not-holding' when the truth is that the thing is gone (attack-check L1low)
+  if (!w.state().entities[id]) { if (h) { delete w.presence.holds[id]; w.savePresence(); } refuse("gone", h?.by === actor || !h ? `${id} isn't here any more (it was deleted)` : `${id} was deleted`, "your hand is empty now"); }
   if (!h || h.by !== actor) refuse("not-holding", `you aren't holding ${id}${h ? ` (${said(h.by)} is)` : ""}`, `grab {id: '${id}'} first`);
-  if (!w.state().entities[id]) { delete w.presence.holds[id]; w.savePresence(); refuse("gone", `${id} was deleted while you held it`, "your hand is empty now"); }
   return h;
 }
 // L6 / 25d M3: the authority's own plausibility TRACK of each body (presence: unlogged). A body is where the authority last
@@ -2974,6 +3122,7 @@ const PHYSICS_VERBS = {
     if (typeof a.id === "string" && a.id.startsWith("body:")) return BODY_VERBS.body(w, actor, { to: a.id, kind: "drag" }); // a body is presence, never an entity (§2.3)
     const me = body(w, actor); const sf = w.sim(); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
+    offRefuse(st, a.id, "picked up");
     const held = w.presence.holds[a.id];
     if (a.hand !== undefined && !["left", "right"].includes(a.hand)) refuse("shape", "hand is left or right", "");
     if (a.offset !== undefined && !offsetOk(a.offset)) refuse("shape", "offset is {pos: [x, y, z] (within 2 m), q: [x, y, z, w]}: where it sits in your hand", "a VR hand sends where it took hold");
@@ -2985,7 +3134,12 @@ const PHYSICS_VERBS = {
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
-    const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
+    // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
+    // things"; a number, not a claim about hands: "avatars can have more (or none!)")
+    { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
+      if (mine.length >= MAX_HELD) refuse("hands-full", `you are already holding ${mine.length} things (${mine.join(", ")}), and ${MAX_HELD} is the most you can carry here`, `put one down first: put {id: '${mine.at(-1)}'}`); }
+    const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const eb = sf.launched[a.id] ? sf.sim?.bodies[a.id] : null;
+    const here = held ? held.pose.pos : live ? live.pos : eb ? eb.p : t.pos; // where it IS: someone's hand, the air, the engine (rested, not yet logged: second review S2-1), or the log
     // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
     const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
@@ -2998,6 +3152,11 @@ const PHYSICS_VERBS = {
     const over = new Set(); if (!live) for (const s of spatial(st).rec.get(a.id)?.surfs ?? []) for (const k of near(st, [s.min[0], s.y - 0.02, s.min[1]], [s.max[0], Infinity, s.max[1]])) over.add(k);   // only what stands over its surfaces (the index)
     const dependents = live ? [] : Object.keys(st.entities).filter((k) => { if (fam.has(k) || !over.has(k)) return false; const b = aabb(st, k);
       return b && !st.entities[k].c.parent && supportUnder(st, b, familyOf(st, k)).id === a.id; });
+    // R 10-10: what the physics stacked on it (a dynamic child, its rest attached it) does NOT come along unless it carries
+    // ('can carry other entities', a tray): picking up the bottom crate of a stack takes that crate; the rest fall and
+    // tumble. A builder's attachment (a child that isn't dynamic) still rides.
+    const physW = !!(st.entities["@world"]?.c["physics-engine"] && carried(st.entities["@world"].c["physics-engine"]));
+    if (physW && !live && !g.carries) for (const k of descendants(st, a.id)) if (st.entities[k]?.c.physics?.kind === "dynamic" && !dependents.includes(k)) dependents.push(k);
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
       if (!may(st, actor, "editOthers") && !(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
@@ -3066,16 +3225,31 @@ const PHYSICS_VERBS = {
     const stay = g?.release === "stay";
     let pos = a.pos;
     if (pos === undefined && stay) pos = h.pose.pos.map(r3);
-    if (pos === undefined) { // no pose given: straight down from where it's held, onto what's below (the authority resolves)
-      const fam = new Set([a.id, ...descendants(st, a.id)]); const sup = supportBelow(st, h.pose.pos[0], h.pose.pos[2], h.pose.pos[1], fam);
-      pos = [r3(h.pose.pos[0]), sup.y, r3(h.pose.pos[2])]; }
+    if (a.at !== undefined && (!Array.isArray(a.at) || a.at.length !== 2 || a.at.some((n) => !Number.isFinite(n)))) refuse("shape", "put takes at: [x, z] (set it down there, on whatever is below)", "");
+    if (pos === undefined) { // no pose given: onto what's below, the authority resolves the height. Where: `at` (the
+      // holder says where on the floor, e.g. in front of their feet: the hand is INSIDE the body's footprint, and a big
+      // thing set down there shoved the body aside, R 10-10), else straight down from the hand.
+      // Its BOTTOM rests on the support, not its origin: a ball's origin is its centre, and one put down by its origin
+      // sat half in the floor (R's gym, 10-10). The bottom is the thing's own box under its origin, as it last stood.
+      // What it lands on is what is under its CENTRE (a thing resting by a sliver of its footprint on a neighbour hung in
+      // the air beside it), and never a thing in someone's hand: a held thing is still in the log where it was picked
+      // up, and crates put down there floated on nothing (R's gym, 10-10; the second was so before `at` existed).
+      const fam = new Set([a.id, ...descendants(st, a.id)]); const x = a.at ? a.at[0] : h.pose.pos[0], z = a.at ? a.at[1] : h.pose.pos[2];
+      for (const k of Object.keys(w.presence.holds)) if (st.entities[k]) for (const d of [k, ...descendants(st, k)]) fam.add(d);
+      const q = spatial(st).rec.get(a.id)?.q; const under = q ? Math.max(0, t.pos[1] - q.min[1]) : 0;
+      const sup = supportBelow(st, x, z, h.pose.pos[1], fam);
+      pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
     const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
     const q = a.q ?? h.pose.q; const value = { pos, q, scale: t.scale };
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
-    const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")));
+    const bad = warnings(plan.after, [a.id], true).filter((x) => !(stay && (x.kind === "floating" || x.kind === "sunk")))
+      .filter((x) => !(x.with && w.presence.holds[x.with]));   // not "inside" a thing that is in someone's hand (the log has it where it was picked up)
+    // set down where it doesn't fit (against a neighbour, on a ledge): in a world that runs physics a loose thing is let
+    // go there instead, from the hand's height, and physics finds where it rests. Only for the plain put (no pos claimed).
+    if (bad.length && a.pos === undefined && !stay && fliesIn(st, a.id)) return PHYSICS_VERBS.drop(w, actor, { id: a.id, pos: [pos[0], r3(h.pose.pos[1]), pos[2]] });
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the authority checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
     const act = w.append(actOf(w, actor, "put", a, { ...facts(), ...(stay ? { release: "stay" } : {}) }));
     const seq = changeEntry(w, plan, act);
@@ -3118,6 +3292,7 @@ const PHYSICS_VERBS = {
   punt(w, actor, a) {
     const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
+    offRefuse(st, a.id, "punted");
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
@@ -3225,7 +3400,7 @@ function snapTarget(st, id, g, p) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
   for (const [hid, he] of Object.entries(st.entities)) {
-    if (hid === "@world" || fam.has(hid)) continue;
+    if (hid === "@world" || fam.has(hid) || offChain(st, hid)) continue;   // a switched-off host has no sockets to snap into (review 5d5eef5c #7)
     const socks = he.c.sockets ?? modelOf(he.c.model)?.sockets; if (!socks || typeof socks !== "object") continue;
     for (const [slot, sk] of Object.entries(socks)) {
       if (!fitsSocket(g, sk) || !Array.isArray(sk.pos)) continue;
@@ -3280,8 +3455,28 @@ function returnDue(w) {
 // A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
 // that moves a thing whose home was where it stood carries the home with it (a builder moving the key moves its hook…
 // home). A builder may set home outright; one that isn't where the thing stands is left alone.
+// the scale a thing goes home at, in its home parent's frame (R 10-10: a settled crate is parented to the one under it
+// at a local scale of 1; sent home unparented with that 1, it came back four times its size). Its size in the world is
+// kept: its scale times every ancestor's now, divided by the home parent chain's.
+const vec3s = (v) => (typeof v === "number" ? [v, v, v] : Array.isArray(v) && v.length === 3 ? v : [1, 1, 1]);
+const chainScale = (st, id) => { let k = [1, 1, 1], p = id, n = 0; while (p && n++ < 33) { const c = st.entities[p]?.c; if (!c) break; const sc = vec3s(c.transform?.scale); k = k.map((x, i) => x * sc[i]); p = c.parent?.to; } return k; };
+const homeScale = (st, id, home) => { if (home.scale !== undefined) return vec3s(home.scale).slice();
+  const world = chainScale(st, id), under = home.parent?.to ? chainScale(st, home.parent.to) : [1, 1, 1];
+  return world.map((x, i) => +(x / (under[i] || 1)).toFixed(6)); };
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
   return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to, ...(c.parent.socket ? { socket: c.parent.socket } : {}) } } : {}) }; };
+// a reset handler being written: each target with no home of its own gets one where it stands now (it can be moved with
+// "set home here", i.e. a write of home). Not under a capability: a script or reaction writes only what it names.
+function stampResetHomes(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops;
+  const resets = ops.filter((o) => o.verb === "set" && o.comp === "reactions" && o.value && typeof o.value === "object").flatMap((o) => Object.values(o.value).filter((h) => h?.kind === "reset"));
+  if (!resets.length) return ops;
+  const after = scratch(ctx.st, ops); const out = ops.slice(); const done = new Set();
+  for (const t of resets.flatMap((h) => h.targets ?? [])) { const c = after.entities[t]?.c; if (!c || done.has(t)) continue; done.add(t);
+    if (c.home || grabOf(c)?.home || ops.some((o) => o.id === t && o.comp === "home")) continue;
+    const home = homeHere(after, t); out.push(setOp(t, "home", home)); ctx.notes.push({ id: t, component: "home", kept: home, why: "stamped for the reset that names it: where it stands now" }); }
+  return out;
+}
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
@@ -3332,17 +3527,35 @@ function launch(w, actor, a, verb, g = null) {
   // spin cap). t is never a sim input: a launch takes effect at its own entry's tick (Covenant IV)
   if (a.w !== undefined && !(Array.isArray(a.w) && a.w.length === 3 && a.w.every((n) => Number.isFinite(n) && Math.abs(n) <= 1000))) refuse("shape", "w is [x, y, z]: spin in rad/s about world axes (each within ±1000)", "e.g. w: [0, 6.28, 0] turns once a second about up");
   if (a.t !== undefined && !Number.isFinite(a.t)) refuse("shape", "t is a time on the authority's clock (ms)", "leave it out if you don't know it");
+  // q as let go (PHYSICS §4.2): the launch carries it, so a client that predicts its own throw folds the same inputs
+  // bit for bit (DESIGN-physics-responsiveness §3). A unit quaternion, else refused.
+  if (a.q !== undefined) { if (!(Array.isArray(a.q) && a.q.length === 4 && a.q.every(Number.isFinite) && Math.abs(Math.hypot(...a.q) - 1) < 1e-3)) refuse("shape", "q is the thing's orientation as let go: a unit quaternion [x, y, z, w]", "leave it out to use the hold's");
+    h.pose.q = a.q.map(noNeg0); }
   if (a.pos !== undefined) h.pose.pos = releasePos(me, a.pos);
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
-  const notes = []; let v = a.v;
-  if (g && g.throw !== 1 && verb === "throw") { v = v.map((n) => n * g.throw); notes.push({ field: "v", sent: a.v, kept: v.map(r3), why: `×${g.throw} (its grabbable.throw)` }); }
-  const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
-  if (sp > max) { const was = v; v = v.map((n) => n * max / sp); notes.push({ field: "v", sent: was, kept: v.map(r3), why: `capped at ${max} m/s` }); }
+  const { v, notes } = planVelocity(a.v, g, ENGINES[spec.engine].maxSpeed, verb);   // one function with the predicting client (launchplan.js)
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
   const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
+  // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
+  const riders = []; { const st = w.state(); const t = worldT(st, a.id);
+    const at = scratch(st, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.slice(), q: h.pose.q ?? t.q, scale: t.scale })]);
+    // each rider leaves with the tray's velocity at ITS spot (v + w × r: the rim of a tumbling tray moves faster than its
+    // middle), plus a small scatter (6% of the speed per axis) for the flick. The scatter is a hash of the act and the id,
+    // and the launch carries the result, so every client folds the same spray (R 10-10: "start to fly apart as soon as
+    // they're launched from your hand").
+    const sp = Math.hypot(...v), wv = Array.isArray(a.w) ? a.w : [0, 0, 0], o = h.pose.pos;
+    const jit = (k, i) => { let x = 2166136261; for (const ch of `${act}:${k}:${i}`) x = Math.imul(x ^ ch.charCodeAt(0), 16777619); return ((x >>> 0) / 4294967295) * 2 - 1; };
+    for (const k of descendants(st, a.id)) { if (st.entities[k]?.c.physics?.kind !== "dynamic" || w.presence.holds[k]) continue; const tk = worldT(at, k);
+      const r = [0, 1, 2].map((i) => tk.pos[i] - o[i]); const wr = [wv[1] * r[2] - wv[2] * r[1], wv[2] * r[0] - wv[0] * r[2], wv[0] * r[1] - wv[1] * r[0]];
+      let vk = [0, 1, 2].map((i) => v[i] + wr[i] + jit(k, i) * 0.06 * sp); const sk = Math.hypot(...vk), max = ENGINES[spec.engine].maxSpeed;
+      if (sk > max) vk = vk.map((n) => n * max / sk); vk = vk.map((n) => noNeg0(r3(n)));
+      w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: k, p: tk.pos.map(noNeg0), yaw: qYaw(tk.q), ...(ENGINES[spec.engine].rotates ? { q: tk.q.slice() } : {}), v: vk, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+      riders.push(k); } }
+  if (riders.length) notes.push({ flying: riders, why: `they were riding on ${a.id}; they fly with it` });
   delete w.presence.holds[a.id]; w.savePresence(); heldEvent(w, "release", a.id, { by: actor, how: verb, seq: act });
   return { ok: true, seq, act, flying: a.id, from: h.pose.pos.map(r3), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
 }
@@ -3571,6 +3784,7 @@ const VERBS = {
         // an imported act reads as what it was (spawn, place, comp), never "imported" (batch 2: Credits in History)
         out.push({ seq: i, by: e.actor, who: said(e.actor), ts: e.ts, verb: (isE(act) && act.kind === "act" ? (act.verb === "imported" && typeof act.body?.verb === "string" ? act.body.verb : act.verb) : null) ?? ops[0].verb,
           changed: [...new Set(ops.map((o) => o.verb === "create" ? "(created)" : o.verb === "delete" && o.comp === undefined ? "(deleted)" : o.comp))],
+          ...(() => { const d = historyDiff(w, id, i, ops); return d ? { diff: d } : {}; })(),
           ...(isE(act) && act.body?.undoes !== undefined ? { undoes: act.body.undoes } : {}), ...(Number.isInteger(e.cause) ? { act: e.cause } : {}) }); }
       return { ok: true, id, entries: out, ...(next !== null ? { next, more: "send the same with before: next for older" } : {}) };
     }

@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, presenceEvent, scriptsView, settleOrphans } from "../shared/protocol/authority.js";
+import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -170,6 +170,14 @@ export class WorldLog {
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length;
     try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
+  }
+  /** The engine's heartbeat (server.ts `physics`): rests log at tick cadence with nobody asking, and requests no longer
+   *  carry the settling (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2: 150–500 ms per request during a cascade). */
+  settle() {
+    if (this.live.state().status !== "ok") return;
+    const from = this.live.entries.length; const held = this.holdsKey();
+    try { authoritySettle(this.live); }
+    finally { if (this.live.entries.length > from) this.afterWrite(from); if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); }
   }
   /** Someone arrived or left: scripts that listen for enter / leave hear it (by their identity). */
   presenceScripts(kind: "enter" | "leave", who: string) {

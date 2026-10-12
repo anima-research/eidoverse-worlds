@@ -178,7 +178,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
   authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path), `label`, `description`, `parent {to, socket?}`,
-  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`,
+  `pivot`, `light`, `motion`, `sockets`, `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
   `joint:<name>` (reserved: refused until an engine carries joints), and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -335,7 +335,8 @@ request moves a copy to a newer version, keeping its own overrides.
   rest caused by its launch). The log never depends on reconstructing where
   a ride was.
 - **Body consent.** Every body has one table of act classes (near, follow,
-  social touch, intimate touch, pose, shove, move, voice), each set to
+  social touch, intimate touch, pose, shove, move, voice; `carry` is
+  reserved, PHYSICS §4.1), each set to
   everyone, ask, or nobody, separately for strangers and friends — the same
   table for humans and agents. Silence is no. The authority refuses before
   delivery, and the target's own client has the final word. Consent is
@@ -392,9 +393,14 @@ owner lists, never confused:** governance keys in genesis (§13) decide who
 may sign handoffs; roles decide rights inside the world.
 
 **Locks.** `lock: true` on an entity binds everyone, its locker and owners
-included: no write may move, replace or delete it or anything attached to
-it (its `transform`, `parent` or `model`, or the entity itself). Edits that
-don't relocate it stay open. Anyone who may delete the `lock` component
+included: no write may change it or anything attached to it — no component
+set, added or removed, no move, no new parent, no new model, no removal —
+except the lock itself (by someone who may lift it). Use stays open: a
+handler's own writes may change a locked thing's state (an `openable`, a
+`label`, and `disabled`: a handler may switch a locked thing off, by
+design, since that is a state and not a relocation) but never its
+`transform`, `parent` or `model`; sitting, scripts' reads and a new thing
+placed on top are open too. Anyone who may delete the `lock` component
 (builders and owners) may instead send a request with `throughLock: true`;
 the log records only the edit. A lock binds authoring, not motion. A lock
 has a level: `true` is builder level, and `{rank: "builder" | "moderator" |

@@ -35,9 +35,10 @@ import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text com
 import { tickOpenables } from './lib/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook, setFolded, photoMode,
+  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook,
 } from './lib/controller.js';
 import { initUsePrompt } from './lib/useprompt.js';
+import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
@@ -46,7 +47,7 @@ import * as participants from './lib/remotes.js';
 import { capture } from './lib/net_capture.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendWhisper, sendTyping,
+  replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendWhisper, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { mergePose } from '../shared/humanoid.js';
@@ -61,6 +62,9 @@ import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
 import { initEditPanels } from './lib/editpanels.js';
 import { initEditLayout } from './lib/editlayout.js';
 import { initGizmo } from './lib/gizmo.js';
+import { initGripEdit } from './lib/gripedit.js';
+import { initMaterialOverrides } from './lib/matoverride.js';
+import { initWorldEdge } from './lib/edge.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
 import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
 import { initRolesPanels, openModeration } from './lib/rolespanels.js';
@@ -350,6 +354,9 @@ function start() {
   const editPanels = initEditPanels();
   bus.on('edit-mode', (on) => editPanels.show(!!on));
   initGizmo();        // TransformControls on the selection while a transform tool is up
+  initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
+  initMaterialOverrides();   // the draft hesperus/material reader (docs/COMPONENT-LADDER.md)
+  initWorldEdge();           // @world.bounds drawn as a fence (R 10-11)
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered AFTER show, so it docks visible frames)
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
   // (lib/commandbar.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
@@ -444,8 +451,10 @@ setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
-initThingPhysics({ myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
+initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({

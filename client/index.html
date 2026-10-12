@@ -6,7 +6,36 @@
 <!-- the favicon: the hand-set 32 and 16 px masters (notes: logo small/mark-{32,16}.svg; 16 has no room for
      the peg's head, so its peg is a bar), inline so it costs no request. Brand mint on a dark tab strip, a
      deeper mint on a light one (mint on white all but vanishes). /favicon.ico (server/routes.ts) is the 32. -->
-<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
+<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}/* the name in the profile header is the control (R 10-11): text until you point at it */
+.pf-name { all: unset; font-weight: 700; cursor: pointer; border-radius: 4px; padding: 0 3px; margin-left: -3px; }
+.pf-name:hover, .pf-name:focus-visible { background: rgba(255,255,255,.08); box-shadow: inset 0 -1px 0 var(--brand, #7cf); }
+.pf-rename-dlg { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(0,0,0,.45); }
+.pf-rename-card { width: min(380px, calc(100vw - 32px)); padding: 16px 18px; border-radius: 10px; }
+.pf-rename-card h3 { margin: 0 0 8px; font-size: 15px; }
+.pf-rename-card p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; opacity: .85; }
+.pf-rename-in { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 6px 8px; margin: 2px 0 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
+.pf-rename-in:focus { outline: none; border-color: var(--brand, #7cf); }
+.pf-rename-warn { color: var(--warn, #e0a33a); opacity: 1 !important; }
+.pf-rename-err { color: #ff7a7a; }
+.pf-rename-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.pf-rename-btns button { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,.18); background: transparent; color: inherit; }
+.pf-rename-ok { background: var(--brand, #7cf) !important; color: #0b0d10 !important; border-color: transparent !important; font-weight: 600; }
+.pf-rename-ok:disabled { opacity: .45; cursor: default; }
+/* a long info value: cut with an ellipsis, whole on hover, unfolded on click (R 10-11) */
+.sp-info.sp-info-long { cursor: pointer; }
+.sp-info.sp-info-open { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; }
+/* the icon buttons on the name line: the glyph centred, accent-blue when switched on (R 10-11) */
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on, .frame.edit .sp-row.sp-iconbtn .sp-btn.on:hover { color: var(--e-accent, #4a9eff); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn svg { display: block; }
+/* Add Component… / Add Script…: Blender's Add Modifier, a filled band that heads the component list, not a footnote to Transform */
+.frame.edit .sp-row.sp-add { margin-top: 10px; }
+.frame.edit .sp-row.sp-add .sp-btn, .frame.edit .sp-row.sp-add > button { background: color-mix(in srgb, var(--e-accent, #4a9eff) 22%, transparent); border-color: color-mix(in srgb, var(--e-accent, #4a9eff) 45%, transparent); color: var(--e-text); font-weight: 600; }
+.frame.edit .sp-row.sp-add .sp-btn:hover, .frame.edit .sp-row.sp-add > button:hover { background: color-mix(in srgb, var(--e-accent, #4a9eff) 34%, transparent); }
+/* a card's provenance pill, at the front of its title (R 10-11) */
+.sp-pill { display: inline-block; margin: 0 6px 0 1px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 15px; letter-spacing: .02em; text-transform: uppercase; vertical-align: 1px; }
+.sp-pill-draft { background: color-mix(in srgb, #e0a33a 22%, transparent); color: #e0a33a; box-shadow: inset 0 0 0 1px color-mix(in srgb, #e0a33a 55%, transparent); }
+.sp-pill-foreign { background: transparent; color: var(--e-dim, #999); box-shadow: inset 0 0 0 1px currentColor; }
+</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
 <style>
@@ -160,7 +189,7 @@ button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--f
 /* unshared local changes are pending until committed */
 button.dirty { border-color: var(--warn); color: var(--warn); }
 
-input[type=text], input[type=search], input[type=number], input:not([type]) {
+input[type=text], input[type=search], input[type=number], input:not([type]), textarea {   /* textarea too (R 10-10: World Settings' description was the browser's white box) */
   font: var(--fs-sm) var(--font);
   color: var(--fg);
   background: var(--well);
@@ -168,7 +197,8 @@ input[type=text], input[type=search], input[type=number], input:not([type]) {
   border-radius: 5px;
   padding: 6px 8px;
 }
-input::placeholder { color: var(--dim); }
+input::placeholder, textarea::placeholder { color: var(--dim); }
+textarea { resize: vertical; }
 select {
   font: var(--fs-xs) var(--font); background: var(--well); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 5px; padding: 5px;
@@ -781,8 +811,10 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
    far edge of a wide frame. .row = short label (42px) + slider + readout;
    .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
    No private layout rules anywhere. */
-.row.wide { display: grid; grid-template-columns: var(--row-label-col, 7rem) minmax(0, 1fr); align-items: center; }
-.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: left; line-height: 1.25; white-space: normal; }
+/* R 10-11 supersedes the left-aligned rule: labels RIGHT-justified, controls left-justified, both against ONE invisible
+   line, as the edit-mode panels do ("the Settings panel aren't aligned like stuff in the Edit mode menus") */
+.row.wide { display: grid; grid-template-columns: var(--row-label-col, clamp(6rem, 36%, 10rem)) minmax(0, 1fr); align-items: center; column-gap: 9px; }
+.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: right; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
    or meter inside fills the row (Audio's did not — .ctl had been swept into the
    12rem cap by a bad edit;) */
@@ -1039,6 +1071,7 @@ body.edit-mode canvas { cursor: crosshair; }
 }
 #hintbar kbd { font-size: var(--fs-xs); }
 #hintbar.gone { opacity: 0; }
+#hintbar.attn { color: var(--attn); border-color: var(--attn); }   /* asked for, didn't happen: the reason (ui.js flashHint tone) */
 
 /* ---- the lantern (lib/commandbar.js): one line for talk, /commands and actions.
    Ported from the HUD redesign mockups (the lantern direction, desktop and open).
@@ -1050,7 +1083,13 @@ body.edit-mode canvas { cursor: crosshair; }
    z 38: over frames (≤25), the rail (27) and the frame rim (30); under the ∃
    menu and the scrims (40), the glyphs (45), notices (60) and the door (120). */
 #hintbar { bottom: var(--ln-b, 24px); left: var(--ln-x, 50%); height: 36px; box-sizing: border-box;
-  display: flex; align-items: center; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+  display: block; line-height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+/* block, not flex (R 10-11: "the text is right up against the 'T' in the box on either side"): a flex box makes every text
+   run its own item and drops the spaces at their ends, so 'click or ' + <kbd>T</kbd> + ' to pick up' lost both spaces */
+#hintbar kbd { vertical-align: middle; position: relative; top: -1px; }
+#hintbar.attn { pointer-events: auto; user-select: text; }
+#hintbar .hint-copy { margin-right: 8px; padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
+#hintbar .hint-copy:hover { opacity: 1; }
 #hintbar:empty { display: none; }
 #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: hidden; }
 body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer sits in this band (both bottom 24px); on a phone its list can reach it */
@@ -1729,10 +1768,11 @@ body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var
 /* rows: 24px rhythm; a label column (~38%, right-aligned, dim) and the value left-aligned after it */
 .frame.edit .sp-row { margin: 0; min-height: 24px; gap: 8px; }
 .frame.edit .sp-row + .sp-row { margin-top: 2px; }
-.frame.edit .sp-label { flex: 0 0 38%; min-width: 72px; max-width: 140px; box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frame.edit .sp-label { flex: 0 0 27%; min-width: 60px; max-width: 100px;   /* R 10-10: the label column ~30% narrower */
+  box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }   /* a long label wraps (R 10-11: 'can be taken fro…'), never cut */
 .frame.edit .sp-f-num.sp-row { justify-content: flex-start; }
-.frame.edit .sp-f-num .sp-label { flex: 0 0 38%; }
+.frame.edit .sp-f-num .sp-label { flex: 0 0 27%; }
 .frame.edit .sp-info { color: var(--e-text); }
 .frame.edit .sp-row[data-axis="x"] .sp-label { color: var(--e-x); }
 .frame.edit .sp-row[data-axis="y"] .sp-label { color: var(--e-y); }
@@ -1757,11 +1797,19 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit input::placeholder, body.edit-workspace .frame.docked input::placeholder { color: var(--e-faint); }
 .frame.edit .sp-text { flex: 1 1 auto; }
 .frame.edit .sp-num.scrub { border-color: var(--e-accent); }
+/* the channel box, after Maya's (R, 10-10): rows pushed together, no outline on a box until the hand is on it, the
+   channel's name a handle (drag scrubs, click selects) */
+.frame.edit .sp-f-num.sp-row { min-height: 22px; }
+.frame.edit .sp-f-num.sp-row + .sp-f-num.sp-row { margin-top: 0; }
+.frame.edit .sp-step.compact .sp-num { height: 20px; border-color: transparent; }
+.frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
+.frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 0 1px 4px; margin: 0; }   /* no negative margins: they pulled every number field 8 px left of the other rows (R 10-10, spin's axis vs rate) */
+.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: var(--e-accent-bg); box-shadow: inset 0 0 0 1px var(--e-accent); }
 /* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
 .frame.edit .sp-step { position: relative; }
 .frame.edit .sp-step .sp-unit { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); margin: 0; color: var(--e-faint); font-size: 11px; pointer-events: none; }
 .frame.edit .sp-step.compact .sp-num { width: 96px; text-align: right; padding: 0 8px; }
-.frame.edit .sp-step.compact:has(.sp-unit) .sp-num { padding-right: 20px; }
+.frame.edit .sp-step.compact .sp-num { padding-right: 20px; }   /* unit or not: one right edge for every number (R 10-11: scale sat 12 px right of translate/rotate) */
 .frame.edit .sp-step:not(.compact) { height: 22px; background: var(--e-well); border: 1px solid var(--e-line); border-radius: 3px; gap: 0; box-sizing: border-box; }
 .frame.edit .sp-step:not(.compact):focus-within { border-color: var(--e-accent); }
 .frame.edit .sp-step:not(.compact) .sp-num { border: none; background: none; height: 20px; width: 56px; text-align: center; padding: 0 2px; box-shadow: none; }
@@ -1770,10 +1818,10 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-bump:hover { background: var(--e-hover); color: var(--e-text); }
 .frame.edit .sp-vec { gap: 4px; }
 /* checkbox: never the native control (it rasterises differently on a VR quad) */
-.frame.edit input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none;
+.frame.edit input[type=checkbox], .edit-selbar input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none;
   background: var(--e-well); border: 1px solid #4a4a52; border-radius: 3px; cursor: pointer; }
-.frame.edit input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
-.frame.edit input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
+.frame.edit input[type=checkbox]:checked, .edit-selbar input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
+.frame.edit input[type=checkbox]:focus-visible, .edit-selbar input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
 .frame.edit input[type=checkbox]:disabled { opacity: .45; cursor: not-allowed; }
 /* select: a field with a chevron */
 .frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
@@ -1799,9 +1847,24 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-group::first-letter { text-transform: uppercase; }
 .frame.edit .sp-group:hover { background: var(--e-hover); }
 /* tree rows (Hierarchy): 24px, faint indent guides, name + dim kind on one line; selected = accent-bg + a 2px accent bar */
-.frame.edit .sp-tree { gap: 0; }
-.frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 24px; gap: 4px; }
+.frame.edit .sp-tree { gap: 0; max-height: none; }
+.frame.edit .sp-row.sp-f-tree > .sp-tree { flex: 1 1 auto; min-width: 0; }   /* the rows span the panel (a short list shrank to its longest name, and the eye sat mid-row) */
+/* the Add Component / New Script bar under Transform: two buttons on one line, its own little area */
+/* provenance dot on a card's title (amber: a draft; hollow: nothing here reads it) */
+.frame.edit .sp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 7px; vertical-align: middle; }
+.frame.edit .sp-dot-draft { background: #e0a33a; }
+.frame.edit .sp-dot-foreign { border: 1.5px solid var(--e-dim); box-sizing: border-box; }
+/* a card's title-line actions (remove …): on the right, shown while the line is hovered or focused */
+.frame.edit .sp-row.sp-f-group.has-acts { position: relative; }
+.frame.edit .sp-gacts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; }
+.frame.edit .sp-row.sp-f-group:hover .sp-gacts, .frame.edit .sp-row.sp-f-group:focus-within .sp-gacts { display: inline-flex; }
+.frame.edit .sp-gact { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 3px; background: none; color: var(--e-dim); cursor: pointer; }
+.frame.edit .sp-gact:hover { background: var(--e-bg1); color: var(--e-text); }
+.frame.edit .sp-gact.danger:hover { color: var(--e-danger, #ff6b6b); }
+.frame.edit .sp-row.sp-bar { display: inline-flex; vertical-align: top; margin: 6px 6px 6px 0 !important; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
+.frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 20px; gap: 4px; }   /* Maya-tight (R 10-11 00:03) */
 .frame.edit .sp-item:hover { background: var(--e-hover); }
+.frame.edit .sp-tree .sp-item.dim { min-height: 16px; line-height: 14px; font-size: 11px; }   /* a thing's component rows, packed (R 10-10 23:31) */
 .frame.edit .sp-tree-row { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--e-line) 10px 11px, transparent 11px 14px);
   background-size: calc(var(--d, 0) * 14px) 100%; background-position: 4px 0; background-repeat: no-repeat; }
 .frame.edit .sp-item.active { background-color: var(--e-accent-bg); box-shadow: inset 2px 0 0 var(--e-accent); }
@@ -1900,11 +1963,59 @@ body.edit-workspace .frame.docked { --panel-a: 1; }
    beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
 body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
+/* the viewport bar: floats on the view's top-left corner, the edit chrome's own tokens */
+.edit-viewbar { position: fixed; z-index: 29; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px;
+  background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }   /* solid (R 10-10 23:32: readable over any view) */
+.edit-viewbar[hidden] { display: none; }
+/* the Inspector's name line: the name as a title, the eye and padlock beside it (R 10-10 23:48) */
+.frame.edit .sp-row.sp-title { width: calc(100% - 84px); margin-right: 0 !important; }
+.frame.edit .sp-row.sp-iconbtn { margin-left: 0 !important; margin-right: 0 !important; }
+.frame.edit .sp-row.sp-title .sp-label { display: none; }
+.frame.edit .sp-row.sp-title input, .frame.edit .sp-row.sp-title .sp-text { width: 100%; font-size: 15px; font-weight: 600; background: transparent !important; border-color: transparent !important; box-shadow: none !important; padding-left: 2px; }
+.frame.edit .sp-row.sp-title input:hover, .frame.edit .sp-row.sp-title input:focus { border-color: var(--e-line) !important; background: var(--e-well) !important; }
+.frame.edit .sp-row.sp-iconbtn .sp-btn { width: 26px; height: 24px; padding: 0; display: inline-grid; place-items: center; background: none; border-color: transparent; color: var(--e-dim); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn:hover { color: var(--e-text); background: var(--e-hover); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on { color: var(--e-accent); }
+.edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
+/* the grip editor's panel: floats under the viewport bar (gripedit.js) */
+.gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--e-bg1, #1e1e21) 92%, transparent); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); }
+.gripedit-head { display: flex; align-items: center; gap: 6px; }
+.gripedit-of { color: var(--e-accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gripedit-list { display: flex; flex-direction: column; gap: 1px; }
+.gripedit-row { display: flex; align-items: center; gap: 6px; text-align: left; border: none; background: none; padding: 2px 4px; border-radius: 3px; }
+.gripedit-row.on { background: var(--e-accent-bg); }
+.gripedit-sw { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.gripedit-dim { color: var(--e-dim, #8a8a92); margin-left: auto; }
+.gripedit-list > .gripedit-dim { margin-left: 0; }
+.gripedit-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+.gripedit-bar button.on { box-shadow: inset 0 -2px 0 var(--e-accent); }
+.gripedit-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
+.gripedit button.danger { color: var(--e-danger, #ff6b6b); }
+.edit-viewbar .edit-camsw { margin: 0 2px; }
+.edit-camsw { display: inline-flex; margin-right: 6px; border: 1px solid var(--e-line); border-radius: 4px; overflow: hidden; }
+.edit-camsw .edit-cam { border: none; border-radius: 0; padding: 0 8px; height: 22px; }
+.edit-camsw .edit-cam.on { background: var(--e-accent-bg); color: var(--e-text); box-shadow: inset 0 -2px 0 var(--e-accent); }
+/* a row's menu as a button: only where there is no right-click (a frame on a headset quad, domquad.js's #xr-stage) */
+.sp-ctxbtn { display: none; flex: none; margin-left: auto; width: 22px; height: 20px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; color: var(--dim); cursor: pointer; line-height: 1; }
+#xr-stage .sp-ctxbtn { display: inline-flex; align-items: center; justify-content: center; }
+.sp-item-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-item-head .sp-ico { display: inline-flex; flex: none; color: var(--e-accent, var(--brand)); }
+/* the world's environment rows hang under the World row (R 10-11): indented, quieter glyph, ✕ on hover */
+.sp-item-sub-row { padding-left: 22px; }
+.sp-item-sub-row .sp-item-head .sp-ico { color: var(--e-dim, var(--ink-dim)); }
+.sp-item .sp-mini.sp-hov { opacity: 0; margin-left: auto; }
+.sp-item:hover .sp-mini.sp-hov, .sp-item .sp-mini.sp-hov:focus-visible { opacity: 1; }
+#xr-stage .sp-item .sp-mini.sp-hov { opacity: 1; }
+.sp-item-head .sp-item-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-item-kind { font-weight: 400; color: var(--e-dim, var(--dim)); margin-right: 6px; text-transform: uppercase; font-size: .82em; letter-spacing: .06em; }
+.edit-selbar .sp-ico { display: inline-flex; vertical-align: -2px; }
+body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); }   /* the dock is open: ⋯ folds it again */
 /* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the
    wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /
    ear / goggles are NOT moved here: mictoggle.placeMic folds them to the ∃'s right exactly as it does
    on the HUD, and editlayout's spacer (fitSeat) starts the menus after them. */
-body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 8px; z-index: 28;
+body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 2px; z-index: 28;   /* the normal dock's gap: 8 px read "exploded" next to it (R 10-11 14:41: 42 px pitch against 36) */
   background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }   /* no HUD-tinted card behind the ∃ and the wrench: the bar and the rail ARE its ground */
 /* …grey-on-grey: the glyphs read their inks off themselves (mictoggle tok), so re-pointing the house
    tokens on these three elements alone re-inks them for the bar and nowhere else */
@@ -1931,6 +2042,7 @@ body.edit-workspace #dock button[data-toggles="edit"].on::before { display: none
 .sp-ctx-item { text-align: left; background: none; border: none; color: #e4e4e8; font: 12.5px var(--font); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
 .sp-ctx-item:hover { background: rgb(255 255 255 / .09); }
 .sp-ctx-item.danger { color: #ff9e9e; }
+.sp-ctx-name { color: var(--e-accent, var(--brand)); }
 .sp-disc { width: 14px; flex: none; padding: 0; background: none; border: none; color: var(--dim); font-size: 10px; cursor: pointer; line-height: 1; }
 .sp-disc.none { cursor: default; }
 .sp-disc:not(.none):hover { color: var(--fg); }
@@ -1983,7 +2095,8 @@ body.edit-workspace .sp-ctx-item.danger { color: var(--e-danger); }
 .edit-left > :is([data-frame="hierarchy"], [data-frame="build"]) > .fr-head { display: none !important; }
 .edit-left[data-tab="hierarchy"] > [data-frame="build"], .edit-left[data-tab="build"] > [data-frame="hierarchy"] { display: none !important; }
 .edit-right > :is([data-frame="inspector"], [data-frame="history"]) > .fr-head { display: none !important; }
-.edit-right[data-tab="inspector"] > [data-frame="history"], .edit-right[data-tab="history"] > [data-frame="inspector"] { display: none !important; }
+.edit-right[data-tab="inspector"] > :is([data-frame="history"], [data-frame="attributes"]), .edit-right[data-tab="history"] > :is([data-frame="inspector"], [data-frame="attributes"]),
+.edit-right[data-tab="attributes"] > :is([data-frame="inspector"], [data-frame="history"]) { display: none !important; }
 /* tiles (panels.js 'tiles'): a grid; an icon or a picture over a short label. Quiet at rest, hover fill,
    armed = press fill + an accent glyph — the tool rail's look */
 .frame.edit .sp-f-tiles.sp-row { display: block; margin: 2px 0 4px; }
@@ -2079,13 +2192,15 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const world = params.get('world') || 'commons';
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
     const avatar = wantAvatar;   // resolved above, and published for lite.js to match
-    const sent = { world, id: name, avatar, token };
+    // the account kept apart from the shown name (base.js says the same; R 10-11)
+    const account = params.get('account') || localStorage.getItem('ew-account') || (/^guest-/.test(name) ? '' : name);
+    const sent = { world, id: name, avatar, token, ...(account ? { account } : {}) };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
     globalThis.__ewEarlySocket = stash;
     // replica: a world sends this page its own log stream (slice 3b; net.js sendJoin says the same, and
     // a v1 world ignores it)
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, replica: true }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, ...(account ? { account } : {}), replica: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path
@@ -2334,8 +2449,19 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 .rp-filters { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .rp-filters .pm-chip { padding: 3px 9px; font-size: var(--fs-xs); }
 .rp-ended summary { cursor: pointer; color: var(--dim); font-size: var(--fs-xs); margin-top: 10px; }
-.rp-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; font-size: var(--fs-sm); flex-wrap: wrap; }
-.rp-field.rp-wide { flex-direction: column; align-items: stretch; }
+.rp-field { display: grid; grid-template-columns: 12em auto minmax(0, 1fr); align-items: center; gap: 4px 10px; margin: 6px 0; font-size: var(--fs-sm); }   /* the label, then its control beside it (R 10-10: inputs were pushed to the far edge) */
+.rp-field > input:not([type=checkbox]):not([type=number]) { grid-column: 2 / -1; width: 100%; box-sizing: border-box; min-width: 0; }   /* a text field runs to the edge; a number keeps its unit beside it */
+.rp-field > input[type=number], .rp-field > select { justify-self: start; max-width: 100%; }
+.rp-field > input[type=number] { width: 8em; box-sizing: border-box; }
+.rp-v3 input { width: 5em; box-sizing: border-box; }
+.rp-field.rp-wide { grid-template-columns: minmax(0, 1fr); }
+/* a dark checkbox, the panels' own ink (R 10-10: the browser's white one is "unconventional for the style") */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0; flex: none; vertical-align: middle; cursor: pointer;
+  border: 1px solid var(--edge-hi, #4a5a5a); border-radius: 3px; background: var(--well, #0b1414) center / 11px 11px no-repeat; }
+input[type=checkbox]:checked { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-offset: 1px; }
 .rp-field textarea { width: 100%; box-sizing: border-box; }
 .rp-v3 { display: inline-flex; gap: 4px; } .rp-v3 input { width: 4.5em; }
 .rp-ro { color: var(--dim); font-size: var(--fs-xs); font-style: italic; margin: 8px 0 0; }

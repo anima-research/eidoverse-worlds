@@ -23,7 +23,7 @@
 
 import { THREE, scene, camera } from '../core.js';
 import { applyScale, entScale } from '../../../shared/scale3.js';
-import { isMineHidden } from '../myview.js';
+import { isMineHidden, isolatedOut } from '../myview.js';
 import { report, bus } from '../base.js';
 import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure,
   lodNegotiable, negotiationReady } from '../assets.js';
@@ -37,7 +37,7 @@ import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, kindOf, offIn } from './models_field.js';
 
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 
@@ -745,12 +745,14 @@ function emitCompBag(id) {
  *  the convention every surface — inspector, hierarchy, look() — honours. */
 function applyHidden(id) {
   const obj = entities.get(id);
-  if (obj) obj.visible = comps.get(id)?.hidden !== true && !isMineHidden(id);   // hidden for everyone, or just in my view (myview.js)
+  if (obj) obj.visible = comps.get(id)?.hidden !== true && !isMineHidden(id) && !isolatedOut(id);   // hidden for everyone, or just in my view (myview.js: the eye, isolate)
 }
 bus.on('myview', ({ id }) => applyHidden(id));
 
 function onComp(id, type) {
   syncComps(id);
+  // switched off or back on: the thing and everything under it go (deepest first) or come back (the top first)
+  if (type === 'disabled') { reconcileSubtree(id); bus.emit('disabled-changed', { id }); return; }
   const data = comps.get(id)?.[type] ?? null;
   if (type === 'motion' && data == null) restAtBase(id);
   if (type === 'hidden') applyHidden(id);
@@ -1038,10 +1040,19 @@ export const residencyDebug = () => {
 
 /** One id, after its identity may have changed: create, retire, rebuild, or
  *  refresh — the fold's current word is final. */
+/** A thing and everything under it, after it was switched off or on (or moved under / out from under something off): off
+ *  goes deepest first, on comes top first, by real depth, with the parent index rebuilt so each load re-seats its riders. */
+function reconcileSubtree(id) {
+  const E = state.st.entities; const depth = (k) => { let n = 0; for (let p = E[k]?.parent?.to; p && n < 33; p = E[p]?.parent?.to) n++; return n; };
+  const under = Object.keys(E).filter((k) => { for (let p = E[k]?.parent?.to, n = 0; p && n < 33; p = E[p]?.parent?.to, n++) if (p === id) return true; return false; });
+  const order = [id, ...under].sort((a, b) => depth(a) - depth(b)); const off = offIn(E, id); if (off) order.reverse();
+  for (const k of order) { if (!off) indexFoldParent(k); reconcileId(k); }
+  if (!off) for (const k of order) execMount(k);   // (a no-op until both ends are realized; the load's own callback finishes it)
+}
 function reconcileId(id) {
   const ent = state.st.entities[id];
   const t = tracked.get(id);
-  if (!ent) { if (t || entities.has(id)) retire(id); return; }
+  if (!ent || offIn(state.st.entities, id)) { if (t || entities.has(id)) retire(id); return; }
   const kind = kindOf(ent);
   if (!t) { CREATE[kind](id, ent); return; }
   if (t.kind !== kind || (kind === 'model' && t.lib !== ent.lib)) {
@@ -1094,6 +1105,8 @@ function onChange({ id, what, comp }) {
         break;
       case 'parent':
         refoldParents('mount', id);
+        // moved under (or out from under) a switched-off thing: it goes or comes with its new parent (review 5d5eef5c #6)
+        if (offIn(state.st.entities, id) !== !(entities.has(id) || tracked.has(id))) { reconcileSubtree(id); break; }
         if (ent?.parent) execMount(id);
         else if (entities.has(id) || tracked.has(id)) execDismount(id, ent);
         break;
@@ -1116,6 +1129,11 @@ export function initModelsRealizer() {
   // lights.js names the stranded id ('light-refused', off net.js's refusal
   // event) and the rollback is one call: refreshLight re-derives every
   // folded field, so the preview snaps back to exactly what a joiner sees
+  // thingphysics: a launched body leaves its carrier (scene.attach keeps where it is); its rest's parent record re-mounts it
+  bus.on('flight-detach', ({ id }) => {
+    const obj = entities.get(id); if (!obj || !obj.parent || obj.parent.isScene) return;
+    scene.attach(obj); delete obj.userData.mountedTo; delete obj.userData.mountRel; indexSceneMount(id, null);
+  });
   bus.on('edit-mode', (on) => {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);

@@ -19,7 +19,7 @@
 
 import { bus } from './base.js';
 import { getFrame, allFrames } from './windows.js';
-import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace } from './build.js';
+import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost } from './build.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
@@ -27,6 +27,13 @@ import * as Edits from './editwrites.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
 import { TABS, openingTab, useTab } from './edittabs.js';
 import { placeStatusChips } from './statuschips.js';
+import { replica } from './net.js';
+import { setFreeCam, freeCamState } from './controller.js';
+import { selection, openWorldCard } from './editpanels.js';
+import { flashHint } from './ui.js';
+import { LAYERS, LAYER_HINT } from '../../shared/layers.js';
+import { layerOn, setLayerOn } from './selectmask.js';
+import { isolating, setIsolate } from './myview.js';
 
 const LS = 'ew-edit-layout';
 // the left column's top pane is one frame at a time, picked by tab (edittabs.js TABS): B opens
@@ -45,7 +52,7 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
   { id: 'pivot', icon: 'locateFixed', key: 'P', title: 'pivot (P) — drag where it turns and scales from; it snaps to the model\'s centre, base, corners and faces. The thing never moves' },
 ];
 
-const RTABS = [['inspector', 'Inspector'], ['history', 'History']];
+const RTABS = [['inspector', 'Inspector'], ['attributes', 'Attributes'], ['history', 'History']];
 let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip }
 let prevChat = null;     // chat's visibility before docking, restored on exit
 let prevWorld = null;    // the World panel's, likewise
@@ -89,11 +96,13 @@ function build() {
   // ---- tools column
   for (const t of TOOLS) {
     const b = el('button', 'edit-tool');
-    b.innerHTML = iconSvg(t.icon, 16);   // one glyph set (icons.js) — the rail's old ↖ ✥ ↻ ⤢ ⊙ were four fonts' worth of shapes
+    b.innerHTML = iconSvg(t.icon, 21);   // R 10-11: 'they look so small in their buttons'   // one glyph set (icons.js) — the rail's old ↖ ✥ ↻ ⤢ ⊙ were four fonts' worth of shapes
     if (t.key) b.append(el('kbd', 'edit-tool-key', t.key));   // the letter, so hands learn it
     b.dataset.tool = t.id; b.disabled = !!t.disabled;
     // the tool's hidden keys, in its tooltip (keyhints.js): the gizmo's Ctrl-snap, select's Ctrl/Shift-click, all the letters
     b.title = withKeys(withKeys(t.title, { select: 'selectExtend', move: 'gizmo', rotate: 'gizmo', scale: 'gizmo', pivot: 'gizmo' }[t.id]), 'toolKeys');
+    // the select tool also says how the camera moves; the three transform tools say how to reset what they change
+    b.title = withKeys(b.title, { select: 'editCamera', move: 'resetTransform', rotate: 'resetTransform', scale: 'resetTransform', pivot: 'resetTransform' }[t.id]);
     b.onclick = () => setTool(t.id);
     // right-click: the tool's spaces (Maya's marking menu, as a plain menu): one click picks, the tool comes with it
     if (SPACES[t.id]?.length > 1) b.oncontextmenu = (e) => {
@@ -121,9 +130,29 @@ function build() {
       { label: 'redo\tCtrl+Shift+Z', run: () => Edits.redo(), title: KEYHINTS.undo.before },
       { label: 'deselect\tEsc', run: deselectAll },
       { label: 'delete\tDel', run: removeKeyTargets },
+      // a reset button (R, 10-10): select the button FIRST, then what it sends home (Ctrl/Shift-click)
+      { label: 'make reset button (first selected resets the rest)', run: () => { const sel = selection(); if (sel.length < 2) return flashHint('select the button first, then Ctrl- or Shift-click what it should send home', 4200, 'attn'); void Edits.makeResetButton(sel[0], sel.slice(1)); },
+        title: 'The first thing you selected becomes a button. Using it (click, or E) puts every other selected thing back where it stands right now.' },
+      { label: 'set home here', run: () => { const sel = selection(); if (!sel.length) return flashHint('select something first', 3000, 'attn'); void Edits.setHomeHere(sel); },
+        title: 'Where a reset button sends the selected things back to: where they stand now.' },
       { label: 'leave builder mode\tB', run: () => setEditMode(false) },
     ]),
-    menu('View', () => [
+    // CREATE (R 10-11: "a Create panel on the top line… to the RIGHT of Edit. Same as Maya. File, then Edit, then Create…
+    // empty entity, model primitives, lights, blueprints, whatever we want to call the sky/ground/grass/weather stuff since
+    // that seems to be all one suite"). Every item opens a path that already exists: the ghost in hand (build.js
+    // holdGhost), the Build tab's library and blueprints, the World's cards and presets. The suite is Environment (Godot's
+    // WorldEnvironment; SkyeSharkie's "environment… sky system").
+    menu('Create', () => [
+      { label: 'Empty', run: () => holdGhost('@empty', 'empty'), title: 'a bare entity: a place to parent things under (Unity\'s Create Empty)' },
+      { label: 'Light', run: () => holdGhost('@light', 'light'), title: 'a point light, placed where you click' },
+      { label: 'Model from the library…', run: () => { L = useTab(L, 'build'); save(); apply(); setTimeout(() => document.querySelector('[data-frame="build"] input[type="text"], [data-frame="build"] input')?.focus(), 50); },
+        title: 'the Build tab: search the library, click a model, click the world' },
+      { label: 'Blueprint…', run: () => { L = useTab(L, 'build'); save(); apply(); }, title: 'the Build tab\'s Blueprints: saved groups of things, placed as copies' },
+      { label: '— Environment —', run: () => {}, title: 'the world\'s sky, weather, ground and grass' },
+      ...[['sky', 'Sky'], ['weather', 'Weather'], ['terrain', 'Terrain'], ['grass', 'Grass']].map(([k, lab]) => ({ label: `   ${lab}`, run: () => { L = useTab(L, 'build'); save(); apply(); openWorldCard(k); },
+        title: `the world's ${lab.toLowerCase()}: its card in the Inspector, its presets in Build ▸ World` })),
+    ]),
+    menu('Layout', () => [   // was 'View' (R, 10-10: say what it holds: the workspace's own arrangement)
       { label: 'reset workspace layout', run: () => { L = { ...DEF }; save(); apply(); } },
       { label: `${getFrame('chat')?.visible ? 'hide' : 'show'} chat`, run: () => { getFrame('chat')?.toggle(); apply(); } },
       { label: `${getFrame('console')?.visible ? 'hide' : 'show'} console (scripts)`, run: () => getFrame('console')?.toggle() },
@@ -137,12 +166,41 @@ function build() {
   const undoBtn = el('button', 'edit-btn'); undoBtn.innerHTML = `${iconSvg('undo2', 14)}<span>undo</span>`; undoBtn.title = 'Ctrl+Z'; undoBtn.onclick = undo;
   // viewport buttons: what the render does, not what the world is
   const view = el('div', 'edit-viewbtns');
+  // VIEWPORT menu (R, 10-10: "start a 'viewport options' menu ... isolate selected ... wireframe (probably also
+  // 'wireframe on shaded' and 'flat shaded')"). What MY render shows; nothing in the world changes, all of it off on exit.
+  const tick = (on) => (on ? '✓ ' : '   ');   // a plain check mark: ☑ draws as a colour emoji on some systems
+  const vmenu = menu('Viewport', () => [
+    { label: `${tick(isolating())}isolate selected`, title: 'show only what is selected (with what it rides and what rides it), in your view only', run: () => toggleIsolate() },
+    { label: `${tick(shade === 'shaded')}shaded`, run: () => setShade('shaded') },
+    { label: `${tick(shade === 'wire')}wireframe`, run: () => setShade('wire') },
+    { label: `${tick(shade === 'flat')}flat shaded`, title: 'every face lit flat, in one grey: the forms without their textures', run: () => setShade('flat') },
+  ]);
+  vmenu.dataset.menu = 'viewport';
+  // SELECT menu (R 10-11: selection layers): which kinds of thing MY viewport clicks can land on. Per viewer; the
+  // Hierarchy still selects anything. Each thing's layer is its Layer row in Attributes (or a default by kind).
+  const smenu = menu('Select', () => LAYERS.map((ly) => ({ label: `${tick(layerOn(ly))}${ly}`, title: `${LAYER_HINT[ly]}: click to ${layerOn(ly) ? 'stop clicks landing on' : 'let clicks land on'} these (in your view only)`, run: () => setLayerOn(ly, !layerOn(ly)) })));
+  smenu.dataset.menu = 'select';
   const wire = el('button', 'edit-vbtn'); wire.innerHTML = iconSvg('box', 16); wire.title = 'wireframe'; wire.dataset.view = 'wire';
-  wire.onclick = () => { setWireframe(!wireOn); wire.classList.toggle('on', wireOn); };
+  wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
+  shadeBtn = wire;
   const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen (F11 also works)'; full.dataset.view = 'full';
   full.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); };
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
-  view.append(wire, full);
+  // Body | Free: whose camera this is (controller.js FREE CAMERA)
+  const camSw = el('span', 'edit-camsw');
+  for (const [k, label, title] of [['body', 'Body', 'the camera orbits your body; WASD walks'], ['free', 'Free', 'the camera is on its own: WASD flies it, your body waits where it stood. B steps back into your body and keeps this spot; Body resets it']]) {
+    const b = el('button', 'edit-btn edit-cam', label); b.dataset.cam = k; b.title = title;
+    b.onclick = () => { setFreeCam(k === 'free'); paintCam(); };
+    camSw.append(b);
+  }
+  const paintCam = () => { for (const b of camSw.children) b.classList.toggle('on', (b.dataset.cam === 'free') === freeCamState().on); };
+  bus.on('edit-freecam', paintCam); paintCam();
+  // the VIEWPORT BAR (R, 10-10: "move the Body/Free, Viewport, and wireframe button onto a new panel line between the
+  // Hierarchy and the Inspector ... free-floating like Blender"): what pertains to the view sits ON the view, a small
+  // floating bar at its top-left. Full screen stays in the top bar (it is the window's, not the viewport's).
+  const vbar = el('div', 'edit-viewbar'); vbar.hidden = true; document.body.append(vbar);
+  vbar.append(vmenu, camSw, wire, smenu);   // 'Viewport ▾' first, almost a title (R 10-10 23:32)
+  view.append(full);
   const mode = el('span', 'edit-mode-label');
   // the corner: ∃ + mic / ear / goggles. They are fixed elements their own modules place (ui.js's
   // dock, mictoggle.placeMic — which folds them to the ∃'s right, the HUD's own layout); this
@@ -158,7 +216,7 @@ function build() {
   dragSplit(split, (_dx, dy) => { L.leftSplit = clamp(L.leftSplit + dy / left.clientHeight, 0.15, 0.85); });
   addEventListener('resize', () => { if (on) apply(); });
 
-  els = { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip };
+  els = { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip, vbar };
   paintTools();
   return els;
 }
@@ -188,6 +246,7 @@ function paintStrip() {
   const t = structureTool();
   const info = t ? structureTools().find((x) => x.k === t) : null;
   els.strip.hidden = !(on && info);
+  if (els.vbar.style.left) els.vbar.style.top = `${40 + 8 + (els.strip.hidden ? 0 : 30)}px`;
   if (!info) return;
   els.strip.innerHTML = '';
   const name = el('span', 'edit-toolstrip-name');
@@ -197,16 +256,26 @@ function paintStrip() {
   els.strip.lastChild.append(el('kbd', '', 'Esc'), document.createTextNode(' to drop'));
 }
 
-// wireframe = one override material on the scene; the renderer draws every
-// mesh with it and nothing in the world is touched. Off on exit.
-let wireOn = false;
-let wireMat = null;
-function setWireframe(v) {
-  wireOn = !!v;
-  if (wireOn) {
-    wireMat ??= new THREE.MeshBasicNodeMaterial({ color: 0xbfc4cc, wireframe: true, toneMapped: false });
-    scene.overrideMaterial = wireMat;
-  } else if (scene.overrideMaterial === wireMat) scene.overrideMaterial = null;
+// shading = one override material on the scene; the renderer draws every mesh with it and nothing in the world is
+// touched. 'shaded' is the world as it is.
+let shade = 'shaded', shadeBtn = null;
+const shadeMats = {};
+function setShade(v) {
+  const was = shadeMats[shade];
+  shade = ['wire', 'flat'].includes(v) ? v : 'shaded';
+  if (shade === 'wire') shadeMats.wire ??= new THREE.MeshBasicNodeMaterial({ color: 0xbfc4cc, wireframe: true, toneMapped: false });
+  if (shade === 'flat') shadeMats.flat ??= new THREE.MeshStandardNodeMaterial({ color: 0xb9bdc4, roughness: 0.85, metalness: 0, flatShading: true });
+  if (shade !== 'shaded') scene.overrideMaterial = shadeMats[shade];
+  else if (!scene.overrideMaterial || scene.overrideMaterial === was) scene.overrideMaterial = null;
+  shadeBtn?.classList.toggle('on', shade === 'wire');
+}
+function toggleIsolate() {
+  const all = Object.keys(replica.st?.entities ?? {}), parentOf = (id) => replica.st?.entities?.[id]?.c?.parent?.to ?? null;
+  if (isolating()) { setIsolate(null, parentOf, all); flashHint('isolate off: everything is shown again', 2000); return; }
+  const ids = selection();
+  if (!ids.length) { flashHint('select something first, then Viewport ▸ isolate selected', 3000); return; }
+  const n = setIsolate(ids, parentOf, all);
+  flashHint(`isolated: ${n} thing${n === 1 ? '' : 's'} shown, in your view only — Viewport ▸ isolate selected again shows the rest`, 4000);
 }
 
 const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
@@ -258,41 +327,37 @@ function paintTools() {
   for (const b of els.tools.querySelectorAll('.edit-tool')) b.classList.toggle('on', b.dataset.tool === getTool());
 }
 
-/** The dock in builder mode: every pinned panel button stays, and the trailing ones fold under one ⋯ when the column
- *  would push the tools off the screen (a 1366×768 laptop leaves ~650 px). The ∃, the wrench and the tools never fold.
+/** The dock in builder mode (R, 10-10: "a collapsible dock in Edit mode with a special '...' icon that you could click
+ *  to expand into the full dock, and click again to shrink to just E and the wrench"). Folded (the default): the ∃,
+ *  the ⋯ and the wrench. Open: every pinned panel button; if the column would still push the tools off the screen
+ *  (a 1366×768 laptop leaves ~650 px) the trailing ones stay hidden, and HUD Panels ▾ in the bar has them all.
  *  Returns the dock's bottom edge. */
 const TOOLS_H = () => TOOLS.length * 36 + 16;
+let dockOpen = false;
+try { dockOpen = localStorage.getItem('ew.edit.dock') === 'open'; } catch { /* no storage: folded */ }
 function fitDock(TOP) {
   const dock = document.getElementById('dock'); if (!dock) return TOP;
   const wrench = dock.querySelector('button[data-toggles="edit"]');
   let more = dock.querySelector('.dock-more');
   if (!more) {
-    more = document.createElement('button'); more.className = 'dock-more'; more.textContent = '⋯'; more.hidden = true;
-    more.onclick = (e) => { e.stopPropagation(); openMore(more); };
+    // three real dots, drawn (R 10-11: "make these ellipses dots bigger and more graphic"): a glyph's ⋯ was a few pixels tall
+    more = document.createElement('button'); more.className = 'dock-more'; more.title = 'more panels';
+    more.innerHTML = '<svg width="20" height="6" viewBox="0 0 20 6" aria-hidden="true"><circle cx="3" cy="3" r="2.4" fill="currentColor"/><circle cx="10" cy="3" r="2.4" fill="currentColor"/><circle cx="17" cy="3" r="2.4" fill="currentColor"/></svg>';
+    more.onclick = (e) => { e.stopPropagation(); dockOpen = !dockOpen; try { localStorage.setItem('ew.edit.dock', dockOpen ? 'open' : 'folded'); } catch { /* no storage */ } apply(); };
     dock.insertBefore(more, wrench ?? dock.querySelector('.dock-grip'));
   }
   for (const b of dock.querySelectorAll('.edit-overflow')) b.classList.remove('edit-overflow');
-  more.hidden = true;
   const panelBtns = [...dock.querySelectorAll('button[data-toggles]')].filter((b) => !b.hidden && b !== wrench);
-  const limit = innerHeight - TOOLS_H();
+  more.hidden = !panelBtns.length;
+  more.classList.toggle('on', dockOpen);
+  more.setAttribute('aria-expanded', String(dockOpen));
   const bottom = () => dock.getBoundingClientRect().bottom;
-  for (let i = panelBtns.length - 1; i >= 0 && bottom() > limit; i--) { panelBtns[i].classList.add('edit-overflow'); more.hidden = false; }
+  if (!dockOpen) { for (const b of panelBtns) b.classList.add('edit-overflow'); more.title = `show the ${panelBtns.length} panel buttons`; return bottom(); }
+  const limit = innerHeight - TOOLS_H();
+  for (let i = panelBtns.length - 1; i >= 0 && bottom() > limit; i--) panelBtns[i].classList.add('edit-overflow');
   const folded = dock.querySelectorAll('.edit-overflow').length;
-  more.title = `${folded} more panel${folded === 1 ? '' : 's'} — or HUD Panels ▾ in the bar`;
+  more.title = folded ? `fold the panel buttons away (${folded} didn't fit: HUD Panels ▾ in the bar has them)` : 'fold the panel buttons away';
   return bottom();
-}
-function openMore(anchor) {
-  closeMenus();
-  const pop = el('div', 'edit-menu-pop edit-space-pop');
-  for (const b of document.querySelectorAll('#dock .edit-overflow')) {
-    const row = el('button', 'edit-menu-item');
-    row.append(el('span', '', b.getAttribute('title') ?? b.dataset.toggles));
-    row.onclick = () => { pop.remove(); b.click(); const f = getFrame(b.dataset.toggles); if (f?.visible) f.el.style.zIndex = '30'; };
-    pop.append(row);
-  }
-  const r = anchor.getBoundingClientRect();
-  Object.assign(pop.style, { position: 'fixed', left: `${r.right + 4}px`, top: `${r.top}px`, zIndex: 40 });
-  document.body.append(pop);
 }
 function unfitDock() {
   const dock = document.getElementById('dock');
@@ -317,6 +382,7 @@ function apply() {
   const dockBottom = fitDock(TOP);
   tools.style.cssText = `left:0; top:${TOP}px; bottom:0; width:${RAIL}px; padding-top:${Math.max(46, Math.round(dockBottom - TOP + 8))}px`;
   strip.style.cssText = `left:${RAIL + Math.round(L.leftW)}px; right:${Math.round(L.rightW)}px; top:${TOP}px`;
+  els.vbar.style.cssText = `left:${RAIL + Math.round(L.leftW) + 8}px; top:${TOP + 8 + (els.strip.hidden ? 0 : 30)}px`;   // under the armed-tool strip when one shows
   const leftW = Math.round(L.leftW), rightW = Math.round(L.rightW);
   left.style.cssText = `left:${RAIL}px; top:${TOP}px; bottom:0; width:${leftW}px`;
   right.style.cssText = `right:0; top:${TOP}px; bottom:0; width:${rightW}px`;
@@ -341,19 +407,33 @@ function apply() {
 }
 
 let seatTimer = 0;
+// the HUD's own panels, not the workspace's columns (those dock into it) nor the World panel (parked separately)
+const WORKSPACE_OWN = new Set(['build', 'hierarchy', 'inspector', 'attributes', 'history', 'chat', 'world']);
+const loosePanels = () => allFrames().filter((f) => f?.id && !WORKSPACE_OWN.has(f.id) && typeof f.show === 'function');
+let playPanels = null;
+const PANELS_KEY = 'ew.edit.panels';
+function readPanels() { try { const v = JSON.parse(localStorage.getItem(PANELS_KEY) ?? '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; } }
+function savePanels(ids) { try { localStorage.setItem(PANELS_KEY, JSON.stringify(ids)); } catch { /* private window: edit mode starts bare next time */ } }
 function enter() {
   const { top, tools, left, right, lsplit, rsplit, tabs, rtabs } = build();
   on = true;
   for (const e of [top, tools, left, right, lsplit, rsplit]) e.hidden = false;
+  els.vbar.hidden = false;
   document.body.classList.add('edit-workspace');
   dispatchEvent(new CustomEvent('dockmoved'));   // the ∃ just moved into the corner: re-seat its glyphs now (mictoggle.placeMic listens)
   const bd = getFrame('build'), h = getFrame('hierarchy'), i = getFrame('inspector'), c = getFrame('chat');
   bd?.dock(left); h?.dock(left);
   left.prepend(tabs, ...[bd?.el, h?.el].filter(Boolean));   // tabs, then both pages, above the splitter
-  const hs = getFrame('history');
-  i?.dock(right); hs?.dock(right);
-  right.prepend(rtabs, ...[i?.el, hs?.el].filter(Boolean));   // tabs, then both pages
+  const hs = getFrame('history'), at = getFrame('attributes');
+  i?.dock(right); at?.dock(right); hs?.dock(right);
+  right.prepend(rtabs, ...[i?.el, at?.el, hs?.el].filter(Boolean));   // tabs, then the pages
   if (c) { prevChat = c.visible; c.dock(left); if (!c.visible) c.show(); }
+  // each mode keeps its own open panels (R, 10-10: "collapse all other HUD panels" on entering; Blender's workspaces):
+  // play's are put away and remembered, edit's last set comes back (none, the first time). What you open in edit mode
+  // is edit mode's from then on.
+  playPanels = loosePanels().filter((f) => f.visible).map((f) => f.id);
+  for (const f of loosePanels()) if (f.visible) f.hide();
+  for (const id of readPanels()) getFrame(id)?.show();
   // floating frames render UNDER the columns; the World panel build.js opens
   // on entry sits at the right edge, exactly where the Inspector now is.
   // Park it; World ▾ brings it back, and exit restores it.
@@ -371,14 +451,19 @@ function exit() {
   clearInterval(seatTimer); seatTimer = 0;
   const { top, tools, left, right, lsplit, rsplit, strip } = els;
   for (const e of [top, tools, left, right, lsplit, rsplit, strip]) e.hidden = true;
+  els.vbar.hidden = true;
   document.body.classList.remove('edit-workspace');
   unfitDock();
   dispatchEvent(new CustomEvent('dockmoved'));   // …and back beside the HUD's ∃
-  setWireframe(false);
-  if (els.top.querySelector('.edit-vbtn[data-view="wire"]')) els.top.querySelector('.edit-vbtn[data-view="wire"]').classList.remove('on');
+  setShade('shaded');
+  if (isolating()) setIsolate(null, (id) => replica.st?.entities?.[id]?.c?.parent?.to ?? null, Object.keys(replica.st?.entities ?? {}));   // the view is whole again outside edit mode
   const c = getFrame('chat');
-  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
+  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), getFrame('attributes'), getFrame('history'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace
+  savePanels(loosePanels().filter((f) => f.visible).map((f) => f.id));
+  for (const f of loosePanels()) if (f.visible) f.hide();
+  for (const id of playPanels ?? []) getFrame(id)?.show();
+  playPanels = null;
   if (prevWorld) getFrame('world')?.show();
   prevChat = prevWorld = null;
   closeMenus();

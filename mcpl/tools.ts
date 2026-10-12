@@ -1125,8 +1125,22 @@ export const HANDLERS: Record<string, ToolHandler> = {
   for (const n of Object.keys(HANDLERS)) if (!declared.has(n)) throw new Error(`[tools] "${n}" has a handler but no schema row`);
 }
 
+// Old names still work (STRIKES A-S1-2: walk_to, snapshot, spawn and world_verb were renamed with no alias, and a pilot
+// whose code learned the old name got "Unknown tool"). An alias runs the new tool and says so in one line; an unknown
+// name offers the closest declared one.
+export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act" };
+export function resolveTool(name: string): { name: string; note?: string } | null {
+  if (HANDLERS[name]) return { name };
+  const to = TOOL_ALIASES[name]; if (to && HANDLERS[to]) return { name: to, note: `(${name} is now called ${to}; this ran ${to})` };
+  return null;
+}
+const edits = (x: string, y: string) => { const d: number[][] = Array.from({ length: x.length + 1 }, (_, i) => [i, ...Array(y.length).fill(0)]); for (let j = 1; j <= y.length; j++) d[0][j] = j;
+  for (let i = 1; i <= x.length; i++) for (let j = 1; j <= y.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1)); return d[x.length][y.length]; };
+export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
-  const h = HANDLERS[name];
-  if (!h) return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
-  return await h(ctx.agent, a, ctx, name);
+  const r = resolveTool(name);
+  if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `Unknown tool: ${name}${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}` }], isError: true }; }
+  const out = await HANDLERS[r.name](ctx.agent, a, ctx, r.name);
+  if (r.note && Array.isArray((out as any)?.content) && (out as any).content[0]?.type === "text") (out as any).content[0] = { ...(out as any).content[0], text: `${r.note}\n${(out as any).content[0].text}` };
+  return out;
 }

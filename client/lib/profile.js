@@ -3,7 +3,7 @@
 // Today: identity up top (portrait = presence control, header), and four tabs.
 // satchel / worlds / friends have no server surface yet — R, 2026-09-11: "I would make them fully clickable panels ... aspirational so someone (maybe us!) can build it some day".
 
-import { CONFIG, bus, colorFor } from './base.js';
+import { CONFIG, bus, colorFor, setName } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
 import { getMyAvatarName, getMe } from './mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
@@ -11,6 +11,7 @@ import { presence, setPresence, STATES } from './presence.js';
 import { renderDOM } from './panels.js';
 import { makeFrame, fitTabStrip } from './windows.js';
 import { fsvg } from './icons.js';
+import { net } from './net.js';
 
 let frame = null;
 
@@ -78,7 +79,7 @@ function paint() {
       <button class="pf-portrait" data-presence="${st}" title="presence · ${st} — click to change" aria-haspopup="menu" aria-expanded="false"
         style="--who:${colorFor(CONFIG.name)}">${fsvg('user-circle', 20)}<span class="pf-portrait-dot"></span></button>
       <div class="pf-who">
-        <b>${escape(CONFIG.name)}</b>
+        <button class="pf-name" type="button" title="your name — click to change it">${escape(CONFIG.name)}</button>
         <span>in <b>${escape(CONFIG.world)}</b> · wearing <b>${escape(avatar)}</b> · <i class="pf-state">${st}</i></span>
       </div>
     </div>
@@ -112,6 +113,11 @@ function paint() {
     addEventListener('keydown', onKey, true);
     dismissRef = dismiss;
   };
+
+  // the name is the control (R 10-11: "make the display name an invisible field that you can click on… a popup window and a
+  // warning to pick carefully because you can only rename yourself every so often"). The account stays (base.js
+  // CONFIG.account); the door enforces the cooldown and says when the next change is allowed (net.renameAfter).
+  frame.body.querySelector('.pf-name').onclick = () => openRenameDialog();
 
   // tabs
   frame.body.querySelectorAll('.pf-tab').forEach((b) => {
@@ -152,3 +158,32 @@ function paintPane(pane) {
 
 const escape = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function openRenameDialog() {
+  document.querySelector('.pf-rename-dlg')?.remove();
+  const days = net.renameCooldownDays ?? 7, after = net.renameAfter ?? 0, wait = after > Date.now();
+  const when = new Date(after).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  const dlg = document.createElement('div'); dlg.className = 'pf-rename-dlg'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
+  dlg.innerHTML = `<div class="pf-rename-card panel">
+      <h3>Your name</h3>
+      <p>This is the name everyone sees over your head, in chat and in the history of what you build. You stay the same person
+        whatever it says: your roles and your things stay yours.</p>
+      <input class="pf-rename-in" maxlength="32" value="${escape(CONFIG.name)}" ${wait ? 'disabled' : ''} aria-label="your name">
+      <p class="pf-rename-warn">${wait ? `You changed it recently. You can change it again on <b>${escape(when)}</b>.`
+        : `Pick carefully: once you change it, you can't change it again for ${days} days.`}</p>
+      <p class="pf-rename-err" hidden></p>
+      <div class="pf-rename-btns"><button type="button" class="pf-rename-cancel">${wait ? 'Close' : 'Cancel'}</button>${wait ? '' : '<button type="button" class="pf-rename-ok" disabled>Change my name</button>'}</div>
+    </div>`;
+  document.body.append(dlg);
+  const inp = dlg.querySelector('.pf-rename-in'), ok = dlg.querySelector('.pf-rename-ok'), err = dlg.querySelector('.pf-rename-err');
+  const close = () => { dlg.remove(); removeEventListener('keydown', onKey, true); };
+  const valid = () => { const v = inp.value.trim(); const bad = /[<>"]/.test(v) ? '< > and " can\'t be part of a name' : v.length > 32 ? 'at most 32 characters' : '';
+    err.hidden = !bad; err.textContent = bad; if (ok) ok.disabled = !!bad || !v || v === CONFIG.name; return !bad && v && v !== CONFIG.name ? v : null; };
+  const submit = () => { const v = valid(); if (!v) return;
+    setName(v); const u = new URL(location.href); if (u.searchParams.has('name')) u.searchParams.set('name', v); history.replaceState(null, '', u); location.reload(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } else if (e.key === 'Enter' && document.activeElement === inp) { e.stopPropagation(); e.preventDefault(); submit(); } else e.stopPropagation(); };
+  addEventListener('keydown', onKey, true);
+  inp.oninput = valid; dlg.querySelector('.pf-rename-cancel').onclick = close; if (ok) ok.onclick = submit;
+  dlg.onpointerdown = (e) => { if (e.target === dlg) close(); };
+  if (!wait) { inp.focus(); inp.select(); }
+}

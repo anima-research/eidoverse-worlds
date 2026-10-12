@@ -20,7 +20,7 @@ import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
 import { directoryFileIn } from "./keyfiles.ts";
 
-export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "imported"; since: number; world?: string };
+export type Entry = { name: string; subs: string[]; kind: "human" | "agent" | "anon" | "imported"; since: number; world?: string; renamedAt?: number };
 type File = { v: 1 | 2; ids: Record<string, Entry> };
 
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
@@ -85,6 +85,8 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     put(entries: Record<string, Entry>) { for (const [id, e] of Object.entries(entries)) { if (d.ids[id]) throw new Error(`identity ${id} exists`);
         for (const s of e.subs) { const k = e.world ? `${s}|${e.world}` : s; if (byKey.has(k)) throw new Error(`${s} already wears ${byKey.get(k)}`); } }
       for (const [id, e] of Object.entries(entries)) { d.ids[id] = e; index(id, e); } save(); },
+    /** a person changed the name they type (not a collision suffix, not a sign-in's name): starts the rename cooldown */
+    markRenamed(id: string) { const e = d.ids[id]; if (e) { e.renamedAt = now(); save(); } },
     nameOf: (id: string): string | null => get(id)?.name ?? null,
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */

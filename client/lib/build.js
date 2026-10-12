@@ -16,6 +16,7 @@
 // seat-anchor grammar in seatedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
+import { svg as iconSvg } from './icons.js';
 import * as OP from '../../shared/protocol/requests.js';
 import { mintId } from '../../shared/protocol/ids.js';
 import { THREE, scene, camera, canvas } from './core.js';
@@ -32,6 +33,8 @@ import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame, html } from './ui.js';
 import { paint, escapeHtml } from './markup.js';
+import { pushHostHook } from './autohooks.js';
+import { clickable } from './selectmask.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
@@ -157,8 +160,10 @@ export const hasSelection = () => selected !== null;
 setPointerClaim(() => ghost !== null || !!dragging?.armed);
 // the gizmo (gizmo.js) vetoes the mesh-grab while one of its handles is hot —
 // a probe, not an import: gizmo imports us
-let pointerVeto = () => false;
-export function setPointerVeto(fn) { pointerVeto = fn; }
+// several handle sets may own a press (the gizmo, the grip editor's): any one vetoes
+const pointerVetoes = [];
+const pointerVeto = () => pointerVetoes.some((f) => f());
+export function setPointerVeto(fn) { pointerVetoes.push(fn); }
 setEditingProbe(() => editMode);
 
 // ============================================================ selection
@@ -172,7 +177,7 @@ let inspector = null;
 function ensureInspector() {
   if (!inspector) {
     inspector = document.createElement('div');
-    inspector.className = 'panel';
+    inspector.className = 'panel edit-selbar';
     inspector.style.cssText = `position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
       z-index:7; padding:9px 13px; font-size:var(--fs-sm); display:flex; gap:14px; align-items:center;`;
     document.body.appendChild(inspector);
@@ -188,22 +193,25 @@ export function setInspectorHtml(line) {   // text, or markup built with html`` 
 function showInspector(id) {
   const meta = entityMeta.get(id) ?? {};
   ensureInspector();
-  const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id;
+  // its NAME first (R 10-11: the bar said 'crate_large_blue'), then the model's library label, its file, its id
+  const own = Edits.compsOf(id)?.label;
+  const label = (typeof own === 'string' && own) || (libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id);
   const locked = isLocked(id);
   inspector.innerHTML =
     `<span><b>${escapeHtml(label.slice(0, 34))}</b></span>` +   // a thing's label or model path: world content, text
     (locked
-        ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
+        ? `<span style="color:var(--dim)">locked — nothing moves or removes it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag up/down · ` +
           `<kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>F</kbd> find · <kbd>X</kbd> remove · <kbd>Esc</kbd> done</span>`) +
     `<label title="nail it down: while locked, nobody's drags, verbs or scripts can move, replace or remove it (server-enforced) — sitting on it and content edits stay open" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
-    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}> 🔒 lock</label>` +
-    `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes">+ seat</button>`;
+    // an icon, never an emoji (R, 10-10: "ONLY use emotes in the Chat and Emote panes. They are illegal pretty much everywhere else")
+    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}><span class="sp-ico" aria-hidden="true">${iconSvg(locked ? 'lock' : 'lockOpen', 14)}</span> lock</label>`;
+  // '+ seat' lived here (R 10-10 23:56: "Very curious why there's a 'seat' button here in the helper dialog?"); one stray
+  // click on it seated people on a sign 3 m up. A seat is added where components are: Add Component ▸ Sockets ▸ '+ seat here'.
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
     Edits.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); });
   };
-  inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
   inspector.style.display = 'flex';
 }
 export function hideInspector() { if (inspector) inspector.style.display = 'none'; }
@@ -236,6 +244,22 @@ export function deselect() {
 export function refreshOutline() {
   if (selected) outline.box.setFromObject(selected.obj);
 }
+// ONE selection (R 10-11 01:13: "make sure the same entities that are selected agree with each other in the hierarchy and
+// the viewport"; 00:57: after undos, clicking away no longer deselected; 00:41: "Can the bounding box on moving objects
+// update as the objects translate?"). The scene selection (scenegraph) is the truth; each edit-mode frame the viewport's
+// pick follows it (a Hierarchy click, an undo, a model swapped under it) and its box is re-measured, so it tracks a thing
+// that moves.
+function syncSelection() {
+  if (!editMode) return;
+  const sid = sceneSelected(); const obj = sid != null ? entities.get(sid) : null;
+  if (obj) {
+    if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
+    obj.updateWorldMatrix(true, true); outline.box.setFromObject(obj); outline.visible = true;
+  } else if (selected && !dragging) { editHolds.delete(selected.id); selected = null; outline.visible = false; }
+}
+pushHostHook(syncSelection);
+/** For probes: what the viewport shows as selected (its outline box). */
+export const selectionView = () => ({ id: selected?.id ?? null, visible: !!outline.visible, min: outline.box.min.toArray(), max: outline.box.max.toArray() });
 // the echo of a place (ours from the inspector, or anyone's) moves the mesh; the box follows
 bus.on('entity', ({ id } = {}) => { if (selected && id === selected.id) refreshOutline(); });
 
@@ -262,6 +286,8 @@ export async function holdGhost(lib, label) {
     if (lib === '@light') {
       obj = makeLightGizmo(0xffd9a0);
       obj.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.7; } });
+    } else if (lib === '@empty') {   // Create ▸ Empty (R 10-11): a bare entity, a parent for others; shown as its axes
+      obj = new THREE.AxesHelper(0.5);
     } else {
       obj = await loadGLB(lib);
       ghostify(obj);
@@ -269,10 +295,10 @@ export async function holdGhost(lib, label) {
     ghost = { obj, lib, yaw: 0, scale: 1 };
     scene.add(obj);
     collapseAll();
-    flashHint(lib === '@light'
-      ? html`placing a <b>light</b> — click to place · <kbd>Esc</kbd> cancel`
+    flashHint(lib === '@light' || lib === '@empty'
+      ? html`placing ${lib === '@light' ? html`a <b>light</b>` : html`an <b>empty</b>`} — click to place · <kbd>Esc</kbd> cancel`
       : html`placing <b>${label ?? ''}</b> — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
-    if (lib !== '@light') engage('ghostKeys');   // the status line keeps the keys while it's in hand
+    if (lib !== '@light' && lib !== '@empty') engage('ghostKeys');   // the status line keeps the keys while it's in hand
   } catch (e) { report('ghost', e); }
 }
 
@@ -340,7 +366,7 @@ const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1
 /** The thing in hand, for tests and the hint: {yaw, scale} or null. */
 export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib, bp: ghost.bp?.hash ?? null } : null);
 function ghostKey(e) {
-  if (!ghost || ghost.lib === '@light' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
+  if (!ghost || ghost.lib === '@light' || ghost.lib === '@empty' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
   const fine = !!e.shiftKey;   // keys: ghostKeys
   if (e.code === 'KeyQ' || e.code === 'KeyE') ghost.yaw += (e.code === 'KeyQ' ? 1 : -1) * (fine ? GHOST_TURN_FINE : GHOST_TURN);
   else if (e.code === 'Comma' || e.code === 'Period') { const k = fine ? GHOST_SIZE_FINE : GHOST_SIZE; ghost.scale = THREE.MathUtils.clamp(ghost.scale * (e.code === 'Period' ? k : 1 / k), 0.1, 12); }
@@ -458,27 +484,41 @@ function relayDrag() {
   sendDrag(selected.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
 }
 
-// remote drags: apply transiently, no log involvement
-bus.on('drag', ({ id, pos, yaw, q }) => {
+// remote drags: apply transiently, no log involvement. A live drag is a CLAIM (locking design 10-11, R: "while someone
+// drags/edits a thing, presence says who"): while samples flow, `by` is editing `id`; an amber box marks it and the
+// Hierarchy says 'editing: <name>'; it lapses on the last sample (`end`) or CLAIM_MS of silence. Presence only.
+const CLAIM_MS = 1500;
+const claims = new Map();   // id -> { by, at, box }
+const claimBox = () => { const b = new THREE.Box3Helper(new THREE.Box3(), 0xe0a33a); b.userData.noCamCollide = true; scene.add(b); return b; };
+function endClaim(id) { const c = claims.get(id); if (!c) return; claims.delete(id); c.box.removeFromParent(); bus.emit('claims', claimsNow()); }
+/** Probe/Hierarchy surface: who is editing what right now, by id. */
+export const claimsNow = () => Object.fromEntries([...claims].map(([id, c]) => [id, c.by]));
+setInterval(() => { const now = performance.now(); for (const [id, c] of claims) if (now - c.at > CLAIM_MS) endClaim(id); }, 250);
+bus.on('drag', ({ id, pos, yaw, q, scale, by, end }) => {
   const obj = entities.get(id);
   if (!obj) return;
-  obj.position.set(...pos);
+  if (Array.isArray(pos) && pos.length === 3) obj.position.set(...pos);
+  if (Array.isArray(scale) && scale.length === 3) obj.scale.set(...scale);   // a scrubbed size, previewed live
   if (Array.isArray(q) && q.length === 4) obj.quaternion.set(q[0], q[1], q[2], q[3]);   // the rotate gizmo's full turn
   else if (yaw != null) obj.rotation.y = yaw;
   reindexCollider(id);
+  if (end) { endClaim(id); return; }
+  if (typeof by === 'string' && by) { let c = claims.get(id); if (!c) { c = { by, at: 0, box: claimBox() }; claims.set(id, c); c.at = performance.now(); bus.emit('claims', claimsNow()); } c.at = performance.now(); c.by = by; c.box.box.setFromObject(obj); }
 });
+bus.on('cut-adopted', () => { for (const id of [...claims.keys()]) endClaim(id); });
 
 // ============================================================ commits + undo
 
 
 function commitSpawn() {
   const p = ghost.obj.position;
-  const id = mintId(ghost.lib === '@light' ? 'light' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
+  const id = mintId(ghost.lib === '@light' ? 'light' : ghost.lib === '@empty' ? 'empty' : String(ghost.lib ?? '').split('/').pop().replace(/\.[a-z0-9]+$/i, ''));   // 128+ random bits (shared/protocol/ids.js)
   // one request: create (a model, or a light: a thing with a light component), or create {from} for a blueprint copy
   // a copy's root keeps the record's own size, times the size it was given in hand
   const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
   let sent;
   if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
+  else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot
@@ -547,8 +587,32 @@ function removeSelected() {
 
 // ============================================================ pointer
 
+let barePress = null;
+addEventListener('mouseup', (e) => {
+  const p = barePress; barePress = null;
+  if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
+  // a click on empty space clears THE selection (the Hierarchy's too), not only the viewport's pick
+  deselectAll(); if (seatSelected()) deselectSeat();
+});
+// BOX SELECT (R 10-11 00:18: "shift-select-drag draw a bounding box around objects to select them"): Shift-drag on bare
+// space draws a box and ADDS every thing whose centre lands inside it (hidden ones, and layers I've switched off for
+// clicks, aren't caught). A plain bare drag still orbits.
+let marquee = null; const _mc = new THREE.Vector3(), _mb = new THREE.Box3();
+function marqueeMove(e) { if (!marquee) return; const x0 = Math.min(marquee.x, e.clientX), y0 = Math.min(marquee.y, e.clientY);
+  Object.assign(marquee.el.style, { left: `${x0}px`, top: `${y0}px`, width: `${Math.abs(e.clientX - marquee.x)}px`, height: `${Math.abs(e.clientY - marquee.y)}px`, display: 'block' }); }
+function marqueeEnd(e) { const m = marquee; marquee = null; if (!m) return; m.el.remove(); removeEventListener('mousemove', marqueeMove); removeEventListener('mouseup', marqueeEnd);
+  if (Math.hypot(e.clientX - m.x, e.clientY - m.y) < 5) return;
+  const x0 = Math.min(m.x, e.clientX), x1 = Math.max(m.x, e.clientX), y0 = Math.min(m.y, e.clientY), y1 = Math.max(m.y, e.clientY); const ids = [];
+  const W = state.st?.entities ?? {};
+  for (const [id, o] of entities) { if (!o || !o.visible || !clickable(W, id)) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
+    _mb.getCenter(_mc).project(camera); if (_mc.z > 1) continue;
+    const sx = (_mc.x + 1) / 2 * innerWidth, sy = (1 - _mc.y) / 2 * innerHeight; if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(id); }
+  if (ids.length) bus.emit('edit-select-add', ids); }
+export const marqueeActive = () => !!marquee;
+
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
+  if (e.altKey) return;   // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   // keys: editCamera
   // an armed seat placement outranks everything, the ghost included
   if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
@@ -564,8 +628,15 @@ canvas.addEventListener('mousedown', (e) => {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
   for (const o of entities.values()) if (o) targets.push(o);
-  const hit = raycaster.intersectObjects(targets, true)[0];
-  if (!hit) { if (selected) deselect(); if (seatSelected()) deselectSeat(); return; }
+  // the nearest hit on a thing MY selection layers let me click (selectmask.js; the floor is 'environment', off at first)
+  const W = state.st?.entities ?? {};   // the editor's world view (lib, comp, parent), as editpanels reads it
+  const hit = raycaster.intersectObjects(targets, true).find((h) => { let r = h.object; while (r && !r.userData.entityId) r = r.parent; return r && clickable(W, r.userData.entityId); });
+  // a press on nothing: a DRAG from here orbits the camera; only a click that didn't travel deselects (an orbit that
+  // threw away the selection every time would make looking around a thing impossible)
+  if (!hit && e.shiftKey) { const d = document.createElement('div');   // keys: selectExtend
+    d.className = 'edit-marquee'; d.style.display = 'none'; document.body.append(d);
+    marquee = { x: e.clientX, y: e.clientY, el: d }; addEventListener('mousemove', marqueeMove); addEventListener('mouseup', marqueeEnd); e.preventDefault(); return; }
+  if (!hit) { barePress = { x: e.clientX, y: e.clientY }; bus.emit('edit-bare-press'); return; }
   if (seatSelected()) deselectSeat();
   let root = hit.object;
   while (root && !root.userData.entityId) root = root.parent;
@@ -575,7 +646,10 @@ canvas.addEventListener('mousedown', (e) => {
   // vertical drag here, so it can't double as the extend modifier it is in
   // the tree). No drag starts from an extend.
   if (e.ctrlKey || e.metaKey) { bus.emit('edit-extend', id); e.preventDefault(); return; }   // keys: selectExtend
-  select(id);
+  // Shift: a click adds it to (or takes it from) the selection, as in the tree (R 10-11); a Shift press that TRAVELS is
+  // still the vertical drag, so the thing is selected only once it starts to move
+  const shiftPick = e.shiftKey && !!sceneSelected() && sceneSelected() !== id;   // keys: selectExtend
+  if (!shiftPick) select(id);
   // A press is a SELECT. It only becomes a drag once the pointer actually
   // travels — otherwise clicking a thing to look at its label moved it.
   const aim = aimPoint(id);
@@ -596,6 +670,7 @@ canvas.addEventListener('mousedown', (e) => {
     // express height, so hold Shift and the pointer's up/down maps to world Y
     // with the horizontal position pinned. The standard editor gesture.
     vertical: e.shiftKey,   // keys: meshMove
+    shiftPick,
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
@@ -620,11 +695,13 @@ addEventListener('mousemove', (e) => {
     // the press selected it; travel is where a move would begin — a locked
     // thing refuses here, before any preview exists to snap back
     dragging.armed = true;
+    if (dragging.shiftPick) { select(dragging.id); dragging.shiftPick = false; }
     engage('meshMove');
   }
 });
 
 addEventListener('mouseup', () => {
+  if (dragging && !dragging.armed && dragging.shiftPick) bus.emit('edit-extend', dragging.id);
   if (dragging?.armed) release();
   if (dragging?.armed && selected) {
     const moved = dragging.before;
@@ -636,6 +713,8 @@ addEventListener('mouseup', () => {
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
     if (!same) commitPlace(moved);          // release commits ONE clean entry
   }
+  // the last sample says so: others drop the claim at once rather than after CLAIM_MS
+  if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
   dragging = null;
 });
 
@@ -648,8 +727,10 @@ canvas.addEventListener('click', (e) => {
 // ============================================================ keys
 
 /** Something mid-gesture that Esc should cancel before anything else (gizmo.js). */
-let escapeHook = () => false;
-export function setEscapeHook(fn) { escapeHook = fn; }
+// Esc goes to each hook in turn, newest first (the grip editor, then the gizmo's drag); the first that takes it ends it
+const escapeHooks = [];
+const escapeHook = () => escapeHooks.some((f) => f());
+export function setEscapeHook(fn) { escapeHooks.unshift(fn); }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
     // §3a: Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
@@ -671,6 +752,10 @@ bus.on('key', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
   if (!editMode) return;
 
+  // reset the selection's transform (editpanels.resetTransform): the tools' own letters with Alt, and Ctrl+G for all
+  // three. Before the tool keys, which ignore modifiers.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && ['KeyG', 'KeyE', 'KeyR'].includes(e.code)) { e.preventDefault(); bus.emit('edit-reset', { KeyG: 'pos', KeyE: 'rot', KeyR: 'scale' }[e.code]); return; }   // keys: resetTransform
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyG') { e.preventDefault(); bus.emit('edit-reset', 'all'); return; }   // keys: resetTransform
   // the thing in hand holds Q / E and , / . before the tools do (they'd switch tool mid-aim)
   if (ghostKey(e)) return;
   // a selected seat anchor holds the editing keys before things do
