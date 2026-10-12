@@ -47,7 +47,11 @@ console.log('MATERIALS — one mask node, marked');
   check('an existing mask is composed, not replaced', c.maskShadowNode !== a.maskShadowNode && c.maskShadowNode?.tag?.endsWith('.and()'), c.maskShadowNode?.tag);
   const basic = new THREE.MeshBasicMaterial(); basic.isNodeMaterial = true; basic.isMeshBasicNodeMaterial = true;
   mats.prepareMaterial(basic);
-  check('an unlit material is not marked (hard flip)', basic.userData.shadowFade !== true); }
+  check('an unlit material is not marked (hard flip)', basic.userData.shadowFade !== true);
+  // matoverride clones a prepared material: NodeMaterial.copy carries maskShadowNode AND userData, then prepareMaterial runs again
+  const clone = new THREE.NodeMaterial(); clone.roughness = 0.5; clone.metalness = 0; clone.maskShadowNode = a.maskShadowNode; clone.userData = { ...a.userData };
+  mats.prepareMaterial(clone);
+  check('re-preparing a clone keeps the ONE node (never FADE.and(FADE))', clone.maskShadowNode === a.maskShadowNode, clone.maskShadowNode?.tag); }
 
 console.log('ENABLE — fades in from 0');
 let t = 1000;

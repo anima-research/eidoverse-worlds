@@ -159,7 +159,7 @@ export function initVideoPanel() {
       (v) => { setCasterCeiling(+v); flashHint(`shadows from the ${v} nearest things`); });
     castRow.hidden = !shadowsOn();
     const meRow = checkRow('my body casts a real shadow',
-      'Your own body throws a real shadow from the sun and lamps, instead of only the soft blob under your feet (the blob stays as the contact cue). Only your body — other people keep theirs unless they wear a lamp. Costs a few shadow draws; the first switch-on compiles its depth shaders off the frame.',
+      'Your own body throws a real shadow from the sun and lamps, instead of only the soft blob under your feet (the blob stays as the contact cue). Only your body — other people keep theirs unless they wear a lamp. Costs a few shadow draws; the first switch-on compiles its lit and depth shaders off the frame, so the shadow appears a moment after the tick.',
       myShadowPref(), (on) => { setMyShadowPref(on); flashHint(`my shadow: ${on ? 'real' : 'blob only'}`); });
     meRow.hidden = !shadowsOn();
     body.appendChild(checkRow('shadows',

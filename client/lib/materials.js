@@ -48,7 +48,7 @@ import { effectiveSky } from '../../shared/forecast.js';
 const {
   Fn, If, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
   fract, floor, dot, length, positionWorld, positionView, normalWorld,
-  materialColor, materialRoughness, materialMetalness, screenCoordinate,
+  materialColor, materialRoughness, materialMetalness, screenCoordinate, bool,
 } = TSL;
 
 // ---- the caster fade ---------------------------------------------------------
@@ -375,9 +375,12 @@ export function prepareMaterial(mat, receiver = null) {
   const pbr = mat.isMeshStandardNodeMaterial || mat.isMeshPhysicalNodeMaterial
     || (mat.roughness !== undefined && mat.metalness !== undefined);
   wrapMaterial(mat, receiver, pbr);
-  const mask = mat.maskShadowNode ?? mat.maskNode;   // maskShadowNode wins over maskNode in three's depth pass
-  mat.maskShadowNode = mask ? FADE_MASK.and(mask) : FADE_MASK;
-  mat.userData.shadowFade = true;
+  // a clone of a prepared material (matoverride) carries the node AND the flag: never compose the fade with itself
+  if (!mat.userData.shadowFade) {
+    const mask = mat.maskShadowNode ?? mat.maskNode;   // maskShadowNode wins over maskNode in three's depth pass
+    mat.maskShadowNode = mask ? FADE_MASK.and(bool(mask)) : FADE_MASK;
+    mat.userData.shadowFade = true;
+  }
   stats.wrapped++;
   return true;
 }
@@ -424,11 +427,12 @@ export const BODY_NO_CAST = /^(GOLD|wings)/;
 // AFTER assets.js has already prepared the scene. At prepare time nobody knows
 // yet whether this body glows.
 //
-// castShadow/receiveShadow are in NO pipeline cache key (TEL0S_NOTES SS12.1),
-// so flipping them here costs nothing at the graph level. What it DOES cost is
-// a depth pipeline per material on the first shadow render, compiled in-frame,
-// because bodies never go through warmqueue's warmDepth -- that is the measured
-// risk when this widens past one body, and the reason it has not.
+// castShadow is in NO pipeline cache key (TEL0S_NOTES SS12.1) — but receiveShadow
+// IS (three 0.186 RenderObject.js:856/:945: the shadow taps are only generated
+// for an object that receives), so flipping it here costs a LIT pipeline per
+// material plus a depth pipeline per material on the first shadow render, both
+// compiled in-frame unless warmed first (warmqueue warmLit + warmDepth — the
+// own-body pref below does; the lamp gate at load still pays inside loading).
 //
 // GOLD and the wings are excluded: see BODY_NO_CAST.
 export function setBodyShadows(root, on = true) {
@@ -452,20 +456,26 @@ export function setMyShadowPref(on) {
   try { localStorage.setItem(PREF_MY_SHADOW, on ? '1' : '0'); } catch { /* private window */ }
   bus.emit('my-shadow', !!on);
 }
-/** Decide and apply the own body's shadows: the pref OR its lamp. `warm(label, getMeshes)` pre-compiles the depth
- *  pipelines before the flip ON (bodies never reach the caster budget's warm, and a compile inside the next shadow
- *  render is the first-frame hitch); `still()` says whether this body is still the one worn when the warm lands. */
-export async function applyOwnBodyShadow(av, { pref = myShadowPref(), warm = null, still = () => true } = {}) {
+/** Decide and apply the own body's shadows: the pref OR its lamp. Before a flip ON, `lit(label, getMeshes)` warms
+ *  the lit+shadow pipelines (receiveShadow is in the cache key) and `warm(label, getMeshes)` the depth pass — both
+ *  off the frame, through the conductor; bodies never reach the caster budget's warm. `pref` may be a getter: the
+ *  decision is re-read AFTER the warms (a toggle while a warm was pending ends where the pref is, not where it was);
+ *  `still()` says whether the body is still the one worn. */
+export async function applyOwnBodyShadow(av, { pref = myShadowPref, warm = null, lit = null, still = () => true } = {}) {
   const root = av?.vrm?.scene;
   if (!root?.traverse) return false;
-  const want = pref || !!av._lamps?.length;
-  if (want && warm && !av._depthWarm) {
+  const read = () => (typeof pref === 'function' ? !!pref() : !!pref) || !!av._lamps?.length;
+  if (read() && !av._bodyWarm && (warm || lit)) {
     const meshes = [];
     root.traverse((o) => { if (o.isMesh && !BODY_NO_CAST.test(o.name || '')) meshes.push(o); });
-    await warm('depth me', () => (still() ? meshes : []));
-    av._depthWarm = true;
+    let ran = false;
+    const get = () => { if (!still()) return []; ran = true; return meshes; };
+    if (lit) await lit('lit me', get);
+    if (warm) await warm('depth me', get);
+    if (ran) av._bodyWarm = true;
     if (!still()) return false;
   }
+  const want = read();
   setBodyShadows(root, want);
   return want;
 }

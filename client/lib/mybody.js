@@ -13,7 +13,7 @@ import { toast } from './ui.js';
 import { net } from './net.js';
 import { loadBodyPrefs, saveBodyPrefs } from './bodyscale.js';
 import { applyOwnBodyShadow } from './materials.js';
-import { warmDepth } from './warmqueue.js';
+import { warmDepth, warmLit } from './warmqueue.js';
 
 // ---------------------------------------------------------------- identity
 
@@ -108,7 +108,7 @@ function applyMyBodyPrefs(av) {
   const p = myBodyPrefs();
   av.setUserScale?.(p.scale);
   av.setPlateY?.(p.plateY);
-  applyOwnBodyShadow(av, { warm: warmDepth, still: () => me === av }).catch((e) => report('my shadow', e));
+  applyOwnBodyShadow(av, { warm: warmDepth, lit: warmLit, still: () => me === av }).catch((e) => report('my shadow', e));
 }
 bus.on('my-shadow', () => { if (me) applyMyBodyPrefs(me); });
 /** Profile › Avatar writes here: { scale?, plateY? } for the body you have on, saved and worn at once. `name` is for a
