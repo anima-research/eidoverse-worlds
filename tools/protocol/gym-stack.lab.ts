@@ -1,7 +1,7 @@
 // LAB (not in the suite): R's gym, copied, in the bench. R 10-11 13:09: "There's a pretty long time delay between taking a
 // box in this stack and the rest dropping down". Walk to the tower, grab a lower box, and time on THIS client, frame by
 // frame: the grab's reply, the launch reaching the replica, the rider's first visible drop (2 cm), and its landing.
-//   WORLDS_SRC=/home/claude/eido/scratch-worlds/v4-garden bun tools/protocol/gym-stack.lab.ts [grabId] [riderId]
+//   WORLDS_SRC=<the scratch worlds dir holding gym/> bun tools/protocol/gym-stack.lab.ts [grabId] [riderId]
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";

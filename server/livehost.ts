@@ -96,7 +96,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
       return { seq: s, cut }; }
     return null;
   })();
-  const sim = simFolder(entries, { models: opts.simModels ?? {}, ...(ckpt ? { from: ckpt.cut } : {}) });
+  // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
+  // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
+  const sim = simFolder(entries, { models: opts.simModels ?? {}, ...(ckpt ? { from: { ...ckpt.cut, st: fold(entries, { until: ckpt.seq }) } } : {}) });
   const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "change") return;
     for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = touching.get(id as string); if (!a) touching.set(id as string, (a = [])); a.push(seq); } };
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));

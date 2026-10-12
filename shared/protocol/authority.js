@@ -2330,6 +2330,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     const n0 = w.entries.length;
     WORK = { left: Infinity, until: Infinity, k: 0 };
     settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
+    drainScripts(w); drainHeld(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
   });
 }
@@ -2342,10 +2343,11 @@ export function settle(w, { maxTicks = 8 } = {}) {
 const CHECKPOINT_QUIET_MS = 20000;
 function checkpointSim(w) {
   if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
-  const E = w.entries; let last = -1, launches = 0, newest = -Infinity;
-  for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!e || typeof e !== "object" || e.kind !== "sim") continue;
-    if (e.verb === "checkpoint") { last = s; break; } if (e.verb === "launch") { launches++; if (e.ts > newest) newest = e.ts; } }
-  if (!launches || w.now() - newest < CHECKPOINT_QUIET_MS) return;
+  // incremental (second review S2-3: a whole-log scan every beat until the first checkpoint): what's been counted stays counted
+  const E = w.entries; const k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity });
+  for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object" || e.kind !== "sim") continue;
+    if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; } else if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } }
+  if (!k.launches || w.now() - k.newest < CHECKPOINT_QUIET_MS) return;
   const sf = w.sim(); if (!sf.sim || sf.foreign || Object.keys(livePoses(sf)).length || sf.rested.length || (w.unsettled?.length ?? 0)) return;
   // the cut rides as a JSON string: the blob store canonicalises objects (sorted keys), and the engine's object order is the
   // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
@@ -3130,7 +3132,8 @@ const PHYSICS_VERBS = {
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
     { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
       if (mine.length >= MAX_HELD) refuse("hands-full", `you are already holding ${mine.length} things (${mine.join(", ")}), and ${MAX_HELD} is the most you can carry here`, `put one down first: put {id: '${mine.at(-1)}'}`); }
-    const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
+    const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const eb = sf.launched[a.id] ? sf.sim?.bodies[a.id] : null;
+    const here = held ? held.pose.pos : live ? live.pos : eb ? eb.p : t.pos; // where it IS: someone's hand, the air, the engine (rested, not yet logged: second review S2-1), or the log
     // range (grabbable): from the hand; past arm's reach the authority grants it as a pull (the thing flies to the hand: a
     // presence ease on every client), never a hold at a distance (the reach check is the anti-cheat)
     const d = dist(handOf(me), here); if (d > g.range) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${g.range} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);

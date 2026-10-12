@@ -5,7 +5,8 @@
 // rested on, woken, fallen, rested. Traced through simFolder on her own log: after the catch, tower-1 must stay out.
 //   bun tools/protocol/gym-catch.lab.ts
 import fs from "node:fs"; import { simFolder } from "../../shared/protocol/simlayer.js"; import { readLog } from "../../shared/protocol/fold.js";
-const E = readLog(fs.readFileSync("/home/claude/eido/scratch-worlds/v4-garden/gym/world.jsonl"));
+const SRC = process.env.WORLDS_SRC; if (!SRC) throw new Error("WORLDS_SRC=<the scratch worlds dir holding gym/> is required");
+const E = readLog(fs.readFileSync(`${SRC}/gym/world.jsonl`));
 const f = simFolder(E, { models: {} }); const A = Date.parse("2026-10-11T21:23:27.861Z"), B = Date.parse("2026-10-11T21:23:31.84Z");
 let back = null, caught = false;
 for (let i = 0; i < E.length; i++) { f.feed(i); const e = E[i]; if (e.ts > B) break;

@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import { request, settle } from "../../shared/protocol/authority.js";
 import { openLive } from "../../server/livehost.ts";
-import { restsOf, digestOf } from "../../shared/protocol/simlayer.js";
+import { restsOf, digestOf, simFold, livePoses } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
 
 const root = scratch("phystick"); let fails = 0, passes = 0;
@@ -99,16 +99,26 @@ function world(name, N) {
   const ck = w.entries.slice(n1).filter((e) => e.kind === "sim" && e.verb === "checkpoint");
   ok(ck.length === 1 && ck[0].body.at === w.entries.indexOf(ck[0]) - 1 && typeof ck[0].body.state === "string", "T6 one checkpoint, right after the entry it names, with a blob", ck.map((e) => e.body));
   const fromGenesis = w.sim(); const dA = digestOf(fromGenesis.sim);   // both views at the same clock
-  const dir = `${root}t6`; const a0 = performance.now(); const w2 = openLive(dir, "t6", { now }); const openMs = performance.now() - a0;
+  // w2 starts on the same clock as w (the comparison below), then r.tick moves its own
+  const dir = `${root}t6`; let T2 = now(); const a0 = performance.now(); const w2 = openLive(dir, "t6", { now: () => T2 }); const openMs = performance.now() - a0;
   const again = w2.sim(); const dB = digestOf(again.sim);
   ok(w2.bootedFrom === w.entries.indexOf(ck[0]) && dA === dB && JSON.stringify(Object.keys(again.launched).sort()) === JSON.stringify(Object.keys(fromGenesis.launched).sort()),
     "T6 reopened from the checkpoint: the same sim digest and the same launched set", { bootedFrom: w2.bootedFrom, ckSeq: w.entries.indexOf(ck[0]), dA, dB });
   const b0 = performance.now(); const w3 = openLive(`${root}t6`, "t6", { now, simModels: {} }); const genesisMs = performance.now() - b0;   // same open path; reports the cost
   ok(openMs < 1500, `T6 opening from the checkpoint is quick (${openMs.toFixed(0)} ms; this world's history re-simulated takes longer)`, { openMs, genesisMs });
   // a throw after reopening still flies and rests from the checkpointed state
-  w2.simPeek(); const r = (() => { let T2 = now() + 100; const w2now = () => T2; return { call: (v, args, s = 100) => { T2 += s; return request(w2, "rowan", v, args); } }; })();
+  w2.simPeek(); const r = { call: (v, args, s = 100) => { T2 += s; return request(w2, "rowan", v, args); }, tick: (ms) => { T2 += ms; } };
   { const bp = w2.state().entities.ball.c.transform.pos; r.call("move", { to: [bp[0], 0, bp[2] - 0.5] }); }   // bodies are presence: the reopened world has none until I move; the ball rested where the knock left it
-  { const g = r.call("grab", { id: "ball" }); const th = g.ok ? r.call("throw", { id: "ball", v: [0, 2, 3] }) : null; ok(g.ok && th?.ok, "T6 …and the reopened world takes a new throw", { g: g.refused, th: th?.refused }); }
+  // an edit of a pre-checkpoint thing, then its flight: the reopened engine must agree with a from-genesis fold of the same
+  // log, and the throw must really fly and rest (second review 10-11 S1-1: the cut carried no fold state; the first edit
+  // removed the thing from the engine and a later throw was silently dropped — th.ok alone passed)
+  r.call("set", { id: "cr-0", component: "transform", value: { pos: [3, 0, 3], q: [0, 0, 0, 1], scale: 1 } });
+  // (the live host folds with no catalogue colliders, Covenant III: the from-genesis fold must too)
+  { const a = digestOf(w2.sim().sim), b = digestOf(simFold(w2.entries, w2.now(), { models: {} }).sim); ok(a === b, "T6 after an edit the reopened engine equals a from-genesis fold of the same log", { a, b }); }
+  { const g = r.call("grab", { id: "ball" }); const th = g.ok ? r.call("throw", { id: "ball", v: [0, 2, 3] }) : null;
+    const flying = th?.ok && !!livePoses(w2.sim()).ball;
+    let rested = false; for (let k = 0; k < 600 && !rested; k++) { r.tick(TICK); settle(w2); rested = restsOf(w2.entries).some((x) => x.id === "ball" && x.seq > (th?.seq ?? 0)); }
+    ok(g.ok && th?.ok && flying && rested, "T6 …and a throw after the reopen flies in its engine and comes to rest on the record", { g: g.refused, th: th?.refused, flying, rested }); }
 }
 // T7: a purge after a checkpoint discards it: the bytes may sit in the cut, so the blob is deleted and the next open folds
 // the sim from genesis (a purge is retroactive, L1).

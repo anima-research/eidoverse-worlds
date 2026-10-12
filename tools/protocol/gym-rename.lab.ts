@@ -1,6 +1,6 @@
 // LAB: R's gym, copied. R 10-11 12:57: "With 'Rab' as the name, it won't let me do anything… I can't seem to change the
 // display name anywhere". Join as Rab (an owner), rename in the profile header, reload: same person (id, role), new name.
-//   WORLDS_SRC=/home/claude/eido/scratch-worlds/v4-garden bun tools/protocol/gym-rename.lab.ts
+//   WORLDS_SRC=<the scratch worlds dir holding gym/> bun tools/protocol/gym-rename.lab.ts
 // @ts-nocheck
 import fs from "node:fs"; import path from "node:path";
 import { scratchBench, sleep } from "../harness.ts";

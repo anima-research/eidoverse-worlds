@@ -7,7 +7,7 @@ import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog } from "../../shared/protocol/fold.js";
 import * as THREE from "three";
-const SRC = "/home/claude/eido/scratch-worlds/v4-garden"; const root = fs.mkdtempSync("/home/claude/eido/scratch/gymdrag-");
+const SRC = process.env.WORLDS_SRC; if (!SRC) throw new Error("WORLDS_SRC=<the scratch worlds dir holding gym/> is required"); const root = fs.mkdtempSync("/home/claude/eido/scratch/gymdrag-");
 for (const f of [".custody.json", ".directory.json"]) if (fs.existsSync(path.join(SRC, f))) fs.copyFileSync(path.join(SRC, f), path.join(root, f));
 fs.mkdirSync(path.join(root, "worlds"), { recursive: true }); fs.mkdirSync(path.join(root, "keys")); fs.copyFileSync(path.join(SRC, ".custody.json"), path.join(root, "keys/custody.json"));   // filehost's layout: <root>/worlds/<name>.jsonl
 const lines = fs.readFileSync(path.join(SRC, "gym/world.jsonl"), "utf8").split("\n").filter(Boolean);

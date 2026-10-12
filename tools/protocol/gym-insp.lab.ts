@@ -1,7 +1,7 @@
 // LAB: R's gym, copied; the Inspector on tower-2 ("tower crate 3", her long description), locked. R 10-11 14:08-14:14:
 // the eye/padlock blue when on and centred; 'reads as' whole on hover/click; scale's numbers on the same right edge as
 // translate/rotate; 'Add Component…' / 'Add Script…' alike. Measured, then a screenshot to look at.
-//   WORLDS_SRC=/home/claude/eido/scratch-worlds/v4-garden bun tools/protocol/gym-insp.lab.ts
+//   WORLDS_SRC=<the scratch worlds dir holding gym/> bun tools/protocol/gym-insp.lab.ts
 // @ts-nocheck
 import fs from "node:fs"; import path from "node:path";
 import { scratchBench, sleep } from "../harness.ts";

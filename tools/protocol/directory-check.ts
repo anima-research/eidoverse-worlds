@@ -88,10 +88,11 @@ const file = path.join(tmp, "worlds", ".directory.json");
   request(w, own, "set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const big = request(w, own, "say", { text: "x".repeat(9000) });
   ok(big.refused?.code === "too-big", "B1 a say is at most 8 KiB of text", big.refused);
-  // the flood is big VALUES, not chat (20 says of 8 KiB stay under the cap): 60 KiB labels, well under 60 entries
+  // the flood is big VALUES, not chat (20 says of 8 KiB stay under the cap): 60 KiB draft bags, well under 60 entries
+  // (a label is capped at 80 since f5dbb31e; a namespaced draft component has no schema, so it carries the bulk)
   request(w, own, "create", { id: "slab", model: "crate", place: { at: [4, 4] } });
   const n0 = w.entries.length; let said = 0, stop: any = null;
-  for (let i = 0; i < 40 && !stop; i++) { const r: any = request(w, own, "set", { id: "slab", component: "label", value: `${i}` + "y".repeat(60000) }); if (r.ok) said++; else stop = r.refused; }
+  for (let i = 0; i < 40 && !stop; i++) { const r: any = request(w, own, "set", { id: "slab", component: "hesperus/pad", value: { pad: `${i}` + "y".repeat(60000) } }); if (r.ok) said++; else stop = r.refused; }
   const grew = w.entries.slice(n0).reduce((a: number, e: any) => a + JSON.stringify(e).length, 0);
   ok(stop?.code === "rate" && /KiB/.test(stop?.reason ?? "") && said < 8 && grew < 400 * 1024, "B2 one identity's BYTES per 10 s are capped (256 KiB), not just its entries", { said, grew, stop: stop?.reason });
   T += 20000;

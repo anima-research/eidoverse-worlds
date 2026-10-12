@@ -1,6 +1,6 @@
 // LAB: R's gym, copied. Switch a thing off from the Inspector's name line (R 10-11: "a 'disabled' option - present in the
 // world as links, but not downloaded, interopable, or visible until someone re-enables it"), with its children, and back on.
-//   WORLDS_SRC=/home/claude/eido/scratch-worlds/v4-garden bun tools/protocol/gym-off.lab.ts
+//   WORLDS_SRC=<the scratch worlds dir holding gym/> bun tools/protocol/gym-off.lab.ts
 // @ts-nocheck
 import fs from "node:fs"; import path from "node:path";
 import { scratchBench, sleep } from "../harness.ts";

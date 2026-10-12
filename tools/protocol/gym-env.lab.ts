@@ -1,7 +1,7 @@
 // LAB: R's gym, copied. R 10-11 12:57: "I still have no idea how to get rid of the sky and the ground once they're created.
 // We really need those components or entities to appear under the world entity in the Hierarchy". Are the environment
 // rows there, does ✕ remove each one, does the ground go back to the stage floor, does Ctrl+Z bring it back? Screenshots.
-//   WORLDS_SRC=/home/claude/eido/scratch-worlds/v4-garden bun tools/protocol/gym-env.lab.ts
+//   WORLDS_SRC=<the scratch worlds dir holding gym/> bun tools/protocol/gym-env.lab.ts
 // @ts-nocheck
 import fs from "node:fs"; import path from "node:path";
 import { scratchBench, sleep } from "../harness.ts";
