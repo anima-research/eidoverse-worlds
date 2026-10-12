@@ -133,7 +133,7 @@ try {
   // ---- SC: a new script from the Inspector ----
   { const thing = myActs().at(-1)?.e.body?.request?.id;
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('${thing}'); return true;`);
-    const btn = `[...document.querySelectorAll('[data-frame="inspector"] button')].find((b) => /Add Script.test(b.textContent))`;
+    const btn = `[...document.querySelectorAll('[data-frame="inspector"] button')].find((b) => /Add Script/.test(b.textContent))`;
     check("SC1 the Inspector offers 'Add Script…' on the selected thing", await waitFor(`!!(${btn}) && !(${btn}).disabled`), await evalJson(`[...document.querySelectorAll('[data-frame="inspector"] button')].map((b) => b.textContent).slice(0, 30)`));
     await evalJson(`(${btn})?.click(), true`);
     check("SC2 …it opens the card, a template that runs as it stands already in it", await waitFor(`!!document.querySelector('#script-new .sn-src') && /world\\.on\\("use"/.test(document.querySelector('#script-new .sn-src').value)`));
