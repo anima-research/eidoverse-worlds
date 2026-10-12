@@ -919,5 +919,34 @@ ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: 
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-5, 0, -5], max: [5, 0, 5] } })) === "shape", "BZ2 a box flat on one axis (min = max) is refused");
 ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 40, 50] } }).ok, "BZ3 a real box is accepted"); }
 
+// ---- MS: mesh (R 10-12, primitives): a registered parametric body on a model-less thing. One place per thing with a model
+// and a light; it has a size to place and stack on; its physics shape is stamped from the component and re-stamped on resize
+{ const name = "mesh"; T += 1000;
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c;
+  call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  { const r = call("bob", "create", { id: "mb", components: { mesh: { shape: "box" }, transform: { pos: [0, 0, 0] } } });
+    ok(r.ok && JSON.stringify(E("mb")?.mesh) === JSON.stringify({ shape: "box", size: [1, 1, 1] }), "MS1 a mesh thing is created with its defaults written down (box 1×1×1)", r.refused ?? E("mb")?.mesh); }
+  { const r1 = call("bob", "set", { id: "mb", component: "model", value: "crate" }); const r2 = call("bob", "set", { id: "mb", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
+    call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
+    call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
+    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok")); }
+  { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
+    ok(code(r1) === "bounds" && code(r2) === "shape", "MS3 a size outside 0.05..200 and an unknown shape are refused", [r1.refused, r2.refused]); }
+  { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];
+    ok(r.ok && Math.abs(y - 1) < 1e-3, "MS4 place {on} a mesh box works: it has a size, and the ball lands on its top (y = 1)", r.refused ?? E("cup")?.transform);
+    const b = call("bob", "create", { id: "mb2", components: { mesh: { shape: "box", size: [2, 0.5, 2] } }, place: { beside: "mb" } }); ok(b.ok, "MS4b place {beside} works for a mesh too", b.refused); }
+  { const m = call("bob", "measure", { id: "mb" }); ok(m.ok && m.size.every((x) => Math.abs(x - 1) < 1e-6), "MS5 measure reads a mesh box as 1×1×1", m); }
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+  { const sh = E("mb")?.physics?.shape; ok(E("mb")?.physics?.kind === "static" && JSON.stringify(sh) === JSON.stringify([[-0.5, 0, -0.5], [0.5, 1, 0.5]]), "MS6 physics on: a mesh box is a static collider with its box stamped (base-centred)", E("mb")?.physics); }
+  { call("bob", "create", { id: "ms", components: { mesh: { shape: "sphere", size: [0.4, 9, 9] }, physics: { kind: "dynamic" }, transform: { pos: [-3, 2, -3] } } });
+    call("bob", "create", { id: "mc", components: { mesh: { shape: "cylinder", size: [0.6, 1.2, 9] }, transform: { pos: [-3, 0, 3] } } });
+    const s = E("ms")?.physics?.shape, c = E("mc")?.physics?.shape;
+    ok(s?.type === "sphere" && s.radius === 0.2 && s.pos[1] === 0.2, "MS7 a mesh sphere stamps a sphere (radius = size[0]/2, centred r up)", s);
+    ok(c?.type === "cylinder" && c.radius === 0.3 && c.halfHeight === 0.6, "MS8 a mesh cylinder stamps a cylinder {radius, halfHeight} from size[0], size[1]", c); }
+  { const r = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [2, 3, 4] } }); const sh = E("mb")?.physics?.shape;
+    ok(r.ok && JSON.stringify(sh) === JSON.stringify([[-1, 0, -2], [1, 3, 2]]), "MS9 a mesh size change re-stamps its physics shape", r.refused ?? sh); }
+}
+
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

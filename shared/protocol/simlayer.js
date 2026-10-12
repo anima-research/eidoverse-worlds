@@ -32,7 +32,7 @@ export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
 export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.build;
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
-const PHYSICAL = new Set(["transform", "parent", "model", "physics", "disabled"]);
+const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "disabled"]);
 const RELEASES = new Set(["transform", "parent", "disabled"]);   // the writes that end a hold (authority commit()); keep the two in step   // disabled: switching off takes the body (and its subtree) out, on puts it back
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
@@ -50,6 +50,10 @@ export function worldPose(st, id, depth = 0) {
 // eidosim carries boxes only (PHYSICS.md §3.1): a stamped physics.shape is its collider when it's a bare box; any other
 // shape is no body to it (rather than a tagged object misread as [[min], [max]]). An engine that carries spheres reads them.
 export const engineBox = (ph) => (isBoxShape(ph?.shape) ? ph.shape : null);
+// eidosim keys its boxes by model name (sim.boxes[lib]); a model-less thing with a stamped box (a `mesh`) is keyed by the
+// box itself, so two meshes of one size share an entry and a resize is a new key. A tagged cylinder has no box here: no body
+const meshKey = (ph) => { const b = engineBox(ph); return b ? `mesh:${b[0].join(",")}|${b[1].join(",")}` : undefined; };
+export const libOf = (e) => (typeof e?.c.model === "string" ? e.c.model : e?.c.mesh !== undefined ? meshKey(e.c.physics) : undefined);
 // The engine sees the world through its own entity view: one entry per modelled thing (its "lib" is its model).
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };   // as authority.lockedC
 const sphereShape = (ph) => ph?.shape?.type === "sphere" && !shapeError(ph.shape);
@@ -70,7 +74,7 @@ function engineEntity(st, id, models = MODELS, fixed = null) {
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)
-  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: e.c.model, scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
+  return { pos: t.pos, yaw: yawOf(t.q), q: t.q, lib: libOf(e), scale: t.scale[1], scale3: t.scale, ...(sh && !isBoxShape(sh) ? { shape: sh } : {}),
     ...(e.c.physics?.kind === "dynamic" && !(fixed ?? fixedSet(st)).has(id) ? { kind: "dynamic" } : {}) };
 }
 export function engineViewM(st, models = MODELS) {
@@ -83,7 +87,7 @@ const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise
 function boxesForM(st, models = MODELS) {
   const out = Object.fromEntries(Object.entries(models).map(([k, m]) => [k, catalogueBox(m)]));
-  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; if (engineBox(e.c.physics) && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape; }
+  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; const lib = libOf(e); if (engineBox(e.c.physics) && typeof lib === "string") out[lib] = e.c.physics.shape; }
   return out;
 }
 const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof Malformed) return []; throw x; } };
@@ -180,7 +184,7 @@ export function simFolder(entries, { models = MODELS, from = null } = {}) {
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
           if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? { amplitude: 0 } }, engineView(st)); out.launched = {}; }   // removed: flat y = 0, as at boot (line 80), never the toolkit's default hills
           continue; }
-        const shape = engineBox(st.entities[o.id]?.c.physics), model = st.entities[o.id]?.c.model;
+        const shape = engineBox(st.entities[o.id]?.c.physics), model = libOf(st.entities[o.id]);
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
         const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
         if (o.comp === "lock" || o.comp === "parent") relock = true;

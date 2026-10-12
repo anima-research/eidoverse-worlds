@@ -82,8 +82,31 @@ function structGeom(v) {
     g = { label: "a building", structure: true, box: [lo, hi], size: hi.map((x, i) => x - lo[i]), surfaces, solids: walls.length > STRUCT_MAX ? [[lo, hi]] : walls }; }
   STRUCTGEO.set(v, g); return g;
 }
-/** A thing's geometry: its building's (structure) if it has one, else its model's. */
-const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : geomOf(e?.c.model));
+// a mesh thing's geometry, from its component alone (componentspec `mesh`): base-centred like a measured model, so boxOfM's
+// default box is its box; a sphere and a capsule are `round` (they offer no face when tipped). Cached per VALUE, as structGeom
+export const MESH_SIZE = { min: 0.05, max: 200 };
+const MESHGEO = new WeakMap();
+const meshOk = (v) => v && typeof v === "object" && !Array.isArray(v) && v !== PURGED && COMPONENTS.mesh.enums.shape.includes(v.shape)
+  && Array.isArray(v.size) && v.size.length === 3 && v.size.every((x) => isNum(x) && x >= MESH_SIZE.min && x <= MESH_SIZE.max);
+export function meshGeom(v) {
+  if (!meshOk(v)) return undefined;
+  if (MESHGEO.has(v)) return MESHGEO.get(v);
+  const [x, y, z] = v.size; const d = v.shape === "sphere" ? x : v.shape === "cylinder" || v.shape === "capsule" ? x : null;
+  const size = v.shape === "sphere" ? [d, d, d] : v.shape === "cylinder" || v.shape === "capsule" ? [d, y, d] : v.shape === "plane" ? [x, MESH_SIZE.min, z] : [x, y, z];
+  const round = v.shape === "sphere" || v.shape === "capsule";
+  const g = { label: `a ${v.shape}`, mesh: v.shape, size, surfaces: round ? [] : [{ y: size[1] }], ...(round ? { round: true } : {}) };
+  MESHGEO.set(v, g); return g;
+}
+/** The engine's shape of a mesh thing (PHYSICS §3.1): box → [[min], [max]]; sphere → {sphere}; cylinder, capsule → {cylinder};
+ *  plane → a thin box. In the thing's frame, base-centred, so it matches what geomE places and stacks. */
+export function meshShape(v) {
+  const g = meshGeom(v); if (!g) return null; const [x, y, z] = g.size, r = r4(x / 2);
+  if (v.shape === "sphere") return { type: "sphere", radius: r, pos: [0, r, 0] };
+  if (v.shape === "cylinder" || v.shape === "capsule") return { type: "cylinder", radius: r, halfHeight: r4(y / 2), pos: [0, r4(y / 2), 0] };
+  return boxOfM(g).map((c) => c.map(r4));
+}
+/** A thing's geometry: its building's (structure) if it has one, else its mesh's, else its model's. */
+const geomE = (e) => (e?.c.structure !== undefined ? structGeom(e.c.structure) : e?.c.mesh !== undefined ? meshGeom(e.c.mesh) : geomOf(e?.c.model));
 /** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
 export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
 
@@ -1179,6 +1202,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   // (the fold never refuses); the importer splits them; a carried value (an import) passes.
   if (!carry && comp === "light" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
   if (!carry && comp === "model" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a model goes on its own thing`, `create the model as its own thing and parent this light to it`);
+  // a mesh is a body of its own, as a model is: never beside a model or a light on one thing
+  if (!carry && comp === "mesh" && s.entities[id]?.c.model !== undefined) refuse("one-place", `${id} has a model; a mesh is its own thing`, `create {id: '${id}-mesh', components: {mesh: {…}, parent: {to: '${id}'}}}, or delete its model first`);
+  if (!carry && comp === "mesh" && s.entities[id]?.c.light !== undefined) refuse("one-place", `${id} is a light; a mesh goes on its own thing`, `create the mesh as its own thing and parent this light to it`);
+  if (!carry && comp === "model" && s.entities[id]?.c.mesh !== undefined) refuse("one-place", `${id} is a mesh (${s.entities[id].c.mesh?.shape}); a model goes on its own thing`, `create the model as its own thing, or delete the mesh first`);
+  if (!carry && comp === "light" && s.entities[id]?.c.mesh !== undefined) refuse("one-place", `${id} is a mesh; a light goes on its own thing under it`, `create {id: '${id}-light', components: {light: {…}, parent: {to: '${id}'}, transform: {pos: [0, 1, 0]}}}`);
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !KNOWNID(comp.slice(6))))
     refuse("shape", `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name`, "who {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
@@ -1401,6 +1429,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     const bad = (r.min !== undefined && x < r.min) || (r.gt !== undefined && x <= r.gt) || (r.max !== undefined && x > r.max);
     if (bad) refuse("bounds", `${at}.${k} is ${x}; it must be ${[r.gt !== undefined ? `> ${r.gt}` : r.min !== undefined ? `≥ ${r.min}` : "", r.max !== undefined ? `≤ ${+r.max.toFixed(4)}` : ""].filter(Boolean).join(" and ")}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
+  if (name === "mesh" && Array.isArray(v.size) && v.size.some((x) => x < MESH_SIZE.min || x > MESH_SIZE.max)) refuse("bounds", `${at}.size is [${v.size.join(", ")}]; each is ${MESH_SIZE.min}..${MESH_SIZE.max} m`, def.help);
   // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
     if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.fix); }
@@ -1505,14 +1534,14 @@ function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
-  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider")) ids.add(o.id);
+  for (const o of ops) if ((o.verb === "set" || o.verb === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
   if (simOn) for (const o of ops) if (o.verb === "create") ids.add(o.id);
   if (ops.some((o) => o.id === "@world" && o.comp === "physics-engine" && o.verb === "set") && simOn) for (const id of Object.keys(after.entities)) ids.add(id);
   ids.delete("@world");
   const out = ops.slice(); const stamped = [];
   for (const id of ids) {
     const e = after.entities[id]; if (!e) continue;
-    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : null;
+    const ph = e.c.physics; const want = typeof e.c.model === "string" ? shapeFor(e.c.model, e.c.collider?.shape) : e.c.mesh !== undefined ? meshShape(e.c.mesh) : null;
     let next;
     if (ph === undefined || ph === null) { if (!simOn || !want) continue; next = { kind: "static", shape: want }; }
     else if (typeof ph !== "object" || Array.isArray(ph)) continue; // valueCheck refuses it
@@ -1523,7 +1552,7 @@ function stampShapes(ctx, ops) {
     const k = out.findIndex((o) => o.verb === "set" && o.comp === "physics" && o.id === id);
     if (k >= 0) out[k] = setOp(id, "physics", next); else { out.push(setOp(id, "physics", next)); stamped.push(id); }
   }
-  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model are colliders, with the authority's measured shape" });
+  if (stamped.length) ctx.notes.push({ component: "physics", stamped: stamped.length <= 12 ? stamped : stamped.length, why: "this world runs physics: things with a model or a mesh are colliders, with the authority's measured shape" });
   return out;
 }
 // batch 2: a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
@@ -1752,7 +1781,7 @@ function buildTurn(ctx, a) {
 // Relational placement (A1): the authority solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
-  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  const m = geomE(e); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model or mesh, so it has no size to place`, "set its transform directly");
   // the one gate before any solving (security pass 2 H-A: a visitor's place on a table scaled 1000× ran the whole search,
   // seconds of every world's thread, and was refused only after): admit a move of this thing as it stands — rights,
   // locks, flight and rate, the checks the placed result meets — so a refusal costs nothing. admit runs again on the result.
@@ -3550,9 +3579,10 @@ function shaped(e, id, spec = null) {
   // a rotating engine finds a thing's collider through its model (the epoch's boxes): with no model it would fly nothing
   // and never rest (review of 49d4fb0d #6). Today the shape check below refuses it anyway (a modelless thing keeps no
   // measured shape; phys-check D6); this holds if a shape can ever be set without a model
-  if (spec && ENGINES[spec.engine]?.rotates && typeof e.c.model !== "string") refuse("no-shape", `${id} has no model, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
+  const bodied = typeof e.c.model === "string" || e.c.mesh !== undefined;
+  if (spec && ENGINES[spec.engine]?.rotates && !bodied) refuse("no-shape", `${id} has no model or mesh, so ${spec.engine} has no collider to fly`, "put it down instead (put {id}); give it a model first");
   if (spec && ENGINES[spec.engine]?.rotates && e.c.physics?.shape?.type === "sphere" && !shapeError(e.c.physics.shape)) return;   // a rigid engine flies a sphere
-  if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${typeof e.c.model === "string" ? "" : " (it has no model)"}, so physics can't fly it`, typeof e.c.model === "string" ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
+  if (!isBoxShape(e.c.physics?.shape)) refuse("no-shape", `${id} has no measured shape${bodied ? "" : " (it has no model or mesh)"}, so physics can't fly it`, bodied ? `put it down instead; a builder can re-set its physics (set {id: '${id}', component: 'physics', value: {kind: 'dynamic'}}) and the authority measures it` : "put it down instead; give it a model first");
 }
 // where the hand lets go (a VR hand, or the desktop hand the person sees): within reach of the authority's track of the body
 function releasePos(me, pos) {
@@ -3801,7 +3831,7 @@ const VERBS = {
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },
   measure(w, actor, a) {
-    const st = w.state(); const b = aabb(st, a.id); if (!b) return { ok: false, refused: { code: "no-model", reason: `${a.id} has no model to measure` } };
+    const st = w.state(); const b = aabb(st, a.id); if (!b) return { ok: false, refused: { code: "no-model", reason: `${a.id} has no model or mesh to measure` } };
     const t = worldT(st, a.id);
     return { ok: true, id: a.id, bounds: { min: b.min.map(r3), max: b.max.map(r3) }, size: b.max.map((v, i) => r3(v - b.min[i])),
       front: qrot(t.q, [0, 0, 1]).map(r3), surfaces: surfacesOf(st, a.id).map((s) => ({ level: s.level, y: r3(s.y), size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] })) };
