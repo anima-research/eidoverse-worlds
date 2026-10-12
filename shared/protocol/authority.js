@@ -30,7 +30,9 @@ import { saysOf } from "../says.js";
 import { readOut } from "../a11y.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES } from "../particle_effects.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, offChain, simCutOf } from "./simlayer.js";
-import { planVelocity } from "./launchplan.js";
+import { planLaunch } from "./launchplan.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BODY_REACH } from "./physconst.js";
+import { r3, noNeg0, unNegZero } from "./round.js";
 import { collisionBoxes } from "../structure.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 
@@ -236,7 +238,6 @@ const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURG
 // — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
 export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
 export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
-const r3 = (n) => Math.round(n * 1000) / 1000;
 // a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
 // and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
 const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
@@ -988,7 +989,6 @@ function lockLevelCheck(w, st, s, who, op, at) {
   if (op.verb === "set" && rankOf(st, holder) < RANK[lockLevel(op.value)])
     refuse("rank", `${at}: a lock at ${lockLevel(op.value)} level is above your rank (${roleOf(st, holder)})`, "lock at your own level or below: true (builder) or {rank: 'builder'}", { needs: "rank" });
 }
-const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
   if (!["create", "set", "delete"].includes(verb)) refuse("shape", `op ${i}: '${verb}' isn't a state operation`, "create, set and delete (batches are flat)");
   if (!isEntityId(op.id)) refuse("shape", `'${op.id}' isn't an entity id`, "§3.1: a–z, 0–9 and '-', up to 64, or @world", { didYouMean: guess(String(op.id), []) });
@@ -2949,9 +2949,6 @@ const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities
   return lines.length ? { says: lines } : {}; };
 
 // ---------- physics (design 20) ----------
-const REACH = 1.5;   // m from your body: arm plus a step
-const HAND_Y = 1.1; // where a held thing sits above your feet
-const MAX_HELD = 2; // things in your hands at once
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const handOf = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
@@ -3353,8 +3350,6 @@ function recentRests(w, now) {
   return out.reverse();
 }
 // the punt's reach, from the feet: a thing at your feet, or in the air beside you (a volley)
-const KICK = { reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 };
-const noNeg0 = (n) => (n === 0 ? 0 : n); // I-JSON has no -0; an engine can make one (the same number, written as 0)
 // The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
 // Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
 // by one; a named grip must exist and suit the hand. Every client derives where it's drawn from the holder's hand bone and
@@ -3533,9 +3528,10 @@ function launch(w, actor, a, verb, g = null) {
   // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
-  const { v, notes } = planVelocity(a.v, g, ENGINES[spec.engine].maxSpeed, verb);   // one function with the predicting client (launchplan.js)
+  // one function with the predicting client (launchplan.js): the body it folds is this body, bit for bit
+  const L = planLaunch({ id: a.id, p: h.pose.pos, q: h.pose.q, v: a.v, ...(a.w !== undefined ? { w: a.w } : {}) }, g, ENGINES[spec.engine].maxSpeed, verb); const { v, notes } = L;
   const act = w.append(actOf(w, actor, verb, a, { handled: h.handled }));
-  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: h.pose.pos.slice(), yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: h.pose.q.slice() } : {}), v, ...(a.w !== undefined ? { w: a.w.slice() } : {}), handled: h.handled } });
+  const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: L.p, yaw: qYaw(h.pose.q), ...(ENGINES[spec.engine].rotates ? { q: L.q } : {}), v, ...(a.w !== undefined ? { w: L.w } : {}), handled: h.handled } });
   // R 10-10 evening: what rides on it (a tray's load, or a stack settled onto it) flies too, from where the hand has it,
   // with the same velocity. Left as children they were carried rigidly by the thrown crate and sank with it into the ground.
   const riders = []; { const st = w.state(); const t = worldT(st, a.id);
@@ -3628,7 +3624,7 @@ const BODY_VERBS = {
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);
     if (!["pose", "anim", "shove", "drag", "seat", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|seat|carry}");
-    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
+    const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer");
     const g = bodyGate(w, actor, to, a.kind, { spec: a.spec, why: a.why });
     if (!g.ok) refuse(g.code, g.reason, g.fix, { class: g.class });
     if (g.asked) return { ok: true, outcome: "asked", ask: g.ask, delivered: false, note: `${to} was asked; no answer in 20 s is no` };
@@ -3641,7 +3637,7 @@ const BODY_VERBS = {
       if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
     else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
       cls = C.INTIMATE_POINTS.has(point) ? "intimate" : C.SOCIAL_POINTS.has(point) ? "touch" : refuse("shape", `no point '${point}'`, [...C.SOCIAL_POINTS, ...C.INTIMATE_POINTS].join(", "));
-      const t = P.bodies[to]; if (t && dist(me.at, t.at) > REACH + 0.5) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
+      const t = P.bodies[to]; if (t && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "walk closer"); }
     delete P.reaches?.[actor];
     const g = bodyGate(w, actor, to, "touch", { cls, spec: { point, ...(a.at ? { at: a.at } : {}) }, why: a.why });
     if (!g.ok) { w.presenceDirty = true; refuse(g.code, g.reason, g.fix, { class: g.class, stripped: true }); }

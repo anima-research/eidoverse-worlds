@@ -7,6 +7,7 @@
 import { bodyOf } from "../shared/components.js";
 import { describeBody, mayLeave } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
+import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
@@ -2571,7 +2572,6 @@ export class WorldAgent {
    *  drag, a seat moved this body without walking it), as a person's client does. A visitor in a world with a spawn arrives
    *  at the spawn, as a person does. {open} = this authority keeps no body track: walk as before. */
   private async trackHere(): Promise<{ ok: true } | { ok: false; refused: any } | { open: true }> {
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
     const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
     const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
     if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
@@ -2606,7 +2606,6 @@ export class WorldAgent {
     if (d < 1e-3) { g.permit = [T.x, from[1], T.z]; return; }   // the authority already has it at this leg's end
     const last = d <= PERMIT_STEP;
     const nx = last ? T.x : from[0] + dx * PERMIT_STEP / d, nz = last ? T.z : from[2] + dz * PERMIT_STEP / d;
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
     const to = [r3(nx), r3(this.heightAt(nx, nz)), r3(nz)];
     g.busy = true;
     void this.request("move", { to }).then((r: any) => {
