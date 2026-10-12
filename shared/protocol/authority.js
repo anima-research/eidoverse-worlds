@@ -230,10 +230,9 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 // untranslated. A lock is on when its value is truthy; the authority itself only ever writes `true`.
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
-// lock levels (R, 10-07): a lock is `true` or {rank: builder|moderator|owner}; only that rank and above — or whoever set it
-// — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
-export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
-export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
+// lock levels live beside the rank ladder they index (roles.js); re-exported for the door's readers
+export { LOCK_LEVELS, lockLevel, lockRank } from "./roles.js";
+const { LOCK_LEVELS, lockLevel, lockRank } = R;
 // a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
 // and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
 const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
@@ -965,7 +964,7 @@ function lockCheck(w, st, who, role, k, op, at) {
 /** May `holder` lift k's lock (or act through it)? At its level or above, or whoever set it (R, 10-07: "whoever locked it,
  *  or anyone at the lock's rank"). Rights to delete the component are checked apart (L7: lacks). */
 function mayLiftLock(w, st, holder, k) {
-  if (rankOf(st, holder) >= RANK[lockLevel(st.entities[k]?.c.lock)]) return true;
+  if (rankOf(st, holder) >= lockRank(st.entities[k]?.c.lock)) return true;
   const by = lastSetterOf(w, k, "lock"); return !!by && !by.deleted && by.rights === holder;
 }
 // A write to a lock itself: changing or removing a lock is lifting it (its level or its locker), and nobody sets one above
@@ -980,7 +979,7 @@ function lockLevelCheck(w, st, s, who, op, at) {
     const by = lastSetterOf(w, op.id, "lock"); const level = lockLevel(cur);
     refuse("rank", `${op.id} is locked at ${level} level${by && !by.deleted ? ` by ${said(by.by)}` : ""}; only ${level === "owner" ? "an owner" : `a ${level} or above`} or whoever locked it may ${op.verb === "delete" ? "unlock" : "change"} it`,
       `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: level, needs: "rank" }); }
-  if (op.verb === "set" && rankOf(st, holder) < RANK[lockLevel(op.value)])
+  if (op.verb === "set" && rankOf(st, holder) < lockRank(op.value))
     refuse("rank", `${at}: a lock at ${lockLevel(op.value)} level is above your rank (${roleOf(st, holder)})`, "lock at your own level or below: true (builder) or {rank: 'builder'}", { needs: "rank" });
 }
 function shapeOneOrRefuse(verb, op, i) {

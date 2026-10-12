@@ -36,6 +36,7 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, modernize, instanceProblem, paramShown } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered } from './protocol/componentspec.js';
+import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ } from './components.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -653,8 +654,9 @@ const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
 // R1 sends every offered entry to the real door: all must be accepted.
 const NOT_OFFERED = new Set();
 // a lock's level as the inspector reads it: true (a plain lock) is builder level
-const LOCK_LEVEL = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
-const LOCK_LEVEL_OPTIONS = [['builder', 'builders and up'], ['moderator', 'moderators and up'], ['owner', 'owners only']].map(([v, label]) => ({ v, label }));
+const LOCK_LEVEL = lockLevel;
+const LOCK_LEVEL_WORDS = { builder: 'builders and up', moderator: 'moderators and up', owner: 'owners only' };
+const LOCK_LEVEL_OPTIONS = LOCK_LEVELS.map((v) => ({ v, label: LOCK_LEVEL_WORDS[v] }));
 /** The words people search Add Component with that aren't in a component's name or summary (review 10-07 S9: "seat"
  *  found nothing; the seat is Sockets). Shared so an agent's surface can use the same words. */
 export const ADD_WORDS = Object.freeze({
@@ -1094,7 +1096,7 @@ export function editOps(ent, id, edits, live = {}) {
       }
       case 'flags': {
         if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
-        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!['builder', 'moderator', 'owner'].includes(v)) { errors.push(`flags.lockLevel: builder, moderator or owner (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
+        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!LOCK_LEVELS.includes(v)) { errors.push(`flags.lockLevel: ${LOCK_LEVELS.join(', ')} (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'clickthrough') flagsComp('clickthrough', bool(raw) ? true : null);
         else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);

@@ -54,6 +54,7 @@ import { reindexCollider } from './colliders.js';
 import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
+import { RANK, lockLevel, lockRank } from '../../shared/protocol/roles.js';
 import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
@@ -409,11 +410,10 @@ function duplicate(id) {
 
 // lock levels (R, 10-07): who may lift a lock is its level and up, or whoever set it (the authority decides; this only
 // keeps the padlock honest about it)
-const lockLevelOf = (v) => (v && typeof v === 'object' && ['builder', 'moderator', 'owner'].includes(v.rank) ? v.rank : 'builder');
-const LEVEL_RANK = { builder: 100, moderator: 200, owner: 255 };
-const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : net.myRights?.role === 'owner' ? 255 : net.myRights?.role === 'moderator' ? 200 : 100);
+const lockLevelOf = lockLevel;
+const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : RANK[net.myRights?.role] ?? RANK.builder);
 const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
-const mayLiftLevel = (id, v) => myRank() >= LEVEL_RANK[lockLevelOf(v)] || (!!net.you && lockerOf(id) === net.you);
+const mayLiftLevel = (id, v) => myRank() >= lockRank(v) || (!!net.you && lockerOf(id) === net.you);
 async function toggleLock(id) {
   const lk = comps.get(id)?.lock;
   if (!Edits.mayLift()) { flashHint('only builders and owners can lock or unlock things here'); return; }

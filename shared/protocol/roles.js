@@ -30,6 +30,12 @@ export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
 export const REASON_MAX = 500;
 
 export const RANK = Object.freeze({ none: -1, visitor: 0, builder: 100, moderator: 200, owner: 255 });
+// lock levels (R, 10-07): a lock is `true` or {rank: builder|moderator|owner}; only that rank and above — or whoever set it
+// — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
+// The authority decides; the inspector and the padlock read the same two functions (C9, 10-12) so none restates the ladder.
+export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
+export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
+export const lockRank = (v) => RANK[lockLevel(v)];
 export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "owner"]);
 
 // ---------------- the closed permission list ----------------
