@@ -61,5 +61,13 @@ const holds = (W) => Object.keys(openWorld(root, W).presence.holds);
   call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 25 } });
   ok(holds(W).includes("top") && !engineHas(W, "top"), "L4 an engine change doesn't seat a held thing either", { held: holds(W), engine: engineHas(W, "top") }); }
 
+// D6: switching off a PARENT lets go of a held child (attack-editor S2-1: the hold persisted while put/drop/throw were refused
+// "sunk into ground", use/grab said "hangs under p, which is switched off"; only deleting or re-enabling the parent freed the hand)
+{ const W = "offparent"; mk(W);
+  call(W, "vic", "move", { to: [0, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
+  const s = call(W, "rowan", "set", { id: "base", component: "disabled", value: true });
+  const d = call(W, "vic", "drop", { id: "top" });
+  ok(g.ok && s.ok && !holds(W).includes("top") && (s.notes ?? []).some((n) => n.id === "top" && n.tookFromHand) && code(d) === "not-holding",
+    "D6 switching off a parent lets go of the held child (the note says so; nothing left to drop)", { g: code(g), s: code(s), notes: s.notes, held: holds(W), d: code(d) }); }
 console.log(`[disabled-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

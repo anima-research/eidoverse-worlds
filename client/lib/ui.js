@@ -120,8 +120,8 @@ export function setAmbientHint(line) {
 // …and the lantern's resting line goes away with them and comes back with them (commandbar.js setPillQuiet)
 bus.on('esc-quiet', (did) => {
   setPillQuiet(did === 'closed');
-  if (did === 'closed') flashHint(html`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Esc</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
-  else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
+  if (did === 'closed') flashHint(html`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Tab</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
+  else if (did === 'restored' && el.hint._t && /hidden · Tab to bring back/.test(el.hint.textContent)) endFlash();
 });
 /** Borrow the hint bar for a moment. `line` is text unless built with html`` (markup.js). */
 export function flashHint(line, ms = 2600, tone = null) {

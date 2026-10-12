@@ -148,7 +148,7 @@ const TIPS = [
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
   ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
   ['1', 'Number keys play the emote bar\'s gestures, in its order. The bar shows which is which.'],
-  ['Esc', '<b>Esc</b> closes every open panel. <b>Esc</b> again brings back exactly the set you had.'],
+  ['Esc', '<b>Esc</b> closes every open panel (and leaves full screen). <b>Tab</b> hides the set and brings back exactly what you had.'],
   ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],
   ['▦', 'Every panel moves and resizes. Where you put them is remembered.'],

@@ -1062,14 +1062,18 @@ let escStash = null;
 // so the module graph stays a tree (frames → build → controller → ui → frames was a cycle)
 const escClaims = [];
 export function claimEscape(fn) { escClaims.push(fn); }
-// Esc: close every open panel, Esc again brings the same set back. Installed here, with the frames, so the
+// Esc closes every open panel; Tab hides the set and brings it back. Installed here, with the frames, so the
 // binding and the help text that promises it ship together. Yields to anything that owns Esc already
 // (escapeIsClaimed — edit mode registers its claim from build.js).
+// Esc only ever CLOSES; Tab hides the set and brings it back (R 10-11 23:01: in full screen Esc is the browser's way out,
+// and an Esc that re-opened the panels fought it: "esc makes sense to get out of full screen mode more").
 addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if ((e.key !== 'Escape' && e.key !== 'Tab') || e.defaultPrevented) return;
   if (escapeIsClaimed()) return;
+  if (e.key === 'Escape' && (document.fullscreenElement || ![...frames.values()].some((f) => f.visible))) return;   // the browser's Esc, or nothing to close
+  e.preventDefault();   // Tab: not the browser's focus walk
   const did = escapeToggle();
-  // said, not only done: ui.js flashes "panels hidden · Esc to bring back" on the hint bar (the lantern's resting line
+  // said, not only done: ui.js flashes "panels hidden · Tab to bring back" on the hint bar (the lantern's resting line
   // steps aside for it) — frames imports no ui, so the gesture goes out on the bus (escapeHid says what went with it)
   bus.emit('esc-quiet', did);
 });

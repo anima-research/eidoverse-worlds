@@ -17,6 +17,7 @@
 // history with the people (and agents) in it. Every other window is one
 // Panels ▾ click away, never gone.
 
+import { register } from './actions.js';
 import { bus } from './base.js';
 import { getFrame, allFrames } from './windows.js';
 import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost } from './build.js';
@@ -184,7 +185,7 @@ function build() {
   wire.onclick = () => { setShade(shade === 'wire' ? 'shaded' : 'wire'); };
   shadeBtn = wire;
   const full = el('button', 'edit-vbtn'); full.innerHTML = iconSvg('maximize', 16); full.title = 'full screen (F11 also works)'; full.dataset.view = 'full';
-  full.onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); };
+  full.onclick = toggleFullscreen;
   document.addEventListener('fullscreenchange', () => full.classList.toggle('on', !!document.fullscreenElement));
   // Body | Free: whose camera this is (controller.js FREE CAMERA)
   const camSw = el('span', 'edit-camsw');
@@ -277,6 +278,13 @@ function toggleIsolate() {
   const n = setIsolate(ids, parentOf, all);
   flashHint(`isolated: ${n} thing${n === 1 ? '' : 's'} shown, in your view only — Viewport ▸ isolate selected again shows the rest`, 4000);
 }
+
+/** full screen, on or off: the viewport bar's ⛶, F11, and the ∃ menu's "full screen" (R 10-11 22:58: "I want to take a
+ *  video and it's dicey trying to hide all my identifying browser details"). Esc leaves it (the browser's own rule). */
+export function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); }
+register({ id: 'view:fullscreen', title: 'full screen', key: 'F11', group: 'view',
+  keywords: ['fullscreen', 'full screen', 'video', 'record', 'hide browser', 'kiosk'],
+  detail: 'the whole screen, no browser chrome; Esc or F11 leaves it', run: toggleFullscreen });
 
 const PANEL_NAMES = { world: 'World (catalog · ground · sky)', profile: 'Profile', emotes: 'Emotes', debug: 'Debug', settings: 'Settings', console: 'Console (scripts)', chat: 'Chat' };
 const panelName = (id) => PANEL_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);

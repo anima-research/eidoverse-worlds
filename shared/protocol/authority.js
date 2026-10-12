@@ -1475,6 +1475,12 @@ function commit(w, actor, verb, args, build) {
       // the record has it. Keep this set in step with simlayer's RELEASES.
       if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
         delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
+    // …and switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held child of a
+    // switched-off parent could be neither put, dropped nor thrown; only its parent's return freed the hand)
+    const offed = plan.ops.filter((o) => (o.verb === "set" && o.comp === "disabled" && o.value === true) || (o.verb === "delete" && o.comp === undefined)).map((o) => o.id);
+    if (offed.length) for (const [id, h] of Object.entries(w.presence.holds ?? {})) {
+      if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
+      delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); ctx.notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
     if (let_go) w.savePresence(); }
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
