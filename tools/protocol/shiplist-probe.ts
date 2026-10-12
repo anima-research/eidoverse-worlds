@@ -509,7 +509,8 @@ try {
   // ---- CT: clicks go through (R 10-11 01:17 queue E8: a per-thing switch; componentspec clickthrough) ----
   await stage("CT", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
-  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'ctbox', model: '${CRATE}', components: { label: 'Through', grabbable: { enabled: true }, transform: { pos: [${me[0]} + Math.sin(${me[2]}) * 1.2, 0, ${me[1]} + Math.cos(${me[2]}) * 1.2], scale: 0.3 } } });`);
+  // 1.2 m ahead and 0.7 m to the side: the full run leaves WG's crate straight ahead of me, and a click found that instead
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'ctbox', model: '${CRATE}', components: { label: 'Through', grabbable: { enabled: true }, transform: { pos: [${me[0]} + Math.sin(${me[2]}) * 1.2 + Math.cos(${me[2]}) * 0.7, 0.9, ${me[1]} + Math.cos(${me[2]}) * 1.2 - Math.sin(${me[2]}) * 0.7], scale: 0.3 } } });`);
   check("(setup) a crate in front of me", made?.ok, made);
   const seen = await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('ctbox') && !!m.comps.get('ctbox'))`, 15000); await sleep(600);   // realized, not just listed (the map holds null until the model is in)
   const dbg = await page(`const w = await import('/lib/world.js'); return { has: w.entities.has('ctbox'), comps: w.comps.get('ctbox') ?? null, n: w.entities.size };`);
