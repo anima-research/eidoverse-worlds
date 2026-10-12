@@ -94,6 +94,7 @@ try {
   const b = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('set', { id: '@world', component: 'bounds', value: { min: [${edge}, 0, -60], max: [60, 30, 60] } });`);
   check("(setup) this world's edge 1.2 m to my -x", b?.ok, b);
   await sleep(800);
+  await evalJson(`import('/lib/edge.js').then((e) => (e.setWorldEdgeShown(true), true))`);   // off by default (R 10-11 23:04); Viewport ▾ 'world edge' turns it on
   const fenceAll = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`); const fence = fenceAll?.box;
   check("WB0 the edge is drawn: a fence at exactly this world's bounds", Array.isArray(fence) && fence[0]?.[0] === edge && fence[1]?.[0] === 60, fenceAll);
   const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');

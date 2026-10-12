@@ -38,9 +38,14 @@ function refresh() {
   // geometry) would otherwise leave a stale fence that never refreshes
   const old = group; group = null; shown = null;
   if (old) { scene.remove(old); try { old.traverse((o) => { o.geometry?.dispose?.(); }); } catch (err) { console.warn('[edge] dispose', err); } }
-  if (B) { group = build(B); scene.add(group); shown = [B.min.slice(), B.max.slice()]; }
+  if (B && wanted) { group = build(B); scene.add(group); shown = [B.min.slice(), B.max.slice()]; }
   key = k;
 }
+// off unless asked (R 10-11 23:04: "not sure how I feel about the walls… looks a bit clunky"): the rules already keep things in
+// (placement past the edge is refused, what rests or flies out goes home), so the fence is for sizing a world, not for living in it
+let wanted = (() => { try { return localStorage.getItem('ew-world-edge') === '1'; } catch { return false; } })();
+export const worldEdgeWanted = () => wanted;
+export function setWorldEdgeShown(on) { wanted = !!on; try { localStorage.setItem('ew-world-edge', on ? '1' : '0'); } catch { /* private mode */ } key = ''; refresh(); }
 
 // bounds is a plain @world component: the view's 'world' events cover sky/terrain/grass only, so listen to every folded
 // batch too (refresh is a key compare; it rebuilds only when the box changed)

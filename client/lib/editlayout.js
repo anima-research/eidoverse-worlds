@@ -17,6 +17,7 @@
 // history with the people (and agents) in it. Every other window is one
 // Panels ▾ click away, never gone.
 
+import { worldEdgeWanted, setWorldEdgeShown } from './edge.js';
 import { register } from './actions.js';
 import { bus } from './base.js';
 import { getFrame, allFrames } from './windows.js';
@@ -175,6 +176,7 @@ function build() {
     { label: `${tick(shade === 'shaded')}shaded`, run: () => setShade('shaded') },
     { label: `${tick(shade === 'wire')}wireframe`, run: () => setShade('wire') },
     { label: `${tick(shade === 'flat')}flat shaded`, title: 'every face lit flat, in one grey: the forms without their textures', run: () => setShade('flat') },
+    { label: `${tick(worldEdgeWanted())}world edge`, title: 'draw the world\'s bounds as a fence (things are kept in either way)', run: () => setWorldEdgeShown(!worldEdgeWanted()) },
   ]);
   vmenu.dataset.menu = 'viewport';
   // SELECT menu (R 10-11: selection layers): which kinds of thing MY viewport clicks can land on. Per viewer; the

@@ -145,6 +145,15 @@ const ENV = [
   { key: 'grass', label: 'Grass', icon: 'plant', gone: 'no grass' },
 ];
 const wxOf = () => state.st.sky?.weather ?? state.st.sky?.override?.weather ?? null;
+/** Remove one environment component (sky/weather/terrain/grass): the same edit from the Hierarchy row's ✕, the World section's
+ *  button and the card's remove button (mow, for grass; clear, for weather). */
+function removeEnv(key) {
+  const e = ENV.find((x) => x.key === key); if (!e) return;
+  const path = key === 'weather' ? 'weather.state' : key === 'grass' ? 'grass.mow' : `${key}.remove`;
+  const r = commitEdit(WORLD_ID, path, key === 'weather' ? 'clear' : true);
+  flashHint(r.errors?.length ? r.errors.join(' · ') : `${e.label} removed: ${e.gone} (Ctrl+Z brings it back)`, r.errors?.length ? 5000 : 2600, r.errors?.length ? 'attn' : undefined);
+  repaintAll();
+}
 function envRows() {
   const may = mayShape() !== false;
   return ENV.filter((e) => (e.key === 'weather' ? wxOf() && wxOf() !== 'clear' : state.st[e.key] != null)).map((e) => ({
@@ -337,13 +346,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       if (envFocus) requestAnimationFrame(() => document.querySelector(`#ew-inspector [data-group="${envFocus}"], .sp-group[data-k="${envFocus}"]`)?.scrollIntoView?.({ block: 'nearest' }));
       return;
     }
-    case 'envdel': {   // ✕ on an environment row: the same edit as the card's remove button (mow, for grass)
-      const key = String(payload ?? '').slice(4); const e = ENV.find((x) => x.key === key); if (!e) return;
-      const path = key === 'weather' ? 'weather.state' : key === 'grass' ? 'grass.mow' : `${key}.remove`;
-      const r = commitEdit(WORLD_ID, path, key === 'weather' ? 'clear' : true);
-      flashHint(r.errors?.length ? r.errors.join(' · ') : `${e.label} removed: ${e.gone} (Ctrl+Z brings it back)`, r.errors?.length ? 5000 : 2600, r.errors?.length ? 'attn' : undefined);
-      repaintAll(); return;
-    }
+    case 'envdel': removeEnv(String(payload ?? '').slice(4)); return;   // ✕ on an environment row
     case 'sel': {
       if (String(payload).startsWith('rider:')) return;
       if (String(payload).startsWith('comp:')) payload = payload.slice(5, payload.lastIndexOf(':'));   // a component's row selects its thing
@@ -1016,6 +1019,9 @@ function worldBuildFields() {
     { t: 'group', k: 'world', label: 'World', open: !buildFolds.world },
     worldRowFields(),
     ...(owner ? [] : [{ t: 'info', label: '', value: 'shaping the world is the owner\'s — these are read-only for you' }]),
+    // remove what's there, from the world's own section too (R 10-11 23:05: "allow the sky/weather/terrain/grass to be
+    // deleted/disabled from the World entity"): the same edit as the Hierarchy row's ✕ and the card's remove button
+    ...(owner ? envRows().map((r) => ({ t: 'btn', k: `envdel-${r.id.slice(4)}`, label: `✕ remove ${r.label.toLowerCase()}`, icon: r.icon, hint: `remove: ${ENV.find((e) => e.key === r.id.slice(4))?.gone} (Ctrl+Z brings it back)` })) : []),
     { t: 'info', label: 'sky', value: ch.sky ? `${ch.sky} — a pick replaces the sky; the weather stays` : 'custom — a pick replaces the sky; the weather stays' },
     { t: 'tiles', k: 'wsky', value: ch.sky, empty: 'this world serves no sky presets (defs/sky/_presets.json)', options: names(skyPresets).map((n) => ({ v: n, label: n, hint: `the sky at ${skyPresets[n].hours ?? '?'}h${skyPresets[n].clouds ? `, ${skyPresets[n].clouds}` : ''}` })), ...ro },
     { t: 'info', label: 'ground', value: 'shape and colour — each pick changes only its own dial' },
@@ -1056,6 +1062,7 @@ function buildFields() {
 }
 function buildDispatch(action, payload) {
   if (WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }
+  if (String(action).startsWith('envdel-')) { removeEnv(action.slice(7)); return; }
   switch (action) {
     case 'fold': buildFolds[payload] = !buildFolds[payload]; break;
     case 'wsel': selectWorld(); return;
