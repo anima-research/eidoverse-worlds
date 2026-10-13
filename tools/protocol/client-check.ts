@@ -590,6 +590,23 @@ try {
     check("GR3 mow clears it: one act, and @world has no grass", await waitDisk(() => myActs().length === n0 + 1 && !st4().entities["@world"]?.c?.grass), { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`) });
     await evalJson(`(window.__gp.remove(), true)`); }
 
+  // ---- ST: a seat on a socket that's switched off is no seat on the client either (review 10-12 S3-3) ----
+  // The authority clears its record when a socket is disabled; the sitter's own client must let go too (not stay mounted,
+  // sending seat {to} frames), so a second body can't come to render on the same socket after a re-enable.
+  { const made = await page(`const n = await import('/lib/net.js');
+      const a = await n.sendRequest('create', { id: 'ststool', model: '${CRATE}', place: { at: [7, 7] } });
+      const b = await n.sendRequest('create', { id: 'ststool-seat', components: { parent: { to: 'ststool' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'seat', body: { action: 'sit' } } } });
+      return JSON.stringify([a.ok, b.ok]);`);
+    const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
+    await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`);
+    await page(`(await import('/lib/localbody.js')).trySitOn('ststool'); return true;`);
+    const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
+    const off = await page(`return JSON.stringify((await (await import('/lib/net.js')).sendRequest('set', { id: 'ststool-seat', component: 'disabled', value: true })).ok);`);
+    const up = await waitFor(`${mine}.then((t) => t === null)`);
+    const closed = await evalJson(`import('/lib/world.js').then((w) => w.seatSocket('ststool-seat') === null)`);
+    check("ST1 sitting on a socket that is then switched off: my client lets go of it (no seat), and reads it as no seat", made === "[true,true]" && sat && off === "true" && up && closed, { made, sat, off, up, closed, now: await evalJson(mine) });
+    await page(`await (await import('/lib/net.js')).sendRequest('delete', { id: 'ststool' }); return true;`); }
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/protocol/fold.js')]).then(([n, f]) => f.digest(n.replica.st))`), digest(disk())]);
   check("B4 what the page drew is the view of its own fold: entries ingested, no resync, and state.st = viewState(its fold) — no v1 verbs anywhere (that the server sends it no `log` entries is server-check S8)", await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => { const x = d.diffView(s.state.st, r.viewState(n.replica.st)); return n.replica.stats.ingested > 10 && n.replica.stats.resyncs === 0 && !x.things.length && !x.world.length && !('projected' in n.replica.stats); })`), await evalJson(`Promise.all([import('/lib/net.js'), import('/lib/state.js'), import('/shared/protocol/view.js'), import('/shared/protocol/viewdiff.js')]).then(([n, s, r, d]) => ({ stats: n.replica.stats, diff: d.diffView(s.state.st, r.viewState(n.replica.st)) }))`));

@@ -67,10 +67,13 @@ export const ancestorsOf = (id) => replica.ancestors?.(enc(String(id))).map(out)
  *  surface shares (clickuse, localbody, seatbody, the Inspector, xrpointer, the scene panel). */
 export const socketsOn = (host) => socketsUnder(String(host), childrenOf, bagOf);
 /** A socket child as a seat reads it: {id (the socket), host, name, sock (its socket component)}, or null when `id` isn't
- *  a socket in the fold (yet, or any more). */
+ *  a socket in the fold (yet, or any more), or is switched off. */
 export function seatSocket(id) {
   const c = id == null ? null : bagOf(id);
   if (!c?.socket || typeof c.socket !== 'object') return null;
+  // a socket switched off (or under something switched off) is a closed seat, as the authority reads it (seatOf: offChain):
+  // whoever sits there lets go (localbody's per-frame check), and a frame naming it seats nobody (review 10-12 S3-3)
+  if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket };
 }
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
