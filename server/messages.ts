@@ -21,8 +21,6 @@ import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor } from "./directory.ts";
 import { actorOf as actorIdOf, whois } from "./requestwire.ts";
-// the authority's role ladder (shared/protocol/authority.js RANK), for the presence gates that mirror a door rule
-const ROLE_RANK: Record<string, number> = { none: -1, visitor: 0, builder: 1, owner: 2 };
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";

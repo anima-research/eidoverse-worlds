@@ -172,8 +172,8 @@ function addRole(body) {
     // an id of its own: a name that slugs like an existing role's (or two names with no Latin letters) must never land on
     // that role's key and overwrite its permissions (review 10-07)
     const base = name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').replace(/^[^a-z]+/, '').slice(0, 20) || 'role';
-    const taken = new Set([...R.BUILTIN_IDS, 'none', 'guest', 'everyone', 'ghost', 'banned', ...Object.keys(defsValue())]);
-    let id = base; for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+    const defs = defsValue(); const taken = (x) => R.BUILTIN_IDS.includes(x) || !R.isRoleId(x) || Object.hasOwn(defs, x);
+    let id = base; for (let n = 2; taken(id); n++) id = `${base}-${n}`;
     const below = R.roleDef(wc(), box.querySelector('select').value); const above = R.rolesOf(wc()).filter((x) => x.rank > below.rank).sort((a, b) => a.rank - b.rank)[0];
     const rank = Math.floor((below.rank + (above?.rank ?? 255)) / 2);
     if (rank <= below.rank) return toast('no room there: move another role first', 'warn');

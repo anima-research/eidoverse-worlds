@@ -10,6 +10,7 @@
 
 import { CONFIG, bus, report } from '../base.js';
 import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
+import { CUSTOM_ID } from '../../../shared/protocol/roles.js';
 import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, worldHasOwner } from '../world.js';
@@ -106,7 +107,7 @@ register('grant', (arg) => {
   // The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own, with permissions they hold.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.slice(1).find((p) => /^[a-z][a-z0-9-]{0,23}$/i.test(p))?.toLowerCase();
+  const role = parts.slice(1).map((p) => p.toLowerCase()).find((p) => CUSTOM_ID.test(p));
   const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
   const gen = flag('gen'), fly = flag('fly');
   if (!id || (!role && gen === undefined && fly === undefined)) {

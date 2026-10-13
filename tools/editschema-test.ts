@@ -7,7 +7,7 @@
 // num with a dotted address; editOps turns dotted edits into the FEWEST
 // door requests (three transform channels = one whole `set transform`; two
 // socket fields = one merged `set sockets`), honours relative math on the face
-// scale (degrees), hard limits, read-only fields, and never mutates the record
+// scale (degrees), the door's ranges (a value it takes is written as typed), read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
 // ops go through the real door on a scratch world (tools/protocol/scratchworld.ts)
 // and the state is read back as the view.
@@ -124,7 +124,7 @@ console.log("\nedits → the fewest door ops:");
   check("rest → delete motion", dels(rR, "motion").length === 1 && flat(rR.ops).length === 1, JSON.stringify(rR));
   const rF = editOps(swing, "s", { "flags.label": "  the swing ", "flags.hidden": "yes", "comp.+": "notice", "comp.nope": "{bad json" });
   check("label trimmed, hidden as comp true, + adds an empty comp, bad JSON reported", val(rF, "label") === "the swing" && val(rF, "hidden") === true && JSON.stringify(val(rF, "notice")) === "{}" && rF.errors.some((e: string) => /comp\.nope/.test(e)), JSON.stringify(rF));
-  check("hard min clamps (scale 0.01)", JSON.stringify(val(editOps({ ...chair, comp: {} }, "c1", { "pos.scale": -3 }), "transform")?.scale) === "[0.01,0.01,0.01]");
+  check("a scale below the slider's 0.01 is written as typed (a mirror, which the door takes)", JSON.stringify(val(editOps({ ...chair, comp: {} }, "c1", { "pos.scale": -3 }), "transform")?.scale) === "[-3,-3,-3]");
   check("an unknown field is an error, not an op", (() => { const x = editOps(chair, "c1", { "light.intensity": 3 }); return x.errors.length === 1 && !x.ops.length; })());
   check("a viewport gesture (sockets.add) is refused with guidance", /gesture/.test(editOps(chair, "c1", { "sockets.add": 1 }).errors[0] ?? ""));
   const before = JSON.stringify(chair);
@@ -172,7 +172,7 @@ console.log("\nthe survivors of the mutation sweep, bound:");
   // R 10-07: an older value is written back in today's shape on its first edit: origin is at, the knobs are the effect's params
   const pr = editOps(fire, "c1", { "particles.at|1": "+=0.5", "particles.param|count": 900, "particles.param|quality": "low" });
   const pv = sets(pr, "particles");
-  check("particles: an older value is edited in today's shape (at, params), count hard-capped at 600, quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.at[1] === 0.75 && fire.comp.particles.origin[1] === 0.25 && pv[0].args.value.params.count === 600 && pv[0].args.value.params.quality === "low" && pv[0].args.value.effect === "fire" && !("preset" in pv[0].args.value), JSON.stringify(pv));
+  check("particles: an older value is edited in today's shape (at, params), a count past the door's 600 refused in its words (the old 150 stays), quality passes through — ONE set", pv.length === 1 && flat(pr.ops).length === 1 && pv[0].args.value.at[1] === 0.75 && fire.comp.particles.origin[1] === 0.25 && pv[0].args.value.params.count === 150 && pr.errors.length === 1 && /count is a number 1\.\.600/.test(pr.errors[0]) && pv[0].args.value.params.quality === "low" && pv[0].args.value.effect === "fire" && !("preset" in pv[0].args.value), JSON.stringify(pv));
   const sw = sets(editOps({ ...chair, comp: { particles: { effect: "fire", params: { count: 90 } } } }, "c1", { "particles.effect": "smoke" }), "particles");
   check("particles: changing the effect drops the old effect's params (another effect's knobs aren't these)", sw[0]?.args.value.effect === "smoke" && sw[0]?.args.value.params === undefined, JSON.stringify(sw));
   const st = sets(editOps({ ...chair, comp: { particles: { effect: "fire" } } }, "c1", { "particles.playing": false }), "particles");
@@ -248,7 +248,8 @@ console.log("\npicture + sound: schema groups, validated before any op:");
   const playing = { ...crate, comp: { sound: { src: MP3, playing: true, loop: true, volume: 0.8, radius: 12, t0: 5000 } } };
   const vol = editOps(playing, "c", { "sound.volume": "*=0.5" }, { now: 9000 });
   check("tuning a PLAYING sound keeps its t0 (nobody's playhead jumps)", val(vol, "sound")?.t0 === 5000 && val(vol, "sound").volume === 0.4, JSON.stringify(vol));
-  check("volume clamps to 1", val(editOps(playing, "c", { "sound.volume": 3 }), "sound")?.volume === 1);
+  { const r = editOps(playing, "c", { "sound.volume": 3 });
+    check("a volume past the door's 1 is refused in its words, nothing sent", !r.ops.length && /sound\.volume is 3; it must be ≥ 0 and ≤ 1/.test(r.errors[0] ?? ""), JSON.stringify(r)); }
   const pause = val(editOps(playing, "c", { "sound.pause": true }), "sound");
   check("pause keeps t0 (batch 2: a resume restarts on the door's clock)", pause?.playing === false && pause.t0 === 5000);
   check("silence → delete sound", dels(editOps(playing, "c", { "sound.silence": true }), "sound").length === 1);
@@ -349,7 +350,7 @@ console.log("\nmesh (a parametric body with no model):");
   const r = editOps(cube, "m1", { "mesh.size.x": "+=0.5", "mesh.shape": "cylinder" });
   const v = val(r, "mesh");
   check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
-  check("a size below 0.05 clamps to the hard min; an unknown shape is an error, not an op", val(editOps(cube, "m1", { "mesh.size.z": "0" }), "mesh")?.size[2] === 0.05 && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
+  check("a size below the door's 0.05 is refused in its words, nothing sent; an unknown shape is an error, not an op", !editOps(cube, "m1", { "mesh.size.z": "0" }).ops.length && /must be ≥ 0\.05/.test(editOps(cube, "m1", { "mesh.size.z": "0" }).errors[0] ?? "") && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
   const addL = editOps(cube, "m1", { "comp.+": "Light" });
   check("Add Component ▸ Light on a mesh thing makes a CHILD light (one place per thing), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "m1-light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
   const addM = editOps(chair, "c1", { "comp.+": "Mesh" });
