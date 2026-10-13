@@ -31,6 +31,7 @@ import { livePoses, digestOf, restEta, ENGINES, carried, worldPose, TICK_MS, off
 import { trustRefusal } from "../drafts.js";
 import { planLaunch } from "./launchplan.js";
 import { REACH, HAND_Y, MAX_HELD, KICK, SHOVE, BODY_REACH } from "./physconst.js";
+import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
@@ -145,6 +146,8 @@ function logRefusal(w, actor, verb, args, code) {
     // or seated wrote a permanent, broadcast refusal every few seconds (review 10-06 S0-3). An ACCEPTED teleport is an act.
     if (verb === "move") return;
     if (code === "rate") { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; } // an attempt all the same: counted, not written
+    // a refused shove is a walk that met something, not a request anyone made in words (review 10-12 S2-4): counted, not written
+    if (verb === "punt" && args?.shove === true) { const m = (w.unrecorded ??= new Map()); m.set(actor, (m.get(actor) ?? 0) + 1); return; }
     if (UNLOGGED.has(code)) return;
     let req = stripDry(args ?? {}); try { checkIJSON(req); } catch { req = { unloggable: "not I-JSON" }; } const j = jcs(req);
     const body = { request: j.length > 2048 ? { truncated: true, bytes: j.length } : req, refused: { code } };
@@ -2535,6 +2538,26 @@ function pathBlocked(w, st, from, to) {
   for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already, swept); if (hit) return hit; }
   return null;
 }
+// A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
+function leftSeat(w, st, actor, to) {
+  const s = w.presence.seats?.[actor]; if (!s) return;
+  const p = st.entities[s.to] ? worldT(st, s.to).pos : null;
+  if (!p || Math.hypot(to[0] - p[0], to[2] - p[2]) > 1) delete w.presence.seats[actor];
+}
+// Who a hand or a foot acting on `id` would move with it: another present body seated on it or on anything riding it, or
+// standing on it or on anything riding it (review 10-12 S1-1/S1-2: a kick, a shove, a grab or a throw went round body
+// consent through the chair). Bodies are presence and never things, so this is the only way one is moved by moving a thing.
+function occupant(w, st, id, actor) {
+  const fam = new Set([id, ...descendants(st, id)]);
+  for (const [who, s] of Object.entries(w.presence.seats ?? {})) if (who !== actor && fam.has(s.to)) return { who, how: "sits on" };
+  const boxes = [...fam].map((k) => aabb(st, k)).filter(Boolean);
+  for (const [who, b] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(b?.at) && boxes.some((x) => feetOn(x, b.at))) return { who, how: "is standing on" };
+  return null;
+}
+function occupiedRefuse(w, st, id, actor, what) {
+  const o = occupant(w, st, id, actor);
+  if (o) refuse("occupied", `${said(o.who)} ${o.how} ${id} (or something on it), so it can't be ${what}`, "wait till they get up or step off", { by: o.who });
+}
 // review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
 // the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
 // and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
@@ -2556,14 +2579,14 @@ const PHYSICS_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
-      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; w.savePresence();
+      w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(a.client ? { client: String(a.client) } : {}) }; leftSeat(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
     const d = dist(me.at, to); const tokens = Math.min(TRACK.cap, (me.tokens ?? TRACK.cap) + TRACK.speed * Math.max(0, now - (me.ts ?? now)) / 1000);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to);
     if (block) refuse("solid", `${block} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
-    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d };
+    const prev = me.at; w.presence.bodies[actor] = { ...me, at: to, ts: now, tokens: tokens - d }; leftSeat(w, st, actor, to);
     const carrying = [];
     for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === actor) { h.pose.pos = h.pose.pos.map((n, i) => n + to[i] - prev[i]); carrying.push(id); }
     w.savePresence();
@@ -2585,6 +2608,7 @@ const PHYSICS_VERBS = {
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
     if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
+    occupiedRefuse(w, st, a.id, actor, "picked up");
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two
     // things"; a number, not a claim about hands: "avatars can have more (or none!)")
     { const mine = Object.keys(w.presence.holds).filter((k) => k !== a.id && w.presence.holds[k].by === actor);
@@ -2665,7 +2689,7 @@ const PHYSICS_VERBS = {
   // the hand let go (release: stay), or straight down onto what's below (drop, the default).
   put(w, actor, a, how = "put") {
     const me = body(w, actor); const h = holdOf(w, actor, a.id);
-    const st = w.state(); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
+    const st = w.state(); occupiedRefuse(w, st, a.id, actor, "set down"); const t = worldT(st, a.id); const g = grabOf(st.entities[a.id].c);
     const facts = () => ({ handled: h.handled });
     // review 10-06: the claim is checked before anything acts on it: a pos is [x, y, z] within reach (a far or malformed
     // pos snapped into a socket across the world), and the holder's rank NOW still covers carrying it (the return and the
@@ -2768,12 +2792,13 @@ const PHYSICS_VERBS = {
     const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
+    occupiedRefuse(w, st, a.id, actor, "punted");
     shaped(e, a.id, st.entities["@world"]?.c["physics-engine"] ?? null);
     if (a.v !== undefined && a.power !== undefined) refuse("shape", "punt takes v or power, not both", "v: [x, y, z] in m/s, or power (m/s) along the line from your feet through it");
     const sf = w.sim(); const b = sf.sim?.bodies[a.id]; const flying = !!(sf.launched[a.id] && b && !b.resting);
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
     const dx = here[0] - me.at[0], dz = here[2] - me.at[2], dh = Math.hypot(dx, dz), dy = here[1] - me.at[1];
-    if (a.shove !== undefined) shoveGate(st, me, a, flying);
+    if (a.shove !== undefined) shoveGate(w, st, me, a, flying, actor);
     else if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from your feet${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
     let v;
     if (a.v !== undefined) { if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "punt's v is [x, y, z] in m/s", "e.g. v: [0, 2, 4]"); v = a.v.slice(); }
@@ -2800,7 +2825,7 @@ const PHYSICS_VERBS = {
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
-    delete w.presence.bodies[actor]; w.savePresence();
+    delete w.presence.bodies[actor]; if (w.presence.seats) delete w.presence.seats[actor]; w.savePresence();
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
   wait(w) {
@@ -2830,21 +2855,28 @@ function recentRests(w, now) {
 // rest, from a body standing against its footprint (SHOVE.reach from the feet, measured to its box, not its origin: a wide
 // crate's middle is far from the side you walk into), neither under the feet nor over the head, pushed away from the feet
 // along the ground at a walk's speed. Everything else is the punt's: physics.who, locks, a hand on it, the engine's cap.
-function shoveGate(st, me, a, flying) {
+function shoveGate(w, st, me, a, flying, actor) {
   if (a.shove !== true) refuse("shape", "shove is true or left out", "");
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "a shove carries v: [x, y, z] in m/s (never power)", "e.g. punt {id, v: [1.5, 0.2, 0], shove: true}");
   if (flying) refuse("in-flight", `${a.id} is already moving; a shove pushes what stands still`, "walk into it again once it comes to rest");
-  const [vx, vy, vz] = a.v, vh = Math.hypot(vx, vz), sp = Math.hypot(vx, vy, vz);
-  if (sp > SHOVE.maxV) refuse("too-fast", `a shove is a walking body's push: ${r3(sp)} m/s is more than ${SHOVE.maxV}`, `at most ${SHOVE.maxV} m/s; a kick (punt without shove) goes harder`);
+  const [vx, vy, vz] = a.v, vh = Math.hypot(vx, vz), m = massOf(st, a.id), cap = shoveCap(m);
+  if (vh > cap + 1e-3 || Math.hypot(vx, vy, vz) > SHOVE.maxV * (1 + SHOVE.lift) + 1e-3) refuse("too-fast", `a shove is a walking body's push: ${r3(vh)} m/s is more than a body passes to ${a.id} (${r3(m)} kg: at most ${r3(cap)} m/s)`, `at most ${r3(cap)} m/s; a kick (punt without shove) goes harder`);
   if (vh < 1e-6 || vy < 0 || vy > SHOVE.lift * vh + 1e-9) refuse("shape", `a shove pushes along the ground: its v rises at most ${SHOVE.lift} × its speed along the ground, and never falls`, "e.g. v: [1.5, 0.2, 0]");
   const f = me.at, b = aabb(st, a.id) ?? { min: worldT(st, a.id).pos, max: worldT(st, a.id).pos };
   if (b.max[1] <= f[1] + SHOVE.underfoot) refuse("underfoot", `${a.id} is under your feet; a body walks over it, it doesn't shove it`, "step off it, or punt it (no shove)");
   if (b.min[1] >= f[1] + SHOVE.above) refuse("out-of-reach", `${a.id} is over your head (${r3(b.min[1] - f[1])} m up); a shove is from a body against it`, "");
-  const cx = Math.min(b.max[0], Math.max(b.min[0], f[0])), cz = Math.min(b.max[2], Math.max(b.min[2], f[2]));
-  const d = Math.hypot(cx - f[0], cz - f[2]);
-  if (d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
-  const mx = (b.min[0] + b.max[0]) / 2 - f[0], mz = (b.min[2] + b.max[2]) / 2 - f[2];
-  if (mx * vx + mz * vz <= 0) refuse("wrong-way", `that would push ${a.id} toward you; a shove pushes it away from your feet`, "");
+  // to its ORIENTED box (review 10-12 S2-2: a rotated plank's axis-aligned box reached metres past the plank)
+  const ob = obbs(st, a.id); const R = ob.length ? reachTo(ob, f) : { d: 0, n: null, c: b.min.map((x, i) => (x + b.max[i]) / 2) };
+  if (R.d > SHOVE.reach) refuse("out-of-reach", `${a.id} is ${r3(R.d)} m from your feet; a shove comes from a body against it (${SHOVE.reach} m)`, "walk up to it first");
+  const dir = R.n ?? (() => { const cx = R.c[0] - f[0], cz = R.c[2] - f[2], l = Math.hypot(cx, cz); return l > 1e-6 ? [cx / l, cz / l] : null; })();
+  if (!dir || vx * dir[0] + vz * dir[1] < 0.5 * vh) refuse("wrong-way", `that doesn't push ${a.id} away from your feet; a shove pushes it within 60° of straight away`, "");
+  // not through a wall: the body's way to the point it touches is clear of anything solid but the thing and what rides it
+  if (R.d > 0.05 && R.n) { const fam = new Set([a.id, ...descendants(st, a.id)]); const L = Math.max(0, R.d - 0.2), n = Math.ceil(L / 0.05);
+    for (let k = 1; k <= n; k++) { const p = [f[0] + R.n[0] * L * k / n, f[1], f[2] + R.n[1] * L * k / n]; const hit = solidAt(w, st, p, fam);
+      if (hit) refuse("out-of-reach", `${hit} is between you and ${a.id}`, "walk round to it"); } }
+  // never into someone: what it slides through until friction stops it is clear of every other body (S2-1)
+  for (const [who, bd] of Object.entries(w.presence.bodies)) if (who !== actor && Array.isArray(bd?.at) && sweptCovers(b, a.v, bd.at))
+    refuse("in-the-way", `${said(who)} is where ${a.id} would slide`, "push it another way, or wait till they move", { by: who });
 }
 // The hold record (research §3, presence): which hand, and by which grip (snapped to it: VRChat ExactGrip, Unity Attach
 // Transform) or at which offset (held where it was grabbed: Unreal Free, Unity dynamic attach). A thing with grips is held
@@ -3007,7 +3039,7 @@ function releasePos(me, pos) {
   return pos.map(noNeg0);
 }
 function launch(w, actor, a, verb, g = null) {
-  const me = body(w, actor); const h = holdOf(w, actor, a.id);
+  const me = body(w, actor); const h = holdOf(w, actor, a.id); occupiedRefuse(w, w.state(), a.id, actor, verb === "drop" ? "dropped" : "thrown");
   const spec = flyingWorld(w.state());
   shaped(w.state().entities[a.id], a.id, spec);
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
@@ -3322,7 +3354,12 @@ const VERBS = {
         a = { ...a, action }; }
     }
     const probe = buildUse({ st: w.state(), actor, w, notes: [], refs: new Set() }, a);
-    if (probe.presence) return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
+    if (probe.presence) {
+      // a seat is presence (nothing recorded), but the authority keeps who sits where: a thing someone sits on, or anything
+      // carrying it, isn't kicked, shoved, grabbed or thrown out from under them (occupant)
+      if (probe.attach?.to) { (w.presence.seats ??= {})[actor] = { to: probe.attach.to, socket: probe.attach.socket ?? null }; w.presenceDirty = true; }
+      return { ok: true, recorded: false, ...(probe.attach ? { attach: probe.attach } : {}), note: probe.note };   // attach: where your frames now say you are
+    }
     if (probe.script) { // L7 (41 §3.6): the visitor's use is ITS act, on its own rate; the behaviour runs with its sponsor's rights
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
       if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
