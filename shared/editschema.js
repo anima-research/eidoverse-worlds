@@ -39,7 +39,7 @@ import { COMPONENTS as SPEC, registered, outOfRange, rangeWords } from './protoc
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
-import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn } from './sockbody.js';
+import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
@@ -431,7 +431,7 @@ export function inspectSchema(ent, id, live = {}) {
     // out from its components (shared/a11y.js), shown below as everyone who reads it gets it
     { t: 'text', k: 'description', label: 'description', value: typeof c.description === 'string' ? c.description : '', multiline: true, placeholder: 'what it is and looks like, for people who can\'t see it and for agents',
       hint: `${graphemes(typeof c.description === 'string' ? c.description : '')} / ${SPEC.description.maxLen}. Don't list what it does: that is read from its components. A visible nameplate is a child thing with a sign (Text, billboard yaw)` },
-    { t: 'info', k: 'reads', label: 'reads as', value: (() => { const r = readOut(c, { name: typeof c.label === 'string' ? c.label : null }); return [r.name ? `«${r.name}»` : '(no name)', readLine(r, { max: 120 })].filter(Boolean).join(': ') || '—'; })() },
+    { t: 'info', k: 'reads', label: 'reads as', value: (() => { const r = readOut(c, { name: typeof c.label === 'string' ? c.label : null, sockets: live.world ? socketsIn(live.world, id) : null }); return [r.name ? `«${r.name}»` : '(no name)', readLine(r, { max: 120 })].filter(Boolean).join(': ') || '—'; })() },
   ] });
 
   // pivot (research 52): where it turns and scales from, in its own frame (before scale). The buttons snap it to the
@@ -874,7 +874,10 @@ function componentSections(ent, groups, live = {}, id = '?') {
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Parent': sec.info = ent.parent?.socket ? [['socket', String(ent.parent.socket)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
+      // on a socket: the socket is the parent (a child entity of its host, PLAN-sockets-entities), named with its host
+      case 'Parent': { const on = live.world?.[ent.parent?.to]; const sk = on?.comp?.socket ?? on?.c?.socket;
+        sec.info = sk && typeof sk === 'object' ? [['socket', `${String(sk.name)} on ${String(on.parent?.to ?? on.c?.parent?.to ?? '?')}`]] : []; }
+        sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a

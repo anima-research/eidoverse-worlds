@@ -1264,6 +1264,19 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const OLD = /\bc\??\.sockets\b|\bparent\??\.socket\b|\bhome\??\.parent\??\.socket\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\bm\??\.sockets\b/;
   const hits = files.flatMap((f) => fs.readFileSync(dir + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/ .*$/, "")]).filter(([, , l]) => OLD.test(l)));
   ok(!hits.length, `LG1 no reader of the old spelling outside authority/sockets.js (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
+// LG1b (review 10-12 S3-4): …nor anywhere a client, an agent or a shared reader looks: shared/, client/lib, mcpl. The few
+// that read a map on purpose are named, each with why: the Inspector's Sockets card reads (and writes) the map that
+// socketMapIn builds FROM the children until the Parts UI (12b); a blueprint's own records keep their spelling (11/12);
+// hierarchy.js socketOf/localOf read a record in the old spelling (a v1 fold's: the M checks draw v1 by it; a blueprint's
+// parts); grab.js's home shape check accepts the old field (the door lifts it first)
+{ const root = new URL("../../", import.meta.url).pathname;
+  const walk = (d) => fs.readdirSync(root + d, { withFileTypes: true }).flatMap((x) => x.isDirectory() ? (x.name === "node_modules" || x.name === "vendor" ? [] : walk(`${d}/${x.name}`)) : /\.(js|mjs|ts)$/.test(x.name) ? [`${d}/${x.name}`] : []);
+  const files = [...walk("shared"), ...walk("client/lib"), ...walk("mcpl")].filter((f) => f !== "shared/protocol/authority/sockets.js");
+  const OLD = /\b(c|comp|m)\??\.sockets\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\b(parent|rel)\??\.socket\b|\bhome\??\.parent\??\.socket\b/;
+  const ON_PURPOSE = [["shared/editschema.js", /withSocketMap|ent\.comp\?\.sockets\)|c\.sockets\b/], ["shared/blueprint.js", /rel\.socket/], ["shared/hierarchy.js", /rel\??\.socket/], ["shared/grab.js", /h\.parent\.socket/]];
+  const hits = files.flatMap((f) => fs.readFileSync(root + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*(\/\/|\*|\/\*\*).*$/, "").replace(/\s\/\/ .*$/, "")])
+    .filter(([, , l]) => OLD.test(l) && !ON_PURPOSE.some(([pf, re]) => pf === f && re.test(l))));
+  ok(files.length > 100 && !hits.length, `LG1b no reader of the old spelling in shared/, client/lib or mcpl but the named ones (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
 
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

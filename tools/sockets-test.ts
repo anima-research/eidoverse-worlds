@@ -192,6 +192,16 @@ const carRows = () => inspectSchema(W.rec('car'), 'car', carLive()).groups.find(
 const has = (k: string) => carRows().some((f: any) => f.k === k);
 check('the Sockets card has rows for anchor, pose, leave by, who, input, look and reach', ['driver|anchor', 'driver|pose', 'driver|leaveBy', 'driver|who', 'driver|input|move', 'driver|input|look', 'driver|look|yaw|0', 'driver|look|up', 'driver|reach'].every(has),
   carRows().map((f: any) => f.k));
+// review 10-12 S3-4: a thing's seats are read from its socket children: the Inspector's "reads as", inspect's `can`, and
+// the Parent card of something on a socket (it read the old map and the old parent.socket, and said nothing)
+{ const reads = inspectSchema(W.rec('car'), 'car', carLive()).groups.flatMap((g: any) => g.fields ?? []).find((f: any) => f.k === 'reads')?.value ?? '';
+  const ins = W.call('inspect', { id: 'car' });
+  check('S3-4 the seats are read out from the socket children: the Inspector\'s "reads as" and inspect\'s can say what using them is', /used to drive \(driver, back\)/.test(reads) && (ins.can ?? []).some((c: string) => /used to drive \(driver, back\)/.test(c)), [reads, ins.can]);
+  const drv = Object.keys(W.view().entities).find((k) => W.view().entities[k].comp?.socket?.name === 'driver');
+  W.call('create', { id: 'dice', model: 'crate', components: { parent: { to: drv }, transform: { pos: [0, 0.1, 0], scale: [0.1, 0.1, 0.1] } } });
+  const par = inspectSchema(W.rec('dice'), 'dice', carLive()).sections?.list?.find((x: any) => x.type === 'Parent');
+  check('S3-4 …and the Parent card of a thing on a socket names the socket and its host', JSON.stringify(par?.info ?? null) === '[["socket","driver on car"]]', par);
+  W.call('delete', { id: 'dice' }); }
 const cplan = (edits: any) => editOps(W.rec('car'), 'car', edits, carLive());
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'feet', 'sockets.back|leaveBy': 'menu', 'sockets.back|input|look': 'locked', 'sockets.back|look|yaw|0': -45, 'sockets.back|look|up': 'socket',
   'sockets.back|reach': '{"rightHand": {"at": [0.3, 1, 0.2], "vr": "track"}}' }).ops);

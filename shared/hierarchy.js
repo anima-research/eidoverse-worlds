@@ -29,7 +29,9 @@ const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
-/** The socket a mount names, resolved on its carrier — or null. */
+/** The socket a mount names, resolved on its carrier — or null. Only a record in the old spelling has one: a v1 fold's
+ *  (tools/protocol/import-v1/fold.js, which authority-check's M checks draw v1 by) and a blueprint's own published parts
+ *  (blueprint.js). A live record's socket is a child entity, and its mount names that entity (PLAN-sockets-entities). */
 export function socketOf(world, rel) {
   if (!rel?.socket) return null;
   const s = world?.[rel.to]?.comp?.sockets?.[rel.socket];
