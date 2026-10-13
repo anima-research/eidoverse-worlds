@@ -9,7 +9,8 @@
 import { THREE, camera, canvas } from './core.js';
 import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
-import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
+import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from './colliders.js';
+import { bumpTick } from './hiddenbump.js';
 import { scaledSpeed, colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: stride, capsule, eye
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint, html } from './ui.js';
@@ -599,7 +600,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 export function updateMe(dt, me) {
   if (!me) return;
-  if (photoMode) { updatePhotoCamera(dt); return; }
+  if (photoMode) { updatePhotoCamera(dt); bumpTick(null, dt); return; }   // no body moving: a mark already up still fades
 
   let fwd = Number(held(MOVE_KEYS.fwd)) - Number(held(MOVE_KEYS.back));
   let strafe = Number(held(MOVE_KEYS.right)) - Number(held(MOVE_KEYS.left));
@@ -678,6 +679,7 @@ export function updateMe(dt, me) {
   const cap = colliderFor(me.userScale);   // the walking capsule grows and shrinks with the body; it still climbs
   const ground = resolveColliders(myState.pos, heightAt, cap.r, cap.tall, true);
   const blockedTop = lastBlockedTop();
+  bumpTick(lastContacts(), dt);   // a thing I hid stays solid: bumping it shows its outline (hiddenbump.js)
   // FLIGHT OWNS THE BODY while it lasts -- position, heading and clip -- the
   // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
   if (flight) {

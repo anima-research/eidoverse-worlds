@@ -35,6 +35,7 @@ import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } 
 import { paint, escapeHtml } from './markup.js';
 import { pushHostHook } from './autohooks.js';
 import { clickable } from './selectmask.js';
+import { outOfMyView } from './myview.js';
 import * as Sel from './edit/selection.js';
 import { claimEscape } from './windows.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
@@ -396,6 +397,7 @@ function aimPoint(skipId = null) {
   // thing being dragged under the pointer (and it would climb toward the camera). Skip its whole subtree.
   const skipObj = skipId != null ? entities.get(skipId) : null;
   if (skipObj) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (o === skipObj) return false; return true; });
+  hits = hits.filter((h) => !outOfMyView(h.object));   // a thing hidden in my view is no surface to place on
   if (hits.length) {
     const h = hits[0];
     // only treat near-horizontal faces as placement surfaces — a wall should
@@ -614,11 +616,24 @@ function marqueeEnd(e) { const m = marquee; marquee = null; if (!m) return; m.el
   if (Math.hypot(e.clientX - m.x, e.clientY - m.y) < 5) return;
   const x0 = Math.min(m.x, e.clientX), x1 = Math.max(m.x, e.clientX), y0 = Math.min(m.y, e.clientY), y1 = Math.max(m.y, e.clientY); const ids = [];
   const W = state.st?.entities ?? {};
-  for (const [id, o] of entities) { if (!o || !o.visible || !clickable(W, id)) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
+  for (const [id, o] of entities) { if (!o || !o.visible || outOfMyView(o) || !clickable(W, id)) continue; _mb.setFromObject(o); if (_mb.isEmpty()) continue;
     _mb.getCenter(_mc).project(camera); if (_mc.z > 1) continue;
     const sx = (_mc.x + 1) / 2 * innerWidth, sy = (1 - _mc.y) / 2 * innerHeight; if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) ids.push(id); }
   if (ids.length) bus.emit('edit-select-add', ids); }
 export const marqueeActive = () => !!marquee;
+
+/** The nearest hit under a viewport point (NDC) on a thing MY selection layers let me click (selectmask.js; the floor is
+ *  'environment', off at first) and that is in my view (a thing hidden with the eye is not drawn, so not clicked). */
+function pickHit(nx, ny) {
+  mouse.set(nx, ny);
+  raycaster.setFromCamera(mouse, camera);
+  const targets = [];
+  for (const o of entities.values()) if (o) targets.push(o);
+  const W = state.st?.entities ?? {};   // the editor's world view (lib, comp, parent), as editpanels reads it
+  return raycaster.intersectObjects(targets, true).find((h) => { let r = h.object; while (r && !r.userData.entityId) r = r.parent; return r && clickable(W, r.userData.entityId) && !outOfMyView(h.object); }) ?? null;
+}
+/** What a viewport click at NDC (nx, ny) would select: its id, or null. */
+export function pickAt(nx, ny) { let r = pickHit(nx, ny)?.object; while (r && !r.userData.entityId) r = r.parent; return r?.userData.entityId ?? null; }
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
@@ -634,13 +649,7 @@ canvas.addEventListener('mousedown', (e) => {
   // left `mouse` in the right place works for a real pointer and fails for
   // anything that presses without moving first — a touch, a synthetic click,
   // a tab that regained focus under the cursor.
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
-  const targets = [];
-  for (const o of entities.values()) if (o) targets.push(o);
-  // the nearest hit on a thing MY selection layers let me click (selectmask.js; the floor is 'environment', off at first)
-  const W = state.st?.entities ?? {};   // the editor's world view (lib, comp, parent), as editpanels reads it
-  const hit = raycaster.intersectObjects(targets, true).find((h) => { let r = h.object; while (r && !r.userData.entityId) r = r.parent; return r && clickable(W, r.userData.entityId); });
+  const hit = pickHit((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   // a press on nothing: a DRAG from here orbits the camera; only a click that didn't travel deselects (an orbit that
   // threw away the selection every time would make looking around a thing impossible)
   if (!hit && e.shiftKey) { const d = document.createElement('div');   // keys: selectExtend

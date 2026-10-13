@@ -18,6 +18,7 @@
 // foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
 import { confirmCenter } from './confirmcenter.js';
+import { outOfMyView } from './myview.js';
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio } from './core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
 import { withXREyes } from './xrpass.js';   // a warm needs THREE'S two eyes: xr.getCamera() has none before a session
@@ -437,7 +438,7 @@ function rayHitEntity(handRay, far = 24) {
   _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
   _rc.far = far;
   const roots = [...entities.values()].filter(Boolean);
-  const hit = _rc.intersectObjects(roots, true)[0];
+  const hit = _rc.intersectObjects(roots, true).find((h) => !outOfMyView(h.object));   // what isn't drawn for me isn't pointed at
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
   const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot

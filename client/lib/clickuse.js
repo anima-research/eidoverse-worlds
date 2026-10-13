@@ -6,6 +6,7 @@
 // (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).
 // The cursor is an open hand over what a click would pick up, a pointing finger over any other use.
 import { THREE, camera, canvas } from './core.js';
+import { outOfMyView } from './myview.js';
 import { bagOf, entities } from './world.js';
 import { contextMenu, closeContextMenu } from './panels.js';
 import { flashHint } from './ui.js';
@@ -61,7 +62,7 @@ export function thingAt(clientX, clientY) {
   for (const [id, o] of entities) if (o && !through(id) && (canGrab(id) || actionsOf(id).length || seatOf(id) || physicsApi.mine().includes(id))) targets.push(o);
   if (!targets.length) return null;
   // not a surface the camera is standing in (an orbit camera pulled up against a gate saw only the gate, 7 cm away)
-  let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR)?.object;
+  let root = ray.intersectObjects(targets, true).find((h) => h.distance > NEAR && !outOfMyView(h.object))?.object;
   while (root && !root.userData.entityId) root = root.parent;
   return root?.userData.entityId ?? null;
 }
@@ -88,7 +89,7 @@ export function aimPoint(clientX = lastXY?.[0], clientY = lastXY?.[1]) {
   if (lock) aimNdc.set(0, 0); else if (clientX == null) return null; else aimNdc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   aimRay.setFromCamera(aimNdc, camera);
   const mine = new Set(physicsApi.mine()), targets = []; for (const [id, o] of entities) if (o && !mine.has(id)) targets.push(o);
-  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR);
+  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR && !outOfMyView(x.object));
   const feetY = hooks?.myPos?.()?.y ?? 0; aimPlane.constant = -feetY;
   const g = aimRay.ray.intersectPlane(aimPlane, aimHit) ? aimHit.clone() : null;
   const p = h && (!g || h.distance < aimRay.ray.origin.distanceTo(g)) ? h.point : g;

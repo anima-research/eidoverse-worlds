@@ -381,9 +381,10 @@ try {
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`);
   await sleep(600);
   const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
-  // R 10-10 23:48: the name is the first line's title (no label; the eye and padlock beside it), then the id
-  const firstIsTitle = await evalJson(`!!${insp}.querySelector('.sp-row')?.classList.contains('sp-title')`);
-  check("I1 the Inspector leads with the name (its title line), then the id", firstIsTitle && labels?.[0] === "" && labels?.[1] === "id", { firstIsTitle, labels: labels?.slice(0, 3) });
+  // R 10-10 23:48: the name is the first line's title (no label; the eye and padlock beside it), then the id; R 10-12: the
+  // ENABLED box leads that line
+  const firstIsTitle = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; return r[0]?.classList.contains('sp-enabled') && r[1]?.classList.contains('sp-title'); })()`);
+  check("I1 the Inspector leads with the ENABLED box and the name (its title line), then the id", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && labels?.[2] === "id", { firstIsTitle, labels: labels?.slice(0, 3) });
   // R 10-10: parent moved to the Attributes tab ("I don't think we should show 'parent' here at all - this seems like a Hierarchy thing")
   check("I2 …no lib line (the Model card has it), no filter box; no Parent card (it lives in Attributes now)", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && !labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
   check("I3 …placed by names who made it (the authority's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));

@@ -539,7 +539,7 @@ function tokens() {
     bg, row: 'rgba(255,255,255,0.04)', well: 'rgba(0,0,0,0.4)',
     label: t('--dim', '#97979b'), text: t('--fg', '#ebebe9'),
     accent: t('--brand', '#8fe8c8'), danger: '#6e2a2a', line: 'rgba(255,255,255,0.10)',
-    head: 'rgba(255,255,255,0.06)', driven: '#b48cff',
+    head: 'rgba(255,255,255,0.06)', driven: '#b48cff', mine: '#b08ad8',
   };
 }
 export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12, title = '', theme = null } = {}) {
@@ -568,7 +568,8 @@ export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12,
       return y + pad;
     },
     prep(f, y, h) {
-      if (f && f.label != null) { font(13); g.fillStyle = f.driven ? C.driven : C.label; g.fillText(f.label, pad, y + rowH * 0.6); }
+      const lab = f?.vrLabel ?? f?.label;   // vrLabel: the word a quad paints where the desktop row shows none (the header's box, its name)
+      if (f && lab != null) { font(13); g.fillStyle = f.driven ? C.driven : C.label; g.fillText(lab, pad, y + rowH * 0.6); }
       return { ...S, y, h };
     },
   };
