@@ -102,4 +102,8 @@ export const replica = { st: null };
 export const replicaActive = () => false;
 export const sendRequest = async () => ({ ok: false, refused: { code: 'not-joined', reason: 'not in a world' } });
 export const toast = (t) => { hints.push(String(t)); };
+// ui.js's one status bar (claimStatus/releaseStatus, DESIGN-status-bar.md): build.js claims the selection line, editwrites
+// claims 'warn' for a refusal. A text claim is a hint the suite reads, as flashHint's are; a node claim (the selection) is not.
+export const claimStatus = (id, { content = null } = {}) => { if (content != null) hints.push(String(content)); };
+export const releaseStatus = () => {};
 export { html } from '../client/lib/markup.js';
