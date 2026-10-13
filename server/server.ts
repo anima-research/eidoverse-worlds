@@ -29,6 +29,7 @@ import { warmBoxes, worldLibs } from "./boxes.ts";
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingSnaps for the renderer's snap-result replies.
 import { route, avatarRoster } from "./routes.ts";
+import { joinBriefing } from "./briefing.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -373,8 +374,9 @@ function sendGeomFollowup(w: World, c: Client) {
 // code. It is STRUCTURAL now: admitJoin can only answer and refuse (it
 // never touches the roster; the one c.world assignment predates the aux
 // checks exactly as the unsplit case had it), installJoin is the only
-// place a join mutates the roster, and buildSnapshot is a pure read that
-// can finally be exercised without a live socket. Bodies moved verbatim;
+// place a join mutates the roster, and buildSnapshot only reads, so it
+// can finally be exercised without a live socket: the world, and since #214
+// AGENTS.md from disk, hashed for the join's briefing. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
 function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, reason?: string): void }, msg: any, auth: HnSession | null): World | null {
@@ -627,6 +629,7 @@ function buildSnapshot(w: World, c: Client) {
     const jp = w.joinPayload();
     return {
       type: "snapshot",
+      briefing: joinBriefing(),
       world: w.name,
       you: c.id,
       // your durable subject, when the door vouched for one — the principal

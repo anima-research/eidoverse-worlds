@@ -6,6 +6,7 @@
 
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
+import { resolveBriefing } from "../shared/briefing.js";
 import { mergePose } from "../shared/humanoid.js";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
@@ -423,6 +424,9 @@ export class WorldAgent {
   private lastDayPhase: string | null = null;
   private lastSkyCheck = 0;
   worldInfo: Record<string, unknown> = {};
+  /** Documentation hints from the latest join, separate from folded world facts.
+   *  Exposed on every look: delivery is not evidence the consumer read a guide. */
+  briefing: ReturnType<typeof resolveBriefing> = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** Highest world-log seq this body has seen. This — not a wall-clock time —
    *  is what "where was I up to" means: it survives restarts, it cannot drift,
@@ -432,7 +436,12 @@ export class WorldAgent {
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
-  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string } = {}) {
+  private briefingBase: string | null | undefined;
+  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string; briefingBase?: string | null } = {}) {
+    // undefined: a local/stdio consumer can use the sequencer URL. Network
+    // sessions supply their public door origin (null when unavailable), never
+    // substitute the body's private loopback connection for the reader's origin.
+    this.briefingBase = opts.briefingBase;
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     this.world = opts.world ?? process.env.WORLD_NAME ?? "commons";
@@ -460,6 +469,7 @@ export class WorldAgent {
    *  the body as a zombie that fights its successor over the identity. */
   close() {
     this.closed = true;
+    this.briefing = null;
     this.stopSim();
     if (this.ticker) { clearInterval(this.ticker); this.ticker = null; }
     if (this.activityTimer) { clearInterval(this.activityTimer); this.activityTimer = null; }
@@ -583,6 +593,9 @@ export class WorldAgent {
         agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
       ws.onclose = (ev) => {
         this.joined = false;
+        // A briefing describes the connection it came with: between
+        // connections, or after a refused rejoin, look() offers none.
+        this.briefing = null;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
         // either hammer a banned door or instantly undo a kick — the body
         // stays down; its host reconnecting later is the deliberate return.
@@ -671,6 +684,10 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
+            // Replace even when absent: reconnecting to an older door must not
+            // keep advertising guidance from a previous snapshot.
+            this.briefing = resolveBriefing(msg.briefing,
+              this.briefingBase === undefined ? this.httpBase + "/" : this.briefingBase);
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -3094,6 +3111,7 @@ export class WorldAgent {
         description: describeSky(this.skyState, now),
       };
     }
+    if (this.briefing) L.push(`Briefing (door guidance): ${JSON.stringify(this.briefing)}`);
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];
