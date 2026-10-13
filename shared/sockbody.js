@@ -34,6 +34,7 @@
 import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
+import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
 
 export const ANCHORS = ['hips', 'feet', 'head', 'root'];
 export const LEAVE_BY = ['jump', 'menu', 'script'];
@@ -42,9 +43,9 @@ export const LOOKS = ['free', 'aim', 'locked'];
 export const UPS = ['world', 'socket'];
 export const VR_POLICIES = ['snap', 'track', 'near'];
 export const TIMES = ['loop', 'phase'];
-export const WHO = ['visitor', 'builder', 'moderator', 'owner'];
-// a `who` may also name a world's custom role (roles.js): the shape is checked here, existence by the authority (whoRank)
-const isWho = (x) => WHO.includes(x) || (typeof x === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(x) && !['none', 'guest', 'everyone', 'ghost', 'banned'].includes(x));
+export const WHO = BUILTIN_IDS;
+// a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
+const isWho = isRoleId;
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
  *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */

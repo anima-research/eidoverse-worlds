@@ -447,7 +447,9 @@ export function inspectSchema(ent, id, live = {}) {
   // fields addressed `look-at.<k>` for the whole thing and `look-at.<part>|<k>` for a part's
   const laKeys = Object.keys(c).filter((k) => (k === 'look-at' || k.startsWith('look-at:')) && isBag(c[k]));
   if (laKeys.length) {
-    const AX = ['z', 'x', 'y', '-z', '-x', '-y'];
+    // the door's axis letters (componentspec `axis`: x, y, z or a vector); a stored vector shows as itself
+    const AX = ['z', 'x', 'y'];
+    const fwdOf = (f) => (typeof f === 'string' ? f : Array.isArray(f) ? JSON.stringify(f) : 'z');
     const fields = [];
     for (const key of laKeys) {
       const la = c[key]; const pre = key === 'look-at' ? '' : `${key.slice(8)}|`; const nm = key === 'look-at' ? '' : `${key.slice(8)} `;
@@ -457,7 +459,7 @@ export function inspectSchema(ent, id, live = {}) {
           hint: 'what it turns to face: pick a thing (a row, or the thing in the world), or "the viewer" (each viewer sees it face them) or "nearest person"' }),
         { t: 'enum', k: `${pre}target@`, label: `${nm}or`, value: T?.startsWith('@') ? T : '', options: [{ v: '', label: '(a thing)' }, { v: '@viewer', label: 'the viewer' }, { v: '@nearest', label: 'nearest person' }] },
         LA('mode', { label: 'turns', value: la.mode === 'aim' ? 'aim' : 'yaw', options: [{ v: 'yaw', label: 'around its up (stays upright)' }, { v: 'aim', label: 'fully (tilts too)' }] }),
-        LA('forward', { label: 'front', value: typeof la.forward === 'string' ? la.forward : 'z', options: AX.map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' }),
+        LA('forward', { label: 'front', value: fwdOf(la.forward), options: [...AX, ...(AX.includes(fwdOf(la.forward)) ? [] : [fwdOf(la.forward)])].map((v) => ({ v, label: v === 'z' ? '+z (its front)' : v })), hint: 'which of its own axes points at the target' }),
         LA('speed', { hint: '0 = turns at once' }),
         LA('range', { hint: 'a person further than this: it turns back to rest' }));
     }
