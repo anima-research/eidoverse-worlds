@@ -40,7 +40,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the hand's settlement reads grabOf", "protocol/authority.js", "else if (cap.kind === \"handle\") { const g = grabOf(st.entities[op.id]?.c);", "else if (cap.kind === \"handle\") { const g = st.entities[op.id]?.c.physics?.kind === \"dynamic\" ? grabOf(st.entities[op.id]?.c) : null;", ["G2", "G3"]],
   ["enabled", "protocol/authority.js", "if (!g.enabled) refuse(\"not-grabbable\"", "if (false) refuse(\"not-grabbable\"", ["G5"]],
   ["who", "protocol/authority.js", "const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need))", "const need = g.who; const role = roleOf(st, actor); if (false)", ["G6"]],
-  ["punt keeps physics.who (a kick-only ball is still punted)", "protocol/authority.js", "if (cap.kind === \"handle\" && cap.via === \"punt\") {", "if (false) {", ["G5"]],
+  ["punt keeps physics.who (a kick-only ball is still punted)", "protocol/authority.js", "if (cap.kind === \"handle\" && cap.via === \"punt\") {", "if (false) {", ["G6"]],
   ["steal", "protocol/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (false)", ["G7"]],
   ["steal: owners may", "protocol/authority.js", "if (held && !g.steal && role !== \"owner\")", "if (held && !g.steal)", ["G7"]],
   ["range", "protocol/authority.js", "if (d > g.range) refuse(\"out-of-reach\"", "if (d > REACH) refuse(\"out-of-reach\"", ["G8"]],
@@ -95,7 +95,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the card's edits are checked as the authority checks them", "editschema.js", "const bad = checkGrabbable(next);\n      if (bad)", "const bad = null;\n      if (bad)", ["I2"]],
   ["look says what a hand may do with it", "protocol/authority.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
   ["review: a put's pos is reach-checked before it snaps", "protocol/authority.js", "const d0 = dist(handOf(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
-  ["review: a refused orphan's hold still ends", "protocol/authority.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2"]],
+  ["review: a refused orphan's hold still ends", "protocol/authority.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2b"]],
   ["review: the up from whoever pressed down", "protocol/authority.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
   ["review: a copy goes home where it was made", "protocol/authority.js", "(born && !sameHome(after, id, v.home))", "false", ["F4"]],
   ["review: the holder's rank before a return", "protocol/authority.js", "if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["F5"]],
@@ -271,8 +271,13 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, -0.5] });
       const punt = s.call("vic", "punt", { id: "ball", power: 3 }); const g = s.call("vic", "grab", { id: "ball" }); s.call("vic", "put", { id: "ball" });
       const k = s.call("vic", "grab", { id: "key" });
-      return { punt: code(punt), g: show(g), key: code(k) }; },
-    good: (o) => o.punt === "rights" && o.g === "ok" && o.key === "rights" },
+      // and the other way round: anyone may kick it, only a builder carry it. The punt's admission must read physics.who,
+      // not fall through to the hand's settlement (grabbable.who): with the punt branch gone the kick is refused (F4 10-12)
+      s.call("olive", "create", { id: "kickball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, grabbable: { who: "builder" } }, place: { at: [-1, 0] } });
+      s.call("vic", "move", { to: [-1, 0, -0.5] });
+      const kick = s.call("vic", "punt", { id: "kickball", power: 3 }); const carry = s.call("vic", "grab", { id: "kickball" });
+      return { punt: code(punt), g: show(g), key: code(k), kick: show(kick), carry: code(carry) }; },
+    good: (o) => o.punt === "rights" && o.g === "ok" && o.key === "rights" && o.kick === "ok" && o.carry === "rights" },
   { id: "G7", what: "steal: false: nobody takes it from a holder's hand (refused 'held'); an owner may", run(s) { cast(s);
       s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor", steal: false } }, place: { at: [0, 0] } });
       for (const [p, x] of [["vic", 0], ["ann", 0.4], ["olive", -0.4]]) s.call(p, "move", { to: [x, 0, 0.5] });
@@ -546,6 +551,16 @@ const cases: Case[] = [
       const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => e.verb);
       return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
+  // F5 (10-12): leave passes a banned holder (request() lets leave through), so F2 never reaches the refused-leave branch.
+  // A leave IS refused for a holder the authority can't stamp (a presence file from before today's identity rule, or
+  // hand-edited): that hold must still end, or it pins the thing to nobody forever.
+  { id: "F2b", what: "an orphaned hold whose holder the authority refuses a leave for (not a stampable identity) still ends at load", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
+      const pres = JSON.parse(JSON.stringify(s.w().presence)); pres.holds.ball.by = "Vic Old!"; pres.bodies["Vic Old!"] = pres.bodies.vic; delete pres.bodies.vic;
+      const w2 = s.reopen(pres); T += 100; process.env.PROTOCOL_NOW = String(T); const out = D.settleOrphans?.(w2, []);
+      return { holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies["Vic Old!"], left: out?.find((x: any) => x.holder === "Vic Old!")?.left, carrier: carrier(s) }; },
+    good: (o) => !o.holds.length && !o.body && o.left === false && !o.carrier.disagree },
   { id: "F3", what: "use.up from whoever pressed down is taken after the thing left their hand (taken by someone else): the hose turns off", run(s) { cast(s);
       s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },
         reactions: { on: { kind: "set", component: "t/burning", value: true }, off: { kind: "set", component: "t/burning", value: false } } }, place: { at: [0, 0] } });

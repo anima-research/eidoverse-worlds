@@ -3208,7 +3208,7 @@ const VERBS = {
       const key = `script:${probe.script}`; const v = w.state().entities[a.id].c[key];
       if (!v || typeof v !== "object") { const wc = w.state().entities["@world"]?.c ?? {};
         // an imported world: the reaction names an old binding (@world imported-behavior:<name>), which the authority never runs
-        // (a binding there, or the handler itself written by the translation: its cause is a `legacy` act)
+        // (a binding there, or the handler itself written by the translation: its cause is an `imported` act)
         const old = Object.entries(wc).find(([k, b]) => k.startsWith("imported-behavior:") && (k === `imported-behavior:${probe.script}` || b?.attach === a.id));
         const lt = lastTouch(w, a.id, "reactions"); const ce = lt ? w.entries[w.entries[lt.seq]?.cause] : null;
         if (old || (isE(ce) && ce.kind === "act" && ce.verb === "imported"))
