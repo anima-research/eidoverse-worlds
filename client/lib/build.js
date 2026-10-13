@@ -28,6 +28,7 @@ import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
 import { net, sendDrag } from './net.js';
 import { scaleOf } from '../../shared/scale3.js';
+import { MESH_DEFAULT, ghostMeshSize } from './meshghost.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
@@ -270,7 +271,6 @@ function ghostify(obj) {
 // Create ▸ Box/Sphere/Cylinder/Plane/Capsule (R 10-12): a mesh thing (componentspec `mesh`), held as its own grey ghost and
 // placed with a click, standing on the floor (its origin is its base centre, the authority's boxOfM). Q/E turn it; ,/. scale
 // its default size. The lib is '@mesh:<shape>'.
-export const MESH_DEFAULT = { box: [1, 1, 1], sphere: [1, 1, 1], cylinder: [1, 1, 1], plane: [2, 0.05, 2], capsule: [0.5, 1.5, 0.5] };
 const meshOf = (lib) => (typeof lib === 'string' && lib.startsWith('@mesh:') ? lib.slice(6) : null);
 function meshGhost(shape, [x, y, z]) {
   const r = x / 2;
@@ -527,7 +527,7 @@ function commitSpawn() {
   let sent;
   if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
   else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
-  else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = (MESH_DEFAULT[shape] ?? [1, 1, 1]).map((v) => +(v * ghost.scale).toFixed(3));
+  else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = ghostMeshSize(shape, ghost.scale);
     sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
