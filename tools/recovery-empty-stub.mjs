@@ -50,3 +50,10 @@ export function applyVoiceWire() {}   // mic / hear ride the same packet (platec
 export function presenceWire() { return null; }
 export function applyBodyWire() { return false; }   // this body's size / plate lift — recovery applies nothing
 export function bodyWire() { return {}; }
+// remotes.js stamps each sample with sampleTime (the one time base, PHYSICS §5.1). It is pure, so it is the real body,
+// not an inert one: a sample's own capture time when it is sane against its frame's, else the frame's.
+export const SAMPLE_STALE_MS = 1000;
+export function sampleTime(pose, frameT) {
+  const t = pose?.t;
+  return typeof t === 'number' && Number.isFinite(t) && typeof frameT === 'number' && t <= frameT && t >= frameT - SAMPLE_STALE_MS ? t : frameT;
+}
