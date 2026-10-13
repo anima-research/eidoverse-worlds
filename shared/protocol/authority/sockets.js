@@ -106,11 +106,8 @@ export function carriesLegacy(ops) {
 }
 
 /** The write in the new spelling: {ops, notes}. `ever` is every id the world has made (a lifted id is never a reused one). */
-export function liftOps(st, ops, ever = new Set()) {
-  if (!carriesLegacy(ops)) return { ops, notes: [] };
-  const s = cowState(st); const out = []; const notes = []; const taken = new Set();
-  const via = new Map();   // a thing given a legacy parent in this write: a later transform of it is in its host's frame
-  const models = new Set();
+function lifter(st, ever) {
+  const s = cowState(st); const out = []; const taken = new Set();
   const emit = (o) => { out.push(o); applyCow(s, [o]); };
   const fresh = (host, name) => { for (let n = 1; ; n++) { const id = socketId(host, n === 1 ? name : `${name}\0${n}`);
     if (!ever.has(id) && !s.entities[id] && !taken.has(id)) { taken.add(id); return id; } } };
@@ -137,6 +134,13 @@ export function liftOps(st, ops, ever = new Set()) {
       if (bag(c.grabbable) && legacyHome(c.grabbable.home) && c.grabbable.home.parent.to === h) emit(setOp(k, "grabbable", { ...c.grabbable, home: homeLifted(c.grabbable.home, made) })); }
     return made; };
   const liftStored = (h) => (bag(s.entities[h]?.c.sockets) ? liftHost(h, s.entities[h].c.sockets, { stored: true }) : {});
+  return { s, out, emit, make, kidsOf, childNamed, homeLifted, liftHost, liftStored }; }
+
+export function liftOps(st, ops, ever = new Set()) {
+  if (!carriesLegacy(ops)) return { ops, notes: [] };
+  const L = lifter(st, ever); const { s, out, emit, make, kidsOf, childNamed, homeLifted, liftStored, liftHost } = L; const notes = [];
+  const via = new Map();   // a thing given a legacy parent in this write: a later transform of it is in its host's frame
+  const models = new Set();
   // a socket child taken away: what sat in it stays with the host, where it was
   const retire = (h, id) => { const T = tfOf(s.entities[id].c);
     for (const k of kidsOf(id)) { const c = s.entities[k].c; emit(setOp(k, "parent", { ...c.parent, to: h })); emit(setOp(k, "transform", overSocket(s, h, T, tfOf(c)))); }
@@ -184,4 +188,27 @@ export function liftOps(st, ops, ever = new Set()) {
     if (!bag(ms) || bag(e.c.sockets) || kidsOf(h).some((k) => isSocketC(s.entities[k].c))) continue;
     const made = liftHost(h, ms, { stored: false }); notes.push({ legacy: "model sockets", id: h, wrote: made, why: `its model declares ${Object.keys(made).join(", ")}: made as socket children` }); }
   return { ops: out, notes };
+}
+
+// ---------- the old spelling, lifted at load (PLAN §3: beside settleOrphans) ----------
+const modelSeatsDue = (st, ever, k) => { const c = st.entities[k].c; const ms = modelOf(c.model)?.sockets;
+  return bag(ms) && !bag(c.sockets) && !Object.keys(ms).some((n) => ever.has(socketId(k, n))) && !Object.keys(st.entities).some((x) => st.entities[x].c.parent?.to === k && isSocketC(st.entities[x].c)); };
+/** The hosts a stored world still holds in the old spelling, in id order: one that stores a map; one a parent or a home
+ *  names a slot of; one whose model declares seats it was never given (none of their ids was ever made, so a seat
+ *  someone deleted stays deleted). */
+export function legacyHosts(st, ever = new Set()) {
+  const hosts = new Set();
+  for (const [k, e] of Object.entries(st.entities)) { const c = e.c;
+    if (bag(c.sockets)) hosts.add(k);
+    if (legacyParent(c.parent) && st.entities[c.parent.to]) hosts.add(c.parent.to);
+    for (const h of [c.home, bag(c.grabbable) ? c.grabbable.home : null]) if (legacyHome(h) && st.entities[h.parent.to]) hosts.add(h.parent.to);
+    if (modelOf(c.model)?.sockets && modelSeatsDue(st, ever, k)) hosts.add(k); }
+  return [...hosts].sort();
+}
+/** One host's lift: the ops (the system's own), the children it made by slot, and the things it moved. */
+export function liftHostOps(st, ever, h) {
+  const L = lifter(st, ever); const c = L.s.entities[h].c;
+  const made = bag(c.sockets) ? L.liftStored(h) : modelSeatsDue(L.s, ever, h) ? L.liftHost(h, modelOf(c.model).sockets, { stored: false }) : L.liftHost(h, {}, { stored: false });
+  const mine = new Set([h, ...Object.values(made)]);
+  return { ops: L.out, made, moved: [...new Set(L.out.map((o) => o.id).filter((id) => !mine.has(id)))] };
 }

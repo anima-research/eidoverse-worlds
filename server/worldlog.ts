@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans } from "../shared/protocol/authority.js";
+import { forkCopy, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
 import { viewState } from "../shared/protocol/view.js";
@@ -91,6 +91,9 @@ export class WorldLog {
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
     catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
+    // a world stored before sockets were entities is lifted at its first load, and logged (authority.js liftWorld)
+    try { const lifted = liftWorld(this.live); if (lifted.length) console.log(`[world:${name}] lifted ${lifted.length} socket host(s) to socket children: ${JSON.stringify(lifted).slice(0, 300)}`); }
+    catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
     this._state = this.view();

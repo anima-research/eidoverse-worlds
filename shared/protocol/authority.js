@@ -35,7 +35,7 @@ import { reachTo, massOf, shoveCap, feetOn, sweptCovers } from "../shove.js";
 import { r3, noNeg0, unNegZero } from "./round.js";
 import { shapeError, isBoxShape } from "./shapes.js";
 import { CTX } from "./authority/ctx.js";
-import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps } from "./authority/sockets.js";
+import { isSocketC, socketRules, socketsOf, allSockets, socketPoint, socketRole, liftOps, legacyHosts, liftHostOps } from "./authority/sockets.js";
 import { Refusal, refuse, said } from "./authority/refuse.js";
 import { LAB_CATALOGUE, modelOf, geomOf, boxOfM, geomE, withCatalogue, meshShape } from "./authority/catalogue.js";
 export { LAB_CATALOGUE, withCatalogue, MESH_SIZE, meshSize, meshGeom, meshShape } from "./authority/catalogue.js";
@@ -241,7 +241,7 @@ function rateOf(w, actor) {
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle") rateCheck(w, actor);
-  const lifted = liftOps(st, ops, w.everIds()); ops = lifted.ops;
+  const lifted = who.lifting ? { ops, notes: [] } : liftOps(st, ops, w.everIds()); ops = lifted.ops;
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
@@ -1881,6 +1881,24 @@ export function settleOrphans(w, present = []) {
   if (out.length) w.savePresence();
   return out;
 }
+/** A world stored before sockets were entities, lifted at its first load: per host, one system act (lift-sockets: the
+ *  children it made, what it moved, and whose rights authored the sockets, so their builder still edits them) and its
+ *  change. Not bounded like ORPHANS (a half-lifted world would need both readers), and not undoable (a system act). A
+ *  second load finds nothing to lift. A server that can't sign for the world doesn't write to it, as request won't. */
+export function liftWorld(w) {
+  if (!w.exists || w.state().status !== "ok") return [];
+  if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return [{ skipped: "custody", why: "this server doesn't hold the key that signs this world" }];
+  return withAuthority(w, () => { const out = [];
+    for (const h of legacyHosts(w.state(), w.everIds())) {
+      const st = w.state(); if (!st.entities[h]) continue;
+      const { ops, made, moved } = liftHostOps(st, w.everIds(), h); if (!ops.length) continue;
+      const author = (lastSetterOf(w, h, "sockets") ?? lastSetterOf(w, h, "model") ?? creatorOf(w, h))?.rights ?? null;
+      const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
+      const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
+      changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
+      out.push({ host: h, made, moved }); }
+    return out; });
+}
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
 // no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
 function orphanLifts(w) {
@@ -2070,7 +2088,9 @@ function buildUndo(ctx, a, w) {
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
   // the result (bounded by what happened after the act, never the log before it)
-  const others = (i) => E[i].actor !== target.actor; // later work by anyone but the act's own author stands
+  // later work by anyone but the act's own author stands; the load-time lift isn't work (it respells, and its old values
+  // are translated again on the way back in)
+  const others = (i) => E[i].actor !== target.actor && E[E[i].cause]?.verb !== "lift-sockets";
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
   const later = X.changes.slice(firstAfter(X.changes, res.seq)).filter(others).map((i) => E[i]);
@@ -2085,12 +2105,15 @@ function buildUndo(ctx, a, w) {
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never
     // deleted with it and never left pointing at a thing that's gone
-    if (o.verb === "create") { if (now.entities[id]) { const kids = Object.keys(now.entities).filter((k) => now.entities[k].c.parent?.to === id && !madeHere.has(k));
-        groups.push([...kids.flatMap((k) => [setOp(k, "transform", worldT(now, k)), delOp(k, "parent")]), delOp(id)]); kids.forEach((k) => ctx.refs.add(k)); } }
+    if (o.verb === "create") { if (now.entities[id]) { const kidsOf = (p) => Object.keys(now.entities).filter((k) => now.entities[k].c.parent?.to === p && !madeHere.has(k));
+        // its sockets are its parts (a lift made them): they go with it, and what others put in them is let go like the rest
+        const parts = kidsOf(id).filter((k) => isSocketC(now.entities[k].c)); const kids = [...kidsOf(id).filter((k) => !parts.includes(k)), ...parts.flatMap(kidsOf)];
+        groups.push([...kids.flatMap((k) => [setOp(k, "transform", worldT(now, k)), delOp(k, "parent")]), ...parts.map((k) => delOp(k)), delOp(id)]); kids.forEach((k) => ctx.refs.add(k)); } }
     else if (whole) { const old = before(id); if (old && !now.entities[id]) (ctx.restores ??= new Set()).add(id), groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
     else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
-      if (old === undefined) { if (now.entities[id] && comp in now.entities[id].c) groups.push([delOp(id, comp)]); }
+      // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
+      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
       else if (now.entities[id]) groups.push([setOp(id, comp, old)]); }
     ctx.refs.add(id);
   }

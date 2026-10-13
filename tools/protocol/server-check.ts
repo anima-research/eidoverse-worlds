@@ -401,13 +401,17 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
   // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
   const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
-  const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
-    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, socket: e.parent?.socket }]; }));
+  // (since sockets are entities, the served world is lifted at its first load: a thing at a socket rides that socket's child,
+  // so "at a socket" reads as the host and the child's name; the socket child itself is no thing of v1's)
+  const E = (s) => Object.fromEntries(Object.entries(s.entities).filter(([, e]) => !e.comp?.socket).map(([id, e]) => { const p = worldPose(s.entities, id);
+    const via = s.entities[e.parent?.to]?.comp?.socket ? s.entities[e.parent.to] : null;
+    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: via ? via.parent?.to : e.parent?.to, socket: via ? via.comp.socket.name : e.parent?.socket }]; }));
   const neuView = viewState(stateFromWire(neu.snapshot.cut.state));   // what the page draws: the view of its own fold of the cut
   ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neuView)), "S6 the new copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neuView)]);
   const replica = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-new", "world.jsonl")))).entities;
-  ok(JSON.stringify(replica[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", socket: "seat" }) && JSON.stringify(replica[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
-    "S6 a translated mount is in the authority's shape: transform local to the parent (here the socket's pos), parent {to, order, socket}", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform]);
+  const seatC = replica[replica[enc("mug_1")].c.parent?.to]?.c;
+  ok(seatC?.socket?.name === "seat" && seatC.parent?.to === enc("lamp_1") && JSON.stringify(seatC.transform.pos) === "[0.3,0.75,0.1]" && !("socket" in replica[enc("mug_1")].c.parent) && replica[enc("mug_1")].c.transform.pos.every((v) => Math.abs(v) < 1e-9),
+    "S6 a translated mount is in the authority's shape once the world is loaded: the socket is lamp_1's child at the socket's pos, and the mug rides it (parent {to: <the socket>}, at its origin)", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform, seatC]);
   ok(neu.snapshot.cut?.dialect === "eidoverse-log" && neu.snapshot.cut?.v === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.cut, "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.cut]);
   ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
