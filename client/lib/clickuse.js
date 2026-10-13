@@ -89,7 +89,7 @@ export function aimPoint(clientX = lastXY?.[0], clientY = lastXY?.[1]) {
   if (lock) aimNdc.set(0, 0); else if (clientX == null) return null; else aimNdc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   aimRay.setFromCamera(aimNdc, camera);
   const mine = new Set(physicsApi.mine()), targets = []; for (const [id, o] of entities) if (o && !mine.has(id)) targets.push(o);
-  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR && !outOfMyView(x.object));
+  const h = aimRay.intersectObjects(targets, true).find((x) => x.distance > NEAR);   // a thing hidden in my view still catches a put: it is solid for everyone
   const feetY = hooks?.myPos?.()?.y ?? 0; aimPlane.constant = -feetY;
   const g = aimRay.ray.intersectPlane(aimPlane, aimHit) ? aimHit.clone() : null;
   const p = h && (!g || h.distance < aimRay.ray.origin.distanceTo(g)) ? h.point : g;

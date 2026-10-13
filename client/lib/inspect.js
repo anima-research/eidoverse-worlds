@@ -170,9 +170,9 @@ export function commitEdit(id, key, value, opts = {}) {
   const { ops, errors, euler, asks } = planEdit(id, key, value);
   // one edit is ONE request (a batch when it took several ops): one act, one Ctrl+Z, and it waits for the authority;
   // expect names what it changes as this viewer saw it (a scrubbed field: as the scrub began)
-  if (ops.length) Edits.sendOps(ops, { what: `${key} of ${id}`, base: baseComps ? { [id]: baseComps } : null, revert: () => Edits.revertPose(id) });
+  const reply = ops.length ? Edits.sendOps(ops, { what: `${key} of ${id}`, base: baseComps ? { [id]: baseComps } : null, revert: () => Edits.revertPose(id) }) : null;
   if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
-  return { ok: !errors.length, errors, ops, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };
+  return { ok: !errors.length, errors, ops, reply, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };   // reply: the authority's answer (a promise)
 }
 
 /** Several channels of one thing in ONE request (so one undo step): {'pos.x': 0, 'pos.y': 0, …}, FACE values (degrees

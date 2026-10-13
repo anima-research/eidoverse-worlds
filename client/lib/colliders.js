@@ -862,14 +862,14 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs =
 /** Nearest sittable surface to a point: a horizontal top at chair-ish height
  *  within `range`. This is DESIGN.md's `seatOn` — no authoring, no metadata,
  *  the geometry IS the affordance. Returns {y, x, z, yaw, id} or null. */
-export function findSeat(pos, range = 1.2) {
+export function findSeat(pos, range = 1.2, skip = null) {   // skip(entry): a surface the caller won't offer
   let best = null;
   // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
   for (const [id, e0] of nearColliders(pos.x, pos.z, range)) {
     const { obj, mask } = e0; const { yaw, box, exact, pillar, grid } = frameOf(e0);
-    if (mask) continue;
+    if (mask || skip?.(e0)) continue;
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
     const sc = obj.scale?.x || 1;

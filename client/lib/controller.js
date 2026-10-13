@@ -11,6 +11,7 @@ import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from './colliders.js';
 import { bumpTick } from './hiddenbump.js';
+import { outOfMyView } from './myview.js';
 import { scaledSpeed, colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: stride, capsule, eye
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint, html } from './ui.js';
@@ -382,7 +383,7 @@ function toggleSit() {
   if (posture === 'sit') { posture = null; myState.seat = null; return; }
   // Layer-0: if there's a real seat pan within reach, sit ON it. The geometry
   // is the affordance — a scanned stool is sittable the moment it arrives.
-  const seat = findSeat(myState.pos);
+  const seat = findSeat(myState.pos, undefined, (e) => !!outOfMyView(e.obj));   // a surface I hid is no seat offer
   if (seat) {
     myState.pos.set(seat.x, seat.y, seat.z);
     myState.yaw = seat.yaw;

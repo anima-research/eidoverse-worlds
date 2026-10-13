@@ -397,7 +397,8 @@ function aimPoint(skipId = null) {
   // thing being dragged under the pointer (and it would climb toward the camera). Skip its whole subtree.
   const skipObj = skipId != null ? entities.get(skipId) : null;
   if (skipObj) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (o === skipObj) return false; return true; });
-  hits = hits.filter((h) => !outOfMyView(h.object));   // a thing hidden in my view is no surface to place on
+  // a thing hidden in MY view still catches what I place: it is solid for everyone, and my private view must never shape a
+  // shared write (review 10-12 S3-5)
   if (hits.length) {
     const h = hits[0];
     // only treat near-horizontal faces as placement surfaces — a wall should

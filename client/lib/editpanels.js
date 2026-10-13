@@ -56,7 +56,7 @@ import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { RANK, lockLevel, lockRank } from '../../shared/protocol/roles.js';
-import { KEYHINTS } from './keyhints.js';   // slice 3b: these panels' writes are requests
+import { KEYHINTS, withKeys } from './keyhints.js';   // slice 3b: these panels' writes are requests
 
 const _wp = new THREE.Vector3();
 const round = (v, dp = 3) => +(+v).toFixed(dp);
@@ -266,9 +266,11 @@ function hierarchyFields() {
   const only = ONLY[hopts.only]?.test ?? null;
   const textHit = (id) => [id, world[id]?.comp?.label ?? '', world[id]?.lib ?? '', kindHint(world[id]), ...Object.keys(world[id]?.comp ?? {})].join(' ').toLowerCase().includes(q);
   const matches = q || only ? (id) => (!q || textHit(id)) && (!only || only(id, world)) : null;
-  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: q ? r.toLowerCase().includes(q) : !only }));
+  // a rider's or a component's row matches only where its thing passes the row filter too (review 10-12 S3-2)
+  const underOk = (id) => !only || only(id, world);
+  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: (q ? r.toLowerCase().includes(q) : !only) && underOk(id) }));
   // with 'list components' on, a thing's components are greyed rows under it (they fold with it, like its children)
-  const compsOfRow = (id) => (hopts.comps ? compKeys(bagOf(id)).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: q ? k.toLowerCase().includes(q) : !only })) : []);
+  const compsOfRow = (id) => (hopts.comps ? compKeys(bagOf(id)).filter((k) => k !== 'label').sort().map((k) => ({ id: `comp:${id}:${k}`, match: (q ? k.toLowerCase().includes(q) : !only) && underOk(id) })) : []);
   const underOf = (id) => [...ridersOf(id), ...compsOfRow(id)];
   const rows = treeRows(world, { collapsed: { has: isFolded }, matches, extra: underOf }).map((t) => {
     if (t.extra && t.id.startsWith('comp:')) return { id: t.id, label: t.id.slice(t.id.lastIndexOf(':') + 1), depth: t.depth, noDrag: true, dim: true, title: `a component of ${t.id.slice(5, t.id.lastIndexOf(':'))}: click to select it` };
@@ -317,7 +319,8 @@ function hierarchyFields() {
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     // Options ▾ (R, 10-10: the 'View: ids' face was drawn twice and the list carried a search box and a 'recent'
     // group for three switches; Maya's Outliner calls its two menus Display and Show, which read as one thing: one menu here)
-    { t: 'pop', k: 'hopts', label: 'Options ▾', plain: true, deskOnly: true, bar: true, hint: 'what each row shows: names only, unless you turn more on',
+    // an active row filter says so on the bar: a filter nobody can see is the trap research 51 R3 names (review 10-12 S3-3)
+    { t: 'pop', k: 'hopts', label: only ? `Options ▾ · ${ONLY[hopts.only].label}` : 'Options ▾', plain: true, deskOnly: true, bar: true, hint: 'what each row shows: names only, unless you turn more on',
       items: [...Object.keys(HOPTS).map((k) => ({ k: `hopt:${k}`, label: `${hopts[k] ? '✓' : ' '} ${HOPTS[k]}` })),
         ...Object.entries(ONLY).map(([k, o]) => ({ k: `honly:${k}`, label: `${(hopts.only ?? 'all') === k ? '✓' : ' '} ${o.label}` })),
         { k: 'fold:all-open', label: '  expand all' }, { k: 'fold:all-shut', label: '  collapse all' }] },
@@ -329,7 +332,7 @@ function hierarchyFields() {
     // since R 10-11 ("move the 'world' in the Hierarchy under the filter line, just to make it more clear that you can
     // interact with it like an ordinary entity"): Blender's Outliner starts its tree with the Scene Collection the same way
     worldRowFields(),
-    { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : only ? `nothing ${ONLY[hopts.only].none}` : 'nothing placed yet — press B in the world to place things' },
+    { t: 'tree', k: 'sel', rows, settle: enabledSettle, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : only ? `nothing ${ONLY[hopts.only].none}` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
 function myHide(id) {
@@ -641,9 +644,10 @@ const thingName = (id) => { const l = bagOf(id)?.label; return typeof l === 'str
 /** The ENABLED box that leads every thing's Inspector header (Unity's and Resonite's convention; R 10-12): ticked = on.
  *  It is the `disabled` component (5d5eef5c) read the other way round, so it is there whether the thing is on or off. */
 const enabledBox = (id) => { const on = state.st.entities[id]?.comp?.disabled !== true;
-  return { t: 'check', k: 'henabled', label: '', vrLabel: 'enabled', value: on, bar: true, cls: 'sp-enabled', path: 'flags.disabled',
-    hint: on ? 'Enabled. Untick to switch it off for everyone: it stays in the Hierarchy, but nobody downloads, sees or touches it, and it has no physics (what hangs under it goes with it).'
-      : 'Switched off for everyone: nobody downloads, sees or touches it. Tick to switch it back on.' }; };
+  const words = on ? 'Enabled. Untick to switch it off for everyone: it stays in the Hierarchy, but nobody downloads, sees or touches it, and it has no physics (what hangs under it goes with it).'
+    : 'Switched off for everyone: nobody downloads, sees or touches it. Tick to switch it back on.';
+  return { t: 'check', k: 'henabled', label: '', vrLabel: 'enabled', value: on, settle: enabledSettle, bar: true, cls: 'sp-enabled', path: 'flags.disabled',
+    hint: withKeys(words, 'toggleEnabled') }; };
 function inspectorFields() {
   if (worldSel()) return worldFields();
   const id = sceneSelected();
@@ -767,11 +771,16 @@ function inspectorFields() {
   return shown;
 }
 
+// bumped when a switch has its answer: the ENABLED boxes drop the click they were holding and show the record
+let enabledSettle = 0;
 function setEnabled(id, on) {
-  if ((state.st.entities[id]?.comp?.disabled !== true) === on) { repaintAll(); return; }
+  if ((state.st.entities[id]?.comp?.disabled !== true) === on) { enabledSettle++; repaintAll(); return; }
   const r = commitEdit(id, 'flags.disabled', !on);
-  if (r?.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); else flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600);
-  repaintAll();
+  if (r?.errors?.length) { flashHint(r.errors.join(' · '), 5000, 'attn'); enabledSettle++; repaintAll(); return; }
+  // the hint waits for the authority: a refusal says its own words (editwrites), and the boxes go back to the record
+  Promise.resolve(r?.reply).then((x) => {
+    if (x?.ok) flashHint(on ? `${thingName(id)} switched back on` : `${thingName(id)} switched off for everyone (Ctrl+Z switches it back on)`, 2600);
+  }).finally(() => { enabledSettle++; repaintAll(); });
 }
 function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel() ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
@@ -1299,6 +1308,14 @@ export function initEditPanels() {
   bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark
     if (!shown || e.code !== 'KeyD' || !(e.ctrlKey || e.metaKey || e.altKey)) return;   // keys: duplicate
     if (sceneSelected()) { e.preventDefault(); hierarchyDispatch('duplicate', sceneSelected()); }
+  });
+  bus.on('key', (e) => {   // Alt+Shift+A: the selection's ENABLED box (Unity's toggle active); the primary decides which way
+    if (!shown || e.code !== 'KeyA' || !(e.altKey && e.shiftKey)) return;   // keys: toggleEnabled
+    const sel = Sel.selection();   // not selection(): that keeps live things only, and a switched-off thing is still selected
+    const ids = sel.kind === 'things' ? sel.ids.filter((id) => id !== WORLD_ID && state.st.entities[id]) : []; if (!ids.length) return;
+    e.preventDefault();
+    const on = state.st.entities[ids[0]]?.comp?.disabled === true;
+    for (const id of ids) setEnabled(id, on);
   });
   // ↑/↓ walk the tree ONLY while the tree has focus — on the window they are
   // walking keys (controller.js: ArrowUp is forward). The frame listener runs

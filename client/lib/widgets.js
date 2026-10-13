@@ -104,11 +104,17 @@ const ROW = {
     g.fillStyle = r.active ? 'rgba(143,232,200,0.16)' : C.row;
     g.fillRect(pad, y + 2, width - pad * 2, rowH - 4);
     const lx = pad + 10 + ind + (tree ? 26 : 0);   // a tree row's name starts after its enabled column
+    // the text stops short of the row's right-hand targets (the eye and the lock), however deep or long (review 10-12 S3-4)
+    const stop = tree ? width - pad - 34 - (r.mine != null ? 40 : 0) - 8 : width - pad;
+    const fit = (t, w) => { t = String(t); if (w <= 0) return ''; if (g.measureText(t).width <= w) return t; while (t.length && g.measureText(t + '…').width > w) t = t.slice(0, -1); return t ? t + '…' : ''; };
     font(15, r.active ? 600 : 400); g.fillStyle = r.off ? C.label : C.text;
-    g.fillText(String(r.label).slice(0, 34), lx, y + rowH * 0.62);
+    const name = fit(String(r.label).slice(0, 34), stop - lx);
+    g.fillText(name, lx, y + rowH * 0.62);
     if (tree && (r.sub || r.badges?.length)) {
+      const sx = lx + Math.min(220, g.measureText(name).width + 14);
       font(11); g.fillStyle = C.label;
-      g.fillText([r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · ').slice(0, 40), lx + Math.min(220, r.label.length * 9 + 14), y + rowH * 0.62);
+      const sub = fit([r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · ').slice(0, 40), stop - sx);
+      if (sub) g.fillText(sub, sx, y + rowH * 0.62);
     }
     regions.push({ x: pad, y, w: width * 0.6, h: rowH, action: parent.k ?? 'row', payload: r.id });
     if (tree && r.kids) {   // a disclosure glyph, its own hit region ahead of the row's
@@ -455,10 +461,17 @@ export const WIDGETS = {
       // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
       // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
       // it was clicked to until the record agrees (or 3 s pass: then the record wins, e.g. a refusal).
-      let pending = null;
-      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked); };
+      // A field that bumps `settle` has had its answer (a refusal too): the record wins from then on, so a refused click
+      // can't leave the box lying (review 10-12 S2-1); so does the record once the 3 s are up, repaint or not.
+      let pending = null, rec = !!f.value, settle = f.settle;
+      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked);
+        setTimeout(() => { if (pending && performance.now() >= pending.until) { pending = null; inp.checked = rec; } }, 3050); };
+      // a mouse click must not leave focus here: a focused input holds the panel's repaint until blur, and the world's keys
+      // (WASD, B, Enter) stop (review 10-12 S2-3). Keyboard focus (Tab) still lands
+      inp.onmousedown = (e) => e.preventDefault();
       row.append(inp);
-      row.update = (nf) => { setLabel(nf); const v = !!nf.value;
+      row.update = (nf) => { setLabel(nf); const v = !!nf.value; rec = v;
+        if (nf.settle !== settle) { settle = nf.settle; pending = null; }
         if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
         pending = null; inp.checked = v; };
     },
@@ -791,6 +804,8 @@ export const WIDGETS = {
       const dropOn = (onto) => (e) => { e.preventDefault(); e.stopPropagation(); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); if (treeDrag && treeDrag !== onto) edit('drop', { id: treeDrag, onto }); treeDrag = null; };
       box.ondragover = (e) => { if (treeDrag) { e.preventDefault(); e.dataTransfer && (e.dataTransfer.dropEffect = 'move'); } };
       box.ondrop = dropOn(null);
+      const boxes = new Map();   // id → its row's ENABLED box: a same-shape repaint sets them from the record
+      let settle = f.settle;
       for (const r of f.rows ?? []) {
         const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // every row is findable by what it is (component rows too)
@@ -819,7 +834,10 @@ export const WIDGETS = {
           on.disabled = r.offable === false;
           on.title = r.enabled ? 'enabled: untick to switch it off for everyone (it stays here as a link)' : 'switched off for everyone: tick to switch it back on';
           on.onclick = (e) => e.stopPropagation(); on.onpointerdown = (e) => e.stopPropagation();
-          on.onchange = () => edit('enable', { id: r.id, on: on.checked });
+          on.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };   // no focus from a click (the check widget's reason)
+          on._rec = !!r.enabled; boxes.set(String(r.id), on);
+          on.onchange = () => { on._pend = { v: on.checked, until: performance.now() + 3000, settle }; edit('enable', { id: r.id, on: on.checked });
+            setTimeout(() => { if (on._pend && performance.now() >= on._pend.until) { on._pend = null; on.checked = on._rec; } }, 3050); };
           line.append(on);
         } else line.append(el('span', 'sp-row-on gap'));
         if (r.off) line.classList.add('off');
@@ -895,7 +913,11 @@ export const WIDGETS = {
       box.addEventListener('scroll', () => treeScroll.set(tkey, box.scrollTop), { passive: true });
       const back = () => { const y = treeScroll.get(tkey); if (y && box.isConnected) box.scrollTop = y; };
       queueMicrotask(back); requestAnimationFrame(back);
-      // rows are shape: a changed tree repaints
+      // rows are shape: a changed tree repaints. A same-shape repaint (a refused switch leaves the rows as they were) still
+      // owes the boxes the record, past a click still waiting on its answer (review 10-12 S2-1)
+      row.update = (nf) => { settle = nf.settle; for (const r of nf.rows ?? []) { const b = boxes.get(String(r.id)); if (!b || r.enabled == null) continue; b._rec = !!r.enabled;
+        if (b._pend && b._pend.settle === nf.settle && performance.now() < b._pend.until) { b.checked = b._pend.v; continue; }
+        b._pend = null; b.checked = !!r.enabled; } };
     },
     row: ROW,
   },

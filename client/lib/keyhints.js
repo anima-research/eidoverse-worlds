@@ -14,6 +14,7 @@ export const KEYHINTS = {
   selectExtend:  { before: 'Ctrl- or Shift-click adds to the selection · Shift-drag on empty space draws a box', during: null },
   undo:          { before: 'Ctrl+Z undo · Ctrl+Shift+Z or Ctrl+Y redo', during: null },
   jsonCommit:    { before: 'Ctrl+Enter commits · Esc reverts', during: null },
+  toggleEnabled: { before: 'Alt+Shift+A switches the selection on or off, for everyone (Unity\'s toggle active)', during: null },
   duplicate:     { before: 'Ctrl+D (or Alt+D) duplicates the selection: an independent copy · Save as blueprint for copies that stay in step', during: null },
   editCamera:    { before: 'camera: drag bare space or Alt+drag to orbit · middle-drag pans · Alt+right-drag or the wheel dollies · F frames the selection', during: null },
   resetTransform: { before: 'Alt+G resets translate · Alt+E rotate · Alt+R scale · Ctrl+G all three (or right-click a channel)', during: null },

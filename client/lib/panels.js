@@ -239,7 +239,8 @@ function stepper(value, f, commit) {
   const num = el('input', 'sp-num');
   num.type = 'text'; num.inputMode = 'decimal'; num.autocomplete = 'off'; num.spellcheck = false;
   if (disabled) num.disabled = true;
-  const toFace = (w) => trimNum(deg ? w * R2D : w, deg ? 0 : cur.dp);
+  // a value finer than the row's dp (a typed 0.5 m in a whole-metre row) shows as it is, not rounded to what it isn't
+  const toFace = (w) => { const v = deg ? w * R2D : w, dp = deg ? 0 : cur.dp; return trimNum(v, Math.abs(v - +v.toFixed(dp)) > 1e-9 ? Math.max(dp, 3) : dp); };
   const toWire = (face) => (deg ? face / R2D : face);
   const hard = (w) => Math.min(cur.max ?? Infinity, Math.max(cur.min ?? -Infinity, w));
   const soft = (w) => Math.min(cur.softMax ?? cur.max ?? Infinity, Math.max(cur.softMin ?? cur.min ?? -Infinity, w));
@@ -248,8 +249,11 @@ function stepper(value, f, commit) {
   const show = (w) => { num.value = toFace(w); shownFace = num.value; };
   show(wire);
   const send = (w, o) => { wire = hard(w); show(wire); commit(wire, o); };
+  // typed: written AS TYPED. The row's min/max are the slider's, not the door's: the editor's own check (editschema
+  // editOps, D4a) refuses what the door would refuse and says why, so nothing here clamps (tools/editor-range-test.ts)
+  const sendTyped = (w) => { wire = w; show(wire); commit(wire); };
 
-  // typed entry: relative math against the CURRENT face value, hard limits. ONE commit per typing: Enter commits and
+  // typed entry: relative math against the CURRENT face value, no clamp (sendTyped). ONE commit per typing: Enter commits and
   // blurs, and the blur's own native `change` must not commit again with a stale expect (review 10-07 B2: every Enter
   // wrote the edit, then a second identical set that the authority refused as `changed`, with a red toast). A change
   // whose text is what the field last showed is no edit at all.
@@ -258,7 +262,7 @@ function stepper(value, f, commit) {
     const face = parseEntry(num.value, +toFace(wire));
     if (face == null) { show(wire); return; }
     if (face === +toFace(wire)) { show(wire); num.blur(); return; }   // the value it already has: nothing to write
-    send(toWire(face));
+    sendTyped(toWire(face));
     num.blur();   // release focus so held repaints resume
   };
   num.onkeydown = (e) => {

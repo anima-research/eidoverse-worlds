@@ -6,6 +6,7 @@
 // edit mode (E rotates there), not while typing (controller.js filters), not in a headset (no hint bar there).
 import { THREE } from './core.js';
 import { bags, bagOf, entities } from './world.js';
+import { outOfMyView } from './myview.js';
 import { bus } from './base.js';
 import { register as registerAction } from './actions.js';
 import { xrActive } from './xrask.js';
@@ -32,7 +33,7 @@ export function usable() {
   let best = null, bestS = Infinity;
   for (const [id, bag] of bags()) {
     const rx = bag.reactions; if (!isBag(rx) || !Object.keys(rx).length) continue;
-    const obj = entities.get(id); if (!obj?.getWorldPosition) continue;
+    const obj = entities.get(id); if (!obj?.getWorldPosition || outOfMyView(obj)) continue;   // nothing I hid is offered
     obj.getWorldPosition(_v);
     const dx = _v.x - me.x, dz = _v.z - me.z, d = Math.hypot(dx, dz);
     if (d > USE_REACH || Math.abs(_v.y - me.y) > 2.5) continue;
