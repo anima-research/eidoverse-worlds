@@ -59,18 +59,6 @@ const restOf = (obj, ent) => ({
 
 const _v = new THREE.Vector3();
 
-// A child's record pos is LOCAL to its carrier (view.js: parent.offset = transform.pos). While it is mounted the scene
-// graph composes it; while it WAITS (its carrier beyond its residency radius, or still loading, so there is nothing to
-// mount into) it stands in the Scene by itself, and standing it at the record's pos would hang it, and the light it
-// carries, off the world origin. A waiting child stands at its folded WORLD pose instead, the pose it will hold once
-// mounted, so a far lamp's bulb shines over the far lamp exactly as a far model's own light parks at its fold
-// (syncCompLight) and the rig budgets it by that distance.
-function standPose(id, ent) {
-  if (!ent?.parent) return ent;
-  const w = worldPose(state.st.entities, id);
-  return w ? { pos: w.pos, q: w.q, scale: w.scale } : ent;
-}
-
 // ---- placeholders -----------------------------------------------------------
 // The world appears at FOLD time: a translucent box the size of the real
 // thing (bbox from the server's geom side-channel), standing at the folded
@@ -119,11 +107,10 @@ function makePlaceholder(id, ent, g) {
   grp.userData.entityId = id;
   grp.userData.placeholder = true;
   grp.userData.noCamCollide = true;
-  const at = standPose(id, ent);
-  grp.position.set(...(at.pos ?? [0, 0, 0]));
-  orientObj(grp, at);
-  if (entScale(at)) applyScale(grp, entScale(at));
-  grp.userData.base = restOf(grp, at);
+  grp.position.set(...(ent.pos ?? [0, 0, 0]));
+  orientObj(grp, ent);
+  if (ent.scale) applyScale(grp, entScale(ent));
+  grp.userData.base = restOf(grp, ent);
   return grp;
 }
 
@@ -312,12 +299,11 @@ function realizeModel(id, cur, obj) {
   // tier 'full' but ASKED 'lod'; the sweep compares wants against the ask, so
   // it is not re-asked every cooldown — only when the policy flips and back.
   obj.userData.entityId = id;
-  const at = standPose(id, cur);
-  const sc = entScale(at);
-  obj.position.set(...(at.pos ?? [0, 0, 0]));
-  orientObj(obj, at);
+  const sc = entScale(cur);
+  obj.position.set(...(cur.pos ?? [0, 0, 0]));
+  orientObj(obj, cur);
   if (sc) applyScale(obj, sc);
-  obj.userData.base = restOf(obj, at);
+  obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
   scene.add(obj);
   applyHidden(id);   // a thing hidden before its model arrived stays hidden
@@ -444,11 +430,10 @@ function createHost(id, ent, kind) {
   g.userData.entityId = id;
   g.userData.empty = true;
   g.userData.noCamCollide = true;
-  const at = standPose(id, ent);
-  g.position.set(...(at.pos ?? [0, 0, 0]));
-  orientObj(g, at);
-  if (entScale(at)) applyScale(g, entScale(at));
-  g.userData.base = restOf(g, at);
+  g.position.set(...(ent.pos ?? [0, 0, 0]));
+  orientObj(g, ent);
+  if (ent.scale) applyScale(g, entScale(ent));
+  g.userData.base = restOf(g, ent);
   setEmptyMarker(g, editing);
   entities.set(id, g);
   scene.add(g);
@@ -583,18 +568,16 @@ function applyColliderPref(id) {
 function refreshModel(id, ent) {
   const obj = entities.get(id);
   if (!obj) return;   // loading: completion reads state
-  // A MOUNTED child's transform is parent-relative and the mount owns it
-  // (execMount seats it at the offset; the dismount stamp brings the fold's
-  // word back when the ride ends): re-applying it here on every reconnect
-  // reconcile is what the mount-pose parity bucket caught (review B1). An
-  // unmounted one stands where standPose says.
-  const at = obj.userData.mountedTo ? ent : standPose(id, ent);
+  // A MOUNTED child's transform is parent-relative (its record pos IS the
+  // offset) and the mount owns it: re-applying it here on every reconnect
+  // reconcile is what the mount-pose parity bucket caught (review B1). The
+  // dismount stamp brings the fold's word back when the ride ends.
   if (!obj.userData.mountedTo) {
-    if (at.pos) obj.position.set(...at.pos);
-    if (at.q || at.yaw != null) orientObj(obj, at);
-    obj.userData.base = restOf(obj, at);
+    if (ent.pos) obj.position.set(...ent.pos);
+    if (ent.q || ent.yaw != null) orientObj(obj, ent);
+    obj.userData.base = restOf(obj, ent);
   }
-  if (at.scale != null) applyScale(obj, entScale(at));
+  if (ent.scale != null) applyScale(obj, entScale(ent));
   if (!isPlaceholder(obj) && obj.userData.tier !== 'lod') refitCollider(id);   // placeholders and lod tiers own no collider
   bus.emit('entity', { id, kind: 'place' });
 }
@@ -608,7 +591,11 @@ function retire(id) {
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
-  if (obj) {
+  const rode = obj?.userData?.mountedTo;
+  // a carrier that leaves the fold with only a stand-in: its cargo steps off that, the same way (one that is only being
+  // rebuilt keeps it: the rebuild re-mounts them)
+  const holder = obj ?? (state.st.entities[id] ? null : standIns.get(id));
+  if (holder) {
     // cargo steps off before the carrier vanishes — at the pose the FOLD
     // stamped for it, so every joiner and this client agree where it landed.
     // The scene index is the same membership the old all-entities walk
@@ -629,8 +616,10 @@ function retire(id) {
       // an Empty owns no collider (its only mesh may be a light gizmo)
       if (!cobj.userData.empty) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
     }
-    (obj.parent ?? scene).remove(obj);
+    (holder.parent ?? scene).remove(holder);
+    if (holder !== obj) standIns.delete(id);
   }
+  if (rode) pruneStandIn(rode);
   indexSceneMount(id, null);      // if the retired thing itself rode a carrier
   release(id, 'retire');          // the collider, the caster and the lamps let go
   entities.delete(id);
@@ -652,6 +641,7 @@ function emitCompBag(id) {
 function applyHidden(id) {
   const obj = entities.get(id);
   if (obj) obj.visible = bagOf(id)?.hidden !== true && !isMineHidden(id) && !isolatedOut(id);   // hidden for everyone, or just in my view (myview.js: the eye, isolate)
+  else if (standIns.has(id)) placeStandIn(id);   // its waiting children go and come with it
 }
 bus.on('myview', ({ id }) => applyHidden(id));
 
@@ -702,13 +692,14 @@ function execMount(id) {
   }
   const rel = ent.parent;
   const child = entities.get(id);
-  const parent = entities.get(rel.to);
   if (!child) return;
-  if (!parent) { standWaiting(id, child); return; }
+  const parent = entities.get(rel.to) || standInFor(rel.to);
+  if (!parent) return;
   const sock = rel.socket ? state.st.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
   // the RESOLVED socket is part of the linkage's identity: a socket authored
-  // after the mount must re-seat the rider, not be ignored (review S5)
-  const relKey = JSON.stringify([rel, sock ?? null]);
+  // after the mount must re-seat the rider, not be ignored (review S5); so is
+  // riding the stand-in, which the real carrier's arrival replaces
+  const relKey = JSON.stringify([rel, sock ?? null, !!parent.userData.standIn]);
   if (child.userData.mountRel === relKey) return;   // already exactly this
   // a loop (a log written before the authority refused them): parenting a thing
   // under its own descendant would make three.js recurse forever every frame —
@@ -717,7 +708,7 @@ function execMount(id) {
   const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
   parent.add(child);   // transform becomes parent-relative
   child.position.set(...off);
-  applyScale(child, entScale(ent) ?? 1);   // its own, not the composed scale it stood in while it waited (standPose)
+  applyScale(child, entScale(ent) ?? 1);   // its own: attach() and a step-out bake the carrier's in
   if (Array.isArray(rel.q) && rel.q.length === 4) child.quaternion.set(rel.q[0], rel.q[1], rel.q[2], rel.q[3]);
   else if (rel.yaw != null || !sock) child.rotation.set(0, rel.yaw ?? 0, 0);
   else child.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation (a rocket's seat lies on its back)
@@ -731,35 +722,53 @@ function execMount(id) {
   // the parent's collider is what the pair collides as while attached
   removeCollider(id);
   bus.emit('mount', { id, to: rel.to, socket: rel.socket });
+  if (!parent.userData.standIn) pruneStandIn(rel.to);
 }
 
-/** A child whose carrier has nothing realized to mount into: off any carrier it still rode (re-parented from a standing
- *  one), standing at its folded world pose until the carrier's load calls execMount back (mountsTouching). */
-function standWaiting(id, obj) {
-  if (obj.userData.mountedTo) {
-    scene.attach(obj);
-    delete obj.userData.mountedTo;
-    delete obj.userData.mountRel;
-    indexSceneMount(id, null);
-    bus.emit('mount', { id, to: null });
-  }
-  refreshModel(id, state.st.entities[id]);
-}
+// ---- stand-ins ----------------------------------------------------------------
+// A carrier that is in the fold but has nothing realized (beyond its residency radius, still loading, a failed load)
+// still carries its children. They mount into its STAND-IN: a bare Group (no mesh, no collider, no entityId) at the carrier's
+// folded world pose, so a child's position, rotation, scale and base stay LOCAL to its carrier everywhere (the gizmo,
+// the scene panel, a peer's drag preview, restAtBase all read them so), a far lamp's bulb shines over the far lamp as a
+// far model's own light parks at its fold, and the carrier's hidden/isolated state reaches them as the scene graph's
+// would. The real carrier's arrival re-mounts them (mountsTouching; the relKey names the stand-in) and the emptied
+// stand-in goes. One per carrier, keyed by the carrier's id; never in `entities`.
+const standIns = new Map();   // carrier id -> Group
 
-/** The carrier `id` moved in the fold: what waits on it (unmounted, so the scene graph does not carry it) re-stands. */
-function restandWaiting(id, seen = new Set([id])) {
-  for (const cid of childrenOf(id)) {
-    if (seen.has(cid)) continue;
-    seen.add(cid);
-    const obj = entities.get(cid);
-    if (obj && !obj.userData.mountedTo) refreshModel(cid, state.st.entities[cid]);
-    restandWaiting(cid, seen);
+function standInFor(cid) {
+  if (!state.st.entities[cid]) return null;   // a dangling parent: the child stands as a root, as it always did
+  let g = standIns.get(cid);
+  if (!g) {
+    g = new THREE.Group();
+    g.userData = { standIn: cid, noCamCollide: true, perfscopeIgnore: true, skyExempt: true };   // skyExempt: a sky build in flight must not adopt it (sky.js claimSkyAdditions)
+    standIns.set(cid, g);
+    scene.add(g);
+    placeStandIn(cid);
   }
+  return g;
+}
+function placeStandIn(cid) {
+  const g = standIns.get(cid); if (!g) return;
+  const w = worldPose(state.st.entities, cid); if (!w) return;
+  g.position.set(...w.pos); g.quaternion.set(...w.q); applyScale(g, w.scale ?? 1);
+  g.visible = bagOf(cid)?.hidden !== true && !isMineHidden(cid) && !isolatedOut(cid);
+}
+function pruneStandIn(cid) {
+  const g = standIns.get(cid);
+  if (g && !g.children.length) { g.parent?.remove(g); standIns.delete(cid); }
+}
+/** `id` moved or was re-parented in the fold: the stand-ins at or under it re-stand (their world pose composes its). */
+function restandWaiting(id, seen = new Set()) {
+  if (seen.has(id)) return;
+  seen.add(id);
+  placeStandIn(id);
+  for (const cid of childrenOf(id)) restandWaiting(cid, seen);
 }
 
 function execDismount(id, ent) {
   const obj = entities.get(id);
   if (obj && obj.userData.mountedTo) {
+    const was = obj.userData.mountedTo;
     scene.attach(obj);   // keeps the world transform it had
     delete obj.userData.mountedTo;
     delete obj.userData.mountRel;
@@ -773,6 +782,7 @@ function execDismount(id, ent) {
     applyScale(obj, entScale(ent) ?? 1);
     obj.userData.base = restOf(obj, ent);
     if (!obj.userData.empty) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
+    pruneStandIn(was);
   }
   bus.emit('mount', { id, to: null });
 }
@@ -1020,13 +1030,14 @@ function onChange({ id, what, comp }) {
       case 'pose':
         if (ent) refreshModel(id, ent);
         syncCompLight(id);   // a parked light (model still loading) moves with the fold
-        restandWaiting(id);
+        if (standIns.size) restandWaiting(id);
         break;
       case 'parent':
         // moved under (or out from under) a switched-off thing: it goes or comes with its new parent (review 5d5eef5c #6)
         if (offIn(state.st.entities, id) !== !(entities.has(id) || tracked.has(id))) { reconcileSubtree(id); break; }
         if (ent?.parent) execMount(id);
         else if (entities.has(id) || tracked.has(id)) execDismount(id, ent);
+        if (standIns.size) restandWaiting(id);
         break;
       case 'comp':
         onComp(id, comp);
@@ -1080,6 +1091,8 @@ export function initModelsRealizer() {
       for (const id of [...tracked.keys()]) retire(id);
       sceneChildren.clear();
       sceneParentOf.clear();
+      for (const g of standIns.values()) g.parent?.remove(g);
+      standIns.clear();
     } else if (ev.type === 'change') onChange(ev);
   });
   return true;
