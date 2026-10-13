@@ -338,6 +338,41 @@ export function resolveSeat(world, seat) {
   return kid ? { to: kid } : null;
 }
 
+/** What a socket is for, read from what it has (never stored): a seat if body, a snap point if accepts, else an attach
+ *  point. `c` is the socket's record (a fold `c` or a view's `comp`). */
+export const socketRole = (c) => (isObj(c?.socket?.body) ? 'seat' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
+/** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock}] in `kids` order. `kids(host)`
+ *  lists a thing's child ids; `rec(id)` is a record's components (a fold `c`, or a view's `comp`). A socket switched off
+ *  on its own is a closed seat: not listed. The one reader every client and agent surface shares (the authority's own is
+ *  authority/sockets.js socketsOf, over its children index). */
+export function socketsUnder(host, kids, rec, { all = false } = {}) {
+  const out = [];
+  for (const k of kids(host) ?? []) { const c = rec(k); if (isObj(c?.socket) && (all || c.disabled !== true)) out.push({ id: k, name: c.socket.name, sock: c.socket }); }
+  return out;
+}
+/** …in a world: a fold state's or a view's `entities` ({id: {c}} or {id: {comp, parent}}). O(things): readers that ask
+ *  for many hosts build their own children index and call socketsUnder. */
+export function socketsIn(entities, host, opts) {
+  const E = entities ?? {}; const recC = (k) => E[k]?.c ?? E[k]?.comp ?? null; const up = (k) => E[k]?.c?.parent?.to ?? E[k]?.parent?.to;
+  return socketsUnder(host, (h) => Object.keys(E).filter((k) => up(k) === h), recC, opts);
+}
+/** A socket child as the old `sockets.<name>` entry read ({pos, q?, part?, body?, accepts?, radius?}): its pose is its own
+ *  transform, local to its host. For the readers still written against the map (the Inspector's Sockets card and the
+ *  seat gizmos, until the Parts UI: PLAN §10 12b); writing one back as a map is translated at the door. `t` is the
+ *  socket's transform ({pos, q}). */
+export function slotOf(sock, t) {
+  const { name, ...rest } = sock ?? {};
+  const q = Array.isArray(t?.q) && t.q.length === 4 && !(t.q[0] === 0 && t.q[1] === 0 && t.q[2] === 0 && t.q[3] === 1) ? { q: t.q.slice() } : {};
+  return { pos: Array.isArray(t?.pos) ? t.pos.slice() : [0, 0, 0], ...q, ...JSON.parse(JSON.stringify(rest)) };
+}
+/** A host's socket children as the old `sockets` map ({name: slotOf…}), switched-off ones included (a map written back
+ *  must not drop them), or null when it has none. `entities` as socketsIn. */
+export function socketMapIn(entities, host) {
+  const E = entities ?? {}; const out = {};
+  for (const x of socketsIn(E, host, { all: true })) { const e = E[x.id]; out[x.name] = slotOf(x.sock, e?.c ? e.c.transform : { pos: e?.pos, q: e?.q }); }
+  return Object.keys(out).length ? out : null;
+}
+
 /** One line saying what a body does at a socket, for people and agents alike (the agent's look, the sit reply). */
 export function describeBody(slot, b) {
   if (!b) return `${slot}: an attach point (things only)`;

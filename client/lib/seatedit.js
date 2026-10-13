@@ -1,6 +1,6 @@
 // seatedit — the seat-anchor authoring grammar (split from build.js, §R4).
 //
-// Sit anchors (the `sockets` component) get the same editing grammar as
+// Sit anchors (socket children with a body block; PLAN-sockets-entities) get the same editing grammar as
 // things: visible in edit mode as gold gizmos, click to select, drag to
 // refine, Q/E to face, Del to remove, one undoable log entry per commit.
 // Zero server involvement — this is all authoring UI over the comp verb.
@@ -17,7 +17,9 @@ import { sendOps } from './editwrites.js';
 import { THREE, camera } from './core.js';
 import { bus } from './base.js';
 import { libLabels } from './assets.js';
-import { entities, metaOf, bags, bagOf, findPart } from './world.js';
+import { entities, metaOf, bags, bagOf, parentIdOf, findPart } from './world.js';
+import { state } from './state.js';
+import { socketMapIn } from '../../shared/sockbody.js';
 import { mouse } from './controller.js';
 import { flashHint, html } from './ui.js';
 import { engage, release } from './keyhints.js';
@@ -57,11 +59,13 @@ function makeSeatGizmo() {
 export function refreshSeatGizmos() {
   for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
   if (!isEditing()) return;
-  for (const [id, bag] of bags()) {
-    if (!bag.sockets) continue;
+  // a seat is a socket child (PLAN-sockets-entities): every host that has one, read as its old map (socketMapIn)
+  const hosts = new Set();
+  for (const [sid, c] of bags()) if (c?.socket && typeof c.socket === 'object') { const h = parentIdOf(sid); if (h != null) hosts.add(h); }
+  for (const id of hosts) {
     const root = entities.get(id);
     if (!root) continue;
-    for (const [slot, sock] of Object.entries(bag.sockets)) {
+    for (const [slot, sock] of Object.entries(socketsOf(id))) {
       const g = makeSeatGizmo();
       g.position.set(...(sock.pos ?? [0, 0.5, 0]));
       g.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation
@@ -72,7 +76,7 @@ export function refreshSeatGizmos() {
   if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSeat();
   else refreshSeatHighlight();
 }
-bus.on('comp', ({ type }) => { if (type === 'sockets') refreshSeatGizmos(); });
+bus.on('comp', ({ type }) => { if (type === 'socket' && isEditing()) refreshSeatGizmos(); });
 bus.on('entity', () => { if (isEditing()) refreshSeatGizmos(); });
 
 function refreshSeatHighlight() {
@@ -123,7 +127,9 @@ export function resetSeats() {
   deselectSeat();
 }
 
-function socketsOf(id) { return structuredClone(bagOf(id)?.sockets ?? {}); }
+/** A host's sockets as the map this grammar edits (its socket children: shared/sockbody.js socketMapIn); writing the map
+ *  back is translated into the children at the door. */
+function socketsOf(id) { return socketMapIn(state.st.entities, id) ?? {}; }
 
 /** One merged comp entry per gesture, with its inverse on the undo stack —
  *  merged, because comp data replaces wholesale and a naive write would

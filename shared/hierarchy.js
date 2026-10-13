@@ -22,6 +22,7 @@ import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 import { socketQ, lightOf } from './components.js';
 import { kindOf } from './protocol/kind.js';
+import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
@@ -122,6 +123,7 @@ export function childrenOf(world, id) {
 export function kindHint(ent) {
   if (!ent) return '?';
   const kind = kindOf(ent);
+  if (kind === 'socket') return socketRole(ent.c ?? ent.comp);   // what it is for: seat, snap or attach (never stored)
   const plus = lightOf(ent) ? ' + light' : '';
   if (kind === 'mesh') return `${(ent.c ?? ent.comp).mesh.shape}${plus}`;
   if (kind !== 'model') return kind;

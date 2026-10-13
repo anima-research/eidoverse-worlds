@@ -40,10 +40,11 @@ export function dotVisible(mode, { target = false, surface = false } = {}) {
  *  every wall it hangs toward. An INTERACTABLE entity (below) is a target like a panel, button or not. */
 export const looksAtWorld = (mode, { grip = false, trig = false } = {}) => pointerVisibilityMode(mode) === 'always' || !!(grip || trig);
 /** INTERACTABLE: an entity that does something when you use it (owner, 10-02: "it does something when you trigger-click
- *  it"). The affordances look() reads out to agents (mcpl/agent.ts): sockets (sit / mount) and reactions (use). The
+ *  it"). The affordances look() reads out to agents (mcpl/agent.ts): its sockets (socket children: sit / mount; `sockets`
+ *  is how many it has, world.js socketsOn) and reactions (use). The
  *  trigger on any entity also SELECTS it for editing (xr:select → the scene graph); that is an editor's act, not an
  *  affordance, so a plain wall is not a target. `comp`: the entity's component bag (world.js comps). */
-export const interactable = (comp) => !!comp && ['sockets', 'reactions'].some((k) => comp[k] && typeof comp[k] === 'object' && Object.keys(comp[k]).length > 0);
+export const interactable = (comp, sockets = 0) => !!comp && (sockets > 0 || (!!comp.reactions && typeof comp.reactions === 'object' && Object.keys(comp.reactions).length > 0));
 
 // ---- 2. smoothing ---------------------------------------------------------------------------------------------
 // τ is the time to close ~63% of a gap. 30 ms: physiological tremor (8–12 Hz) is roughly halved, and a deliberate

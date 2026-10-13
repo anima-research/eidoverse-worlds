@@ -3,10 +3,10 @@
 // it (VRChat Station, Roblox Seat). usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/sockets-test.ts
 import { inspectSchema, editOps } from '../shared/editschema.js';
 import { bodyOf, socketQ } from '../shared/components.js';
-import { localOf } from '../shared/hierarchy.js';
+import { localOf, kindHint } from '../shared/hierarchy.js';
 import { scratchWorld } from './protocol/scratchworld.ts';
 import * as OP from '../shared/protocol/requests.js';
-import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M, resolveSeat } from '../shared/sockbody.js';
+import { checkSockets, evalPose, choosePose, mayLeave, reachWins, describeBody, NEAR_M, resolveSeat, socketMapIn, socketsIn } from '../shared/sockbody.js';
 import { socketSignals, cycleOf, travelOf } from '../client/lib/socksignals.js';
 import { socketId } from '../shared/protocol/authority/sockets.js';
 import { opsOf } from '../shared/protocol/fold.js';
@@ -19,12 +19,14 @@ const near = (a: number[], b: number[], e = 1e-5) => a.length === b.length && a.
 // a rocket: a crate with one seat, built through the inspector the way a person would
 const W = scratchWorld('sockets').seed({ rocket: { lib: 'crate', pos: [0, 0, 0] } });
 const ent = () => W.rec('rocket');
-const C = () => ent()?.comp ?? {};
-const plan = (edits: Record<string, any>) => editOps(ent(), 'rocket', edits);
+// a host's sockets are its socket children (PLAN-sockets-entities): the Inspector reads them as the card's map (live.world)
+const live = () => ({ world: W.view().entities });
+const C = () => ({ ...(ent()?.comp ?? {}), sockets: socketMapIn(W.view().entities, 'rocket') ?? undefined });
+const plan = (edits: Record<string, any>) => editOps(ent(), 'rocket', edits, live());
 const send = (p: any) => W.sendAll(p.ops);
 
 let r: any;
-// until the Inspector writes socket children (PLAN §10 12b), these read a `sockets` map the door no longer stores: a throw
+// the card reads the socket children as its map and writes the whole map, which the door lifts into the children: a throw
 // here is a red, not the end of the file
 try {
 r = send(plan({ 'sockets.seat|pos|1': 0.4 }));
@@ -35,11 +37,11 @@ check('…with no rotation stored (identity)', C().sockets.seat.q === undefined,
 r = send(plan({ 'sockets.seat|rot|0': -90 }));
 const q = C().sockets.seat.q;
 check('pitch -90 is stored as a quaternion and the door takes it', r.ok && Array.isArray(q) && near(q, [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]), [r.refused, q]);
-const rows = inspectSchema(ent(), 'rocket').groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
+const rows = inspectSchema(ent(), 'rocket', live()).groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
 const val = (k: string) => rows.find((f: any) => f.k === k)?.value;
 check('the inspector reads it back as heading 0, pitch -90°, roll 0', Math.abs(val('seat|rot|0') + Math.PI / 2) < 1e-6 && Math.abs(val('seat|rot|1')) < 1e-6 && Math.abs(val('seat|rot|2')) < 1e-6, rows.map((f: any) => [f.k, f.value]));
 r = send(plan({ 'sockets.seat|rot|1': 90 }));
-check('a heading edit on a tilted socket keeps the tilt (heading 90, pitch -90)', r.ok && (() => { const f = inspectSchema(ent(), 'rocket').groups.find((g: any) => g.group === 'sockets').fields;
+check('a heading edit on a tilted socket keeps the tilt (heading 90, pitch -90)', r.ok && (() => { const f = inspectSchema(ent(), 'rocket', live()).groups.find((g: any) => g.group === 'sockets').fields;
   const v = (k: string) => f.find((x: any) => x.k === k).value; return Math.abs(v('seat|rot|1') - Math.PI / 2) < 1e-6 && Math.abs(v('seat|rot|0') + Math.PI / 2) < 1e-6; })(), C().sockets.seat);
 
 // body: action and pose
@@ -53,12 +55,16 @@ check('a bad action is refused by the planner with the door\'s words', plan({ 's
 r = send(plan({ 'sockets.seat|body': false }));
 check('people attach: off → no body; the thing offers nothing to use', r.ok && !C().sockets.seat.body && !(W.call('inspect', { id: 'rocket' }).actions ?? []).length, C().sockets.seat);
 
-// a thing parented at the slot takes the socket's whole rotation as its local one
+// a thing parented at the slot rides the socket child, landing on it: identity under the socket, so its world rotation is
+// the socket's whole rotation
 W.call('create', { id: 'flag', model: 'crate' });
-W.sendAll([OP.parent(W.view(), 'flag', 'rocket', { socket: 'seat' })]);   // the planner: a socket gives the socket's pose
+r = W.sendAll([OP.parent(W.view(), 'flag', 'rocket', { socket: 'seat' })]);   // the planner: a socket names the socket child
 const world = W.view().entities;
+const seatKid = socketsIn(world, 'rocket').find((x: any) => x.name === 'seat')?.id;
 const L = localOf(world.flag, world);
-check('a thing attached at a tilted socket rides it with the socket\'s rotation', !!L?.q && near(L.q, [-0.5, 0.5, 0.5, 0.5], 1e-4)   /* heading 90 then pitch -90: qY(90)·qX(-90) */, L);
+check('requests.parent with a socket lands at the socket: parent {to: <the socket child>}, identity local pose', r.ok && !!seatKid && world.flag.parent?.to === seatKid && near(L.pos, [0, 0, 0]) && near(L.q ?? [0, 0, 0, 1], [0, 0, 0, 1]), [r.refused, world.flag.parent, L]);
+const fq = worldPose(W.state(), 'flag').q;
+check('a thing attached at a tilted socket rides it with the socket\'s rotation', near(fq, [-0.5, 0.5, 0.5, 0.5], 1e-4) || near(fq, [0.5, -0.5, -0.5, -0.5], 1e-4)   /* heading 90 then pitch -90: qY(90)·qX(-90) */, fq);
 
 } catch (e) { check('the Inspector\'s socket section ran to its end', false, String(e)); }
 
@@ -180,19 +186,21 @@ check('…an explicit socket is honoured, an unknown one refused with its name',
 
 // the inspector: rows for the common fields, edits through the planner and the door
 try {
-const carRows = () => inspectSchema(W.rec('car'), 'car').groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
+const carLive = () => ({ world: W.view().entities });
+const carSocks = () => socketMapIn(W.view().entities, 'car') ?? {};
+const carRows = () => inspectSchema(W.rec('car'), 'car', carLive()).groups.find((g: any) => g.group === 'sockets')?.fields ?? [];
 const has = (k: string) => carRows().some((f: any) => f.k === k);
 check('the Sockets card has rows for anchor, pose, leave by, who, input, look and reach', ['driver|anchor', 'driver|pose', 'driver|leaveBy', 'driver|who', 'driver|input|move', 'driver|input|look', 'driver|look|yaw|0', 'driver|look|up', 'driver|reach'].every(has),
   carRows().map((f: any) => f.k));
-const cplan = (edits: any) => editOps(W.rec('car'), 'car', edits);
+const cplan = (edits: any) => editOps(W.rec('car'), 'car', edits, carLive());
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'feet', 'sockets.back|leaveBy': 'menu', 'sockets.back|input|look': 'locked', 'sockets.back|look|yaw|0': -45, 'sockets.back|look|up': 'socket',
   'sockets.back|reach': '{"rightHand": {"at": [0.3, 1, 0.2], "vr": "track"}}' }).ops);
-const back = bodyOf(W.rec('car').comp.sockets.back);
-check('…the planner writes them and the door takes them', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && back.input.look === 'locked' && back.look.yaw[0] === -45 && back.look.up === 'socket' && back.reach.rightHand?.vr === 'track', [r.refused, W.rec('car').comp.sockets.back]);
+const back = bodyOf(carSocks().back);
+check('…the planner writes them and the door takes them', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && back.input.look === 'locked' && back.look.yaw[0] === -45 && back.look.up === 'socket' && back.reach.rightHand?.vr === 'track', [r.refused, carSocks().back]);
 const planBad = cplan({ 'sockets.back|input|move': 'drive' });
 check('…and refuses what the door would, in its words (a second driver)', planBad.ops.length === 0 && planBad.errors.some((e: string) => /only one socket may drive/.test(e)), planBad.errors);
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'root', 'sockets.back|leaveBy': 'any' }).ops);
-check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.back.body.anchor === undefined && W.rec('car').comp.sockets.back.body.leaveBy === undefined, W.rec('car').comp.sockets.back);
+check('…and a default leaves the key out', r.ok && carSocks().back.body.anchor === undefined && carSocks().back.body.leaveBy === undefined, carSocks().back);
 
 } catch (e) { check('the Inspector\'s Sockets card section ran to its end', false, String(e)); }
 
@@ -257,6 +265,12 @@ check('…and a default leaves the key out', r.ok && W.rec('car').comp.sockets.b
   const d = L.call('create', { from: 'chair1', id: 'chair2' });
   const kids2 = Object.entries(L.state().entities).filter(([, e]: any) => e.c.parent?.to === 'chair2' && e.c.socket);
   check('LS4 a duplicate copies its seat child once (the model\'s seats aren\'t made again)', d.ok && kids2.length === 1, kids2.map(([k]) => k)); }
+
+// K7: a socket child's Hierarchy row says what it is for (seat, snap, attach; derived, never stored), never "(empty)"
+{ const H = scratchWorld('kinds').seed({ rack: { lib: 'crate', pos: [0, 0, 0] } });
+  H.call('set', { id: 'rack', component: 'sockets', value: { seat: { pos: [0, 0.5, 0], body: {} }, hook: { pos: [0.4, 1, 0], accepts: ['coat'] }, eye: { pos: [0, 1.2, 0] } } });
+  const v = H.view().entities; const hint = (n: string) => kindHint(v[socketsIn(v, 'rack').find((x: any) => x.name === n)?.id ?? '']);
+  check('K7 kindHint: a socket child reads seat / snap / attach by what it has', hint('seat') === 'seat' && hint('hook') === 'snap' && hint('eye') === 'attach', [hint('seat'), hint('hook'), hint('eye')]); }
 
 // OC3: a presence frame's seat, old or new, as a socket id (receivers take the old {to: host, slot} for one release)
 { const view = { entities: { bench: { comp: {} }, 'bench-seat': { parent: { to: 'bench' }, comp: { socket: { name: 'seat' } } }, other: { comp: {} } } };

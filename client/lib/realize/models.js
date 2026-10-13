@@ -33,7 +33,7 @@ import { attachLamps, releaseOwner, registerCaster, requestLight, updateRequest,
 import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
-import { lightOf, colliderOf, socketQ } from '../../../shared/components.js';
+import { lightOf, colliderOf } from '../../../shared/components.js';
 import { entities, bagOf, childrenOf, avatarMounts, findPart, editHolds } from '../world.js';
 import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
@@ -145,7 +145,7 @@ function clearReservation(id) {
 
 // ---- the scene-side mount index ---------------------------------------------
 // The FOLD's edges (parent id -> children whose state parent.to is it) are the replica's own index (world.js
-// childrenOf, kept at every ingest): canDemote's carrier refusal, the sockets re-seat and mountsTouching read it.
+// childrenOf, kept at every ingest): canDemote's carrier refusal and mountsTouching read it.
 // What stays here is SCENE truth (parent id -> children whose realized object is attached, i.e. userData.mountedTo),
 // for the two cargo step-out loops: a `remove` folds the children's parent records away BEFORE retire() runs, so at
 // step-out time the scene attachment is all there is left to read. Maintained exactly where userData.mountedTo is
@@ -335,7 +335,7 @@ function shareableLib(id, cur) {
   const kids = sceneChildren.get(id);
   if (kids) for (const cid of kids) {
     const cobj = entities.get(cid);
-    if (cobj && cobj.parent && cobj.parent !== scene) return null;
+    if (cobj && cobj.parent && cobj.parent !== scene && !cobj.userData.socket) return null;   // a socket is a frame, not geometry
   }
   const bag = cur.comp;
   if (bag) {
@@ -435,7 +435,8 @@ function createHost(id, ent, kind) {
   orientObj(g, ent);
   if (ent.scale) applyScale(g, entScale(ent));
   g.userData.base = restOf(g, ent);
-  setEmptyMarker(g, editing);
+  if (kind === 'socket') g.userData.socket = true;   // a socket: no marker (the seat gizmos draw it), no collider, no box
+  else setEmptyMarker(g, editing);
   entities.set(id, g);
   scene.add(g);
   applyHidden(id);
@@ -518,7 +519,9 @@ export function previewMesh(id, m) {
 }
 /** A light is an Empty that casts (syncCompLight hangs the cast and the gizmo on it); a mesh is its own drawn thing — each
  *  tracked under its own kind so the planner's identity rule and the residency sweep read the same word the fold does. */
-const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createMesh, empty: createEmpty, model: createModel };
+// A socket (PLAN-sockets-entities) is an Empty that is only ever a frame: attached to its host (or into the host's moving
+// part, at rest: execMount), so a sitter's seat and the cargo on it ride whatever carries the socket through the scene graph.
+const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createMesh, empty: createEmpty, model: createModel, socket: (id, ent) => createHost(id, ent, 'socket') };
 
 // An Empty is invisible, so in EDIT MODE it wears a small wireframe marker
 // that a click can pick (build.js walks up from the hit mesh to entityId).
@@ -717,13 +720,8 @@ function onComp(id, type) {
   // a mesh's own geometry follows its component in place; a mesh arriving on (or leaving) a host is a rebuild
   if (type === 'mesh') { if (kindOf(state.st.entities[id]) === 'mesh' && tracked.get(id)?.kind === 'mesh') rebuildMesh(id); else reconcileId(id); }
   if (type === 'collider') applyColliderPref(id);
-  // a sockets change re-seats everything riding this carrier — a mount that
-  // landed BEFORE its socket was authored glued to the origin, and the
-  // socket's arrival is what makes it right (review S5; the relKey includes
-  // the resolved socket for exactly this)
-  if (type === 'sockets') {
-    for (const cid of childrenOf(id)) execMount(cid);
-  }
+  // a socket that starts (or stops) riding a part re-attaches: into the part's node at rest, or back onto its host
+  if (type === 'socket') execMount(id);
   bus.emit('comp', { id, type, data });
 }
 
@@ -758,34 +756,51 @@ function execMount(id) {
   if (!child) return;
   const parent = entities.get(rel.to) || standInFor(rel.to);
   if (!parent) return;
-  const sock = rel.socket ? state.st.entities[rel.to]?.comp?.sockets?.[rel.socket] : null;
-  // the RESOLVED socket is part of the linkage's identity: a socket authored
-  // after the mount must re-seat the rider, not be ignored (review S5); so is
-  // riding the stand-in, which the real carrier's arrival replaces
-  const relKey = JSON.stringify([rel, sock ?? null, !!parent.userData.standIn]);
+  // a socket that rides a part goes INTO the part's node, at the part's rest pose (its transform is in the host's frame
+  // at rest): the scene graph then carries it through the part's motion, and whatever sits on it or in it with it. The
+  // part node is part of the linkage's identity: a model that loads after its socket re-attaches it there (the promote
+  // tail clears mountRel); so is riding the stand-in, which the real carrier's arrival replaces
+  const part = typeof ent.comp?.socket?.part === 'string' ? ent.comp.socket.part : null;
+  const partNode = part && !parent.userData.standIn ? findPart(parent, part) : null;
+  const relKey = JSON.stringify([rel, part, !!partNode, !!parent.userData.standIn]);
   if (child.userData.mountRel === relKey) return;   // already exactly this
   // a loop (a log written before the authority refused them): parenting a thing
   // under its own descendant would make three.js recurse forever every frame —
   // leave it where it stands; the Hierarchy shows both as roots (hierarchy.js treeOf)
   for (let p = parent; p; p = p.parent) if (p === child) return;
-  const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
   parent.add(child);   // transform becomes parent-relative
-  child.position.set(...off);
+  child.position.set(...(rel.offset ?? [0, 0, 0]));
   applyScale(child, entScale(ent) ?? 1);   // its own: attach() and a step-out bake the carrier's in
   if (Array.isArray(rel.q) && rel.q.length === 4) child.quaternion.set(rel.q[0], rel.q[1], rel.q[2], rel.q[3]);
-  else if (rel.yaw != null || !sock) child.rotation.set(0, rel.yaw ?? 0, 0);
-  else child.quaternion.fromArray(socketQ(sock));   // the socket's whole rotation (a rocket's seat lies on its back)
-  // a part socket glues the cargo INTO the moving node — attach preserves
-  // world transform, baking the part's current phase into the offset
-  const partNode = sock?.part ? findPart(parent, String(sock.part)) : null;
-  if (partNode) partNode.attach(child);
+  else child.rotation.set(0, rel.yaw ?? 0, 0);
+  if (partNode) attachAtRest(parent, partNode, child);
   child.userData.mountedTo = rel.to;
   child.userData.mountRel = relKey;
   indexSceneMount(id, rel.to);
   // the parent's collider is what the pair collides as while attached
   removeCollider(id);
-  bus.emit('mount', { id, to: rel.to, socket: rel.socket });
+  bus.emit('mount', { id, to: rel.to });
   if (!parent.userData.standIn) pruneStandIn(rel.to);
+}
+
+/** Move `child` (posed in `host`'s frame) into `node`, a moving part somewhere under `host`, so that with the part at
+ *  REST it stands exactly where it stood: its local pose in the node is (the node's rest pose in the host's frame)⁻¹ ∘
+ *  its pose in the host's. A node's rest is motion.js's `mbase` once it has animated it (the pose it started from), else
+ *  where it stands now (a part that has never moved is at rest). */
+const _arM = new THREE.Matrix4(), _arL = new THREE.Matrix4(), _arV = new THREE.Vector3(), _arQ = new THREE.Quaternion();
+function attachAtRest(host, node, child) {
+  const chain = [];
+  for (let n = node; n && n !== host; n = n.parent) chain.push(n);
+  if (!chain.length || chain[chain.length - 1].parent !== host) return;   // not under it: stays on the host
+  _arM.identity();
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const n = chain[i], b = n.userData.mbase;
+    _arM.multiply(_arL.compose(b ? _arV.fromArray(b.pos) : n.position, b ? _arQ.fromArray(b.quat) : n.quaternion, n.scale));
+  }
+  child.updateMatrix();
+  _arL.copy(_arM).invert().multiply(child.matrix);
+  node.add(child);
+  _arL.decompose(child.position, child.quaternion, child.scale);
 }
 
 // ---- stand-ins ----------------------------------------------------------------
@@ -935,11 +950,14 @@ function canDemote(id, ent) {
   if (!libGeom.get(ent.lib)?.bbox) return false;    // nothing honest to stand in
   // a carrier: children mounted on it would need the cargo step-off, which
   // is semantically a removal (it re-stamps fold poses) — refuse instead.
-  if (childrenOf(id).length) return false;
+  // Its own sockets don't count (they are frames, not cargo: demote moves them onto the stand-in) unless one rides a part
+  // (a placeholder has no named nodes) or carries something.
+  const kids = childrenOf(id);
+  for (const k of kids) { const sk = state.st.entities[k]?.comp?.socket; if (!sk || typeof sk.part === 'string' || childrenOf(k).length) return false; }
   // a body in its seat: someone is sitting on it, wherever WE are standing
   // (avatarMounts is rider-keyed and bounded by bodies present, not
   // entities — the scan stays)
-  for (const rel of avatarMounts.values()) if (rel.to === id) return false;
+  for (const rel of avatarMounts.values()) if (rel.to === id || kids.includes(rel.to)) return false;
   const bag = state.st.entities[id]?.comp;
   if (bag) {
     // part motions and part sockets need named nodes a placeholder lacks
@@ -947,7 +965,6 @@ function canDemote(id, ent) {
     // is fine — the stand-in carries userData.base and swings honestly.
     if (bag.motion?.part) return false;
     for (const k in bag) if (k.startsWith('motion:')) return false;
-    if (bag.sockets) for (const k in bag.sockets) if (bag.sockets[k]?.part) return false;
   }
   return true;   // a flight comes to rest in seconds and punts are near-range
                  // by nature — distance already excludes them
@@ -956,6 +973,9 @@ function canDemote(id, ent) {
 function demote(id) {
   const ent = state.st.entities[id];
   const obj = entities.get(id);
+  // its sockets (canDemote let only bare ones through) step off onto the scene and re-attach to the stand-in below
+  const socks = [...(sceneChildren.get(id) ?? [])].filter((k) => entities.get(k)?.userData?.socket);
+  for (const k of socks) { const so = entities.get(k); scene.attach(so); delete so.userData.mountRel; }
   teardownRealized(id, obj, 'demote');   // a demoted stand-in must not inherit the real model's collider/lamps
   (obj.parent ?? scene).remove(obj);
   const grp = makePlaceholder(id, ent, libGeom.get(ent.lib));
@@ -964,6 +984,7 @@ function demote(id) {
   applyHidden(id);   // hidden survives the stand-in box (placeholder / demote)
   syncCompLight(id); // the lamp's light follows it onto the stand-in
   resStats.demotes++;
+  for (const k of socks) execMount(k);
   bus.emit('entity', { id, kind: 'demote' });   // emitters retire their handle
 }
 
@@ -1125,7 +1146,7 @@ export function initModelsRealizer() {
   });
   bus.on('edit-mode', (on) => {
     editing = !!on;
-    for (const [id, t] of tracked) if (t.kind !== 'model' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
+    for (const [id, t] of tracked) if (t.kind !== 'model' && t.kind !== 'socket' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });
   // a gesture the authority refused, or one cancelled with Esc (worlds, editwrites.js): the preview snaps back to the fold.
   // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
@@ -1135,8 +1156,8 @@ export function initModelsRealizer() {
     // a refused or cancelled mesh scrub previewed a geometry the fold never took (review S2.1): back to the fold's, collider too
     if (tracked.get(id)?.kind === 'mesh') { tracked.get(id).mesh = null; rebuildMesh(id); }
     if (obj.userData.mountedTo && ent.parent) {
-      const sock = ent.parent.socket ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.socket] : null;
-      obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
+      if (typeof ent.comp?.socket?.part === 'string') { delete obj.userData.mountRel; execMount(id); bus.emit('entity', { id, kind: 'place' }); return; }   // in a part, at rest
+      obj.position.set(...(ent.parent.offset ?? [0, 0, 0]));
       if (Array.isArray(ent.parent.q) && ent.parent.q.length === 4) obj.quaternion.set(...ent.parent.q);
       if (ent.scale != null) applyScale(obj, entScale(ent));
       bus.emit('entity', { id, kind: 'place' });

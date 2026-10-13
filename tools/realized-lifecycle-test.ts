@@ -156,6 +156,51 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('reset');
 }
 
+// ---- 7. sockets (PLAN-sockets-entities): a socket child is an Empty frame on its host — no collider, no caster, no box —
+// and a socket that rides a part goes into the part's node at rest, so what sits on it rides the part
+{
+  const T = stub.THREE;
+  spawnAt('sw', 5, lib('swing')); await settle(); drain();
+  door('set', { id: 'sw', component: 'sockets', value: { seat: { pos: [0, 0.5, 0.1], part: 'plank', body: { action: 'sit' } }, hook: { pos: [0.4, 1, 0], accepts: ['coat'] } } });
+  const kids = Object.keys(S.state.st.entities).filter((k) => S.state.st.entities[k].parent?.to === 'sw');
+  const seat = kids.find((k) => S.state.st.entities[k].comp?.socket?.name === 'seat'), hook = kids.find((k) => S.state.st.entities[k].comp?.socket?.name === 'hook');
+  const so = seat && stub.entities.get(seat), ho = hook && stub.entities.get(hook);
+  check('a socket child is realized: an Empty (a Group marked socket), tracked as a socket', !!so && so.isGroup && so.userData.socket === true && M.realizedAs(seat)?.kind === 'socket', JSON.stringify({ seat, kind: M.realizedAs(seat ?? '') }));
+  check('…with no collider, no caster and no box', !stub.colliders.has(seat) && !stub.casters.has(seat) && M.boxOf(seat) === null && !stub.colliders.has(hook), JSON.stringify({ seat: held(seat), box: M.boxOf(seat) }));
+  check('a plain socket hangs on its host at its own pose', !!ho && ho.parent === stub.entities.get('sw') && ho.position.toArray().join() === '0.4,1,0', JSON.stringify({ parent: ho?.parent?.userData, pos: ho?.position?.toArray() }));
+  const host = stub.entities.get('sw'); const plank = host.getObjectByName('plank'); const pivot = host.getObjectByName('pivot');
+  host.updateMatrixWorld(true);
+  const wp = (o: any) => { o.updateWorldMatrix(true, false); return new T.Vector3().setFromMatrixPosition(o.matrixWorld); };
+  const want = new T.Vector3(0, 0.5, 0.1).applyMatrix4(host.matrixWorld);
+  check('a part socket goes INTO the part\'s node, where the part at rest puts it on the host', so?.parent === plank && wp(so).distanceTo(want) < 1e-9, JSON.stringify({ parent: so?.parent?.name, at: wp(so).toArray(), want: want.toArray() }));
+  door('create', { id: 'cup', model: lib('cup'), components: { parent: { to: seat }, transform: { pos: [0, 0.1, 0] } } }); await settle(); drain();
+  const cup = stub.entities.get('cup');
+  check('cargo on the part socket rides inside it', cup?.parent === so, JSON.stringify({ parent: cup?.parent?.userData }));
+  // the swing swings (motion.js keeps the rest pose as mbase and turns the pivot): the seat and its cargo go with it
+  pivot.userData.mbase = { pos: pivot.position.toArray(), quat: pivot.quaternion.toArray() };
+  const before = wp(cup).clone();
+  pivot.quaternion.setFromAxisAngle(new T.Vector3(1, 0, 0), 0.5);
+  const pivotW = wp(pivot), swung = before.clone().sub(pivotW).applyAxisAngle(new T.Vector3(1, 0, 0), 0.5).add(pivotW);
+  check('the part swings: the cargo on its socket swings with it (about the pivot)', wp(cup).distanceTo(swung) < 1e-6 && wp(cup).distanceTo(before) > 0.1, JSON.stringify({ before: before.toArray(), now: wp(cup).toArray(), want: swung.toArray() }));
+  // re-attaching mid-swing (a reconnect's reconcile) still seats it at REST, not at the swing's current phase
+  delete so.userData.mountRel; M.reconcileModels();
+  pivot.quaternion.set(0, 0, 0, 1); host.updateMatrixWorld(true);
+  check('re-attached mid-swing, the socket still sits where the part at rest puts it', wp(so).distanceTo(want) < 1e-9, JSON.stringify({ at: wp(so).toArray(), want: want.toArray() }));
+  // residency: a host whose sockets are bare frames still demotes (they move onto its stand-in); a part socket keeps it real
+  spawnAt('bench', 6); await settle(); drain();
+  door('set', { id: 'bench', component: 'sockets', value: { rest: { pos: [0, 0.5, 0], body: {} } } });
+  const rest = Object.keys(S.state.st.entities).find((k) => S.state.st.entities[k].parent?.to === 'bench');
+  stub.camera.position.set(0, 0, -500); M.residencySweep(); await settle();
+  check('far: a host with a bare socket demotes, and its socket rides the stand-in', held('bench').entities === 'placeholder' && stub.entities.get(rest)?.parent === stub.entities.get('bench'), JSON.stringify({ bench: held('bench'), on: stub.entities.get(rest)?.parent?.userData }));
+  check('…while a host with a part socket stays real (a stand-in has no named nodes)', held('sw').entities === 'object', JSON.stringify(held('sw')));
+  stub.camera.position.set(0, 0, 0); M.residencySweep(); await settle(); drain();
+  check('near again: the real bench carries its socket', full('bench') && stub.entities.get(rest)?.parent === stub.entities.get('bench'), JSON.stringify(held('bench')));
+  door('delete', { id: 'bench' });
+  door('delete', { id: 'sw' });
+  check('deleting the host takes its sockets (and what rides them) with it, from every registry', gone('sw') && gone(seat) && gone(hook) && gone('cup'), JSON.stringify({ sw: held('sw'), seat: held(seat), hook: held(hook), cup: held('cup') }));
+  noErrors('sockets');
+}
+
 console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
 W.close?.();
 process.exit(failures ? 1 : 0);

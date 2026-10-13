@@ -7,7 +7,7 @@
 // The cursor is an open hand over what a click would pick up, a pointing finger over any other use.
 import { THREE, camera, canvas } from './core.js';
 import { outOfMyView } from './myview.js';
-import { bagOf, entities } from './world.js';
+import { bagOf, entities, socketsOn } from './world.js';
 import { contextMenu, closeContextMenu } from './panels.js';
 import { flashHint } from './ui.js';
 import { xrActive } from './xrask.js';
@@ -24,7 +24,7 @@ export function initClickUse(h) { hooks = h; }
 const off = () => !hooks || hooks.editing?.() || hooks.busy?.() || xrActive();
 
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
-const seatOf = (id) => { const s = bagOf(id)?.sockets; if (!isBag(s)) return null; const k = Object.keys(s).find((k) => bodyOf(s[k])); return k ? bodyOf(s[k]) : null; };   // a socket a body may take (localbody's rule)
+const seatOf = (id) => { for (const x of socketsOn(id)) { const b = bodyOf(x.sock); if (b) return b; } return null; };   // a socket child a body may take (localbody's rule)
 const canGrab = (id) => !!physicsApi.grabbable(id)?.enabled;
 
 /** What a thing offers, most likely first: [{k, label, run}]. The first is what a left-click does. */

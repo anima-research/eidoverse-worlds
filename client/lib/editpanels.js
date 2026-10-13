@@ -244,7 +244,8 @@ function badgesFor(id) {
   for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'lock' || type === 'hidden' || type === 'label') continue;   // lock has its glyph, label IS the row's name, hidden is added once below
     if (type === 'motion' || type.startsWith('motion:')) out.push(`${type}(${data?.type ?? '…'})`);
-    else if (type === 'sockets' || type === 'reactions') out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
+    else if (type === 'reactions') out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
+    else if (type === 'socket') out.push(`socket(${data?.name ?? ''})`);
     else out.push(type);
   }
   for (const b of behaviors) if (b.attach === id) out.push(`📜${b.id}`);
@@ -261,7 +262,8 @@ function hierarchyFields() {
   const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
-  const nameOnly = (id) => { const l = bagOf(id)?.label; return typeof l === 'string' && l ? l : null; };
+  // a socket's row is its name (a seat, a hook: kindHint says which), unless someone labelled it
+  const nameOnly = (id) => { const c = bagOf(id); const l = c?.label; return typeof l === 'string' && l ? l : typeof c?.socket?.name === 'string' ? c.socket.name : null; };
   const labelOf = (id) => { const l = nameOnly(id); return l ? (hopts.ids ? `${l}  (${id})` : l) : id; };
   const only = ONLY[hopts.only]?.test ?? null;
   const textHit = (id) => [id, world[id]?.comp?.label ?? '', world[id]?.lib ?? '', kindHint(world[id]), ...Object.keys(world[id]?.comp ?? {})].join(' ').toLowerCase().includes(q);

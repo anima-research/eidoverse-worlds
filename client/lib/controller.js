@@ -373,7 +373,7 @@ const BODY_KEYS = [
 ];
 for (const { code, ...a } of BODY_KEYS) registerAction({ ...a, id: `body:${a.id}`, group: 'body' });
 
-// Declared seats (the `sockets` component — mount verb, rides motion) live in
+// Declared seats (socket children with a body block — use verb, rides motion) live in
 // main.js with the rest of the world vocabulary; the controller only knows
 // postures. main.js registers a hook so X reaches BOTH systems: sockets get
 // first claim (a swing that carries you beats sitting frozen mid-air where

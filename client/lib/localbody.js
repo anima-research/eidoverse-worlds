@@ -24,7 +24,7 @@ import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook, camYaw, camPitch, setCamYaw, xrIntent,
 } from './controller.js';
 import { camera } from './core.js';
-import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities } from './world.js';
+import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities, seatSocket, socketsOn, parentIdOf } from './world.js';
 import { outOfMyView } from './myview.js';
 import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
@@ -101,7 +101,7 @@ export const seatLeaving = () => !!leaving;
 /** My seat's socket body (shared/sockbody.js bodyOf), or null when I'm not seated. */
 export function mySeatBody() {
   const m = avatarMounts.get(CONFIG.name);
-  return m ? bodyOf(bagOf(m.to)?.sockets?.[m.slot]) : null;
+  return m ? bodyOf(seatSocket(m.to)?.sock) : null;
 }
 /** Get off my seat, if the socket lets this kind of leaving through ('move' | 'jump' | 'menu' | 'script'). True when
  *  I'm off (or on my way off, with a leave clip). */
@@ -120,8 +120,9 @@ export function dismountMe(kind = 'menu') {
   let exitYaw = yaw;
   // the socket's exit (its own frame), where it names one: off a horse to the side, out of a car door
   const ex = body?.exit;
-  if (ex && entities.get(m.to)) {
-    const obj = entities.get(m.to); obj.updateWorldMatrix(true, false);
+  const host = seatSocket(m.to)?.host;   // the exit is in the thing's frame
+  if (ex && host != null && entities.get(host)) {
+    const obj = entities.get(host); obj.updateWorldMatrix(true, false);
     off.set(ex[0], ex[1], ex[2]).applyMatrix4(obj.matrixWorld);
     if (ex.length === 4) { const f = new THREE.Vector3(Math.sin(ex[3]), 0, Math.cos(ex[3])).transformDirection(obj.matrixWorld); exitYaw = Math.atan2(f.x, f.z); }
   } else { off.x += Math.sin(yaw) * 0.7; off.z += Math.cos(yaw) * 0.7; }
@@ -247,23 +248,24 @@ const SEAT_RISE = { up: 1.6, down: 1.0 };
 function nearestSeat(arg, reach) {
   const want = arg ? String(arg).toLowerCase() : null;
   const mine = avatarMounts.get(CONFIG.name);
-  const taken = new Set([...avatarMounts].filter(([id]) => id !== CONFIG.name).map(([, o]) => `${o.to}/${o.slot}`));
+  const taken = new Set([...avatarMounts].filter(([id]) => id !== CONFIG.name).map(([, o]) => o.to));
   let best = null, bestD = reach;
-  for (const [id, bag] of bags()) {
-    if (!bag.sockets) continue;
-    if (want && !id.toLowerCase().startsWith(want)) continue;
+  // every socket child in the world (a seat is a socket with a body block): its host is what you name and see
+  for (const [sid, c] of bags()) {
+    if (!c?.socket || typeof c.socket !== 'object' || c.disabled === true) continue;
+    const body = bodyOf(c.socket);
+    if (!body) continue;   // an attachment point for things, not a seat
+    const id = parentIdOf(sid);
+    if (id == null) continue;
+    if (want && !id.toLowerCase().startsWith(want) && !sid.toLowerCase().startsWith(want)) continue;
     if (!want && entities.get(id) && outOfMyView(entities.get(id))) continue;   // a seat I hid is not offered; naming it still sits
-    for (const slot of Object.keys(bag.sockets)) {
-      const body = bodyOf(bag.sockets[slot]);
-      if (!body) continue;   // an attachment point for things, not a seat
-      if (mine && mine.to === id && mine.slot === slot) continue;
-      if (taken.has(`${id}/${slot}`)) continue;
-      const p = socketWorldPos(id, slot, _sitV);
-      if (!p) continue;
-      const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);
-      if (!want && (p.y - myState.pos.y > SEAT_RISE.up || myState.pos.y - p.y > SEAT_RISE.down)) continue;   // out of climbing reach
-      if (d < bestD) { bestD = d; best = { id, slot, d, body }; }
-    }
+    if (mine && mine.to === sid) continue;
+    if (taken.has(sid)) continue;
+    const p = socketWorldPos(sid, _sitV);
+    if (!p) continue;
+    const d = Math.hypot(p.x - myState.pos.x, p.z - myState.pos.z);
+    if (!want && (p.y - myState.pos.y > SEAT_RISE.up || myState.pos.y - p.y > SEAT_RISE.down)) continue;   // out of climbing reach
+    if (d < bestD) { bestD = d; best = { id, sock: sid, slot: c.socket.name, d, body }; }
   }
   return best;
 }
@@ -279,7 +281,7 @@ let sitTicket = 0;   // the latest sit ask; getting up (or asking again) makes e
 export function trySitOn(arg, slot = null) {
   const mine = avatarMounts.get(CONFIG.name);
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
-  if (best && slot && best.slot !== slot) { const b = bodyOf(bagOf(best.id)?.sockets?.[slot]); if (b) Object.assign(best, { slot, body: b }); }
+  if (best && slot && best.slot !== slot) { const o = socketsOn(best.id).find((x) => x.name === slot); const b = bodyOf(o?.sock); if (b) Object.assign(best, { sock: o.id, slot, body: b }); }
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
     if (far) logChat('*', `nearest seat is ${far.id} (${far.slot}), ${far.d.toFixed(0)}m away — walk closer, or /sit ${far.id}`);
@@ -292,11 +294,11 @@ export function trySitOn(arg, slot = null) {
     // door, X pressed twice) must never put me back on a seat I already left
     if (ticket !== sitTicket || avatarMounts.get(CONFIG.name) !== mine) return;
     if (mine) releaseSeat(getMe());
-    setBodySeat(CONFIG.name, { to: best.id, slot: best.slot });   // presence: my frames carry the seat (world.js)
+    setBodySeat(CONFIG.name, { to: best.sock });   // presence: my frames carry the seat, the socket's id (world.js)
     const lb = best.body.leaveBy;
     logChat('*', `you ${best.body.action} on ${best.id} (${best.slot}) — ${lb === 'script' ? 'it lets you go when the world does' : lb === 'menu' ? 'X to get up' : lb === 'jump' ? 'Space or X to get up' : 'X or move to get off'}`);
   };
-  sendRequest('use', { id: best.id, action: best.body.action, args: { socket: best.slot } }).then((r) => {
+  sendRequest('use', { id: best.sock, action: best.body.action }).then((r) => {
     if (r?.ok) take(); else logChat('*', plain(`${best.body.action} on ${best.id}`, r));   // a person's words (plainwords.js)
   });
   return true;

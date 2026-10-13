@@ -63,7 +63,7 @@ function badgesFor(id) {
   for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'motion' || type.startsWith('motion:')) {
       out.push(`${type}(${data?.type ?? '…'})`);
-    } else if (type === 'sockets' || type === 'reactions') {
+    } else if (type === 'reactions') {
       out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
     } else out.push(type);
   }
@@ -83,7 +83,7 @@ export function treeData() {
   const riders = new Map();
   for (const [rid, m] of avatarMounts) {
     if (!riders.has(m.to)) riders.set(m.to, []);
-    riders.get(m.to).push(m.slot ? `${rid} (${m.slot})` : rid);
+    riders.get(m.to).push(rid);   // m.to is the socket: the rider's row hangs under the socket's
   }
   return { roots, kids, riders };
 }
@@ -306,7 +306,7 @@ function followSelection({ ids, kind }) {
  *  Exported for /mount — command and panel are the same act. */
 export function sceneAttach(childId, parentId, slot) {
   if (slot) {   // a declared socket wins over glue-in-place
-    sendOps([OP.parent(state.st, childId, parentId, { slot })], { what: `seat ${childId} on ${parentId}` });
+    sendOps([OP.parent(state.st, childId, parentId, { socket: slot })], { what: `seat ${childId} on ${parentId}` });
     return;
   }
   doAttach(childId, parentId);

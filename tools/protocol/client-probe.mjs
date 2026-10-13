@@ -78,7 +78,7 @@ try {
     const dir = directoryFor(worlds); ANN = dir.idOfSub('local:ann'); BOB = dir.resolve({ sub: 'local:bob', name: 'Bob' });
     const r1 = request(w, ANN, 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
     const r2 = request(w, ANN, 'set', { id: '@world', component: `roles:${BOB}`, value: { role: 'builder' } });
-    const r3 = request(w, ANN, 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@0.5.0' } }); // the world runs physics
+    const r3 = request(w, ANN, 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } }); // the world runs physics
     // roles stages: Zed, someone this world knows (a role on record) but who never comes in (an owner's ban on an absent person)
     { const ZED = dir.resolve({ sub: 'local:zed', name: 'Zed' }); request(w, ANN, 'set', { id: '@world', component: `roles:${ZED}`, value: { role: 'visitor' } }); }
     if (!r1.ok || !r2.ok || !r3.ok) throw new Error(`setup: ${JSON.stringify([r1, r2, r3])}`); }
@@ -732,8 +732,9 @@ try {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ev = (fn, arg) => race(pg.evaluate(fn, arg), 20000);
   const waitFor = async (fn, arg, ms = 12000) => { const t = Date.now(); let v = null; while (Date.now() - t < ms) { v = await ev(fn, arg).catch(() => null); if (v) return v; await sleep(200); } return v; };
-  const seated = () => ev(() => { const m = globalThis.EW.avatarMounts.get(globalThis.EW.net.myId ?? 'Ann') ?? [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; return m ? `${m.to}/${m.slot}` : null; });
-  const sit = async (arg, want) => { await ev((a) => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: a }), arg); return waitFor(async (w) => { const m = [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; return m && `${m.to}/${m.slot}` === w; }, want, 30000); };
+  // a seat is a socket child's id (PLAN-sockets-entities): read back as host/name
+  const seated = () => ev(() => { const m = globalThis.EW.avatarMounts.get(globalThis.EW.net.myId ?? 'Ann') ?? [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; const s = m && globalThis.EW.seatSocket(m.to); return s ? `${s.host}/${s.name}` : null; });
+  const sit = async (arg, want) => { await ev((a) => globalThis.EW.bus.emit('command', { cmd: 'sit', arg: a }), arg); return waitFor(async (w) => { const m = [...globalThis.EW.avatarMounts.entries()].find(([k]) => k === 'Ann')?.[1]; const s = m && globalThis.EW.seatSocket(m.to); return s && `${s.host}/${s.name}` === w; }, want, 30000); };
   const stand = async () => { await ev(() => globalThis.EW.bus.emit('xr:stand')); await sleep(500); };
   const here = await ev(() => globalThis.EW.me().root.position.toArray());
   const thing = (id, dx, dz, comps, y = 0) => door('create', { id, model: MODEL, components: { transform: { pos: [here[0] + dx, y, here[2] + dz], scale: [0.2, 0.2, 0.2] }, ...comps } });
@@ -860,12 +861,12 @@ try {
     const freed = await waitFor(async () => ![...globalThis.EW.avatarMounts.keys()].includes('Ann') || null, null, 5000);
     check('leaveBy script: …the world lets go (the socket taken away), and the body is off', !!freed, await seated());
     await door('set', { id: 'pod', component: 'sockets', value: { seat: { pos: [0, 2.6, 0], body: {} } } });
-    await waitFor(() => !!globalThis.EW.bagOf('pod')?.sockets?.seat, null, 20000);   // the seat is back in her client
+    await waitFor(() => globalThis.EW.socketsOn('pod').some((x) => x.name === 'seat'), null, 20000);   // the seat is back in her client
     const again = await sit('pod', 'pod/seat');
     await sleep(500);
     await pg.keyboard.down('KeyW'); await sleep(400); await pg.keyboard.up('KeyW'); await sleep(300);
     const said = await ev(() => document.body.innerText.split('\n').filter((l) => /pod|seat|refused|sit/i.test(l)).slice(-6)).catch(() => null);
-    check('leaveBy (control): the same seat without leaveBy, W takes you off', !!again && (await seated()) === null, { again, now: await seated(), said, sock: await ev(() => globalThis.EW.bagOf('pod')?.sockets ?? null) });
+    check('leaveBy (control): the same seat without leaveBy, W takes you off', !!again && (await seated()) === null, { again, now: await seated(), said, sock: await ev(() => globalThis.EW.socketsOn('pod')) });
   }
 
   // (e) anchor: feet — a standing place on a plinth puts a standing body's soles on the socket. The sole height is
@@ -884,7 +885,7 @@ try {
       return { feet: [(l.x + rr.x) / 2, (l.y + rr.y) / 2, (l.z + rr.z) / 2], sock: new T.Vector3(0, 2.0, 0).applyMatrix4(s.matrixWorld).toArray(), clip: EW.myState.clip }; });
     const said = sat ? null : await ev(() => document.body.innerText.split('\n').filter((l) => /plinth|seat|refused|sit|stand/i.test(l)).slice(-5)).catch(() => null);
     check('anchor: feet — the soles on the socket: foot joints at socket + their standing height (within 2 cm)',
-      !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.bagOf('plinth')?.sockets ?? null) });
+      !!sat && Math.abs(at.feet[1] - at.sock[1] - rest) < 0.02 && Math.hypot(at.feet[0] - at.sock[0], at.feet[2] - at.sock[2]) < 0.12, { sat, rest, at, said, sock: sat ? undefined : await ev(() => globalThis.EW.socketsOn('plinth')) });
     await shoot('stand-on-plinth', [1.4, 0.2, 1.6]);
     await stand();
   }

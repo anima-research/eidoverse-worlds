@@ -16,7 +16,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const throws = (f: () => void) => { try { f(); return false; } catch { return true; } };
 
-const W = scratchWorld("freeze").seed({ crate: { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, comp: { label: "crate", sockets: { top: { pos: [0, 1, 0] } } } } });
+const W = scratchWorld("freeze").seed({ crate: { lib: "crate.glb", pos: [1, 0, 2], yaw: 0, comp: { label: "crate", "example.org/rack": { top: { pos: [0, 1, 0] } } } } });
 const cutAt = () => JSON.parse(JSON.stringify({ state: wireState(W.state()), head: W.entries().length - 1 }));
 
 console.log("\nfrozen by default (every suite runs with the guard):");
@@ -24,11 +24,11 @@ console.log("\nfrozen by default (every suite runs with the guard):");
   const r = makeReplica(); r.adopt(cutAt());
   const c = r.st.entities.crate.c;
   check("the bag is frozen", Object.isFrozen(c));
-  check("…and so is every value under it", Object.isFrozen(c.sockets) && Object.isFrozen(c.sockets.top) && Object.isFrozen(c.sockets.top.pos) && Object.isFrozen(c.transform.pos));
-  check("a reader that writes a value throws (sockets.top.pos[0] = 9)", throws(() => { c.sockets.top.pos[0] = 9; }));
+  check("…and so is every value under it", Object.isFrozen(c["example.org/rack"]) && Object.isFrozen(c["example.org/rack"].top) && Object.isFrozen(c["example.org/rack"].top.pos) && Object.isFrozen(c.transform.pos));
+  check("a reader that writes a value throws (rack.top.pos[0] = 9)", throws(() => { c["example.org/rack"].top.pos[0] = 9; }));
   check("a reader that adds a key throws (c.stray = 1)", throws(() => { (c as any).stray = 1; }));
   check("a reader that deletes a key throws", throws(() => { delete (c as any).label; }));
-  check("the fold is untouched", c.sockets.top.pos[0] === 0 && c.label === "crate" && !("stray" in c));
+  check("the fold is untouched", c["example.org/rack"].top.pos[0] === 0 && c.label === "crate" && !("stray" in c));
 
   const before = W.entries().length, worldBag = r.st.entities["@world"].c;
   const res = W.call("set", { id: "crate", component: "label", value: "tall crate" });
@@ -45,7 +45,7 @@ console.log("\nfrozen by default (every suite runs with the guard):");
 console.log("\noff by choice (a visitor's browser):");
 {
   const r = makeReplica({ freeze: false }); r.adopt(cutAt());
-  check("nothing is frozen", !Object.isFrozen(r.st.entities.crate.c) && !Object.isFrozen(r.st.entities.crate.c.sockets));
+  check("nothing is frozen", !Object.isFrozen(r.st.entities.crate.c) && !Object.isFrozen(r.st.entities.crate.c["example.org/rack"]));
   check("the replica says which it is", r.frozen === false && makeReplica().frozen === true);
 }
 

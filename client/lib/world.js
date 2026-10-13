@@ -11,7 +11,8 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
-import { bodyOf, socketQ } from '../../shared/components.js';
+import { bodyOf } from '../../shared/components.js';
+import { socketsUnder, resolveSeat } from '../../shared/sockbody.js';
 import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
 // net.js does NOT import this module (its own note: "live grants keep it fresh
@@ -40,7 +41,7 @@ import { applySeatCorrection } from './seatcore.js';
 export const entities = new Map();
 /** A thing's fold record as this client folds it (shared/protocol/replica.js): {model?, transform, parent?, …components},
  *  component keys as the fold spells them (shared/protocol/names.js). ONE record for every reader — the Hierarchy, the
- *  Inspector, every evaluator (motion.js reads `motion`; mounting reads `sockets`; the server reads `reactions`) — so
+ *  Inspector, every evaluator (motion.js reads `motion`; a seat reads its socket child's `socket`; the server reads `reactions`) — so
  *  nothing is held beside the fold to drift (C7c; the `comps` Map the realizer mirrored it into is gone). Frozen in
  *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it.
  *  Read it where you need it; never keep it across an ingest — a write replaces the record (the frozen one is thawed
@@ -56,25 +57,45 @@ export function* bags() {
 export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { lib: c.model } : {}) } : null; };
 /** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
  *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
- *  index for the realizer's carrier checks, the sockets re-seat and the panels; no map is kept beside the fold (C12b). */
+ *  index for the realizer's carrier checks, the panels and the seats; no map is kept beside the fold (C12b). */
 const out = (k) => dec(k) ?? k;
 export const childrenOf = (id) => replica.childrenOf?.(enc(String(id))).map(out) ?? [];
 export const parentIdOf = (id) => { const p = replica.parentOf?.(enc(String(id))); return p == null ? null : out(p); };
 export const ancestorsOf = (id) => replica.ancestors?.(enc(String(id))).map(out) ?? [];
+/** A host's sockets (PLAN-sockets-entities: a socket is a child entity {transform, parent: {to: host}, socket: {name,
+ *  part?, body?, accepts?, radius?}}): [{id, name, sock}], from the fold's children index. The one reader every client
+ *  surface shares (clickuse, localbody, seatbody, the Inspector, xrpointer, the scene panel). */
+export const socketsOn = (host) => socketsUnder(String(host), childrenOf, bagOf);
+/** A socket child as a seat reads it: {id (the socket), host, name, sock (its socket component)}, or null when `id` isn't
+ *  a socket in the fold (yet, or any more). */
+export function seatSocket(id) {
+  const c = id == null ? null : bagOf(id);
+  if (!c?.socket || typeof c.socket !== 'object') return null;
+  return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket };
+}
 /** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
- *  their mounts live here for remotes/controller to consume. */
+ *  their mounts live here for remotes/controller to consume. {to: <socket id>, pose?, at?, in?} */
 export const avatarMounts = new Map();
 /** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
- *  `seat: {to, slot}` while seated, so every receiver sets it from the frame and clears it when a frame comes without
- *  one. My own is set here by localbody.js and rides my frames (net.js sendPose). */
+ *  `seat: {to: <socket id>}` while seated, so every receiver sets it from the frame and clears it when a frame comes
+ *  without one. A frame from a client before sockets were entities says {to: <host>, slot}: it names the host's socket
+ *  child of that name (shared/sockbody.js resolveSeat, one release). A seat naming no socket here is no seat. My own is
+ *  set here by localbody.js and rides my frames (net.js sendPose). */
 export function setBodySeat(id, seat) {
   const cur = avatarMounts.get(id);
-  if (!seat?.to) { if (cur) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); } return; }
-  if (cur?.to === seat.to && (cur.slot ?? null) === (seat.slot ?? null)) { seatExtras(cur, seat); return; }
-  const m = { to: String(seat.to), ...(seat.slot ? { slot: String(seat.slot) } : {}) };
+  const to = seat?.to ? seatSocketId(seat) : null;
+  if (!to) { if (cur) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); } return; }
+  if (cur?.to === to) { seatExtras(cur, seat); return; }
+  const m = { to };
   seatExtras(m, seat);
   avatarMounts.set(id, m);
-  bus.emit('mount', { id, to: String(seat.to), slot: seat.slot });
+  bus.emit('mount', { id, to });
+}
+function seatSocketId(seat) {
+  if (seatSocket(seat.to)) return String(seat.to);
+  if (typeof seat.slot !== 'string' || !replica.st) return null;
+  const hit = resolveSeat(replica.st, { to: enc(String(seat.to)), slot: seat.slot });   // the old frame: the host's socket of that name
+  return hit ? (dec(hit.to) ?? hit.to) : null;
 }
 /** What else a seat frame carries (shared/sockbody.js): the pose the occupant chose from the socket's menu and when
  *  (`pose`, `at`: a sync group follows the latest choice), and their input (`in`: throttle, steer, aimYaw, aimPitch)
@@ -343,88 +364,57 @@ export function findPart(root, name) {
 
 // ---- mounting ---------------------------------------------------------------
 
-/** A named attachment point, from the entity's `sockets` component:
- *  comp {id, type: 'sockets', data: {seat: {pos:[...], yaw, pose?, part?}}}
- *  Coords are the MODEL's local frame — the frame `measure` reports, so a
- *  flat-zone center is a socket pos verbatim. A socket that names a `part`
- *  (a node motion.js animates, e.g. a swing's seat assembly) keeps the same
- *  coords but RIDES that part's motion instead of standing on the rest pose. */
-const socketOf = (id, slot) => (slot ? bagOf(id)?.sockets?.[slot] : null);
-
-/** World-space position of a socket, for reach checks and hints. Ignores the
- *  part's motion on purpose: "how far is the seat" should not oscillate with
- *  the swing. Fills out; returns null when either half is missing. */
-export function socketWorldPos(id, slot, out) {
-  const parent = entities.get(id);
-  const sock = socketOf(id, slot);
-  if (!parent || !sock) return null;
-  parent.updateWorldMatrix(true, false);
-  return out.set(...(sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
+/** World-space position of a socket (a socket child's id), for reach checks and hints: its host's transform composed
+ *  with the socket's own (local to the host). Ignores a part's motion on purpose: "how far is the seat" should not
+ *  oscillate with the swing. Fills out; returns null when either half is missing. */
+export function socketWorldPos(id, out) {
+  const s = seatSocket(id);
+  const host = s?.host != null ? entities.get(s.host) : null;
+  if (!host) return null;
+  host.updateWorldMatrix(true, false);
+  const p = bagOf(id)?.transform?.pos;
+  return out.set(...(Array.isArray(p) && p.length === 3 ? p : [0, 0, 0])).applyMatrix4(host.matrixWorld);
 }
 
-// A seated body's world transform, live: parent entity's CURRENT transform
-// (mid-pendulum, mid-path — motion.js has already ticked it this frame)
-// composed with the socket. This is what makes a sitter actually RIDE the
-// swing: their body is derived, not streamed.
-//
-// When the socket names a `part`, the seat point additionally rides that
-// part's motion: the model-frame point is carried through the part's current
-// DISPLACEMENT (live transform ∘ rest⁻¹, in world terms). At rest the
-// displacement is identity, so a part socket sits exactly where a plain one
-// does — declaring the part only adds the arc. This is the missing half of
-// motion:<part>: without it a rider sat still while the plank swung through
-// them (the fox's swing, commons, 2026-08-03).
-//
-// The socket offset goes through the parent's full matrixWorld (scale
-// included) rather than quaternion+position: socket coords are model-frame,
-// and a spawn-scaled model renders its seat scaled too.
+// A seated body's world transform, live: the SOCKET's realized object (realize/models.js: an Empty attached to its host,
+// or into the host's moving part at rest), read through its matrixWorld — the host's CURRENT transform (mid-pendulum,
+// mid-path: motion.js has already ticked it this frame), the part's displacement when the socket rides one, then the
+// socket's own pose. This is what makes a sitter actually RIDE the swing: their body is derived, not streamed. The
+// scene graph carries the part, so a sitter and a thing on that socket ride it the same way.
 const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
-const _mtM = new THREE.Matrix4();
 const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
 /** Fill outPos with the rider's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
- *  body, sock, upright, yaw, pose, to, seatState, seatReason} or null when not mounted (or the parent isn't live yet).
- *  `rider` is {path, av} — the roster path and live wrapper of the body being seated.
+ *  body, sock, upright, yaw, pose, to (the socket), host, slot (its name), seatState, seatReason} or null when not
+ *  mounted (or the socket isn't live yet). `rider` is {path, av} — the roster path and live wrapper of the body.
  *
  *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
  *  a seat, feet for a standing place, head, or the root itself — measured from the rider's posed skeleton
  *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
- *  Until the body has been measured the root sits at the socket, declared approximate. (The seat-profile correction,
- *  #101, still applies to a 'surface' socket that has no body anchor.) */
-const _mtP = new THREE.Vector3(), _mtD = new THREE.Quaternion();
+ *  Until the body has been measured the root sits at the socket, declared approximate. A socket whose body anchors at
+ *  'surface' (the seat authors its support plane, D14) takes the seat-profile correction (#101) instead. */
+const _mtP = new THREE.Vector3(), _mtW = new THREE.Quaternion();
 export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   const m = avatarMounts.get(riderId);
   if (!m) return null;
-  const parent = entities.get(m.to);
-  if (!parent) return null;
-  const sock = (bagOf(m.to)?.sockets ?? {})[m.slot] ?? {};
+  const s = seatSocket(m.to);
+  const sObj = s ? entities.get(s.id) : null;
+  if (!sObj) return null;
+  const sock = s.sock;
   const body = bodyOf(sock);
-  parent.updateWorldMatrix(true, false);
-  _mtF.set(...(m.offset ?? sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
-  _mtD.identity();
-  const part = sock.part ? findPart(parent, String(sock.part)) : null;
-  if (part && part.parent && part.userData.mbase) {
-    // mbase = the part's rest pose, captured by motion.js the first time it
-    // animates it. Absent mbase means the part has never moved: identity.
-    const b = part.userData.mbase;
-    part.updateWorldMatrix(true, false);
-    _mtM.compose(_mtV.set(...b.pos), _mtQ.fromArray(b.quat), part.scale)
-      .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
-    _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
-    // …and the rider turns with it (a swing's plank tilts its sitter): the part's displacement, live ∘ rest⁻¹
-    part.parent.getWorldQuaternion(_mtS).multiply(_mtQ.fromArray(b.quat));
-    part.getWorldQuaternion(_mtD).multiply(_mtS.invert());
-  }
-  // the rider's WHOLE rotation: the part's displacement, the parent's, then the socket's (a rocket seat lies on its
-  // back), then the rider's own heading, where set, instead of the socket's
-  parent.getWorldQuaternion(_mtQ);
-  const socketQw = _mtQ.clone().premultiply(_mtD).multiply(_mtS.fromArray(socketQ(sock)));
-  _mtR.copy(_mtQ).premultiply(_mtD).multiply(Number.isFinite(m.yaw) ? _mtS.setFromAxisAngle(_UP, m.yaw) : _mtS.fromArray(socketQ(sock)));
+  sObj.updateWorldMatrix(true, false);
+  _mtF.setFromMatrixPosition(sObj.matrixWorld);
+  // the socket's whole world rotation (a rocket seat lies on its back), part displacement and host included
+  const socketQw = sObj.getWorldQuaternion(_mtW);
+  // the rider's: the socket's, or, where the rider set its own heading, the socket's frame without its own turn (the
+  // host's, a part's displacement included) then that heading
+  if (Number.isFinite(m.yaw)) { const lq = bagOf(s.id)?.transform?.q; _mtR.copy(socketQw).multiply(_mtS.fromArray(Array.isArray(lq) && lq.length === 4 ? lq : [0, 0, 0, 1]).invert()).multiply(_mtQ.setFromAxisAngle(_UP, m.yaw)); }
+  else _mtR.copy(socketQw);
   const upright = _mtV.set(0, 1, 0).applyQuaternion(_mtR).y > 0.966;   // within 15°
   const socketPos = _mtF.toArray();
   let state = 'approximate', reason = null;
-  if (body && sock.seatAnchor !== 'surface') {
+  if (body && body.anchor !== 'surface') {
     if (poseOffset) _mtF.add(_mtP.fromArray(poseOffset).applyQuaternion(socketQw));
     if (body.anchor === 'root') state = 'anchored';
     else {
@@ -441,7 +431,7 @@ export function mountTransform(riderId, outPos, rider, poseOffset = null) {
   }
   outPos.copy(_mtF);
   _mtF.set(0, 0, 1).applyQuaternion(_mtR);
-  return { q: _mtR.toArray(), socketPos, socketQ: socketQw.toArray(), body, sock, upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: body?.clip ?? 'sitchair', to: m.to, slot: m.slot ?? null,
+  return { q: _mtR.toArray(), socketPos, socketQ: socketQw.toArray(), body, sock, upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: body?.clip ?? 'sitchair', to: s.id, host: s.host, slot: s.name ?? null,
     seatState: state, seatReason: reason };
 }
 

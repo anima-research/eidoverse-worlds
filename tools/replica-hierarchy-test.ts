@@ -10,6 +10,7 @@
 // edge). Mutation: skip the index update on the ingest path and the first move goes red.
 import { scratchWorld } from "./protocol/scratchworld.ts";
 import { makeReplica, wireState } from "../shared/protocol/replica.js";
+import { socketId } from "../shared/protocol/authority/sockets.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -23,6 +24,9 @@ const W = scratchWorld("hier").seed({
   lantern: { lib: "lantern.glb", pos: [0, 0, 0], yaw: 0, parent: { to: "crate" } },
   rock: { lib: "rock.glb", pos: [5, 0, 5], yaw: 0 },
 });
+// the truck's bed is a socket child (PLAN-sockets-entities: the seed's old `sockets` map is lifted at load), so the crate
+// rides it: truck › bed › crate › lantern
+const bed = socketId("truck", "bed");
 const cutAt = () => JSON.parse(JSON.stringify({ state: wireState(W.state()), head: W.entries().length - 1 }));
 const r = makeReplica(); r.adopt(cutAt());
 let head = W.entries().length;
@@ -50,27 +54,27 @@ const agree = (label: string) => {
 
 console.log("\nthe index agrees with a fresh scan after every write:");
 agree("adopt: the cut's folded parents are indexed");
-check("the seed's tree reads as seeded", r.childrenOf("truck").join() === "crate" && r.childrenOf("crate").join() === "lantern" && r.ancestors("lantern").join() === "crate,truck" && r.parentOf("rock") === null && r.childrenOf("rock").length === 0);
+check("the seed's tree reads as seeded", r.childrenOf("truck").join() === bed && r.childrenOf(bed).join() === "crate" && r.childrenOf("crate").join() === "lantern" && r.ancestors("lantern").join() === `crate,${bed},truck` && r.parentOf("rock") === null && r.childrenOf("rock").length === 0);
 write("set", { id: "rock", component: "parent", value: { to: "truck" } });
 agree("a root moves under a carrier");
-check("…and the carrier lists it, in id order", r.childrenOf("truck").join() === "crate,rock");
+check("…and the carrier lists it, in id order", r.childrenOf("truck").join() === `${bed},rock`);
 write("set", { id: "rock", component: "parent", value: { to: "crate" } });
 agree("a child moves to another carrier");
-check("…the old carrier forgets it, the new one lists it, its ancestors grow", r.childrenOf("truck").join() === "crate" && r.childrenOf("crate").join() === "lantern,rock" && r.ancestors("rock").join() === "crate,truck");
+check("…the old carrier forgets it, the new one lists it, its ancestors grow", r.childrenOf("truck").join() === bed && r.childrenOf("crate").join() === "lantern,rock" && r.ancestors("rock").join() === `crate,${bed},truck`);
 write("delete", { id: "rock", component: "parent" });
 agree("an unparent");
 check("…it is a root again", r.parentOf("rock") === null && r.childrenOf("crate").join() === "lantern");
 write("create", { id: "cup", model: "cup.glb", components: { transform: { pos: [0, 0, 0] }, parent: { to: "lantern" } } });
 agree("a create born under a carrier (one entry)");
-check("…four deep", r.ancestors("cup").join() === "lantern,crate,truck");
+check("…five deep", r.ancestors("cup").join() === `lantern,crate,${bed},truck`);
 write("delete", { id: "crate" });
 agree("a delete that takes the children with it");
-check("…nothing names the gone carrier; truck has no children; what was under it is gone too", r.childrenOf("crate").length === 0 && r.childrenOf("truck").length === 0 && !r.st.entities.lantern && !r.st.entities.cup && r.parentOf("lantern") === null);
+check("…nothing names the gone carrier; truck keeps only its socket; what was under it is gone too", r.childrenOf("crate").length === 0 && r.childrenOf(bed).length === 0 && r.childrenOf("truck").join() === bed && !r.st.entities.lantern && !r.st.entities.cup && r.parentOf("lantern") === null);
 write("create", { id: "box", model: "box.glb", components: { transform: { pos: [1, 0, 1] } } });
 write("set", { id: "box", component: "parent", value: { to: "truck" } });
 write("set", { id: "rock", component: "parent", value: { to: "box" } });
 agree("a fresh chain built in three entries");
-check("…reads whole", r.ancestors("rock").join() === "box,truck" && r.childrenOf("truck").join() === "box");
+check("…reads whole", r.ancestors("rock").join() === "box,truck" && r.childrenOf("truck").join() === `${bed},box`);
 check("an id the world never had answers empty", r.childrenOf("nothing").length === 0 && r.parentOf("nothing") === null && r.ancestors("nothing").length === 0);
 
 console.log("\nthe index is the fold's, not a view's:");

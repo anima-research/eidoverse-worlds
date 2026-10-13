@@ -33,7 +33,7 @@ import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, x
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
-import { entities, bagOf } from './world.js';
+import { entities, bagOf, socketsOn } from './world.js';
 import { xrHand as grabHand, bindPresenting as bindGrabPresenting } from './thingphysics.js';   // world grabbing: the grabbable component's VR hands
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
@@ -442,7 +442,7 @@ function rayHitEntity(handRay, far = 24) {
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
   const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot
-  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(bagOf(n.userData.entityId)) } : null;
+  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(bagOf(n.userData.entityId), socketsOn(n.userData.entityId).length) } : null;
 }
 
 

@@ -39,7 +39,7 @@ import { COMPONENTS as SPEC, registered, outOfRange, rangeWords } from './protoc
 import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
-import { checkSockets, ANCHORS, ACTION_DEFAULTS } from './sockbody.js';
+import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, POSES as GRAB_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE, setEulerChannel } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading, qRotate } from './rot.js';
@@ -131,6 +131,15 @@ const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'm
 // grips). Each keeps a `read` (its rows) and a `write` (its edits); the inspector and editOps call them where the card
 // stands. Transform's hooks are inline in inspectSchema/editOps (its edits coalesce into the one place every channel
 // shares); HAND.Transform names where.
+// A host's sockets are its socket children (PLAN-sockets-entities); until the Parts UI (PLAN §10 12b) the Sockets card
+// still reads and writes them as the one map it was built on: the children, read as `sockets.<name>` (shared/sockbody.js
+// socketMapIn); a write of the whole map is translated into the children at the door (authority/sockets.js liftOps).
+// Needs the world (live.world); without it a record shows the sockets it carries itself (none, after the cut).
+function withSocketMap(ent, id, live) {
+  if (!ent || !live?.world || ent.comp?.sockets) return ent;
+  const map = socketMapIn(live.world, id);
+  return map ? { ...ent, comp: { ...(ent.comp ?? {}), sockets: map } } : ent;
+}
 const HAND = {
   Transform: { read: 'inspectSchema: the pos and rot groups', write: 'editOps: case pos, case rot, and the compose after the loop' },
   Sockets: {
@@ -324,7 +333,7 @@ const HAND = {
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
-  ent = recordOf(ent, id);
+  ent = withSocketMap(recordOf(ent, id), id, live);
   const c = ent.comp ?? {};
   const mounted = !!ent.parent;
   const locked = !!c.lock;
@@ -1174,7 +1183,7 @@ export function fieldAt(schema, key) {
  *  relative expressions; a number is written as typed, or refused (nothing written) where the door's range refuses it:
  *  a row's min/max bound its slider, never the value. Disabled fields refuse. Pure: never sends, never mutates `ent`. */
 export function editOps(ent, id, edits, live = {}) {
-  ent = recordOf(ent, id);
+  ent = withSocketMap(recordOf(ent, id), id, live);
   const schema = inspectSchema(ent, id, live);
   const errors = [];
   const ops = [];

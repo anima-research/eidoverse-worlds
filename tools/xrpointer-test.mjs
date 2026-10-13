@@ -69,8 +69,8 @@ console.log('\nSTICKINESS');
   check('angleTo measures the drift', Math.abs(P.angleTo(o, new THREE.Vector3(0, 0, -1), new THREE.Vector3(Math.tan(0.02), 1, -1)) - 0.02) < 1e-9); }
 
 console.log('\nINTERACTABLE ENTITIES, THE DOT\'S SETTING');
-check('an entity with sockets or reactions is interactable; a plain one, empty bags, or none is not',
-  P.interactable({ sockets: { seat: {} } }) && P.interactable({ reactions: { push: {} } }) && !P.interactable({}) && !P.interactable({ sockets: {} }) && !P.interactable({ motion: { type: 'spin' } }) && !P.interactable(undefined));
+check('an entity with sockets (socket children, counted) or reactions is interactable; a plain one, empty bags, or none is not',
+  P.interactable({}, 1) && P.interactable({ reactions: { push: {} } }) && !P.interactable({}) && !P.interactable({}, 0) && !P.interactable({ reactions: {} }) && !P.interactable({ motion: { type: 'spin' } }) && !P.interactable(undefined));
 const dv = (m) => [{}, { surface: true }, { target: true }, { target: true, surface: true }].map((c) => +P.dotVisible(m, c)).join('');
 check('dot contextual: only on a target (panel, name, interactable entity), not a plain surface', dv('contextual') === '0011', dv('contextual'));
 check('dot always: on any surface; never: nowhere; an unknown mode is contextual', dv('always') === '0111' && dv('never') === '0000' && dv('bogus') === dv('contextual'), `${dv('always')} ${dv('never')}`);

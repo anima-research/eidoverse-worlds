@@ -71,6 +71,8 @@ export async function loadGLB(lib, { tier = 'full' } = {}) {
     : { asset: { extras: {} } };
   const g = new THREE_.Group();
   g.add(new THREE_.Mesh(new THREE_.BoxGeometry(1, 1, 1), new THREE_.MeshBasicMaterial()));
+  // a swing (realized-lifecycle's part sockets): a named pivot 2 m up, its plank hanging 1.5 m under it
+  if (/swing/.test(lib)) { const pivot = new THREE_.Group(); pivot.name = 'pivot'; pivot.position.set(0, 2, 0); const plank = new THREE_.Group(); plank.name = 'plank'; plank.position.set(0, -1.5, 0); pivot.add(plank); g.add(pivot); }
   g.userData.glbKey = ask.tier === 'lod' ? `${lib}#lod` : lib;
   g.userData.tierServed = tierOf(json, server.recipe);
   g.userData.tierAsked = ask.tier;
