@@ -303,7 +303,7 @@ function admit(w, st, who, ops) {
   });
   seatRights(w, st, s, who, role, norm, made);
   capacityCheck(w, st, s, who, norm);
-  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
+  for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
@@ -639,7 +639,9 @@ function valueCheck(s, { id, comp, value: v }, { carry = false } = {}) {
   if (id === "@world" && comp === "trusted") { const bad = trustRefusal(v); if (bad) refuse("shape", `${at}: ${bad}`, "set {id: '@world', component: 'trusted', value: {components: ['<handle>/<name>', …]}} (the drafts this world trusts; delete the component to trust none)"); }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
-  const whoOk = (x, where) => { if (x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
+  // a carried value (a fork's copy, the load's lift) keeps the who it was written with, even a role deleted since: the lift
+  // re-spells what the log holds and judges nothing new (review 10-12 S2-3); an unknown who reads as the strictest
+  const whoOk = (x, where) => { if (!carry && x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
   if (comp === "physics" && obj) whoOk(v.who, at);
   if (comp === "grabbable" && obj) whoOk(v.who, at);
   if (comp === "reactions" && obj) for (const [act, h] of Object.entries(v)) if (h && typeof h === "object") whoOk(h.who, `${at}.${act}`);
@@ -1941,14 +1943,18 @@ export function liftWorld(w) {
   if (!w.exists || w.state().status !== "ok") return [];
   if (w.custody()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return [{ skipped: "custody", why: "this server doesn't hold the key that signs this world" }];
   return withAuthority(w, () => { const out = [];
+    // one host at a time, each on its own (review 10-12 S2-3): a host whose lift fails is reported ({host, failed}: the
+    // server says it to the flight recorder) and left as it was, to lift at the next load; the hosts after it still lift
     for (const h of legacyHosts(w.state(), w.everIds())) {
-      const st = w.state(); if (!st.entities[h]) continue;
-      const { ops, made, moved } = liftHostOps(st, w.everIds(), h); if (!ops.length) continue;
-      const author = (lastSetterOf(w, h, "sockets") ?? lastSetterOf(w, h, "model") ?? creatorOf(w, h))?.rights ?? null;
-      const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
-      const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
-      changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
-      out.push({ host: h, made, moved }); }
+      try {
+        const st = w.state(); if (!st.entities[h]) continue;
+        const { ops, made, moved } = liftHostOps(st, w.everIds(), h); if (!ops.length) continue;
+        const author = (lastSetterOf(w, h, "sockets") ?? lastSetterOf(w, h, "model") ?? creatorOf(w, h))?.rights ?? null;
+        const ids = [...new Set(ops.map((o) => o.id))], comps = [...new Set(ops.map((o) => o.comp))];
+        const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids, comps }, lifting: true }, ops);
+        changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "lift-sockets", body: { id: h, made, moved, ...(author ? { capability: { author } } : {}) } }));
+        out.push({ host: h, made, moved });
+      } catch (x) { out.push({ host: h, failed: { code: x instanceof Refusal ? x.code : "error", reason: String(x?.reason ?? x?.message ?? x).slice(0, 300) } }); } }
     return out; });
 }
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,

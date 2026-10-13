@@ -1228,6 +1228,34 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const kept = JSON.stringify(Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === "tbl").sort().map((k) => [k, st.entities[k].c])) === snap;
   ok(b.ok && kept && (code(u) === "conflict" || (u.notes ?? []).some((n) => n.skipped?.some((x) => x.id === "tbl" && x.component === "sockets" && x.by === "bob"))), `SRU2 ${work === "hook" ? "bob adds a socket" : work === "perch" ? "bob moves the perch" : "bob deletes the seat"} after the cut; ann's undo of her pre-cut sockets edit skips (bob changed it since), and every child of tbl is as bob left it`, { b: b.refused, u: u.ok ? { ok: true, skipped: u.skipped, notes: u.notes } : u.refused, kept }); }
 
+// SRW (S2-3): the load's lift of a host the door would refuse today. Pre-cut: role-defs crew; a-chair's seat has body.who
+// 'crew'; b-chair has a plain seat; crew is deleted. The lift re-spells what the log holds (a carry: no re-judging
+// historical values), and one host that fails anyway doesn't stop the hosts after it: it's said, per host, to the caller.
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-chair", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-chair", lib: "crate", pos: [3, 0, 0] } },
+    { seq: 4, ts: 5, actor: "ann", verb: "spawn", args: { id: "c-chair", lib: "crate", pos: [6, 0, 0] } }];
+  const write = (name, ops) => { const out = translate(old, DOORKEYS()).out; const wid = out[1].world;
+    for (const o of ops) { const n = out.length; const ts = out[n - 1].ts + 1; const req = o.verb === "delete" ? { id: o.id, component: o.comp } : { id: o.id, component: o.comp, value: o.value };
+      out.push({ world: wid, kind: "act", actor: "ann", verb: o.verb, body: { request: req }, ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: o.verb, body: { id: o.id, comp: o.comp, ...(o.verb === "set" ? { value: o.value } : {}) }, ts }); }
+    fs.writeFileSync(root + `worlds/${name}.jsonl`, out.map((e) => JSON.stringify(e)).join("\n") + "\n"); };
+  const seat = (extra = {}) => ({ seat: { pos: [0, 0.5, 0], body: { action: "sit", ...extra } } });
+  write("srw1", [{ verb: "set", id: "@world", comp: "role-defs", value: { crew: { name: "Crew", rank: 150, can: { build: true } } } },
+    { verb: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "delete", id: "@world", comp: "role-defs" }]);
+  let threw = null, out = null; try { out = liftWorld(openWorld(root, "srw1")); } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
+  const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+  T += 100; process.env.PROTOCOL_NOW = String(T); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
+  ok(!threw && kids("a-chair") === 1 && kids("b-chair") === 1 && !st.entities["a-chair"].c.sockets && !st.entities["b-chair"].c.sockets && sit.ok, "SRW1 a seat whose who names a role since deleted lifts anyway (the lift is a carry), and so does the healthy host after it", { threw, out, a: kids("a-chair"), b: kids("b-chair"), sit: sit.refused });
+  // a host the lift can't write at all (here: the first append for it throws, as a full disk would) is said and
+  // skipped, and the hosts after it still lift: liftWorld never throws for one host
+  write("srw2", [{ verb: "set", id: "a-chair", comp: "sockets", value: seat() }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "set", id: "c-chair", comp: "sockets", value: seat() }]);
+  const w2 = openWorld(root, "srw2"); const real = w2.append.bind(w2); let n = 0; w2.append = (e, ...more) => { if (e.kind === "act" && e.verb === "lift-sockets" && e.body?.id === "a-chair" && !n++) throw new Error("disk full"); return real(e, ...more); };
+  let t2 = null, o2 = null; try { o2 = liftWorld(w2); } catch (x) { t2 = String(x?.message ?? x); }
+  const s2 = openWorld(root, "srw2").state(); const k2 = (h) => Object.values(s2.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+  const failed = (o2 ?? []).find((x) => x.host === "a-chair" && x.failed);
+  ok(!t2 && !!failed && /disk full/.test(failed.failed.reason ?? "") && k2("b-chair") === 1 && k2("c-chair") === 1 && !!s2.entities["a-chair"].c.sockets, "SRW2 a host whose lift fails is reported ({host, failed}) and left as it was; the hosts after it lift", { t2, o2, b: k2("b-chair"), c: k2("c-chair") });
+  const again = liftWorld(openWorld(root, "srw2")); const s3 = openWorld(root, "srw2").state();
+  ok(again.some((x) => x.host === "a-chair" && x.made) && Object.values(s3.entities).filter((e) => e.c.parent?.to === "a-chair" && e.c.socket).length === 1, "SRW2 …and the next load lifts it", again); }
+
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket

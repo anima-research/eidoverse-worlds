@@ -92,7 +92,15 @@ export class WorldLog {
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
     catch (err) { console.error(`[world:${name}] settling orphaned holds`, err); }
     // a world stored before sockets were entities is lifted at its first load, and logged (authority.js liftWorld)
-    try { const lifted = liftWorld(this.live); if (lifted.length) console.log(`[world:${name}] lifted ${lifted.length} socket host(s) to socket children: ${JSON.stringify(lifted).slice(0, 300)}`); }
+    // A host whose lift fails is left as it was (no seats until a later load lifts it) and said, per host: to the console
+    // and, once the world is attached, to the flight recorder (world_debug, /debug). A world this server can't sign for
+    // isn't lifted here at all, so it stays in the old spelling, with no seats, on this server: said too (review 10-12).
+    try { const lifted = liftWorld(this.live) as Any[];
+      const done = lifted.filter((x) => x.made), failed = lifted.filter((x) => x.failed), skipped = lifted.filter((x) => x.skipped);
+      if (done.length) console.log(`[world:${name}] lifted ${done.length} socket host(s) to socket children: ${JSON.stringify(done).slice(0, 300)}`);
+      for (const f of failed) console.error(`[world:${name}] lifting ${f.host}'s sockets failed (${f.failed.code}): ${f.failed.reason}; it keeps the old spelling, with no seats, until a load lifts it`);
+      for (const k of skipped) console.warn(`[world:${name}] not lifting its sockets (${k.skipped}): ${k.why}; seats stored in the old spelling don't work on this server`);
+      this.liftNotes = [...failed.map((f) => ({ host: f.host, ...f.failed })), ...skipped.map((k) => ({ skipped: k.skipped, why: k.why }))]; }
     catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
@@ -104,7 +112,9 @@ export class WorldLog {
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     void warm(Object.values(st.entities ?? {}).map((e: Any) => e.c.model)); // standing models, measured for the authority
   }
-  attach(host: LogHost) { this.host = host; }
+  /** what the load's socket lift couldn't do (per host), said to the flight recorder when a world attaches */
+  private liftNotes: Record<string, unknown>[] = [];
+  attach(host: LogHost) { this.host = host; for (const n of this.liftNotes) host.debug("lift-sockets", n); }
 
   private view(): WorldView {
     return viewState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldView;

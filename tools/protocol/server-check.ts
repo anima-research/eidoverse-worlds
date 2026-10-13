@@ -555,5 +555,30 @@ srv.proc.kill();
   ok(!Object.keys(c.snapshot?.cut?.holds ?? {}).length && bodies.includes("ball") && bodies.includes("torch"), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.cut?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 
+// ================= SL: the load's socket lift, per host, said to the flight recorder (review 10-12 S2-3) =================
+// A world stored in the old spelling, by hand, with one host the door can't lift (a slot called "front seat": a socket's
+// name is one word, and the name is a shape, not a value the lift carries) before a healthy one. WorldLog lifts at construction: the healthy host lifts, the bad one is
+// left as it was, and attaching the world says it to its flight recorder (world_debug, /debug), with the host's id.
+{ const WS = scratch("srvlift"); const script = path.join(WS, "lift.ts");
+  fs.writeFileSync(script, `// @ts-nocheck
+import fs from "node:fs"; import path from "node:path";
+const W = process.env.WORLDS_DIR, E = process.env.ENGINE;
+const { custodyAt } = await import(E + "/server/custody.ts"); const { custodyFileIn } = await import(E + "/server/keyfiles.ts");
+const { translate } = await import(E + "/tools/protocol/import-v1/translate-v1.js");
+const cu = custodyAt(custodyFileIn(W)); const keys = { key: cu.sequencer(), operator: cu.operator() };
+const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }, { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+  { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "a-cart", lib: "crate", pos: [0, 0, 0] } }, { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "b-bench", lib: "crate", pos: [3, 0, 0] } },
+  { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "a-cart", type: "sockets", data: { "front seat": { pos: [0, 0.5, 0], body: { action: "sit" } } } } },
+  { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "b-bench", type: "sockets", data: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } }];
+fs.mkdirSync(path.join(W, "liftw"), { recursive: true }); fs.writeFileSync(path.join(W, "liftw", "world.jsonl"), translate(old, keys).out.map((e) => JSON.stringify(e)).join("\\n") + "\\n");
+const { WorldLog } = await import(E + "/server/worldlog.ts");
+const log = new WorldLog("liftw"); const notes = []; log.attach({ broadcast() {}, rightsChanged() {}, debug: (k, d) => notes.push({ kind: k, ...d }) });
+const st = log.live.state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
+console.log("SL " + JSON.stringify({ notes, a: kids("a-cart"), aMap: !!st.entities["a-cart"].c.sockets, b: kids("b-bench") }));
+`);
+  const r = Bun.spawnSync(["bun", script], { env: { ...process.env, WORLDS_DIR: path.join(WS, "worlds"), ENGINE }, stdout: "pipe", stderr: "pipe" });
+  const line = String(r.stdout).split("\n").find((l) => l.startsWith("SL ")); const got = line ? JSON.parse(line.slice(3)) : null;
+  ok(!!got && got.b === 1 && got.a === 0 && got.aMap && got.notes.some((n) => n.kind === "lift-sockets" && n.host === "a-cart" && n.code === "shape"), "SL1 at load, a host the lift can't write is left as it was and said to the flight recorder (lift-sockets, its id and why); the healthy host after it lifts", got ?? String(r.stderr).slice(-400)); }
+
 console.log(`[server-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
