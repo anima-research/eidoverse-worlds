@@ -165,8 +165,9 @@ export function createShover(opts = {}) {
         const e = st.entities[id]; const ph = e?.c.physics;
         if (ph?.kind !== "dynamic" || !isBoxShape(ph.shape) || skip(id)) continue;
         // broad phase: a top-level thing's origin farther than its own size plus the body's reach is no contact
-        const t = e.c.transform; if (!e.c.parent && Array.isArray(t?.pos)) { const sc = t.scale ?? [1, 1, 1];
-          const ext = Math.max(...[0, 1, 2].map((i) => Math.max(Math.abs(ph.shape[0][i]), Math.abs(ph.shape[1][i])) * Math.abs(sc[i] ?? 1)));
+        // (riding something, its origin in the world: a pose, not the oriented box and the reach)
+        const t = e.c.parent ? worldPose(st, id) : e.c.transform; if (Array.isArray(t?.pos)) { const sc = t.scale ?? [1, 1, 1];
+          let ext = 0; for (let i = 0; i < 3; i++) ext = Math.max(ext, Math.max(Math.abs(ph.shape[0][i]), Math.abs(ph.shape[1][i])) * Math.abs(sc[i] ?? 1));
           if (Math.hypot(t.pos[0] - feet[0], t.pos[2] - feet[2]) > ext * 1.75 + r + F.slack) { touched.delete(id); continue; } }
         const obb = obbOf(st, id); const box = obb && aabbOfObb(obb); const c = box && contactOf(feet, r, tall, { obb, box }, F.slack);
         if (!c) { touched.delete(id); continue; }
