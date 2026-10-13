@@ -53,8 +53,9 @@ export function paintEdit(canvas, fields, { width = 522, title = '' } = {}) {
       if (!f) return { ...S, y, h, mid };
       // the label is the AXIS's (x/y/z) or dim; driven is the FIELD's job (amber edge + ~), never the label's
       const lab = T[AXIS_RE.exec(f.k ?? '')?.[1]] ?? T.dim;
-      const hasLabel = f.label != null && f.label !== '' && f.t !== 'btn' && f.t !== 'log';
-      if (hasLabel && f.t !== 'vec3') { font(); text(g, f.label, pad + labelW, mid, lab, labelW, 'right'); }
+      const word = f.vrLabel ?? f.label;   // vrLabel: the word a quad paints where the desktop row shows none
+      const hasLabel = word != null && word !== '' && f.t !== 'btn' && f.t !== 'log';
+      if (hasLabel && f.t !== 'vec3') { font(); text(g, word, pad + labelW, mid, lab, labelW, 'right'); }
       const X = hasLabel || VALUE_COL.includes(f.t) ? vx : pad;
       return { ...S, y, h, mid, X, W: width - pad - X };
     },

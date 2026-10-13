@@ -2,7 +2,7 @@
 //
 // Edit mode is a dark-grey utilitarian editor (Blender / Godot / Resonite / Maya family): the chrome
 // is grey and the WORLD is the only colour. Colour in the chrome means exactly one of: selection /
-// focus (accent), an axis (x/y/z), danger, or a driven value. Nothing is coloured for decoration.
+// focus (accent), an axis (x/y/z), danger, a driven value, or "only you" (mine). Nothing is coloured for decoration.
 //
 // Two surfaces read these values and must never drift:
 //   - the desktop CSS (client/index.html, the `--e-*` block scoped to body.edit-workspace / .frame.edit)
@@ -27,6 +27,7 @@ export const EDIT = Object.freeze({
   danger: '#e07a72',     // destructive actions (quiet style)
   driven: '#c9a24a',     // a value a motion comp drives (the rest pose is shown): the ~ marker
   drivenEdge: 'rgba(201,162,74,.45)',   // …and the driven FIELD's edge — toned, so three driven axes don't out-shout their x/y/z labels
+  mine: '#b08ad8',       // "only you": a view switch nobody else sees (the eye), never a shared state (research 10-12 R7)
 });
 
 /** The CSS custom property a token is written to: accentBg → --e-accent-bg. */

@@ -25,6 +25,7 @@ import {
 } from './controller.js';
 import { camera } from './core.js';
 import { avatarMounts, mountTransform, bags, bagOf, socketWorldPos, setBodySeat, entities } from './world.js';
+import { outOfMyView } from './myview.js';
 import { sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
@@ -251,6 +252,7 @@ function nearestSeat(arg, reach) {
   for (const [id, bag] of bags()) {
     if (!bag.sockets) continue;
     if (want && !id.toLowerCase().startsWith(want)) continue;
+    if (!want && entities.get(id) && outOfMyView(entities.get(id))) continue;   // a seat I hid is not offered; naming it still sits
     for (const slot of Object.keys(bag.sockets)) {
       const body = bodyOf(bag.sockets[slot]);
       if (!body) continue;   // an attachment point for things, not a seat

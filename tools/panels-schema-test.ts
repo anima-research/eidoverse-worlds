@@ -69,7 +69,9 @@ check('info shows the value as text', rows[0].querySelector('.sp-info')?.textCon
   // at 1.5 after a + and stepped to 1, i.e. two clicks that should cancel moved the value
   check('− steps down from the SHOWN value (+ then − cancel): edit("h", 1.5)', last() === '["h",1.5]', last());
   num.value = '-4'; num.onchange!(new Event('change'));
-  check('a typed value clamps to min: edit("h", 0)', last() === '["h",0]', last());
+  // refused, never clamped (D4a; review 10-12): the row's min is the slider's; the editor's own check refuses what the door
+  // would and says why, so the stepper hands on what was typed
+  check('a typed value is handed on as typed, not clamped to min: edit("h", -4)', last() === '["h",-4]', last());
   num.value = 'nope'; const n = edits.length; num.onchange!(new Event('change'));
   check('a non-number is ignored', edits.length === n); }
 { const sl = rows[3].querySelector('input.sp-range') as HTMLInputElement, out = rows[3].querySelector('.sp-range-val')!;

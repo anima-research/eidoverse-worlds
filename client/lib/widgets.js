@@ -21,7 +21,7 @@
 // min, max, options, def) are the descriptor's `ui` facts (shared/protocol/descriptors.js) as editschema's rowOf hands
 // them on; the shared readers of them are FACTS below.
 
-import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine } from './icons.js';
+import { svg as strokeSvg, rsvg, has as hasIcon, fsvg, hasFill, hasLine, stroke as strokeIcon } from './icons.js';
 import { EDIT as T, EDIT_VR as V, pictoRuns, hasPicto } from './edittheme.js';
 import { KEYHINTS, withKeys } from './keyhints.js';
 
@@ -103,19 +103,38 @@ const ROW = {
     const ind = tree ? (r.depth ?? 0) * 18 : 0;
     g.fillStyle = r.active ? 'rgba(143,232,200,0.16)' : C.row;
     g.fillRect(pad, y + 2, width - pad * 2, rowH - 4);
-    font(15, r.active ? 600 : 400); g.fillStyle = C.text;
-    g.fillText(String(r.label).slice(0, 34), pad + 10 + ind, y + rowH * 0.62);
+    const lx = pad + 10 + ind + (tree ? 26 : 0);   // a tree row's name starts after its enabled column
+    // the text stops short of the row's right-hand targets (the eye and the lock), however deep or long (review 10-12 S3-4)
+    const stop = tree ? width - pad - 34 - (r.mine != null ? 40 : 0) - 8 : width - pad;
+    const fit = (t, w) => { t = String(t); if (w <= 0) return ''; if (g.measureText(t).width <= w) return t; while (t.length && g.measureText(t + '…').width > w) t = t.slice(0, -1); return t ? t + '…' : ''; };
+    font(15, r.active ? 600 : 400); g.fillStyle = r.off ? C.label : C.text;
+    const name = fit(String(r.label).slice(0, 34), stop - lx);
+    g.fillText(name, lx, y + rowH * 0.62);
     if (tree && (r.sub || r.badges?.length)) {
+      const sx = lx + Math.min(220, g.measureText(name).width + 14);
       font(11); g.fillStyle = C.label;
-      g.fillText([r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · ').slice(0, 40), pad + 10 + ind + Math.min(220, r.label.length * 9 + 14), y + rowH * 0.62);
+      const sub = fit([r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · ').slice(0, 40), stop - sx);
+      if (sub) g.fillText(sub, sx, y + rowH * 0.62);
     }
     regions.push({ x: pad, y, w: width * 0.6, h: rowH, action: parent.k ?? 'row', payload: r.id });
     if (tree && r.kids) {   // a disclosure glyph, its own hit region ahead of the row's
       font(13); g.fillStyle = C.label; g.fillText(r.open === false ? '▸' : '▾', pad + ind - 4, y + rowH * 0.62);
       regions.unshift({ x: pad + ind - 8, y, w: 16, h: rowH, action: 'open', payload: r.id });
     }
+    if (tree && r.enabled != null) {   // ☑ ahead of the row's own region, like the disclosure
+      const s = 18, bx = pad + 10 + ind, by = y + (rowH - s) / 2;
+      g.strokeStyle = C.label; g.lineWidth = 2; g.strokeRect(bx, by, s, s);
+      if (r.enabled) { g.strokeStyle = C.accent; g.lineWidth = 3; g.beginPath(); g.moveTo(bx + s * 0.2, by + s * 0.55); g.lineTo(bx + s * 0.45, by + s * 0.8); g.lineTo(bx + s * 0.85, by + s * 0.2); g.stroke(); }
+      if (r.offable !== false) regions.unshift({ x: bx - 4, y, w: s + 8, h: rowH, action: 'enable', payload: { id: r.id, on: !r.enabled } });
+    }
     if (tree) {
       const bw = 34, bx = width - pad - bw;
+      if (r.mine != null) {   // the eye, left of the lock: tinted when on, "only you"
+        const ex = bx - bw - 6;
+        g.fillStyle = r.mine ? C.mine : '#2a3342'; g.fillRect(ex, y + 7, bw, rowH - 14);
+        g.save(); g.translate(ex + bw / 2, y + rowH / 2); g.strokeStyle = r.mine ? '#14100c' : C.text; strokeIcon(g, r.mine ? 'eyeOff' : 'eye', 20, 2); g.restore();
+        regions.push({ x: ex, y: y + 7, w: bw, h: rowH - 14, action: 'myhide', payload: r.id });
+      }
       g.fillStyle = r.locked ? C.accent : '#2a3342';
       g.fillRect(bx, y + 7, bw, rowH - 14);
       font(13, 600); g.fillStyle = r.locked ? '#14100c' : C.text;
@@ -140,10 +159,11 @@ const ROW = {
     if (r.active) { fill(g, T.accentBg, 0, y, width, rowH); fill(g, T.accent, 0, y, 3, rowH); }
     else if (r.multi) fill(g, T.accentBg, 0, y, width, rowH);
     if (tree) for (let d = 1; d <= (r.depth ?? 0); d++) fill(g, T.line, pad + d * 18 - 9, y, V.minLine, rowH);   // indent guides
-    const x0 = pad + ind + (tree ? 22 : 8);
+    const x0 = pad + ind + (tree ? 22 + 30 : 8);   // a tree row's name starts after its enabled column, box or not
     font(V.minText, r.active ? 600 : 400);
     const lockW = tree && r.locked != null ? V.minHit + 8 : 0;
-    let right = width - pad - lockW;
+    const eyeW = tree && r.mine != null ? V.minHit + 8 : 0;
+    let right = width - pad - lockW - eyeW;
     // row actions (lists): quiet buttons at the right end, full-height targets
     if (!tree) {
       for (const a of [...(r.actions ?? [])].reverse()) {
@@ -156,7 +176,7 @@ const ROW = {
       }
     }
     font(V.minText, r.active ? 600 : 400);
-    const lw = text(g, r.label, x0, y + rowH / 2, r.dim ? T.dim : T.text, right - x0 - 8);
+    const lw = text(g, r.label, x0, y + rowH / 2, r.dim || r.off ? T.dim : T.text, right - x0 - 8);
     if (tree && (r.sub || r.badges?.length)) {
       font(V.minText); text(g, [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), x0 + lw + 10, y + rowH / 2, T.dim, right - (x0 + lw + 10) - 8);
     }
@@ -164,6 +184,18 @@ const ROW = {
     if (tree && r.kids) {   // the disclosure: its own target ahead of the row's (legacy order)
       icon(g, r.open === false ? 'chevronRight' : 'chevronDown', pad + ind + 9, y + rowH / 2, 18, T.dim);
       regions.unshift({ x: pad + ind - 8, y, w: Math.max(28, 16), h: rowH, action: 'open', payload: r.id });
+    }
+    if (tree && r.enabled != null) {   // ☑ ahead of the row's own target (and after the disclosure's)
+      const s = 24, bx = pad + ind + 24, by = y + rowH / 2 - s / 2;
+      if (r.enabled) { box(g, bx, by, s, s, T.accent, null, 4); icon(g, 'check', bx + s / 2, by + s / 2, 18, '#ffffff', 3); }
+      else box(g, bx, by, s, s, T.well, T.dim, 4);
+      if (r.offable !== false) regions.unshift({ x: bx - 4, y: y + IN, w: s + 8, h: V.minHit, action: 'enable', payload: { id: r.id, on: !r.enabled } });
+    }
+    if (tree && r.mine != null) {   // the eye, left of the lock: tinted when on ("only you")
+      const bx = width - pad - lockW - V.minHit, by = y + IN;
+      if (r.mine) box(g, bx, by, V.minHit, V.minHit, T.press, null);
+      icon(g, r.mine ? 'eyeOff' : 'eye', bx + V.minHit / 2, by + V.minHit / 2, 20, r.mine ? T.mine : T.dim);
+      regions.push({ x: bx, y: by, w: V.minHit, h: V.minHit, action: 'myhide', payload: r.id });
     }
     if (tree && r.locked != null) {   // always drawn in VR (no hover); ON = accent
       const bx = width - pad - V.minHit, by = y + IN;
@@ -429,10 +461,17 @@ export const WIDGETS = {
       // R 10-10 23:48: in a busy world every frame repaints, and until the authority's answer folded in, each repaint put
       // the box back to the old value: it looked unclicked, so she clicked again and sent it twice. A clicked box keeps what
       // it was clicked to until the record agrees (or 3 s pass: then the record wins, e.g. a refusal).
-      let pending = null;
-      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked); };
+      // A field that bumps `settle` has had its answer (a refusal too): the record wins from then on, so a refused click
+      // can't leave the box lying (review 10-12 S2-1); so does the record once the 3 s are up, repaint or not.
+      let pending = null, rec = !!f.value, settle = f.settle;
+      inp.onchange = () => { pending = { v: inp.checked, until: performance.now() + 3000 }; edit(f.k, inp.checked);
+        setTimeout(() => { if (pending && performance.now() >= pending.until) { pending = null; inp.checked = rec; } }, 3050); };
+      // a mouse click must not leave focus here: a focused input holds the panel's repaint until blur, and the world's keys
+      // (WASD, B, Enter) stop (review 10-12 S2-3). Keyboard focus (Tab) still lands
+      inp.onmousedown = (e) => e.preventDefault();
       row.append(inp);
-      row.update = (nf) => { setLabel(nf); const v = !!nf.value;
+      row.update = (nf) => { setLabel(nf); const v = !!nf.value; rec = v;
+        if (nf.settle !== settle) { settle = nf.settle; pending = null; }
         if (pending && v !== pending.v && performance.now() < pending.until) { inp.checked = pending.v; return; }
         pending = null; inp.checked = v; };
     },
@@ -765,6 +804,8 @@ export const WIDGETS = {
       const dropOn = (onto) => (e) => { e.preventDefault(); e.stopPropagation(); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); if (treeDrag && treeDrag !== onto) edit('drop', { id: treeDrag, onto }); treeDrag = null; };
       box.ondragover = (e) => { if (treeDrag) { e.preventDefault(); e.dataTransfer && (e.dataTransfer.dropEffect = 'move'); } };
       box.ondrop = dropOn(null);
+      const boxes = new Map();   // id → its row's ENABLED box: a same-shape repaint sets them from the record
+      let settle = f.settle;
       for (const r of f.rows ?? []) {
         const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
         if (r.id != null) line.dataset.id = String(r.id);   // every row is findable by what it is (component rows too)
@@ -786,6 +827,20 @@ export const WIDGETS = {
         if (r.kids) disc.onclick = (e) => { e.stopPropagation(); edit('open', e.shiftKey || e.altKey ? { id: r.id, deep: true } : r.id); };   // keys: treeFold
         if (r.kids) disc.title = KEYHINTS.treeFold.before;
         line.append(disc);
+        // the row's columns, always in this order (R 10-12): [☑ enabled][name …][👁 only you][🔒]. A row without a box keeps
+        // its place, so every name starts at the same x for its depth
+        if (r.enabled != null) {
+          const on = el('input', 'sp-row-on'); on.type = 'checkbox'; on.checked = !!r.enabled; on.tabIndex = -1;
+          on.disabled = r.offable === false;
+          on.title = r.enabled ? 'enabled: untick to switch it off for everyone (it stays here as a link)' : 'switched off for everyone: tick to switch it back on';
+          on.onclick = (e) => e.stopPropagation(); on.onpointerdown = (e) => e.stopPropagation();
+          on.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };   // no focus from a click (the check widget's reason)
+          on._rec = !!r.enabled; boxes.set(String(r.id), on);
+          on.onchange = () => { on._pend = { v: on.checked, until: performance.now() + 3000, settle }; edit('enable', { id: r.id, on: on.checked });
+            setTimeout(() => { if (on._pend && performance.now() >= on._pend.until) { on._pend = null; on.checked = on._rec; } }, 3050); };
+          line.append(on);
+        } else line.append(el('span', 'sp-row-on gap'));
+        if (r.off) line.classList.add('off');
         const main = el('span', 'sp-item-main');
         main.append(put(el('span', 'sp-item-label'), r.label, ro.icons));
         if (r.sub || r.badges?.length) main.append(put(el('span', 'sp-item-sub'), [r.sub, ...(r.badges ?? [])].filter(Boolean).join(' · '), ro.icons));
@@ -818,11 +873,10 @@ export const WIDGETS = {
         const items = r.menu ?? f.menu;
         if (items?.length) line.oncontextmenu = (e) => { e.preventDefault(); contextMenu(e.clientX, e.clientY, items, (k) => (k === 'rename' && beginRename ? beginRename() : edit(k, r.id))); };
         line.append(main);
-        if (items?.length) line.append(menuButton(line));
-        if (r.mine != null) {   // 👁: hidden in MY view only (myview.js) — never the shared component
+        if (r.mine != null) {   // 👁: hidden in MY view only (myview.js), never the shared component; its tint says "only you"
           const eye = el('button', `sp-mini sp-eye${r.mine ? ' on' : ''}`);
-          eye.innerHTML = iconSvg(r.mine ? 'eye-slash' : 'eye', 14);
-          eye.title = r.mine ? 'hidden in your view only — click to show it again' : 'click to hide it in your view only (nobody else is affected)';
+          eye.innerHTML = iconSvg(r.mine ? 'eyeOff' : 'eye', 14);
+          eye.title = r.mine ? 'Only you: hidden in your view (not drawn, not clickable, still solid). Click to show it again.' : 'Only you: click to hide it in your view. Nobody else is affected.';
           eye.onclick = (e) => { e.stopPropagation(); edit('myhide', r.id); };
           line.append(eye);
         }
@@ -839,6 +893,7 @@ export const WIDGETS = {
           lock.onclick = (e) => { e.stopPropagation(); if (lock.disabled) return; if (held) edit('find', r.heldBy); else edit('lock', r.id); };
           line.append(lock);
         }
+        if (items?.length) line.append(menuButton(line));   // the headset's ⋯ (hidden on desktop) closes the row, after its columns
         box.append(line);
       }
       // the root zone: a full tree has no empty space to drop on, so while a
@@ -858,7 +913,11 @@ export const WIDGETS = {
       box.addEventListener('scroll', () => treeScroll.set(tkey, box.scrollTop), { passive: true });
       const back = () => { const y = treeScroll.get(tkey); if (y && box.isConnected) box.scrollTop = y; };
       queueMicrotask(back); requestAnimationFrame(back);
-      // rows are shape: a changed tree repaints
+      // rows are shape: a changed tree repaints. A same-shape repaint (a refused switch leaves the rows as they were) still
+      // owes the boxes the record, past a click still waiting on its answer (review 10-12 S2-1)
+      row.update = (nf) => { settle = nf.settle; for (const r of nf.rows ?? []) { const b = boxes.get(String(r.id)); if (!b || r.enabled == null) continue; b._rec = !!r.enabled;
+        if (b._pend && b._pend.settle === nf.settle && performance.now() < b._pend.until) { b.checked = b._pend.v; continue; }
+        b._pend = null; b.checked = !!r.enabled; } };
     },
     row: ROW,
   },

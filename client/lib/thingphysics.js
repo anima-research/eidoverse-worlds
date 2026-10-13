@@ -25,6 +25,7 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { entities } from './world.js';
+import { outOfMyView } from './myview.js';
 import { remotes, serverNow } from './remotes.js';
 import { colliders, suspendCollider } from './colliders.js';
 import { pushHostHook } from './autohooks.js';
@@ -534,10 +535,13 @@ function whereIs(id) {
   const obj = entities.get(id); if (obj) { obj.updateWorldMatrix(true, false); return obj.getWorldPosition(new THREE.Vector3()).toArray(); }
   return null;
 }
+// what I hid with the eye (or isolated out) is offered no verb by proximity: no hint, no T, no kick, no hand (R 10-12 17:33).
+// Naming it still works (grab(name)), the Hierarchy row's equivalent
+const hiddenToMe = (id) => { const o = entities.get(id); return !!o && !!outOfMyView(o); };
 // the nearest a test accepts; for grabbing, the highest grabbable.priority first (the key, not the table: Resonite)
 function nearest(ok, ids = dynamicIds(), prio = () => 0) {
   const f = feet(); if (!f) return null; let best = null, bd = Infinity, bp = -Infinity;
-  for (const id of ids) { if (holds[id]) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f, id); if (d === null) continue;
+  for (const id of ids) { if (holds[id] || hiddenToMe(id)) continue; const p = whereIs(id); if (!p) continue; const d = ok(p, f, id); if (d === null) continue;
     const pr = prio(id); if (pr > bp || (pr === bp && d < bd)) { bd = d; bp = pr; best = id; } }
   return best;
 }
@@ -625,7 +629,7 @@ export async function throwHeld(arg) {
  *  that point and of the authority's hand. The same request the desktop key sends. */
 export async function grabNear(at, within = 0.6) {
   const f = feet(); if (!f) return null; let best = null, bd = within;
-  for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj) continue;
+  for (const id of grabbableIds()) { if (holds[id]) continue; const obj = entities.get(id); if (!obj || outOfMyView(obj)) continue;
     const c = obj.getWorldPosition(new THREE.Vector3()).add(localCentre(id, obj).applyQuaternion(obj.getWorldQuaternion(_cq))); const d = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]);
     if (d < bd && inHand(c.toArray(), f, id) !== null) { bd = d; best = id; } }
   return best ? grab(best) : null;
@@ -721,7 +725,7 @@ function nearest4(side, at, scale) {
   const R = NEAR_GRAB * (scale || 1); let best = null;
   for (const id of grabbableIds()) {
     if (holds[id]?.by === net.you && (holds[id].hand === side || holds[id].second?.hand === side)) continue;   // already in this hand
-    const obj = entities.get(id); if (!obj) continue;
+    const obj = entities.get(id); if (!obj || outOfMyView(obj)) continue;
     const d = _bx.setFromObject(obj).distanceToPoint(at); if (d > R) continue;
     const g = grabOf(compsOf(id)); const k = [g.priority, pickGrip(g, side) ? 1 : 0, -d];
     if (!best || k[0] > best.k[0] || (k[0] === best.k[0] && (k[1] > best.k[1] || (k[1] === best.k[1] && k[2] > best.k[2])))) best = { id, k };

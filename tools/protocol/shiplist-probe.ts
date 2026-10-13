@@ -820,7 +820,10 @@ try {
   await pick("show ids");
   const r1 = await row();
   const face = await evalJson(`(() => { const b = ${H}.querySelector('.sp-pop-btn'), r = b.closest('.sp-row'); b.click(); const pop = document.querySelector('.sp-pop'); const o = { btn: b.textContent, rowText: r.textContent, items: [...document.querySelectorAll('.sp-pop-item')].map((x) => x.textContent.trim()), search: (() => { const i = pop?.querySelector('.sp-pop-search'); return i ? i.getBoundingClientRect().height : 0; })() }; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return o; })()`);
-  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, then expand all / collapse all, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾" && face.items.length === 5 && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
+  check("HQ2b the switches live under ONE 'Options' button (said once), a plain list: each switch once, then expand all / collapse all, no search box", face?.btn === "Options ▾" && face.rowText === "Options ▾"
+    // read off the menu, not counted (the row filters joined it 10-12): each line once, the three view switches among them
+    && new Set(face.items).size === face.items.length && ["show ids", "show kinds", "list components"].every((w) => face.items.some((t) => t.endsWith(w)))
+    && face.items.filter((t) => /expand all|collapse all/.test(t)).length === 2 && face.search < 2, face);
   check("HQ3 Options ▸ show ids: the row carries its id again", /Clicker\s+\(cuball\)/.test(r1?.label ?? ""), r1);
   await pick("list components");
   // R 10-11 00:03: with components listed, things start FOLDED; opening one shows its components
