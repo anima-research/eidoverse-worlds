@@ -96,8 +96,14 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
     !!lamp && !!lamp.userData.lib && lampLight?.parent === lamp && rq('lamp-light')?.obj === lampLight && rq('lamp-light').color === 0xff8800 && rq('lamp-light').range === 7 && rq('lamp-light').dayAware === false, JSON.stringify({ ...rq('lamp-light'), obj: rq('lamp-light')?.obj?.userData, parent: lampLight?.parent?.userData }));
   let lampGizmo = false; lamp?.traverse((o: any) => { if (o.userData?.gizmo && o.parent !== lampLight) lampGizmo = true; });
   check('…with NO gizmo mesh inside the model itself (it would join the collider, the lamp scan, the caster scan); the bulb\'s gizmo hangs on the child', !lampGizmo && !!lampLight?.children.some((c: any) => c.userData.gizmo));
-  check('a far lamp\'s light (beyond its residency radius, never loaded) still lights: the request parks at the folded WORLD position',
-    stub.entities.get('farlamp') === null && rq('farlamp-light')?.obj === null && jeq(rq('farlamp-light')?.pos, [600, 0, 0]) && rq('farlamp-light').intensity === 5, JSON.stringify(rq('farlamp-light')));
+  // where the rig puts a request's light (lightrig.js worldPosOf): its object's world position, else its parked pos
+  const lit = (id: string) => { const r = rq(id); if (!r) return null; const p = r.obj ? r.obj.getWorldPosition(new stub.THREE.Vector3()).toArray() : r.pos; return p?.map((x: number) => +x.toFixed(6) + 0); };
+  // F1 (10-12): a child's record pos is carrier-LOCAL; with no realized carrier to mount into, the child Empty stood
+  // in the Scene at that local pos and its light shone at the world origin. It stands at its folded WORLD pose now.
+  const farChild = stub.entities.get('farlamp-light');
+  check('a far lamp\'s light (beyond its residency radius, never loaded) still lights, over the far lamp: its child stands at the folded WORLD pose and the request rides it',
+    stub.entities.get('farlamp') === null && rq('farlamp-light')?.obj === farChild && farChild?.parent?.isScene && jeq(lit('farlamp-light'), [600, 0, 0]) && rq('farlamp-light').intensity === 5,
+    JSON.stringify({ lit: lit('farlamp-light'), obj: rq('farlamp-light')?.obj?.userData?.entityId ?? null, pos: rq('farlamp-light')?.pos }));
 
   // authored beats inferred (design §3): a Light component suppresses the model's inferred lamps
   const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
@@ -116,7 +122,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   live('set', at('pivot', [5, 5, 5]));
   check('live: moving the Empty moves its Group (and the request rides it)', jeq(piv.position.toArray().map((x: number) => +x.toFixed(9)), [5, 5, 5]) && rq('pivot')?.obj === piv, JSON.stringify(piv.position));
   live('set', at('farlamp', [700, 0, 0]));
-  check('live: moving a never-loaded lamp moves its child\'s parked light', jeq(rq('farlamp-light')?.pos, [700, 0, 0]), JSON.stringify(rq('farlamp-light')?.pos));
+  check('live: moving a never-loaded lamp moves its child\'s light with it', jeq(lit('farlamp-light'), [700, 0, 0]), JSON.stringify(lit('farlamp-light')));
   const marks = stub.colliderLog.length;
   live('set', { id: 'lamp', component: 'collider', value: { shape: 'exact' } });
   check('live: a changed collider component re-decides the standing collider under the new shape',
@@ -154,6 +160,29 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   check('edit mode on: every Empty wears a pickable marker, including one created while editing', marker(piv) && marker(stub.entities.get('e3')));
   bus.emit('edit-mode', false);
   check('edit mode off: the markers come off again', !marker(piv) && !marker(stub.entities.get('e3')));
+  // F1 pins: a waiting child composes its carrier's whole folded pose (turn, scale) with its own offset, follows a change
+  // to either, and mounts into the real lamp the moment the lamp loads, without moving.
+  const q90 = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+  live('set', { id: 'farlamp', component: 'transform', value: { pos: [700, 0, 0], q: q90, scale: 2 }, merge: true });
+  live('set', { id: 'farlamp-light', component: 'transform', value: { pos: [0, 1, 2] }, merge: true });
+  check('live: a waiting child stands at carrier pose ∘ its offset (turned 90°, scale 2, offset [0,1,2] → [704,2,0]), its light with it',
+    stub.entities.get('farlamp') === null && jeq(lit('farlamp-light'), [704, 2, 0]) && farChild.parent?.isScene, JSON.stringify(lit('farlamp-light')));
+  live('set', at('farlamp', [3, 0, 0]));
+  await settle();
+  const farNow = stub.entities.get('farlamp');
+  check('…brought within its radius the lamp loads and the child mounts into it at its offset and its OWN scale (not the composed one it waited in), the light where it was composed ([7,2,0])',
+    !!farNow?.userData?.lib && farChild.parent === farNow && jeq(farChild.position.toArray(), [0, 1, 2]) && jeq(farChild.scale.toArray(), [1, 1, 1]) && rq('farlamp-light')?.obj === farChild && jeq(lit('farlamp-light'), [7, 2, 0]),
+    JSON.stringify({ lib: farNow?.userData?.lib ?? null, parent: farChild.parent?.userData?.entityId ?? farChild.parent?.type, local: farChild.position.toArray(), scale: farChild.scale.toArray(), lit: lit('farlamp-light') }));
+  live('create', { id: 'far2', components: { transform: { pos: [600, 0, 0] }, model: LAMP } });
+  live('set', { id: 'lamp-light', component: 'parent', value: { to: 'far2' } });
+  const { worldPose } = await import('../shared/hierarchy.js');
+  const lampLightNow = stub.entities.get('lamp-light');
+  const want = worldPose(S.state.st.entities, 'lamp-light')?.pos.map((x: number) => +x.toFixed(6) + 0);
+  check('live: a child re-parented from a standing lamp to a never-loaded one steps off the old lamp and stands at its folded world pose (the door keeps it where it was)',
+    stub.entities.get('far2') === null && lampLightNow?.parent?.isScene && !lampLightNow.userData.mountedTo && jeq(lit('lamp-light'), want),
+    JSON.stringify({ parent: lampLightNow?.parent?.userData?.entityId ?? lampLightNow?.parent?.type, lit: lit('lamp-light'), want }));
+  live('set', at('far2', [650, 0, 0]));
+  check('…and from then on it follows the far lamp, not the old one', jeq(lit('lamp-light'), [want[0] + 50, want[1], want[2]]), JSON.stringify(lit('lamp-light')));
   check('the realizer reported nothing at any point (no error path was taken)', spy.reports.length === 0, JSON.stringify(spy.reports.map((r: any) => `${r.where}: ${r.e}`)));
 }
 
