@@ -35,7 +35,7 @@ import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text com
 import { tickOpenables } from './lib/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook,
+  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, flying as flyingNow, capSpeed,
 } from './lib/controller.js';
 import { initUsePrompt } from './lib/useprompt.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
@@ -452,7 +452,7 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
-initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState });
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own

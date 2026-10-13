@@ -56,7 +56,7 @@ try {
   const made = await page(`const n = await import('/lib/net.js');
     const out = {}; const mk = async (id, model, pos, scale, comps = {}) => (out[id] = (await n.sendRequest('create', { id, model, components: { label: id, transform: { pos, scale }, ...comps } }))?.ok ?? 'refused');
     out.engine = (await n.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } }))?.ok;
-    const dyn = { physics: { kind: 'dynamic', who: 'visitor' } };
+    const dyn = { physics: { kind: 'dynamic', who: 'visitor', mass: 20 } };   // empty crates: a body's push (70 kg, elastic) sends them along
     await mk('w-crate', '${CRATE}', [${X}, 0, ${Z} + 1.6], 0.25, dyn);
     for (let i = 0; i < 3; i++) await mk('p-crate-' + i, '${CRATE}', [${X} + 4 + (i - 1) * 0.55, 0, ${Z} + 1.2], 0.25, dyn);
     await mk('p-block', '${RED}', [${X} + 4, 0, ${Z} + 2.4], 0.6, { physics: { kind: 'static' } });
@@ -65,9 +65,11 @@ try {
     await mk('n-static', '${CRATE}', [${X} - 8, 0, ${Z} + 1.6], 0.25, { physics: { kind: 'static' } });
     await mk('n-held', '${CRATE}', [${X} - 12, 0, ${Z} + 0.9], 0.15, { ...dyn, grabbable: { who: 'visitor' } });
     await mk('c-crate', '${CRATE}', [${X} + 12, 0, ${Z} + 1.6], 0.25, dyn);
+    await mk('e-crate', '${CRATE}', [${X} + 16, 0, ${Z} + 1.6], 0.25, dyn);
+    await mk('m-crate', '${CRATE}', [${X} + 20, 0, ${Z} + 1.6], 0.25, { physics: { kind: 'dynamic', who: 'visitor', mass: 400 } });
     return out;`);
   check("(setup) physics on, and the crates made", made.engine && Object.entries(made).every(([, v]) => v === true), made);
-  const ids = ["w-crate", "p-crate-0", "p-crate-1", "p-crate-2", "p-block", "s-crate", "n-locked", "n-static", "n-held", "c-crate"];
+  const ids = ["w-crate", "p-crate-0", "p-crate-1", "p-crate-2", "p-block", "s-crate", "n-locked", "n-static", "n-held", "c-crate", "e-crate", "m-crate"];
   check("(setup) realized, the dynamic ones measured", await waitFor(`Promise.all([import('/lib/world.js'), import('/lib/net.js')]).then(([w, n]) => ${JSON.stringify(ids)}.every((id) => w.entities.has(id) && !w.entities.get(id).userData?.placeholder) && ${JSON.stringify(ids.filter((i) => !/static|block/.test(i)))}.every((id) => Array.isArray(n.replica.st.entities[id]?.c.physics?.shape)))`, 30000));
   await sleep(1500);
 
@@ -117,6 +119,26 @@ try {
       // a static thing is no shove's candidate, so against() never lists it: its contact is the collider stopping the walk at its face
       const against = id === "n-static" ? r.done === "blocked" && r.me[2] > Z + 1.0 : r.contact;
       check(`N walking into ${id} (in contact): none sent, none in the log`, against && (r.log ?? []).length === 0 && puntsOf(id).length === 0, { contact: r.contact, done: r.done, me: r.me, log: r.log, punts: puntsOf(id).map((e: any) => e.body) }); } }
+
+  // ---- M: a heavy crate (400 kg) stops me: for keepMs after the shove my speed is held at what I kept (0)
+  { await page(STAND(X + 20, Z));
+    const r = await page(`const c = await import('/lib/controller.js'), t = await import('/lib/thingphysics.js'); const n0 = t.physicsApi.shove.log().length;
+      const walk = c.walkTo(${X} + 20, ${Z} + 3.2, { ms: 2500 }); let at = null, after = []; const t0 = performance.now();
+      while (performance.now() - t0 < 2500) { await new Promise((z) => requestAnimationFrame(z)); const n = t.physicsApi.shove.log().length - n0;
+        if (n && at === null) at = performance.now(); if (at !== null && performance.now() - at < 250) after.push(+c.myState.speed.toFixed(3)); }
+      return { log: t.physicsApi.shove.log().slice(n0), after, feel: t.physicsApi.shove.feel().keepMs };`);
+    console.log("M:", JSON.stringify(r).slice(0, 400));
+    check("M a 400 kg crate: one shove, slow (by mass), and my speed held at 0 for the frames after it", r.log?.length >= 1 && Math.hypot(r.log[0].v[0], r.log[0].v[2]) < 0.6 && r.after.length > 3 && r.after.slice(1).every((v: number) => v === 0), r); }
+
+  // ---- E: my own client in edit mode never shoves (R 10-12); out of it, the same keys do
+  { const keyWalk = (ms: number, edit: boolean) => page(`const c = await import('/lib/controller.js'), b = await import('/lib/build.js'), t = await import('/lib/thingphysics.js');
+      b.setEditMode(${edit}, { quiet: true }); c.setCamYaw(Math.PI); const n0 = t.physicsApi.shove.log().length; let contact = false;
+      c.keys.add('KeyW'); const t0 = performance.now(); while (performance.now() - t0 < ${ms}) { await new Promise((z) => requestAnimationFrame(z)); contact ||= t.physicsApi.shove.against().includes('e-crate'); }
+      c.keys.delete('KeyW'); await new Promise((z) => setTimeout(z, 600)); const log = t.physicsApi.shove.log().slice(n0); b.setEditMode(false, { quiet: true }); return { log, contact, editing: b.isEditing() };`);
+    await page(STAND(X + 16, Z)); const on = await keyWalk(1800, true);
+    await page(STAND(X + 16, Z)); const off = await keyWalk(1800, false);
+    console.log("E:", JSON.stringify({ on, off }).slice(0, 400));
+    check("E in edit mode, walking into a crate (in contact) sends none; out of edit mode the same walk shoves it", on.contact && on.log.length === 0 && off.log.length >= 1 && off.log[0].id === "e-crate", { on, off }); }
 
   // ---- C (the control arm, last: the knob stays off)
   { await page(STAND(X + 12, Z)); await page(`const t = await import('/lib/thingphysics.js'); t.physicsApi.shove.on(false); return true;`);

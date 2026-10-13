@@ -3,8 +3,8 @@
 // a locked, held, static, underfoot or out-of-rights thing, none; a crate that moved and is walked into again, another.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/shove-test.ts
 // @ts-nocheck
-import { createShover, contactOf, footprint, shoveV, SHOVE_FEEL } from "../shared/shove.js";
-import { SHOVE } from "../shared/protocol/physconst.js";
+import { createShover, contactOf, footprint, obbOf, aabbOfObb, shoveV, massOf, shoveCap, keptOf, occupied, smoother, SHOVE_FEEL } from "../shared/shove.js";
+import { SHOVE, BODY_MASS } from "../shared/protocol/physconst.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => { if (ok) pass++; else fail++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : `  ${typeof detail === "string" ? detail : JSON.stringify(detail)}`}`); };
@@ -26,7 +26,9 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
 { const st = world({ crate: thing([0, 0, 0]) });
   const { out } = walk(st);
   check("walk into a crate: one punt", out.length === 1, out);
-  check("…pushed away, along the ground, at gain × the walk", out[0] && out[0].v[0] === 0 && out[0].v[2] === +(1.55 * SHOVE_FEEL.gain).toFixed(3) && out[0].v[1] > 0 && out[0].v[1] <= SHOVE.lift * out[0].v[2], out[0]);
+  const k = 2 * BODY_MASS / (BODY_MASS + 216);
+  check("…pushed away, along the ground, at the walk passed on by mass (216 kg crate: ×2·70/286)", out[0] && out[0].v[0] === 0 && out[0].v[2] === +(1.55 * k).toFixed(3) && out[0].v[1] > 0 && out[0].v[1] <= SHOVE.lift * out[0].v[2], out[0]);
+  check("…and the walker keeps nothing of its speed against a crate three times its mass", out[0] && out[0].kept === 0 && out[0].keepMs > 0, out[0]);
   check("…within what the authority admits", out[0] && Math.hypot(...out[0].v) <= SHOVE.maxV, out[0]); }
 
 { const st = world({ crate: thing([0, 0, 0]) });
@@ -35,7 +37,38 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
 
 { const st = world({ crate: thing([0, 0, 0]) });
   const { out } = walk(st, { speed: 4.0, frames: 30 });
-  check("running into it: capped at the walker's own limit", out.length === 1 && Math.hypot(out[0].v[0], out[0].v[2]) <= SHOVE_FEEL.maxV + 1e-9, out); }
+  check("running into it: at most the cap for its mass", out.length === 1 && Math.hypot(out[0].v[0], out[0].v[2]) <= shoveCap(216) + 1e-3, out);
+  const ball = world({ ball: thing([0, 0, 0], { physics: { mass: 5 } }) });
+  const b = walk(ball, { speed: 4.0, frames: 30 }).out;
+  check("a 5 kg ball run into takes the flat ceiling (3 m/s), and the walker keeps most of its speed", b.length === 1 && Math.abs(Math.hypot(b[0].v[0], b[0].v[2]) - SHOVE.maxV) < 1e-3 && Math.abs(b[0].kept - 4 * keptOf(5)) < 1e-9 && b[0].kept > 3, b); }
+
+{ check("mass: physics.mass wins; else density × volume × scale (water when unsaid; a material's density)",
+    massOf(world({ a: thing([0, 0, 0], { physics: { mass: 12 } }) }), "a") === 12 && Math.abs(massOf(world({ a: thing([0, 0, 0]) }), "a") - 216) < 1e-6
+    && Math.abs(massOf(world({ a: thing([0, 0, 0], { physics: { material: "wood" } }) }, { "surface:wood": { density: 500 } }), "a") - 108) < 1e-6
+    && Math.abs(massOf(world({ a: { c: { physics: { kind: "dynamic", shape: CRATE }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [2, 1, 1] } } } }), "a") - 432) < 1e-6);
+  check("shoveCap: heavy is slow, light hits the ceiling", Math.abs(shoveCap(70) - 4) > 0 && shoveCap(70) === SHOVE.maxV && shoveCap(1000) < 0.6 && shoveCap(216) < 2); }
+
+{ // the review's rot.ts: a 3 m plank at 45°; feet 1.78 m from its face, inside its axis-aligned box's empty corner: no contact
+  const h = Math.SQRT1_2, q = [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)];
+  const st = world({ plank: { c: { physics: { kind: "dynamic", shape: [[-1.5, 0, -0.15], [1.5, 0.6, 0.15]] }, transform: { pos: [0, 0, 0], q, scale: [1, 1, 1] } } } });
+  const obb = obbOf(st, "plank"), box = aabbOfObb(obb);
+  const corner = [box.max[0] - 0.05, 0, box.max[2] - 0.05], face = [0.15 * h + 0.34 * h, 0, 0.15 * h + 0.34 * h];
+  const sh = createShover(); const far = sh.step({ st, feet: corner, vel: [-1.1, -1.1], r: R, now: 0 });
+  check("a plank turned 45°: from its axis-aligned box's empty corner, no contact and no shove", !contactOf(corner, R, 1.9, { obb, box }) && far.length === 0, far);
+  check("…against its long face, contact along its normal", (() => { const c = contactOf(face, R, 1.9, { obb, box }); return c && Math.abs(c.n[0] + h) < 1e-3 && Math.abs(c.n[1] + h) < 1e-3; })()); }
+
+{ const st = world({ chair: thing([0, 0, 0]), cart: thing([3, 0, 0]), stool: thing([0, 0.6, 0], { c: { parent: { to: "cart" } } }) });
+  check("occupied: a thing someone sits on, and one carrying a seat", occupied(st, "chair", [0, 0, 1], { mounted: new Set(["chair"]) })?.why === "seat" && occupied(st, "cart", [0, 0, 1], { mounted: new Set(["stool"]) })?.why === "seat");
+  check("occupied: someone standing on it", occupied(st, "chair", [0, 0, 1], { bodies: [[0.1, 0.6, 0]] })?.why === "standing");
+  check("occupied: someone where it would slide; not when it slides the other way", occupied(st, "chair", [0, 0.2, 1.8], { bodies: [[0, 0, 1.2]] })?.why === "in-the-way" && occupied(st, "chair", [1.8, 0.2, 0], { bodies: [[0, 0, 1.2]] }) === null);
+  const { out } = walk(st, { opts: { bodies: [[0, 0, 0.9]] } }); const ok = walk(st, { opts: { bodies: [[0, 0, 1.5]] } }).out;
+  check("…and the walker sends none toward someone 0.9 m beyond it (one 1.5 m beyond is clear of the slide)", out.length === 0 && ok.length === 1, { out, ok }); }
+
+{ // VR room-scale: the head's smoothed horizontal speed; jitter and a lean over a table stay under vrSpeed, walking doesn't
+  const peak = (path: (t: number) => number[]) => { const sm = smoother(); let m = 0; for (let i = 0; i <= 180; i++) { const t = i * 1000 / 90, v = sm.step(path(t / 1000), t); m = Math.max(m, Math.hypot(v[0], v[1])); } return m; };
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5);
+  const jitter = peak(() => [rnd() * 0.02, 0, rnd() * 0.02]), lean = peak((t) => [0, 0, t < 1 ? 0.15 * (1 - Math.cos(Math.PI * t)) : 0.3]), walkV = peak((t) => [0, 0, t * 1.0]);
+  check(`VR: tracking jitter (${jitter.toFixed(2)}) and a 0.3 m lean over a second (${lean.toFixed(2)}) stay under ${SHOVE_FEEL.vrSpeed} m/s; walking 1 m/s (${walkV.toFixed(2)}) is over`, jitter < SHOVE_FEEL.vrSpeed && lean < SHOVE_FEEL.vrSpeed && walkV > SHOVE_FEEL.vrSpeed); }
 
 { // a wall of crates the body is pressed against: two rows of five, every one in reach of the slack would be absurd, so a
   // row side by side at the body's face plus the row behind it; pressing on for 3 s
@@ -86,8 +119,9 @@ for (const [name, st, opts] of [
 
 { const box = footprint(world({ c: thing([1, 0, 1], {}) }), "c");
   check("footprint: the shape in the world", box && box.min.join() === "0.7,0,0.7" && box.max.join() === "1.3,0.6,1.3", box);
-  check("contact: within r + slack only", !!contactOf([1, 0, 0.7 - R - 0.03], R, 1.9, box) && !contactOf([1, 0, 0.7 - R - 0.2], R, 1.9, box));
-  check("shoveV: nothing below minSpeed", shoveV([0, SHOVE_FEEL.minSpeed * 0.9], [0, 1]) === null && !!shoveV([0, SHOVE_FEEL.minSpeed * 1.1], [0, 1])); }
+  const th = { obb: obbOf(world({ c: thing([1, 0, 1], {}) }), "c"), box };
+  check("contact: within r + slack only", !!contactOf([1, 0, 0.7 - R - 0.03], R, 1.9, th) && !contactOf([1, 0, 0.7 - R - 0.2], R, 1.9, th));
+  check("shoveV: nothing below minSpeed", shoveV([0, SHOVE_FEEL.minSpeed * 0.9], [0, 1], 10) === null && !!shoveV([0, SHOVE_FEEL.minSpeed * 1.1], [0, 1], 10)); }
 
 { const st = world({ crate: thing([0, 0, 0]) }); const sh = createShover();
   const one = (t: number) => sh.step({ st, feet: [0, 0, -0.62], vel: [0, 1.55], r: R, now: t }).length;
