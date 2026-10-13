@@ -1212,6 +1212,22 @@ const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - 
   const st = W().state(); const after = worldT(st, "bell"); const on = st.entities[st.entities.bell.c.parent?.to]?.c.socket?.name;
   ok(u.ok && !(u.skipped?.length) && nearly(after.pos, before.pos) && nearly(after.q, before.q) && on === "perch", "SRU1 undo of a pre-cut move of cargo on a socket puts the bell back exactly (within 1e-8), still on the perch", { u: u.refused ?? u.skipped, before: before.pos, after: after.pos, on }); }
 
+// SRU2 (S2-2): ann's pre-cut `set tbl.sockets {perch, seat}`; after the cut nobody writes that key, so other people's work on
+// tbl's seats is creates and sets on its socket children. Undoing ann's edit must skip, as base did, not retire bob's work.
+for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "delete"]]) {
+  const W = () => openWorld(root, name);
+  precut(name, [{ seq: 6, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }]);
+  liftWorld(W()); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  const kidOf = (n) => { const st = W().state(); return Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === "tbl" && st.entities[k].c.socket?.name === n); };
+  const perch = kidOf("perch"), seat = kidOf("seat");
+  const b = work === "hook" ? R("bob", "create", { id: "bobhook", components: { parent: { to: "tbl" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } })
+    : work === "perch" ? R("bob", "set", { id: perch, component: "transform", value: { pos: [0.45, 0.95, 0.25], q: W().state().entities[perch].c.transform.q, scale: [1, 1, 1] } })
+    : R("bob", "delete", { id: seat });
+  const snap = JSON.stringify(Object.keys(W().state().entities).filter((k) => W().state().entities[k].c.parent?.to === "tbl").sort().map((k) => [k, W().state().entities[k].c]));
+  const u = R("ann", "undo", {}); const st = W().state();
+  const kept = JSON.stringify(Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === "tbl").sort().map((k) => [k, st.entities[k].c])) === snap;
+  ok(b.ok && kept && (code(u) === "conflict" || (u.notes ?? []).some((n) => n.skipped?.some((x) => x.id === "tbl" && x.component === "sockets" && x.by === "bob"))), `SRU2 ${work === "hook" ? "bob adds a socket" : work === "perch" ? "bob moves the perch" : "bob deletes the seat"} after the cut; ann's undo of her pre-cut sockets edit skips (bob changed it since), and every child of tbl is as bob left it`, { b: b.refused, u: u.ok ? { ok: true, skipped: u.skipped, notes: u.notes } : u.refused, kept }); }
+
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js (the translator and the load's lift) reads a stored `sockets` map, a
 // parent {to, socket} or a home's socket

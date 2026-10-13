@@ -2146,6 +2146,15 @@ function buildUndo(ctx, a, w) {
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
     for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
   const later = X.changes.slice(firstAfter(X.changes, res.seq)).filter(others).map((i) => E[i]);
+  // a host's seats after the cut are its socket children, and nobody writes its `sockets` key (review 10-12 S2-2): later
+  // work by others on them (a socket made under it, or any write to one of its socket children, deleted ones included)
+  // is a change to what a pre-cut `sockets` edit set, so undoing that edit skips, as it did before the cut
+  const socketWorkBy = (host) => {
+    for (const i of X.changes.slice(firstAfter(X.changes, res.seq))) { if (!others(i)) continue; const ops = opsQuiet(E[i]);
+      for (const o of ops) {
+        if (o.verb === "set" && o.comp === "parent" && o.value?.to === host && ops.some((q) => q.id === o.id && q.comp === "socket")) return E[i].actor;
+        const was = o.verb === "create" ? null : entityBefore(w, o.id, i, X); if (was && isSocketC(was.c) && was.c.parent?.to === host) return E[i].actor; } }
+    return null; };
   const groups = [], skipped = [];
   const keys = new Map();
   const madeHere = new Set(flat.filter((o) => o.verb === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
@@ -2164,7 +2173,7 @@ function buildUndo(ctx, a, w) {
       if (ob.c.transform === PURGED) { skipped.push({ id, component: "transform", why: "its old value was purged" }); continue; }
       if (now.entities[id]) groups.push([setOp(id, "parent", ob.c.parent), ...(ob.c.transform ? [setOp(id, "transform", ob.c.transform)] : [])]);
       ctx.refs.add(id); continue; }
-    const by = touchedBy(id, whole ? undefined : comp);
+    const by = touchedBy(id, whole ? undefined : comp) ?? (comp === "sockets" && !whole ? socketWorkBy(id) : null);
     if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     // undoing a create: what others hung on it since is THEIR work. It stays, let go where it is (round-1 F3), never
     // deleted with it and never left pointing at a thing that's gone
