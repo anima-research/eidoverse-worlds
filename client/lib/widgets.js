@@ -28,6 +28,26 @@ import { KEYHINTS, withKeys } from './keyhints.js';
 export const R2D = 180 / Math.PI;
 export const iconSvg = (name, size = 18) => (hasIcon(name) ? strokeSvg(name, size) : hasFill(name) ? fsvg(name, size) : '');
 const IN = (V.rowH - V.minHit) / 2;            // edit: a target's inset inside its row → exactly minHit tall
+const hslInt = (h, s, l) => {
+  const a = s * Math.min(l, 1 - l), f = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+  return (f(0) << 16) | (f(8) << 8) | f(4);
+};
+export const PICK_GRID = [
+  ...Array.from({ length: 12 }, (_, i) => { const v = Math.round(255 * (1 - i / 11)); return (v << 16) | (v << 8) | v; }),
+  ...[[0.9, 0.88], [0.85, 0.74], [0.8, 0.58], [0.75, 0.44], [0.7, 0.28]].flatMap(([s, l]) => Array.from({ length: 12 }, (_, i) => hslInt(i * 30, s, l))),
+];
+const openPickers = new Set();
+const RECENT_KEY = 'eido-recent-colours', RECENT_MAX = 12;
+let recent = null;
+export function recentColours() {
+  if (recent) return recent;
+  try { const r = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); recent = Array.isArray(r) ? r.filter(Number.isInteger).slice(0, RECENT_MAX) : []; } catch { recent = []; }
+  return recent;
+}
+function noteRecent(c) {
+  recent = [c, ...recentColours().filter((x) => x !== c)].slice(0, RECENT_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch {}
+}
 const PAL = [0xffffff, 0xffd9a0, 0xff8a5c, 0xe05a5a, 0x7cc47c, 0x5fa8ff, 0xb48cff, 0x202020];   // the keyboard-free colour picks, both canvas looks
 const ACTION_ICON = { '✕': 'x' };             // row-action labels that are glyphs → the icon set (edit)
 const TILE_COLS = 3;                           // edit: a tiles field three across (≈ 160 px each on a 522 quad)
@@ -347,16 +367,32 @@ export const WIDGETS = {
     },
   },
   color: {
+    // R 10-12: a colour field is a picker. The native <input type=color> opened nothing in a headset (the quad's click is
+    // synthetic and the dialog would be the desktop's), so the picker is made of what a quad draws and clicks: solid
+    // cells. One swatch opens it in place; a cell, a recent or a typed hex commits once.
     dom(f, D) { const { row, setLabel, edit, el } = D;
-      const inp = el('input', 'sp-color');
-      inp.type = 'color';
-      inp.disabled = !!f.disabled;
       const hex = FACTS.hex;
-      inp.value = hex(f.value);
-      inp.oninput = () => edit(f.k, parseInt(inp.value.slice(1), 16), null, { live: true });
-      inp.onchange = () => { edit(f.k, parseInt(inp.value.slice(1), 16)); inp.blur(); };
-      row.append(inp);
-      row.update = (nf) => { setLabel(nf); if (document.activeElement !== inp) inp.value = hex(nf.value); };
+      let cur = f.value ?? 0xffffff, dis = !!f.disabled;
+      const sw = el('div', 'sp-color sp-color-sw');
+      sw.setAttribute('role', 'button'); sw.tabIndex = 0;
+      const pick = el('div', 'sp-picker');
+      const recentRow = el('div', 'sp-pick-row sp-pick-recent');
+      const grid = el('div', 'sp-pick-grid');
+      const hexIn = el('input', 'sp-pick-hex'); hexIn.type = 'text'; hexIn.spellcheck = false; hexIn.maxLength = 7;
+      const cell = (c) => { const d = el('div', 'sp-pick-cell'); d.setAttribute('role', 'button'); d.style.background = hex(c); d.title = hex(c); d.dataset.c = c; d.onclick = () => commit(c); return d; };
+      grid.append(...PICK_GRID.map(cell));
+      const paintRecent = () => { const rc = recentColours(); recentRow.replaceChildren(...rc.map(cell)); recentRow.hidden = !rc.length; mark(); };
+      const mark = () => { for (const d of pick.querySelectorAll('.sp-pick-cell')) d.classList.toggle('on', +d.dataset.c === cur); };
+      const show = () => { sw.style.background = hex(cur); if (document.activeElement !== hexIn) hexIn.value = hex(cur); mark(); };
+      const setOpen = (on) => { if (on && dis) return; openPickers[on ? 'add' : 'delete'](f.k); pick.hidden = !on; sw.classList.toggle('open', on); if (on) paintRecent(); };
+      function commit(c) { if (dis || !Number.isInteger(c)) return; cur = c; noteRecent(c); paintRecent(); show(); edit(f.k, c); }
+      sw.onclick = () => setOpen(pick.hidden);
+      sw.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(pick.hidden); } };
+      hexIn.onchange = () => { const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(hexIn.value.trim()); if (!m) { hexIn.value = hex(cur); return; } const h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1]; commit(parseInt(h, 16)); };
+      pick.append(grid, recentRow, hexIn);
+      row.append(sw, pick);
+      setOpen(openPickers.has(f.k)); show();
+      row.update = (nf) => { setLabel(nf); dis = !!nf.disabled; if (dis && !pick.hidden) setOpen(false); cur = nf.value ?? cur; show(); };
     },
     legacy(f, P) { const { g, regions, C, vx, rowH, y } = P;
       const s = rowH - 14;
